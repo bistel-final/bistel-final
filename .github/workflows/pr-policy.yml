@@ -1,0 +1,96 @@
+name: PR Policy
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    env:
+      PR_BRANCH: ${{ github.head_ref }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+
+    steps:
+      - name: Validate branch name
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch_pattern='^(feat|fix|refactor|test|docs|chore)/(common|detection|knowledge|agent|analytics|integration)-[a-z0-9]+(-[a-z0-9]+)*$'
+
+          if [[ ! "$PR_BRANCH" =~ $branch_pattern ]]; then
+            echo "잘못된 브랜치명입니다: $PR_BRANCH"
+            echo "형식: <type>/<area>-<description>"
+            echo "예시: feat/detection-summary"
+            exit 1
+          fi
+
+      - name: Validate closing issue
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s\n' "$PR_BODY" |
+            grep -Eq '(Closes|Fixes|Resolves)[[:space:]]+#[0-9]+'; then
+            echo "PR 본문에 이슈 종료 문구가 없습니다."
+            echo "예시: Closes #12"
+            exit 1
+          fi
+
+      - name: Validate required sections
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_headings=(
+            "## 관련 이슈"
+            "## 담당 영역"
+            "## 변경 유형"
+            "## 변경 내용"
+            "## 확인 방법"
+            "## 실제 연동 확인"
+            "## 문서 변경"
+            "## 체크리스트"
+          )
+
+          for heading in "${required_headings[@]}"; do
+            if ! printf '%s\n' "$PR_BODY" | grep -Fq "$heading"; then
+              echo "필수 항목이 없습니다: $heading"
+              exit 1
+            fi
+          done
+
+      - name: Validate selected area
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s\n' "$PR_BODY" |
+            grep -Eq -- '- \[[xX]\] (Common|A - Detection|B - Knowledge|C - Agent|D - Analytics)'; then
+            echo "담당 영역을 하나 이상 체크해야 합니다."
+            exit 1
+          fi
+
+      - name: Validate selected change type
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s\n' "$PR_BODY" |
+            grep -Eq -- '- \[[xX]\] (Feature|Fix|Refactoring|Test|Documentation|Chore)'; then
+            echo "변경 유형을 하나 이상 체크해야 합니다."
+            exit 1
+          fi
