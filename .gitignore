@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ML model artifacts
+*.joblib
+
+# Local files
+logs/
+data/
+artifacts/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
