@@ -1,0 +1,72 @@
+name: 기능 개발
+description: 새로운 기능, API, Tool 또는 화면 연동 작업
+title: "[Feat] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 담당 영역
+      description: 해당 기능의 담당 영역을 선택해 주세요.
+      options:
+        - Common
+        - A - Detection
+        - B - Knowledge
+        - C - Agent
+        - D - Analytics
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 기능 설명
+      description: 구현할 기능을 간단히 설명해 주세요.
+      placeholder: 어떤 기능을 왜 구현하는지 작성해 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: api_tool
+    attributes:
+      label: 관련 API 또는 Tool
+      description: 관련된 API 경로 또는 Tool 함수가 있으면 작성해 주세요.
+      placeholder: |
+        API: GET /alarms
+        Tool: get_fdc_summary(lot_hist_id)
+
+  - type: textarea
+    id: work
+    attributes:
+      label: 작업 내용
+      placeholder: |
+        - [ ] Pydantic 스키마 정의
+        - [ ] Repository 구현
+        - [ ] Service 구현
+        - [ ] Router 구현
+        - [ ] React API 연결
+        - [ ] 테스트 및 실제 연동 확인
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 기준
+      description: 작업이 끝났다고 판단할 수 있는 기준을 작성해 주세요.
+      placeholder: |
+        - 정상 요청에서 기대 응답 반환
+        - 잘못된 ID에서 404 반환
+        - React 화면에서 실제 API 연결 확인
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 확인사항
+      options:
+        - label: 기존 API·Tool 계약을 확인했습니다.
+          required: true
+        - label: 실제 비밀번호와 `.env`를 커밋하지 않습니다.
+          required: true
+        - label: 계약 변경 시 `docs/contracts.md`도 수정합니다.

@@ -1,0 +1,72 @@
+name: 버그 신고
+description: API, Tool, DB 연결 또는 기능 동작 오류
+title: "[Bug] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 발생 영역
+      options:
+        - Common
+        - A - Detection
+        - B - Knowledge
+        - C - Agent
+        - D - Analytics
+        - Integration
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 문제 내용
+      description: 실제로 발생한 문제를 설명해 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. 서버 실행
+        2. GET /alarms 요청
+        3. 오류 발생
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 결과
+      description: 정상이라면 어떤 결과가 나와야 하는지 작성해 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 오류 메시지
+      description: 비밀번호, API Key, 서버 주소 등 민감정보는 제거해 주세요.
+      render: shell
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 실행 환경
+      options:
+        - macOS
+        - Windows
+        - Docker
+        - GitHub Actions
+        - 기타
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: security
+    attributes:
+      label: 보안 확인
+      options:
+        - label: 로그에서 비밀번호, API Key, 개인정보를 제거했습니다.
+          required: true

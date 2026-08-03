@@ -1,0 +1,65 @@
+name: 공통 작업
+description: 문서, 테스트, 리팩터링, 배포 및 공통 설정 작업
+title: "[Task] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 담당 영역
+      options:
+        - Common
+        - A - Detection
+        - B - Knowledge
+        - C - Agent
+        - D - Analytics
+    validations:
+      required: true
+
+  - type: dropdown
+    id: task_type
+    attributes:
+      label: 작업 유형
+      options:
+        - Documentation
+        - Test
+        - Refactoring
+        - Docker
+        - GitHub
+        - Configuration
+        - Evaluation
+        - Integration
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 작업 설명
+      description: 수행할 작업과 필요한 이유를 작성해 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: work
+    attributes:
+      label: 세부 작업
+      placeholder: |
+        - [ ] 작업 1
+        - [ ] 작업 2
+        - [ ] 작업 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 기준
+      description: 검토자가 확인할 수 있는 완료 기준을 작성해 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependency
+    attributes:
+      label: 선행 작업 또는 관련 이슈
+      placeholder: "#이슈번호 또는 없음"
