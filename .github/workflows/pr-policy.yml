@@ -21,6 +21,7 @@ jobs:
 
     env:
       PR_BRANCH: ${{ github.head_ref }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
       PR_BODY: ${{ github.event.pull_request.body }}
 
     steps:
@@ -38,15 +39,17 @@ jobs:
             exit 1
           fi
 
-      - name: Validate closing issue
+      - name: Validate pull request title
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! printf '%s\n' "$PR_BODY" |
-            grep -Eq '(Closes|Fixes|Resolves)[[:space:]]+#[0-9]+'; then
-            echo "PR 본문에 이슈 종료 문구가 없습니다."
-            echo "예시: Closes #12"
+          title_pattern='^\[(Common|A|B|C|D)\][[:space:]]+.+$'
+
+          if [[ ! "$PR_TITLE" =~ $title_pattern ]]; then
+            echo "잘못된 PR 제목입니다: $PR_TITLE"
+            echo "형식: [담당영역] 변경 요약"
+            echo "예시: [A] FDC 요약 조회 API 구현"
             exit 1
           fi
 
@@ -56,14 +59,8 @@ jobs:
           set -euo pipefail
 
           required_headings=(
-            "## 관련 이슈"
-            "## 담당 영역"
-            "## 변경 유형"
             "## 변경 내용"
-            "## 확인 방법"
-            "## 실제 연동 확인"
-            "## 문서 변경"
-            "## 체크리스트"
+            "## 변경 이유"
           )
 
           for heading in "${required_headings[@]}"; do
@@ -72,25 +69,3 @@ jobs:
               exit 1
             fi
           done
-
-      - name: Validate selected area
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! printf '%s\n' "$PR_BODY" |
-            grep -Eq -- '- \[[xX]\] (Common|A - Detection|B - Knowledge|C - Agent|D - Analytics)'; then
-            echo "담당 영역을 하나 이상 체크해야 합니다."
-            exit 1
-          fi
-
-      - name: Validate selected change type
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! printf '%s\n' "$PR_BODY" |
-            grep -Eq -- '- \[[xX]\] (Feature|Fix|Refactoring|Test|Documentation|Chore)'; then
-            echo "변경 유형을 하나 이상 체크해야 합니다."
-            exit 1
-          fi
