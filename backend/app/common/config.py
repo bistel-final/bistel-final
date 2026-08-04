@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(REPOSITORY_ROOT / ".env")
 
 
 def get_env(name: str, default: str | None = None) -> str:
