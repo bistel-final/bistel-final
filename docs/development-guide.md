@@ -95,9 +95,10 @@ git switch -c feat/detection-summary
 
 각 담당자는 Backend 구현뿐 아니라 실제 서버와 React 연동까지 직접 확인합니다.
 
-커밋 전에 실행합니다.
+Backend 변경 시 커밋 전에 실행합니다.
 
 ```bash
+cd backend
 ruff format .
 ruff check .
 pytest
@@ -106,6 +107,7 @@ pytest
 필요한 경우 FastAPI를 실행해 실제 연동을 확인합니다.
 
 ```bash
+cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -118,6 +120,19 @@ http://localhost:8000/health/ready
 ```
 
 GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않습니다. 실행 결과는 PR의 `확인 방법`과 체크리스트에 기록합니다.
+
+Frontend 변경 시 Node `.nvmrc` 버전과 `package-lock.json`을 기준으로 설치하고 검증합니다.
+
+```bash
+cd frontend
+cp .env.example .env
+npm ci
+npm run lint
+npm run build
+npm run dev
+```
+
+Frontend API 주소는 `frontend/.env`의 `VITE_API_BASE_URL`로 관리합니다. 각 담당자는 Loading·Error·Empty 상태와 실제 FastAPI 연결을 함께 확인합니다.
 
 ## 5. Commit 규칙
 
@@ -132,7 +147,7 @@ GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않�
 ### 예시
 
 ```bash
-git add app/detection tests/detection docs/contracts.md
+git add backend/app/detection backend/tests/detection frontend/src/features/detection docs/contracts.md
 
 git commit \
   -m "feat: implement FDC summary API" \
