@@ -104,6 +104,45 @@ ruff check .
 pytest
 ```
 
+`pytest`는 `backend/pytest.ini`의 `addopts = -m "not e2e"`에 따라 **`e2e` 마커가 지정된 테스트를 제외하고 실행**합니다.
+
+> 제외는 **마커 기반**입니다. `tests/e2e/`에 두더라도 `@pytest.mark.e2e`를 빼먹으면 일반 `pytest`에서 실행됩니다. 모든 E2E 테스트에 마커를 반드시 지정합니다. 경로 자동 마킹(`conftest.py`)과 공용 호스트 거부 검사는 추후 구현합니다.
+
+### E2E 실행 (파괴적 — 격리 DB에서만)
+
+E2E는 `action_history`·`agent_run`·`agent_run_alarm`·`agent_tool_call`·`approval_request`·`audit_log`·`action_delivery`·운영 `nl_query_log`와 Checkpoint 실행 데이터를 **비운 상태**를 전제합니다. 공용 개발 서버에서 실행하면 멘토 배포 정답 데이터(ACT-0001~0010)가 손상됩니다.
+
+**격리 DB 검증 장치가 구현되기 전까지는 공용 서버에 연결된 `.env` 상태에서 E2E를 실행하지 않습니다.** 대상 DB를 직접 확인한 뒤 수동으로 실행합니다.
+
+```bash
+# 1. 접속 대상이 격리 DB인지 눈으로 확인한다. 공용 서버면 여기서 중단한다.
+#    (backend/scripts/reset_agent_e2e_db.py 는 아직 미구현이다.
+#     DB명 검사만으로는 공용 DB를 구분할 수 없으므로 호스트까지 함께 확인한다.)
+
+# 2. E2E만 실행한다.
+cd backend
+pytest -m e2e
+```
+
+지켜야 할 조건입니다.
+
+- 대상은 **격리 Compose DB 또는 전용 테스트 DB**입니다. 공용 교육장 서버를 대상으로 실행하지 않습니다.
+- 공용 PostgreSQL·Neo4j·n8n 컨테이너를 `docker stop`으로 멈추지 않습니다. 장애 주입은 dependency override·Tool mock·테스트 webhook으로 합니다.
+- `ACT-0001~0010`은 DB에 적재하지 않고 `backend/tests/fixtures/expected_actions.json`으로 비교합니다.
+- 기준 데이터(`fdc_alarm` 51건 등 입력 6종, 기준정보, 문서 3·청크 39)는 보존합니다.
+
+근거: 요구사항 13장 「테스트 데이터 격리 원칙」 · 시스템설계서 14.1~14.2
+
+### 테스트 계층
+
+| 계층 | 대상 | 마커 |
+|---|---|---|
+| Unit | 요약, R03, feature, `decide_action`, sqlglot, chart 규칙 | 없음 |
+| Contract | Tool 5종 정상·오류·timeout JSON | `contract` |
+| Integration | PostgreSQL Repository, Neo4j, pgvector, checkpoint, 승인 트랜잭션 | `integration` |
+| E2E | FastAPI + React + DB + n8n 골든 시나리오 | `e2e` |
+| Evaluation | ML, Fault 분류, RAG, 관계, Text2SQL, Level 1·2 | `evaluation` |
+
 필요한 경우 FastAPI를 실행해 실제 연동을 확인합니다.
 
 ```bash
@@ -114,9 +153,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 확인 경로:
 
 ```text
-http://localhost:8000/docs
-http://localhost:8000/health
-http://localhost:8000/health/ready
+http://localhost:8000/docs          OpenAPI 문서
+http://localhost:8000/health        API 프로세스 생존 (외부 장애와 무관하게 200)
+http://localhost:8000/health/ready  PostgreSQL·Neo4j·n8n 준비 상태 (하나라도 실패 시 503)
 ```
 
 GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않습니다. 실행 결과는 PR의 `확인 방법`과 체크리스트에 기록합니다.
@@ -147,14 +186,23 @@ Frontend API 주소는 `frontend/.env`의 `VITE_API_BASE_URL`로 관리합니다
 ### 예시
 
 ```bash
-git add backend/app/detection backend/tests/detection frontend/src/features/detection docs/contracts.md
+git add backend/app/detection backend/tests/unit backend/tests/contract frontend/src/features/detection
 
 git commit \
   -m "feat: implement FDC summary API" \
   -m "센서 요약 결과를 Agent와 React에서 사용할 수 있도록 조회 API와 Tool을 추가한다."
 ```
 
-비밀번호, API Key, 실제 `.env`, 모델 파일(`*.joblib`)을 커밋하지 않습니다.
+비밀번호, API Key, 실제 `.env`, 모델 파일(`*.joblib`), 임베딩 캐시(`backend/model-cache/`)를 커밋하지 않습니다. 반대로 `backend/artifacts/*.json` manifest는 재현성 근거이므로 **커밋합니다**.
+
+테스트 파일은 계층별 폴더에 둡니다. 도메인별 폴더(`tests/detection` 등)를 만들지 않습니다.
+
+목표 구조입니다. 현재는 `tests/test_health.py`만 있으며 각 담당자가 자기 파트를 구현하면서 만듭니다.
+
+```text
+backend/tests/
+├── unit/  ├── contract/  ├── integration/  ├── e2e/  └── fixtures/
+```
 
 ## 6. Push 규칙
 
@@ -226,8 +274,9 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - 최소 1명의 다른 팀원이 변경 내용을 확인합니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 `docs/contracts.md`가 함께 수정됐는지 확인합니다.
+- API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_2_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
+- E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`를 권장합니다.
 
 ## 10. 병합 후 정리
@@ -248,8 +297,6 @@ Delete branch
 
 ## 11. 계약·보안 규칙
 
-- Tool 오류는 예외 대신 `{"ok": false, "reason": "..."}`로 반환합니다.
-- REST API는 상황에 맞는 HTTP 상태코드(`404`, `409`, `422`)를 사용합니다.
-- API 또는 Tool 계약 변경은 코드, 테스트, `docs/contracts.md`를 같은 PR에서 수정합니다.
-- 실제 `.env`, 비밀번호, API Key, 개인 이메일, 서버 접속정보를 Git에 올리지 않습니다.
-- Text2SQL은 반드시 `kosa_readonly` 연결을 사용합니다.
+코드·계약·보안 강제 규칙은 **`docs/ai-context/01-project-rules.md`를 단일 출처**로 합니다. 사람과 AI 도구가 같은 문서를 봅니다.
+
+원본 근거는 `docs/specifications/` 의 요구사항 정의서·시스템 설계서이며, 요약본과 충돌하면 원본이 우선합니다.
