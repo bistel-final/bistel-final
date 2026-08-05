@@ -69,4 +69,4 @@ body:
           required: true
         - label: 실제 비밀번호와 `.env`를 커밋하지 않습니다.
           required: true
-        - label: 계약 변경 시 `docs/contracts.md`도 수정합니다.
+        - label: 계약 변경 시 `docs/specifications/시스템설계서_v1_2_최종.md` 10장·10.6도 수정합니다.

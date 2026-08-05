@@ -14,12 +14,14 @@ __pycache__/
 htmlcov/
 
 # ML model artifacts
+# joblib 본체와 임베딩 캐시는 제외하되, backend/artifacts/*.json manifest는
+# 재현성 근거이므로 커밋한다 (시스템설계서 13.5).
 *.joblib
+backend/model-cache/
 
 # Local files
 logs/
 data/
-artifacts/
 
 # IDE / OS
 .vscode/
