@@ -274,7 +274,7 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - 최소 1명의 다른 팀원이 변경 내용을 확인합니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 `docs/specifications/시스템설계서_v1_2_최종.md` 10장(API DTO)·10.6(Tool 5종)이 함께 수정됐는지 확인합니다.
+- API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_2_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`를 권장합니다.

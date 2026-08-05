@@ -49,7 +49,17 @@ docs/ai-context/01-project-rules.md  강제 규칙
 | C Agent·HITL | `tasks/C-agent.md` |
 | D Analytics | `tasks/D-analytics.md` |
 
-**주제별 원본 절**
+**주제별 요약 문서**
+
+| 하는 일 | 읽을 것 |
+|---|---|
+| 스키마 변경 · migration · DB 계정 | `03-database-rules.md` |
+| API 추가·수정 · Tool 구현 | `04-api-tool-contracts.md` |
+| LangGraph · 승인 · 전송 · 복구 | `05-agent-workflow.md` |
+| React 화면 | `06-frontend-guide.md` |
+| 테스트 작성·실행 | `07-testing-guide.md` |
+
+**주제별 원본 절** — 요약으로 부족하거나 정확한 근거가 필요할 때
 
 | 작업 | 원본 |
 |---|---|
@@ -78,17 +88,17 @@ docs/ai-context/01-project-rules.md  강제 규칙
 
 ## 문서 목록
 
-| 파일 | 내용 | 상태 |
+| 파일 | 내용 | 주요 독자 |
 |---|---|---|
-| `01-project-rules.md` | 강제 규칙 · 계층 · Tool/REST 계약 · 예산 · DB 접근 · Git | 작성됨 |
-| `02-domain-rules.md` | FDC 도메인 · **불변 수치** · 판정/조치 규칙 · Fault Code | 작성됨 |
-| `PROMPT_TEMPLATE.md` | 도구 무관 요청 양식 | 작성됨 |
-| `tasks/*.md` | 역할별 범위 · 요구사항 ID · 완료 기준 | 작성됨 |
-| `03-database-rules.md` | 스키마 · migration · 계정 권한 | 예정 |
-| `04-api-tool-contracts.md` | API 목록 · Tool 5종 · 오류 계약 | 예정 |
-| `05-agent-workflow.md` | State · Node · 승인 · 전송 | 예정 |
-| `06-frontend-guide.md` | 7화면 · 라우트 · 상태 처리 | 예정 |
-| `07-testing-guide.md` | 공통 테스트 실행 방법 | 예정 |
+| `01-project-rules.md` | 강제 규칙 · 계층 · Tool/REST 계약 · 예산 · DB 접근 · Git | 전원 |
+| `02-domain-rules.md` | FDC 도메인 · **불변 수치** · 판정/조치 규칙 · Fault Code | 전원 |
+| `03-database-rules.md` | 원본 스키마 보존 · migration · ID·시간 · 계정 권한 | 전원 |
+| `04-api-tool-contracts.md` | API 목록 · Tool 5종 · DTO · health | 전원 |
+| `05-agent-workflow.md` | State · Node · 배치 · 승인 · 전송 · 복구 · 감사 | C |
+| `06-frontend-guide.md` | 7화면 · 라우트 · 상태 원칙 · polling · 실행 | 전원 |
+| `07-testing-guide.md` | 테스트 계층 · 실행 · E2E 격리 · 평가 artifact | 전원 |
+| `PROMPT_TEMPLATE.md` | 도구 무관 요청 양식 | 전원 |
+| `tasks/*.md` | 역할별 범위 · 요구사항 ID · 완료 기준 | 각 담당자 |
 
 전부 읽을 필요는 없다. 위 라우팅에 따라 **필요한 것만 조합**한다.
 
