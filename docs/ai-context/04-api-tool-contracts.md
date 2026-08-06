@@ -20,6 +20,8 @@ Tool 반환 규격과 REST 상태코드 표는 `01-project-rules.md` 3·4절에 
 
 ## 2. 공통 Enum
 
+**코드 기준은 `backend/app/common/enums.py` 하나다.** 도메인 `schemas.py`와 `tool_contracts.py`가 여기서 import하며 각자 재정의하지 않는다. 값을 바꾸려면 설계서 10.1을 먼저 고친다.
+
 ```
 Judgement            IN_CONTROL | OOC | OOS
 AgentRunStatus       RUNNING | WAITING_APPROVAL | COMPLETED | FAILED
@@ -31,7 +33,14 @@ Severity             LOW | MEDIUM | HIGH
 ChamberStatus        NORMAL | WARNING | ALARM | CRITICAL
 ToolCallStatus       SUCCESS | ERROR | TIMEOUT
 ChartType            table | bar | line | histogram
+ActionCode           MONITOR | NOTIFY | LOT_HOLD | EQP_HOLD
+SendChannel          EMAIL | MES
+FaultCode            FOC | RFM | MFD | TMD
+ActorType            SYSTEM | AGENT | HUMAN
 ```
+
+`ActionCode`에 딸린 `severity`·`send_channel`·승인 필요 여부는 `enums.py`의 순수 함수
+`resolve_severity()`·`resolve_send_channel()`·`requires_approval()`로 고정한다. LLM 출력이 채우지 않는다.
 
 ---
 
@@ -112,6 +121,7 @@ n8n은 liveness `/healthz`가 아니라 **`/healthz/readiness`** 를 쓴다.
 ## 5. Tool 5종 고정 계약
 
 `backend/app/common/tool_contracts.py`의 Pydantic 모델을 단일 기준으로 한다.
+`ToolResult` 기반 클래스가 성공 시 `reason=""`, 실패 시 접두어 7종과 데이터 필드 비움을 검증하므로 각 Tool이 따로 확인하지 않는다.
 
 | Tool | Input | Success 핵심 | timeout | 기록 |
 |---|---|---|---|---|
