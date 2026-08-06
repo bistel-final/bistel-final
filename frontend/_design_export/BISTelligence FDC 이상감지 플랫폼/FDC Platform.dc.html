@@ -1,0 +1,1457 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="./alarms-data.js"></script>
+<style>
+  html,body{margin:0;padding:0;height:100%;font-family:"Pretendard Variable",Pretendard,-apple-system,sans-serif;}
+  a{color:#1E5FC2;text-decoration:none;} a:hover{color:#2E7BE8;text-decoration:underline;}
+  @keyframes om-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.8);}}
+  @keyframes om-grow{from{transform:scaleY(0);}to{transform:scaleY(1);}}
+  @keyframes om-shimmer{0%{background-position:-400px 0;}100%{background-position:400px 0;}}
+  @keyframes om-spin{to{transform:rotate(360deg);}}
+  @keyframes om-fadein{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  @keyframes om-flash{0%{background:#DBEAFE;box-shadow:inset 3px 0 0 #1E5FC2;}100%{background:transparent;box-shadow:none;}}
+  @keyframes om-draw{to{stroke-dashoffset:0;}}
+  @keyframes om-pop{from{transform:translate(-50%,-50%) scale(0);}to{transform:translate(-50%,-50%) scale(1);}}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;min-width:1440px;background:#F5F8FC;color:#1E293B;font-size:15px;">
+  <div style="width:236px;flex:none;background:#0F2A5C;color:#FFFFFF;display:flex;flex-direction:column;">
+    <div style="padding:22px 20px 18px;border-bottom:1px solid rgba(255,255,255,.12);">
+      <div style="font-size:21px;font-weight:800;letter-spacing:-.3px;"><span style="color:#FFFFFF;">BISTel</span><span style="color:#35B5C8;">ligence</span></div>
+      <div style="font-size:11.5px;color:#8FA5CE;margin-top:4px;letter-spacing:.4px;">FDC ANOMALY AGENT PLATFORM</div>
+    </div>
+    <div style="padding:14px 10px;display:flex;flex-direction:column;gap:2px;">
+      <sc-for list="{{ menus }}" as="m" hint-placeholder-count="7">
+        <div onClick="{{ m.onClick }}" style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;cursor:pointer;background:{{ m.bg }};color:{{ m.color }};font-weight:{{ m.weight }};transition:background .15s;" style-hover="background:rgba(46,123,232,.35);color:#FFFFFF;">
+          <span style="width:22px;height:22px;flex:none;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;background:{{ m.numBg }};color:{{ m.numColor }};">{{ m.num }}</span>
+          <span style="font-size:14.5px;">{{ m.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;padding:16px 20px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#8FA5CE;">
+      <div style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:#4ADE80;animation:om-pulse 2s infinite;"></span>Agent 파이프라인 가동 중</div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+    <div style="height:60px;flex:none;background:#FFFFFF;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;padding:0 28px;gap:16px;">
+      <div style="font-size:17px;font-weight:800;color:#0F2A5C;letter-spacing:-.2px;">BISTEL Final</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:20px;">
+        <div style="font-size:13.5px;color:#475569;">기준일 <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-weight:700;color:#0F2A5C;">2026-06-04</span></div>
+        <div style="width:1px;height:22px;background:#E2E8F0;"></div>
+        <div style="display:flex;align-items:center;gap:14px;font-size:12.5px;color:#475569;font-weight:600;">
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#16A34A;animation:om-pulse 2.4s infinite;"></span>DB</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#16A34A;animation:om-pulse 2.4s .4s infinite;"></span>Neo4j</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#16A34A;animation:om-pulse 2.4s .8s infinite;"></span>n8n</span>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:24px 28px;">
+      <sc-if value="{{ stateLoading }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div style="display:flex;align-items:center;gap:12px;padding:8px 0;color:#475569;font-size:15px;font-weight:600;">
+            <span style="width:20px;height:20px;border-radius:50%;border:3px solid #D5E2F5;border-top-color:#1E5FC2;animation:om-spin .8s linear infinite;"></span>대시보드 데이터를 불러오는 중…
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;">
+            <sc-for list="{{ skel5 }}" as="s" hint-placeholder-count="5">
+              <div style="height:118px;border-radius:12px;background:linear-gradient(90deg,#EDF2FA 25%,#F7FAFF 50%,#EDF2FA 75%);background-size:800px 100%;animation:om-shimmer 1.4s linear infinite;"></div>
+            </sc-for>
+          </div>
+          <div style="height:320px;border-radius:12px;background:linear-gradient(90deg,#EDF2FA 25%,#F7FAFF 50%,#EDF2FA 75%);background-size:800px 100%;animation:om-shimmer 1.4s linear infinite;"></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stateError }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:560px;margin:80px auto;background:#FFFFFF;border:1px solid #FECACA;border-radius:14px;padding:36px;text-align:center;box-shadow:0 2px 8px rgba(15,42,92,.06);">
+          <div style="width:48px;height:48px;border-radius:50%;background:#FEE2E2;color:#DC2626;font-size:26px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">!</div>
+          <div style="font-size:19px;font-weight:800;color:#0F2A5C;">데이터를 불러오지 못했습니다</div>
+          <div style="font-size:15px;color:#475569;margin-top:8px;font-family:ui-monospace,Menlo,monospace;">FDC_API_TIMEOUT (504) — /api/dashboard?date=2026-06-04</div>
+          <button onClick="{{ retry }}" style="margin-top:20px;background:#1E5FC2;color:#FFFFFF;border:none;border-radius:8px;padding:11px 26px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;" style-hover="background:#2E7BE8;">다시 시도</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stateEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:560px;margin:80px auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;padding:36px;text-align:center;box-shadow:0 2px 8px rgba(15,42,92,.06);">
+          <div style="width:48px;height:48px;border-radius:50%;background:#EDF2FA;color:#1E5FC2;font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">0</div>
+          <div style="font-size:19px;font-weight:800;color:#0F2A5C;">해당 조건의 데이터가 없습니다</div>
+          <div style="font-size:15px;color:#475569;margin-top:8px;">기준일 또는 AREA 필터를 변경해 다시 조회해 주세요.</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stateNormal }}" hint-placeholder-val="{{ true }}">
+        <sc-if value="{{ isDash }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:18px;animation:om-fadein .3s ease-out;" data-screen-label="운영 대시보드">
+            <div style="display:flex;align-items:center;gap:16px;">
+              <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">운영 대시보드</div>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+                <input type="date" value="{{ date }}" onChange="{{ onDateChange }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 12px;font-size:14px;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;background:#FFFFFF;font-weight:600;">
+                <div style="display:flex;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden;">
+                  <sc-for list="{{ areas }}" as="ar" hint-placeholder-count="3">
+                    <div onClick="{{ ar.onClick }}" style="padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;background:{{ ar.bg }};color:{{ ar.color }};transition:background .15s;">{{ ar.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,92,.12);">
+                <div style="font-size:13.5px;font-weight:700;color:#475569;">당일 알람 <span style="font-family:ui-monospace,Menlo,monospace;">(6/4)</span></div>
+                <div style="font-size:36px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:6px;">{{ kToday }}<span style="font-size:17px;font-weight:700;color:#475569;margin-left:3px;">건</span></div>
+                <div style="font-size:13px;margin-top:6px;font-weight:600;"><span style="color:#DC2626;">OOS {{ kTodayOos }}</span><span style="color:#94A3B8;margin:0 6px;">·</span><span style="color:#D97706;">OOC {{ kTodayOoc }}</span></div>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,92,.12);">
+                <div style="font-size:13.5px;font-weight:700;color:#475569;">전체 알람</div>
+                <div style="font-size:36px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:6px;">{{ kTotal }}<span style="font-size:17px;font-weight:700;color:#475569;margin-left:3px;">건</span></div>
+                <div style="font-size:13px;margin-top:6px;font-weight:600;"><span style="color:#DC2626;">OOS {{ kTotalOos }}</span><span style="color:#94A3B8;margin:0 6px;">·</span><span style="color:#D97706;">OOC {{ kTotalOoc }}</span></div>
+              </div>
+              <div onClick="{{ goAgent }}" style="background:linear-gradient(160deg,#1E5FC2,#2E7BE8);border:1px solid #1E5FC2;border-radius:12px;padding:18px 20px;box-shadow:0 4px 12px rgba(30,95,194,.3);cursor:pointer;transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 10px 24px rgba(30,95,194,.4);">
+                <div style="font-size:13.5px;font-weight:700;color:#D5E2F5;display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;border-radius:50%;background:#FBBF24;animation:om-pulse 1.6s infinite;"></span>승인 대기</div>
+                <div style="font-size:36px;font-weight:800;color:#FFFFFF;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:6px;">{{ kPending }}<span style="font-size:17px;font-weight:700;color:#D5E2F5;margin-left:3px;">건</span></div>
+                <div style="font-size:13px;margin-top:6px;font-weight:700;color:#FFFFFF;">Agent 분석·승인으로 이동 →</div>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,92,.12);">
+                <div style="font-size:13.5px;font-weight:700;color:#475569;">계측 PASS율</div>
+                <div style="font-size:36px;font-weight:800;color:#16A34A;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:6px;">{{ kPass }}<span style="font-size:17px;font-weight:700;color:#475569;margin-left:3px;">%</span></div>
+                <div style="font-size:13px;margin-top:6px;font-weight:600;color:#475569;font-family:ui-monospace,Menlo,monospace;">34 / 40</div>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,92,.12);">
+                <div style="font-size:13.5px;font-weight:700;color:#475569;">활성 조치</div>
+                <div style="font-size:36px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:6px;">{{ kActive }}<span style="font-size:17px;font-weight:700;color:#475569;margin-left:3px;">건</span></div>
+                <div style="font-size:13px;margin-top:6px;font-weight:600;color:#475569;">진행 중 Action</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:16px;font-weight:800;color:#0F2A5C;margin-bottom:10px;">챔버 상태</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+                <sc-for list="{{ chambers }}" as="ch" hint-placeholder-count="4">
+                  <div style="background:{{ ch.cardBg }};border:1px solid {{ ch.cardBorder }};border-top:4px solid {{ ch.accent }};border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,42,92,.05);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,92,.12);">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <div style="font-size:17px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,'SF Mono',Menlo,monospace;">{{ ch.name }}</div>
+                      <span style="margin-left:auto;font-size:12.5px;font-weight:800;padding:4px 10px;border-radius:20px;background:{{ ch.badgeBg }};color:{{ ch.badgeColor }};letter-spacing:.3px;">{{ ch.status }}</span>
+                    </div>
+                    <div style="font-size:13.5px;color:#475569;margin-top:10px;font-weight:600;">{{ ch.note }}</div>
+                    <sc-if value="{{ ch.hold }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;background:#FEE2E2;color:#DC2626;border-radius:6px;padding:5px 10px;">
+                        <span style="width:7px;height:7px;border-radius:50%;background:#DC2626;animation:om-pulse 1.4s infinite;"></span>EQP_HOLD 승인 대기
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+                  <div style="font-size:16px;font-weight:800;color:#0F2A5C;">일자별 알람 추이 <span style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;color:#475569;">(6/1–6/4)</span></div>
+                  <div style="margin-left:auto;display:flex;gap:14px;font-size:12.5px;font-weight:700;color:#475569;">
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:3px;background:#DC2626;"></span>OOS</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;border-radius:3px;background:#35B5C8;"></span>OOC</span>
+                  </div>
+                </div>
+                <div style="position:relative;height:264px;">
+                  <div style="position:absolute;inset:0 0 24px 30px;">
+                    <div style="position:absolute;left:0;right:0;bottom:0;border-bottom:2px solid #CBD5E1;"></div>
+                    <div style="position:absolute;left:0;right:0;bottom:80px;border-bottom:1px solid #EDF2FA;"></div>
+                    <div style="position:absolute;left:0;right:0;bottom:160px;border-bottom:1px solid #EDF2FA;"></div>
+                    <div style="position:absolute;left:0;right:0;bottom:240px;border-bottom:1px solid #EDF2FA;"></div>
+                    <div style="position:absolute;display:flex;align-items:flex-end;justify-content:space-around;left:0;right:0;bottom:0;top:0;">
+                      <sc-for list="{{ days }}" as="d" hint-placeholder-count="4">
+                        <div onMouseEnter="{{ d.onEnter }}" onMouseLeave="{{ d.onLeave }}" style="position:relative;width:72px;display:flex;flex-direction:column-reverse;align-items:stretch;cursor:pointer;">
+                          <div style="height:{{ d.oosH }}px;background:#DC2626;border-radius:0 0 4px 4px;transform-origin:bottom;animation:om-grow .7s {{ d.delay }} cubic-bezier(.2,.8,.3,1) both;"></div>
+                          <div style="height:{{ d.oocH }}px;background:#35B5C8;border-radius:4px 4px 0 0;margin-bottom:2px;transform-origin:bottom;animation:om-grow .7s {{ d.delay2 }} cubic-bezier(.2,.8,.3,1) both;"></div>
+                          <sc-if value="{{ d.tip }}" hint-placeholder-val="{{ false }}">
+                            <div style="position:absolute;bottom:{{ d.tipY }}px;left:50%;transform:translateX(-50%);background:#0F2A5C;color:#FFFFFF;border-radius:8px;padding:9px 13px;font-size:13px;white-space:nowrap;box-shadow:0 6px 16px rgba(15,42,92,.3);z-index:5;font-weight:600;">
+                              <div style="font-weight:800;font-family:ui-monospace,Menlo,monospace;margin-bottom:3px;">{{ d.label }} · 총 {{ d.total }}건</div>
+                              <div><span style="color:#FCA5A5;">OOS</span> {{ d.oos }} <span style="color:#7DD8E5;margin-left:8px;">OOC</span> {{ d.ooc }}</div>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div style="position:absolute;left:0;top:0;bottom:24px;width:26px;font-size:12px;color:#64748B;font-family:ui-monospace,Menlo,monospace;font-weight:600;">
+                    <span style="position:absolute;bottom:-6px;right:4px;">0</span>
+                    <span style="position:absolute;bottom:74px;right:4px;">10</span>
+                    <span style="position:absolute;bottom:154px;right:4px;">20</span>
+                    <span style="position:absolute;bottom:234px;right:4px;">30</span>
+                  </div>
+                  <div style="position:absolute;left:30px;right:0;bottom:0;height:20px;display:flex;justify-content:space-around;font-size:13px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">
+                    <span>6/1</span><span>6/2</span><span>6/3</span><span>6/4</span>
+                  </div>
+                </div>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;">
+                <div style="display:flex;align-items:center;margin-bottom:12px;">
+                  <div style="font-size:16px;font-weight:800;color:#0F2A5C;">최근 알람</div>
+                  <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#16A34A;"><span style="width:8px;height:8px;border-radius:50%;background:#16A34A;animation:om-pulse 1.8s infinite;"></span>LIVE</span>
+                </div>
+                <sc-if value="{{ alarmsEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="flex:1;display:flex;align-items:center;justify-content:center;color:#475569;font-size:14.5px;font-weight:600;background:#F5F8FC;border-radius:10px;">선택한 AREA에 해당하는 알람이 없습니다</div>
+                </sc-if>
+                <div style="display:flex;flex-direction:column;">
+                  <sc-for list="{{ alarms }}" as="a" hint-placeholder-count="5">
+                    <div style="display:grid;grid-template-columns:92px 1fr auto 72px;align-items:center;gap:12px;padding:11px 10px;border-bottom:1px solid #EDF2FA;border-radius:8px;background:{{ a.rowBg }};transition:background .15s;cursor:pointer;animation:{{ a.anim }};" style-hover="background:#EDF2FA;">
+                      <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-weight:800;font-size:14px;color:#0F2A5C;">{{ a.id }}</span>
+                      <span style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;color:#1E293B;font-weight:600;">{{ a.sensor }}<span style="color:#64748B;font-weight:500;"> · {{ a.eqp }}</span></span>
+                      <span style="font-size:12px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:6px;background:{{ a.badgeBg }};color:{{ a.badgeColor }};">{{ a.rule }}</span>
+                      <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#475569;font-weight:600;text-align:right;">{{ a.time }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="margin-top:auto;padding-top:12px;"><a href="#" onClick="{{ goAlarms }}" style="font-size:13.5px;font-weight:700;">알람 목록 전체 보기 →</a></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isAlarms }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="알람 목록">
+            <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">알람 목록</div>
+            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:14px 18px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:700;color:#475569;">판정</span>
+                <div style="display:flex;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden;">
+                  <sc-for list="{{ judBtns }}" as="b" hint-placeholder-count="3">
+                    <div onClick="{{ b.onClick }}" style="padding:7px 14px;font-size:13.5px;font-weight:700;cursor:pointer;background:{{ b.bg }};color:{{ b.color }};">{{ b.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:700;color:#475569;">규칙</span>
+                <div style="display:flex;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden;">
+                  <sc-for list="{{ ruleBtns }}" as="b" hint-placeholder-count="4">
+                    <div onClick="{{ b.onClick }}" style="padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:ui-monospace,Menlo,monospace;background:{{ b.bg }};color:{{ b.color }};">{{ b.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:700;color:#475569;">챔버</span>
+                <select value="{{ fCh }}" onChange="{{ onCh }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:7px 10px;font-size:13.5px;font-weight:600;color:#0F2A5C;background:#FFFFFF;font-family:ui-monospace,Menlo,monospace;">
+                  <sc-for list="{{ chOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o }}">{{ o }}</option></sc-for>
+                </select>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:700;color:#475569;">센서</span>
+                <select value="{{ fSensor }}" onChange="{{ onSensor }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:7px 10px;font-size:13.5px;font-weight:600;color:#0F2A5C;background:#FFFFFF;font-family:ui-monospace,Menlo,monospace;">
+                  <sc-for list="{{ sensorOpts }}" as="o" hint-placeholder-count="9"><option value="{{ o }}">{{ o }}</option></sc-for>
+                </select>
+              </div>
+              <input type="text" value="{{ fLot }}" onChange="{{ onLot }}" placeholder="LOT 검색 (예: LOT-260010)" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 12px;font-size:13.5px;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;width:220px;font-weight:600;">
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <sc-for list="{{ sumChips }}" as="c" hint-placeholder-count="6">
+                <span style="display:inline-flex;align-items:center;gap:7px;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;color:#475569;">{{ c.label }}<span style="font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:14px;color:{{ c.color }};">{{ c.val }}</span></span>
+              </sc-for>
+            </div>
+            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+              <div style="display:grid;grid-template-columns:96px 150px 110px 60px 104px 96px 122px 66px 1fr;gap:8px;padding:12px 16px;background:#F5F8FC;border-bottom:1px solid #E2E8F0;font-size:12.5px;font-weight:800;color:#475569;">
+                <span>alarm_id</span><span>발생시각</span><span>LOT</span><span>WAFER</span><span>챔버</span><span>센서</span><span>규칙</span><span>판정</span><span>Agent 처리상태</span>
+              </div>
+              <sc-if value="{{ rowsEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:48px;text-align:center;color:#475569;font-size:15px;font-weight:600;">조건에 맞는 알람이 없습니다. 필터를 조정해 주세요.</div>
+              </sc-if>
+              <div style="max-height:560px;overflow:auto;">
+                <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+                  <div onClick="{{ r.onClick }}" style="display:grid;grid-template-columns:96px 150px 110px 60px 104px 96px 122px 66px 1fr;gap:8px;padding:10px 16px;border-bottom:1px solid #EDF2FA;align-items:center;cursor:pointer;background:{{ r.rowBg }};transition:background .12s;" style-hover="background:#EDF2FA;">
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:13.5px;color:#0F2A5C;">{{ r.id }}</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#1E293B;font-weight:600;">{{ r.time }}</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#1E293B;font-weight:600;">{{ r.lot }}</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#1E293B;font-weight:600;">{{ r.wafer }}</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#1E293B;font-weight:600;">{{ r.ch }}</span>
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#1E293B;font-weight:600;">{{ r.sensor }}</span>
+                    <span><span style="font-size:11.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;background:{{ r.ruleBg }};color:{{ r.ruleColor }};">{{ r.rule }}</span></span>
+                    <span><span style="font-size:11.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;background:{{ r.judBg }};color:{{ r.judColor }};">{{ r.jud }}</span></span>
+                    <span><span style="font-size:11.5px;font-weight:800;padding:3px 8px;border-radius:6px;background:{{ r.stBg }};color:{{ r.stColor }};">{{ r.st }}</span></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <sc-if value="{{ pOpen }}" hint-placeholder-val="{{ false }}">
+            <div onClick="{{ closePanel }}" style="position:fixed;top:60px;left:236px;right:0;bottom:0;background:rgba(15,42,92,.25);z-index:19;animation:om-fadein .2s;"></div>
+          </sc-if>
+          <div style="position:fixed;top:60px;right:0;bottom:0;width:560px;background:#FFFFFF;border-left:1px solid #E2E8F0;box-shadow:-12px 0 32px rgba(15,42,92,.15);z-index:20;transform:{{ panelTx }};transition:transform .3s cubic-bezier(.2,.8,.3,1);display:flex;flex-direction:column;" data-screen-label="알람 상세 패널">
+            <div style="padding:18px 22px;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;gap:12px;background:#F5F8FC;">
+              <div>
+                <div style="font-size:19px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ pId }}</div>
+                <div style="font-size:13px;color:#475569;font-weight:600;margin-top:3px;font-family:ui-monospace,Menlo,monospace;">{{ pTime }}</div>
+              </div>
+              <span style="font-size:12px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:4px 10px;border-radius:6px;background:{{ pJudBg }};color:{{ pJudColor }};">{{ pJud }}</span>
+              <div onClick="{{ closePanel }}" style="margin-left:auto;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#475569;font-size:18px;font-weight:700;border:1px solid #CBD5E1;background:#FFFFFF;" style-hover="background:#EDF2FA;">×</div>
+            </div>
+            <div style="flex:1;overflow:auto;padding:20px 22px;display:flex;flex-direction:column;gap:18px;">
+              <div>
+                <div style="font-size:14px;font-weight:800;color:#0F2A5C;margin-bottom:10px;">알람 정보</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+                  <sc-for list="{{ pFields }}" as="f" hint-placeholder-count="6">
+                    <div style="background:#F5F8FC;border-radius:8px;padding:9px 12px;">
+                      <div style="font-size:11.5px;font-weight:700;color:#64748B;">{{ f.k }}</div>
+                      <div style="font-size:14px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;margin-top:2px;">{{ f.v }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="margin-top:10px;background:{{ pDetailBg }};border:1px solid {{ pDetailBorder }};border-radius:8px;padding:11px 14px;font-size:13.5px;font-weight:700;color:{{ pDetailColor }};font-family:ui-monospace,Menlo,monospace;">{{ pDetail }}</div>
+              </div>
+              <div>
+                <div style="font-size:14px;font-weight:800;color:#0F2A5C;margin-bottom:10px;">Agent 분석 결과</div>
+                <sc-if value="{{ pHasAgent }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px solid #BFDBFE;background:#F0F6FF;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <span style="font-size:12px;font-weight:800;background:#1E5FC2;color:#FFFFFF;border-radius:6px;padding:4px 10px;font-family:ui-monospace,Menlo,monospace;">FAULT CODE: RFM</span>
+                      <span style="font-size:14px;font-weight:800;color:#0F2A5C;">RF 정합 이상</span>
+                    </div>
+                    <div style="font-size:14px;color:#1E293B;line-height:1.55;font-weight:500;">ET_REFL(반사파) 연속 3 WAFER OOS — RF 정합 상태 불량으로 판단.<br>동일 챔버(ETC-01-C2) 반복 발생으로 챔버 하드웨어 점검 필요.</div>
+                    <div style="display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid #DBEAFE;">
+                      <span style="font-size:13px;font-weight:700;color:#475569;">권고 조치</span>
+                      <span style="font-size:13px;font-weight:800;font-family:ui-monospace,Menlo,monospace;background:#0F2A5C;color:#FFFFFF;border-radius:6px;padding:4px 12px;">EQP_HOLD</span>
+                      <span style="font-size:12px;font-weight:800;background:#FEF3C7;color:#D97706;border-radius:20px;padding:4px 10px;display:inline-flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#D97706;animation:om-pulse 1.6s infinite;"></span>승인 필요</span>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ pNoAgent }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px dashed #CBD5E1;border-radius:10px;padding:16px;text-align:center;font-size:13.5px;color:#475569;font-weight:600;background:#F5F8FC;">이 알람의 Agent 분석 결과 실측 데이터가 아직 제공되지 않았습니다</div>
+                </sc-if>
+              </div>
+              <div>
+                <div style="font-size:14px;font-weight:800;color:#0F2A5C;margin-bottom:10px;">근거</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <div style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;">
+                    <div onClick="{{ tgAcc1 }}" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:#F5F8FC;font-size:13.5px;font-weight:800;color:#0F2A5C;" style-hover="background:#EDF2FA;"><span>① 센서 요약</span><span style="margin-left:auto;color:#475569;font-size:12px;">{{ acc1Arrow }}</span></div>
+                    <sc-if value="{{ acc1 }}" hint-placeholder-val="{{ true }}">
+                      <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+                        <div style="text-align:center;"><div style="font-size:11.5px;font-weight:700;color:#64748B;">mean</div><div style="font-size:17px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ pMean }}</div></div>
+                        <div style="text-align:center;"><div style="font-size:11.5px;font-weight:700;color:#64748B;">min</div><div style="font-size:17px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ pMin }}</div></div>
+                        <div style="text-align:center;"><div style="font-size:11.5px;font-weight:700;color:#64748B;">max</div><div style="font-size:17px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ pMax }}</div></div>
+                        <div style="text-align:center;"><div style="font-size:11.5px;font-weight:700;color:#64748B;">hit_cnt</div><div style="font-size:17px;font-weight:800;color:#DC2626;font-family:ui-monospace,Menlo,monospace;">{{ pHit }}</div></div>
+                      </div>
+                    </sc-if>
+                  </div>
+                  <div style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;">
+                    <div onClick="{{ tgAcc2 }}" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:#F5F8FC;font-size:13.5px;font-weight:800;color:#0F2A5C;" style-hover="background:#EDF2FA;"><span>② 장비 관계 (상류/하류)</span><span style="margin-left:auto;color:#475569;font-size:12px;">{{ acc2Arrow }}</span></div>
+                    <sc-if value="{{ acc2 }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin:10px;padding:14px 16px;font-size:13.5px;color:#475569;font-weight:600;border:1px dashed #CBD5E1;border-radius:8px;text-align:center;background:#F5F8FC;">관계 실측 데이터 미제공 — 화면 5(관계·문서 근거)용 값을 주시면 채웁니다</div>
+                    </sc-if>
+                  </div>
+                  <div style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;">
+                    <div onClick="{{ tgAcc3 }}" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:#F5F8FC;font-size:13.5px;font-weight:800;color:#0F2A5C;" style-hover="background:#EDF2FA;"><span>③ 문서 근거</span><span style="margin-left:auto;color:#475569;font-size:12px;">{{ acc3Arrow }}</span></div>
+                    <sc-if value="{{ acc3 }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin:10px;padding:14px 16px;font-size:13.5px;color:#475569;font-weight:600;border:1px dashed #CBD5E1;border-radius:8px;text-align:center;background:#F5F8FC;">문서 실측 데이터 미제공 — 문서명·절 제목을 주시면 채웁니다</div>
+                    </sc-if>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isTrace }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="센서 Trace">
+            <div style="display:flex;align-items:center;gap:16px;">
+              <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">센서 Trace</div>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:14px;">
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:#475569;">LOT</span>
+                  <select value="{{ tLot }}" onChange="{{ onTLot }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 10px;font-size:13.5px;font-weight:700;color:#0F2A5C;background:#FFFFFF;font-family:ui-monospace,Menlo,monospace;">
+                    <sc-for list="{{ lotOpts }}" as="o" hint-placeholder-count="8"><option value="{{ o }}">{{ o }}</option></sc-for>
+                  </select></div>
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:#475569;">WAFER</span>
+                  <select value="{{ tWafer }}" onChange="{{ onTWafer }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 10px;font-size:13.5px;font-weight:700;color:#0F2A5C;background:#FFFFFF;font-family:ui-monospace,Menlo,monospace;">
+                    <sc-for list="{{ waferOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o }}">{{ o }}</option></sc-for>
+                  </select></div>
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:#475569;">센서</span>
+                  <select value="{{ tSensor }}" onChange="{{ onTSensor }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 10px;font-size:13.5px;font-weight:700;color:#0F2A5C;background:#FFFFFF;font-family:ui-monospace,Menlo,monospace;">
+                    <sc-for list="{{ sensor8 }}" as="o" hint-placeholder-count="8"><option value="{{ o }}">{{ o }}</option></sc-for>
+                  </select></div>
+              </div>
+            </div>
+            <sc-if value="{{ isRefl }}" hint-placeholder-val="{{ false }}">
+              <div style="display:inline-flex;align-items:center;gap:8px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 14px;font-size:13.5px;font-weight:700;color:#D97706;align-self:flex-start;">ET_REFL은 하한선 없이 상한 기준선 2개(USL·UCL)만 적용됩니다</div>
+            </sc-if>
+            <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+                  <div style="font-size:16px;font-weight:800;color:#0F2A5C;">Trace <span style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;color:#475569;">{{ traceTitle }}</span></div>
+                  <span style="margin-left:auto;font-size:12px;font-weight:700;color:#475569;">RECIPE STEP당 3포인트 · 총 6포인트 · 단위 nm</span>
+                </div>
+                <sc-if value="{{ traceKnown }}" hint-placeholder-val="{{ true }}">
+                  <div style="position:relative;height:440px;margin:10px 6px 26px 44px;">
+                    <div style="position:absolute;top:0;bottom:0;left:0;width:50%;background:rgba(46,123,232,.045);border-right:1px dashed #CBD5E1;">
+                      <span style="position:absolute;top:6px;left:10px;font-size:12px;font-weight:800;color:#1E5FC2;letter-spacing:.5px;">EXPOSE</span>
+                    </div>
+                    <div style="position:absolute;top:0;bottom:0;left:50%;width:50%;background:rgba(53,181,200,.06);">
+                      <span style="position:absolute;top:6px;left:10px;font-size:12px;font-weight:800;color:#0E7490;letter-spacing:.5px;">DEVELOP</span>
+                    </div>
+                    <sc-for list="{{ refLines }}" as="rl" hint-placeholder-count="5">
+                      <div style="position:absolute;left:0;right:0;top:{{ rl.top }}%;border-top:{{ rl.line }};"></div>
+                      <div style="position:absolute;right:4px;top:{{ rl.top }}%;transform:translateY(-120%);font-size:11.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;color:{{ rl.color }};">{{ rl.label }}</div>
+                      <div style="position:absolute;left:-40px;top:{{ rl.top }}%;transform:translateY(-50%);font-size:11.5px;font-weight:700;font-family:ui-monospace,Menlo,monospace;color:#64748B;">{{ rl.val }}</div>
+                    </sc-for>
+                    <svg style="position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;" viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <polyline points="{{ polyPts }}" fill="none" stroke="#1E5FC2" stroke-width="3.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:1;animation:om-draw 1.3s .2s ease-out forwards;"></polyline>
+                    </svg>
+                    <sc-for list="{{ tracePts }}" as="pt" hint-placeholder-count="6">
+                      <div style="position:absolute;left:{{ pt.x }}%;top:{{ pt.y }}%;width:{{ pt.size }}px;height:{{ pt.size }}px;border-radius:50%;background:{{ pt.color }};border:3px solid #FFFFFF;box-shadow:0 0 0 2px {{ pt.color }};transform:translate(-50%,-50%);animation:om-pop .35s {{ pt.delay }} cubic-bezier(.2,.8,.3,1) both;z-index:3;"></div>
+                      <div style="position:absolute;left:{{ pt.x }}%;top:{{ pt.y }}%;transform:translate(-50%,-210%);font-size:12.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;color:{{ pt.color }};z-index:3;">{{ pt.label }}</div>
+                      <div style="position:absolute;left:{{ pt.x }}%;bottom:-24px;transform:translateX(-50%);font-size:12px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">P{{ pt.n }}</div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;gap:16px;margin-top:6px;font-size:12.5px;font-weight:700;color:#475569;flex-wrap:wrap;">
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#DC2626;"></span>OOS (규격 이탈)</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#D97706;"></span>OOC (UCL 초과)</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#1E5FC2;"></span>정상 범위</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:22px;border-top:3px dashed #DC2626;"></span>USL/LSL</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:22px;border-top:2px dashed #D97706;"></span>UCL/LCL</span>
+                    <span style="display:flex;align-items:center;gap:6px;"><span style="width:22px;border-top:2px solid #94A3B8;"></span>TARGET</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ traceUnknown }}" hint-placeholder-val="{{ false }}">
+                  <div style="height:440px;border:2px dashed #CBD5E1;border-radius:10px;background:#F5F8FC;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;">
+                    <div style="font-size:16px;font-weight:800;color:#0F2A5C;">이 조합의 Trace 실측값이 아직 없습니다</div>
+                    <div style="font-size:14px;color:#475569;font-weight:600;line-height:1.6;">현재 실측 제공: LOT-260008 · WAFER 1 · PH_FOCUS<br>다른 조합의 기준선·포인트 값을 주시면 추가합니다.</div>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;gap:14px;" data-screen-label="Trace 요약 카드">
+                <div style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ traceTitle }}</div>
+                <sc-if value="{{ traceKnown }}" hint-placeholder-val="{{ true }}">
+                  <sc-for list="{{ stepStats }}" as="st" hint-placeholder-count="2">
+                    <div style="border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;">
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                        <span style="font-size:13px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ st.name }}</span>
+                        <span style="margin-left:auto;font-size:11.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:3px 9px;border-radius:6px;background:{{ st.judBg }};color:{{ st.judColor }};">{{ st.jud }}</span>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <div style="background:#F5F8FC;border-radius:6px;padding:6px 10px;"><span style="font-size:11px;font-weight:700;color:#64748B;">mean</span><div style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ st.mean }}</div></div>
+                        <div style="background:#F5F8FC;border-radius:6px;padding:6px 10px;"><span style="font-size:11px;font-weight:700;color:#64748B;">std</span><div style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ st.std }}</div></div>
+                        <div style="background:#F5F8FC;border-radius:6px;padding:6px 10px;"><span style="font-size:11px;font-weight:700;color:#64748B;">min</span><div style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ st.min }}</div></div>
+                        <div style="background:#F5F8FC;border-radius:6px;padding:6px 10px;"><span style="font-size:11px;font-weight:700;color:#64748B;">max</span><div style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ st.max }}</div></div>
+                      </div>
+                      <div style="display:flex;gap:14px;margin-top:10px;font-size:13px;font-weight:700;">
+                        <span style="color:#D97706;">OOC {{ st.ooc }}</span><span style="color:#DC2626;">OOS {{ st.oos }}</span><span style="color:#475569;margin-left:auto;">{{ st.pts }}포인트</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                  <div style="border:1px solid #FECACA;background:#FEF2F2;border-radius:10px;padding:14px;">
+                    <div style="display:flex;align-items:baseline;gap:8px;">
+                      <span style="font-size:13px;font-weight:800;color:#0F2A5C;">anomaly_score</span>
+                      <span style="margin-left:auto;font-size:26px;font-weight:800;color:#DC2626;font-family:ui-monospace,Menlo,monospace;">0.87</span>
+                    </div>
+                    <div style="position:relative;height:10px;background:#E2E8F0;border-radius:5px;margin-top:30px;overflow:visible;">
+                      <div style="position:absolute;left:0;top:0;bottom:0;width:87%;background:linear-gradient(90deg,#D97706,#DC2626);border-radius:5px;"></div>
+                      <div style="position:absolute;left:80%;top:-8px;bottom:-4px;width:2.5px;background:#0F2A5C;"></div>
+                      <div style="position:absolute;left:80%;top:-24px;transform:translateX(-50%);font-size:11px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;">임계 0.80</div>
+                    </div>
+                    <div style="font-size:12.5px;font-weight:700;color:#DC2626;margin-top:10px;">임계값 0.80 초과 — 이상 판정</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ traceUnknown }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px dashed #CBD5E1;border-radius:10px;padding:20px;text-align:center;font-size:13.5px;color:#475569;font-weight:600;background:#F5F8FC;">요약 실측값 미제공</div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isAgent }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="Agent 분석·승인">
+            <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">Agent 분석·승인</div>
+            <div style="display:grid;grid-template-columns:290px 1fr 360px;gap:16px;align-items:start;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+                <div style="padding:13px 16px;border-bottom:1px solid #E2E8F0;background:#F5F8FC;display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:14px;font-weight:800;color:#0F2A5C;">Agent 실행</span>
+                  <span style="margin-left:auto;font-size:12px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">{{ runCnt }}건</span>
+                </div>
+                <div style="max-height:640px;overflow:auto;">
+                  <sc-for list="{{ runs }}" as="rn" hint-placeholder-count="10">
+                    <div onClick="{{ rn.onClick }}" style="padding:11px 14px;border-bottom:1px solid #EDF2FA;cursor:pointer;background:{{ rn.bg }};border-left:3px solid {{ rn.edge }};transition:background .12s;" style-hover="background:#EDF2FA;">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:13.5px;color:#0F2A5C;">{{ rn.id }}</span>
+                        <span style="margin-left:auto;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px;background:{{ rn.stBg }};color:{{ rn.stColor }};">{{ rn.st }}</span>
+                      </div>
+                      <div style="font-size:12.5px;color:#475569;font-weight:600;font-family:ui-monospace,Menlo,monospace;margin-top:4px;">{{ rn.alarm }} · {{ rn.lot }}</div>
+                      <div style="font-size:12px;color:#64748B;font-weight:600;margin-top:2px;display:flex;gap:8px;font-family:ui-monospace,Menlo,monospace;"><span>{{ rn.ch }}</span><span style="margin-left:auto;">{{ rn.model }} · {{ rn.lat }}</span></div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;gap:16px;" data-screen-label="Agent 분석 상세">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div style="font-size:16px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ dRun }}</div>
+                  <span style="font-size:12px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:3px 9px;border-radius:6px;background:{{ dStBg }};color:{{ dStColor }};">{{ dSt }}</span>
+                  <span style="margin-left:auto;font-size:12.5px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">{{ dAlarm }} · {{ dLot }} · {{ dCh }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;background:#F0F6FF;border:1px solid #BFDBFE;border-radius:10px;padding:16px;">
+                  <span style="font-size:24px;font-weight:800;font-family:ui-monospace,Menlo,monospace;background:#1E5FC2;color:#FFFFFF;border-radius:10px;padding:10px 18px;">{{ dFault }}</span>
+                  <div>
+                    <div style="font-size:16px;font-weight:800;color:#0F2A5C;">{{ dFaultName }}</div>
+                    <div style="font-size:13.5px;color:#475569;font-weight:600;margin-top:3px;">{{ dBasis }}</div>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:13.5px;font-weight:800;color:#0F2A5C;margin-bottom:6px;">원인 분석</div>
+                  <div style="font-size:14.5px;color:#1E293B;line-height:1.6;font-weight:500;">{{ dCause }}</div>
+                </div>
+                <sc-if value="{{ dChain }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px solid #BFDBFE;border-radius:10px;overflow:hidden;">
+                    <div style="padding:10px 14px;background:#F0F6FF;font-size:13px;font-weight:800;color:#1E5FC2;">상류 기여 확인 (LOT-260008)</div>
+                    <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+                      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#1E293B;font-family:ui-monospace,Menlo,monospace;"><span style="width:6px;height:6px;border-radius:50%;background:#1E5FC2;flex:none;"></span>PHO-01-C1 FOC 이력: ALM-0025 (PH_FOCUS R01_OOS) → LOT_HOLD 조치 ACT-0007</div>
+                      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#1E293B;font-family:ui-monospace,Menlo,monospace;"><span style="width:6px;height:6px;border-radius:50%;background:#DC2626;flex:none;"></span>계측 FAIL: MET-0029 (CD_ADI 41.59) · MET-0031 (CD_AEI 41.20) — WAFER 1</div>
+                    </div>
+                    <div style="margin:0 14px 14px;background:#F5F8FC;border-left:3px solid #0F2A5C;border-radius:0 8px 8px 0;padding:11px 14px;font-size:13.5px;font-weight:600;color:#0F2A5C;line-height:1.55;">판단 결론: 하류 ETCH 자체 OOC는 존재하므로 자체 조치 MONITOR 유지, 상류 원인이 주 기여 — EQP_HOLD 미적용, PHOTO LOT_HOLD 중복 미생성</div>
+                  </div>
+                </sc-if>
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#F5F8FC;border-radius:10px;">
+                  <span style="font-size:13px;font-weight:700;color:#475569;">권고 조치</span>
+                  <sc-if value="{{ dHasAct }}" hint-placeholder-val="{{ true }}">
+                    <span style="font-size:13px;font-weight:800;font-family:ui-monospace,Menlo,monospace;background:#0F2A5C;color:#FFFFFF;border-radius:6px;padding:4px 12px;">{{ dActCode }}</span>
+                    <span style="font-size:13px;color:#475569;font-weight:600;">{{ dActWhy }}</span>
+                  </sc-if>
+                  <sc-if value="{{ dNoAct }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:13px;color:#64748B;font-weight:600;">실측 미제공</span>
+                  </sc-if>
+                </div>
+                <div>
+                  <div style="font-size:13.5px;font-weight:800;color:#0F2A5C;margin-bottom:8px;">사용 근거</div>
+                  <div style="display:flex;flex-direction:column;gap:8px;">
+                    <div style="border:1px solid #E2E8F0;border-radius:8px;padding:11px 14px;">
+                      <div style="font-size:12px;font-weight:800;color:#1E5FC2;margin-bottom:4px;">센서 요약</div>
+                      <div style="font-size:13px;color:#1E293B;font-weight:600;font-family:ui-monospace,Menlo,monospace;">{{ dDetail }} · hit_cnt {{ dHit }}</div>
+                    </div>
+                    <div style="border:1px solid #E2E8F0;border-radius:8px;padding:11px 14px;">
+                      <div style="font-size:12px;font-weight:800;color:#1E5FC2;margin-bottom:4px;">장비 관계</div>
+                      <div style="font-size:13px;color:#1E293B;font-weight:600;font-family:ui-monospace,Menlo,monospace;">PHO-01 (PH-9000) → UPSTREAM_OF → ETC-01 (ET-7500) · 발생 챔버 {{ dCh }}</div>
+                    </div>
+                    <div style="border:1px dashed #CBD5E1;border-radius:8px;padding:11px 14px;background:#F5F8FC;">
+                      <div style="font-size:12px;font-weight:800;color:#64748B;margin-bottom:4px;">문서 인용</div>
+                      <div style="font-size:13px;color:#475569;font-weight:600;">실측 문서(문서명·절·발췌) 대기 중 — 제공 시 채웁니다</div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:13.5px;font-weight:800;color:#0F2A5C;margin-bottom:8px;">Tool 호출 타임라인</div>
+                  <div style="display:flex;flex-direction:column;">
+                    <sc-for list="{{ dTools }}" as="t" hint-placeholder-count="4">
+                      <div style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-bottom:1px solid #EDF2FA;background:{{ t.rowBg }};border-radius:6px;">
+                        <span style="width:22px;height:22px;border-radius:50%;background:{{ t.dotBg }};color:{{ t.dotColor }};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;">{{ t.n }}</span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;font-weight:700;color:#0F2A5C;">{{ t.name }}</span>
+                        <sc-if value="{{ t.hasTag }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:800;background:#EDF2FA;color:#475569;border-radius:5px;padding:2px 7px;">규칙 코드</span></sc-if>
+                        <sc-if value="{{ t.hl }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:800;background:#DBEAFE;color:#1E5FC2;border-radius:5px;padding:2px 7px;">UPSTREAM_OF 조회</span></sc-if>
+                        <span style="margin-left:auto;font-size:11px;font-weight:800;padding:2px 8px;border-radius:5px;background:{{ t.stBg }};color:{{ t.stColor }};">{{ t.st }}</span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#475569;width:64px;text-align:right;">{{ t.ms }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px;" data-screen-label="승인 큐">
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+                  <div style="padding:13px 16px;border-bottom:1px solid #E2E8F0;background:#F5F8FC;display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:14px;font-weight:800;color:#0F2A5C;">승인 큐</span>
+                    <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#D97706;"><span style="width:7px;height:7px;border-radius:50%;background:#D97706;animation:om-pulse 1.6s infinite;"></span>PENDING {{ pendCnt }}</span>
+                  </div>
+                  <sc-for list="{{ aprCards }}" as="c" hint-placeholder-count="2">
+                    <div style="padding:14px 16px;border-bottom:1px solid #EDF2FA;opacity:{{ c.opacity }};transition:opacity .3s;">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:14px;color:#0F2A5C;">{{ c.id }}</span>
+                        <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#475569;">→ {{ c.act }}</span>
+                        <span style="margin-left:auto;font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;background:{{ c.stBg }};color:{{ c.stColor }};transition:background .3s;">{{ c.st }}</span>
+                      </div>
+                      <div style="font-size:12.5px;color:#475569;font-weight:600;font-family:ui-monospace,Menlo,monospace;margin-top:5px;">{{ c.meta }}</div>
+                      <sc-if value="{{ c.showSend }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+                          <sc-for list="{{ c.steps }}" as="sp" hint-placeholder-count="3">
+                            <span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;background:{{ sp.bg }};color:{{ sp.color }};transition:background .4s,color .4s;">{{ sp.label }}</span>
+                            <sc-if value="{{ sp.arrow }}" hint-placeholder-val="{{ true }}"><span style="color:#94A3B8;font-size:11px;font-weight:800;">→</span></sc-if>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ c.showCanceled }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:10px;font-size:11.5px;font-weight:800;color:#64748B;background:#F1F5F9;border-radius:6px;padding:5px 10px;display:inline-block;">전송상태 CANCELED</div>
+                      </sc-if>
+                      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+                        <input type="text" value="{{ c.cmt }}" onChange="{{ c.onCmt }}" placeholder="코멘트" style="border:1px solid #CBD5E1;border-radius:7px;padding:8px 11px;font-size:13px;color:#1E293B;font-weight:500;">
+                        <div style="display:flex;gap:8px;">
+                          <input type="text" value="{{ c.who }}" onChange="{{ c.onWho }}" placeholder="승인자 이름" style="flex:1;border:1px solid #CBD5E1;border-radius:7px;padding:8px 11px;font-size:13px;color:#1E293B;font-weight:500;min-width:0;">
+                          <button onClick="{{ c.onApprove }}" style="background:#1E5FC2;color:#FFFFFF;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#2E7BE8;">승인</button>
+                          <button onClick="{{ c.onReject }}" style="background:#FFFFFF;color:#DC2626;border:1px solid #FECACA;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#FEF2F2;">반려</button>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+                  <div style="padding:13px 16px;border-bottom:1px solid #E2E8F0;background:#F5F8FC;font-size:14px;font-weight:800;color:#0F2A5C;">전송 결과 이력</div>
+                  <sc-for list="{{ hist }}" as="h" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #EDF2FA;">
+                      <span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;background:{{ h.bg }};color:{{ h.color }};">{{ h.k }}</span>
+                      <span style="font-size:12.5px;font-weight:700;color:#1E293B;font-family:ui-monospace,Menlo,monospace;">{{ h.label }}</span>
+                      <sc-if value="{{ h.canRetry }}" hint-placeholder-val="{{ false }}">
+                        <button onClick="{{ h.onRetry }}" style="margin-left:auto;background:#FFFFFF;color:#1E5FC2;border:1px solid #BFDBFE;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#F0F6FF;">재시도</button>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+          <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+            <div style="position:fixed;right:28px;bottom:28px;background:#0F2A5C;color:#FFFFFF;border-left:4px solid #DC2626;border-radius:10px;padding:14px 20px;font-size:14px;font-weight:700;box-shadow:0 10px 30px rgba(15,42,92,.35);z-index:40;animation:om-fadein .2s;">409: 이미 처리된 승인 건입니다</div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{ isGraph }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="관계·문서 근거">
+            <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">관계·문서 근거</div>
+            <div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;align-items:start;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:20px 22px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                <div style="font-size:16px;font-weight:800;color:#0F2A5C;margin-bottom:12px;">장비 관계 그래프</div>
+                <div style="position:relative;height:560px;">
+                  <div style="position:absolute;left:8%;right:8%;top:12px;height:220px;border:2px solid #BFDBFE;border-radius:14px;background:rgba(46,123,232,.03);">
+                    <div style="position:absolute;top:-12px;left:18px;background:#FFFFFF;padding:0 10px;font-size:12.5px;font-weight:800;color:#1E5FC2;letter-spacing:.5px;">PHOTO 공정</div>
+                    <div style="position:absolute;top:18px;left:50%;transform:translateX(-50%);background:#0F2A5C;color:#FFFFFF;border-radius:10px;padding:10px 22px;text-align:center;box-shadow:0 4px 10px rgba(15,42,92,.25);">
+                      <div style="font-size:15px;font-weight:800;font-family:ui-monospace,Menlo,monospace;">PHO-01</div>
+                      <div style="font-size:11.5px;font-weight:700;color:#8FA5CE;font-family:ui-monospace,Menlo,monospace;">PH-9000</div>
+                    </div>
+                    <div style="position:absolute;bottom:24px;left:0;right:0;display:flex;justify-content:center;gap:120px;">
+                      <sc-for list="{{ gPhoCh }}" as="n" hint-placeholder-count="2">
+                        <div onClick="{{ n.onClick }}" style="position:relative;background:#FFFFFF;border:2.5px solid {{ n.border }};border-radius:10px;padding:9px 16px;cursor:pointer;text-align:center;box-shadow:{{ n.shadow }};transition:transform .15s;" style-hover="transform:translateY(-2px);">
+                          <div style="font-size:14px;font-weight:800;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;">{{ n.name }}</div>
+                          <div style="font-size:11px;font-weight:800;color:{{ n.stColor }};margin-top:2px;">{{ n.st }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="position:absolute;bottom:52px;left:50%;transform:translateX(-50%);width:96px;border-top:2px dashed #CBD5E1;"></div>
+                  </div>
+                  <div style="position:absolute;left:50%;top:236px;height:80px;width:3px;background:#1E5FC2;transform:translateX(-50%);">
+                    <div style="position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #1E5FC2;"></div>
+                    <div style="position:absolute;top:50%;left:14px;transform:translateY(-50%);background:#EDF2FA;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-size:11.5px;font-weight:800;color:#1E5FC2;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;">UPSTREAM_OF</div>
+                  </div>
+                  <div style="position:absolute;left:8%;right:8%;top:322px;height:220px;border:2px solid #BFDBFE;border-radius:14px;background:rgba(53,181,200,.04);">
+                    <div style="position:absolute;top:-12px;left:18px;background:#FFFFFF;padding:0 10px;font-size:12.5px;font-weight:800;color:#0E7490;letter-spacing:.5px;">ETCH 공정</div>
+                    <div style="position:absolute;top:18px;left:50%;transform:translateX(-50%);background:#0F2A5C;color:#FFFFFF;border-radius:10px;padding:10px 22px;text-align:center;box-shadow:0 4px 10px rgba(15,42,92,.25);">
+                      <div style="font-size:15px;font-weight:800;font-family:ui-monospace,Menlo,monospace;">ETC-01</div>
+                      <div style="font-size:11.5px;font-weight:700;color:#8FA5CE;font-family:ui-monospace,Menlo,monospace;">ET-7500</div>
+                    </div>
+                    <div style="position:absolute;bottom:24px;left:0;right:0;display:flex;justify-content:center;gap:120px;">
+                      <sc-for list="{{ gEtcCh }}" as="n" hint-placeholder-count="2">
+                        <div onClick="{{ n.onClick }}" style="position:relative;background:#FFFFFF;border:2.5px solid {{ n.border }};border-radius:10px;padding:9px 16px;cursor:pointer;text-align:center;box-shadow:{{ n.shadow }};transition:transform .15s;" style-hover="transform:translateY(-2px);">
+                          <div style="font-size:14px;font-weight:800;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;">{{ n.name }}</div>
+                          <div style="font-size:11px;font-weight:800;color:{{ n.stColor }};margin-top:2px;">{{ n.st }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="position:absolute;bottom:52px;left:50%;transform:translateX(-50%);width:96px;border-top:2px dashed #CBD5E1;"></div>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <sc-if value="{{ gSelOn }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:#FFFFFF;border:1px solid {{ gSelBorder }};border-top:4px solid {{ gSelAccent }};border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,42,92,.05);animation:om-fadein .25s;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <span style="font-size:16px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ gSelName }}</span>
+                      <span style="margin-left:auto;font-size:12px;font-weight:800;padding:4px 10px;border-radius:20px;background:{{ gSelBg }};color:{{ gSelColor }};">{{ gSelSt }}</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px;">
+                      <div style="background:#F5F8FC;border-radius:8px;padding:8px 12px;text-align:center;"><div style="font-size:11px;font-weight:700;color:#64748B;">알람</div><div style="font-size:19px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ gSelTotal }}</div></div>
+                      <div style="background:#F5F8FC;border-radius:8px;padding:8px 12px;text-align:center;"><div style="font-size:11px;font-weight:700;color:#64748B;">OOS</div><div style="font-size:19px;font-weight:800;color:#DC2626;font-family:ui-monospace,Menlo,monospace;">{{ gSelOos }}</div></div>
+                      <div style="background:#F5F8FC;border-radius:8px;padding:8px 12px;text-align:center;"><div style="font-size:11px;font-weight:700;color:#64748B;">OOC</div><div style="font-size:19px;font-weight:800;color:#D97706;font-family:ui-monospace,Menlo,monospace;">{{ gSelOoc }}</div></div>
+                    </div>
+                    <sc-if value="{{ gSelHold }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;background:#FEE2E2;color:#DC2626;border-radius:6px;padding:5px 10px;"><span style="width:7px;height:7px;border-radius:50%;background:#DC2626;animation:om-pulse 1.4s infinite;"></span>EQP_HOLD 승인 대기</div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;gap:12px;" data-screen-label="문서 검색">
+                  <div style="font-size:16px;font-weight:800;color:#0F2A5C;">문서 검색</div>
+                  <div style="display:flex;gap:8px;">
+                    <input type="text" value="{{ docQ }}" onChange="{{ onDocQ }}" placeholder="질문 또는 키워드 입력" style="flex:1;border:1px solid #CBD5E1;border-radius:8px;padding:10px 13px;font-size:14px;color:#1E293B;font-weight:500;min-width:0;">
+                    <button style="background:#1E5FC2;color:#FFFFFF;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#2E7BE8;">검색</button>
+                  </div>
+                  <div style="display:flex;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden;align-self:flex-start;">
+                    <sc-for list="{{ docFBtns }}" as="b" hint-placeholder-count="3">
+                      <div onClick="{{ b.onClick }}" style="padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:ui-monospace,Menlo,monospace;background:{{ b.bg }};color:{{ b.color }};">{{ b.label }}</div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px;">
+                    <sc-for list="{{ docChips }}" as="q" hint-placeholder-count="3">
+                      <div onClick="{{ q.onClick }}" style="align-self:flex-start;font-size:13px;font-weight:700;color:#1E5FC2;background:#F0F6FF;border:1px solid #BFDBFE;border-radius:20px;padding:6px 14px;cursor:pointer;" style-hover="background:#DBEAFE;">{{ q.label }}</div>
+                    </sc-for>
+                  </div>
+                  <sc-if value="{{ docIdle }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:2px dashed #CBD5E1;border-radius:10px;background:#F5F8FC;padding:28px 20px;text-align:center;">
+                      <div style="font-size:15px;font-weight:800;color:#0F2A5C;">질문을 입력하거나 예시 질문을 선택하세요</div>
+                      <div style="font-size:13.5px;color:#475569;font-weight:600;margin-top:6px;">top_k=4 결과 카드가 표시됩니다</div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ docHasResults }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                      <sc-for list="{{ docResults }}" as="d" hint-placeholder-count="4">
+                        <div style="border:1px solid #E2E8F0;border-radius:10px;padding:13px 15px;transition:transform .15s,box-shadow .15s;animation:om-fadein .3s {{ d.delay }} both;" style-hover="transform:translateY(-2px);box-shadow:0 6px 16px rgba(15,42,92,.1);">
+                          <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:800;color:#0F2A5C;">{{ d.doc }}</span>
+                            <span style="font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:5px;background:{{ d.tagBg }};color:{{ d.tagColor }};font-family:ui-monospace,Menlo,monospace;">{{ d.model }}</span>
+                          </div>
+                          <div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:5px;">{{ d.section }}</div>
+                          <div style="display:flex;align-items:center;gap:8px;margin-top:7px;">
+                            <span style="font-size:11px;font-weight:700;color:#64748B;font-family:ui-monospace,Menlo,monospace;">score {{ d.score }}</span>
+                            <div style="flex:1;height:6px;background:#EDF2FA;border-radius:3px;overflow:hidden;"><div style="height:100%;width:{{ d.barW }};background:#1E5FC2;border-radius:3px;"></div></div>
+                          </div>
+                          <sc-if value="{{ d.hasExcerpt }}" hint-placeholder-val="{{ false }}">
+                            <div style="margin-top:9px;font-size:13px;color:#475569;font-weight:500;line-height:1.55;border-left:3px solid #BFDBFE;padding-left:10px;">{{ d.excerpt }}</div>
+                          </sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <div style="font-size:12px;font-weight:600;color:#64748B;">ℹ COMMON 문서(트러블슈팅 가이드)는 model_code 필터와 무관하게 항상 포함됩니다</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isNlq }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="자연어 분석">
+            <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">자연어 분석 <span style="font-size:13px;font-weight:800;color:#1E5FC2;background:#F0F6FF;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;vertical-align:middle;margin-left:6px;font-family:ui-monospace,Menlo,monospace;">Text2SQL</span></div>
+            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:18px 20px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;gap:12px;">
+              <div style="display:flex;gap:10px;">
+                <input type="text" value="{{ nlQ }}" onChange="{{ onNlQ }}" onKeyDown="{{ onNlKey }}" placeholder="데이터에 대해 질문하세요 (예: 챔버별 알람 건수)" style="flex:1;border:1.5px solid #CBD5E1;border-radius:10px;padding:12px 16px;font-size:15px;color:#1E293B;font-weight:500;min-width:0;" style-focus="border-color:#1E5FC2;outline:none;">
+                <button onClick="{{ nlAsk }}" style="background:#1E5FC2;color:#FFFFFF;border:none;border-radius:10px;padding:12px 26px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#2E7BE8;">질문</button>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <sc-for list="{{ nlChips }}" as="q" hint-placeholder-count="5">
+                  <div onClick="{{ q.onClick }}" style="font-size:13px;font-weight:700;color:{{ q.color }};background:{{ q.bg }};border:1px solid {{ q.border }};border-radius:20px;padding:6px 14px;cursor:pointer;" style-hover="filter:brightness(.96);">{{ q.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+            <sc-if value="{{ nlGenLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:22px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                <span style="width:18px;height:18px;border-radius:50%;border:3px solid #D5E2F5;border-top-color:#1E5FC2;animation:om-spin .8s linear infinite;"></span>
+                <span style="font-size:15px;font-weight:700;color:#0F2A5C;">SQL 생성 중...</span>
+                <span style="font-size:13px;color:#64748B;font-weight:600;">1/2 단계 · 스키마 매핑</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ nlRejected }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#FFFFFF;border:2px solid #DC2626;border-radius:12px;padding:20px 22px;box-shadow:0 4px 16px rgba(220,38,38,.12);animation:om-fadein .25s;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="width:34px;height:34px;border-radius:50%;background:#FEE2E2;color:#DC2626;font-size:19px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;">!</span>
+                  <div style="font-size:17px;font-weight:800;color:#DC2626;">실행할 수 없는 요청입니다 — SELECT 외 구문은 거부됩니다</div>
+                  <span style="margin-left:auto;font-size:12px;font-weight:800;font-family:ui-monospace,Menlo,monospace;background:#FEE2E2;color:#DC2626;border-radius:6px;padding:4px 10px;">REJECT_NON_SELECT</span>
+                </div>
+                <div style="margin-top:12px;font-size:14px;color:#1E293B;font-weight:600;background:#FEF2F2;border-radius:8px;padding:11px 14px;">요청 "<span style="font-family:ui-monospace,Menlo,monospace;">{{ nlQDone }}</span>" 은 데이터 변경(DELETE) 의도로 분류되어 SQL을 생성하지 않았습니다.</div>
+                <div style="margin-top:10px;font-size:13px;color:#475569;font-weight:600;">ℹ 구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ nlHasSql }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid #E2E8F0;background:#F5F8FC;">
+                  <span style="font-size:14px;font-weight:800;color:#0F2A5C;">생성 SQL</span>
+                  <sc-if value="{{ nlReverified }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:12px;font-weight:800;background:#DCFCE7;color:#16A34A;border-radius:6px;padding:3px 10px;animation:om-fadein .2s;">재검증 통과: SELECT-only · LIMIT 강제</span>
+                  </sc-if>
+                  <div style="margin-left:auto;display:flex;gap:8px;">
+                    <button onClick="{{ nlRun }}" style="background:#1E5FC2;color:#FFFFFF;border:none;border-radius:7px;padding:7px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#2E7BE8;">실행</button>
+                    <button onClick="{{ nlReverify }}" style="background:#FFFFFF;color:#1E5FC2;border:1px solid #BFDBFE;border-radius:7px;padding:7px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;" style-hover="background:#F0F6FF;">SQL 수정 후 재검증</button>
+                  </div>
+                </div>
+                <div style="background:#0F2A5C;padding:16px 20px;">
+                  <sc-for list="{{ nlSqlLines }}" as="ln" hint-placeholder-count="4">
+                    <div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14px;line-height:1.7;"><sc-for list="{{ ln.toks }}" as="tk" hint-placeholder-count="5"><span style="color:{{ tk.c }};font-weight:{{ tk.w }};white-space:pre;">{{ tk.t }}</span></sc-for></div>
+                  </sc-for>
+                </div>
+                <div style="padding:9px 18px;background:#F5F8FC;border-top:1px solid #E2E8F0;font-size:12.5px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">읽기 전용 계정(kosa_readonly)으로 실행 · LIMIT 500 · timeout 5s</div>
+              </div>
+              <sc-if value="{{ nlRunLoading }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:22px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                  <span style="width:18px;height:18px;border-radius:50%;border:3px solid #D5E2F5;border-top-color:#16A34A;animation:om-spin .8s linear infinite;"></span>
+                  <span style="font-size:15px;font-weight:700;color:#0F2A5C;">쿼리 실행 중...</span>
+                  <span style="font-size:13px;color:#64748B;font-weight:600;">2/2 단계 · kosa_readonly</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ nlDone }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;animation:om-fadein .25s;">
+                  <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid #E2E8F0;background:#F5F8FC;padding:0 18px;">
+                    <div onClick="{{ nlTabTable }}" style="padding:12px 18px;font-size:14px;font-weight:800;cursor:pointer;color:{{ nlTabTColor }};border-bottom:3px solid {{ nlTabTLine }};">표</div>
+                    <div onClick="{{ nlTabChart }}" style="padding:12px 18px;font-size:14px;font-weight:800;cursor:pointer;color:{{ nlTabCColor }};border-bottom:3px solid {{ nlTabCLine }};">차트</div>
+                    <span style="margin-left:auto;font-size:12.5px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">{{ nlRowMeta }}</span>
+                  </div>
+                  <sc-if value="{{ nlNoRows }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:32px;text-align:center;">
+                      <div style="font-size:15px;font-weight:800;color:#0F2A5C;">계측 FAIL 6건 — 상세 목록 실측 미제공</div>
+                      <div style="font-size:13.5px;color:#475569;font-weight:600;margin-top:6px;">계측 결과 행 데이터를 주시면 표를 채웁니다 (PASS율 85.0% · 34/40 기준)</div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ nlShowTable }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px;">
+                      <div style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;align-self:flex-start;min-width:420px;">
+                        <div style="display:flex;background:#F5F8FC;border-bottom:1px solid #E2E8F0;">
+                          <sc-for list="{{ nlCols }}" as="c" hint-placeholder-count="2">
+                            <div onClick="{{ c.onSort }}" style="flex:1;padding:10px 16px;font-size:13px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;cursor:pointer;display:flex;align-items:center;gap:6px;" style-hover="background:#EDF2FA;">{{ c.name }}<span style="font-size:10px;color:#1E5FC2;">{{ c.arrow }}</span></div>
+                          </sc-for>
+                        </div>
+                        <sc-for list="{{ nlRows }}" as="r" hint-placeholder-count="3">
+                          <div style="display:flex;border-bottom:1px solid #EDF2FA;" style-hover="background:#F5F8FC;">
+                            <sc-for list="{{ r.cells }}" as="cl" hint-placeholder-count="2">
+                              <div style="flex:1;padding:9px 16px;font-size:14px;font-weight:{{ cl.w }};color:#1E293B;font-family:ui-monospace,Menlo,monospace;">{{ cl.v }}</div>
+                            </sc-for>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <sc-if value="{{ nlHasStats }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex;gap:10px;">
+                          <sc-for list="{{ nlStats }}" as="s" hint-placeholder-count="5">
+                            <div style="background:#F5F8FC;border-radius:8px;padding:8px 16px;text-align:center;"><div style="font-size:11px;font-weight:700;color:#64748B;font-family:ui-monospace,Menlo,monospace;">{{ s.k }}</div><div style="font-size:17px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;margin-top:2px;">{{ s.v }}</div></div>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ nlShowChart }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:18px 22px;">
+                      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                        <span style="font-size:12px;font-weight:800;background:#F0F6FF;color:#1E5FC2;border:1px solid #BFDBFE;border-radius:6px;padding:3px 10px;font-family:ui-monospace,Menlo,monospace;">{{ nlChartBadge }}</span>
+                        <sc-if value="{{ nlChartNote }}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size:12.5px;font-weight:700;color:#D97706;background:#FEF3C7;border-radius:6px;padding:3px 10px;">{{ nlChartNoteText }}</span>
+                        </sc-if>
+                      </div>
+                      <sc-if value="{{ nlChartBars }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex;align-items:flex-end;gap:48px;height:220px;padding:0 20px;border-bottom:2px solid #CBD5E1;">
+                          <sc-for list="{{ nlBars }}" as="b" hint-placeholder-count="3">
+                            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:88px;">
+                              <span style="font-size:15px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;">{{ b.v }}</span>
+                              <div style="width:100%;height:{{ b.h }}px;background:#1E5FC2;border-radius:6px 6px 0 0;transform-origin:bottom;animation:om-grow .6s {{ b.delay }} cubic-bezier(.2,.8,.3,1) both;"></div>
+                            </div>
+                          </sc-for>
+                        </div>
+                        <div style="display:flex;gap:48px;padding:8px 20px 0;">
+                          <sc-for list="{{ nlBars }}" as="b" hint-placeholder-count="3">
+                            <span style="width:88px;text-align:center;font-size:12.5px;font-weight:700;color:#475569;font-family:ui-monospace,Menlo,monospace;">{{ b.label }}</span>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ nlChartDemoted }}" hint-placeholder-val="{{ false }}">
+                        <div style="border:1px dashed #CBD5E1;border-radius:10px;background:#F5F8FC;padding:28px;text-align:center;font-size:14px;font-weight:700;color:#475569;">차트로 표현할 수 없는 결과 형태 — 표 탭을 이용하세요</div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </sc-if>
+            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+              <div style="padding:12px 18px;border-bottom:1px solid #E2E8F0;background:#F5F8FC;font-size:14px;font-weight:800;color:#0F2A5C;">최근 질의 이력</div>
+              <div style="display:grid;grid-template-columns:1fr 96px 84px 96px;gap:8px;padding:9px 18px;border-bottom:1px solid #E2E8F0;font-size:11.5px;font-weight:800;color:#64748B;">
+                <span>질문</span><span>결과</span><span style="text-align:right;">row_cnt</span><span style="text-align:right;">latency_ms</span>
+              </div>
+              <sc-for list="{{ nlHist }}" as="h" hint-placeholder-count="3">
+                <div style="display:grid;grid-template-columns:1fr 96px 84px 96px;gap:8px;padding:10px 18px;border-bottom:1px solid #EDF2FA;align-items:center;">
+                  <span style="font-size:13.5px;font-weight:600;color:#1E293B;">{{ h.q }}</span>
+                  <span><span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;background:{{ h.bg }};color:{{ h.color }};">{{ h.st }}</span></span>
+                  <span style="text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:#1E293B;">{{ h.rows }}</span>
+                  <span style="text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:#475569;">{{ h.lat }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:om-fadein .3s ease-out;" data-screen-label="감사로그">
+            <div style="font-size:21px;font-weight:800;color:#0F2A5C;letter-spacing:-.3px;">감사로그</div>
+            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:14px 18px;box-shadow:0 1px 3px rgba(15,42,92,.05);display:flex;flex-direction:column;gap:11px;">
+              <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+                <span style="font-size:13px;font-weight:700;color:#475569;margin-right:3px;">이벤트</span>
+                <sc-for list="{{ agEvChips }}" as="c" hint-placeholder-count="9">
+                  <div onClick="{{ c.onClick }}" style="font-size:11.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:5px 11px;border-radius:20px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }};">{{ c.label }}</div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:13px;font-weight:700;color:#475569;">행위자</span>
+                  <div style="display:flex;background:#FFFFFF;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden;">
+                    <sc-for list="{{ agActBtns }}" as="b" hint-placeholder-count="4">
+                      <div onClick="{{ b.onClick }}" style="padding:7px 13px;font-size:13px;font-weight:700;cursor:pointer;background:{{ b.bg }};color:{{ b.color }};">{{ b.label }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:13px;font-weight:700;color:#475569;">기간</span>
+                  <input type="date" value="{{ agFrom }}" onChange="{{ onAgFrom }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:7px 10px;font-size:13px;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;font-weight:600;">
+                  <span style="color:#94A3B8;font-weight:700;">~</span>
+                  <input type="date" value="{{ agTo }}" onChange="{{ onAgTo }}" style="border:1px solid #CBD5E1;border-radius:8px;padding:7px 10px;font-size:13px;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;font-weight:600;">
+                </div>
+                <input type="text" value="{{ agTarget }}" onChange="{{ onAgTarget }}" placeholder="대상 ID 검색 (예: APR-0001)" style="border:1px solid #CBD5E1;border-radius:8px;padding:8px 12px;font-size:13px;font-family:ui-monospace,Menlo,monospace;color:#0F2A5C;width:230px;font-weight:600;">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:7fr 3fr;gap:16px;align-items:start;">
+              <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;box-shadow:0 1px 3px rgba(15,42,92,.05);overflow:hidden;">
+                <div style="display:grid;grid-template-columns:150px 130px 210px 200px 1fr;gap:8px;padding:12px 16px;background:#F5F8FC;border-bottom:1px solid #E2E8F0;font-size:12px;font-weight:800;color:#475569;">
+                  <span>발생시각</span><span>행위자</span><span>이벤트</span><span>대상</span><span>요약</span>
+                </div>
+                <sc-if value="{{ agEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:48px;text-align:center;color:#475569;font-size:15px;font-weight:600;">조건에 맞는 로그가 없습니다. 필터를 조정해 주세요.</div>
+                </sc-if>
+                <sc-for list="{{ agRows }}" as="r" hint-placeholder-count="8">
+                  <div>
+                    <div onClick="{{ r.onClick }}" style="display:grid;grid-template-columns:150px 130px 210px 200px 1fr;gap:8px;padding:10px 16px;border-bottom:1px solid #EDF2FA;align-items:center;cursor:pointer;background:{{ r.bg }};transition:background .12s;" style-hover="background:#EDF2FA;">
+                      <span style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#1E293B;">{{ r.ts }}</span>
+                      <span style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:20px;border-radius:6px;background:{{ r.acBg }};color:{{ r.acColor }};font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;">{{ r.acK }}</span><span style="font-size:12.5px;font-weight:700;color:#1E293B;font-family:ui-monospace,Menlo,monospace;">{{ r.actor }}</span></span>
+                      <span><span style="font-size:10.5px;font-weight:800;font-family:ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;background:{{ r.evBg }};color:{{ r.evColor }};">{{ r.ev }}</span></span>
+                      <span style="font-size:12.5px;font-weight:600;color:#475569;font-family:ui-monospace,Menlo,monospace;">{{ r.entType }} <span style="color:#0F2A5C;font-weight:800;">{{ r.entId }}</span></span>
+                      <span style="font-size:13px;font-weight:600;color:#1E293B;">{{ r.summary }}</span>
+                    </div>
+                    <sc-if value="{{ r.open }}" hint-placeholder-val="{{ false }}">
+                      <div style="padding:14px 18px;background:#F5F8FC;border-bottom:1px solid #E2E8F0;animation:om-fadein .2s;">
+                        <sc-if value="{{ r.hasDiff }}" hint-placeholder-val="{{ true }}">
+                          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;">
+                              <div style="padding:7px 13px;background:#EDF2FA;font-size:11px;font-weight:800;color:#475569;font-family:ui-monospace,Menlo,monospace;">before_json</div>
+                              <div style="padding:10px 13px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7;">
+                                <sc-for list="{{ r.beforeLines }}" as="l" hint-placeholder-count="1"><div style="background:{{ l.bg }};border-radius:4px;padding:1px 6px;color:{{ l.c }};font-weight:{{ l.w }};">{{ l.t }}</div></sc-for>
+                              </div>
+                            </div>
+                            <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;">
+                              <div style="padding:7px 13px;background:#EDF2FA;font-size:11px;font-weight:800;color:#475569;font-family:ui-monospace,Menlo,monospace;">after_json</div>
+                              <div style="padding:10px 13px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7;">
+                                <sc-for list="{{ r.afterLines }}" as="l" hint-placeholder-count="1"><div style="background:{{ l.bg }};border-radius:4px;padding:1px 6px;color:{{ l.c }};font-weight:{{ l.w }};">{{ l.t }}</div></sc-for>
+                              </div>
+                            </div>
+                          </div>
+                        </sc-if>
+                        <sc-if value="{{ r.noDiff }}" hint-placeholder-val="{{ false }}">
+                          <div style="font-size:13px;font-weight:600;color:#64748B;">상태 변경 데이터 없음 (이벤트 기록 전용)</div>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+                <div style="display:flex;align-items:center;gap:6px;padding:12px 16px;">
+                  <span style="font-size:12.5px;font-weight:700;color:#475569;margin-right:auto;">총 {{ agTotal }}건</span>
+                  <sc-for list="{{ agPages }}" as="pg" hint-placeholder-count="3">
+                    <div onClick="{{ pg.onClick }}" style="width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;cursor:pointer;font-family:ui-monospace,Menlo,monospace;background:{{ pg.bg }};color:{{ pg.color }};border:1px solid {{ pg.border }};">{{ pg.n }}</div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                  <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:15px 17px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                    <div style="font-size:12.5px;font-weight:700;color:#475569;">오늘 이벤트</div>
+                    <div style="font-size:30px;font-weight:800;color:#0F2A5C;font-family:ui-monospace,Menlo,monospace;margin-top:4px;">{{ agToday }}</div>
+                  </div>
+                  <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:15px 17px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                    <div style="font-size:12.5px;font-weight:700;color:#475569;">실패 이벤트</div>
+                    <div style="font-size:30px;font-weight:800;color:#DC2626;font-family:ui-monospace,Menlo,monospace;margin-top:4px;">{{ agFailed }}</div>
+                  </div>
+                </div>
+                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:17px 18px;box-shadow:0 1px 3px rgba(15,42,92,.05);">
+                  <div style="font-size:14px;font-weight:800;color:#0F2A5C;margin-bottom:13px;">이벤트 유형별 건수</div>
+                  <div style="display:flex;flex-direction:column;gap:9px;">
+                    <sc-for list="{{ agTypeBars }}" as="b" hint-placeholder-count="9">
+                      <div>
+                        <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;font-family:ui-monospace,Menlo,monospace;color:#475569;"><span>{{ b.name }}</span><span style="margin-left:auto;color:#0F2A5C;font-size:12.5px;">{{ b.cnt }}</span></div>
+                        <div style="height:8px;background:#EDF2FA;border-radius:4px;margin-top:3px;overflow:hidden;"><div style="height:100%;width:{{ b.w }};background:{{ b.clr }};border-radius:4px;"></div></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">
+          <div style="max-width:640px;margin:90px auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;padding:40px;text-align:center;box-shadow:0 2px 8px rgba(15,42,92,.06);" data-screen-label="준비 중 화면">
+            <div style="font-size:13px;font-weight:800;color:#1E5FC2;letter-spacing:1px;">SCREEN {{ currentNum }} / 7</div>
+            <div style="font-size:22px;font-weight:800;color:#0F2A5C;margin-top:10px;">{{ currentLabel }}</div>
+            <div style="font-size:15px;color:#475569;margin-top:10px;">이 화면은 다음 단계에서 설계됩니다. 요구사항을 알려주시면 이어서 디자인할게요.</div>
+          </div>
+        </sc-if>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;viewState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;normal&quot;,&quot;loading&quot;,&quot;error&quot;,&quot;empty&quot;],&quot;default&quot;:&quot;normal&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;화면 상태 시연&quot;}}">
+class Component extends DCLogic {
+  state = { p: 0, menu: 0, area: '전체', hoverIdx: -1, override: null, date: '2026-06-04',
+    fJud: '전체', fRule: '전체', fCh: '전체', fSensor: '전체', fLot: '', selId: null,
+    acc1: true, acc2: false, acc3: false, tLot: 'LOT-260008', tWafer: '1', tSensor: 'PH_FOCUS',
+    selRun: 'RUN-0006', apr: { 'APR-0001': { st: 'PENDING', send: null }, 'APR-0002': { st: 'PENDING', send: null } },
+    cmt: {}, who: {}, hist: [{ k: 'SENT', label: 'ACT-0002 · ALM-0005 · EQP_HOLD' }],
+    toast: false, selCh: null, docQ: '', docF: '전체',
+    nlQ: '', nlKey: null, nlPhase: null, nlTab: 'table', nlSortAsc: false, nlReverified: false,
+    nlHist: [{ q: '전체 알람이 몇 건이야?', ok: true, rows: 1, lat: 1240 }, { q: '알람 테이블 전부 지워줘', ok: false, rows: 0, lat: 310 }],
+    agEvents: [], agActor: '전체', agFrom: '2026-06-01', agTo: '2026-06-04', agTarget: '', agPage: 1, agOpen: null };
+  componentDidMount() {
+    const t0 = performance.now(), dur = 1100;
+    const step = (t) => {
+      const x = Math.min(1, (t - t0) / dur);
+      this.setState({ p: 1 - Math.pow(1 - x, 3) });
+      if (x < 1) this._raf = requestAnimationFrame(step);
+    };
+    this._raf = requestAnimationFrame(step);
+    this._live = setInterval(() => {
+      this.setState({ flash: true });
+      this._flashOff = setTimeout(() => this.setState({ flash: false }), 1900);
+    }, 7000);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this._raf); clearInterval(this._live); clearTimeout(this._flashOff); }
+  renderVals() {
+    const S = this.state, p = S.p;
+    const eff = S.override ?? this.props.viewState ?? 'normal';
+    const labels = ['운영 대시보드','알람 목록','센서 Trace','Agent 분석·승인','관계·문서 근거','자연어 분석','감사로그'];
+    const menus = labels.map((label, i) => {
+      const act = S.menu === i;
+      return { label, num: String(i + 1),
+        bg: act ? '#2E7BE8' : 'transparent', color: act ? '#FFFFFF' : '#B7C6E4', weight: act ? 800 : 600,
+        numBg: act ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.08)', numColor: act ? '#FFFFFF' : '#8FA5CE',
+        onClick: () => this.setState({ menu: i }) };
+    });
+    const areas = ['전체','PHOTO','ETCH'].map(label => ({ label,
+      bg: S.area === label ? '#1E5FC2' : '#FFFFFF', color: S.area === label ? '#FFFFFF' : '#475569',
+      onClick: () => this.setState({ area: label }) }));
+    const chAll = [
+      { name: 'PHO-01-C1', areaKey: 'PHOTO', status: 'ALARM', accent: '#D97706', badgeBg: '#FEF3C7', badgeColor: '#D97706', note: 'PHOTO · OOS 알람 발생', hold: false },
+      { name: 'PHO-01-C2', areaKey: 'PHOTO', status: 'NORMAL', accent: '#16A34A', badgeBg: '#DCFCE7', badgeColor: '#16A34A', note: 'PHOTO · 이상 없음', hold: false },
+      { name: 'ETC-01-C1', areaKey: 'ETCH', status: 'CRITICAL', accent: '#DC2626', badgeBg: '#FEE2E2', badgeColor: '#DC2626', note: 'ETCH · R03_CONSEC 연속 이상', hold: true, cardBg: '#FEF5F5', cardBorder: '#FECACA' },
+      { name: 'ETC-01-C2', areaKey: 'ETCH', status: 'ALARM', accent: '#D97706', badgeBg: '#FEF3C7', badgeColor: '#D97706', note: 'ETCH · OOS 알람 발생', hold: false }
+    ];
+    const chambers = chAll.map(c => ({ cardBg: '#FFFFFF', cardBorder: '#E2E8F0', ...c })).filter(c => S.area === '전체' || c.areaKey === S.area);
+    // AREA별 mock (ETCH+PHOTO = 전체와 일자별 합계 일치)
+    const dayByArea = {
+      '전체': [ { label: '6/1', oos: 0, ooc: 4 }, { label: '6/2', oos: 11, ooc: 3 }, { label: '6/3', oos: 20, ooc: 7 }, { label: '6/4', oos: 6, ooc: 0 } ],
+      'ETCH': [ { label: '6/1', oos: 0, ooc: 2 }, { label: '6/2', oos: 4, ooc: 1 }, { label: '6/3', oos: 10, ooc: 6 }, { label: '6/4', oos: 6, ooc: 0 } ],
+      'PHOTO': [ { label: '6/1', oos: 0, ooc: 2 }, { label: '6/2', oos: 7, ooc: 2 }, { label: '6/3', oos: 10, ooc: 1 }, { label: '6/4', oos: 0, ooc: 0 } ]
+    };
+    const kpiByArea = {
+      '전체': { today: 6, tOos: 6, tOoc: 0, total: 51, aOos: 37, aOoc: 14 },
+      'ETCH': { today: 6, tOos: 6, tOoc: 0, total: 29, aOos: 20, aOoc: 9 },
+      'PHOTO': { today: 0, tOos: 0, tOoc: 0, total: 22, aOos: 17, aOoc: 5 }
+    };
+    const kpi = kpiByArea[S.area];
+    const dayData = dayByArea[S.area];
+    const days = dayData.map((d, i) => ({ ...d, total: d.oos + d.ooc,
+      oosH: d.oos * 8, oocH: d.ooc * 8, delay: (i * 0.12) + 's', delay2: (i * 0.12 + 0.1) + 's',
+      tip: S.hoverIdx === i, tipY: (d.oos + d.ooc) * 8 + 12,
+      onEnter: () => this.setState({ hoverIdx: i }), onLeave: () => this.setState({ hoverIdx: -1 }) }));
+    const mkAlarm = (id, sensor, eqp, rule, time, crit) => ({ id, sensor, eqp, rule, time,
+      badgeBg: crit ? '#DC2626' : rule.includes('OOC') ? '#FEF3C7' : '#FEE2E2',
+      badgeColor: crit ? '#FFFFFF' : rule.includes('OOC') ? '#D97706' : '#DC2626',
+      rowBg: crit ? '#FEF2F2' : 'transparent' });
+    const etAlarms = [
+      mkAlarm('ALM-0051', 'ET_CF4', 'ETC-01-C1', 'R01_OOS', '07:29', false), mkAlarm('ALM-0050', 'ET_CF4', 'ETC-01-C1', 'R01_OOS', '07:25', false),
+      mkAlarm('ALM-0049', 'ET_CF4', 'ETC-01-C1', 'R01_OOS', '07:20', false), mkAlarm('ALM-0048', 'ET_CF4', 'ETC-01-C1', 'R03_CONSEC', '07:15', true),
+      mkAlarm('ALM-0047', 'ET_CF4', 'ETC-01-C1', 'R01_OOS', '07:15', false)
+    ];
+    const phAlarms = [
+      mkAlarm('ALM-0040', 'PH_FOCUS', 'PHO-01-C1', 'R01_OOS', '6/3 22:42', false), mkAlarm('ALM-0039', 'PH_FOCUS', 'PHO-01-C1', 'R01_OOS', '6/3 22:38', false),
+      mkAlarm('ALM-0038', 'PH_FOCUS', 'PHO-01-C1', 'R01_OOS', '6/3 22:38', false), mkAlarm('ALM-0037', 'PH_FOCUS', 'PHO-01-C1', 'R01_OOS', '6/3 22:34', false),
+      mkAlarm('ALM-0035', 'PH_FOCUS', 'PHO-01-C1', 'R02_OOC', '6/3 22:26', false)
+    ];
+    const alAll = S.area === 'PHOTO' ? phAlarms : S.area === 'ETCH' ? etAlarms : etAlarms;
+    const alarms = alAll.map((a, i) => ({ ...a, anim: i === 0 && S.flash && S.area !== 'PHOTO' ? 'om-flash 1.8s ease-out' : 'none' }));
+    // ── 화면 2: 알람 목록 (실측 CSV: alarms-data.js) ──
+    const data = window.FDC_ALARMS || [];
+    const stOf = a => (a.alarm_id === 'ALM-0022' || a.alarm_id === 'ALM-0048') ? 'WAITING_APPROVAL' : String(a.occurred_at || '').startsWith('2026-06-04') ? '미처리' : 'COMPLETED';
+    const ruleClr = r => r === 'R03_CONSEC' ? ['#DC2626', '#FFFFFF'] : r === 'R02_OOC' ? ['#FEF3C7', '#D97706'] : ['#FEE2E2', '#DC2626'];
+    const judClr = j => j === 'OOS' ? ['#FEE2E2', '#DC2626'] : ['#FEF3C7', '#D97706'];
+    const stClr = s => s === 'COMPLETED' ? ['#DCFCE7', '#16A34A'] : s === 'WAITING_APPROVAL' ? ['#FEF3C7', '#D97706'] : ['#F1F5F9', '#475569'];
+    const filtered = data.filter(a =>
+      (S.fJud === '전체' || a.judgement === S.fJud) && (S.fRule === '전체' || a.rule_id === S.fRule) &&
+      (S.fCh === '전체' || a.chamber_id === S.fCh) && (S.fSensor === '전체' || a.sensor_id === S.fSensor) &&
+      (!S.fLot || String(a.lot_id || '').toLowerCase().includes(S.fLot.toLowerCase())));
+    const rows = filtered.map(a => {
+      const st = stOf(a), rc = ruleClr(a.rule_id), jc = judClr(a.judgement), sc = stClr(st);
+      return { id: a.alarm_id, time: String(a.occurred_at || '').slice(5, 16), lot: a.lot_id, wafer: a.wafer_no, ch: a.chamber_id, sensor: a.sensor_id,
+        rule: a.rule_id, ruleBg: rc[0], ruleColor: rc[1], jud: a.judgement, judBg: jc[0], judColor: jc[1],
+        st, stBg: sc[0], stColor: sc[1], rowBg: S.selId === a.alarm_id ? '#DBEAFE' : a.rule_id === 'R03_CONSEC' ? '#FEF2F2' : 'transparent',
+        onClick: () => this.setState({ selId: a.alarm_id }) };
+    });
+    const judBtns = ['전체', 'OOS', 'OOC'].map(l => ({ label: l, bg: S.fJud === l ? '#1E5FC2' : '#FFFFFF', color: S.fJud === l ? '#FFFFFF' : '#475569', onClick: () => this.setState({ fJud: l }) }));
+    const ruleBtns = ['전체', 'R01_OOS', 'R02_OOC', 'R03_CONSEC'].map(l => ({ label: l, bg: S.fRule === l ? '#1E5FC2' : '#FFFFFF', color: S.fRule === l ? '#FFFFFF' : '#475569', onClick: () => this.setState({ fRule: l }) }));
+    const sel = data.find(a => a.alarm_id === S.selId);
+    const pJc = sel ? judClr(sel.judgement) : ['#F1F5F9', '#475569'];
+    const num = (re) => { const m = sel && String(sel.detail || '').match(re); return m ? m[1] : '—'; };
+    const isConsec = sel && sel.rule_id === 'R03_CONSEC';
+    // ── 화면 3: 센서 Trace (실측: PH_FOCUS 기준선 ±60/±36/0, LOT-260008 W1 6포인트) ──
+    const traceKnown = S.tLot === 'LOT-260008' && S.tWafer === '1' && S.tSensor === 'PH_FOCUS';
+    const yPct = v => (70 - v) / 140 * 100;
+    const ptVals = [50.323, 58.116, 64.16, 51.106, 46.954, 30.79]; // step별 3*mean−min−max로 도출
+    const tracePts = ptVals.map((v, i) => {
+      const oos = v > 60, ooc = !oos && v > 36;
+      return { n: String(i + 1), x: 8.33 + i * 16.67, y: yPct(v), label: v.toFixed(1),
+        color: oos ? '#DC2626' : ooc ? '#D97706' : '#1E5FC2', size: oos ? 18 : ooc ? 16 : 13, delay: (0.25 + i * 0.18) + 's' };
+    });
+    const refLines = [
+      { val: '60.0', label: 'USL', color: '#DC2626', top: yPct(60), line: '3px dashed #DC2626' },
+      { val: '36.0', label: 'UCL', color: '#D97706', top: yPct(36), line: '2px dashed #D97706' },
+      { val: '0.0', label: 'TARGET', color: '#64748B', top: yPct(0), line: '2px solid #94A3B8' },
+      { val: '-36.0', label: 'LCL', color: '#D97706', top: yPct(-36), line: '2px dashed #D97706' },
+      { val: '-60.0', label: 'LSL', color: '#DC2626', top: yPct(-60), line: '3px dashed #DC2626' }
+    ];
+    const stepStats = [
+      { name: 'EXPOSE', mean: '57.533', std: '6.937', min: '50.323', max: '64.160', pts: '3', ooc: '2', oos: '1', jud: 'OOS', judBg: '#FEE2E2', judColor: '#DC2626' },
+      { name: 'DEVELOP', mean: '42.950', std: '10.733', min: '30.790', max: '51.106', pts: '3', ooc: '2', oos: '0', jud: 'OOC', judBg: '#FEF3C7', judColor: '#D97706' }
+    ];
+    // ── 화면 4: Agent 분석·승인 (runs 생성 허용 — 실제 alarm_id·LOT·챔버에만 연결) ──
+    const byId = {}; data.forEach(a => byId[a.alarm_id] = a);
+    // 확정 실측 표 (action_history.trigger_alarm_lot_hist_id 기준) — 이 표 기준으로만 수정
+    const runDefs = [
+      { id: 'RUN-0001', alm: 'ALM-0001', st: 'COMPLETED', act: 'ACT-0001', lat: 8421 },
+      { id: 'RUN-0002', alm: 'ALM-0005', st: 'FAILED', act: null, lat: 30012 },
+      { id: 'RUN-0003', alm: 'ALM-0005', st: 'COMPLETED', act: 'ACT-0002', lat: 9137, rerun: true },
+      { id: 'RUN-0004', alm: 'ALM-0011', st: 'COMPLETED', act: 'ACT-0003', lat: 7642 },
+      { id: 'RUN-0005', alm: 'ALM-0016', st: 'COMPLETED', act: 'ACT-0004', lat: 8890 },
+      { id: 'RUN-0006', alm: 'ALM-0019', st: 'WAITING_APPROVAL', act: 'ACT-0005', lat: 9310 },
+      { id: 'RUN-0007', alm: 'ALM-0025', st: 'COMPLETED', act: 'ACT-0007', lat: 7955 },
+      { id: 'RUN-0008', alm: 'ALM-0031', st: 'COMPLETED', act: 'ACT-0006', lat: 10204 },
+      { id: 'RUN-0009', alm: 'ALM-0034', st: 'COMPLETED', act: 'ACT-0009', lat: 8577 },
+      { id: 'RUN-0010', alm: 'ALM-0041', st: 'COMPLETED', act: 'ACT-0008', lat: 9044 },
+      { id: 'RUN-0011', alm: 'ALM-0046', st: 'WAITING_APPROVAL', act: 'ACT-0010', lat: 11268 }
+    ];
+    const runStClr = s => s === 'COMPLETED' ? ['#DCFCE7', '#16A34A'] : s === 'WAITING_APPROVAL' ? ['#FEF3C7', '#D97706'] : ['#FEE2E2', '#DC2626'];
+    const faultOf = sensor => sensor === 'PH_FOCUS'
+      ? { code: 'FOC', name: '포커스 이탈', basis: 'PH_FOCUS 연속 OOS — 포커스 이탈로 CD_ADI 불량 유발', why: '포커스 이탈 지속 — CD_ADI 불량 방지 위해 장비 정지 필요' }
+      : sensor === 'ET_REFL'
+      ? { code: 'RFM', name: 'RF 정합 이상', basis: '반사파 상승 = RF 정합 불량, 실효 전력 저하', why: 'RF 정합 불량 지속 — 실효 전력 저하로 공정 품질 위험' }
+      : { code: 'MFD', name: 'CF4 유량 저하', basis: 'CF4 유량 저하로 식각 부족, 연속 3 WAFER OOS', why: 'CF4 유량 저하 — 식각 부족 재발 방지 위해 장비 정지 필요' };
+    const runs = runDefs.map(r => {
+      const a = byId[r.alm] || {}, c = runStClr(r.st);
+      return { id: r.id, alarm: r.alm, lot: a.lot_id || '—', ch: a.chamber_id || '—', model: 'kosa-api', lat: (r.lat / 1000).toFixed(1) + 's',
+        st: r.st, stBg: c[0], stColor: c[1],
+        bg: S.selRun === r.id ? '#DBEAFE' : 'transparent', edge: S.selRun === r.id ? '#1E5FC2' : 'transparent',
+        onClick: () => this.setState({ selRun: r.id }) };
+    });
+    const dr = runDefs.find(r => r.id === S.selRun) || runDefs[5];
+    const da = byId[dr.alm] || {};
+    const dFailed = dr.st === 'FAILED';
+    const df = faultOf(da.sensor_id);
+    const dc = runStClr(dr.st);
+    const dChain = dr.id === 'RUN-0008';
+    const actDisp = {
+      'ACT-0001': ['MONITOR · AUTO', '자동 감시 유지(승인 불필요)'],
+      'ACT-0002': ['EQP_HOLD', df.why], 'ACT-0005': ['EQP_HOLD', df.why], 'ACT-0010': ['EQP_HOLD', df.why],
+      'ACT-0003': ['LOT_HOLD · AUTO', '해당 LOT 보류 — 자동 실행(승인 불필요)'],
+      'ACT-0004': ['MONITOR · AUTO', '자동 감시 유지(승인 불필요)'],
+      'ACT-0006': ['MONITOR · AUTO', '상류 원인 주 기여 — 하류 자체 OOC 감시 유지(승인 불필요)'],
+      'ACT-0007': ['LOT_HOLD · AUTO', '포커스 이탈 LOT 보류 — 자동 실행(승인 불필요)'],
+      'ACT-0008': ['LOT_HOLD · AUTO', '해당 LOT 보류 — 자동 실행(승인 불필요)'],
+      'ACT-0009': ['LOT_HOLD · AUTO', '포커스 이탈 LOT 보류 — 자동 실행(승인 불필요)']
+    };
+    const dActKnown = !!actDisp[dr.act];
+    const dTools = [
+      { n: '1', name: 'get_fdc_summary', st: 'OK', ms: '412ms' },
+      { n: '2', name: 'get_equipment_context', st: 'OK', ms: '388ms' },
+      dFailed ? { n: '3', name: 'search_documents', st: 'FAILED', ms: '30,012ms' } : { n: '3', name: 'search_documents', st: 'OK', ms: '1,240ms' },
+      dFailed ? { n: '4', name: 'decide_action', st: 'SKIPPED', ms: '—', tag: true } : { n: '4', name: 'decide_action', st: 'OK', ms: '6ms', tag: true }
+    ].map(t => ({ ...t, hasTag: !!t.tag,
+      hl: dChain && t.name === 'get_equipment_context',
+      rowBg: dChain && t.name === 'get_equipment_context' ? '#F0F6FF' : 'transparent',
+      dotBg: t.st === 'OK' ? '#DCFCE7' : t.st === 'FAILED' ? '#FEE2E2' : '#F1F5F9',
+      dotColor: t.st === 'OK' ? '#16A34A' : t.st === 'FAILED' ? '#DC2626' : '#64748B',
+      stBg: t.st === 'OK' ? '#DCFCE7' : t.st === 'FAILED' ? '#FEE2E2' : '#F1F5F9',
+      stColor: t.st === 'OK' ? '#16A34A' : t.st === 'FAILED' ? '#DC2626' : '#64748B' }));
+    const showToast = () => {
+      clearTimeout(this._toastT);
+      this.setState({ toast: true });
+      this._toastT = setTimeout(() => this.setState({ toast: false }), 2500);
+    };
+    const aprMeta = {
+      'APR-0001': { act: 'ACT-0005', alm: 'ALM-0022', meta: 'LOT-260007 · PHO-01 · EQP_HOLD · R03: ALM-0022' },
+      'APR-0002': { act: 'ACT-0010', alm: 'ALM-0048', meta: 'LOT-260010 · ETC-01 · EQP_HOLD · R03: ALM-0048' }
+    };
+    const approve = id => {
+      if (this.state.apr[id].st !== 'PENDING') { showToast(); return; }
+      const set = (send) => this.setState(s => ({ apr: { ...s.apr, [id]: { st: 'APPROVED', send } } }));
+      set('WAITING');
+      setTimeout(() => set('SENDING'), 1000);
+      setTimeout(() => {
+        set('SENT');
+        this.setState(s => ({ hist: [{ k: 'SENT', label: aprMeta[id].act + ' · ' + aprMeta[id].alm + ' · EQP_HOLD' }, ...s.hist] }));
+      }, 2000);
+    };
+    const rejectA = id => {
+      if (this.state.apr[id].st !== 'PENDING') { showToast(); return; }
+      this.setState(s => ({ apr: { ...s.apr, [id]: { st: 'REJECTED', send: 'CANCELED' } },
+        hist: [{ k: 'CANCELED', label: aprMeta[id].act + ' · ' + aprMeta[id].alm + ' · EQP_HOLD' }, ...s.hist] }));
+    };
+    const aprCards = ['APR-0001', 'APR-0002'].map(id => {
+      const st = S.apr[id].st, send = S.apr[id].send, m = aprMeta[id];
+      const sc2 = st === 'PENDING' ? ['#FEF3C7', '#D97706'] : st === 'APPROVED' ? ['#DCFCE7', '#16A34A'] : ['#F1F5F9', '#64748B'];
+      const stageIdx = ['WAITING', 'SENDING', 'SENT'].indexOf(send);
+      return { id, act: m.act, meta: m.meta, st, stBg: sc2[0], stColor: sc2[1],
+        opacity: st === 'REJECTED' ? '.55' : '1',
+        showSend: st === 'APPROVED', showCanceled: st === 'REJECTED',
+        steps: ['WAITING', 'SENDING', 'SENT'].map((l, i) => ({ label: l, arrow: i < 2,
+          bg: i < stageIdx ? '#DCFCE7' : i === stageIdx ? (l === 'SENT' ? '#16A34A' : '#1E5FC2') : '#F1F5F9',
+          color: i < stageIdx ? '#16A34A' : i === stageIdx ? '#FFFFFF' : '#94A3B8' })),
+        cmt: S.cmt[id] || '', who: S.who[id] || '',
+        onCmt: e => this.setState(s => ({ cmt: { ...s.cmt, [id]: e.target.value } })),
+        onWho: e => this.setState(s => ({ who: { ...s.who, [id]: e.target.value } })),
+        onApprove: () => approve(id), onReject: () => rejectA(id) };
+    });
+    const histClr = k => k === 'SENT' ? ['#DCFCE7', '#16A34A'] : k === 'FAILED' ? ['#FEE2E2', '#DC2626'] : ['#F1F5F9', '#64748B'];
+    const hist = S.hist.map(h => ({ ...h, bg: histClr(h.k)[0], color: histClr(h.k)[1], canRetry: h.k === 'FAILED' }));
+    // ── 화면 5: 관계 그래프·문서 (챔버 통계는 CSV 실측 집계) ──
+    const chStat = {};
+    data.forEach(a => {
+      const c = chStat[a.chamber_id] = chStat[a.chamber_id] || { total: 0, oos: 0, ooc: 0 };
+      c.total++; a.judgement === 'OOS' ? c.oos++ : c.ooc++;
+    });
+    const gDef = [
+      { name: 'PHO-01-C1', st: 'ALARM', clr: '#D97706', bg: '#FEF3C7', grp: 'pho' },
+      { name: 'PHO-01-C2', st: 'NORMAL', clr: '#16A34A', bg: '#DCFCE7', grp: 'pho' },
+      { name: 'ETC-01-C1', st: 'CRITICAL', clr: '#DC2626', bg: '#FEE2E2', grp: 'etc', hold: true },
+      { name: 'ETC-01-C2', st: 'ALARM', clr: '#D97706', bg: '#FEF3C7', grp: 'etc' }
+    ];
+    const mkNode = n => ({ name: n.name, st: n.st, stColor: n.clr, border: n.clr,
+      shadow: S.selCh === n.name ? '0 0 0 4px ' + n.bg : '0 1px 3px rgba(15,42,92,.08)',
+      onClick: () => this.setState({ selCh: n.name }) });
+    const gSel = gDef.find(n => n.name === S.selCh);
+    const gStat = gSel ? (chStat[gSel.name] || { total: 0, oos: 0, ooc: 0 }) : null;
+    const docFBtns = ['전체', 'PH-9000', 'ET-7500'].map(l => ({ label: l,
+      bg: S.docF === l ? '#1E5FC2' : '#FFFFFF', color: S.docF === l ? '#FFFFFF' : '#475569',
+      onClick: () => this.setState({ docF: l }) }));
+    const docChips = ['반사파가 올라가면 무슨 문제인가', '포커스가 벗어나면 CD가 어떻게 되나', '장비를 세우려면 승인이 필요한가']
+      .map(q => ({ label: q, onClick: () => this.setState({ docQ: q }) }));
+    const docDb = {
+      '반사파가 올라가면 무슨 문제인가': [
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '3.2 RFM — RF Mismatch (RF 정합 불량)', excerpt: 'Reflected Power가 상승한다. Source RF Power 설정값은 그대로인데 반사파만 올라간다. 반사파가 커지면 플라즈마에 실제로 들어가는 실효 전력이 줄어든다.' },
+        { doc: 'SPEC_ET-7500_DryEtcher', model: 'ET-7500', section: '4.2 Reflected Power (ET_REFL)' },
+        { doc: 'SPEC_ET-7500_DryEtcher', model: 'ET-7500', section: '3. 센서 운전 기준' },
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '7. 진단 요약표' }
+      ],
+      '포커스가 벗어나면 CD가 어떻게 되나': [
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '3.1 FOC — Focus Excursion (포커스 이탈)', excerpt: '발생 장비 PH-9000 (PHOTO), 주 센서 PH_FOCUS, 주 RECIPE STEP EXPOSE. 관리한계 ±36 nm · 규격한계 ±60 nm' },
+        { doc: 'SPEC_PH-9000_PhotoScanner', model: 'PH-9000', section: '4.2 Focus Offset (PH_FOCUS)' },
+        { doc: 'SPEC_PH-9000_PhotoScanner', model: 'PH-9000', section: '6. 하류 영향' },
+        { doc: 'SPEC_ET-7500_DryEtcher', model: 'ET-7500', section: '6.1 판별 절차' }
+      ],
+      '장비를 세우려면 승인이 필요한가': [
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '5.1 왜 EQP_HOLD만 승인이 필요한가', excerpt: 'EQP_HOLD는 장비를 세워 후속 LOT 투입을 전면 차단한다. 생산 손실이 크므로 사람이 최종 판단해야 한다. 실제 fab에서도 설비 홀드는 담당자 승인 사항이다.' },
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '5. 조치 결정 기준' },
+        { doc: 'TROUBLE_FDC_FaultGuide', model: 'COMMON', section: '5.2 조치 상향 조건' },
+        { doc: 'SPEC_ET-7500_DryEtcher', model: 'ET-7500', section: '6.2 상류 원인일 때의 조치' }
+      ]
+    };
+    const scores = [0.88, 0.83, 0.79, 0.74];
+    const rawDocs = docDb[S.docQ] || null;
+    const docResults = rawDocs ? rawDocs
+      .filter(d => S.docF === '전체' || d.model === 'COMMON' || d.model === S.docF)
+      .map((d, i) => ({ ...d, score: scores[i].toFixed(2), barW: (scores[i] * 100) + '%',
+        hasExcerpt: !!d.excerpt, delay: (i * 0.08) + 's',
+        tagBg: d.model === 'COMMON' ? '#F1F5F9' : '#EDF2FA',
+        tagColor: d.model === 'COMMON' ? '#475569' : '#1E5FC2' })) : [];
+    // ── 화면 6: 자연어 분석 (집계는 CSV 실측; SQL·latency는 생성 허용) ──
+    const KW = ['SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'DESC', 'COUNT', 'AS', 'LIMIT', 'AND'];
+    const hlSql = sql => sql.split('\n').map(line => ({
+      toks: line.split(/(\s+|,|\(|\)|\*|;|=)/).filter(t => t !== '').map(t => {
+        const up = t.toUpperCase();
+        if (KW.includes(up)) return { t, c: '#7DD8E5', w: 800 };
+        if (/^'.*'$/.test(t)) return { t, c: '#FCD34D', w: 600 };
+        if (/^\d+$/.test(t)) return { t, c: '#86EFAC', w: 700 };
+        return { t, c: '#E2E8F0', w: 500 };
+      }) }));
+    const chCnt = Object.entries(chStat).map(([k, v]) => [k, v.total]).sort((a, b) => b[1] - a[1]);
+    const NLQ = {
+      '전체 알람이 몇 건이야?': { sql: "SELECT COUNT(*) AS alarm_cnt\nFROM fdc_alarm;", cols: ['alarm_cnt'], rows: [[51]], chart: 'demote', lat: 1240 },
+      '챔버별 알람 건수 내림차순': { sql: "SELECT chamber_id, COUNT(*) AS alarm_cnt\nFROM fdc_alarm\nGROUP BY chamber_id\nORDER BY alarm_cnt DESC\nLIMIT 500;", cols: ['chamber_id', 'alarm_cnt'], rows: chCnt, chart: 'bar', stats: [['count', '3'], ['mean', '17.0'], ['std', '4.36'], ['min', '14'], ['max', '22']], lat: 1873 },
+      '계측 FAIL 결과 목록을 보여줘': { sql: "SELECT metrology_id, lot_id, wafer_no, measure_type, measured_value, judgement\nFROM metrology\nWHERE judgement = 'FAIL'\nLIMIT 500;", cols: ['metrology_id', 'lot_id', 'wafer_no', 'measure_type', 'measured_value', 'judgement'],
+        rows: [['MET-0016', 'LOT-260004', 'w6', 'CD_AEI', 41.82, 'FAIL'], ['MET-0020', 'LOT-260005', 'w6', 'CD_AEI', 41.41, 'FAIL'], ['MET-0029', 'LOT-260008', 'w1', 'CD_ADI', 41.59, 'FAIL'], ['MET-0031', 'LOT-260008', 'w1', 'CD_AEI', 41.20, 'FAIL'], ['MET-0033', 'LOT-260009', 'w1', 'CD_ADI', 41.40, 'FAIL'], ['MET-0035', 'LOT-260009', 'w1', 'CD_AEI', 39.59, 'FAIL']],
+        noSort: true, chart: 'demote', lat: 1512 },
+      '판정별 요약 건수': { sql: "SELECT judgement, COUNT(*) AS cnt\nFROM fdc_alarm\nGROUP BY judgement\nORDER BY cnt DESC\nLIMIT 500;", cols: ['judgement', 'cnt'], rows: [['OOS', 37], ['OOC', 14]], chart: 'bar', corrected: true, lat: 1655 },
+      '알람 테이블 전부 지워줘': { reject: true, lat: 310 }
+    };
+    const nlAskQ = q => {
+      const def = NLQ[q];
+      if (!def) return;
+      clearTimeout(this._nlT1); clearTimeout(this._nlT2);
+      this.setState({ nlQ: q, nlKey: q, nlPhase: 'gen', nlTab: 'table', nlSortAsc: false, nlReverified: false });
+      this._nlT1 = setTimeout(() => {
+        if (def.reject) {
+          this.setState(s => ({ nlPhase: 'rejected', nlHist: s.nlHist.some(h => h.q === q) ? s.nlHist : [{ q, ok: false, rows: 0, lat: def.lat }, ...s.nlHist] }));
+        } else {
+          this.setState({ nlPhase: 'run' });
+          this._nlT2 = setTimeout(() => this.setState(s => ({ nlPhase: 'done',
+            nlHist: s.nlHist.some(h => h.q === q) ? s.nlHist : [{ q, ok: true, rows: def.rows ? def.rows.length : 0, lat: def.lat }, ...s.nlHist] })), 800);
+        }
+      }, 700);
+    };
+    const nd = S.nlKey ? NLQ[S.nlKey] : null;
+    const nlSorted = nd && nd.rows ? (nd.noSort ? nd.rows : [...nd.rows].sort((a, b) => S.nlSortAsc ? a[1] - b[1] : b[1] - a[1])) : [];
+    const nlMax = nlSorted.length ? Math.max(...nlSorted.map(r => r[1])) : 1;
+    // ── 화면 7: 감사로그 (엔티티·시각은 실측 연동; 파생 이벤트 시각은 실측+offset) ──
+    const addSec = (ts, n) => { if (!ts) return ''; const d = new Date(ts.replace(' ', 'T')); d.setSeconds(d.getSeconds() + n);
+      const p2 = x => String(x).padStart(2, '0');
+      return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()); };
+    const T = id => (byId[id] || {}).occurred_at || '';
+    const diffOf = (k, bv, av) => ({
+      beforeLines: [{ t: '{ "' + k + '": "' + bv + '" }', bg: '#FEE2E2', c: '#DC2626', w: 700 }],
+      afterLines: [{ t: '{ "' + k + '": "' + av + '" }', bg: '#DCFCE7', c: '#16A34A', w: 800 }] });
+    const EV = [];
+    const det = id => { const a = byId[id]; if (a) EV.push({ ts: a.occurred_at, actor: 'SYSTEM', ac: 'SYSTEM', ev: 'DETECTION_COMPLETED', entType: 'fdc_alarm', entId: id, summary: a.rule_id + ' ' + a.judgement + ' 감지 (' + a.sensor_id + ')' }); };
+    ['ALM-0051', 'ALM-0050', 'ALM-0049', 'ALM-0048', 'ALM-0047'].forEach(det);
+    EV.push(
+      { ts: addSec(T('ALM-0046'), 2), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_STARTED', entType: 'agent_run', entId: 'RUN-0011', summary: 'ALM-0046 분석 시작' },
+      { ts: addSec(T('ALM-0046'), 8), actor: 'fdc-agent', ac: 'AGENT', ev: 'CLASSIFICATION_COMPLETED', entType: 'agent_run', entId: 'RUN-0011', summary: 'Fault Code MFD 분류' },
+      { ts: addSec(T('ALM-0046'), 11), actor: 'fdc-agent', ac: 'AGENT', ev: 'APPROVAL_REQUESTED', entType: 'approval_request', entId: 'APR-0002', summary: 'EQP_HOLD 승인 요청', diff: diffOf('status', 'null', 'PENDING') },
+      { ts: addSec(T('ALM-0034'), 2), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_STARTED', entType: 'agent_run', entId: 'RUN-0009', summary: 'ALM-0034 분석 시작' },
+      { ts: addSec(T('ALM-0034'), 8), actor: 'fdc-agent', ac: 'AGENT', ev: 'CLASSIFICATION_COMPLETED', entType: 'agent_run', entId: 'RUN-0009', summary: 'Fault Code FOC 분류' },
+      { ts: addSec(T('ALM-0034'), 9), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_COMPLETED', entType: 'agent_run', entId: 'RUN-0009', summary: '분석 완료 · ACT-0009' },
+      { ts: addSec(T('ALM-0019'), 2), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_STARTED', entType: 'agent_run', entId: 'RUN-0006', summary: 'ALM-0019 분석 시작' },
+      { ts: addSec(T('ALM-0019'), 9), actor: 'fdc-agent', ac: 'AGENT', ev: 'CLASSIFICATION_COMPLETED', entType: 'agent_run', entId: 'RUN-0006', summary: 'Fault Code FOC 분류' },
+      { ts: addSec(T('ALM-0019'), 11), actor: 'fdc-agent', ac: 'AGENT', ev: 'APPROVAL_REQUESTED', entType: 'approval_request', entId: 'APR-0001', summary: 'EQP_HOLD 승인 요청', diff: diffOf('status', 'null', 'PENDING') },
+      { ts: '2026-06-04 09:12:31', actor: 'daehyuk', ac: 'HUMAN', ev: 'APPROVAL_DECIDED', entType: 'approval_request', entId: 'APR-0001', summary: 'EQP_HOLD 승인', diff: diffOf('status', 'PENDING', 'APPROVED') },
+      { ts: '2026-06-04 09:12:33', actor: 'SYSTEM', ac: 'SYSTEM', ev: 'ACTION_SENT', entType: 'action_history', entId: 'ACT-0005', summary: 'MES 전송 완료', diff: diffOf('send_status', 'WAITING', 'SENT') },
+      { ts: addSec(T('ALM-0005'), 2), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_STARTED', entType: 'agent_run', entId: 'RUN-0002', summary: 'ALM-0005 분석 시작' },
+      { ts: addSec(T('ALM-0005'), 32), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_FAILED', entType: 'agent_run', entId: 'RUN-0002', summary: 'search_documents TIMEOUT (30,012ms) — 자동 재처리 금지' },
+      { ts: addSec(T('ALM-0005'), 3600), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_STARTED', entType: 'agent_run', entId: 'RUN-0003', summary: '수동 재실행 (RUN-0002 대체)' },
+      { ts: addSec(T('ALM-0005'), 3609), actor: 'fdc-agent', ac: 'AGENT', ev: 'AGENT_RUN_COMPLETED', entType: 'agent_run', entId: 'RUN-0003', summary: '분석 완료 · ACT-0002' }
+    );
+    const evAll = EV.filter(e => e.ts).sort((a, b) => b.ts.localeCompare(a.ts));
+    const evTypes = ['DETECTION_COMPLETED', 'AGENT_RUN_STARTED', 'CLASSIFICATION_COMPLETED', 'APPROVAL_REQUESTED', 'APPROVAL_DECIDED', 'ACTION_SENT', 'ACTION_SEND_FAILED', 'AGENT_RUN_COMPLETED', 'AGENT_RUN_FAILED'];
+    const evClr = ev => ev.includes('FAILED') ? ['#FEE2E2', '#DC2626'] : (ev === 'ACTION_SENT' || ev.includes('COMPLETED')) ? ['#DCFCE7', '#16A34A'] : (ev.includes('REQUESTED') || ev.includes('DECIDED')) ? ['#FEF3C7', '#D97706'] : ['#EDF2FA', '#1E5FC2'];
+    const acClr = k => k === 'HUMAN' ? ['#0F2A5C', '#FFFFFF'] : k === 'AGENT' ? ['#DBEAFE', '#1E5FC2'] : ['#F1F5F9', '#475569'];
+    const agFiltered = evAll.filter(e =>
+      (S.agEvents.length === 0 || S.agEvents.includes(e.ev)) &&
+      (S.agActor === '전체' || e.ac === S.agActor) &&
+      e.ts.slice(0, 10) >= S.agFrom && e.ts.slice(0, 10) <= S.agTo &&
+      (!S.agTarget || e.entId.toLowerCase().includes(S.agTarget.toLowerCase())));
+    const PGSZ = 8;
+    const agPageCnt = Math.max(1, Math.ceil(agFiltered.length / PGSZ));
+    const agPage = Math.min(S.agPage, agPageCnt);
+    const agRows = agFiltered.slice((agPage - 1) * PGSZ, agPage * PGSZ).map((e, i) => {
+      const key = e.ev + e.entId + e.ts, ec = evClr(e.ev), ac2 = acClr(e.ac);
+      return { ts: e.ts.slice(5), actor: e.actor, acK: e.ac[0], acBg: ac2[0], acColor: ac2[1],
+        ev: e.ev, evBg: ec[0], evColor: ec[1], entType: e.entType, entId: e.entId, summary: e.summary,
+        open: S.agOpen === key, bg: S.agOpen === key ? '#EDF2FA' : 'transparent',
+        hasDiff: !!e.diff, noDiff: !e.diff,
+        beforeLines: e.diff ? e.diff.beforeLines : [], afterLines: e.diff ? e.diff.afterLines : [],
+        onClick: () => this.setState(s => ({ agOpen: s.agOpen === key ? null : key })) };
+    });
+    const typeCnts = evTypes.map(t => ({ name: t, cnt: agFiltered.filter(e => e.ev === t).length }));
+    const typeMax = Math.max(1, ...typeCnts.map(t => t.cnt));
+    const lots = [...new Set(data.map(a => a.lot_id))];
+    const wafers = [...new Set(data.filter(a => a.lot_id === S.tLot).map(a => a.wafer_no))].sort((a, b) => a - b);
+    return {
+      menus, areas, chambers, days, alarms, alarmsEmpty: alarms.length === 0,
+      judBtns, ruleBtns, rows, rowsEmpty: rows.length === 0,
+      chOpts: ['전체', 'PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2'],
+      sensorOpts: ['전체', 'PH_DOSE', 'PH_FOCUS', 'PH_PEB', 'PH_DEV', 'ET_PRES', 'ET_REFL', 'ET_CF4', 'ET_ESC'],
+      fCh: S.fCh, fSensor: S.fSensor, fLot: S.fLot,
+      onCh: e => this.setState({ fCh: e.target.value }), onSensor: e => this.setState({ fSensor: e.target.value }),
+      onLot: e => this.setState({ fLot: e.target.value }),
+      sumChips: [
+        { label: '전체', val: '51', color: '#0F2A5C' }, { label: 'OOS', val: '37', color: '#DC2626' },
+        { label: 'OOC', val: '14', color: '#D97706' }, { label: 'R01', val: '34', color: '#0F2A5C' },
+        { label: 'R02', val: '14', color: '#0F2A5C' }, { label: 'R03', val: '3', color: '#DC2626' }
+      ],
+      pOpen: !!sel, panelTx: sel ? 'translateX(0)' : 'translateX(105%)',
+      closePanel: () => this.setState({ selId: null }),
+      pId: sel ? sel.alarm_id : '—', pTime: sel ? sel.occurred_at : '', pJud: sel ? sel.judgement : '—', pJudBg: pJc[0], pJudColor: pJc[1],
+      pFields: sel ? [
+        { k: 'LOT', v: sel.lot_id }, { k: 'WAFER', v: 'w' + sel.wafer_no }, { k: '챔버', v: sel.chamber_id },
+        { k: '센서', v: sel.sensor_id }, { k: 'RECIPE STEP', v: sel.recipe_step_name }, { k: '규칙', v: sel.rule_id }
+      ] : [],
+      pDetail: sel ? sel.detail : '', pHit: sel ? sel.hit_cnt : '—',
+      pDetailBg: isConsec ? '#FEE2E2' : sel && sel.judgement === 'OOC' ? '#FEF3C7' : '#FEF2F2',
+      pDetailBorder: isConsec ? '#FCA5A5' : sel && sel.judgement === 'OOC' ? '#FDE68A' : '#FECACA',
+      pDetailColor: sel && sel.judgement === 'OOC' ? '#D97706' : '#DC2626',
+      pMean: num(/mean ([\d.]+)/), pMin: num(/min ([\d.]+)/), pMax: num(/max ([\d.]+)/),
+      pHasAgent: sel && sel.alarm_id === 'ALM-0008', pNoAgent: sel && sel.alarm_id !== 'ALM-0008',
+      acc1: S.acc1, acc2: S.acc2, acc3: S.acc3,
+      acc1Arrow: S.acc1 ? '▲' : '▼', acc2Arrow: S.acc2 ? '▲' : '▼', acc3Arrow: S.acc3 ? '▲' : '▼',
+      tgAcc1: () => this.setState({ acc1: !S.acc1 }), tgAcc2: () => this.setState({ acc2: !S.acc2 }), tgAcc3: () => this.setState({ acc3: !S.acc3 }),
+      tLot: S.tLot, tWafer: S.tWafer, tSensor: S.tSensor,
+      lotOpts: lots, waferOpts: wafers.length ? wafers : ['1'],
+      sensor8: ['PH_DOSE', 'PH_FOCUS', 'PH_PEB', 'PH_DEV', 'ET_PRES', 'ET_REFL', 'ET_CF4', 'ET_ESC'],
+      onTLot: e => this.setState({ tLot: e.target.value }), onTWafer: e => this.setState({ tWafer: e.target.value }), onTSensor: e => this.setState({ tSensor: e.target.value }),
+      isRefl: S.tSensor === 'ET_REFL', traceKnown, traceUnknown: !traceKnown,
+      traceTitle: S.tLot + ' · W' + S.tWafer + ' · ' + S.tSensor,
+      tracePts, refLines, stepStats,
+      polyPts: tracePts.map(p => p.x + ',' + p.y).join(' '),
+      skel5: [1, 2, 3, 4, 5],
+      stateNormal: eff === 'normal', stateLoading: eff === 'loading', stateError: eff === 'error', stateEmpty: eff === 'empty',
+      isDash: S.menu === 0, isAlarms: S.menu === 1, isTrace: S.menu === 2,
+      isAgent: S.menu === 3, isGraph: S.menu === 4, isNlq: S.menu === 5, isAudit: S.menu === 6, isPlaceholder: false,
+      nlQ: S.nlQ, onNlQ: e => this.setState({ nlQ: e.target.value }),
+      onNlKey: e => { if (e.key === 'Enter') nlAskQ(e.target.value); },
+      nlAsk: () => nlAskQ(S.nlQ),
+      nlChips: ['전체 알람이 몇 건이야?', '챔버별 알람 건수 내림차순', '계측 FAIL 결과 목록을 보여줘', '판정별 요약 건수', '알람 테이블 전부 지워줘'].map(q => ({
+        label: q, onClick: () => nlAskQ(q),
+        bg: q.includes('지워줘') ? '#FEF2F2' : '#F0F6FF', color: q.includes('지워줘') ? '#DC2626' : '#1E5FC2',
+        border: q.includes('지워줘') ? '#FECACA' : '#BFDBFE' })),
+      nlGenLoading: S.nlPhase === 'gen', nlRejected: S.nlPhase === 'rejected', nlQDone: S.nlKey || '',
+      nlHasSql: (S.nlPhase === 'run' || S.nlPhase === 'done') && nd && !nd.reject,
+      nlRunLoading: S.nlPhase === 'run', nlDone: S.nlPhase === 'done',
+      nlSqlLines: nd && nd.sql ? hlSql(nd.sql) : [],
+      nlReverified: S.nlReverified,
+      nlReverify: () => { clearTimeout(this._nlRv); this.setState({ nlReverified: true }); this._nlRv = setTimeout(() => this.setState({ nlReverified: false }), 2200); },
+      nlRun: () => { if (!nd || nd.reject) return; clearTimeout(this._nlT2); this.setState({ nlPhase: 'run' }); this._nlT2 = setTimeout(() => this.setState({ nlPhase: 'done' }), 800); },
+      nlTabTable: () => this.setState({ nlTab: 'table' }), nlTabChart: () => this.setState({ nlTab: 'chart' }),
+      nlTabTColor: S.nlTab === 'table' ? '#1E5FC2' : '#64748B', nlTabTLine: S.nlTab === 'table' ? '#1E5FC2' : 'transparent',
+      nlTabCColor: S.nlTab === 'chart' ? '#1E5FC2' : '#64748B', nlTabCLine: S.nlTab === 'chart' ? '#1E5FC2' : 'transparent',
+      nlRowMeta: nd && nd.rows ? 'row_cnt ' + nd.rows.length + ' · ' + nd.lat + 'ms' : nd ? 'row_cnt — · ' + (nd.lat || 0) + 'ms' : '',
+      nlNoRows: S.nlTab === 'table' && nd && !nd.rows,
+      nlShowTable: S.nlTab === 'table' && nd && !!nd.rows,
+      nlShowChart: S.nlTab === 'chart' && !!nd,
+      nlCols: nd && nd.cols ? nd.cols.map((c, i) => ({ name: c,
+        arrow: !nd.noSort && i === (nd.cols.length - 1) ? (S.nlSortAsc ? '▲' : '▼') : '',
+        onSort: nd.noSort ? () => {} : () => this.setState(s => ({ nlSortAsc: !s.nlSortAsc })) })) : [],
+      nlRows: nlSorted.map(r => ({ cells: r.map((v, i) => ({ v: String(v), w: i === r.length - 1 ? 800 : 600 })) })),
+      nlHasStats: !!(nd && nd.stats), nlStats: nd && nd.stats ? nd.stats.map(([k, v]) => ({ k, v })) : [],
+      nlChartBadge: nd && nd.chart === 'bar' ? '자동 선택: bar' : '표로 강등됨',
+      nlChartNote: !!(nd && (nd.corrected || nd.chart === 'demote')),
+      nlChartNoteText: nd && nd.corrected ? 'line → bar로 보정됨 (범주형 x축)' : '집계 형태가 차트와 호환되지 않아 표로 강등됨',
+      nlChartBars: !!(nd && nd.chart === 'bar' && nd.rows),
+      nlChartDemoted: !!(nd && nd.chart === 'demote'),
+      nlBars: nlSorted.map((r, i) => ({ label: String(r[0]), v: String(r[1]), h: Math.max(10, r[1] / nlMax * 190), delay: (i * 0.1) + 's' })),
+      nlHist: S.nlHist.map(h => ({ q: h.q, st: h.ok ? '성공' : '거부', bg: h.ok ? '#DCFCE7' : '#FEE2E2', color: h.ok ? '#16A34A' : '#DC2626', rows: String(h.rows), lat: h.lat.toLocaleString() })),
+      agEvChips: evTypes.map(t => { const on = S.agEvents.includes(t); return { label: t,
+        bg: on ? '#1E5FC2' : '#FFFFFF', color: on ? '#FFFFFF' : '#475569', border: on ? '#1E5FC2' : '#CBD5E1',
+        onClick: () => this.setState(s => ({ agEvents: on ? s.agEvents.filter(x => x !== t) : [...s.agEvents, t], agPage: 1 })) }; }),
+      agActBtns: ['전체', 'SYSTEM', 'AGENT', 'HUMAN'].map(l => ({ label: l,
+        bg: S.agActor === l ? '#1E5FC2' : '#FFFFFF', color: S.agActor === l ? '#FFFFFF' : '#475569',
+        onClick: () => this.setState({ agActor: l, agPage: 1 }) })),
+      agFrom: S.agFrom, agTo: S.agTo, agTarget: S.agTarget,
+      onAgFrom: e => this.setState({ agFrom: e.target.value, agPage: 1 }),
+      onAgTo: e => this.setState({ agTo: e.target.value, agPage: 1 }),
+      onAgTarget: e => this.setState({ agTarget: e.target.value, agPage: 1 }),
+      agRows, agEmpty: agFiltered.length === 0, agTotal: String(agFiltered.length),
+      agPages: Array.from({ length: agPageCnt }, (_, i) => ({ n: String(i + 1),
+        bg: agPage === i + 1 ? '#1E5FC2' : '#FFFFFF', color: agPage === i + 1 ? '#FFFFFF' : '#475569', border: agPage === i + 1 ? '#1E5FC2' : '#CBD5E1',
+        onClick: () => this.setState({ agPage: i + 1, agOpen: null }) })),
+      agToday: String(evAll.filter(e => e.ts.startsWith('2026-06-04')).length),
+      agFailed: String(evAll.filter(e => e.ev.includes('FAILED')).length),
+      agTypeBars: typeCnts.map(t => ({ name: t.name, cnt: String(t.cnt), w: (t.cnt / typeMax * 100) + '%', clr: t.name.includes('FAILED') ? '#DC2626' : '#1E5FC2' })),
+      runs, runCnt: String(runs.length), dRun: dr.id, dSt: dr.st, dStBg: dc[0], dStColor: dc[1],
+      dAlarm: dr.alm, dLot: da.lot_id || '—', dCh: da.chamber_id || '—',
+      dFault: dFailed ? '—' : df.code, dFaultName: dFailed ? '분류 미완료' : df.name,
+      dBasis: dFailed ? 'search_documents Tool 장애로 분류 전 중단' : df.basis,
+      dCause: dFailed ? 'search_documents Tool 장애(TIMEOUT)로 실행 실패. 자동 재처리는 금지 정책이며, 수동 재실행(RUN-0003)으로 완료 처리되었습니다.' :
+        dChain ? 'LOT-260008 ETCH(ETC-01-C1) ET_CF4 R02_OOC 감지. get_equipment_context의 UPSTREAM_OF 조회 결과, 같은 LOT의 상류 PHOTO 공정 이상이 주 기여 원인으로 판단된 연쇄 이상 케이스.' :
+        (dr.rerun ? 'FAILED된 RUN-0002의 수동 재실행 건. ' : '') + df.basis + '. 발생 챔버 ' + (da.chamber_id || '—') + ', ' + (da.recipe_step_name || '—') + ' 스텝에서 감지.',
+      dHasAct: !dFailed && dActKnown, dNoAct: dFailed || !dActKnown,
+      dActCode: dActKnown ? actDisp[dr.act][0] : 'EQP_HOLD',
+      dActWhy: dActKnown ? actDisp[dr.act][1] : df.why,
+      dChain,
+      dDetail: da.detail || '—', dHit: da.hit_cnt || '—', dTools,
+      pendCnt: String(['APR-0001', 'APR-0002'].filter(i => S.apr[i].st === 'PENDING').length),
+      aprCards, hist, toast: S.toast,
+      gPhoCh: gDef.filter(n => n.grp === 'pho').map(mkNode), gEtcCh: gDef.filter(n => n.grp === 'etc').map(mkNode),
+      gSelOn: !!gSel, gSelName: gSel ? gSel.name : '', gSelSt: gSel ? gSel.st : '',
+      gSelBg: gSel ? gSel.bg : '', gSelColor: gSel ? gSel.clr : '', gSelAccent: gSel ? gSel.clr : '#E2E8F0',
+      gSelBorder: gSel && gSel.st === 'CRITICAL' ? '#FECACA' : '#E2E8F0',
+      gSelTotal: gStat ? String(gStat.total) : '0', gSelOos: gStat ? String(gStat.oos) : '0', gSelOoc: gStat ? String(gStat.ooc) : '0',
+      gSelHold: !!(gSel && gSel.hold),
+      docQ: S.docQ, onDocQ: e => this.setState({ docQ: e.target.value }), docFBtns, docChips,
+      docIdle: !rawDocs, docHasResults: docResults.length > 0, docResults,
+      currentLabel: labels[S.menu], currentNum: String(S.menu + 1),
+      kToday: Math.round(kpi.today * p), kTotal: Math.round(kpi.total * p), kPending: Math.round(2 * p),
+      kPass: (85 * p).toFixed(1), kActive: Math.round(10 * p),
+      kTodayOos: kpi.tOos, kTodayOoc: kpi.tOoc, kTotalOos: kpi.aOos, kTotalOoc: kpi.aOoc,
+      date: S.date, onDateChange: (e) => this.setState({ date: e.target.value }),
+      goAgent: () => this.setState({ menu: 3 }), goAlarms: (e) => { e.preventDefault(); this.setState({ menu: 1 }); },
+      retry: () => { this.setState({ override: 'loading' }); setTimeout(() => this.setState({ override: 'normal' }), 900); }
+    };
+  }
+}
+</script>
+</body>
+</html>

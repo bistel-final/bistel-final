@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/* 디자인 토큰 — dc.html 시안에서 추출 */
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-navy: #0f2a5c; /* 사이드바·제목 */
+  --color-brand: #1e5fc2; /* 브랜드 블루 액센트 */
+  --color-brand-light: #2e7be8;
+  --color-teal: #35b5c8;
+  --color-page: #f5f8fc; /* 콘텐츠 배경 */
+  --color-ink: #1e293b; /* 본문 텍스트 */
+  --color-slate: #475569;
+  --color-slate-light: #64748b;
+  --color-line: #e2e8f0;
+  --color-line-soft: #edf2fa;
+  --color-line-input: #cbd5e1;
+  --color-sidebar-dim: #8fa5ce;
+  --color-sidebar-text: #b7c6e4;
+
+  /* 상태색 (연한 배경 + 진한 글자 조합) */
+  --color-oos: #dc2626;
+  --color-oos-soft: #fee2e2;
+  --color-ooc: #d97706;
+  --color-ooc-soft: #fef3c7;
+  --color-ok: #16a34a;
+  --color-ok-soft: #dcfce7;
+}
+
+/* 전역 요소 스타일은 @layer base 안에 둔다 —
+   레이어 밖(unlayered) 규칙은 Tailwind 유틸리티(@layer utilities)를 항상 덮어쓰므로 */
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: var(--font-sans);
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  a {
+    color: #1e5fc2;
+    text-decoration: none;
+  }
+  a:hover {
+    color: #2e7be8;
+    text-decoration: underline;
+  }
+}
+
+@keyframes om-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+@keyframes om-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes om-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+@keyframes om-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes om-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes om-flash {
+  0% {
+    background: #dbeafe;
+    box-shadow: inset 3px 0 0 #1e5fc2;
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+@keyframes om-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes om-pop {
+  from {
+    transform: translate(-50%, -50%) scale(0);
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
