@@ -2,24 +2,45 @@
 
 LangGraph 기반 반도체 FDC 이상감지 에이전트의 FastAPI·React 모노레포입니다.
 
+PHOTO·ETCH 2개 AREA의 센서 데이터(FDC trace)를 WAFER 단위로 요약해 규칙과 이상감지 모델로 감지(Detection)하고, 발생한 알람에 대해 LangGraph 에이전트가 장비 관계(Neo4j)와 장비 매뉴얼(RAG)을 근거로 이상 유형을 분류·원인 분석·조치 권고(Classification)합니다. EQUIPMENT HOLD는 사람 승인(HITL) 후에만 전송하며 전 과정을 감사로그로 기록합니다.
+
 ## 기술 스택
 
-- Python 3.12
-- FastAPI
+- Python 3.12 / FastAPI
 - React 19 / Vite
-- PostgreSQL / pgvector
-- Neo4j
-- LangGraph
+- PostgreSQL 16 + pgvector
+- Neo4j 5 Community
+- LangGraph 0.2.53
 - n8n
 - pytest / Ruff
 
-## 저장소 구조
+## 최종 목표 구조
 
 ```text
-backend/    FastAPI와 AI·Tool
-frontend/   React 데이터 플랫폼
-docs/       공통 문서
+backend/    FastAPI · AI · Tool · 마이그레이션 · 운영 스크립트
+frontend/   React 데이터 플랫폼 (7화면)
+infra/      bootstrap · nginx · n8n workflow          (미생성)
+docs/       사양 원본과 AI 작업 문서
 ```
+
+`infra/`를 비롯한 일부 디렉터리는 해당 산출물이 생기는 시점에 만듭니다. 전체 목표 구조는 [시스템 설계서 2.1](docs/specifications/시스템설계서_v1_2_최종.md)을 따릅니다.
+
+## 문서
+
+**원본 사양** — 기능 동작·수용 기준의 최종 근거
+
+- [요구사항 정의서 v1.8](docs/specifications/요구사항정의서_v1_8_최종.md)
+- [시스템 설계서 v1.2](docs/specifications/시스템설계서_v1_2_최종.md)
+- [역할분담 v9.5](docs/specifications/FDC_프로젝트_역할분담_v9.5\(최종\).md)
+
+**작업 문서**
+
+- [AI 작업 문서](docs/ai-context/README.md) — 라우팅 표 · 문서 우선순위
+- [강제 규칙](docs/ai-context/01-project-rules.md) — 계약·보안·계층·예산
+- [도메인 규칙과 불변 수치](docs/ai-context/02-domain-rules.md)
+- [개발 규칙](docs/development-guide.md) — Git · PR · 테스트 실행
+
+AI 코딩 도구는 `CLAUDE.md`(Claude Code)와 `AGENTS.md`(Codex)를 통해 위 문서로 진입합니다.
 
 ## Backend 실행
 
@@ -32,13 +53,17 @@ cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-`.env`의 PostgreSQL·Neo4j·n8n 주소는 팀이 사용하는 실제 서버로 설정합니다. `.env`는 Git에 커밋하지 않습니다.
+환경변수는 **저장소 루트 `.env`** 에서 관리합니다. PostgreSQL·Neo4j·n8n 주소와 LLM 설정을 팀이 사용하는 실제 서버 값으로 채웁니다. `.env`는 Git에 커밋하지 않습니다.
 
 ## 확인 경로
 
-- Swagger UI: `http://localhost:8000/docs`
-- Liveness: `http://localhost:8000/health`
-- DB readiness: `http://localhost:8000/health/ready`
+| 경로 | 의미 |
+|---|---|
+| `http://localhost:8000/docs` | OpenAPI 문서 |
+| `http://localhost:8000/health` | API 프로세스 생존. 외부 장애와 무관하게 200 |
+| `http://localhost:8000/health/ready` | PostgreSQL·Neo4j·n8n readiness. 하나라도 실패하면 의존성별 상태와 함께 503 |
+
+`/health/ready`가 503이어도 API 프로세스는 종료되지 않습니다.
 
 ## Frontend 실행
 
@@ -67,8 +92,12 @@ npm run lint
 npm run build
 ```
 
-## 문서
+`pytest`는 `backend/pytest.ini` 설정에 따라 **`e2e` 마커가 지정된 테스트를 제외하고 실행**합니다.
 
-- [아키텍처](docs/architecture.md)
-- [API·Tool 계약](docs/contracts.md)
-- [개발 규칙](docs/development-guide.md)
+> **E2E는 격리 DB에서만 실행합니다.** `pytest -m e2e`는 `action_history`·`agent_run`·`approval_request`·`audit_log` 등 실행 데이터를 비운 상태를 전제하므로, 공용 개발 서버에서 실행하면 배포 정답 데이터(ACT-0001~0010)가 손상됩니다.
+>
+> 제외는 **마커 기반**입니다. 모든 E2E 테스트에 `@pytest.mark.e2e`를 반드시 지정합니다. 경로 자동 마킹과 공용 호스트 거부 검사가 구현되기 전까지는 **공용 서버에 연결된 상태에서 E2E를 실행하지 않습니다.** 절차는 [개발 규칙 4장](docs/development-guide.md)을 따릅니다.
+
+## 배포 패키지
+
+기준정보·생산 데이터·문서 임베딩·Neo4j 관계는 멘토 배포패키지로 적재가 완료된 상태입니다. `01_schema.sql`·원본 CSV·`master.cypher`는 **수정하지 않습니다.** 추가 테이블·컬럼·인덱스는 `backend/migrations/`의 별도 마이그레이션으로만 관리합니다.

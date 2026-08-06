@@ -69,4 +69,4 @@ body:
           required: true
         - label: 실제 비밀번호와 `.env`를 커밋하지 않습니다.
           required: true
-        - label: 계약 변경 시 `docs/contracts.md`도 수정합니다.
+        - label: 계약 변경 시 설계서 10장·10.6과 `docs/ai-context/04-api-tool-contracts.md`도 수정합니다.
