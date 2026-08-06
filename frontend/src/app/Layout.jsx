@@ -1,12 +1,13 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
 // 사이드바 7메뉴 — 담당자(C) 인수 영역이므로 최소 구성 유지
+// 경로는 시스템설계서 12.1 라우트 계약을 따른다.
 const MENUS = [
-  { to: '/dashboard', label: '운영 대시보드' },
+  { to: '/', label: '운영 대시보드', end: true },
   { to: '/alarms', label: '알람 목록' },
   { to: '/traces', label: '센서 Trace' },
-  { to: '/agent', label: 'Agent 분석·승인' },
-  { to: '/knowledge', label: '관계·문서 근거' },
+  { to: '/approvals', label: 'Agent 분석·승인' },
+  { to: '/relations', label: '관계·문서 근거' },
   { to: '/analytics', label: '자연어 분석' },
   { to: '/audit-logs', label: '감사로그' },
 ]
@@ -31,6 +32,7 @@ function Layout() {
             <NavLink
               key={m.to}
               to={m.to}
+              end={m.end}
               className={({ isActive }) =>
                 `flex cursor-pointer items-center gap-[11px] rounded-lg border-l-[3px] py-2.5 pl-[9px] pr-3 no-underline transition-colors duration-150 hover:no-underline ${
                   isActive
