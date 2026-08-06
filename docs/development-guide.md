@@ -380,9 +380,11 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`로 **고정**합니다. 저장소 설정에서 merge commit과 rebase를 비활성화했으므로 PR 화면에 다른 선택지가 나오지 않습니다.
 
-### main 브랜치 Ruleset (적용 예정값)
+### main 브랜치 Ruleset (적용값)
 
 **`Settings → Rules → Rulesets` 하나만 사용합니다.** 구형 `Settings → Branches`(Branch protection)와 동시에 만들면 두 규칙이 중첩되고 더 엄격한 쪽이 적용돼 원인 추적이 어려워집니다.
+
+Ruleset 이름은 `main-protection`입니다.
 
 | 설정 | 값 |
 |---|---|
@@ -411,7 +413,7 @@ Actions 장애로 병합이 막히면 **해당 필수 status check만 일시적�
 
 `Dismiss stale approvals`를 켰으므로 승인 후 추가 push를 하면 승인이 취소됩니다. 리뷰 반영 커밋을 올렸다면 다시 승인을 받아야 합니다.
 
-### 저장소 병합 설정 (적용 예정값)
+### 저장소 병합 설정 (적용값)
 
 `Settings → General → Pull Requests`
 
@@ -426,7 +428,22 @@ merge commit을 끄면 `main` 이력이 PR 하나당 커밋 하나로 유지됩�
 
 Ruleset의 `Allowed merge methods`와 함께 이중으로 막습니다.
 
-**실제 설정을 적용한 뒤 위 두 절의 제목에서 「적용 예정값」을 「적용값」으로 바꾸고**, 이후 변경이 필요하면 팀에 공유하고 표를 함께 갱신합니다.
+### 적용 상태 확인
+
+두 표는 실제 설정과 일치해야 합니다. 다음으로 현재 값을 확인할 수 있습니다.
+
+```bash
+gh api repos/bistel-final/bistel-final/rulesets --jq '.[].id' | while read id; do
+  gh api "repos/bistel-final/bistel-final/rulesets/$id" \
+    --jq '{name, enforcement, bypass: (.bypass_actors | length), rules: [.rules[].type]}'
+done
+
+gh api repos/bistel-final/bistel-final \
+  --jq '{squash: .allow_squash_merge, merge: .allow_merge_commit,
+         rebase: .allow_rebase_merge, autodelete: .delete_branch_on_merge}'
+```
+
+설정을 변경하면 팀에 공유하고 위 두 표를 함께 갱신합니다.
 
 ## 10. 병합 후 정리
 
