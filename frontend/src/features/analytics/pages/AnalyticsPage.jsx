@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, LabelList, ResponsiveContainer } from 'recharts'
 import { postQuery, validateSql } from '../../../shared/api/analytics.js'
 import { NL_CHIPS, NL_INITIAL_HISTORY } from '../mock/queries.js'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 
 // dc.html SQL 하이라이팅 토크나이저
 const KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'DESC', 'COUNT', 'AS', 'LIMIT', 'AND']
@@ -57,8 +58,9 @@ function AnalyticsPage() {
     setReverified(null)
     setEditing(false)
     postQuery(query).then((d) => {
+      // mock에 없는 질문: 이력에 남기지 않고 안내 카드로 예시 칩 사용 유도
       if (!d) {
-        setPhase(null)
+        setPhase('unknown')
         return
       }
       after(400, () => {
@@ -151,6 +153,12 @@ function AnalyticsPage() {
           <span className="text-[15px] font-bold text-navy">SQL 생성 중...</span>
           <span className="text-[13px] font-semibold text-slate-light">1/2 단계 · 스키마 매핑</span>
         </div>
+      )}
+      {phase === 'unknown' && (
+        <EmptyState
+          title="이 질문은 데모 mock에 준비되지 않았습니다"
+          description="아래 예시 질문을 사용해 주세요. (실제 API 연결 시에는 모든 자연어 질문이 처리됩니다)"
+        />
       )}
       {phase === 'rejected' && (
         <div className="animate-[om-fadein_.25s] rounded-xl border-2 border-oos bg-white px-[22px] py-5 shadow-[0_4px_16px_rgba(220,38,38,.12)]">

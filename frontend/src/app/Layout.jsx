@@ -32,10 +32,10 @@ function Layout() {
               key={m.to}
               to={m.to}
               className={({ isActive }) =>
-                `flex cursor-pointer items-center gap-[11px] rounded-lg px-3 py-2.5 transition-colors duration-150 hover:no-underline ${
+                `flex cursor-pointer items-center gap-[11px] rounded-lg border-l-[3px] py-2.5 pl-[9px] pr-3 no-underline transition-colors duration-150 hover:no-underline ${
                   isActive
-                    ? 'bg-brand-light font-extrabold text-white hover:text-white'
-                    : 'font-semibold text-sidebar-text hover:bg-[rgba(46,123,232,.35)] hover:text-white'
+                    ? 'border-teal bg-brand-light font-extrabold text-white hover:text-white'
+                    : 'border-transparent font-semibold text-white/70 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
