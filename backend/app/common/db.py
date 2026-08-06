@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Connection, URL
+from sqlalchemy.engine import URL, Connection
 
 from app.common.config import (
     POSTGRES_DB,

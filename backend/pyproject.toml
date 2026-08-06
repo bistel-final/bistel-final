@@ -1,0 +1,7 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# I = import 정렬. 4명이 같은 모듈을 동시에 고치므로 diff 를 줄이려면 필요하다.
+select = ["E", "F", "I", "UP", "B"]
