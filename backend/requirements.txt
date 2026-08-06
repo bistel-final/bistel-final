@@ -34,8 +34,10 @@ langgraph==0.2.53
 langgraph-checkpoint-postgres==2.0.9   # 체크포인트를 PostgreSQL 에 저장 → HITL 재개
 langchain-core==0.3.21
 
-# LLM 제공자 — 사용할 것만 남기고 나머지는 주석 처리해도 된다
-langchain-ollama==0.2.1       # 로컬 Ollama (무료, rate limit 없음)
+# LLM 제공자 — 최종 LLM 은 KOSA 지급 API 다.
+#   provider·호환 방식(OpenAI 호환 여부)이 확인되지 않아 대체 패키지를 아직 정하지 않는다.
+#   확인 후 아래 ollama 를 제거하고 실제 제공자 패키지로 교체한다. (시스템설계서 17장 #3)
+langchain-ollama==0.2.1       # 임시 유지. 최종 배포에서는 사용하지 않는다
 # langchain-google-genai==2.0.6  # Gemini 무료 티어
 # langchain-groq==0.2.1          # Groq 무료 티어
 # langchain-openai==0.2.10       # OpenAI 호환 엔드포인트
@@ -50,11 +52,11 @@ python-frontmatter==1.1.0     # md 파일 YAML 헤더 파싱
 tiktoken==0.8.0               # 토큰 수 계산(청크 크기 조절용)
 
 # ---------------------------------------------------------------------
-# Text2SQL · UI · 평가  (팀원 4)
+# Text2SQL · 평가  (팀원 4)
+#   UI 는 React 로 전환되어 Streamlit 관련 패키지를 제거했다.
+#   화면 차트는 Frontend 에서 처리하고 plotly 는 평가 지표 시각화에만 쓴다.
 # ---------------------------------------------------------------------
-streamlit==1.40.2
-plotly==5.24.1                # 대시보드 차트
-streamlit-agraph==0.0.45      # 관계 그래프 시각화
+plotly==5.24.1                # 평가 결과 차트
 sqlglot==26.0.1               # 생성된 SQL 검증·파싱 (쓰기 구문 차단에 사용)
 
 # ---------------------------------------------------------------------
