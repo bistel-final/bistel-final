@@ -157,7 +157,7 @@ function AnalyticsPage() {
       {phase === 'unknown' && (
         <EmptyState
           title="이 질문은 데모 mock에 준비되지 않았습니다"
-          description="아래 예시 질문을 사용해 주세요. (실제 API 연결 시에는 모든 자연어 질문이 처리됩니다)"
+          description="위의 예시 질문을 사용해 주세요. (실제 API 연결 시에는 모든 자연어 질문이 처리됩니다)"
         />
       )}
       {phase === 'rejected' && (

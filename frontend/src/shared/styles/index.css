@@ -28,25 +28,29 @@
   --color-ok-soft: #dcfce7;
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: var(--font-sans);
-}
+/* 전역 요소 스타일은 @layer base 안에 둔다 —
+   레이어 밖(unlayered) 규칙은 Tailwind 유틸리티(@layer utilities)를 항상 덮어쓰므로 */
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: var(--font-sans);
+  }
 
-#root {
-  height: 100%;
-}
+  #root {
+    height: 100%;
+  }
 
-a {
-  color: #1e5fc2;
-  text-decoration: none;
-}
-a:hover {
-  color: #2e7be8;
-  text-decoration: underline;
+  a {
+    color: #1e5fc2;
+    text-decoration: none;
+  }
+  a:hover {
+    color: #2e7be8;
+    text-decoration: underline;
+  }
 }
 
 @keyframes om-pulse {
