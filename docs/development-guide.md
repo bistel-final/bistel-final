@@ -11,12 +11,91 @@
 → Push
 → Pull Request
 → PR Policy 통과
-→ 팀원 Review
+→ 팀원 Review (승인 1명 이상 필수)
 → Squash and merge
 → 로컬·원격 브랜치 정리
 ```
 
 초기 공통 세팅 이후에는 `main`에 직접 commit 또는 push하지 않습니다.
+
+### 한 작업을 처음부터 끝까지
+
+`FR-A-05` Tool 구현을 예로 든 전체 순서입니다. 각 단계의 상세 규칙은 아래 장에서 다룹니다.
+
+**① Issue 생성** — 무엇을, 왜, 어디까지 하면 끝인지 먼저 적습니다.
+
+```text
+제목  [A] get_fdc_summary Tool 구현
+본문  담당 영역   A
+      목적       Agent 가 WAFER 센서 요약과 한계선을 조회할 수 있게 한다
+      대상 요구사항 FR-A-05
+      완료 기준   잘못된 lot_hist_id 에 ok:false 반환, 예외 미발생
+                 lot_hist_id 당 anomaly_score 정확히 1개
+      선행 작업   #12 (detection/schemas.py)
+```
+
+**② 작업 시작 전 상태 확인** — 작업 유실을 막습니다.
+
+```bash
+cd ~/Desktop/bistel-final
+git status                       # 커밋 안 한 변경이 없는지
+git switch main
+git pull --ff-only origin main   # 최신 main 확보
+```
+
+**③ 브랜치 생성** — `<type>/<area>-<description>` (3장)
+
+```bash
+git switch -c feat/detection-summary-tool
+```
+
+**④ 개발과 로컬 검증** (4장)
+
+```bash
+cd backend
+ruff format . && ruff check . && pytest
+```
+
+**⑤ 커밋** — `<type>: <한 줄 요약>` + 본문에 무엇을 왜 (5장)
+
+```bash
+git add backend/app/detection backend/tests/unit backend/tests/contract
+git commit
+```
+
+**⑥ Push 와 PR 생성** (6·7장)
+
+```bash
+git push -u origin feat/detection-summary-tool
+```
+
+PR 제목은 `[담당영역] 변경 요약`, 본문에 `## 변경 내용`·`## 변경 이유`가 있어야 PR Policy를 통과합니다. Issue를 닫으려면 본문에 `Closes #13`을 넣습니다.
+
+**⑦ 검사와 리뷰 통과** (8·9장) — PR Policy 자동 검사 + **팀원 1명 이상 승인**
+
+**⑧ Squash and merge 후 정리** (10장)
+
+```bash
+git switch main
+git pull --ff-only origin main
+git fetch --prune origin
+git branch -D feat/detection-summary-tool
+```
+
+Squash merge는 브랜치 커밋을 그대로 옮기지 않고 **새 커밋 하나를 만듭니다.** 그래서 `git branch -d`는 "병합되지 않았다"며 실패합니다. `-D`를 쓰되 **PR이 Merged 상태이고 최신 `main`에 변경이 반영된 것을 확인한 뒤** 해당 작업 브랜치에만 사용합니다.
+
+원격 브랜치는 저장소 설정에 의해 자동 삭제됩니다.
+
+### 언제 Issue 없이 진행해도 되나
+
+| 상황 | Issue |
+|---|---|
+| 기능·API·Tool·화면 구현 | 만듭니다 |
+| 버그 수정 | 만듭니다 |
+| 여러 명이 관련되거나 순서가 얽힌 작업 | 만듭니다 |
+| 오타·문서 문구 수정, 설정 한 줄 변경 | 없이 진행해도 됩니다 |
+
+판단 기준은 **"나중에 왜 이렇게 했는지 찾아볼 일이 있는가"** 입니다. PR 본문만으로 설명이 되면 Issue 없이 가도 됩니다.
 
 ## 2. Issue 규칙
 
@@ -87,13 +166,30 @@ chore/integration-docker-compose
 
 ```bash
 git switch main
-git pull origin main
+git pull --ff-only origin main
 git switch -c feat/detection-summary
 ```
 
 ## 4. 개발 및 로컬 검증
 
 각 담당자는 Backend 구현뿐 아니라 실제 서버와 React 연동까지 직접 확인합니다.
+
+### 줄바꿈 (Windows 사용자)
+
+저장소에 `.gitattributes`가 있어 기본 텍스트 파일은 **LF**로 통일하고, Windows 전용 스크립트(`*.bat`·`*.cmd`·`*.ps1`)만 CRLF로 유지합니다. Windows에서도 별도 설정 없이 그대로 쓰면 됩니다.
+
+`*.sh`·`Dockerfile`·`*.sql`은 컨테이너 안에서 실행되므로 CRLF가 섞이면 동작하지 않습니다. 에디터가 CRLF로 저장하지 않도록 확인하세요. VS Code는 우측 하단에 현재 파일의 줄바꿈이 표시됩니다.
+
+변경하지 않은 파일이 `git status`에 뜨면 줄바꿈 문제입니다. 해당 파일·디렉터리만 지정해 정규화합니다. `git add --renormalize .`은 작업 중인 코드까지 전부 stage하므로 범위를 좁히세요.
+
+```bash
+git status
+git add --renormalize <문제가 발생한 파일 또는 디렉터리>
+git diff --cached --check
+git status
+```
+
+### 커밋 전 검증
 
 Backend 변경 시 커밋 전에 실행합니다.
 
@@ -188,6 +284,11 @@ Frontend API 주소는 `frontend/.env`의 `VITE_API_BASE_URL`로 관리합니다
 ```bash
 git add backend/app/detection backend/tests/unit backend/tests/contract frontend/src/features/detection
 
+# 커밋 전 검토 — 의도한 파일만 담겼는지, 공백 오류가 없는지 확인한다
+git diff --cached --check
+git diff --cached --stat
+git status
+
 git commit \
   -m "feat: implement FDC summary API" \
   -m "센서 요약 결과를 Agent와 React에서 사용할 수 있도록 조회 API와 Tool을 추가한다."
@@ -197,7 +298,7 @@ git commit \
 
 테스트 파일은 계층별 폴더에 둡니다. 도메인별 폴더(`tests/detection` 등)를 만들지 않습니다.
 
-목표 구조입니다. 현재는 `tests/test_health.py`만 있으며 각 담당자가 자기 파트를 구현하면서 만듭니다.
+목표 구조입니다. 현재 공통 Unit·Contract 테스트와 `tests/test_health.py`가 있으며, 각 담당자는 자기 파트를 구현하면서 해당 테스트 계층에 테스트를 추가합니다.
 
 ```text
 backend/tests/
@@ -272,26 +373,82 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 ## 9. Review 및 Merge 규칙
 
-- 최소 1명의 다른 팀원이 변경 내용을 확인합니다.
+- **다른 팀원 1명 이상의 승인(Approve)이 있어야 병합할 수 있습니다.** 문서상 권장이 아니라 `main` 브랜치 보호 규칙으로 강제됩니다.
 - PR Policy가 성공한 뒤 병합합니다.
 - API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_2_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
-- 병합 방식은 `Squash and merge`를 권장합니다.
+- 병합 방식은 `Squash and merge`로 **고정**합니다. 저장소 설정에서 merge commit과 rebase를 비활성화했으므로 PR 화면에 다른 선택지가 나오지 않습니다.
+
+### main 브랜치 Ruleset (적용 예정값)
+
+**`Settings → Rules → Rulesets` 하나만 사용합니다.** 구형 `Settings → Branches`(Branch protection)와 동시에 만들면 두 규칙이 중첩되고 더 엄격한 쪽이 적용돼 원인 추적이 어려워집니다.
+
+| 설정 | 값 |
+|---|---|
+| Enforcement status | Active |
+| 대상 브랜치 | `main` |
+| Require a pull request before merging | 켬 |
+| └ Required approvals | **1** |
+| └ Dismiss stale pull request approvals when new commits are pushed | 켬 |
+| └ Require conversation resolution before merging | 켬 |
+| └ Allowed merge methods | **Squash 만** |
+| Require status checks to pass | 켬 |
+| └ 필수 검사 | `PR Policy / Validate PR` |
+| Require branches to be up to date before merging | **끔** |
+| Require linear history | 켬 |
+| Block force pushes | 켬 |
+| Restrict deletions | 켬 |
+| Bypass list | **비움** |
+
+**`Require branches to be up to date`를 끄는 이유** — 4명이 동시에 PR을 올리면 다른 PR이 머지될 때마다 브랜치 갱신과 재승인이 반복됩니다. 각자 다른 영역을 작업하는 동안은 이득보다 마찰이 큽니다.
+
+**Bypass는 비워 둡니다.** 예외를 두면 공통 영역 PR을 올린 사람이 자기 것을 그대로 머지하게 되어 승인 규칙이 무의미해집니다.
+
+Actions 장애로 병합이 막히면 **해당 필수 status check만 일시적으로 제거**하고, 원인을 해결한 뒤 즉시 복원합니다. Ruleset 전체 비활성화는 최후 수단으로만 사용하며, 설정 변경 내용은 팀에 공유하고 Issue 또는 문서에 기록합니다.
+
+**자기 PR은 자기가 승인할 수 없습니다.** 다른 팀원이 승인해야 병합 버튼이 열립니다.
+
+`Dismiss stale approvals`를 켰으므로 승인 후 추가 push를 하면 승인이 취소됩니다. 리뷰 반영 커밋을 올렸다면 다시 승인을 받아야 합니다.
+
+### 저장소 병합 설정 (적용 예정값)
+
+`Settings → General → Pull Requests`
+
+| 설정 | 값 |
+|---|---|
+| Allow squash merging | 켬 (기본 메시지: `Pull request title and description`) |
+| Allow merge commits | **끔** |
+| Allow rebase merging | **끔** |
+| Automatically delete head branches | 켬 |
+
+merge commit을 끄면 `main` 이력이 PR 하나당 커밋 하나로 유지됩니다. 켜져 있으면 PR 화면에서 실수로 고를 수 있고, 실제로 초기 PR 몇 건이 merge commit으로 들어갔습니다.
+
+Ruleset의 `Allowed merge methods`와 함께 이중으로 막습니다.
+
+**실제 설정을 적용한 뒤 위 두 절의 제목에서 「적용 예정값」을 「적용값」으로 바꾸고**, 이후 변경이 필요하면 팀에 공유하고 표를 함께 갱신합니다.
 
 ## 10. 병합 후 정리
 
+GitHub에서 PR이 `Merged` 상태인지 먼저 확인합니다.
+
 ```bash
 git switch main
-git pull origin main
-git branch -d feat/detection-summary
+git pull --ff-only origin main
+git fetch --prune origin
 ```
 
-GitHub PR 화면에서 원격 브랜치도 삭제합니다.
+`main`에 변경이 반영된 것을 확인한 뒤 작업 브랜치를 삭제합니다.
 
-```text
-Delete branch
+```bash
+git branch -D feat/detection-summary
 ```
+
+> **`-d`가 아니라 `-D`인 이유** — Squash merge는 브랜치 커밋을 그대로 옮기지 않고 **새 커밋 하나를 만듭니다.** Git 입장에서 원래 브랜치는 "병합되지 않은" 상태라 `-d`가 거부합니다.
+>
+> `-D`는 병합 여부를 확인하지 않고 지우므로, **PR이 Merged이고 최신 `main`에 변경이 들어온 것을 확인한 뒤 해당 작업 브랜치에만** 사용합니다.
+
+원격 작업 브랜치는 PR 병합 후 저장소 설정(`Automatically delete head branches`)에 의해 자동 삭제됩니다. 자동 삭제되지 않은 경우에만 PR 화면의 `Delete branch`를 사용합니다.
 
 다음 작업은 항상 최신 `main`에서 새 브랜치를 만들어 시작합니다.
 
