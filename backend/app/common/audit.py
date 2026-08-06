@@ -59,7 +59,10 @@ class AuditRecord(BaseModel):
 
     @property
     def entity_type(self) -> AuditEntityType:
-        """이벤트마다 고정이므로 입력으로 받지 않는다. 잘못된 조합 자체를 만들 수 없다."""
+        """이벤트마다 고정이므로 입력으로 받지 않는다.
+
+        잘못된 조합 자체를 만들 수 없게 하려는 목적이다.
+        """
         return EVENT_ENTITY_TYPE[self.event_type]
 
 
