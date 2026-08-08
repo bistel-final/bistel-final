@@ -4,11 +4,7 @@ import { getDashboard } from '../../../shared/api/detection.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 
-const CHAMBER_STYLE = {
-  NORMAL: { accent: '#16A34A', badgeBg: '#DCFCE7', badgeColor: '#16A34A', cardBg: '#FFFFFF', cardBorder: '#E2E8F0' },
-  ALARM: { accent: '#D97706', badgeBg: '#FEF3C7', badgeColor: '#D97706', cardBg: '#FFFFFF', cardBorder: '#E2E8F0' },
-  CRITICAL: { accent: '#DC2626', badgeBg: '#FEE2E2', badgeColor: '#DC2626', cardBg: '#FEF5F5', cardBorder: '#FECACA' },
-}
+const ALL = '전체'
 
 const ruleBadge = (rule, crit) =>
   crit
@@ -17,19 +13,44 @@ const ruleBadge = (rule, crit) =>
       ? { bg: '#FEF3C7', color: '#D97706' }
       : { bg: '#FEE2E2', color: '#DC2626' }
 
+// 눈금 3칸에 맞는 단위 선택 — 전체 스코프(최대 27건)는 dc.html과 같은 0/10/20/30이 된다
+const axisStep = (max) => [1, 2, 5, 10, 20, 50, 100].find((s) => s * 3 >= max) ?? 100
+
+function Dropdown({ label, value, options, onChange }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[13px] font-bold text-slate">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-line-input bg-white px-2.5 py-2 font-mono text-[13.5px] font-bold text-navy"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [date, setDate] = useState('2026-06-04')
-  const [area, setArea] = useState('전체')
+  // 계층 필터: AREA > EQUIPMENT > CHAMBER
+  const [area, setArea] = useState(ALL)
+  const [equipment, setEquipment] = useState(ALL)
+  const [chamber, setChamber] = useState(ALL)
   const [hoverIdx, setHoverIdx] = useState(-1)
   const [flash, setFlash] = useState(false)
   const [p, setP] = useState(0) // KPI count-up 진행도
   const rafRef = useRef()
 
   const load = useCallback(() => {
-    getDashboard('2026-06-04', '전체')
+    getDashboard('2026-06-04', ALL)
       .then(setData)
       .catch((e) => setError(e.message))
   }, [])
@@ -40,14 +61,21 @@ function DashboardPage() {
   // count-up: 1100ms ease-out cubic (dc.html 동작)
   useEffect(() => {
     if (!data) return
-    const t0 = performance.now()
+    // 기준점은 첫 프레임 타임스탬프 — performance.now()와 섞으면 시간축이 어긋나 진행도가 음수가 된다
+    let t0 = null
     const step = (t) => {
-      const x = Math.min(1, (t - t0) / 1100)
+      if (t0 === null) t0 = t
+      const x = Math.min(1, Math.max(0, (t - t0) / 1100))
       setP(1 - Math.pow(1 - x, 3))
       if (x < 1) rafRef.current = requestAnimationFrame(step)
     }
     rafRef.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(rafRef.current)
+    // 프레임이 돌지 않는 환경에서도 최종값이 보이도록 보장
+    const settle = setTimeout(() => setP(1), 1300)
+    return () => {
+      cancelAnimationFrame(rafRef.current)
+      clearTimeout(settle)
+    }
   }, [data])
 
   // 최근 알람 첫 행 LIVE flash (7초 주기)
@@ -67,8 +95,8 @@ function DashboardPage() {
   if (!data)
     return (
       <LoadingState message="대시보드 데이터를 불러오는 중…">
-        <div className="grid grid-cols-5 gap-4">
-          {[1, 2, 3, 4, 5].map((i) => (
+        <div className="grid grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-[118px]" />
           ))}
         </div>
@@ -76,15 +104,38 @@ function DashboardPage() {
       </LoadingState>
     )
 
-  const kpi = data.kpiByArea[area]
-  const days = data.dayByArea[area]
-  const chambers = data.chambers.filter((c) => area === '전체' || c.area === area)
-  const recent = data.recentByArea[area]
+  const areaGroups = area === ALL ? data.hierarchy : data.hierarchy.filter((h) => h.area === area)
+  const eqpOptions = [ALL, ...areaGroups.flatMap((h) => h.equipments.map((e) => e.id))]
+  const chOptions = [
+    ALL,
+    ...areaGroups.flatMap((h) =>
+      h.equipments.filter((e) => equipment === ALL || e.id === equipment).flatMap((e) => e.chambers),
+    ),
+  ]
+  // 가장 좁은 선택이 스코프를 결정한다
+  const scopeKey = chamber !== ALL ? chamber : equipment !== ALL ? equipment : area
+  const scope = data.scopes[scopeKey]
+  const { kpi, days, recent } = scope
+
+  const maxTotal = Math.max(...days.map((d) => d.oos + d.ooc), 1)
+  const step = axisStep(maxTotal)
+  const unitPx = 240 / (step * 3)
+  const isToday = (t) => !t.includes('/')
+
+  const changeArea = (v) => {
+    setArea(v)
+    setEquipment(ALL)
+    setChamber(ALL)
+  }
+  const changeEquipment = (v) => {
+    setEquipment(v)
+    setChamber(ALL)
+  }
 
   return (
     <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-[18px]">
       <div className="flex items-center gap-4">
-        <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">운영 대시보드</div>
+        <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">알람 대시보드</div>
         <div className="ml-auto flex items-center gap-3">
           <input
             type="date"
@@ -92,21 +143,12 @@ function DashboardPage() {
             onChange={(e) => setDate(e.target.value)}
             className="rounded-lg border border-line-input bg-white px-3 py-2 font-mono text-sm font-semibold text-navy"
           />
-          <div className="flex overflow-hidden rounded-lg border border-line-input bg-white">
-            {data.areas.map((a) => (
-              <div
-                key={a}
-                onClick={() => setArea(a)}
-                className="cursor-pointer px-[18px] py-2 text-sm font-bold transition-colors duration-150"
-                style={area === a ? { background: '#1E5FC2', color: '#FFFFFF' } : { background: '#FFFFFF', color: '#475569' }}
-              >
-                {a}
-              </div>
-            ))}
-          </div>
+          <Dropdown label="공정" value={area} options={[ALL, ...data.hierarchy.map((h) => h.area)]} onChange={changeArea} />
+          <Dropdown label="장비" value={equipment} options={eqpOptions} onChange={changeEquipment} />
+          <Dropdown label="챔버" value={chamber} options={chOptions} onChange={setChamber} />
         </div>
       </div>
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
           <div className="text-[13.5px] font-bold text-slate">
             당일 알람 <span className="font-mono">(6/4)</span>
@@ -142,58 +184,18 @@ function DashboardPage() {
             승인 대기
           </div>
           <div className="mt-1.5 font-mono text-4xl font-extrabold text-white">
-            {Math.round(data.pending * p)}
+            {Math.round(scope.pending * p)}
             <span className="ml-[3px] text-[17px] font-bold text-[#D5E2F5]">건</span>
           </div>
           <div className="mt-1.5 text-[13px] font-bold text-white">Agent 분석·승인으로 이동 →</div>
         </div>
         <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
-          <div className="text-[13.5px] font-bold text-slate">계측 PASS율</div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-ok">
-            {(data.passRate * p).toFixed(1)}
-            <span className="ml-[3px] text-[17px] font-bold text-slate">%</span>
-          </div>
-          <div className="mt-1.5 font-mono text-[13px] font-semibold text-slate">{data.passMeta}</div>
-        </div>
-        <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
           <div className="text-[13.5px] font-bold text-slate">활성 조치</div>
           <div className="mt-1.5 font-mono text-4xl font-extrabold text-navy">
-            {Math.round(data.active * p)}
+            {Math.round(scope.active * p)}
             <span className="ml-[3px] text-[17px] font-bold text-slate">건</span>
           </div>
           <div className="mt-1.5 text-[13px] font-semibold text-slate">진행 중 Action</div>
-        </div>
-      </div>
-      <div>
-        <div className="mb-2.5 text-base font-extrabold text-navy">챔버 상태</div>
-        <div className="grid grid-cols-4 gap-4">
-          {chambers.map((ch) => {
-            const st = CHAMBER_STYLE[ch.status]
-            return (
-              <div
-                key={ch.name}
-                className="rounded-xl border border-t-4 px-[18px] py-4 shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]"
-                style={{ background: st.cardBg, borderColor: st.cardBorder, borderTopColor: st.accent }}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="font-mono text-[17px] font-extrabold text-navy">{ch.name}</div>
-                  <span
-                    className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-extrabold tracking-[.3px]"
-                    style={{ background: st.badgeBg, color: st.badgeColor }}
-                  >
-                    {ch.status}
-                  </span>
-                </div>
-                <div className="mt-2.5 text-[13.5px] font-semibold text-slate">{ch.note}</div>
-                {ch.hold && (
-                  <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-oos-soft px-2.5 py-[5px] text-[12.5px] font-extrabold text-oos">
-                    <span className="h-[7px] w-[7px] animate-[om-pulse_1.4s_infinite] rounded-full bg-oos" />
-                    EQP_HOLD 승인 대기
-                  </div>
-                )}
-              </div>
-            )
-          })}
         </div>
       </div>
       <div className="grid grid-cols-[3fr_2fr] gap-4">
@@ -216,9 +218,13 @@ function DashboardPage() {
           <div className="relative h-[264px]">
             <div className="absolute inset-0 bottom-6 left-[30px]">
               <div className="absolute bottom-0 left-0 right-0 border-b-2 border-line-input" />
-              <div className="absolute bottom-20 left-0 right-0 border-b border-line-soft" />
-              <div className="absolute bottom-40 left-0 right-0 border-b border-line-soft" />
-              <div className="absolute bottom-60 left-0 right-0 border-b border-line-soft" />
+              {[1, 2, 3].map((n) => (
+                <div
+                  key={n}
+                  className="absolute left-0 right-0 border-b border-line-soft"
+                  style={{ bottom: step * n * unitPx }}
+                />
+              ))}
               <div className="absolute inset-0 flex items-end justify-around">
                 {days.map((d, i) => (
                   <div
@@ -229,16 +235,16 @@ function DashboardPage() {
                   >
                     <div
                       className="origin-bottom rounded-b bg-oos"
-                      style={{ height: d.oos * 8, animation: `om-grow .7s ${i * 0.12}s cubic-bezier(.2,.8,.3,1) both` }}
+                      style={{ height: d.oos * unitPx, animation: `om-grow .7s ${i * 0.12}s cubic-bezier(.2,.8,.3,1) both` }}
                     />
                     <div
                       className="mb-0.5 origin-bottom rounded-t bg-teal"
-                      style={{ height: d.ooc * 8, animation: `om-grow .7s ${i * 0.12 + 0.1}s cubic-bezier(.2,.8,.3,1) both` }}
+                      style={{ height: d.ooc * unitPx, animation: `om-grow .7s ${i * 0.12 + 0.1}s cubic-bezier(.2,.8,.3,1) both` }}
                     />
                     {hoverIdx === i && (
                       <div
                         className="absolute left-1/2 z-[5] -translate-x-1/2 whitespace-nowrap rounded-lg bg-navy px-[13px] py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(15,42,92,.3)]"
-                        style={{ bottom: (d.oos + d.ooc) * 8 + 12 }}
+                        style={{ bottom: (d.oos + d.ooc) * unitPx + 12 }}
                       >
                         <div className="mb-[3px] font-mono font-extrabold">
                           {d.label} · 총 {d.oos + d.ooc}건
@@ -254,16 +260,16 @@ function DashboardPage() {
               </div>
             </div>
             <div className="absolute bottom-6 left-0 top-0 w-[26px] font-mono text-xs font-semibold text-slate-light">
-              <span className="absolute -bottom-1.5 right-1">0</span>
-              <span className="absolute bottom-[74px] right-1">10</span>
-              <span className="absolute bottom-[154px] right-1">20</span>
-              <span className="absolute bottom-[234px] right-1">30</span>
+              {[0, 1, 2, 3].map((n) => (
+                <span key={n} className="absolute right-1" style={{ bottom: step * n * unitPx - 6 }}>
+                  {step * n}
+                </span>
+              ))}
             </div>
             <div className="absolute bottom-0 left-[30px] right-0 flex h-5 justify-around font-mono text-[13px] font-bold text-slate">
-              <span>6/1</span>
-              <span>6/2</span>
-              <span>6/3</span>
-              <span>6/4</span>
+              {days.map((d) => (
+                <span key={d.label}>{d.label}</span>
+              ))}
             </div>
           </div>
         </div>
@@ -277,7 +283,7 @@ function DashboardPage() {
           </div>
           {recent.length === 0 && (
             <div className="flex flex-1 items-center justify-center rounded-[10px] bg-page text-[14.5px] font-semibold text-slate">
-              선택한 AREA에 해당하는 알람이 없습니다
+              선택한 조건에 해당하는 알람이 없습니다
             </div>
           )}
           <div className="flex flex-col">
@@ -285,11 +291,11 @@ function DashboardPage() {
               const badge = ruleBadge(a.rule, a.crit)
               return (
                 <div
-                  key={a.id + a.rule}
+                  key={a.id}
                   className="grid cursor-pointer grid-cols-[92px_1fr_auto_72px] items-center gap-3 rounded-lg border-b border-line-soft px-2.5 py-[11px] transition-colors duration-150 hover:bg-line-soft"
                   style={{
                     background: a.crit ? '#FEF2F2' : 'transparent',
-                    animation: i === 0 && flash && area !== 'PHOTO' ? 'om-flash 1.8s ease-out' : 'none',
+                    animation: i === 0 && flash && isToday(a.time) ? 'om-flash 1.8s ease-out' : 'none',
                   }}
                 >
                   <span className="font-mono text-sm font-extrabold text-navy">{a.id}</span>

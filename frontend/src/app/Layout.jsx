@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 // 사이드바 7메뉴 — 담당자(C) 인수 영역이므로 최소 구성 유지
 const MENUS = [
-  { to: '/dashboard', label: '운영 대시보드' },
+  { to: '/dashboard', label: '알람 대시보드' },
   { to: '/alarms', label: '알람 목록' },
   { to: '/traces', label: '센서 Trace' },
   { to: '/agent', label: 'Agent 분석·승인' },
