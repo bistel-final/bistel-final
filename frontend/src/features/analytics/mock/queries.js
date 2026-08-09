@@ -14,6 +14,7 @@ export const NL_QUERIES = {
     cols: ['alarm_cnt'],
     rows: [[51]],
     chart: 'demote',
+    visualization: { chart_type: 'table', x: null, y: 'alarm_cnt' },
     lat: 1240,
   },
   '챔버별 알람 건수 내림차순': {
@@ -25,6 +26,7 @@ export const NL_QUERIES = {
       ['ETC-01-C1', 14],
     ],
     chart: 'bar',
+    visualization: { chart_type: 'bar', x: 'chamber_id', y: 'alarm_cnt' },
     stats: [
       ['count', '3'],
       ['mean', '17.0'],
@@ -47,6 +49,7 @@ export const NL_QUERIES = {
     ],
     noSort: true,
     chart: 'demote',
+    visualization: { chart_type: 'table', x: null, y: null },
     lat: 1512,
   },
   '판정별 요약 건수': {
@@ -57,13 +60,24 @@ export const NL_QUERIES = {
       ['OOC', 14],
     ],
     chart: 'bar',
+    visualization: { chart_type: 'bar', x: 'judgement', y: 'cnt' },
     corrected: true, // line → bar 보정 (범주형 x축)
     lat: 1655,
   },
-  '알람 테이블 전부 지워줘': { reject: true, lat: 310 },
+  '알람 테이블 전부 지워줘': {
+    reject: true,
+    reject_code: 'REJECT_NON_SELECT',
+    lat: 310,
+  },
+}
+
+// 정책 위반 사유 — 서버 reject_code ↔ 화면 표기
+export const NL_REJECT_REASONS = {
+  REJECT_NON_SELECT: 'SELECT 외 구문 거부',
+  REJECT_TABLE_NOT_ALLOWED: '허용 목록 밖 테이블',
 }
 
 export const NL_INITIAL_HISTORY = [
   { q: '전체 알람이 몇 건이야?', ok: true, rows: 1, lat: 1240 },
-  { q: '알람 테이블 전부 지워줘', ok: false, rows: 0, lat: 310 },
+  { q: '알람 테이블 전부 지워줘', ok: false, rows: 0, lat: 310, code: 'REJECT_NON_SELECT' },
 ]
