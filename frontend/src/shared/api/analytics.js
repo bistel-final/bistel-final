@@ -1,6 +1,7 @@
 import apiClient, { USE_MOCK, mockResponse } from './client.js'
+import { toIso, page } from './format.js'
 import { NL_QUERIES } from '../../features/analytics/mock/queries.js'
-import { AUDIT_LOGS } from '../../features/analytics/mock/auditLogs.js'
+import { AUDIT_LOGS, AUDIT_EVENT_TYPES } from '../../features/analytics/mock/auditLogs.js'
 
 export function postQuery(question) {
   if (USE_MOCK) return mockResponse(NL_QUERIES[question] ?? null)
@@ -8,12 +9,32 @@ export function postQuery(question) {
 }
 
 export function validateSql(sql) {
-  if (USE_MOCK) return mockResponse({ valid: true, message: '재검증 통과: SELECT-only · LIMIT 강제' })
+  if (USE_MOCK) {
+    // 검증 5항목 — 실제 서버 검증기와 동일 항목 구성
+    const upper = String(sql).toUpperCase()
+    const checks = [
+      { key: 'single_select', label: '단일 SELECT 문', ok: /^\s*SELECT\b/.test(upper) && !/;\s*\S/.test(sql.trim()) },
+      { key: 'allowed_tables', label: '허용 테이블 16종 내', ok: true },
+      { key: 'columns', label: '컬럼 검증 통과', ok: true },
+      { key: 'no_danger', label: '위험 함수 없음', ok: !/(DELETE|UPDATE|INSERT|DROP|ALTER|TRUNCATE|GRANT)\b/.test(upper) },
+      { key: 'limit', label: 'LIMIT 500 강제', ok: /\bLIMIT\b/.test(upper) },
+    ]
+    return mockResponse({ valid: checks.every((c) => c.ok), checks })
+  }
   return apiClient.post('/analytics/validate', { sql }).then((r) => r.data)
 }
 
-// mock에서는 전체 로그 반환 — 필터링·페이지네이션은 화면에서 즉시 수행 (dc.html 동작 동일)
-export function getAuditLogs(filter) {
-  if (USE_MOCK) return mockResponse(AUDIT_LOGS)
+// 집계는 현재 페이지가 아니라 같은 필터 전체 기준 (event_type_counts)
+export function getAuditLogs(filter = {}) {
+  if (USE_MOCK) {
+    const items = AUDIT_LOGS.map((e) => ({ ...e, at: toIso(e.at) }))
+    return mockResponse({
+      ...page(items, filter),
+      event_types: AUDIT_EVENT_TYPES,
+      event_type_counts: Object.fromEntries(
+        AUDIT_EVENT_TYPES.map((t) => [t, AUDIT_LOGS.filter((e) => e.ev === t).length]),
+      ),
+    })
+  }
   return apiClient.get('/audit-logs', { params: filter }).then((r) => r.data)
 }

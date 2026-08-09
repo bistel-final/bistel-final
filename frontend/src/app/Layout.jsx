@@ -4,9 +4,9 @@ import { NavLink, Outlet } from 'react-router-dom'
 const MENUS = [
   { to: '/dashboard', label: '알람 대시보드' },
   { to: '/alarms', label: '알람 목록' },
-  { to: '/traces', label: '센서 Trace' },
-  { to: '/agent', label: 'Agent 분석·승인' },
-  { to: '/knowledge', label: '관계·문서 근거' },
+  { to: '/traces', label: '트레이스 뷰어' },
+  { to: '/agent-runs', label: 'Agent 분석·승인' },
+  { to: '/actions', label: '조치 목록' },
   { to: '/analytics', label: '자연어 분석' },
   { to: '/audit-logs', label: '감사로그' },
 ]
