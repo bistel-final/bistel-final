@@ -36,7 +36,7 @@ const TraceDot = ({ cx, cy, payload }) => {
         fontWeight={800}
         fontFamily="ui-monospace, SF Mono, Menlo, monospace"
       >
-        {payload.y.toFixed(1)}
+        {payload.y}
       </text>
     </g>
   )
