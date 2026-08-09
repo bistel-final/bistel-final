@@ -39,7 +39,7 @@ function RunVerdictCard({ run, anomaly }) {
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded bg-line-soft">
           <div
-            className="h-full rounded bg-brand origin-left animate-[om-grow_.5s_ease-out]"
+            className="h-full animate-[om-fadein_.4s_ease-out] rounded bg-brand"
             style={{ width: `${(confidence ?? 0) * 100}%` }}
           />
         </div>

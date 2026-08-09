@@ -51,7 +51,7 @@ function RunActionCard({ action, rules }) {
 
       <div className="flex flex-col gap-2.5">
         <Row label="조치 코드">
-          <StatusBadge tone={CODE_TONE[action.action_code] ?? 'neutral'} mono className="text-[13px] px-2.5 py-1">
+          <StatusBadge tone={CODE_TONE[action.action_code] ?? 'neutral'} mono>
             {action.action_code}
           </StatusBadge>
           <StatusBadge tone={SEVERITY_TONE[action.severity] ?? 'neutral'} mono>

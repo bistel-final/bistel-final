@@ -102,7 +102,7 @@ function TraceChart({ sensor, series, markers, limits, lim, focus }) {
 
       <div className="h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 26, right: 52, bottom: 6, left: 4 }}>
+          <ComposedChart data={data} margin={{ top: 26, right: 76, bottom: 6, left: 4 }}>
             <CartesianGrid stroke="#EDF2FA" vertical={false} />
             {segments.map((s, i) => (
               <ReferenceArea
@@ -196,7 +196,7 @@ function TraceChart({ sensor, series, markers, limits, lim, focus }) {
                 dataKey={s.key}
                 stroke="#1E5FC2"
                 strokeWidth={focus.has(s.waferNo) ? 3 : 1.8}
-                strokeOpacity={focus.size === 0 || focus.has(s.waferNo) ? 1 : 0.45}
+                strokeOpacity={focus.size === 0 || focus.has(s.waferNo) ? 1 : 0.6}
                 connectNulls={false}
                 dot={dotFor(s.key, lim, focus.has(s.waferNo))}
                 activeDot={false}
