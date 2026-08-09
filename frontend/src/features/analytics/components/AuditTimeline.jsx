@@ -109,24 +109,18 @@ function AuditTimelineItem({ item }) {
 
 function AuditTimeline({ items }) {
   if (items.length === 0) {
-    return (
-      <div className="rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-        <EmptyState title="조건에 맞는 감사 기록이 없습니다" description="기간·이벤트·주체·대상 ID 필터를 조정해 주세요." />
-      </div>
-    )
+    return <EmptyState title="조건에 맞는 감사 기록이 없습니다" description="기간·이벤트·주체·대상 ID 필터를 조정해 주세요." />
   }
   // 날짜가 바뀌는 지점에 구분 헤더를 넣어 생애주기 흐름이 끊기지 않게 한다
-  let prevDate = null
   return (
     <div className="rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
       <div className="max-h-[calc(100vh-330px)] min-h-[320px] overflow-y-auto px-[18px] py-3.5">
         <ol className="relative m-0 list-none p-0">
           {/* 세로 타임라인 축 */}
           <span aria-hidden className="absolute bottom-2 left-[9px] top-2 w-px bg-line" />
-          {items.map((item) => {
+          {items.map((item, i) => {
             const { date } = isoToParts(item.at)
-            const head = date !== prevDate ? date : null
-            prevDate = date
+            const head = i === 0 || date !== isoToParts(items[i - 1].at).date ? date : null
             return (
               <Fragment key={`${item.ev}-${item.entity_id}-${item.at}`}>
                 {head && (
