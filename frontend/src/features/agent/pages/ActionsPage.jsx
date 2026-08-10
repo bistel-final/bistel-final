@@ -1,45 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getActions } from '../../../shared/api/agent.js'
-import { fmtDateTime } from '../../../shared/api/format.js'
+import { fmtShort, isoToParts } from '../../../shared/api/format.js'
 import { ACTION_TABS } from '../mock/actions.js'
+import { sortActions } from '../actionsSort.js'
 import ActionDetailPanel from '../components/ActionDetailPanel.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
-import StatusBadge from '../../../shared/components/StatusBadge.jsx'
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
+import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import {
+  FilterBar,
+  FilterField,
+  FilterSelect,
+  FilterStatic,
+} from '../../../shared/components/ui/FilterField.jsx'
+import {
+  actionCodeVariant,
+  approvalClass,
+  approvalLabel,
+  rowClass,
+  severityClass,
+  CELL_DIM,
+  CELL_ID,
+  CELL_MONO,
+  CELL_SUB,
+  TD_CLS,
+  TH_CLS,
+} from '../../../shared/components/ui/statusStyles.js'
 
-// 값이 없으면 창작하지 않고 "—" 로 표기한다 (규칙: 데이터 창작 금지)
-const DASH = '—'
-
-// 헤더와 행이 같은 트랙을 쓰도록 그리드 템플릿을 한 곳에서 관리한다
-const COLS =
-  'grid-cols-[96px_168px_100px_106px_78px_182px_92px_84px_124px_78px] min-w-[1140px]'
+const ALL = '전체'
 
 // 탭 판정 — 승인 대기만 approval_status, 나머지는 send_status 기준 (명세)
 const matchTab = (a, key) =>
   key === 'ALL' ? true : key === 'PENDING' ? a.approval_status === 'PENDING' : a.send_status === key
 
-// 조치 코드 강조 단계: EQP_HOLD(설비 홀드) 최강 → LOT_HOLD 중간 → MONITOR 약하게
-const CODE_TONE = { EQP_HOLD: 'navy', LOT_HOLD: 'blue', MONITOR: 'muted' }
-const SEVERITY_TONE = { HIGH: 'oos', MEDIUM: 'ooc', LOW: 'neutral' }
-const APPROVAL_LABEL = { AUTO: '자동', PENDING: '승인 대기', APPROVED: '승인 완료' }
-const APPROVAL_TONE = { AUTO: 'info', PENDING: 'ooc', APPROVED: 'ok' }
-const SEND_LABEL = { WAITING: '전송 대기', SENDING: '전송 중', SENT: '전송 완료', FAILED: '전송 실패' }
-const SEND_TONE = { WAITING: 'neutral', SENDING: 'blue', SENT: 'ok', FAILED: 'oos' }
+// 공정은 챔버 ID 앞 세그먼트(ETC·PHO)로 유도한다 — incident 외 값 창작 없음
+const areaOf = (a) => a.incident.chamber_id.split('-')[0]
 
-const HEADERS = [
-  '조치 ID',
-  'incident',
-  '파라미터',
-  '조치 코드',
-  '심각도',
-  '승인',
-  '전송',
-  '알람',
-  '시각',
-  '',
-]
+const HEADERS = ['조치', 'incident', '파라미터', '조치 코드', '심각도', '승인', '전송', '알람', '시각', '']
 
 function ActionsPage() {
   const navigate = useNavigate()
@@ -49,6 +50,9 @@ function ActionsPage() {
   // 기본 선택은 '승인 대기'. 단, ?action=... 딥링크로 들어오면 해당 행이 어느 상태든
   // 보이도록 '전체'에서 시작한다 (초기 렌더에서 한 번만 평가)
   const [tab, setTab] = useState(() => (searchParams.get('action') ? 'ALL' : 'PENDING'))
+  const [area, setArea] = useState(ALL)
+  const [chamber, setChamber] = useState(ALL)
+  const [code, setCode] = useState(ALL)
 
   const load = useCallback(() => {
     getActions()
@@ -68,12 +72,44 @@ function ActionsPage() {
     setSearchParams(next, { replace: true })
   }
 
-  const counts = useMemo(() => {
-    const src = actions ?? []
-    return Object.fromEntries(ACTION_TABS.map((t) => [t.key, src.filter((a) => matchTab(a, t.key)).length]))
-  }, [actions])
+  const src = useMemo(() => actions ?? [], [actions])
 
-  const rows = useMemo(() => (actions ?? []).filter((a) => matchTab(a, tab)), [actions, tab])
+  // 필터 옵션은 incident에서 유도한다 (하드코딩 금지). 설비는 선택 공정에 종속
+  const areaOptions = useMemo(() => [ALL, ...new Set(src.map(areaOf))], [src])
+  const chamberOptions = useMemo(
+    () => [
+      ALL,
+      ...new Set(src.filter((a) => area === ALL || areaOf(a) === area).map((a) => a.incident.chamber_id)),
+    ],
+    [src, area],
+  )
+  const codeOptions = useMemo(() => [ALL, ...new Set(src.map((a) => a.action_code))], [src])
+
+  // 공정 변경 시 무효해진 설비 선택은 핸들러에서 즉시 되돌린다 (useEffect setState 금지)
+  const onArea = (next) => {
+    setArea(next)
+    if (chamber !== ALL && next !== ALL && !chamber.startsWith(next)) setChamber(ALL)
+  }
+
+  // 공정·설비·조치 필터 → 탭 건수도 같은 집합 기준으로 센다
+  const filtered = useMemo(
+    () =>
+      src.filter(
+        (a) =>
+          (area === ALL || areaOf(a) === area) &&
+          (chamber === ALL || a.incident.chamber_id === chamber) &&
+          (code === ALL || a.action_code === code),
+      ),
+    [src, area, chamber, code],
+  )
+
+  const counts = useMemo(
+    () => Object.fromEntries(ACTION_TABS.map((t) => [t.key, filtered.filter((a) => matchTab(a, t.key)).length])),
+    [filtered],
+  )
+
+  // 정렬은 전체 집합에 한 번 — 탭은 같은 순서에 필터만 얹는다 (규칙: PENDING 최상단 → 시각 내림차순)
+  const rows = useMemo(() => sortActions(filtered).filter((a) => matchTab(a, tab)), [filtered, tab])
 
   if (error)
     return (
@@ -89,167 +125,167 @@ function ActionsPage() {
     )
   if (!actions) return <LoadingState message="조치 목록을 불러오는 중…" />
 
-  const alarmSum = rows.reduce((s, a) => s + (a.alarm_count ?? a.alarm_ids.length), 0)
+  // 기간 표시는 데이터의 created_at 범위에서 계산한다 (정적 필터 — 값 창작 금지)
+  const dates = src.map((a) => isoToParts(a.created_at).date).sort()
+  const period = dates.length ? `${dates[0]} ~ ${dates[dates.length - 1].slice(5)}` : '—'
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">조치 목록</div>
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-[64px] items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">조치 목록</div>
+        <div className="text-xs text-g1">incident 단위 · 기간 내 {src.length}건</div>
+      </div>
 
-      {/* 상태 탭 — 건수는 응답 데이터에서 계산한다 (하드코딩 금지). 0건 탭도 회색으로 남긴다 */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-line bg-white px-[18px] py-3 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
+      <FilterBar className="pt-2">
+        <FilterField label="기간">
+          <FilterStatic minWidth={190}>{period}</FilterStatic>
+        </FilterField>
+        <FilterField label="공정">
+          <FilterSelect value={area} onChange={onArea} options={areaOptions} />
+        </FilterField>
+        <FilterField label="설비">
+          <FilterSelect value={chamber} onChange={setChamber} options={chamberOptions} />
+        </FilterField>
+        <FilterField label="조치">
+          <FilterSelect value={code} onChange={setCode} options={codeOptions} />
+        </FilterField>
+      </FilterBar>
+
+      {/* 상태 탭 — 건수는 응답 데이터에서 계산한다 (하드코딩 금지). 활성 탭은 적색 보더+텍스트 */}
+      <div className="flex items-center gap-2.5 pb-4 pt-0.5">
         {ACTION_TABS.map((t) => {
           const on = tab === t.key
-          const cnt = counts[t.key] ?? 0
           return (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className="flex cursor-pointer items-center gap-2 rounded-lg border px-[13px] py-[7px] text-[13.5px] font-bold"
-              style={
-                on
-                  ? { background: '#1E5FC2', color: '#FFFFFF', borderColor: '#1E5FC2' }
-                  : { background: '#FFFFFF', color: cnt === 0 ? '#94A3B8' : '#475569', borderColor: '#CBD5E1' }
-              }
+              className={`inline-flex h-[34px] cursor-pointer items-center gap-2.5 rounded-lg border bg-white px-4 text-[13px] ${
+                on ? 'border-red font-bold text-red' : 'border-line font-semibold text-g1'
+              }`}
             >
-              {t.label}
-              <span
-                className="rounded-md px-1.5 py-px font-mono text-[11.5px] font-extrabold"
-                style={
-                  on
-                    ? { background: 'rgba(255,255,255,.22)', color: '#FFFFFF' }
-                    : cnt === 0
-                      ? { background: '#F1F5F9', color: '#94A3B8' }
-                      : { background: '#EDF2FA', color: '#1E5FC2' }
-                }
-              >
-                {cnt}
-              </span>
+              {t.label} <span className="font-mono text-xs">{counts[t.key] ?? 0}</span>
             </button>
           )
         })}
-        <span className="ml-auto text-[12.5px] font-bold text-slate">
-          {rows.length}건 · 연관 알람 <span className="font-mono text-navy">{alarmSum}</span>건
-        </span>
+        <span className="ml-auto text-xs text-g1">기본은 승인 대기 — 사람이 볼 게 먼저</span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-        <div className={`grid ${COLS} gap-2 border-b border-line bg-page px-4 py-3 text-xs font-extrabold text-slate`}>
-          {HEADERS.map((h, i) => (
-            <span key={h || `col-${i}`}>{h}</span>
-          ))}
-        </div>
-
-        {rows.length === 0 && (
-          <EmptyState
-            title="해당 상태의 조치가 없습니다"
-            description="다른 상태 탭을 선택해 조회해 주세요."
-          />
-        )}
-
-        {rows.map((a) => {
-          const isOpen = openId === a.action_id
-          const isPending = a.approval_status === 'PENDING'
-          const alarmCount = a.alarm_count ?? a.alarm_ids.length
-          return (
-            <div key={a.action_id} className={`min-w-[1140px] ${isOpen ? 'bg-line-soft' : ''}`}>
-              <div
-                onClick={() => toggleOpen(a.action_id)}
-                className={`grid ${COLS} cursor-pointer items-center gap-2 border-b border-line-soft px-4 py-2.5 transition-colors duration-[120ms] hover:bg-line-soft`}
-                style={isOpen ? { boxShadow: 'inset 3px 0 0 #1E5FC2' } : undefined}
-              >
-                <span className="font-mono text-[12.5px] font-extrabold text-brand underline-offset-2 hover:underline">
-                  {a.action_id}
-                </span>
-
-                <span className="flex flex-col leading-tight">
-                  <span className="font-mono text-[12.5px] font-extrabold text-ink">{a.incident.lot_id}</span>
-                  <span className="font-mono text-[11.5px] font-semibold text-slate-light">
-                    {a.incident.chamber_id}
-                  </span>
-                </span>
-
-                <span className="font-mono text-[12.5px] font-bold text-ink">{a.incident.sensor_id}</span>
-
-                <span>
-                  <StatusBadge tone={CODE_TONE[a.action_code] ?? 'neutral'} mono>
-                    {a.action_code}
-                  </StatusBadge>
-                </span>
-
-                <span>
-                  <StatusBadge tone={SEVERITY_TONE[a.severity] ?? 'neutral'} mono>
-                    {a.severity}
-                  </StatusBadge>
-                </span>
-
-                {/* 승인과 전송은 서로 다른 축이므로 컬럼을 분리해 둔다 */}
-                <span className="flex flex-col items-start gap-[3px]">
-                  <StatusBadge tone={APPROVAL_TONE[a.approval_status] ?? 'neutral'}>
-                    {APPROVAL_LABEL[a.approval_status] ?? a.approval_status}
-                  </StatusBadge>
-                  {a.approval_status === 'APPROVED' && (
-                    <span className="font-mono text-[11px] font-semibold text-slate-light">
-                      {a.approved_by || DASH} · {fmtDateTime(a.approved_at) || DASH}
-                    </span>
-                  )}
-                </span>
-
-                <span>
-                  <StatusBadge tone={SEND_TONE[a.send_status] ?? 'neutral'}>
-                    {a.send_status === 'SENDING' && (
-                      <span className="mr-1 h-1.5 w-1.5 animate-[om-pulse_1.2s_ease-in-out_infinite] rounded-full bg-brand" />
-                    )}
-                    {SEND_LABEL[a.send_status] ?? a.send_status}
-                  </StatusBadge>
-                </span>
-
-                {/* 알람 N건 → 해당 알람들만 필터된 알람 목록으로 이동 */}
-                <span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigate(`/alarms?alarms=${a.alarm_ids.join(',')}`)
-                    }}
-                    className="cursor-pointer rounded-md border border-line-input bg-white px-2 py-[3px] font-mono text-[11.5px] font-extrabold text-slate hover:border-brand hover:text-brand"
-                  >
-                    알람 {alarmCount}건
-                  </button>
-                </span>
-
-                {/* TODO(data): action_history.csv 미확보로 created_at이 null인 7건이 있다.
-                    알람 시각에서의 추정 생성은 값 창작이므로 하지 않고 "—"로 둔다 */}
-                <span className="font-mono text-[12.5px] font-semibold text-ink">
-                  {fmtDateTime(a.created_at) || DASH}
-                </span>
-
-                <span>
-                  {isPending && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        navigate(`/agent-runs/${a.run_id}`)
-                      }}
-                      className="cursor-pointer rounded-lg border-none bg-navy px-2.5 py-[6px] font-sans text-[12px] font-bold text-white hover:bg-brand"
-                    >
-                      검토 →
-                    </button>
-                  )}
-                </span>
-              </div>
-
-              {isOpen && (
-                <div className="border-b border-line bg-page px-[18px] py-3.5">
-                  <ActionDetailPanel actionId={a.action_id} />
-                </div>
+      <Card>
+        <CardHeader title="조치" note="조치 시각 내림차순" />
+        <div className="overflow-x-auto px-3 pb-2">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                {HEADERS.map((h, i) => (
+                  <th key={h || `col-${i}`} className={TH_CLS}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={HEADERS.length}>
+                    <EmptyState
+                      title="해당 상태의 조치가 없습니다"
+                      description="다른 상태 탭이나 필터를 선택해 조회해 주세요."
+                    />
+                  </td>
+                </tr>
               )}
-            </div>
-          )
-        })}
-      </div>
+              {rows.map((a, i) => {
+                const isOpen = openId === a.action_id
+                const isPending = a.approval_status === 'PENDING'
+                return (
+                  <ActionRow
+                    key={a.action_id}
+                    action={a}
+                    cls={rowClass(i, { red: isPending, sel: isOpen })}
+                    isOpen={isOpen}
+                    isPending={isPending}
+                    onToggle={() => toggleOpen(a.action_id)}
+                    onReview={() => navigate(`/agent-runs/${a.run_id}`)}
+                  />
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
+  )
+}
+
+function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
+  return (
+    <>
+      <tr className={`cursor-pointer ${cls}`} onClick={onToggle}>
+        <td className={TD_CLS}>
+          <div className={CELL_ID}>{a.action_id}</div>
+          <div className="mt-[3px]">
+            <Link
+              to={`/agent-runs/${a.run_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="font-mono text-[10.5px]"
+            >
+              상세 →
+            </Link>
+          </div>
+        </td>
+        <td className={TD_CLS}>
+          <div className={`${CELL_MONO} font-semibold`}>
+            {a.incident.lot_id} · {a.incident.chamber_id}
+          </div>
+          <div className={CELL_SUB}>LOT · 챔버</div>
+        </td>
+        <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.incident.sensor_id}</td>
+        <td className={TD_CLS}>
+          <Badge variant={actionCodeVariant(a.action_code)}>{a.action_code}</Badge>
+        </td>
+        <td className={`${TD_CLS} ${CELL_MONO} font-bold ${severityClass(a.severity)}`}>{a.severity}</td>
+        <td className={TD_CLS}>
+          <span className={`text-xs font-bold ${approvalClass(a.approval_status)}`}>
+            {approvalLabel(a.approval_status)}
+          </span>
+        </td>
+        <td className={TD_CLS}>
+          {a.send_status === 'SENT' ? <Badge variant="t-green">SENT</Badge> : <span className="text-g2">—</span>}
+        </td>
+        <td className={TD_CLS}>
+          {/* 알람 N건 → 해당 알람들만 필터된 알람 목록으로 이동 */}
+          <Link
+            to={`/alarms?alarms=${a.alarm_ids.join(',')}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`${CELL_MONO} font-bold`}
+          >
+            {a.alarm_count ?? a.alarm_ids.length}건
+          </Link>
+        </td>
+        <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.created_at)}</td>
+        <td className={`${TD_CLS} text-right`}>
+          {isPending && (
+            <Button
+              sm
+              onClick={(e) => {
+                e.stopPropagation()
+                onReview()
+              }}
+            >
+              검토 →
+            </Button>
+          )}
+        </td>
+      </tr>
+      {isOpen && (
+        <tr>
+          <td colSpan={10} className="border-b border-cell-line px-3 pb-3.5 pt-1">
+            <ActionDetailPanel actionId={a.action_id} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
