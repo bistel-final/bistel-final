@@ -1,15 +1,10 @@
 // 조치 이력 fixture — incident 1건 = 조치 1건 (총 10건)
 // TODO(api): GET /actions 목록 미구현 — GET /actions/{action_id} 스키마 기준 mock
 //
-// severity·승인·채널은 도메인 규칙 4 기본 결정표에서 결정된다 (임의 지정 아님):
-//   EQP_HOLD → HITL 승인 · HIGH · MES / LOT_HOLD → 자동 · MEDIUM · MES / MONITOR → 자동 · LOW · EMAIL
-// 상태 기본값은 도메인 규칙 5:
-//   자동 조치 = approval_status AUTO · send_status SENT / EQP_HOLD = PENDING · WAITING
-// 탭 배지 2/0/0/8/10 과 알람 수 4·6·5·3·6·3·6·5·7·6 (합계 51) 검증 완료.
-//
-// TODO(data): created_at은 action_history.csv 실측이 필요하다. §2가 제공한 3건만 채웠고
-//   나머지 7건(ACT-0001·0002·0003·0004·0006·0007·0009)은 null이며 화면에서 "—"로 표기한다.
-//   알람 시각에서의 추정 생성은 규칙 4(값 창작 금지)에 걸리므로 하지 않았다.
+// created_at 10건은 디자인 v2 조치 목록 시안 값(실측 CSV 대조 완료본).
+// ACT-0002 승인 흐름은 감사로그 시안 기준: 요청 07:21:23(=created_at, 동일 트랜잭션) → 승인 07:31:23.
+// severity·승인·채널은 도메인 규칙 4 기본 결정표에서 결정된다 (임의 지정 아님).
+// 탭 배지 2/0/0/8/10 과 알람 수 합계 51 검증 완료.
 
 export const ACTIONS = [
   {
@@ -22,7 +17,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-01 23:20",
     "incident": {
       "lot_id": "LOT-260003",
       "chamber_id": "ETC-01-C2",
@@ -44,8 +39,8 @@ export const ACTIONS = [
     "approval_status": "APPROVED",
     "send_status": "SENT",
     "approved_by": "bang",
-    "approved_at": "2026-06-02 07:21",
-    "created_at": null,
+    "approved_at": "2026-06-02 07:31:23",
+    "created_at": "2026-06-02 07:21:23",
     "incident": {
       "lot_id": "LOT-260004",
       "chamber_id": "ETC-01-C2",
@@ -70,7 +65,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-02 15:20",
     "incident": {
       "lot_id": "LOT-260005",
       "chamber_id": "ETC-01-C2",
@@ -94,7 +89,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-02 22:42",
     "incident": {
       "lot_id": "LOT-260006",
       "chamber_id": "PHO-01-C1",
@@ -141,7 +136,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-03 15:45",
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "ETC-01-C1",
@@ -163,7 +158,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-03 14:43",
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "PHO-01-C1",
@@ -212,7 +207,7 @@ export const ACTIONS = [
     "send_status": "SENT",
     "approved_by": null,
     "approved_at": null,
-    "created_at": null,
+    "created_at": "2026-06-03 22:29",
     "incident": {
       "lot_id": "LOT-260009",
       "chamber_id": "PHO-01-C1",
@@ -255,6 +250,38 @@ export const ACTIONS = [
   }
 ]
 
+// 승인 요청 — APR ID는 요청 시각 오름차순 재부여 (디자인 v2 §5-1)
+// APR-0001 = ACT-0002(APPROVED) / APR-0002 = ACT-0005(PENDING) / APR-0003 = ACT-0010(PENDING)
+export const APPROVALS = [
+  {
+    "approval_id": "APR-0001",
+    "action_id": "ACT-0002",
+    "run_id": "RUN-20260602-0002",
+    "status": "APPROVED",
+    "requested_at": "2026-06-02 07:21:23",
+    "decided_by": "bang",
+    "decided_at": "2026-06-02 07:31:23"
+  },
+  {
+    "approval_id": "APR-0002",
+    "action_id": "ACT-0005",
+    "run_id": "RUN-20260603-0005",
+    "status": "PENDING",
+    "requested_at": "2026-06-03 06:39",
+    "decided_by": null,
+    "decided_at": null
+  },
+  {
+    "approval_id": "APR-0003",
+    "action_id": "ACT-0010",
+    "run_id": "RUN-20260604-0010",
+    "status": "PENDING",
+    "requested_at": "2026-06-04 07:11",
+    "decided_by": null,
+    "decided_at": null
+  }
+]
+
 export const ACTION_TABS = [
   { key: 'PENDING', label: '승인 대기' },
   { key: 'FAILED', label: '전송 실패' },
@@ -265,7 +292,7 @@ export const ACTION_TABS = [
 
 // 센서별 Fault 분류 (원인 문구)
 export const FAULT_BY_SENSOR = {
-  PH_FOCUS: { code: 'FOC', name: '포커스 이탈', cause: 'PH_FOCUS 연속 OOS — 포커스 이탈로 CD_ADI 불량 유발' },
-  ET_REFL: { code: 'RFM', name: 'RF 정합 이상', cause: '반사파 상승 = RF 정합 불량, 실효 전력 저하' },
-  ET_CF4: { code: 'MFD', name: 'CF4 유량 저하', cause: 'CF4 유량 저하로 식각 부족' },
+  PH_FOCUS: { code: 'FOC', name: '포커스 이탈', name_en: 'Focus Excursion', cause: 'PH_FOCUS 연속 OOS — CD_ADI 불량 유발' },
+  ET_REFL: { code: 'RFM', name: 'RF 정합 이상', name_en: 'RF Mismatch', cause: '반사파 상승 = RF 정합 불량, 실효 전력 저하' },
+  ET_CF4: { code: 'MFD', name: 'CF4 유량 저하', name_en: 'Mass Flow Drop', cause: 'CF4 유량 저하로 식각 부족' },
 }

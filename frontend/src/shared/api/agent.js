@@ -1,7 +1,7 @@
 import apiClient, { USE_MOCK, mockResponse } from './client.js'
 import { toIso, page } from './format.js'
 import { RUNS, RUN_TOOL_CALLS, RUN_NODES } from '../../features/agent/mock/runs.js'
-import { ACTIONS, FAULT_BY_SENSOR } from '../../features/agent/mock/actions.js'
+import { ACTIONS, APPROVALS, FAULT_BY_SENSOR } from '../../features/agent/mock/actions.js'
 
 const isoRun = (r) => ({
   ...r,
@@ -31,19 +31,21 @@ export function getRun(runId) {
   return apiClient.get(`/agent/runs/${runId}`).then((r) => r.data)
 }
 
-// 승인 큐 = EQP_HOLD 중 PENDING (도메인 규칙 5)
+// 승인 요청 목록 — APR ID는 요청 시각 오름차순 재부여본 (fixture 참조)
 export function getApprovals() {
   if (USE_MOCK) {
-    const items = ACTIONS.filter((a) => a.approval_status === 'PENDING').map((a) => ({
-      approval_id: `APR-${a.action_id.slice(4)}`,
-      action_id: a.action_id,
-      run_id: a.run_id,
-      action_code: a.action_code,
-      severity: a.severity,
-      incident: a.incident,
-      status: 'PENDING',
-      requested_at: toIso(a.created_at),
-    }))
+    const byAction = Object.fromEntries(ACTIONS.map((a) => [a.action_id, a]))
+    const items = APPROVALS.map((p) => {
+      const a = byAction[p.action_id]
+      return {
+        ...p,
+        requested_at: toIso(p.requested_at),
+        decided_at: toIso(p.decided_at),
+        action_code: a.action_code,
+        severity: a.severity,
+        incident: a.incident,
+      }
+    })
     return mockResponse(page(items))
   }
   return apiClient.get('/approvals').then((r) => r.data)

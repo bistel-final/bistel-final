@@ -1,11 +1,12 @@
 // 감사로그 fixture — append-only, 조회 전용 (쓰기 UI 없음)
-// TODO(api): entity_id 파라미터 제안 반영 대기 — 현 GET /audit-logs 명세에 대상 ID 필터가 없어 클라이언트 필터로 구현
+// TODO(api): entity_id 파라미터 제안 반영 대기 — 클라이언트 필터로 구현
 //
-// 이벤트 유형별 집계 10·8·3·1·0·8·8·0·0 (총 38건)은 다음과 자기정합한다:
-//   런 10건 · 완료 8건 · EQP_HOLD 3건 승인 요청 · 승인 1건(ACT-0002) · 전송 8건 · 실패/반려 0건
-// TODO(data): 시각은 분 단위. AGENT_RUN_STARTED는 incident 최초 알람 occurred_at(실측),
-//   ACT-0002 승인은 §2가 제공한 06-02 07:21(실측), 나머지 전송 이벤트는 그 앵커에 정렬했다.
-//   초 단위와 개별 전송 시각은 audit_log CSV 확보 후 교체 필요.
+// ACT-0002 생애주기는 디자인 v2 감사로그 시안의 실측 시각 그대로:
+//   RUN_STARTED 07:15:02 → APPROVAL_REQUESTED 07:21:23(=action created_at, 동일 트랜잭션)
+//   → ACTION_APPROVED 07:31:23 (HUMAN·bang) → SEND_STARTED 07:31:23 → SENT 07:31:43 → RUN_COMPLETED 07:31:44
+// 나머지 이벤트 시각은 분 단위 실측(incident 최초 알람 / action created_at).
+// TODO(data): 자동 조치 8건의 초 단위 전송 시각은 audit_log CSV 확보 후 교체.
+// 이벤트 유형별 집계 10·8·3·1·0·8·8·0·0 (총 38건) — 시안과 일치 검증.
 
 export const AUDIT_EVENT_TYPES = [
   "AGENT_RUN_STARTED",
@@ -22,546 +23,420 @@ export const AUDIT_EVENT_TYPES = [
 export const AUDIT_LOGS = [
   {
     "ev": "APPROVAL_REQUESTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "approval_request",
-    "entity_id": "APR-0010",
+    "entity_id": "APR-0003",
     "at": "2026-06-04 07:11",
-    "summary": "EQP_HOLD 승인 요청 (ACT-0010)",
     "before": null,
-    "after": {
-      "status": "PENDING"
-    }
+    "after": "status = PENDING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260604-0010",
     "at": "2026-06-04 07:10",
-    "summary": "ALM-0046 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260603-0009",
-    "at": "2026-06-03 23:14",
-    "summary": "분석 완료 · ACT-0008",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
     "entity_id": "ACT-0008",
     "at": "2026-06-03 23:14",
-    "summary": "MES 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
     "entity_id": "ACT-0008",
     "at": "2026-06-03 23:14",
-    "summary": "MES 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260603-0009",
+    "at": "2026-06-03 23:14",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260603-0009",
     "at": "2026-06-03 23:12",
-    "summary": "ALM-0041 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
+  },
+  {
+    "ev": "ACTION_SEND_STARTED",
+    "ac": "SYSTEM",
+    "subject": "backend",
+    "entity": "action_history",
+    "entity_id": "ACT-0009",
+    "at": "2026-06-03 22:29",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
+  },
+  {
+    "ev": "ACTION_SENT",
+    "ac": "SYSTEM",
+    "subject": "n8n",
+    "entity": "action_history",
+    "entity_id": "ACT-0009",
+    "at": "2026-06-03 22:29",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260603-0008",
+    "at": "2026-06-03 22:29",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260603-0008",
     "at": "2026-06-03 22:26",
-    "summary": "ALM-0034 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260603-0008",
-    "at": "2026-06-03 22:26",
-    "summary": "분석 완료 · ACT-0009",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
-    "entity_id": "ACT-0009",
-    "at": "2026-06-03 22:26",
-    "summary": "MES 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "entity_id": "ACT-0006",
+    "at": "2026-06-03 15:45",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
-    "entity_id": "ACT-0009",
-    "at": "2026-06-03 22:26",
-    "summary": "MES 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "entity_id": "ACT-0006",
+    "at": "2026-06-03 15:45",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260603-0007",
+    "at": "2026-06-03 15:45",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260603-0007",
     "at": "2026-06-03 15:43",
-    "summary": "ALM-0031 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260603-0007",
-    "at": "2026-06-03 15:43",
-    "summary": "분석 완료 · ACT-0006",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
-    "entity_id": "ACT-0006",
-    "at": "2026-06-03 15:43",
-    "summary": "EMAIL 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "entity_id": "ACT-0007",
+    "at": "2026-06-03 14:43",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
-    "entity_id": "ACT-0006",
-    "at": "2026-06-03 15:43",
-    "summary": "EMAIL 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "entity_id": "ACT-0007",
+    "at": "2026-06-03 14:43",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260603-0006",
+    "at": "2026-06-03 14:43",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260603-0006",
     "at": "2026-06-03 14:39",
-    "summary": "ALM-0025 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260603-0006",
-    "at": "2026-06-03 14:39",
-    "summary": "분석 완료 · ACT-0007",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
-  },
-  {
-    "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
-    "ac": "SYSTEM",
-    "entity": "action_history",
-    "entity_id": "ACT-0007",
-    "at": "2026-06-03 14:39",
-    "summary": "MES 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
-  },
-  {
-    "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
-    "ac": "SYSTEM",
-    "entity": "action_history",
-    "entity_id": "ACT-0007",
-    "at": "2026-06-03 14:39",
-    "summary": "MES 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "APPROVAL_REQUESTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "approval_request",
-    "entity_id": "APR-0005",
+    "entity_id": "APR-0002",
     "at": "2026-06-03 06:39",
-    "summary": "EQP_HOLD 승인 요청 (ACT-0005)",
     "before": null,
-    "after": {
-      "status": "PENDING"
-    }
+    "after": "status = PENDING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260603-0005",
     "at": "2026-06-03 06:37",
-    "summary": "ALM-0019 incident 분석 시작",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260602-0004",
-    "at": "2026-06-02 22:38",
-    "summary": "ALM-0016 incident 분석 시작",
-    "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260602-0004",
-    "at": "2026-06-02 22:38",
-    "summary": "분석 완료 · ACT-0004",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
     "entity_id": "ACT-0004",
-    "at": "2026-06-02 22:38",
-    "summary": "EMAIL 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "at": "2026-06-02 22:42",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
     "entity_id": "ACT-0004",
-    "at": "2026-06-02 22:38",
-    "summary": "EMAIL 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "at": "2026-06-02 22:42",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260602-0004",
+    "at": "2026-06-02 22:42",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
-    "entity_id": "RUN-20260602-0003",
-    "at": "2026-06-02 15:19",
-    "summary": "ALM-0011 incident 분석 시작",
+    "entity_id": "RUN-20260602-0004",
+    "at": "2026-06-02 22:38",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260602-0003",
-    "at": "2026-06-02 15:19",
-    "summary": "분석 완료 · ACT-0003",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
     "entity_id": "ACT-0003",
-    "at": "2026-06-02 15:19",
-    "summary": "MES 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "at": "2026-06-02 15:20",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
     "entity_id": "ACT-0003",
-    "at": "2026-06-02 15:19",
-    "summary": "MES 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "at": "2026-06-02 15:20",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
   },
   {
     "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260602-0003",
+    "at": "2026-06-02 15:20",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_STARTED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260602-0003",
+    "at": "2026-06-02 15:19",
+    "before": null,
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
     "entity_id": "RUN-20260602-0002",
-    "at": "2026-06-02 07:21",
-    "summary": "분석 완료 · ACT-0002",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "at": "2026-06-02 07:31:44",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
+  },
+  {
+    "ev": "ACTION_SENT",
+    "ac": "SYSTEM",
+    "subject": "n8n",
+    "entity": "action_history",
+    "entity_id": "ACT-0002",
+    "at": "2026-06-02 07:31:43",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
   },
   {
     "ev": "ACTION_APPROVED",
-    "actor": "bang",
     "ac": "HUMAN",
-    "entity": "action_history",
-    "entity_id": "ACT-0002",
-    "at": "2026-06-02 07:21",
-    "summary": "EQP_HOLD 승인",
-    "before": {
-      "approval_status": "PENDING"
-    },
-    "after": {
-      "approval_status": "APPROVED"
-    }
+    "subject": "bang",
+    "entity": "approval_request",
+    "entity_id": "APR-0001",
+    "at": "2026-06-02 07:31:23",
+    "before": "status = PENDING",
+    "after": "status = APPROVED",
+    "note": null
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
     "entity_id": "ACT-0002",
-    "at": "2026-06-02 07:21",
-    "summary": "MES 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
-  },
-  {
-    "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
-    "ac": "SYSTEM",
-    "entity": "action_history",
-    "entity_id": "ACT-0002",
-    "at": "2026-06-02 07:21",
-    "summary": "MES 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260602-0002",
-    "at": "2026-06-02 07:20",
-    "summary": "ALM-0005 incident 분석 시작",
-    "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
+    "at": "2026-06-02 07:31:23",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "APPROVAL_REQUESTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "approval_request",
-    "entity_id": "APR-0002",
-    "at": "2026-06-02 07:20",
-    "summary": "EQP_HOLD 승인 요청 (ACT-0002)",
+    "entity_id": "APR-0001",
+    "at": "2026-06-02 07:21:23",
     "before": null,
-    "after": {
-      "status": "PENDING"
-    }
+    "after": "status = PENDING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "AGENT_RUN_STARTED",
-    "actor": "fdc-agent",
     "ac": "AGENT",
+    "subject": "system",
     "entity": "agent_run",
-    "entity_id": "RUN-20260601-0001",
-    "at": "2026-06-01 23:17",
-    "summary": "ALM-0001 incident 분석 시작",
+    "entity_id": "RUN-20260602-0002",
+    "at": "2026-06-02 07:15:02",
     "before": null,
-    "after": {
-      "status": "RUNNING"
-    }
-  },
-  {
-    "ev": "AGENT_RUN_COMPLETED",
-    "actor": "fdc-agent",
-    "ac": "AGENT",
-    "entity": "agent_run",
-    "entity_id": "RUN-20260601-0001",
-    "at": "2026-06-01 23:17",
-    "summary": "분석 완료 · ACT-0001",
-    "before": {
-      "status": "RUNNING"
-    },
-    "after": {
-      "status": "COMPLETED"
-    }
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   },
   {
     "ev": "ACTION_SEND_STARTED",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "backend",
     "entity": "action_history",
     "entity_id": "ACT-0001",
-    "at": "2026-06-01 23:17",
-    "summary": "EMAIL 전송 시작",
-    "before": {
-      "send_status": "WAITING"
-    },
-    "after": {
-      "send_status": "SENDING"
-    }
+    "at": "2026-06-01 23:20",
+    "before": "send_status = WAITING",
+    "after": "send_status = SENDING",
+    "note": null
   },
   {
     "ev": "ACTION_SENT",
-    "actor": "SYSTEM",
     "ac": "SYSTEM",
+    "subject": "n8n",
     "entity": "action_history",
     "entity_id": "ACT-0001",
+    "at": "2026-06-01 23:20",
+    "before": "send_status = SENDING",
+    "after": "send_status = SENT",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_COMPLETED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260601-0001",
+    "at": "2026-06-01 23:20",
+    "before": "status = RUNNING",
+    "after": "status = COMPLETED",
+    "note": null
+  },
+  {
+    "ev": "AGENT_RUN_STARTED",
+    "ac": "AGENT",
+    "subject": "system",
+    "entity": "agent_run",
+    "entity_id": "RUN-20260601-0001",
     "at": "2026-06-01 23:17",
-    "summary": "EMAIL 전송 완료",
-    "before": {
-      "send_status": "SENDING"
-    },
-    "after": {
-      "send_status": "SENT"
-    }
+    "before": null,
+    "after": "status = RUNNING",
+    "note": "신규 생성 — before 없음"
   }
 ]
