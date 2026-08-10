@@ -1,248 +1,253 @@
-import {
-  ComposedChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ReferenceLine,
-  ReferenceArea,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts'
-import { fmtShort, fmtTime } from '../../../shared/api/format.js'
-import { POINT_COLOR, toneOfValue } from './TraceModel.jsx'
+import { Card } from '../../../shared/components/ui/Card.jsx'
 
-// 파라미터 1개당 차트 1개. x축은 measured_at 시간축이다(포인트 순번이 아니다).
-// 웨이퍼 구간 경계는 실측 occurred_at, 구간 내부 포인트 간격은 렌더링 가정 — TraceModel.buildSeries 주석 참고.
+// 시안 v2 03_트레이스뷰어 차트 — SVG viewBox 1000×260 직접 렌더링 (recharts 제거)
+//
+// 시안과 의도된 차이:
+// - x축은 measured_at 실제 시간축이다 (시안은 18포인트 등간격). 웨이퍼 경계·알람 시점 모두
+//   실측 시각에서 x 를 계산한다. 웨이퍼 내부 포인트 간격은 균등 배치 렌더링 가정 —
+//   TraceModel.buildSeries 주석 참고 (포인트별 measured_at 실측 미확보).
+// - y 변환은 한계선 앵커 고정 선형: 최대 한계선→40.2 · 최소 한계선→191.1
+//   (PH_FOCUS: 60→40.2, 0→115.6, −60→191.1 · y = 115.6 − v×1.2567).
+//   데이터가 캔버스 헤드룸(y 20~212)을 벗어나는 조합에서만 그 방향 앵커를 데이터 극값으로
+//   확장한다 — 시안 검수 조건(LOT-260007 W1·3·5, max 69.377→y 28.4)에서는 발동하지 않는다.
 
-const REF_STYLE = {
-  USL: { color: '#DC2626', width: 2.5, dash: '7 5' },
-  LSL: { color: '#DC2626', width: 2.5, dash: '7 5' },
-  UCL: { color: '#D97706', width: 2, dash: '6 4' },
-  LCL: { color: '#D97706', width: 2, dash: '6 4' },
-  TARGET: { color: '#94A3B8', width: 1.5, dash: undefined },
+// fdc.css 토큰 (SVG 속성은 hex 직접 지정)
+const C = {
+  red: '#B03A4E',
+  amber: '#B97F14',
+  blue: '#2062A8',
+  navy: '#1E3A5C',
+  g1: '#5A6B7E',
+  g2: '#98A5B3',
+  chipBg: '#EBF2F9', // .t-blue
+  chipLine: '#BBD2E8',
+  dash: '#CBD4DE', // .dashed-card
 }
-const MONO = 'ui-monospace, SF Mono, Menlo, monospace'
 
-const dotFor = (key, lim, focused) => (props) => {
-  const { cx, cy, payload, index } = props
-  const v = payload?.[key]
-  const k = `${key}-${index}`
-  if (v == null || cx == null || cy == null) return <g key={k} />
-  const color = POINT_COLOR[toneOfValue(v, lim)]
+const LIMIT_STROKE = { USL: C.red, LSL: C.red, UCL: C.amber, LCL: C.amber, TARGET: C.g2 }
+
+// 시안 좌표계
+const PX0 = 45 // 한계선 좌단
+const PX1 = 945 // 한계선 우단
+const PTX0 = 55 // 포인트 x 도메인
+const PTX1 = 939
+const CHIP_Y = 4
+const CHIP_H = 18
+const BOUND_Y1 = 18
+const BOUND_Y2 = 215
+const LABEL_Y = 235
+const CAPTION_Y = 254
+const Y_TOP = 40.2 // 최대 한계선 y
+const Y_BOT = 191.1 // 최소 한계선 y
+const Y_MIN = 20 // 데이터 허용 헤드룸
+const Y_MAX = 212
+
+// 단위 — 지시서·시안 제공값. 그 외 센서는 단위 실측 미제공
+const SENSOR_UNIT = { PH_FOCUS: 'nm', PH_DOSE: 'mJ/cm²' }
+
+// PH_DOSE 한계선 — 시안 v2 제공값. trace·한계선 모두 fixture 미제공인 센서의 골격에만 사용.
+// TODO(data): fdc_trace.csv 확보 시 catalog.limits 실측으로 대체
+const SKELETON_LIMITS = {
+  PH_DOSE: [
+    { label: 'USL', value: 26 },
+    { label: 'UCL', value: 25.6 },
+    { label: 'TARGET', value: 25 },
+    { label: 'LCL', value: 24.4 },
+    { label: 'LSL', value: 24 },
+  ],
+}
+
+// value → y. 한계선 최대/최소를 40.2/191.1 에 앵커한 선형 변환 (위 주석 참고)
+function scaleOf(limits, values) {
+  const lv = limits.map((l) => l.value)
+  let hiV = Math.max(...lv)
+  let loV = Math.min(...lv)
+  let hiY = Y_TOP
+  let loY = Y_BOT
+  if (hiV === loV) return () => (Y_TOP + Y_BOT) / 2
+  if (values.length) {
+    const k = (loY - hiY) / (hiV - loV)
+    const dMax = Math.max(...values)
+    const dMin = Math.min(...values)
+    if (hiY - (dMax - hiV) * k < Y_MIN) {
+      hiV = dMax
+      hiY = Y_MIN
+    }
+    if (loY + (loV - dMin) * k > Y_MAX) {
+      loV = dMin
+      loY = Y_MAX
+    }
+  }
+  const k = (loY - hiY) / (hiV - loV)
+  return (v) => hiY + (hiV - v) * k
+}
+
+// epoch ms → "HH:MM" (Asia/Seoul 고정 — 실행 환경 타임존에 좌우되지 않게 직접 offset)
+const KST_MS = 9 * 60 * 60 * 1000
+const hhmm = (ms) => new Date(ms + KST_MS).toISOString().slice(11, 16)
+
+// 상단 칩 — t-blue(웨이퍼) / solid blue(강조 웨이퍼) / bg-red(알람)
+function Chip({ x, text, anchor = 'left', tone = 'tint' }) {
+  const w = Math.round(text.length * 6.2) + 18
+  const left = anchor === 'center' ? x - w / 2 : x
+  const fill = tone === 'red' ? C.red : tone === 'solid' ? C.blue : C.chipBg
   return (
-    <g key={k}>
-      {focused && <circle cx={cx} cy={cy} r={7.5} fill="none" stroke={color} strokeWidth={1.5} opacity={0.55} />}
-      <circle cx={cx} cy={cy} r={focused ? 4.6 : 3.8} fill={color} stroke="#FFFFFF" strokeWidth={1.6} />
+    <g>
+      <rect x={left} y={CHIP_Y} rx={9} width={w} height={CHIP_H} fill={fill} stroke={tone === 'tint' ? C.chipLine : 'none'} />
+      <text
+        x={left + w / 2}
+        y={16.5}
+        fontSize={9.5}
+        fontWeight={tone === 'tint' ? 600 : 700}
+        fill={tone === 'tint' ? C.blue : '#fff'}
+        textAnchor="middle"
+      >
+        {text}
+      </text>
     </g>
   )
 }
 
-function TraceTooltip({ active, payload, lim }) {
-  if (!active || !payload?.length) return null
-  const row = payload[0]?.payload
-  const p = row?.meta
-  if (!p) return null
-  const color = POINT_COLOR[toneOfValue(p.value, lim)]
-  return (
-    <div className="rounded-lg border border-line bg-white px-3 py-2 shadow-[0_4px_12px_rgba(15,42,92,.12)]">
-      <div className="font-mono text-[12.5px] font-extrabold text-navy">
-        W{p.waferNo} · {p.step} · P{p.seq}/{p.of}
-      </div>
-      <div className="mt-0.5 font-mono text-[15px] font-extrabold" style={{ color }}>
-        {p.value.toFixed(3)} nm
-      </div>
-      <div className="mt-1 text-[11px] font-semibold text-slate-light">
-        웨이퍼 실측시각 {fmtShort(p.waferAt)} · 구간 내 위치는 균등 배치 가정
-      </div>
-    </div>
-  )
-}
-
-function TraceChart({ sensor, series, markers, limits, lim, focus }) {
+function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new Set(), limits, lim, focus }) {
   const { segments, points, missing } = series
+  const noTrace = segments.length === 0 // 이 센서의 trace 행 자체가 없다 (예: PH_DOSE)
+  const chartLimits = noTrace ? (SKELETON_LIMITS[sensor] ?? limits) : limits
+  const yOf = scaleOf(chartLimits, points.map((p) => p.value))
 
-  if (!points.length) {
-    return (
-      <div className="rounded-xl border border-line bg-white px-[22px] py-5 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-        <div className="mb-2 font-mono text-[15px] font-extrabold text-navy">{sensor}</div>
-        <div className="flex h-[180px] flex-col items-center justify-center gap-2 rounded-[10px] border-2 border-dashed border-line-input bg-page text-center">
-          <div className="text-[15px] font-extrabold text-navy">포인트 실측 미제공</div>
-          <div className="text-[13px] font-semibold text-slate">
-            선택 웨이퍼의 모든 스텝이 <span className="font-mono">points: null</span> 이라 파형을 복원할 수 없습니다.
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const t0 = segments[0]?.start ?? 0
+  const t1 = segments.length ? segments[segments.length - 1].end : 1
+  const xOf = (ms) => PTX0 + ((ms - t0) / Math.max(1, t1 - t0)) * (PTX1 - PTX0)
 
-  const data = points.map((p) => ({ x: p.x, [p.key]: p.value, meta: p }))
-  const values = points.map((p) => p.value)
-  const limitValues = limits.map((l) => l.value)
-  const lo = Math.min(...values, ...limitValues)
-  const hi = Math.max(...values, ...limitValues)
-  const padY = Math.max(6, (hi - lo) * 0.08)
-  const x0 = segments[0].start
-  const x1 = segments[segments.length - 1].end
-  const padX = Math.max(1, (x1 - x0) * 0.03)
-  const tickLabel = new Map(segments.map((s) => [s.start, fmtTime(s.at)]))
-  const focusedWafers = segments.filter((s) => focus.has(s.waferNo))
+  const unit = SENSOR_UNIT[sensor]
+  const poly = points.map((p) => `${xOf(p.x).toFixed(1)},${yOf(p.value).toFixed(1)}`).join(' ')
 
   return (
-    <div className="rounded-xl border border-line bg-white px-[22px] py-5 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-      <div className="mb-3 flex flex-wrap items-baseline gap-2.5">
-        <span className="font-mono text-[15px] font-extrabold text-navy">{sensor}</span>
-        <span className="text-[12px] font-bold text-slate">
-          웨이퍼 {segments.length}장 · 포인트 {points.length}개 · 단위 nm
-        </span>
-        <span className="ml-auto font-mono text-[11.5px] font-bold text-slate-light">
-          {fmtShort(segments[0].at)} ~ {fmtShort(segments[segments.length - 1].at)}
+    <Card className="px-5 pb-2.5 pt-4">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="font-mono text-[14px] font-extrabold text-navy">{sensor}</span>
+        <span className="font-mono text-[11.5px] text-g1">
+          {chamber} · {unit ? `단위 ${unit}` : '단위 실측 미제공'}
         </span>
       </div>
 
-      <div className="h-[300px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 26, right: 76, bottom: 6, left: 4 }}>
-            <CartesianGrid stroke="#EDF2FA" vertical={false} />
-            {segments.map((s, i) => (
-              <ReferenceArea
-                key={`bg-${s.key}`}
-                x1={s.start}
-                x2={s.end}
-                fill={focus.has(s.waferNo) ? 'rgba(30,95,194,.075)' : i % 2 ? 'rgba(15,42,92,.022)' : 'transparent'}
-                stroke="none"
+      <svg viewBox="0 0 1000 260" className="block w-full" fontFamily="IBM Plex Mono, monospace">
+        {/* 한계선 5개 + 좌 값 · 우 이름 라벨 */}
+        {chartLimits.map((l) => {
+          const y = yOf(l.value)
+          const stroke = LIMIT_STROKE[l.label] ?? C.g2
+          const dashed = l.label !== 'TARGET'
+          return (
+            <g key={l.label}>
+              <line
+                x1={PX0}
+                y1={y}
+                x2={PX1}
+                y2={y}
+                stroke={stroke}
+                strokeWidth={1}
+                strokeDasharray={dashed ? '4 4' : undefined}
+                opacity={dashed ? 0.7 : 1}
               />
-            ))}
-            {/* 웨이퍼 경계 구분선 + W# 라벨 */}
-            {segments.map((s) => (
-              <ReferenceLine
-                key={`bd-${s.key}`}
-                x={s.start}
-                stroke="#CBD5E1"
-                strokeDasharray="3 3"
-                label={{
-                  value: `W${s.waferNo}`,
-                  position: 'top',
-                  fill: focus.has(s.waferNo) ? '#1E5FC2' : '#64748B',
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  fontFamily: MONO,
-                }}
-              />
-            ))}
-            {/* 알람 시점 — 세로 점선 + ALM-* 배지 (getAlarms() occurred_at) */}
-            {markers.map((m) => (
-              <ReferenceLine
-                key={`alm-${m.ms}`}
-                x={m.ms}
-                stroke={m.judgement === 'OOS' ? '#DC2626' : '#D97706'}
-                strokeWidth={1.5}
-                strokeDasharray="5 4"
-                label={{
-                  value: m.ids.join(' · '),
-                  position: 'insideBottom',
-                  fill: m.judgement === 'OOS' ? '#DC2626' : '#D97706',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  fontFamily: MONO,
-                }}
-              />
-            ))}
-            {/* 한계선 5개 상시 표시 */}
-            {limits.map((l) => {
-              const st = REF_STYLE[l.label] ?? REF_STYLE.TARGET
-              return (
-                <ReferenceLine
-                  key={l.label}
-                  y={l.value}
-                  stroke={st.color}
-                  strokeWidth={st.width}
-                  strokeDasharray={st.dash}
-                  label={{
-                    value: `${l.label} ${l.value}`,
-                    position: 'right',
-                    fill: st.color === '#94A3B8' ? '#64748B' : st.color,
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                    fontFamily: MONO,
-                  }}
-                />
-              )
-            })}
-            <XAxis
-              dataKey="x"
-              type="number"
-              domain={[x0 - padX, x1]}
-              ticks={segments.map((s) => s.start)}
-              tickFormatter={(v) => tickLabel.get(v) ?? ''}
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: '#475569', fontSize: 11, fontWeight: 700, fontFamily: MONO }}
-            />
-            <YAxis
-              type="number"
-              domain={[lo - padY, hi + padY]}
-              ticks={[...limitValues].sort((a, b) => a - b)}
-              tickFormatter={(v) => String(v)}
-              axisLine={false}
-              tickLine={false}
-              width={46}
-              tick={{ fill: '#64748B', fontSize: 11, fontWeight: 700, fontFamily: MONO }}
-            />
-            <Tooltip content={<TraceTooltip lim={lim} />} />
-            {segments.map((s) => (
-              <Line
-                key={s.key}
-                dataKey={s.key}
-                stroke="#1E5FC2"
-                strokeWidth={focus.has(s.waferNo) ? 3 : 1.8}
-                strokeOpacity={focus.size === 0 || focus.has(s.waferNo) ? 1 : 0.6}
-                connectNulls={false}
-                dot={dotFor(s.key, lim, focus.has(s.waferNo))}
-                activeDot={false}
-                isAnimationActive={false}
-              />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+              <text x={38} y={y + 3} fontSize={9} fill={C.g1} textAnchor="end">
+                {l.value}
+              </text>
+              <text x={950} y={y + 3} fontSize={8.5} fill={stroke}>
+                {l.label}
+              </text>
+            </g>
+          )
+        })}
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] font-bold text-slate">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-oos" />
-          OOS (USL {lim.USL} 초과)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-ooc" />
-          OOC (UCL {lim.UCL} 초과)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-brand" />
-          정상 범위
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-[20px] border-t-2 border-dashed border-oos" />
-          알람 시점
-        </span>
-        {focusedWafers.length > 0 && (
-          <span className="font-mono text-brand">
-            강조: {focusedWafers.map((s) => `W${s.waferNo}`).join(' · ')} (알람 진입 웨이퍼)
-          </span>
+        {/* 웨이퍼 경계 점선 + 상단 칩 (경계 x = occurred_at 실측) */}
+        {segments.map((s, i) => (
+          <g key={s.key}>
+            {i > 0 && (
+              <line
+                x1={xOf(s.start)}
+                y1={BOUND_Y1}
+                x2={xOf(s.start)}
+                y2={BOUND_Y2}
+                stroke={C.g2}
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                opacity={0.7}
+              />
+            )}
+            <Chip
+              x={i === 0 ? PTX0 : xOf(s.start) + 46}
+              text={i === 0 ? `${lot} · W${s.waferNo}` : `W${s.waferNo}`}
+              tone={focus.has(s.waferNo) ? 'solid' : 'tint'}
+            />
+          </g>
+        ))}
+
+        {/* 알람 시점 — 적색 세로 점선 + bg-red 칩 (occurred_at 시간값에서 x 계산) */}
+        {markers.map((m) => (
+          <g key={m.ms}>
+            <line x1={xOf(m.ms)} y1={BOUND_Y1} x2={xOf(m.ms)} y2={BOUND_Y2} stroke={C.red} strokeWidth={1.2} strokeDasharray="3 3" />
+            <Chip x={xOf(m.ms)} anchor="center" text={m.ids.join(' · ')} tone="red" />
+          </g>
+        ))}
+
+        {/* 파형 — 폴리라인 파랑 1.8 + 포인트(흰 채움 파랑 스트로크, R03 대상 USL 초과점은 적색 채움) */}
+        {points.length > 0 && <polyline points={poly} fill="none" stroke={C.blue} strokeWidth={1.8} />}
+        {points.map((p) => {
+          const cx = xOf(p.x)
+          const cy = yOf(p.value)
+          const alarmPt = r03Keys.has(`${p.waferNo}|${p.step}`) && p.value > lim.USL
+          return (
+            <g key={`${p.key}-${p.step}-${p.seq}`}>
+              {focus.has(p.waferNo) && <circle cx={cx} cy={cy} r={6.6} fill="none" stroke={C.blue} strokeWidth={1.2} opacity={0.5} />}
+              <circle cx={cx} cy={cy} r={3.6} fill={alarmPt ? C.red : '#fff'} stroke={C.blue} strokeWidth={1.6}>
+                <title>{`W${p.waferNo} · ${p.step} · P${p.seq}/${p.of} · ${p.value.toFixed(3)}`}</title>
+              </circle>
+            </g>
+          )
+        })}
+
+        {/* 실측 미제공 안내 — 값을 만들지 않는다 */}
+        {points.length === 0 && (
+          <g>
+            <rect x={270} y={84} width={460} height={88} rx={10} fill="#fff" stroke={C.dash} strokeWidth={1.5} strokeDasharray="6 5" />
+            <text x={500} y={122} fontSize={13} fontWeight={700} fill={C.navy} textAnchor="middle">
+              {noTrace ? 'trace 실측 미제공' : '포인트 실측 미제공 — 전 스텝 points: null'}
+            </text>
+            <text x={500} y={146} fontSize={10.5} fill={C.g1} textAnchor="middle">
+              fdc_trace.csv 확보 대기 · TODO(data)
+            </text>
+          </g>
         )}
-      </div>
 
-      {missing.length > 0 && (
-        <div className="mt-2 rounded-lg border border-[#FDE68A] bg-ooc-soft px-3 py-2 text-[11.5px] font-bold text-ooc">
-          포인트 실측 미제공 — {missing.map((m) => `W${m.waferNo}/${m.step}`).join(', ')} 는{' '}
-          <span className="font-mono">points: null</span> 이라 파형을 그리지 않았습니다.
+        {/* 하단 x라벨 — 조회 구간 시작/중간/끝 시각 */}
+        {segments.length > 0 && (
+          <g fontSize={9.5} fill={C.g1}>
+            <text x={PTX0} y={LABEL_Y}>
+              {hhmm(t0)}
+            </text>
+            <text x={(PTX0 + PTX1) / 2} y={LABEL_Y} textAnchor="middle">
+              {hhmm((t0 + t1) / 2)}
+            </text>
+            <text x={PTX1} y={LABEL_Y} textAnchor="end">
+              {hhmm(t1)}
+            </text>
+            <text x={(PTX0 + PTX1) / 2} y={CAPTION_Y} textAnchor="middle" fill={C.g2}>
+              시각
+            </text>
+          </g>
+        )}
+      </svg>
+
+      {missing.length > 0 && points.length > 0 && (
+        <div className="mt-1 font-mono text-[10.5px] text-g2">
+          포인트 실측 미제공: {missing.map((m) => `W${m.waferNo}/${m.step}`).join(', ')} (points: null)
         </div>
       )}
-
-      <div className="mt-1.5 text-[11px] font-semibold text-slate-light">
-        x축 경계(W# 위치)는 웨이퍼 occurred_at 실측값이다. 웨이퍼 구간 내부의 포인트 간격은 균등 배치한 렌더링
-        가정으로, 포인트별 measured_at 실측은 미확보다.
-      </div>
-    </div>
+      {segments.length > 0 && (
+        <div className="mt-0.5 pb-1 text-[10.5px] text-g2">
+          웨이퍼 경계는 occurred_at 실측 · 웨이퍼 내부 포인트 간격은 균등 배치 렌더링 가정 (포인트별 measured_at 실측 미확보)
+        </div>
+      )}
+    </Card>
   )
 }
 

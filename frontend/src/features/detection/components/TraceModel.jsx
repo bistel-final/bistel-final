@@ -28,10 +28,6 @@ export function decorateWafers(wafers) {
 
 export const limitMap = (limits) => Object.fromEntries((limits ?? []).map((l) => [l.label, l.value]))
 
-// 포인트 색·판정 기준은 한계선 데이터(USL/UCL)에서 읽는다
-export const toneOfValue = (v, lim) => (v > lim.USL ? 'oos' : v > lim.UCL ? 'ooc' : 'brand')
-export const POINT_COLOR = { oos: '#DC2626', ooc: '#D97706', brand: '#1E5FC2' }
-
 export function judgeOf(min, max, lim) {
   if (min == null || max == null) return null
   if (max > lim.USL || min < lim.LSL) return 'OOS'
@@ -53,6 +49,11 @@ export function stepOrderOf(alarms) {
 
 export const sortSteps = (names, order) =>
   [...names].sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99) || a.localeCompare(b))
+
+// 시안 v2: PHO-01-C1 은 PH_DOSE 파라미터도 보유하지만 trace fixture 에 실측이 없다
+// (PH_DOSE 알람 0건 → detail 역산 복원 불가). 선택은 가능하게 하고 차트는 골격만 그린다.
+// TODO(data): fdc_trace.csv 확보 시 이 보정 제거 — 옵션이 데이터에서 그대로 유도된다
+const KNOWN_SENSORS_WITHOUT_TRACE = { 'PHO-01-C1': ['PH_DOSE'] }
 
 /**
  * URL 쿼리스트링(raw)을 실제 선택값으로 정규화한다.
@@ -80,7 +81,10 @@ export function resolveFilters(rows, raw = {}) {
   const chamber = pick(chambers, raw.chamber)
   const inChamber = inEquipment.filter((r) => r.chamber_id === chamber)
 
-  const sensorOpts = uniq(inChamber.map((r) => r.sensor_id)).sort()
+  const sensorOpts = uniq([
+    ...inChamber.map((r) => r.sensor_id),
+    ...(KNOWN_SENSORS_WITHOUT_TRACE[chamber] ?? []),
+  ]).sort()
   const askedSensors = (raw.sensors ?? []).filter((s) => sensorOpts.includes(s))
   // 기본값: 챔버가 보유한 전 파라미터
   const sensors = askedSensors.length ? sensorOpts.filter((s) => askedSensors.includes(s)) : sensorOpts

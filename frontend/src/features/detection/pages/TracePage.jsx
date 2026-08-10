@@ -4,6 +4,7 @@ import { getAlarms, getTraceCatalog } from '../../../shared/api/detection.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
 import TraceFilterBar from '../components/TraceFilterBar.jsx'
 import TraceChart from '../components/TraceChart.jsx'
 import TraceSidePanel from '../components/TraceSidePanel.jsx'
@@ -19,13 +20,14 @@ import {
   stepStats,
 } from '../components/TraceModel.jsx'
 
-// 트레이스 뷰어
+// 트레이스 뷰어 — 시안 v2 03_트레이스뷰어
 // - 필터 상태는 전부 쿼리스트링에 직렬화한다 (새로고침·링크 공유 시 동일 화면 복원)
 // - 알람 상세의 "크게 보기"는 ?area=&equipment=&chamber=&sensor=&lot=&wafer= 로 진입한다.
 //   이때 singular `wafer` 는 "선택"이 아니라 "강조" 지시다 — 웨이퍼는 전 장을 그리고 해당 장만 강조한다.
 // - 선택 상태 직렬화에는 복수형 키(sensors / wafers)를 쓴다.
 
 const split = (v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [])
+const isR03 = (a) => String(a.rule_id).startsWith('R03')
 
 function TracePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -103,12 +105,17 @@ function TracePage() {
 
   const charts = f.sensors.map((sensor) => {
     const sRows = selectRows(rows, f, sensor)
+    // 알람 시점 세로선·강조점은 R03(연속 OOS) 알람 기준 — R01/R02 는 우측 알람 카드에만 나열
+    const r03 = scoped.filter((a) => a.sensor_id === sensor && isR03(a))
     return {
       sensor,
       series: buildSeries(sRows, stepOrder),
-      markers: alarmMarkers(scoped.filter((a) => a.sensor_id === sensor)),
+      markers: alarmMarkers(r03),
+      r03Keys: new Set(r03.map((a) => `${a.wafer_no}|${a.recipe_step_name}`)),
     }
   })
+  // 시안 순서: 실측 trace 가 있는 파라미터가 위 (PH_FOCUS → PH_DOSE)
+  charts.sort((a, b) => (b.series.segments.length > 0 ? 1 : 0) - (a.series.segments.length > 0 ? 1 : 0))
 
   const statsBySensor = f.sensors.map((sensor) => {
     const sRows = selectRows(rows, f, sensor)
@@ -127,23 +134,17 @@ function TracePage() {
   })
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">트레이스 뷰어</div>
-        {f.chamber && (
-          <div className="font-mono text-[13px] font-bold text-slate">
-            {f.area} · {f.equipment} · {f.chamber} · {f.lot} · W{f.wafers.join('·')}
-          </div>
-        )}
-        {focus.size > 0 && (
-          <button
-            type="button"
-            onClick={clearFocus}
-            className="ml-auto cursor-pointer rounded-lg border border-line-input bg-white px-3 py-[6px] text-[12px] font-bold text-slate hover:bg-line-soft"
-          >
-            알람 강조 해제 (W{[...focus].join('·')})
-          </button>
-        )}
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">트레이스 뷰어</div>
+        <div className="flex items-center gap-3">
+          {focus.size > 0 && (
+            <Button variant="outline" sm onClick={clearFocus}>
+              알람 강조 해제 (W{[...focus].join('·')})
+            </Button>
+          )}
+          <div className="text-xs text-g1">알람 목록에서 들어오면 조건이 채워진 채로 열린다</div>
+        </div>
       </div>
 
       <TraceFilterBar key={searchParams.toString()} rows={rows} value={f} onSearch={apply} />
@@ -154,27 +155,26 @@ function TracePage() {
           description="AREA·설비·챔버·파라미터·LOT·기간을 조정한 뒤 조회해 주세요."
         />
       ) : (
-        <div className="grid grid-cols-[1fr_340px] items-start gap-3.5">
-          <div className="flex flex-col gap-3.5">
+        <div className="mt-2 flex items-start gap-5">
+          <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
             {charts.map((c) => (
               <TraceChart
                 key={c.sensor}
                 sensor={c.sensor}
+                chamber={f.chamber}
+                lot={f.lot}
                 series={c.series}
                 markers={c.markers}
+                r03Keys={c.r03Keys}
                 limits={limits}
                 lim={lim}
                 focus={focus}
               />
             ))}
           </div>
-          <TraceSidePanel
-            statsBySensor={statsBySensor}
-            anomaly={anomaly}
-            alarms={scoped}
-            lim={lim}
-            focus={focus}
-          />
+          <div className="w-[330px] flex-none">
+            <TraceSidePanel statsBySensor={statsBySensor} anomaly={anomaly} alarms={scoped} lim={lim} focus={focus} />
+          </div>
         </div>
       )}
     </div>
