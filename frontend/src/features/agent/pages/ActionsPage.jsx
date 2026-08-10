@@ -240,7 +240,7 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           </div>
           <div className={CELL_SUB}>LOT · 챔버</div>
         </td>
-        <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.incident.sensor_id}</td>
+        <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.sensor_id}</td>
         <td className={TD_CLS}>
           <Badge variant={actionCodeVariant(a.action_code)}>{a.action_code}</Badge>
         </td>

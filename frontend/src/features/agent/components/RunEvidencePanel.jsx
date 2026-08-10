@@ -46,7 +46,8 @@ function NoTrace({ label }) {
 
 function RunEvidencePanel({ run, runAlarms, allAlarms, catalog, equipmentId }) {
   const inc = run.incident
-  const { lot_id: lot, chamber_id: chamber, sensor_id: sensor, recipe_step_name: step } = inc
+  const { lot_id: lot, chamber_id: chamber } = inc
+  const { sensor_id: sensor, recipe_step_name: step } = run
   const usl = catalog.limits?.find((l) => l.label === 'USL')?.value
 
   // ── ① 문제 파라미터 — fixture trace(웨이퍼 오름차순 × 포인트 순서)에서 좌표 변환 ──

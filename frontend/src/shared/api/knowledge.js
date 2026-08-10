@@ -17,7 +17,7 @@ export function searchDocuments({ query, model_code, top_k = 4 }) {
           .filter((d) => !model_code || model_code === '전체' || d.model === 'COMMON' || d.model === model_code)
           .slice(0, top_k)
       : []
-    return mockResponse({ query, results })
+    return mockResponse({ query, hits: results, count: results.length })
   }
   return apiClient.post('/documents/search', { query, model_code, top_k }).then((r) => r.data)
 }

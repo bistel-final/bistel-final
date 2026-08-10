@@ -52,7 +52,7 @@ function DashActionBand({ pendings, runFailed, sendFailed, onReview }) {
               >
                 <span className="font-mono text-[12.5px] font-bold text-navy">{p.approval_id}</span>
                 <span className="font-mono text-xs">
-                  {p.incident.lot_id} · {p.incident.chamber_id} · {p.incident.sensor_id}
+                  {p.incident.lot_id} · {p.incident.chamber_id} · {p.sensor_id}
                 </span>
                 <Badge variant={actionCodeVariant(p.action_code)}>{p.action_code}</Badge>
                 {p.rule && <span className="font-mono text-[11px] text-g1">{p.rule}</span>}

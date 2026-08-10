@@ -52,7 +52,7 @@ function KnowledgePage() {
       setResults([])
       return
     }
-    searchDocuments({ query: q, model_code: f, top_k: 4 }).then((r) => setResults(r.results))
+    searchDocuments({ query: q, model_code: f, top_k: 4 }).then((r) => setResults(r.hits))
   }
   const changeQuery = (q) => {
     setQuery(q)

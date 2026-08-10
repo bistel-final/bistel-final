@@ -6,7 +6,8 @@ import { WAFER_TRACES, TRACE_LIMITS, TRACE_ANOMALY, MEASURED_STEP_STATS } from '
 import { ACTIONS } from '../../features/agent/mock/actions.js'
 import { RUNS } from '../../features/agent/mock/runs.js'
 
-// incident(LOT+챔버+파라미터) → 조치·런 역인덱스
+// 알람 → 조치·런 역인덱스. incident 키는 (lot_id, chamber_id) 이고
+// 파라미터는 식별 키가 아니라 표시용 형제 필드다 (설계 4.1).
 const actionOfAlarm = {}
 for (const a of ACTIONS) for (const id of a.alarm_ids) actionOfAlarm[id] = a
 const runOfAlarm = {}
@@ -33,7 +34,7 @@ const toItem = (a) => {
     action_id: act?.action_id ?? null,
     action_code: act?.action_code ?? null,
     approval_status: act?.approval_status ?? null,
-    incident: { lot_id: a.lot_id, chamber_id: a.chamber_id, sensor_id: a.sensor_id },
+    incident: { lot_id: a.lot_id, chamber_id: a.chamber_id },
     latest_agent_run_id: run?.run_id ?? null,
     agent_run_status: run?.status ?? null,
   }
@@ -58,16 +59,9 @@ export function getAlarm(alarmId) {
   return apiClient.get(`/alarms/${alarmId}`).then((r) => r.data)
 }
 
-// 웨이퍼 단위 trace. 화면에서 웨이퍼별로 호출해 병합한다.
-export function getTrace(lotHistId, sensor) {
-  if (USE_MOCK) {
-    const w = WAFER_TRACES.find((t) => t.lot_hist_id === lotHistId && (!sensor || t.sensor_id === sensor))
-    return mockResponse(w ? { ...w, occurred_at: toIso(w.occurred_at), limits: TRACE_LIMITS } : null)
-  }
-  return apiClient.get(`/traces/${lotHistId}`, { params: { sensor } }).then((r) => r.data)
-}
-
-// 트레이스 뷰어 필터용 — 전체 웨이퍼 트레이스와 한계선·참고 지표
+// 조회 선택지만 반환한다. 실제 시계열은 searchTraces() 가 준다 (설계 10.2).
+// TODO(front): mock 은 화면 전환 없이 쓰도록 wafers 를 함께 넘긴다.
+//   실제 API 로 바꿀 때 화면이 searchTraces() 를 호출하도록 옮긴다.
 export function getTraceCatalog() {
   if (USE_MOCK) {
     return mockResponse({
@@ -77,5 +71,23 @@ export function getTraceCatalog() {
       measuredStepStats: MEASURED_STEP_STATS,
     })
   }
-  return apiClient.get('/traces').then((r) => r.data)
+  return apiClient.get('/traces/catalog').then((r) => r.data)
+}
+
+// 파라미터 다중 · WAFER 다중 · 기간을 함께 받으므로 POST 를 쓴다 (설계 10.2).
+// query string 에는 배열 표준 표기가 없어 JSON body 로 보낸다.
+export function searchTraces(body = {}) {
+  if (USE_MOCK) {
+    const { sensor_ids, lot_id, wafer_nos, chamber_id, from, to } = body
+    const hit = (w) =>
+      (!sensor_ids?.length || sensor_ids.includes(w.sensor_id)) &&
+      (!lot_id || w.lot_id === lot_id) &&
+      (!wafer_nos?.length || wafer_nos.includes(w.wafer_no)) &&
+      (!chamber_id || w.chamber_id === chamber_id) &&
+      (!from || w.occurred_at >= from) &&
+      (!to || w.occurred_at <= to)
+    const wafers = WAFER_TRACES.filter(hit).map((w) => ({ ...w, occurred_at: toIso(w.occurred_at) }))
+    return mockResponse({ wafers, limits: TRACE_LIMITS, total: wafers.length })
+  }
+  return apiClient.post('/traces/search', body).then((r) => r.data)
 }

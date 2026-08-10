@@ -55,7 +55,7 @@ function ActionDetailPanel({ actionId }) {
     )
   if (!action) return <LoadingState message="조치 상세를 불러오는 중…" />
 
-  const fault = FAULT_BY_SENSOR[action.incident.sensor_id]
+  const fault = FAULT_BY_SENSOR[action.sensor_id]
   const approval = action.approval_status
 
   return (
@@ -75,7 +75,7 @@ function ActionDetailPanel({ actionId }) {
           </span>
         </Field>
         <Field label="파라미터">
-          <span className="font-mono font-bold">{action.incident.sensor_id}</span>
+          <span className="font-mono font-bold">{action.sensor_id}</span>
         </Field>
         <Field label="발송 채널">
           <span className="font-mono font-bold">{action.channel || DASH}</span>
