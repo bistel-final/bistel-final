@@ -1,146 +1,76 @@
-// 감사로그 타임라인 — append-only 기록의 세로 축 뷰 (조회 전용, 상태 변경 UI 없음)
-import { Fragment } from 'react'
-import { isoToParts } from '../../../shared/api/format.js'
+// 감사로그 타임라인 — append-only 기록의 세로 dot·rail 뷰 (조회 전용, 쓰기 UI 없음). 디자인 v2 07.
+// fixture 구조: ev/ac/subject/entity/entity_id/at(ISO)/before·after("status = …" 문자열)/note
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import StateBox from '../../../shared/components/ui/StateBox.jsx'
+import { actorVariant } from '../../../shared/components/ui/statusStyles.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 
-// 이벤트명 색: FAILED/REJECTED → oos · SENT/COMPLETED/APPROVED → ok · REQUESTED → ooc · 그 외 brand
-const evTone = (ev) =>
-  ev.includes('FAILED') || ev.includes('REJECTED')
-    ? { bg: '#FEE2E2', fg: '#DC2626' }
-    : ev.includes('SENT') || ev.includes('COMPLETED') || ev.includes('APPROVED')
-      ? { bg: '#DCFCE7', fg: '#16A34A' }
-      : ev.includes('REQUESTED')
-        ? { bg: '#FEF3C7', fg: '#D97706' }
-        : { bg: '#EDF2FA', fg: '#1E5FC2' }
+// dot 색 — 이벤트: APPROVED/SENT → green · REQUESTED → amber · 그 외 → blue
+const dotClass = (ev) =>
+  ev.includes('APPROVED') || ev.includes('SENT') ? 'bg-green' : ev.includes('REQUESTED') ? 'bg-amber' : 'bg-blue'
 
-// 주체 배지: AGENT 파랑 계열 · HUMAN navy 솔리드 · SYSTEM 회색
-const acTone = (ac) =>
-  ac === 'HUMAN'
-    ? { bg: '#0F2A5C', fg: '#FFFFFF' }
-    : ac === 'AGENT'
-      ? { bg: '#DBEAFE', fg: '#1E5FC2' }
-      : { bg: '#F1F5F9', fg: '#475569' }
-
-function AuditChangeChips({ before, after }) {
-  const keys = [...Object.keys(after ?? {}), ...Object.keys(before ?? {}).filter((k) => !(k in (after ?? {})))]
-  if (keys.length === 0) {
-    return <span className="text-[12.5px] font-semibold text-slate-light">상태 변경 없음 (기록 전용 이벤트)</span>
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-      {keys.map((k) => {
-        const hasBefore = before != null && k in before
-        return (
-          <span key={k} className="inline-flex items-center gap-1.5">
-            {hasBefore ? (
-              <span
-                className="rounded-md px-2 py-[3px] font-mono text-[11.5px] font-extrabold"
-                style={{ background: '#F1F5F9', color: '#475569' }}
-              >
-                {k}: {String(before[k])}
-              </span>
-            ) : (
-              // 신규 생성 건 — 이전 상태가 존재하지 않는다
-              <span
-                className="rounded-md border border-dashed px-2 py-[3px] text-[11.5px] font-bold"
-                style={{ borderColor: '#CBD5E1', color: '#64748B' }}
-              >
-                before 없음
-              </span>
-            )}
-            <span aria-hidden className="font-mono text-[12px] font-extrabold text-slate-light">
-              →
-            </span>
-            <span
-              className="rounded-md px-2 py-[3px] font-mono text-[11.5px] font-extrabold"
-              style={{ background: '#DCFCE7', color: '#16A34A' }}
-            >
-              {k}: {after && k in after ? String(after[k]) : '—'}
-            </span>
-          </span>
-        )
-      })}
-    </div>
-  )
+// "MM-DD HH:mm[:ss]" — 분 단위 실측(ISO 변환 시 :00 패딩)은 초를 표기하지 않는다.
+// TODO(data): audit_log CSV로 초 단위 확보 시 패딩 판별 없이 그대로 노출.
+const fmtAt = (iso) => {
+  const [date, rest] = String(iso).split('T')
+  const time = (rest ?? '').slice(0, 8)
+  return `${date.slice(5)} ${time.endsWith(':00') ? time.slice(0, 5) : time}`
 }
 
-function AuditTimelineItem({ item }) {
-  const { date, time } = isoToParts(item.at)
-  const ev = evTone(item.ev)
-  const ac = acTone(item.ac)
+function AuditTimeline({ items, title, note }) {
   return (
-    <li className="relative pl-8">
-      {/* 타임라인 노드 */}
-      <span
-        aria-hidden
-        className="absolute left-[3px] top-[18px] h-[13px] w-[13px] rounded-full border-2 border-white"
-        style={{ background: ev.fg, boxShadow: `0 0 0 2px ${ev.bg}` }}
-      />
-      <div className="my-1.5 rounded-xl border border-line-soft bg-white px-3.5 py-3 transition-colors duration-[120ms] hover:border-line hover:bg-page">
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className="rounded-md px-2 py-[3px] font-mono text-[11.5px] font-extrabold"
-            style={{ background: ev.bg, color: ev.fg }}
-          >
-            {item.ev}
-          </span>
-          <span
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-[3px] text-[11.5px] font-extrabold"
-            style={{ background: ac.bg, color: ac.fg }}
-          >
-            {item.ac}
-            <span className="font-mono font-bold opacity-85">{item.actor}</span>
-          </span>
-          <span className="font-mono text-[12.5px] font-semibold text-slate">
-            {item.entity} <span className="font-extrabold text-navy">{item.entity_id}</span>
-          </span>
-          <span className="ml-auto font-mono text-[12.5px] font-bold text-slate-light">
-            {date} {time}
-          </span>
+    <Card className="min-w-0 flex-1">
+      <CardHeader title={title} note={note} />
+      {items.length === 0 ? (
+        <div className="px-5 pb-5">
+          <EmptyState
+            title="조건에 맞는 감사 기록이 없습니다"
+            description="이벤트·주체·대상 ID 필터를 조정해 주세요."
+          />
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="text-[13px] font-semibold text-ink">{item.summary}</span>
-          <AuditChangeChips before={item.before} after={item.after} />
+      ) : (
+        <div className="flex flex-col px-5 pb-5 pt-1">
+          {items.map((e, i) => (
+            <div key={`${e.ev}-${e.entity_id}-${e.at}`} className="flex gap-4 pb-3.5">
+              <div className="flex w-3 flex-none flex-col items-center">
+                <span className={`mt-4 h-3 w-3 flex-none rounded-full ${dotClass(e.ev)}`} />
+                {i < items.length - 1 && <span className="mt-1 w-0.5 flex-1 bg-line" />}
+              </div>
+              {/* 항목 카드 배경 — 시안 값: HUMAN 이벤트 #FBF8F8 · 그 외 #FBFCFD */}
+              <div
+                className="min-w-0 flex-1 rounded-[10px] border border-line px-[18px] py-4"
+                style={{ background: e.ac === 'HUMAN' ? '#FBF8F8' : '#FBFCFD' }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[13px] font-extrabold text-navy">{e.ev}</span>
+                  <Badge variant={actorVariant(e.ac)}>{e.ac}</Badge>
+                  <span className="ml-auto font-mono text-[11px] text-g1">{fmtAt(e.at)}</span>
+                </div>
+                <div className="mt-2.5 flex gap-6">
+                  <span className="font-mono text-[11.5px] text-g1">
+                    {e.entity} · {e.entity_id}
+                  </span>
+                  <span className="text-[11.5px] text-g1">
+                    주체 <span className="font-mono font-semibold text-ink">{e.subject}</span>
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3.5">
+                  {e.before && (
+                    <>
+                      <StateBox tone="red">{e.before}</StateBox>
+                      <span className="text-g2">→</span>
+                    </>
+                  )}
+                  <StateBox tone="green">{e.after}</StateBox>
+                  {e.note && <span className="text-[11.5px] text-g1">{e.note}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-    </li>
-  )
-}
-
-function AuditTimeline({ items }) {
-  if (items.length === 0) {
-    return <EmptyState title="조건에 맞는 감사 기록이 없습니다" description="기간·이벤트·주체·대상 ID 필터를 조정해 주세요." />
-  }
-  // 날짜가 바뀌는 지점에 구분 헤더를 넣어 생애주기 흐름이 끊기지 않게 한다
-  return (
-    <div className="rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-      <div className="max-h-[calc(100vh-330px)] min-h-[320px] overflow-y-auto px-[18px] py-3.5">
-        <ol className="relative m-0 list-none p-0">
-          {/* 세로 타임라인 축 */}
-          <span aria-hidden className="absolute bottom-2 left-[9px] top-2 w-px bg-line" />
-          {items.map((item, i) => {
-            const { date } = isoToParts(item.at)
-            const head = i === 0 || date !== isoToParts(items[i - 1].at).date ? date : null
-            return (
-              <Fragment key={`${item.ev}-${item.entity_id}-${item.at}`}>
-                {head && (
-                  <li className="relative list-none pl-8">
-                    <span
-                      aria-hidden
-                      className="absolute left-[5px] top-[13px] h-[9px] w-[9px] rounded-sm bg-line-input"
-                    />
-                    <div className="mt-2.5 pb-0.5 font-mono text-[12px] font-extrabold tracking-[.3px] text-slate-light">
-                      {head}
-                    </div>
-                  </li>
-                )}
-                <AuditTimelineItem item={item} />
-              </Fragment>
-            )
-          })}
-        </ol>
-      </div>
-    </div>
+      )}
+    </Card>
   )
 }
 

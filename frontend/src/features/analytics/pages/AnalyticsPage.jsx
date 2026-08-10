@@ -1,7 +1,11 @@
+// 자연어 분석 — 디자인 v2 06 (읽기 전용 · 허용 테이블 16종)
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { postQuery, validateSql } from '../../../shared/api/analytics.js'
 import { NL_CHIPS, NL_INITIAL_HISTORY, NL_REJECT_REASONS } from '../mock/queries.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
+import { Card } from '../../../shared/components/ui/Card.jsx'
 import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
@@ -10,6 +14,17 @@ import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
 
 const rejectReason = (code) => NL_REJECT_REASONS[code] ?? NL_REJECT_REASONS.REJECT_NON_SELECT
+
+// 단계 진행 표시 카드 (SQL 생성 / 쿼리 실행)
+function PhaseCard({ label, note }) {
+  return (
+    <Card className="flex items-center gap-3 p-[22px]">
+      <span className="h-[18px] w-[18px] animate-[om-spin_.8s_linear_infinite] rounded-full border-[3px] border-tint-blue border-t-blue" />
+      <span className="text-sm font-bold text-navy">{label}</span>
+      <span className="text-xs text-g1">{note}</span>
+    </Card>
+  )
+}
 
 function AnalyticsPage() {
   const [question, setQuestion] = useState('')
@@ -93,13 +108,6 @@ function AnalyticsPage() {
     })
   }
 
-  const run = () => {
-    if (!def) return
-    clearTimers()
-    setPhase('run')
-    after(800, () => setPhase('done'))
-  }
-
   const reverify = () => {
     setEditing(false)
     verify(sqlText, true)
@@ -134,68 +142,68 @@ function AnalyticsPage() {
   const hasSql = (phase === 'run' || phase === 'done') && def && !def.reject
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">
-          자연어 분석{' '}
-          <span className="ml-1.5 rounded-md border border-[#BFDBFE] bg-[#F0F6FF] px-2.5 py-[3px] align-middle font-mono text-[13px] font-extrabold text-brand">
-            Text2SQL
-          </span>
-        </div>
-        <span className="ml-auto rounded-md border border-line bg-white px-3 py-[6px] font-mono text-[12.5px] font-extrabold text-slate">
-          읽기 전용 · 허용 테이블 16종
-        </span>
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">자연어 분석</div>
+        <div className="text-xs text-g1">읽기 전용 · 허용 테이블 16종</div>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-3.5 xl:grid-cols-[minmax(0,1fr)_312px]">
-        <div className="flex min-w-0 flex-col gap-3.5">
-          <div className="flex flex-col gap-3 rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-            <div className="flex gap-2.5">
-              <input
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') ask(e.target.value)
-                }}
-                placeholder="데이터에 대해 질문하세요 (예: 챔버별 알람 건수)"
-                className="min-w-0 flex-1 rounded-[10px] border-[1.5px] border-line-input px-4 py-3 text-[15px] font-medium text-ink focus:border-brand focus:outline-none"
-              />
+      <Card className="px-5 py-[18px]">
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') ask(e.target.value)
+            }}
+            placeholder="데이터에 대해 질문하세요 (예: 챔버별 알람 건수)"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-white px-3 font-mono text-sm text-ink focus:border-blue focus:outline-none"
+          />
+          <Button onClick={() => ask(question)} className="flex-none" style={{ height: 44, padding: '0 34px' }}>
+            질문
+          </Button>
+        </div>
+        {/* 예시 칩 — 클릭 = 질문 실행. '지워줘'(거부 유도)만 적색 틴트 */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {NL_CHIPS.map((q) => {
+            const danger = q.includes('지워줘')
+            return (
               <button
-                onClick={() => ask(question)}
-                className="cursor-pointer rounded-[10px] border-none bg-brand px-[26px] py-3 font-sans text-[15px] font-extrabold text-white hover:bg-brand-light"
+                key={q}
+                type="button"
+                onClick={() => ask(q)}
+                className={`inline-flex h-7 cursor-pointer items-center rounded-full border px-4 font-sans text-[11.5px] font-semibold ${
+                  danger ? 'border-tint-red-line bg-tint-red text-red' : 'border-tint-blue-line bg-tint-blue text-blue'
+                }`}
               >
-                질문
+                {q}
               </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {NL_CHIPS.map((q) => {
-                const danger = q.includes('지워줘')
-                return (
-                  <div
-                    key={q}
-                    onClick={() => ask(q)}
-                    className="cursor-pointer rounded-full border px-3.5 py-1.5 text-[13px] font-bold hover:brightness-[.96]"
-                    style={
-                      danger
-                        ? { background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }
-                        : { background: '#F0F6FF', color: '#1E5FC2', borderColor: '#BFDBFE' }
-                    }
-                  >
-                    {q}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+            )
+          })}
+        </div>
+      </Card>
 
-          {phase === 'gen' && (
-            <div className="flex items-center gap-3 rounded-xl border border-line bg-white p-[22px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-              <span className="h-[18px] w-[18px] animate-[om-spin_.8s_linear_infinite] rounded-full border-[3px] border-[#D5E2F5] border-t-brand" />
-              <span className="text-[15px] font-bold text-navy">SQL 생성 중...</span>
-              <span className="text-[13px] font-semibold text-slate-light">1/2 단계 · LLM API 스키마 매핑</span>
-            </div>
-          )}
+      {hasSql && (
+        <div className="mt-[18px]">
+          <NlqSqlPanel
+            sqlText={sqlText}
+            onSqlChange={setSqlText}
+            editing={editing}
+            onStartEdit={() => setEditing(true)}
+            onCancelEdit={cancelEdit}
+            onReverify={reverify}
+            checks={checks}
+            validating={validating}
+            verifyNotice={verifyNotice}
+          />
+        </div>
+      )}
+
+      {/* 좌: 진행/결과 · 우: 최근 질의 (질문 전에도 이력 5건은 보인다) */}
+      <div className="mt-[18px] flex items-start gap-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
+          {phase === 'gen' && <PhaseCard label="SQL 생성 중…" note="1/2 단계 · LLM API 스키마 매핑" />}
 
           {phase === 'unknown' && (
             <EmptyState
@@ -205,61 +213,41 @@ function AnalyticsPage() {
           )}
 
           {phase === 'rejected' && (
-            <div className="animate-[om-fadein_.25s] rounded-xl border-2 border-oos bg-white px-[22px] py-5 shadow-[0_4px_16px_rgba(220,38,38,.12)]">
+            <Card className="animate-[om-fadein_.25s] p-5" style={{ borderColor: 'var(--color-tint-red-line)' }}>
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-oos-soft text-[19px] font-extrabold text-oos">
+                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-tint-red text-[19px] font-extrabold text-red">
                   !
                 </span>
-                <div className="text-[17px] font-extrabold text-oos">
+                <div className="text-base font-extrabold text-red">
                   실행할 수 없는 요청입니다 — {rejectReason(rejectCode)}
                 </div>
-                <span className="ml-auto rounded-md bg-oos-soft px-2.5 py-1 font-mono text-xs font-extrabold text-oos">
+                <Badge variant="t-red" className="ml-auto">
                   {rejectCode}
-                </span>
+                </Badge>
               </div>
-              <div className="mt-3 rounded-lg bg-[#FEF2F2] px-3.5 py-[11px] text-sm font-semibold text-ink">
-                요청 &quot;<span className="font-mono">{activeQ}</span>&quot; 은 데이터 변경(DELETE) 의도로 분류되어 SQL을
-                생성하지 않았습니다.
+              <div className="mt-3 rounded-lg border border-tint-red-line bg-row-red px-3.5 py-3 text-[13px] text-ink">
+                요청 &quot;<span className="font-mono">{activeQ}</span>&quot; 은{' '}
+                <span className="font-bold text-red">{rejectReason(rejectCode)}</span> 정책에 따라 SQL을 생성하지
+                않았습니다.
               </div>
-              <div className="mt-2.5 text-[13px] font-semibold text-slate">
-                ℹ 구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다
+              <div className="mt-2.5 text-xs text-g1">
+                구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다
               </div>
-            </div>
+            </Card>
           )}
 
-          {hasSql && (
-            <>
-              <NlqSqlPanel
-                sqlText={sqlText}
-                onSqlChange={setSqlText}
-                editing={editing}
-                onStartEdit={() => setEditing(true)}
-                onCancelEdit={cancelEdit}
-                onRun={run}
-                onReverify={reverify}
-                checks={checks}
-                validating={validating}
-                verifyNotice={verifyNotice}
-              />
-              {phase === 'run' && (
-                <div className="flex items-center gap-3 rounded-xl border border-line bg-white p-[22px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-                  <span className="h-[18px] w-[18px] animate-[om-spin_.8s_linear_infinite] rounded-full border-[3px] border-[#D5E2F5] border-t-ok" />
-                  <span className="text-[15px] font-bold text-navy">쿼리 실행 중...</span>
-                  <span className="text-[13px] font-semibold text-slate-light">2/2 단계 · kosa_readonly</span>
-                </div>
-              )}
-              {phase === 'done' && (
-                <NlqResultTabs
-                  def={def}
-                  tab={tab}
-                  onTab={setTab}
-                  sortAsc={sortAsc}
-                  onToggleSort={() => setSortAsc((s) => !s)}
-                  rows={rows}
-                  footnote={footnote}
-                />
-              )}
-            </>
+          {phase === 'run' && <PhaseCard label="쿼리 실행 중…" note="2/2 단계 · kosa_readonly" />}
+
+          {phase === 'done' && (
+            <NlqResultTabs
+              def={def}
+              tab={tab}
+              onTab={setTab}
+              sortAsc={sortAsc}
+              onToggleSort={() => setSortAsc((s) => !s)}
+              rows={rows}
+              footnote={footnote}
+            />
           )}
         </div>
 
