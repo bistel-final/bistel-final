@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getAction, getApprovals, getRun } from '../../../shared/api/agent.js'
-import { getAlarms, getTraceCatalog } from '../../../shared/api/detection.js'
+import { getAlarms, searchTraces } from '../../../shared/api/detection.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
@@ -16,6 +16,9 @@ import RunToast from '../components/RunToast.jsx'
 
 const TOAST_MS = 5000
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
+// 근거 카드 ②④ 는 incident 밖 알람까지 훑는다 — GET /alarms 에 alarm_ids 파라미터가 없어 넓게 받는다
+// TODO(api): alarm_ids 필터 파라미터 미정의
+const ALARM_SCAN_SIZE = 200
 
 // Agent 분석 · 승인 (디자인 v2) — 네이비 헤더 바 · 좌 360px 판정 컬럼 · 우 근거 카드 5개
 function AgentRunPage() {
@@ -36,8 +39,18 @@ function AgentRunPage() {
     getRun(runId)
       .then((run) => {
         if (!run) return { run: null }
-        return Promise.all([getAction(run.action_id), getApprovals(), getAlarms(), getTraceCatalog()]).then(
-          ([action, approvals, alarmPage, catalog]) => {
+        return Promise.all([
+          getAction(run.action_id),
+          getApprovals(),
+          getAlarms({ page: 1, size: ALARM_SCAN_SIZE }),
+          // 문제 파라미터 차트 — 한계선은 응답 limits[sensor_id] 에서 읽는다 (전역 상수 없음)
+          searchTraces({
+            chamber_id: run.incident?.chamber_id,
+            sensor_ids: [run.sensor_id],
+            lot_id: run.incident?.lot_id,
+          }),
+        ]).then(
+          ([action, approvals, alarmPage, trace]) => {
             // 이미 처리된 승인 건은 진입 시점에 사유를 알린다 (서버 재결정은 409)
             if (action && action.approval_status !== 'PENDING' && action.approval_status !== 'AUTO') {
               showToast({
@@ -51,7 +64,7 @@ function AgentRunPage() {
               action,
               approvals: approvals.items ?? [],
               alarms: alarmPage.items ?? [],
-              catalog,
+              trace,
             }
           },
         )
@@ -69,16 +82,17 @@ function AgentRunPage() {
 
   const derived = useMemo(() => {
     if (!data?.run) return null
-    const { run, alarms, approvals, action } = data
+    const { run, alarms, approvals } = data
     const ids = new Set(run.alarm_ids ?? [])
     const runAlarms = alarms.filter((a) => ids.has(a.alarm_id)).sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
     const ruleCnt = runAlarms.reduce((acc, a) => ({ ...acc, [a.rule_id]: (acc[a.rule_id] ?? 0) + 1 }), {})
     return {
       runAlarms,
-      equipmentId: runAlarms[0]?.equipment_id ?? null,
+      equipmentId: run.equipment_id ?? runAlarms[0]?.equipment_id ?? null,
       consec: runAlarms.find((a) => a.rule_id === 'R03_CONSEC') ?? null,
       rules: Object.entries(ruleCnt).map(([rule_id, count]) => ({ rule_id, count })),
-      approval: approvals.find((p) => p.action_id === action?.action_id) ?? null,
+      // 승인 요청은 run 과 agent_run_id 로 이어진다 (run_id 아님)
+      approval: approvals.find((p) => p.agent_run_id === run.agent_run_id) ?? null,
     }
   }, [data])
 
@@ -94,11 +108,11 @@ function AgentRunPage() {
     return (
       <EmptyState
         title="해당 Agent 실행을 찾을 수 없습니다"
-        description={`run_id ${runId} 에 대한 실행 기록이 없습니다.`}
+        description={`agent_run_id ${runId} 에 대한 실행 기록이 없습니다.`}
       />
     )
 
-  const { run, action, catalog } = data
+  const { run, action, trace } = data
   const { runAlarms, equipmentId, consec, rules, approval } = derived
 
   return (
@@ -116,7 +130,7 @@ function AgentRunPage() {
         {/* 좌 360px 판정 컬럼 — 흰 카드, 좌측 3px 적색 보더 */}
         <div className="flex w-[360px] flex-none flex-col gap-4 rounded-[10px] border border-line border-l-[3px] border-l-red bg-white p-5">
           <RunVerdictCard run={run} />
-          <RunActionCard action={action} consec={consec} rules={rules} />
+          <RunActionCard run={run} consec={consec} rules={rules} />
           <RunApprovalCard
             action={action}
             approval={approval}
@@ -132,7 +146,7 @@ function AgentRunPage() {
           run={run}
           runAlarms={runAlarms}
           allAlarms={data.alarms}
-          catalog={catalog}
+          trace={trace}
           equipmentId={equipmentId}
         />
       </div>

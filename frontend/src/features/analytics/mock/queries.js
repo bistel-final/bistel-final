@@ -1,4 +1,8 @@
-// 자연어 분석 mock — 예시 칩·최근 질의는 디자인 v2 06 시안, 집계값은 alarms 51건 실측
+// 자연어 분석 fixture — 명세 AnalysisQueryResponse 스키마
+// rows 는 객체 배열이다 (배열의 배열 아님). columns·latency_ms 필드명도 명세 기준.
+// 집계값은 alarms 51건 실측.
+// TODO(data): 'ETCH 챔버별 CD_AEI 평균'은 metrology 실측 미확보 — 안내 카드 경로
+
 export const NL_CHIPS = [
   '전체 알람이 몇 건이야?',
   '센서별 OOS 알람 수',
@@ -7,74 +11,226 @@ export const NL_CHIPS = [
   '알람 테이블 전부 지워줘',
 ]
 
-export const NL_REJECT_REASONS = {
-  REJECT_NON_SELECT: 'SELECT 외 구문 거부',
-  REJECT_TABLE: '허용 목록 밖 테이블',
-}
-
-// TODO(data): 'ETCH 챔버별 CD_AEI 평균'은 metrology 평균 실측이 없어 mock 미제공 —
-//   질문 시 안내 카드가 뜬다. CSV 확보 후 def 추가.
 export const NL_QUERIES = {
-  '전체 알람이 몇 건이야?': {
-    sql: 'SELECT COUNT(*) AS alarm_cnt\nFROM fdc_alarm\nLIMIT 500',
-    cols: ['alarm_cnt'],
-    rows: [[51]],
-    chart: 'demote',
-    visualization: { chart_type: 'table', x: null, y: 'alarm_cnt' },
-    lat: 1240,
-  },
-  '챔버별 알람 건수 내림차순': {
-    sql: 'SELECT chamber_id, COUNT(*) AS cnt\nFROM fdc_alarm\nGROUP BY chamber_id\nORDER BY cnt DESC\nLIMIT 500',
-    cols: ['chamber_id', 'cnt'],
-    rows: [
-      ['PHO-01-C1', 22],
-      ['ETC-01-C2', 15],
-      ['ETC-01-C1', 14],
+  "전체 알람이 몇 건이야?": {
+    "question": "전체 알람이 몇 건이야?",
+    "sql": "SELECT COUNT(*) AS alarm_cnt\nFROM fdc_alarm\nLIMIT 500",
+    "columns": [
+      "alarm_cnt"
     ],
-    chart: 'bar',
-    visualization: { chart_type: 'bar', x: 'chamber_id', y: 'cnt' },
-    stats: [
-      ['count', '3'],
-      ['mean', '17.0'],
-      ['std', '4.36'], // ddof=1 표본 표준편차
-      ['min', '14'],
-      ['max', '22'],
+    "rows": [
+      {
+        "alarm_cnt": 51
+      }
     ],
-    lat: 940,
+    "row_count": 1,
+    "metric": {
+      "type": "count",
+      "column": null,
+      "p": null
+    },
+    "metric_result": 51,
+    "group_by": [],
+    "visualization": {
+      "chart_type": "table",
+      "x": null,
+      "y": "alarm_cnt"
+    },
+    "latency_ms": 1240
   },
-  '센서별 OOS 알람 수': {
-    sql: "SELECT sensor_id, COUNT(*) AS cnt\nFROM fdc_alarm\nWHERE judgement = 'OOS'\nGROUP BY sensor_id\nORDER BY cnt DESC\nLIMIT 500",
-    cols: ['sensor_id', 'cnt'],
-    rows: [
-      ['PH_FOCUS', 17],
-      ['ET_REFL', 11],
-      ['ET_CF4', 9],
+  "챔버별 알람 건수 내림차순": {
+    "question": "챔버별 알람 건수 내림차순",
+    "sql": "SELECT chamber_id, COUNT(*) AS cnt\nFROM fdc_alarm\nGROUP BY chamber_id\nORDER BY cnt DESC\nLIMIT 500",
+    "columns": [
+      "chamber_id",
+      "cnt"
     ],
-    chart: 'bar',
-    visualization: { chart_type: 'bar', x: 'sensor_id', y: 'cnt' },
-    lat: 870,
-  },
-  '규칙별 알람 분포': {
-    sql: 'SELECT rule_id, COUNT(*) AS cnt\nFROM fdc_alarm\nGROUP BY rule_id\nORDER BY cnt DESC\nLIMIT 500',
-    cols: ['rule_id', 'cnt'],
-    rows: [
-      ['R01_OOS', 34],
-      ['R02_OOC', 14],
-      ['R03_CONSEC', 3],
+    "rows": [
+      {
+        "chamber_id": "PHO-01-C1",
+        "cnt": 22
+      },
+      {
+        "chamber_id": "ETC-01-C2",
+        "cnt": 15
+      },
+      {
+        "chamber_id": "ETC-01-C1",
+        "cnt": 14
+      }
     ],
-    chart: 'bar',
-    visualization: { chart_type: 'bar', x: 'rule_id', y: 'cnt' },
-    lat: 1655,
+    "row_count": 3,
+    "metric": {
+      "type": "count",
+      "column": null,
+      "p": null
+    },
+    "metric_result": [
+      {
+        "group": {
+          "chamber_id": "PHO-01-C1"
+        },
+        "value": 22
+      },
+      {
+        "group": {
+          "chamber_id": "ETC-01-C2"
+        },
+        "value": 15
+      },
+      {
+        "group": {
+          "chamber_id": "ETC-01-C1"
+        },
+        "value": 14
+      }
+    ],
+    "group_by": [
+      "chamber_id"
+    ],
+    "visualization": {
+      "chart_type": "bar",
+      "x": "chamber_id",
+      "y": "cnt"
+    },
+    "latency_ms": 940
   },
-  '알람 테이블 전부 지워줘': { reject: true, reject_code: 'REJECT_NON_SELECT', lat: 310 },
-  'document_chunk 보여줘': { reject: true, reject_code: 'REJECT_TABLE', lat: 120 },
+  "센서별 OOS 알람 수": {
+    "question": "센서별 OOS 알람 수",
+    "sql": "SELECT sensor_id, COUNT(*) AS cnt\nFROM fdc_alarm\nWHERE judgement = 'OOS'\nGROUP BY sensor_id\nORDER BY cnt DESC\nLIMIT 500",
+    "columns": [
+      "sensor_id",
+      "cnt"
+    ],
+    "rows": [
+      {
+        "sensor_id": "PH_FOCUS",
+        "cnt": 17
+      },
+      {
+        "sensor_id": "ET_REFL",
+        "cnt": 11
+      },
+      {
+        "sensor_id": "ET_CF4",
+        "cnt": 9
+      }
+    ],
+    "row_count": 3,
+    "metric": {
+      "type": "count",
+      "column": null,
+      "p": null
+    },
+    "metric_result": [
+      {
+        "group": {
+          "sensor_id": "PH_FOCUS"
+        },
+        "value": 17
+      },
+      {
+        "group": {
+          "sensor_id": "ET_REFL"
+        },
+        "value": 11
+      },
+      {
+        "group": {
+          "sensor_id": "ET_CF4"
+        },
+        "value": 9
+      }
+    ],
+    "group_by": [
+      "sensor_id"
+    ],
+    "visualization": {
+      "chart_type": "bar",
+      "x": "sensor_id",
+      "y": "cnt"
+    },
+    "latency_ms": 870
+  },
+  "규칙별 알람 분포": {
+    "question": "규칙별 알람 분포",
+    "sql": "SELECT rule_id, COUNT(*) AS cnt\nFROM fdc_alarm\nGROUP BY rule_id\nORDER BY cnt DESC\nLIMIT 500",
+    "columns": [
+      "rule_id",
+      "cnt"
+    ],
+    "rows": [
+      {
+        "rule_id": "R01_OOS",
+        "cnt": 34
+      },
+      {
+        "rule_id": "R02_OOC",
+        "cnt": 14
+      },
+      {
+        "rule_id": "R03_CONSEC",
+        "cnt": 3
+      }
+    ],
+    "row_count": 3,
+    "metric": {
+      "type": "count",
+      "column": null,
+      "p": null
+    },
+    "metric_result": [
+      {
+        "group": {
+          "rule_id": "R01_OOS"
+        },
+        "value": 34
+      },
+      {
+        "group": {
+          "rule_id": "R02_OOC"
+        },
+        "value": 14
+      },
+      {
+        "group": {
+          "rule_id": "R03_CONSEC"
+        },
+        "value": 3
+      }
+    ],
+    "group_by": [
+      "rule_id"
+    ],
+    "visualization": {
+      "chart_type": "bar",
+      "x": "rule_id",
+      "y": "cnt"
+    },
+    "latency_ms": 1655
+  }
 }
 
-// 최근 질의 초기 이력 — 디자인 v2 06 시안 5건 그대로 (성공 3 · 거부 2)
+export const NL_REJECTS = {
+  "알람 테이블 전부 지워줘": {
+    "question": "알람 테이블 전부 지워줘",
+    "rejected": true,
+    "reason": "POLICY_REJECTED: SELECT 외 구문 거부",
+    "latency_ms": 310
+  },
+  "document_chunk 보여줘": {
+    "question": "document_chunk 보여줘",
+    "rejected": true,
+    "reason": "POLICY_REJECTED: 허용 목록 밖 테이블",
+    "latency_ms": 120
+  }
+}
+
+// 최근 질의 초기 이력 (디자인 v2 시안 5건: 성공 3 · 거부 2)
 export const NL_INITIAL_HISTORY = [
-  { q: '챔버별 알람 건수 내림차순', ok: true, rows: 3, lat: 940 },
-  { q: '전체 알람이 몇 건이야?', ok: true, rows: 1, lat: 1240 },
-  { q: '알람 테이블 전부 지워줘', ok: false, rows: 0, lat: 310, code: 'REJECT_NON_SELECT' },
-  { q: '센서별 OOS 알람 수', ok: true, rows: 3, lat: 870 },
-  { q: 'document_chunk 보여줘', ok: false, rows: 0, lat: 120, code: 'REJECT_TABLE' },
+  { question: '챔버별 알람 건수 내림차순', ok: true, row_count: 3, latency_ms: 940, reason: null },
+  { question: '전체 알람이 몇 건이야?', ok: true, row_count: 1, latency_ms: 1240, reason: null },
+  { question: '알람 테이블 전부 지워줘', ok: false, row_count: 0, latency_ms: 310, reason: 'POLICY_REJECTED: SELECT 외 구문 거부' },
+  { question: '센서별 OOS 알람 수', ok: true, row_count: 3, latency_ms: 870, reason: null },
+  { question: 'document_chunk 보여줘', ok: false, row_count: 0, latency_ms: 120, reason: 'POLICY_REJECTED: 허용 목록 밖 테이블' },
 ]

@@ -1,15 +1,15 @@
 import { Card } from '../../../shared/components/ui/Card.jsx'
+import { judgeValue, limitLines } from './TraceModel.jsx'
 
 // 시안 v2 03_트레이스뷰어 차트 — SVG viewBox 1000×260 직접 렌더링 (recharts 제거)
 //
-// 시안과 의도된 차이:
-// - x축은 measured_at 실제 시간축이다 (시안은 18포인트 등간격). 웨이퍼 경계·알람 시점 모두
-//   실측 시각에서 x 를 계산한다. 웨이퍼 내부 포인트 간격은 균등 배치 렌더링 가정 —
-//   TraceModel.buildSeries 주석 참고 (포인트별 measured_at 실측 미확보).
+// - x축은 measured_at 실제 시간축이다. 포인트 x·웨이퍼 경계·알람 시점 모두 실측 시각에서 계산한다.
+// - 한계선은 센서별로 다르다. 전역 상수 금지 — lim 은 응답 limits[sensor_id] (또는 catalog.sensors) 이고
+//   { sensor_id, sensor_name, unit, spec_lower, ctrl_lower, target, ctrl_upper, spec_upper } 형태다.
+//   null 인 항목은 선을 그리지 않는다 (전부 null 이면 "한계선 미제공").
 // - y 변환은 한계선 앵커 고정 선형: 최대 한계선→40.2 · 최소 한계선→191.1
 //   (PH_FOCUS: 60→40.2, 0→115.6, −60→191.1 · y = 115.6 − v×1.2567).
-//   데이터가 캔버스 헤드룸(y 20~212)을 벗어나는 조합에서만 그 방향 앵커를 데이터 극값으로
-//   확장한다 — 시안 검수 조건(LOT-260007 W1·3·5, max 69.377→y 28.4)에서는 발동하지 않는다.
+//   데이터가 캔버스 헤드룸(y 20~212)을 벗어나는 조합에서만 그 방향 앵커를 데이터 극값으로 확장한다.
 
 // fdc.css 토큰 (SVG 속성은 hex 직접 지정)
 const C = {
@@ -25,6 +25,8 @@ const C = {
 }
 
 const LIMIT_STROKE = { USL: C.red, LSL: C.red, UCL: C.amber, LCL: C.amber, TARGET: C.g2 }
+// 포인트 색 — spec 벗어남 red · ctrl 벗어남 amber · 그 외 blue
+const POINT_STROKE = { OOS: C.red, OOC: C.amber }
 
 // 시안 좌표계
 const PX0 = 45 // 한계선 좌단
@@ -42,24 +44,17 @@ const Y_BOT = 191.1 // 최소 한계선 y
 const Y_MIN = 20 // 데이터 허용 헤드룸
 const Y_MAX = 212
 
-// 단위 — 지시서·시안 제공값. 그 외 센서는 단위 실측 미제공
-const SENSOR_UNIT = { PH_FOCUS: 'nm', PH_DOSE: 'mJ/cm²' }
-
-// PH_DOSE 한계선 — 시안 v2 제공값. trace·한계선 모두 fixture 미제공인 센서의 골격에만 사용.
-// TODO(data): fdc_trace.csv 확보 시 catalog.limits 실측으로 대체
-const SKELETON_LIMITS = {
-  PH_DOSE: [
-    { label: 'USL', value: 26 },
-    { label: 'UCL', value: 25.6 },
-    { label: 'TARGET', value: 25 },
-    { label: 'LCL', value: 24.4 },
-    { label: 'LSL', value: 24 },
-  ],
-}
-
 // value → y. 한계선 최대/최소를 40.2/191.1 에 앵커한 선형 변환 (위 주석 참고)
 function scaleOf(limits, values) {
   const lv = limits.map((l) => l.value)
+  // 한계선이 없는 센서(ET_REFL)는 데이터 극값을 캔버스에 맞춘다
+  if (!lv.length) {
+    if (!values.length) return () => (Y_TOP + Y_BOT) / 2
+    const dMax = Math.max(...values)
+    const dMin = Math.min(...values)
+    if (dMax === dMin) return () => (Y_TOP + Y_BOT) / 2
+    return (v) => Y_TOP + ((dMax - v) / (dMax - dMin)) * (Y_BOT - Y_TOP)
+  }
   let hiV = Math.max(...lv)
   let loV = Math.min(...lv)
   let hiY = Y_TOP
@@ -108,17 +103,17 @@ function Chip({ x, text, anchor = 'left', tone = 'tint' }) {
   )
 }
 
-function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new Set(), limits, lim, focus }) {
+function TraceChart({ sensor, chamber, lot, series, markers = [], lim, focus }) {
   const { segments, points, missing } = series
   const noTrace = segments.length === 0 // 이 센서의 trace 행 자체가 없다 (예: PH_DOSE)
-  const chartLimits = noTrace ? (SKELETON_LIMITS[sensor] ?? limits) : limits
+  const chartLimits = limitLines(lim)
   const yOf = scaleOf(chartLimits, points.map((p) => p.value))
 
   const t0 = segments[0]?.start ?? 0
-  const t1 = segments.length ? segments[segments.length - 1].end : 1
+  const last = segments[segments.length - 1]
+  const t1 = last ? Math.max(last.end, t0 + 1) : 1
   const xOf = (ms) => PTX0 + ((ms - t0) / Math.max(1, t1 - t0)) * (PTX1 - PTX0)
 
-  const unit = SENSOR_UNIT[sensor]
   const poly = points.map((p) => `${xOf(p.x).toFixed(1)},${yOf(p.value).toFixed(1)}`).join(' ')
 
   return (
@@ -126,12 +121,14 @@ function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new 
       <div className="mb-1.5 flex items-baseline justify-between">
         <span className="font-mono text-[14px] font-extrabold text-navy">{sensor}</span>
         <span className="font-mono text-[11.5px] text-g1">
-          {chamber} · {unit ? `단위 ${unit}` : '단위 실측 미제공'}
+          {chamber}
+          {lim?.sensor_name ? ` · ${lim.sensor_name}` : ''} ·{' '}
+          {chartLimits.length === 0 ? '한계선 미제공' : lim?.unit ? `단위 ${lim.unit}` : '단위 미제공'}
         </span>
       </div>
 
       <svg viewBox="0 0 1000 260" className="block w-full" fontFamily="IBM Plex Mono, monospace">
-        {/* 한계선 5개 + 좌 값 · 우 이름 라벨 */}
+        {/* 한계선 — 그 센서의 값으로 그린다 (null 인 선은 없음) */}
         {chartLimits.map((l) => {
           const y = yOf(l.value)
           const stroke = LIMIT_STROKE[l.label] ?? C.g2
@@ -189,17 +186,21 @@ function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new 
           </g>
         ))}
 
-        {/* 파형 — 폴리라인 파랑 1.8 + 포인트(흰 채움 파랑 스트로크, R03 대상 USL 초과점은 적색 채움) */}
+        {/* 파형 — 폴리라인 파랑 1.8 + 포인트(한계선 이탈 방향에 따라 red / amber / blue) */}
         {points.length > 0 && <polyline points={poly} fill="none" stroke={C.blue} strokeWidth={1.8} />}
         {points.map((p) => {
           const cx = xOf(p.x)
           const cy = yOf(p.value)
-          const alarmPt = r03Keys.has(`${p.waferNo}|${p.step}`) && p.value > lim.USL
+          const judgement = judgeValue(p.value, lim)
+          const stroke = POINT_STROKE[judgement] ?? C.blue
+          const out = stroke !== C.blue
           return (
             <g key={`${p.key}-${p.step}-${p.seq}`}>
               {focus.has(p.waferNo) && <circle cx={cx} cy={cy} r={6.6} fill="none" stroke={C.blue} strokeWidth={1.2} opacity={0.5} />}
-              <circle cx={cx} cy={cy} r={3.6} fill={alarmPt ? C.red : '#fff'} stroke={C.blue} strokeWidth={1.6}>
-                <title>{`W${p.waferNo} · ${p.step} · P${p.seq}/${p.of} · ${p.value.toFixed(3)}`}</title>
+              <circle cx={cx} cy={cy} r={3.6} fill={out ? stroke : '#fff'} stroke={stroke} strokeWidth={1.6}>
+                <title>
+                  {`W${p.waferNo} · ${p.step} · P${p.seq}/${p.of} · ${p.value.toFixed(3)}${lim?.unit ? ` ${lim.unit}` : ''}`}
+                </title>
               </circle>
             </g>
           )
@@ -210,10 +211,10 @@ function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new 
           <g>
             <rect x={270} y={84} width={460} height={88} rx={10} fill="#fff" stroke={C.dash} strokeWidth={1.5} strokeDasharray="6 5" />
             <text x={500} y={122} fontSize={13} fontWeight={700} fill={C.navy} textAnchor="middle">
-              {noTrace ? 'trace 실측 미제공' : '포인트 실측 미제공 — 전 스텝 points: null'}
+              {noTrace ? 'trace 실측 미제공' : '해당 스텝 실측 미제공 — 조회 구간에 포인트가 없다'}
             </text>
             <text x={500} y={146} fontSize={10.5} fill={C.g1} textAnchor="middle">
-              fdc_trace.csv 확보 대기 · TODO(data)
+              선택한 조건의 trace 포인트가 응답에 없습니다
             </text>
           </g>
         )}
@@ -239,12 +240,12 @@ function TraceChart({ sensor, chamber, lot, series, markers = [], r03Keys = new 
 
       {missing.length > 0 && points.length > 0 && (
         <div className="mt-1 font-mono text-[10.5px] text-g2">
-          포인트 실측 미제공: {missing.map((m) => `W${m.waferNo}/${m.step}`).join(', ')} (points: null)
+          해당 스텝 실측 미제공: {missing.map((m) => `W${m.waferNo}/${m.step}`).join(', ')}
         </div>
       )}
       {segments.length > 0 && (
         <div className="mt-0.5 pb-1 text-[10.5px] text-g2">
-          웨이퍼 경계는 occurred_at 실측 · 웨이퍼 내부 포인트 간격은 균등 배치 렌더링 가정 (포인트별 measured_at 실측 미확보)
+          웨이퍼 경계는 occurred_at · 포인트 x 는 measured_at 실측 시각
         </div>
       )}
     </Card>

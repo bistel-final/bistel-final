@@ -1,5 +1,9 @@
-// 조치 목록 정렬 — 화면(ActionsPage)과 테스트(scripts/actions-sort.test.mjs)가
+// 조치 목록 정렬·탭 규칙 — 화면(ActionsPage)과 테스트(scripts/actions-sort.test.mjs)가
 // 같은 함수를 쓴다 (복사 금지). JSX 없이 순수 JS로 두어 node에서도 import 가능.
+//
+// 필드는 명세 ActionDetailResponse 기준이다:
+//   approval_status(PENDING/APPROVED/AUTO) · send_status(WAITING/SENDING/SENT/FAILED) ·
+//   created_at · action_id  — 축약 필드(channel 등)는 쓰지 않는다.
 //
 // 규칙 (디자인 v2 §5 조치 목록):
 // 1) approval_status PENDING 행이 최상단 고정 — 그 안에서 created_at 내림차순
@@ -17,4 +21,19 @@ export function sortActions(items) {
       // 동시각 안전장치 — ID 내림차순으로 순서를 고정한다
       String(b.action_id).localeCompare(String(a.action_id)),
   )
+}
+
+// 탭 → GET /actions 서버 파라미터.
+// 승인 대기만 approval_status, 완료·전송실패·진행중은 send_status, 전체는 파라미터 없음.
+export function tabParams(key) {
+  if (key === 'ALL') return {}
+  if (key === 'PENDING') return { approval_status: 'PENDING' }
+  return { send_status: key }
+}
+
+// 같은 판정을 클라이언트에서도 쓴다 (탭 배지 건수 계산 — 서버 응답 1회를 다섯 탭으로 나눈다)
+export function matchTab(a, key) {
+  if (key === 'ALL') return true
+  if (key === 'PENDING') return a.approval_status === 'PENDING'
+  return a.send_status === key
 }

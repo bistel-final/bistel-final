@@ -15,8 +15,8 @@ const hms = (iso) => (String(iso ?? '').split('T')[1] ?? '').slice(0, 8)
 
 const SOURCE_NOTE = {
   recomputed: '선택 웨이퍼 trace 포인트 재집계 (std = 표본 표준편차, ddof=1)',
-  measured: 'MEASURED_STEP_STATS 실측 제공값 (포인트 복원 불가 조합)',
-  none: '포인트 복원 불가 + 제공 통계 없음',
+  measured: '응답 measured_step_stats 제공값 (포인트 실측 미제공 조합)',
+  none: '포인트 실측 미제공 + 제공 통계 없음',
 }
 
 // R03(연속) 알람 detail 에는 수치가 없다 — 같은 웨이퍼·스텝·파라미터의 수치 보유 알람(R01)
@@ -48,12 +48,7 @@ function StepBox({ stat }) {
           mean/std/min/max 실측 미제공
           {stat.missingWafers?.length > 0 && (
             <div className="mt-1 font-mono text-[10.5px] font-normal text-g2">
-              포인트 없음: {stat.missingWafers.map((w) => `W${w}`).join(' · ')}
-            </div>
-          )}
-          {stat.noteMeans?.length > 0 && (
-            <div className="mt-1 font-mono text-[10.5px] font-normal text-g2">
-              알람 detail 상 스텝 mean: {stat.noteMeans.map((m) => m.toFixed(3)).join(' · ')}
+              해당 스텝 실측 미제공: {stat.missingWafers.map((w) => `W${w}`).join(' · ')}
             </div>
           )}
         </div>
@@ -75,7 +70,8 @@ function StepBox({ stat }) {
   )
 }
 
-function TraceSidePanel({ statsBySensor, anomaly, alarms, lim, focus }) {
+// limitOf(sensor_id) — 알람 요약 문구는 그 알람 파라미터의 한계선·단위로 만든다 (전역 상수 금지)
+function TraceSidePanel({ statsBySensor, anomaly, alarms, limitOf, focus }) {
   const groups = statsBySensor.filter((g) => g.stats.length > 0)
   const r03s = alarms.filter(isR03)
   const rest = alarms.filter((a) => !isR03(a)).slice().reverse() // 최신 알람이 위
@@ -137,7 +133,7 @@ function TraceSidePanel({ statsBySensor, anomaly, alarms, lim, focus }) {
                 W{a.wafer_no} · {a.recipe_step_name} · {hms(a.occurred_at)}
               </div>
               <div className="mt-2 font-mono text-xs font-bold text-red">
-                {alarmSummary(siblingOf(a, alarms) ?? a, lim)}
+                {alarmSummary(siblingOf(a, alarms) ?? a, limitOf(a.sensor_id))}
               </div>
             </div>
           ))}

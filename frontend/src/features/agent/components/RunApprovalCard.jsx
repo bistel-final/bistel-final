@@ -3,6 +3,9 @@ import { decideApproval } from '../../../shared/api/agent.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 
+// 요청 body 의 decision 값은 APPROVE / REJECT — 응답·조회 상태값(APPROVED / REJECTED)과 다르다
+const DECISION = { APPROVE: 'APPROVE', REJECT: 'REJECT' }
+const RESULT_OF = { APPROVE: 'APPROVED', REJECT: 'REJECTED' }
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
 const STATUS_VARIANT = { PENDING: 't-amber', APPROVED: 't-green', REJECTED: 't-red' }
 
@@ -16,7 +19,7 @@ const inputCls =
 // 승인 섹션 — 결정자·코멘트 입력 후 승인/반려. 기존 동작 유지(decideApproval · 409 토스트 · AUTO 안내)
 function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
   const [decidedBy, setDecidedBy] = useState('')
-  const [comment, setComment] = useState('')
+  const [decisionComment, setDecisionComment] = useState('')
   const [sending, setSending] = useState(false)
 
   // 자동 조치(LOT_HOLD·MONITOR)는 HITL 승인 대상이 아니다 — 폼 대신 안내만 노출
@@ -31,7 +34,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           </div>
           <div className="mt-2 text-xs leading-[1.6] text-g1">
             {action.action_code} 는 기본 결정표의 자동 승인 조치입니다. 승인 절차 없이{' '}
-            <span className="font-mono font-bold text-navy">{action.channel}</span> 채널로 전송됩니다.
+            <span className="font-mono font-bold text-navy">{action.send_channel}</span> 채널로 전송됩니다.
           </div>
         </div>
       </div>
@@ -68,20 +71,20 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
     decideApproval(approval.approval_id, {
       decision,
       decided_by: decidedBy.trim(),
-      comment: comment.trim(),
+      decision_comment: decisionComment.trim(),
     })
       .then((res) => {
         setSending(false)
         onDecided({
-          status: res?.status ?? decision,
+          status: res?.approval_status ?? RESULT_OF[decision],
           decided_by: res?.decided_by ?? decidedBy.trim(),
-          comment: res?.comment ?? comment.trim(),
+          decision_comment: res?.decision_comment ?? decisionComment.trim(),
           approval_id: res?.approval_id ?? approval.approval_id,
         })
         onToast({
-          tone: decision === 'APPROVED' ? 'ok' : 'oos',
+          tone: decision === DECISION.APPROVE ? 'ok' : 'oos',
           title: `APPROVAL ${decision}`,
-          message: `${approval.approval_id} 를 ${DECIDED_LABEL[decision]} 처리했습니다.`,
+          message: `${approval.approval_id} 를 ${DECIDED_LABEL[RESULT_OF[decision]]} 처리했습니다.`,
         })
       })
       .catch((e) => {
@@ -113,9 +116,9 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <span className="mb-1.5 block text-[11px] text-g1">코멘트</span>
           <input
             type="text"
-            value={decided?.comment ?? comment}
+            value={decided?.decision_comment ?? decisionComment}
             disabled={locked || sending}
-            onChange={(e) => setComment(e.target.value)}
+            onChange={(e) => setDecisionComment(e.target.value)}
             placeholder="결정 근거 (선택)"
             className={inputCls}
           />
@@ -125,7 +128,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="primary"
             aria-disabled={locked || sending}
-            onClick={() => submit('APPROVED')}
+            onClick={() => submit(DECISION.APPROVE)}
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             {sending ? '전송 중…' : '승인'}
@@ -133,7 +136,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="outline-red"
             aria-disabled={locked || sending}
-            onClick={() => submit('REJECTED')}
+            onClick={() => submit(DECISION.REJECT)}
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             반려

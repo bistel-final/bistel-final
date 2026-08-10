@@ -1,4 +1,14 @@
 // fdc.css .state-box (.state-red / .state-green) — 감사로그 before/after
+// before/after 는 dict 다 ({status:'PENDING'}) — 객체를 받으면 "키 = 값"으로 편다.
+// 키가 여럿이면 콤마로 잇는다. (문자열을 그대로 넘기던 시절의 [object Object] 방지)
+const fmtState = (v) => {
+  if (v == null) return null
+  if (typeof v !== 'object' || Array.isArray(v)) return v
+  return Object.entries(v)
+    .map(([k, val]) => `${k} = ${val}`)
+    .join(', ')
+}
+
 function StateBox({ tone = 'green', children }) {
   return (
     <span
@@ -8,7 +18,7 @@ function StateBox({ tone = 'green', children }) {
           : 'border-tint-green-line bg-state-green-bg text-green'
       }`}
     >
-      {children}
+      {fmtState(children)}
     </span>
   )
 }

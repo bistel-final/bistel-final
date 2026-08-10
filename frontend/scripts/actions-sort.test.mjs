@@ -1,9 +1,10 @@
-// 조치 목록 정렬 검증 — node scripts/actions-sort.test.mjs
+// 조치 목록 정렬·탭 검증 — node scripts/actions-sort.test.mjs
 // fixture ACTIONS를 셔플한 뒤 화면과 동일한 sortActions(공용 모듈)를 적용해
 // 기대 순서(PENDING 최상단 → created_at 내림차순)와 일치하는지 확인한다.
+// 필드명은 명세 ActionDetailResponse 기준(send_channel · 최상위 sensor_id/alarm_ids/alarm_count).
 import assert from 'node:assert/strict'
-import { ACTIONS } from '../src/features/agent/mock/actions.js'
-import { sortActions } from '../src/features/agent/actionsSort.js'
+import { ACTIONS, ACTION_TABS } from '../src/features/agent/mock/actions.js'
+import { matchTab, sortActions, tabParams } from '../src/features/agent/actionsSort.js'
 import { toIso } from '../src/shared/api/format.js'
 
 // 디자인 v2 05_조치목록 rows 순서 그대로 (전체 탭 기준)
@@ -30,6 +31,16 @@ const shuffle = (arr, seed) => {
 }
 
 assert.equal(ACTIONS.length, EXPECTED.length, `fixture는 ${EXPECTED.length}건이어야 한다`)
+
+// 필드명 회귀 방지 — 옛 축약 필드(channel · incident.sensor_id)로 되돌아가면 여기서 깨진다
+for (const a of ACTIONS) {
+  assert.ok('send_channel' in a, `${a.action_id}: send_channel 이 없다 (channel 금지)`)
+  assert.ok(!('channel' in a), `${a.action_id}: 옛 channel 필드가 남아 있다`)
+  assert.equal(typeof a.sensor_id, 'string', `${a.action_id}: sensor_id 는 최상위 필드다`)
+  assert.deepEqual(Object.keys(a.incident).sort(), ['chamber_id', 'lot_id'], `${a.action_id}: incident 키 불일치`)
+  assert.ok(Array.isArray(a.alarm_ids), `${a.action_id}: alarm_ids 는 최상위 배열이다`)
+  assert.equal(a.alarm_count, a.alarm_ids.length, `${a.action_id}: alarm_count 가 alarm_ids 수와 다르다`)
+}
 
 // 여러 시드로 셔플해도 항상 기대 순서로 복원되는지 — raw fixture 형태
 for (const seed of [1, 7, 42, 20260604]) {
@@ -61,5 +72,20 @@ const before = ACTIONS.map((a) => a.action_id).join(',')
 sortActions(ACTIONS)
 assert.equal(ACTIONS.map((a) => a.action_id).join(','), before, '입력 배열이 변경되면 안 된다')
 
+// 탭 → 서버 파라미터 매핑 (승인 대기만 approval_status, 나머지는 send_status, 전체는 없음)
+assert.deepEqual(tabParams('PENDING'), { approval_status: 'PENDING' })
+assert.deepEqual(tabParams('SENT'), { send_status: 'SENT' })
+assert.deepEqual(tabParams('FAILED'), { send_status: 'FAILED' })
+assert.deepEqual(tabParams('SENDING'), { send_status: 'SENDING' })
+assert.deepEqual(tabParams('ALL'), {})
+
+// 탭 배지 건수 — 승인 대기 2 · 전송 실패 0 · 진행 중 0 · 완료 8 · 전체 10
+const EXPECTED_COUNTS = { PENDING: 2, FAILED: 0, SENDING: 0, SENT: 8, ALL: 10 }
+const counts = Object.fromEntries(
+  ACTION_TABS.map((t) => [t.key, ACTIONS.filter((a) => matchTab(a, t.key)).length]),
+)
+assert.deepEqual(counts, EXPECTED_COUNTS, '탭 건수 불일치')
+
 console.log(`OK actions-sort: ${EXPECTED.length}건 · 셔플 6회 → 기대 순서 일치`)
 console.log(`   ${EXPECTED.join(' → ')}`)
+console.log(`OK actions-tabs: ${ACTION_TABS.map((t) => `${t.label} ${counts[t.key]}`).join(' · ')}`)

@@ -1,7 +1,7 @@
 // 감사로그 — 디자인 v2 07 (append-only · 수정 · 삭제 경로 없음, 조회 전용 화면)
+// 필터 4종은 전부 서버 파라미터로 넘긴다: event_type · actor_type · date_from · date_to (+ page·size)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAuditLogs } from '../../../shared/api/analytics.js'
-import { isoToParts } from '../../../shared/api/format.js'
 import AuditFilterBar from '../components/AuditFilterBar.jsx'
 import AuditTimeline from '../components/AuditTimeline.jsx'
 import AuditEventTypeBars from '../components/AuditEventTypeBars.jsx'
@@ -11,6 +11,8 @@ import ErrorState from '../../../shared/components/ErrorState.jsx'
 const DEF_FROM = '2026-06-01'
 const DEF_TO = '2026-06-04'
 const ALL = '전체'
+// 타임라인은 기간 전체를 한 화면에 세운다 (시안에 페이지 나눔이 없다)
+const PAGE_SIZE = 50
 
 // 시각이 분 단위인 항목은 같은 분 안에서 생애주기 흐름 순서로 보조 정렬한다
 // (TODO(data): audit_log 초 단위 확보 시 이 보조 정렬은 제거)
@@ -44,11 +46,24 @@ function AuditLogPage() {
   const [actor, setActor] = useState(ALL)
   const [target, setTarget] = useState('')
 
+  const q = target.trim()
+
+  // 필터가 바뀌면 load가 새로 만들어져 useEffect가 다시 돈다.
+  // setState는 전부 then/catch 안에서만 호출한다 (react-hooks/set-state-in-effect)
   const load = useCallback(() => {
-    getAuditLogs()
+    getAuditLogs({
+      ...(eventType === ALL ? null : { event_type: eventType }),
+      ...(actor === ALL ? null : { actor_type: actor }),
+      date_from: DEF_FROM,
+      date_to: DEF_TO,
+      // TODO(api): entity_id 파라미터 제안 반영 대기 — 지금은 mock/클라이언트에서 거른다
+      ...(q ? { entity_id: q } : null),
+      page: 1,
+      size: PAGE_SIZE,
+    })
       .then(setRes)
       .catch((e) => setError(e.message))
-  }, [])
+  }, [eventType, actor, q])
   useEffect(() => {
     load()
   }, [load])
@@ -60,38 +75,29 @@ function AuditLogPage() {
   }
 
   const eventTypes = useMemo(() => res?.event_types ?? [], [res])
-  const q = target.trim().toLowerCase()
 
-  // 서버 명세에 대상 ID 필터가 없어 조회 결과 전체에 클라이언트 필터를 적용한다
-  const filtered = useMemo(() => {
-    const items = res?.items ?? []
-    const hit = items.filter((e) => {
-      const { date } = isoToParts(e.at)
-      return (
-        (eventType === ALL || e.ev === eventType) &&
-        (actor === ALL || e.ac === actor) &&
-        date >= DEF_FROM &&
-        date <= DEF_TO &&
-        // TODO(api): entity_id 파라미터 제안 반영 대기
-        (!q || String(e.entity_id).toLowerCase().includes(q))
-      )
-    })
-    // 시각 오름차순 기본 + 같은 시각은 생애주기 흐름 랭크 보조 정렬
-    return [...hit].sort((a, b) => a.at.localeCompare(b.at) || flowRank(a.ev) - flowRank(b.ev))
-  }, [res, eventType, actor, q])
+  // 응답은 시각 내림차순이라 화면에서 뒤집는다 + 같은 시각은 생애주기 흐름 랭크 보조 정렬
+  const items = useMemo(() => {
+    const list = res?.items ?? []
+    return [...list].sort(
+      (a, b) =>
+        a.occurred_at.localeCompare(b.occurred_at) ||
+        flowRank(a.event_type) - flowRank(b.event_type) ||
+        a.audit_id - b.audit_id,
+    )
+  }, [res])
 
-  const pristine = eventType === ALL && actor === ALL && q === ''
-
-  // 집계는 현재 화면 slice가 아니라 같은 필터의 전체 집합 기준이다.
-  // 필터가 기본값이면 응답의 event_type_counts를 그대로 사용한다.
-  const counts = useMemo(() => {
-    if (!res) return {}
-    if (pristine) return res.event_type_counts ?? {}
-    return Object.fromEntries(eventTypes.map((t) => [t, filtered.filter((e) => e.ev === t).length]))
-  }, [res, pristine, eventTypes, filtered])
+  // 집계는 현재 화면 slice가 아니라 같은 필터의 전체 집합 기준 — 응답 event_type_counts 를 쓴다
+  const counts = useMemo(() => res?.event_type_counts ?? {}, [res])
 
   if (error) return <ErrorState detail={error} onRetry={retry} />
   if (!res) return <LoadingState message="감사로그를 불러오는 중…" />
+
+  const total = res.total ?? items.length
+  const note =
+    total > items.length
+      ? `시각 오름차순 · 전체 ${total}건 중 ${items.length}건`
+      : `시각 오름차순 · ${items.length}건`
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -111,11 +117,7 @@ function AuditLogPage() {
       />
 
       <div className="flex items-start gap-5">
-        <AuditTimeline
-          items={filtered}
-          title={q ? `${target.trim()} 의 이력` : '전체 이력'}
-          note={`시각 오름차순 · ${filtered.length}건`}
-        />
+        <AuditTimeline items={items} title={q ? `${q} 의 이력` : '전체 이력'} note={note} />
 
         <div className="flex w-[360px] flex-none flex-col gap-4">
           <AuditEventTypeBars eventTypes={eventTypes} counts={counts} />

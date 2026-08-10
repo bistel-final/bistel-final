@@ -88,11 +88,11 @@ Squash merge는 브랜치 커밋을 그대로 옮기지 않고 **새 커밋 하�
 
 ### 언제 Issue 없이 진행해도 되나
 
-| 상황 | Issue |
-|---|---|
-| 기능·API·Tool·화면 구현 | 만듭니다 |
-| 버그 수정 | 만듭니다 |
-| 여러 명이 관련되거나 순서가 얽힌 작업 | 만듭니다 |
+| 상황                                  | Issue                |
+| ------------------------------------- | -------------------- |
+| 기능·API·Tool·화면 구현            | 만듭니다             |
+| 버그 수정                             | 만듭니다             |
+| 여러 명이 관련되거나 순서가 얽힌 작업 | 만듭니다             |
 | 오타·문서 문구 수정, 설정 한 줄 변경 | 없이 진행해도 됩니다 |
 
 판단 기준은 **"나중에 왜 이렇게 했는지 찾아볼 일이 있는가"** 입니다. PR 본문만으로 설명이 되면 Issue 없이 가도 됩니다.
@@ -129,24 +129,24 @@ Issue에는 다음 내용을 작성합니다.
 
 ### Type
 
-| Type | 용도 |
-|---|---|
-| `feat` | 새로운 기능, API, Tool |
-| `fix` | 버그 수정 |
-| `refactor` | 동작 변경 없는 코드 구조 개선 |
-| `test` | 테스트 추가·수정 |
-| `docs` | 문서 추가·수정 |
-| `chore` | 환경, GitHub, 패키지, Docker 설정 |
+| Type         | 용도                              |
+| ------------ | --------------------------------- |
+| `feat`     | 새로운 기능, API, Tool            |
+| `fix`      | 버그 수정                         |
+| `refactor` | 동작 변경 없는 코드 구조 개선     |
+| `test`     | 테스트 추가·수정                 |
+| `docs`     | 문서 추가·수정                   |
+| `chore`    | 환경, GitHub, 패키지, Docker 설정 |
 
 ### Area
 
-| Area | 담당 영역 |
-|---|---|
-| `common` | 공통 설정·DB 연결·GitHub |
-| `detection` | A - FDC Detection |
-| `knowledge` | B - Neo4j·RAG |
-| `agent` | C - LangGraph·HITL·n8n |
-| `analytics` | D - Text2SQL·통계·차트 |
+| Area            | 담당 영역                     |
+| --------------- | ----------------------------- |
+| `common`      | 공통 설정·DB 연결·GitHub    |
+| `detection`   | A - FDC Detection             |
+| `knowledge`   | B - Neo4j·RAG                |
+| `agent`       | C - LangGraph·HITL·n8n      |
+| `analytics`   | D - Text2SQL·통계·차트      |
 | `integration` | 공통 통합·Docker·React 연동 |
 
 ### 예시
@@ -231,13 +231,13 @@ pytest -m e2e
 
 ### 테스트 계층
 
-| 계층 | 대상 | 마커 |
-|---|---|---|
-| Unit | 요약, R03, feature, `decide_action`, sqlglot, chart 규칙 | 없음 |
-| Contract | Tool 5종 정상·오류·timeout JSON | `contract` |
+| 계층        | 대상                                                              | 마커            |
+| ----------- | ----------------------------------------------------------------- | --------------- |
+| Unit        | 요약, R03, feature,`decide_action`, sqlglot, chart 규칙         | 없음            |
+| Contract    | Tool 5종 정상·오류·timeout JSON                                 | `contract`    |
 | Integration | PostgreSQL Repository, Neo4j, pgvector, checkpoint, 승인 트랜잭션 | `integration` |
-| E2E | FastAPI + React + DB + n8n 골든 시나리오 | `e2e` |
-| Evaluation | ML, Fault 분류, RAG, 관계, Text2SQL, Level 1·2 | `evaluation` |
+| E2E         | FastAPI + React + DB + n8n 골든 시나리오                          | `e2e`         |
+| Evaluation  | ML, Fault 분류, RAG, 관계, Text2SQL, Level 1·2                   | `evaluation`  |
 
 필요한 경우 FastAPI를 실행해 실제 연동을 확인합니다.
 
@@ -390,22 +390,22 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 Ruleset 이름은 `main-protection`입니다.
 
-| 설정 | 값 |
-|---|---|
-| Enforcement status | Active |
-| 대상 브랜치 | `main` |
-| Require a pull request before merging | 켬 |
-| └ Required approvals | **1** |
-| └ Dismiss stale pull request approvals when new commits are pushed | 켬 |
-| └ Require conversation resolution before merging | 켬 |
-| └ Allowed merge methods | **Squash 만** |
-| Require status checks to pass | 켬 |
-| └ 필수 검사 | `PR Policy / Validate PR` |
-| Require branches to be up to date before merging | **끔** |
-| Require linear history | 켬 |
-| Block force pushes | 켬 |
-| Restrict deletions | 켬 |
-| Bypass list | **비움** |
+| 설정                                                                | 값                          |
+| ------------------------------------------------------------------- | --------------------------- |
+| Enforcement status                                                  | Active                      |
+| 대상 브랜치                                                         | `main`                    |
+| Require a pull request before merging                               | 켬                          |
+| └ Required approvals                                               | **1**                 |
+| └ Dismiss stale pull request approvals when new commits are pushed | 켬                          |
+| └ Require conversation resolution before merging                   | 켬                          |
+| └ Allowed merge methods                                            | **Squash 만**         |
+| Require status checks to pass                                       | 켬                          |
+| └ 필수 검사                                                        | `PR Policy / Validate PR` |
+| Require branches to be up to date before merging                    | **끔**                |
+| Require linear history                                              | 켬                          |
+| Block force pushes                                                  | 켬                          |
+| Restrict deletions                                                  | 켬                          |
+| Bypass list                                                         | **비움**              |
 
 **`Require branches to be up to date`를 끄는 이유** — 4명이 동시에 PR을 올리면 다른 PR이 머지될 때마다 브랜치 갱신과 재승인이 반복됩니다. 각자 다른 영역을 작업하는 동안은 이득보다 마찰이 큽니다.
 
@@ -421,12 +421,12 @@ Actions 장애로 병합이 막히면 **해당 필수 status check만 일시적�
 
 `Settings → General → Pull Requests`
 
-| 설정 | 값 |
-|---|---|
-| Allow squash merging | 켬 (기본 메시지: `Pull request title and description`) |
-| Allow merge commits | **끔** |
-| Allow rebase merging | **끔** |
-| Automatically delete head branches | 켬 |
+| 설정                               | 값                                                      |
+| ---------------------------------- | ------------------------------------------------------- |
+| Allow squash merging               | 켬 (기본 메시지:`Pull request title and description`) |
+| Allow merge commits                | **끔**                                            |
+| Allow rebase merging               | **끔**                                            |
+| Automatically delete head branches | 켬                                                      |
 
 merge commit을 끄면 `main` 이력이 PR 하나당 커밋 하나로 유지됩니다. 켜져 있으면 PR 화면에서 실수로 고를 수 있고, 실제로 초기 PR 몇 건이 merge commit으로 들어갔습니다.
 

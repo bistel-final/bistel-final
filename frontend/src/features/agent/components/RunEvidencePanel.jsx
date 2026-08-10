@@ -44,16 +44,24 @@ function NoTrace({ label }) {
   )
 }
 
-function RunEvidencePanel({ run, runAlarms, allAlarms, catalog, equipmentId }) {
-  const inc = run.incident
-  const { lot_id: lot, chamber_id: chamber, sensor_id: sensor, recipe_step_name: step } = inc
-  const usl = catalog.limits?.find((l) => l.label === 'USL')?.value
+function RunEvidencePanel({ run, runAlarms, allAlarms, trace, equipmentId }) {
+  // incident 는 (lot_id, chamber_id) 두 개뿐 — sensor_id·recipe_step_name 은 run 의 형제 필드
+  const { lot_id: lot, chamber_id: chamber } = run.incident ?? {}
+  const sensor = run.sensor_id
+  const step = run.recipe_step_name
+  // 한계선은 센서별로 다르다 — POST /traces/search 응답의 limits[sensor_id] 에서 읽는다
+  const usl = trace?.limits?.[sensor]?.spec_upper ?? null
 
-  // ── ① 문제 파라미터 — fixture trace(웨이퍼 오름차순 × 포인트 순서)에서 좌표 변환 ──
-  const values = catalog.wafers
+  // ── ① 문제 파라미터 — trace 응답(웨이퍼 오름차순 × seq_no 순서)에서 좌표 변환 ──
+  const values = (trace?.wafers ?? [])
     .filter((w) => w.lot_id === lot && w.chamber_id === chamber && w.sensor_id === sensor)
     .sort((a, b) => Number(a.wafer_no) - Number(b.wafer_no))
-    .flatMap((w) => w.steps?.[step]?.points ?? [])
+    .flatMap((w) =>
+      [...(w.points ?? [])]
+        .sort((a, b) => a.seq_no - b.seq_no)
+        .filter((p) => p.recipe_step_name === step)
+        .map((p) => p.value),
+    )
 
   // 읽는 법은 알람 실측에서 유도 — R03_CONSEC hit_cnt + 연쇄 창 안 OOS detail max 의 최대값
   const consec = runAlarms.find((a) => a.rule_id === 'R03_CONSEC') ?? null
@@ -64,15 +72,17 @@ function RunEvidencePanel({ run, runAlarms, allAlarms, catalog, equipmentId }) {
   const maxes = consecWindow.map((a) => parseMax(a.detail)).filter(Boolean)
   const peak = maxes.length ? maxes.reduce((m, s) => (Number(s) > Number(m) ? s : m), maxes[0]) : null
   const oocCnt = runAlarms.filter((a) => a.judgement === 'OOC').length
+  // 한계선 미제공 센서(ET_REFL)는 USL 을 창작하지 않고 빼고 쓴다
+  const uslText = typeof usl === 'number' ? ` (USL ${usl})` : ''
   const read1 =
     consec && peak
-      ? `연속 ${consec.hit_cnt} WAFER OOS · 최대 ${peak} (USL ${usl})`
+      ? `연속 ${consec.hit_cnt} WAFER OOS · 최대 ${peak}${uslText}`
       : peak
-        ? `OOS ${oosAlarms.length} WAFER · 최대 ${peak} (USL ${usl})`
+        ? `OOS ${oosAlarms.length} WAFER · 최대 ${peak}${uslText}`
         : `OOS 없음 · OOC ${oocCnt}건 — 한계선 이탈 실측 미제공`
 
   // ── ② 같은 챔버 다른 파라미터 — 같은 챔버 나머지 감시 파라미터의 알람 유무 ──
-  const others = (PARAMS_BY_PREFIX[sensor.slice(0, 2)] ?? []).filter((s) => s !== sensor)
+  const others = (PARAMS_BY_PREFIX[String(sensor ?? '').slice(0, 2)] ?? []).filter((s) => s !== sensor)
   const otherAlarmCnt = allAlarms.filter((a) => a.chamber_id === chamber && others.includes(a.sensor_id)).length
   const read2 =
     others.length === 0
@@ -82,10 +92,11 @@ function RunEvidencePanel({ run, runAlarms, allAlarms, catalog, equipmentId }) {
         : `나머지 ${others.length} 종에서 알람 ${otherAlarmCnt}건 — 챔버 공통 원인 의심`
 
   // ── ③ 형제 챔버 정상 WAFER — C1↔C2 를 비교군으로 삼는다 ──
-  const sibling = /-C1$/.test(chamber)
-    ? chamber.replace(/-C1$/, '-C2')
-    : /-C2$/.test(chamber)
-      ? chamber.replace(/-C2$/, '-C1')
+  const chamberId = String(chamber ?? '')
+  const sibling = /-C1$/.test(chamberId)
+    ? chamberId.replace(/-C1$/, '-C2')
+    : /-C2$/.test(chamberId)
+      ? chamberId.replace(/-C2$/, '-C1')
       : null
   const oosCnt = runAlarms.filter((a) => a.judgement === 'OOS').length
   // OOS = 규격(USL/LSL) 밖 — 정상 밴드 이탈은 OOS 존재로만 판단하고, 없으면 창작하지 않는다
