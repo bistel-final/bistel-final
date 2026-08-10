@@ -7,8 +7,9 @@ import AgentRunPage from '../features/agent/pages/AgentRunPage.jsx'
 import ActionsPage from '../features/agent/pages/ActionsPage.jsx'
 import AnalyticsPage from '../features/analytics/pages/AnalyticsPage.jsx'
 import AuditLogPage from '../features/analytics/pages/AuditLogPage.jsx'
+import KnowledgePage from '../features/knowledge/pages/KnowledgePage.jsx'
 
-// 승인 대기 건이 있는 런이 Agent 화면 기본 진입점 (지시서 §3-3 대상)
+// 승인 대기 건이 있는 런이 Agent 화면 기본 진입점
 const DEFAULT_RUN_ID = 'RUN-20260603-0005'
 
 export const router = createBrowserRouter([
@@ -28,6 +29,8 @@ export const router = createBrowserRouter([
       { path: 'actions', element: <ActionsPage /> },
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'audit-logs', element: <AuditLogPage /> },
+      // B 화면 노출 여부 팀 결정 대기 — 사이드바 숨김, 라우트 유지
+      { path: 'knowledge', element: <KnowledgePage /> },
       { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],
   },

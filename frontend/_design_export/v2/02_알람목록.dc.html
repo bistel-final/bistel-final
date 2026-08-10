@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="알람 목록">
+  <dc-import name="Sidebar" active="{{ 2 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">알람 목록</div>
+      <div class="top-note">기간 내 51건</div>
+    </div>
+    <div class="filter-bar">
+      <div class="f-field"><span class="f-label">기간</span><span class="select" style="min-width:190px">2026-06-01 ~ 06-04 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">공정</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">설비</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">챔버</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">파라미터</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-note">윗단을 고르면 아랫단 선택지가 좁아진다</div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start">
+      <div class="card" style="flex:1;min-width:0">
+        <div class="card-h"><span class="card-t">알람</span><span class="card-note">발생 시각 내림차순</span></div>
+        <div style="padding:0 8px">
+          <table class="tbl">
+            <thead><tr>
+              <th>알람 <span class="chev">▾</span></th><th>시각 <span class="chev">▾</span></th><th>LOT <span class="chev">▾</span></th><th>W <span class="chev">▾</span></th><th>챔버 <span class="chev">▾</span></th><th>파라미터 <span class="chev">▾</span></th><th>룰 <span class="chev">▾</span></th><th>타입 <span class="chev">▾</span></th><th>조치 <span class="chev">▾</span></th>
+            </tr></thead>
+            <tbody>
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="12">
+                <tr class="{{ r.cls }}">
+                  <td class="cell-id">{{ r.id }}</td>
+                  <td class="cell-dim">{{ r.time }}</td>
+                  <td class="cell-mono">{{ r.lot }}</td>
+                  <td class="cell-mono">{{ r.w }}</td>
+                  <td class="cell-dim">{{ r.chamber }}</td>
+                  <td class="cell-mono" style="font-weight:600">{{ r.param }}</td>
+                  <td><span class="badge {{ r.ruleCls }}">{{ r.rule }}</span></td>
+                  <td class="cell-mono {{ r.typeCls }}" style="font-weight:700">{{ r.type }}</td>
+                  <td><a class="cell-mono" href="05_조치목록.dc.html">{{ r.act }}</a></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span class="pager-info">1 – 12 / 51</span>
+          <div class="pager-btns">
+            <span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">4</span><span class="pg">5</span><span class="pg">›</span>
+          </div>
+        </div>
+      </div>
+      <div style="width:470px;flex:none;display:flex;flex-direction:column;gap:14px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;padding:20px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span class="mono" style="font-size:18px;font-weight:800;color:var(--navy)">ALM-0022</span>
+          <span class="card-note">선택한 알람</span>
+        </div>
+        <div>
+          <div class="mono" style="font-size:12.5px;font-weight:700;color:var(--ink)">LOT-260007 · W5 · PHO-01-C1</div>
+          <div class="mono" style="font-size:11px;color:var(--g1);margin-top:4px">EXPOSE · R03_CONSEC · OOS · 06-03 06:45:45</div>
+        </div>
+        <div class="card" style="padding:14px 14px 8px;border-radius:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--navy)">PH_FOCUS</span>
+            <a class="btn btn-primary btn-sm" href="03_트레이스뷰어.dc.html">크게 보기 →</a>
+          </div>
+          <svg viewBox="0 0 430 240" style="width:100%;display:block" font-family="IBM Plex Mono,monospace">
+            <line x1="40" y1="35.6" x2="385" y2="35.6" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="40" y1="63.9" x2="385" y2="63.9" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="40" y1="106.5" x2="385" y2="106.5" stroke="#98A5B3" stroke-width="1"></line>
+            <line x1="40" y1="149" x2="385" y2="149" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="40" y1="177.3" x2="385" y2="177.3" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <text x="34" y="39" font-size="9" fill="#5A6B7E" text-anchor="end">60</text>
+            <text x="34" y="67" font-size="9" fill="#5A6B7E" text-anchor="end">36</text>
+            <text x="34" y="110" font-size="9" fill="#5A6B7E" text-anchor="end">0</text>
+            <text x="34" y="152" font-size="9" fill="#5A6B7E" text-anchor="end">-36</text>
+            <text x="34" y="181" font-size="9" fill="#5A6B7E" text-anchor="end">-60</text>
+            <text x="390" y="39" font-size="8.5" fill="#B03A4E">USL</text>
+            <text x="390" y="67" font-size="8.5" fill="#B97F14">UCL</text>
+            <text x="390" y="110" font-size="8.5" fill="#98A5B3">TARGET</text>
+            <text x="390" y="152" font-size="8.5" fill="#B97F14">LCL</text>
+            <text x="390" y="181" font-size="8.5" fill="#B03A4E">LSL</text>
+            <line x1="215" y1="20" x2="215" y2="200" stroke="#98A5B3" stroke-width="1" stroke-dasharray="3 4" opacity=".6"></line>
+            <polyline points="60,41.8 122,44.8 184,29.3 246,92.4 308,99 370,90.8" fill="none" stroke="#2062A8" stroke-width="1.8"></polyline>
+            <circle cx="60" cy="41.8" r="4" fill="#fff" stroke="#2062A8" stroke-width="1.8"></circle>
+            <circle cx="122" cy="44.8" r="4" fill="#fff" stroke="#2062A8" stroke-width="1.8"></circle>
+            <circle cx="184" cy="29.3" r="4.5" fill="#B03A4E" stroke="#B03A4E" stroke-width="1.8"></circle>
+            <circle cx="246" cy="92.4" r="4" fill="#fff" stroke="#2062A8" stroke-width="1.8"></circle>
+            <circle cx="308" cy="99" r="4" fill="#fff" stroke="#2062A8" stroke-width="1.8"></circle>
+            <circle cx="370" cy="90.8" r="4" fill="#fff" stroke="#2062A8" stroke-width="1.8"></circle>
+            <text x="184" y="16" font-size="11" font-weight="700" fill="#B03A4E" text-anchor="middle">65.353</text>
+            <text x="122" y="222" font-size="9.5" fill="#5A6B7E" text-anchor="middle">EXPOSE</text>
+            <text x="308" y="222" font-size="9.5" fill="#5A6B7E" text-anchor="middle">DEVELOP</text>
+          </svg>
+        </div>
+        <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:14px">
+          <div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:10px">같은 incident 알람 6건 중 4번째</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ siblings }}" as="s" hint-placeholder-count="6">
+              <span class="mono" style="display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:6px;font-size:10.5px;font-weight:600;background:{{ s.bg }};color:{{ s.fg }};border:1px solid {{ s.bd }}">{{ s.id }}</span>
+            </sc-for>
+          </div>
+          <div style="font-size:11px;color:var(--g1);margin-top:10px">좌우 알람으로 바로 이동</div>
+        </div>
+        <div style="background:#FBF0F2;border:1px solid #E3BAC3;border-radius:8px;padding:16px">
+          <div style="font-size:13px;font-weight:800;color:var(--red);margin-bottom:12px">Agent 판단</div>
+          <div style="display:flex;align-items:baseline;gap:10px">
+            <span class="mono" style="font-size:20px;font-weight:800;color:var(--red)">FOC</span>
+            <span style="font-size:14px;font-weight:700;color:var(--ink)">포커스 이탈</span>
+          </div>
+          <div style="font-size:12px;color:var(--ink);margin-top:8px">PH_FOCUS 연속 OOS — CD_ADI 불량 유발</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid #E9CDD3">
+            <span style="font-size:11.5px;color:var(--g1)">조치</span>
+            <span class="cell-id" style="font-size:12px">ACT-0005</span>
+            <span class="badge bg-red">EQP_HOLD</span>
+            <span style="font-size:12px;font-weight:700;color:var(--red)">승인 대기</span>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <a class="btn btn-primary btn-sm" href="04_Agent분석승인.dc.html">분석 보기 →</a>
+          </div>
+        </div>
+        <div class="dashed-card">
+          <div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:8px">URL 이 함께 바뀐다</div>
+          <div class="mono" style="font-size:12px;font-weight:600;color:var(--blue)">/alarms/ALM-0022</div>
+          <div style="font-size:11.5px;color:var(--g1);margin-top:8px;line-height:1.6">선택 상태가 주소에 남아야 공유되고<br>뒤로가기가 목록으로 돌아온다.</div>
+          <div style="font-size:11.5px;font-weight:700;color:var(--red);margin-top:8px">지금은 눌러도 URL 이 그대로다.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const mk = (id,time,lot,w,chamber,param,rule,type,act,sel) => ({
+      id, time, lot, w:String(w), chamber, param, rule, act,
+      type, typeCls: type==='OOS'?'tx-red':'tx-amber',
+      ruleCls: rule==='R03'?'bg-red':'t-gray',
+      cls: sel?'row-sel':''
+    });
+    const rows = [
+      mk('ALM-0024','06-03 06:53','LOT-260007',9,'PHO-01-C1','PH_FOCUS','R01','OOS','ACT-0005'),
+      mk('ALM-0023','06-03 06:49','LOT-260007',7,'PHO-01-C1','PH_FOCUS','R01','OOS','ACT-0005'),
+      mk('ALM-0022','06-03 06:45','LOT-260007',5,'PHO-01-C1','PH_FOCUS','R03','OOS','ACT-0005',true),
+      mk('ALM-0021','06-03 06:45','LOT-260007',5,'PHO-01-C1','PH_FOCUS','R01','OOS','ACT-0005'),
+      mk('ALM-0020','06-03 06:41','LOT-260007',3,'PHO-01-C1','PH_FOCUS','R01','OOS','ACT-0005'),
+      mk('ALM-0019','06-03 06:37','LOT-260007',1,'PHO-01-C1','PH_FOCUS','R01','OOS','ACT-0005'),
+      mk('ALM-0018','06-02 22:54','LOT-260006',9,'PHO-01-C1','PH_FOCUS','R02','OOC','ACT-0004'),
+      mk('ALM-0017','06-02 22:42','LOT-260006',3,'PHO-01-C1','PH_FOCUS','R02','OOC','ACT-0004'),
+      mk('ALM-0016','06-02 22:38','LOT-260006',1,'PHO-01-C1','PH_FOCUS','R02','OOC','ACT-0004'),
+      mk('ALM-0015','06-02 15:39','LOT-260005',10,'ETC-01-C2','ET_REFL','R01','OOS','ACT-0003'),
+      mk('ALM-0014','06-02 15:34','LOT-260005',8,'ETC-01-C2','ET_REFL','R01','OOS','ACT-0003'),
+      mk('ALM-0013','06-02 15:29','LOT-260005',6,'ETC-01-C2','ET_REFL','R01','OOS','ACT-0003'),
+    ];
+    rows.forEach((r,i)=>{ if(!r.cls && i%2===1) r.cls='alt'; });
+    const siblings = ['ALM-0019','ALM-0020','ALM-0021','ALM-0022','ALM-0023','ALM-0024'].map(id=>(
+      id==='ALM-0022' ? {id,bg:'#2062A8',fg:'#fff',bd:'#2062A8'} : {id,bg:'#fff',fg:'#5A6B7E',bd:'#E2E7EE'}
+    ));
+    return { rows, siblings };
+  }
+}
+</script>
+</body>
+</html>

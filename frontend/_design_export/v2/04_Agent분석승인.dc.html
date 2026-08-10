@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="Agent 분석 · 승인">
+  <dc-import name="Sidebar" active="{{ 4 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">Agent 분석 · 승인</div>
+      <div class="top-note">대시보드 「검토」 에서 바로 들어온다</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:36px;background:var(--navy);border-radius:10px;padding:16px 24px;color:#fff">
+      <span class="mono" style="font-size:15px;font-weight:800">RUN-20260603-0005</span>
+      <span class="badge bg-amber">WAITING_APPROVAL</span>
+      <sc-for list="{{ headKv }}" as="h" hint-placeholder-count="5">
+        <span style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:10.5px;color:#8FA5BD">{{ h.k }}</span>
+          <span class="mono" style="font-size:13px;font-weight:700">{{ h.v }}</span>
+        </span>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-top:20px">
+      <div style="width:360px;flex:none;background:#fff;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:16px">
+        <div style="font-size:15px;font-weight:800;color:var(--navy)">판정</div>
+        <div style="background:#FBF0F2;border:1px solid #E3BAC3;border-radius:8px;padding:16px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span class="mono" style="font-size:24px;font-weight:800;color:var(--red)">FOC</span>
+            <span>
+              <span style="display:block;font-size:14.5px;font-weight:800;color:var(--ink)">포커스 이탈</span>
+              <span class="mono" style="display:block;font-size:10px;color:var(--g1);margin-top:2px">Focus Excursion</span>
+            </span>
+          </div>
+          <div style="font-size:12.5px;color:var(--ink);margin-top:12px">PH_FOCUS 연속 OOS — CD_ADI 불량 유발</div>
+          <div class="mono" style="font-size:11px;color:var(--g1);margin-top:6px">confidence 0.87</div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--g1);margin-bottom:8px">권고 조치</div>
+          <div style="background:#FAF3E1;border:1px solid #E2CC98;border-radius:8px;padding:16px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="badge bg-red">EQP_HOLD</span>
+              <span style="font-size:12.5px;font-weight:700">심각도 <span class="tx-red">HIGH</span></span>
+            </div>
+            <div class="mono" style="font-size:11.5px;color:var(--ink);margin-top:12px">근거 R03_CONSEC — 연속 3 WAFER OOS</div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--g1);margin-bottom:8px">승인</div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px">
+            <div><div class="f-label" style="margin-bottom:6px">결정자</div><input class="input mono" value="bang" readOnly></input></div>
+            <div><div class="f-label" style="margin-bottom:6px">코멘트</div><input class="input" value="" readOnly></input></div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+              <span class="btn btn-primary" style="flex:1">승인</span>
+              <span class="btn btn-outline-red" style="flex:1">반려</span>
+            </div>
+          </div>
+        </div>
+        <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:16px">
+          <div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:10px">승인하면</div>
+          <div class="mono" style="font-size:11px;color:var(--ink);display:flex;flex-direction:column;gap:7px">
+            <span>approval PENDING → APPROVED</span>
+            <span>action 승인 APPROVED · 전송 WAITING</span>
+            <span>agent_run WAITING_APPROVAL → RUNNING</span>
+            <span>커밋 뒤 같은 thread_id 로 재개</span>
+          </div>
+        </div>
+        <div class="dashed-card" style="padding:16px">
+          <div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:10px">Tool 호출</div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ tools }}" as="t" hint-placeholder-count="3">
+              <span style="display:flex;align-items:center;gap:8px">
+                <span class="dot-green" style="width:7px;height:7px"></span>
+                <span class="mono" style="font-size:11.5px;color:var(--ink)">{{ t.name }}</span>
+                <span class="mono" style="font-size:10.5px;color:var(--g2);margin-left:auto">{{ t.ms }}</span>
+              </span>
+            </sc-for>
+          </div>
+          <div style="border-top:1px solid var(--line);margin:12px 0 10px"></div>
+          <div style="font-size:10.5px;color:var(--g1);margin-bottom:8px">노드 — Tool 아님</div>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--g2);flex:none"></span>
+            <span class="mono" style="font-size:11.5px;color:var(--ink)">decide_action</span>
+            <span class="mono" style="font-size:10.5px;color:var(--g2);margin-left:auto">6ms</span>
+          </span>
+        </div>
+      </div>
+      <div class="card" style="flex:1;min-width:0">
+        <div class="card-h"><span class="card-t">근거</span><span class="card-note">판단의 이유를 차트로</span></div>
+        <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ evidence }}" as="e" hint-placeholder-count="5">
+            <div style="border:1px solid var(--line);border-left:3px solid {{ e.color }};border-radius:8px;padding:16px 18px">
+              <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:12px">
+                <span style="font-size:13.5px;font-weight:800;color:var(--navy)">⊙ {{ e.title }}</span>
+                <span style="font-size:11.5px;color:var(--g1)">{{ e.sub }}</span>
+              </div>
+              <div style="display:flex;gap:16px;align-items:stretch">
+                <div class="dashed-card" style="flex:1;padding:10px 14px;display:flex;align-items:center">
+                  <svg viewBox="0 0 520 90" style="width:100%;display:block">
+                    <line x1="10" y1="70" x2="510" y2="70" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4" opacity=".8"></line>
+                    <polyline points="{{ e.pts }}" fill="none" stroke="{{ e.color }}" stroke-width="2"></polyline>
+                  </svg>
+                </div>
+                <div style="width:250px;flex:none;background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:14px">
+                  <div style="font-size:11px;font-weight:800;color:var(--navy);margin-bottom:8px">읽는 법</div>
+                  <div style="font-size:12px;color:var(--ink);line-height:1.6">{{ e.read }}</div>
+                  <sc-if value="{{ e.tag }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:10px"><span class="badge {{ e.tagCls }}">{{ e.tag }}</span></div>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const headKv = [
+      {k:'설비', v:'PHO-01'},
+      {k:'챔버', v:'PHO-01-C1'},
+      {k:'파라미터', v:'PH_FOCUS'},
+      {k:'LOT', v:'LOT-260007'},
+      {k:'기간', v:'06-03 06:36 ~ 06:56'},
+    ];
+    const tools = [
+      {name:'get_fdc_summary', ms:'412ms'},
+      {name:'get_equipment_context', ms:'388ms'},
+      {name:'search_documents', ms:'1,240ms'},
+    ];
+    const evidence = [
+      {title:'문제 파라미터', sub:'PH_FOCUS · EXPOSE — 한계선 대비 이탈 구간', color:'#B03A4E',
+       pts:'10,52 110,34 210,22 310,18 410,40 510,28', read:'연속 3 WAFER OOS · 최대 69.377 (USL 60)', tag:false, tagCls:''},
+      {title:'같은 챔버 다른 파라미터', sub:'PH_DOSE · PH_PEB · PH_DEV 를 겹쳐 본다', color:'#2062A8',
+       pts:'10,50 110,42 210,48 310,40 410,46 510,42', read:'나머지 3 종은 전 구간 IN_CONTROL — 이 파라미터만의 문제', tag:false, tagCls:''},
+      {title:'형제 챔버 PHO-01-C2 정상 WAFER', sub:'형제 챔버 정상 WAFER 와 겹쳐 본다', color:'#2E7D4F',
+       pts:'10,55 110,48 210,38 310,30 410,44 510,34', read:'평소 밴드를 크게 벗어남', tag:false, tagCls:''},
+      {title:'상류 PHOTO vs 하류 ETCH', sub:'연쇄인가 독립인가', color:'#1E3A5C',
+       pts:'10,60 110,44 210,28 310,24 410,42 510,36', read:'하류 ETC-01 은 전 구간 정상 — 독립 이상. 하향 대상 아님', tag:'하향 판정 근거', tagCls:'t-navy'},
+      {title:'계측 CD 결과', sub:'CD_ADI · CD_AEI 판정과 나란히', color:'#B97F14',
+       pts:'10,58 110,42 210,26 310,20 410,38 510,30', read:'같은 WAFER CD_ADI FAIL — 품질 영향 확인됨', tag:'상향 판정 근거', tagCls:'t-amber'},
+    ];
+    return { headKv, tools, evidence };
+  }
+}
+</script>
+</body>
+</html>

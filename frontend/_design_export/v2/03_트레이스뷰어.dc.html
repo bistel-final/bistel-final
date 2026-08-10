@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="트레이스 뷰어">
+  <dc-import name="Sidebar" active="{{ 3 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">트레이스 뷰어</div>
+      <div class="top-note">알람 목록에서 들어오면 조건이 채워진 채로 열린다</div>
+    </div>
+    <div class="filter-bar" style="padding-bottom:6px">
+      <div class="f-field"><span class="f-label">AREA</span><span class="select">PHOTO <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">설비</span><span class="select">PHO-01 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">챔버</span><span class="select">PHO-01-C1 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">파라미터</span><span class="select" style="min-width:210px">PH_FOCUS, PH_DOSE (2) <span class="chev">▾</span></span></div>
+    </div>
+    <div class="filter-bar" style="padding-top:0">
+      <div class="f-field"><span class="f-label">레시피</span><span class="select">RCP-PH-A1 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">LOT</span><span class="select">LOT-260007 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">WAFER</span><span class="select">1, 3, 5 (3) <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">기간</span><span class="select" style="min-width:210px">06-03 06:36 ~ 06:56 <span class="chev">▾</span></span></div>
+      <span class="btn btn-primary" style="margin-left:auto">조회</span>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-top:8px">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:18px">
+        <div class="card" style="padding:16px 20px 10px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <span class="mono" style="font-size:14px;font-weight:800;color:var(--navy)">PH_FOCUS</span>
+            <span class="card-note mono">PHO-01-C1 · 단위 nm</span>
+          </div>
+          <svg viewBox="0 0 1000 260" style="width:100%;display:block" font-family="IBM Plex Mono,monospace">
+            <line x1="45" y1="40.2" x2="945" y2="40.2" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="70.4" x2="945" y2="70.4" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="115.6" x2="945" y2="115.6" stroke="#98A5B3" stroke-width="1"></line>
+            <line x1="45" y1="160.9" x2="945" y2="160.9" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="191.1" x2="945" y2="191.1" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <text x="38" y="43" font-size="9" fill="#5A6B7E" text-anchor="end">60</text>
+            <text x="38" y="73" font-size="9" fill="#5A6B7E" text-anchor="end">36</text>
+            <text x="38" y="119" font-size="9" fill="#5A6B7E" text-anchor="end">0</text>
+            <text x="38" y="164" font-size="9" fill="#5A6B7E" text-anchor="end">-36</text>
+            <text x="38" y="194" font-size="9" fill="#5A6B7E" text-anchor="end">-60</text>
+            <text x="950" y="43" font-size="8.5" fill="#B03A4E">USL</text>
+            <text x="950" y="73" font-size="8.5" fill="#B97F14">UCL</text>
+            <text x="950" y="119" font-size="8.5" fill="#98A5B3">TARGET</text>
+            <text x="950" y="164" font-size="8.5" fill="#B97F14">LCL</text>
+            <text x="950" y="194" font-size="8.5" fill="#B03A4E">LSL</text>
+            <line x1="341" y1="18" x2="341" y2="215" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="653" y1="18" x2="653" y2="215" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="783" y1="18" x2="783" y2="215" stroke="#B03A4E" stroke-width="1.2" stroke-dasharray="3 3"></line>
+            <polyline points="55,55.3 107,43.5 159,31.1 211,85.1 263,115.5 315,90.1 367,28.4 419,44.8 471,59.5 523,93.6 575,93.6 627,67.4 679,46.8 731,50 783,33.4 835,100.6 887,107.7 939,98.9" fill="none" stroke="#2062A8" stroke-width="1.8"></polyline>
+            <sc-for list="{{ focusPts }}" as="p" hint-placeholder-count="18">
+              <circle cx="{{ p.x }}" cy="{{ p.y }}" r="3.6" fill="{{ p.fill }}" stroke="{{ p.stroke }}" stroke-width="1.6"></circle>
+            </sc-for>
+            <rect x="55" y="4" rx="9" width="128" height="18" fill="#EBF2F9" stroke="#BBD2E8"></rect>
+            <text x="119" y="16.5" font-size="9.5" font-weight="600" fill="#2062A8" text-anchor="middle">LOT-260007 · W1</text>
+            <rect x="380" y="4" rx="9" width="36" height="18" fill="#EBF2F9" stroke="#BBD2E8"></rect>
+            <text x="398" y="16.5" font-size="9.5" font-weight="600" fill="#2062A8" text-anchor="middle">W3</text>
+            <rect x="692" y="4" rx="9" width="36" height="18" fill="#EBF2F9" stroke="#BBD2E8"></rect>
+            <text x="710" y="16.5" font-size="9.5" font-weight="600" fill="#2062A8" text-anchor="middle">W5</text>
+            <rect x="742" y="4" rx="9" width="82" height="18" fill="#B03A4E"></rect>
+            <text x="783" y="16.5" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">ALM-0022</text>
+            <text x="55" y="235" font-size="9.5" fill="#5A6B7E">06:36</text>
+            <text x="497" y="235" font-size="9.5" fill="#5A6B7E" text-anchor="middle">06:45</text>
+            <text x="939" y="235" font-size="9.5" fill="#5A6B7E" text-anchor="end">06:54</text>
+            <text x="497" y="254" font-size="9.5" fill="#98A5B3" text-anchor="middle">시각</text>
+          </svg>
+        </div>
+        <div class="card" style="padding:16px 20px 10px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <span class="mono" style="font-size:14px;font-weight:800;color:var(--navy)">PH_DOSE</span>
+            <span class="card-note mono">PHO-01-C1 · 단위 mJ/cm²</span>
+          </div>
+          <svg viewBox="0 0 1000 260" style="width:100%;display:block" font-family="IBM Plex Mono,monospace">
+            <line x1="45" y1="23.9" x2="945" y2="23.9" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="59.3" x2="945" y2="59.3" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="112.5" x2="945" y2="112.5" stroke="#98A5B3" stroke-width="1"></line>
+            <line x1="45" y1="165.7" x2="945" y2="165.7" stroke="#B97F14" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="45" y1="201.1" x2="945" y2="201.1" stroke="#B03A4E" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <text x="38" y="27" font-size="9" fill="#5A6B7E" text-anchor="end">26</text>
+            <text x="38" y="62" font-size="9" fill="#5A6B7E" text-anchor="end">25.6</text>
+            <text x="38" y="116" font-size="9" fill="#5A6B7E" text-anchor="end">25</text>
+            <text x="38" y="169" font-size="9" fill="#5A6B7E" text-anchor="end">24.4</text>
+            <text x="38" y="204" font-size="9" fill="#5A6B7E" text-anchor="end">24</text>
+            <text x="950" y="27" font-size="8.5" fill="#B03A4E">USL</text>
+            <text x="950" y="62" font-size="8.5" fill="#B97F14">UCL</text>
+            <text x="950" y="116" font-size="8.5" fill="#98A5B3">TARGET</text>
+            <text x="950" y="169" font-size="8.5" fill="#B97F14">LCL</text>
+            <text x="950" y="204" font-size="8.5" fill="#B03A4E">LSL</text>
+            <line x1="341" y1="14" x2="341" y2="215" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <line x1="653" y1="14" x2="653" y2="215" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4" opacity=".7"></line>
+            <polyline points="55,103.6 107,85.9 159,121.4 211,94.8 263,112.5 315,130.2 367,94.8 419,121.4 471,103.6 523,85.9 575,112.5 627,139.1 679,103.6 731,77 783,121.4 835,94.8 887,68.2 939,94.8" fill="none" stroke="#2062A8" stroke-width="1.8"></polyline>
+            <sc-for list="{{ dosePts }}" as="p" hint-placeholder-count="18">
+              <circle cx="{{ p.x }}" cy="{{ p.y }}" r="3.6" fill="#fff" stroke="#2062A8" stroke-width="1.6"></circle>
+            </sc-for>
+            <text x="55" y="235" font-size="9.5" fill="#5A6B7E">06:36</text>
+            <text x="497" y="235" font-size="9.5" fill="#5A6B7E" text-anchor="middle">06:45</text>
+            <text x="939" y="235" font-size="9.5" fill="#5A6B7E" text-anchor="end">06:54</text>
+            <text x="497" y="254" font-size="9.5" fill="#98A5B3" text-anchor="middle">시각</text>
+          </svg>
+        </div>
+      </div>
+      <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-h"><span class="card-t">구간 통계</span><span class="card-note">선택 WAFER 전체</span></div>
+          <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+            <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--navy)">EXPOSE</span>
+                <span class="badge bg-red">OOS</span>
+              </div>
+              <div class="kv">
+                <div><div class="k">mean</div><div class="v">57.240</div></div>
+                <div><div class="k">std</div><div class="v">8.589</div></div>
+                <div><div class="k">min</div><div class="v">44.616</div></div>
+                <div><div class="k">max</div><div class="v">69.377</div></div>
+              </div>
+            </div>
+            <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--navy)">DEVELOP</span>
+                <span class="badge bg-amber">OOC</span>
+              </div>
+              <div class="kv">
+                <div><div class="k">mean</div><div class="v">16.612</div></div>
+                <div><div class="k">std</div><div class="v">10.926</div></div>
+                <div><div class="k">min</div><div class="v">0.144</div></div>
+                <div><div class="k">max</div><div class="v">38.309</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><span class="card-t mono">anomaly_score</span><span class="card-note">참고 값</span></div>
+          <div style="padding:0 20px 18px">
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <span class="mono" style="font-size:30px;font-weight:800;color:var(--blue)">0.84</span>
+              <span class="mono" style="font-size:12px;color:var(--g1)">임계 0.62</span>
+            </div>
+            <div style="position:relative;height:10px;border-radius:999px;background:#EDF1F5;margin-top:12px">
+              <div style="position:absolute;left:0;top:0;height:100%;width:84%;border-radius:999px;background:var(--blue)"></div>
+              <div style="position:absolute;left:62%;top:-3px;width:2px;height:16px;background:var(--navy)"></div>
+            </div>
+            <div style="font-size:12px;font-weight:700;color:var(--ink);margin-top:14px">판정에는 쓰지 않는다.</div>
+            <div style="font-size:11.5px;color:var(--g1);margin-top:4px">표시 · LLM 근거 · 평가 전용</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><span class="card-t">이 구간의 알람</span><span class="card-note">4건</span></div>
+          <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px">
+            <div style="background:#FBF0F2;border:1px solid #E3BAC3;border-radius:8px;padding:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span class="cell-id" style="font-size:13px">ALM-0022</span>
+                <span class="badge bg-red">R03</span>
+              </div>
+              <div class="mono" style="font-size:11px;color:var(--g1)">W5 · EXPOSE · 06:45:45</div>
+              <div class="mono" style="font-size:12px;font-weight:700;color:var(--red);margin-top:8px">65.353 nm — USL 60 초과</div>
+            </div>
+            <sc-for list="{{ r01Alarms }}" as="a" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:8px;background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:9px 12px">
+                <span class="mono" style="font-size:11.5px;font-weight:700;color:var(--navy);white-space:nowrap">{{ a.id }}</span>
+                <span class="badge t-gray">R01</span>
+                <span class="mono" style="font-size:11px;color:var(--g1);margin-left:auto;white-space:nowrap">{{ a.meta }}</span>
+              </div>
+            </sc-for>
+            <div class="dashed-card" style="padding:14px">
+              <div style="font-size:12.5px;font-weight:700;color:var(--navy);line-height:1.55">선택한 파라미터 수만큼<br>차트가 세로로 쌓인다.</div>
+              <div style="font-size:11.5px;color:var(--g1);margin-top:8px;line-height:1.6">WAFER 를 여러 장 고르면<br>가로로 이어 붙고 경계에 구분선.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const xs = Array.from({length:18},(_,i)=>55+i*52);
+    const focusY = [55.3,43.5,31.1,85.1,115.5,90.1,28.4,44.8,59.5,93.6,93.6,67.4,46.8,50,33.4,100.6,107.7,98.9];
+    const focusPts = focusY.map((y,i)=>({x:xs[i], y, fill: i===14?'#B03A4E':'#fff', stroke:'#2062A8'}));
+    const doseY = [103.6,85.9,121.4,94.8,112.5,130.2,94.8,121.4,103.6,85.9,112.5,139.1,103.6,77,121.4,94.8,68.2,94.8];
+    const dosePts = doseY.map((y,i)=>({x:xs[i], y}));
+    const r01Alarms = [
+      {id:'ALM-0021', meta:'W5 · 06:45:45'},
+      {id:'ALM-0020', meta:'W3 · 06:41:45'},
+      {id:'ALM-0019', meta:'W1 · 06:37:47'},
+    ];
+    return { focusPts, dosePts, r01Alarms };
+  }
+}
+</script>
+</body>
+</html>
