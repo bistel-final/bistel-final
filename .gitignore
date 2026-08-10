@@ -28,3 +28,6 @@ data/
 .idea/
 .DS_Store
 .claude/settings.local.json
+
+# 개인 검토용 산출물 — 정리 후 docs/ 로 옮긴다
+output/
