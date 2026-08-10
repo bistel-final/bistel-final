@@ -39,17 +39,20 @@ jobs:
             exit 1
           fi
 
+      # Squash merge 라서 PR 제목이 main 의 커밋 메시지가 된다.
+      # 커밋 규칙과 같은 형식을 쓴다. 담당 영역은 제목이 아니라 라벨로 표시한다.
       - name: Validate pull request title
         shell: bash
         run: |
           set -euo pipefail
 
-          title_pattern='^\[(Common|A|B|C|D)\][[:space:]]+.+$'
+          title_pattern='^(feat|fix|refactor|test|docs|chore): .+$'
 
           if [[ ! "$PR_TITLE" =~ $title_pattern ]]; then
             echo "잘못된 PR 제목입니다: $PR_TITLE"
-            echo "형식: [담당영역] 변경 요약"
-            echo "예시: [A] FDC 요약 조회 API 구현"
+            echo "형식: <type>: <한 줄 요약>"
+            echo "type: feat | fix | refactor | test | docs | chore"
+            echo "예시: feat: FDC 요약 조회 API 구현"
             exit 1
           fi
 
