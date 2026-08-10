@@ -26,6 +26,11 @@ function FailCard({ title, count, emptyNote, note }) {
 }
 
 // 「처리 필요」 밴드 — 좌측 3px 적색 보더, 승인 대기 리스트 + 실행/전송 실패 카드
+// pendings: DashboardSummary.pending_approvals
+//   [{ approval_id, action_id, agent_run_id, incident:{lot_id,chamber_id}, equipment_id, sensor_id,
+//      action_code, severity, requested_at }]
+//   sensor_id 는 incident 가 아니라 최상위 필드다 (incident 는 lot_id·chamber_id 두 개뿐).
+// TODO(api): 승인 근거 룰(R03_CONSEC) 은 응답에 없다 — 값을 만들지 않고 표기를 생략한다.
 function DashActionBand({ pendings, runFailed, sendFailed, onReview }) {
   return (
     <Card className="mt-2 border-l-[3px] border-l-red px-5 py-4">
@@ -55,9 +60,8 @@ function DashActionBand({ pendings, runFailed, sendFailed, onReview }) {
                   {p.incident.lot_id} · {p.incident.chamber_id} · {p.sensor_id}
                 </span>
                 <Badge variant={actionCodeVariant(p.action_code)}>{p.action_code}</Badge>
-                {p.rule && <span className="font-mono text-[11px] text-g1">{p.rule}</span>}
                 <span className="ml-auto font-mono text-[11px] text-g1">{agoOf(p.requested_at)}</span>
-                <Button sm onClick={() => onReview(p.run_id)}>
+                <Button sm onClick={() => onReview(p.agent_run_id)}>
                   검토
                 </Button>
               </div>

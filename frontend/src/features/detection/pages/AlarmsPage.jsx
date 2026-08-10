@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getAlarms, getTraceCatalog } from '../../../shared/api/detection.js'
+import { getAlarm, getAlarms, getTraceCatalog, searchTraces } from '../../../shared/api/detection.js'
+import { getRun } from '../../../shared/api/agent.js'
 import { fmtShort } from '../../../shared/api/format.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -24,10 +25,8 @@ import AlarmDetailPanel from '../components/AlarmDetailPanel.jsx'
 
 const ALL = '전체'
 const PAGE_SIZE = 12
-
-// 설비 prefix → 공정(AREA). 알람 데이터에서 계층을 유도한다 (PHO-01-C1 → PHO-01 → PHOTO)
-const AREA_BY_PREFIX = { PHO: 'PHOTO', ETC: 'ETCH' }
-const areaOf = (a) => AREA_BY_PREFIX[String(a.equipment_id ?? a.chamber_id ?? '').slice(0, 3)] ?? '기타'
+// TODO(api): alarm_ids · lot_id 필터 파라미터가 명세에 없다 — 이 두 경우만 넓게 받아 클라이언트에서 좁힌다
+const WIDE_SIZE = 200
 
 const COLUMNS = [
   { key: 'alarm_id', label: '알람' },
@@ -48,13 +47,16 @@ const cmp = (a, b, col) => {
   return String(x).localeCompare(String(y))
 }
 
+const orNull = (v) => (v === ALL ? undefined : v)
+
 function AlarmsPage() {
   const { alarmId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const [data, setData] = useState(null)
+  const [list, setList] = useState(null)
   const [catalog, setCatalog] = useState(null)
+  const [detail, setDetail] = useState(null)
   const [error, setError] = useState(null)
   // 다른 화면(대시보드 등)이 쿼리 파라미터로 이관한 계층 필터 — 마운트 시 1회만 읽는다
   const [filter, setFilter] = useState(() => ({
@@ -72,68 +74,89 @@ function AlarmsPage() {
     return ids.length ? new Set(ids) : null
   })
   const [sort, setSort] = useState({ key: 'occurred_at', dir: 'desc' })
-  const [pageOverride, setPageOverride] = useState(null)
+  const [page, setPage] = useState(1)
 
-  const load = useCallback(() => {
-    Promise.all([getAlarms(), getTraceCatalog()])
-      .then(([alarmRes, traceRes]) => {
-        setData(alarmRes)
-        setCatalog(traceRes)
-      })
+  // 계층 필터는 서버 파라미터로 전달한다 (전량 로드 후 클라이언트 필터 금지)
+  const scope = useMemo(
+    () => ({
+      area: orNull(filter.area),
+      equipment_id: orNull(filter.equipment),
+      chamber_id: orNull(filter.chamber),
+      sensor_id: orNull(filter.sensor),
+    }),
+    [filter],
+  )
+
+  const loadCatalog = useCallback(() => {
+    getTraceCatalog()
+      .then(setCatalog)
       .catch((e) => setError(e.message))
   }, [])
   useEffect(() => {
-    load()
-  }, [load])
+    loadCatalog()
+  }, [loadCatalog])
+
+  const loadList = useCallback(() => {
+    const req = alarmIdFilter
+      ? getAlarms({ ...scope, page: 1, size: WIDE_SIZE })
+      : getAlarms({ ...scope, page, size: PAGE_SIZE })
+    req.then(setList).catch((e) => setError(e.message))
+  }, [scope, page, alarmIdFilter])
+  useEffect(() => {
+    loadList()
+  }, [loadList])
+
+  // 상세는 목록 페이지와 무관하게 /alarms/:alarmId 로 복원된다 — 단건 조회로 받는다
+  const loadDetail = useCallback(() => {
+    if (!alarmId) return
+    getAlarm(alarmId)
+      .then((alarm) => {
+        if (!alarm) return { forId: alarmId, alarm: null }
+        return Promise.all([
+          // 같은 incident = (lot_id, chamber_id) — chamber_id 로 받아 lot_id 로 좁힌다
+          getAlarms({ chamber_id: alarm.chamber_id, size: WIDE_SIZE }),
+          searchTraces({
+            chamber_id: alarm.chamber_id,
+            sensor_ids: [alarm.sensor_id],
+            lot_id: alarm.lot_id,
+            wafer_nos: [alarm.wafer_no],
+          }),
+          alarm.latest_agent_run_id ? getRun(alarm.latest_agent_run_id) : Promise.resolve(null),
+        ]).then(([sibPage, trace, run]) => ({
+          // forId 로 이전 알람의 상세가 남아 보이는 것을 막는다 (effect 안 setState 금지)
+          forId: alarmId,
+          alarm,
+          siblings: (sibPage.items ?? [])
+            .filter((s) => s.incident?.lot_id === alarm.incident?.lot_id)
+            .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id)),
+          wafer: trace.wafers?.[0] ?? null,
+          limit: trace.limits?.[alarm.sensor_id] ?? null,
+          run,
+        }))
+      })
+      .then(setDetail)
+      .catch((e) => setError(e.message))
+  }, [alarmId])
+  useEffect(() => {
+    loadDetail()
+  }, [loadDetail])
+
+  const areaOf = useMemo(() => {
+    const byEquipment = Object.fromEntries((catalog?.equipments ?? []).map((e) => [e.equipment_id, e.area_id]))
+    return (a) => byEquipment[a?.equipment_id] ?? ''
+  }, [catalog])
 
   const retry = () => {
     setError(null)
-    setData(null)
+    setList(null)
     setCatalog(null)
-    load()
+    loadCatalog()
+    loadList()
+    loadDetail()
   }
 
-  const items = useMemo(() => data?.items ?? [], [data])
-
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (a) =>
-          (!alarmIdFilter || alarmIdFilter.has(a.alarm_id)) &&
-          (filter.area === ALL || areaOf(a) === filter.area) &&
-          (filter.equipment === ALL || a.equipment_id === filter.equipment) &&
-          (filter.chamber === ALL || a.chamber_id === filter.chamber) &&
-          (filter.sensor === ALL || a.sensor_id === filter.sensor),
-      ),
-    [items, filter, alarmIdFilter],
-  )
-
-  const sorted = useMemo(() => {
-    const col = COLUMNS.find((c) => c.key === sort.key) ?? COLUMNS[1]
-    const sign = sort.dir === 'asc' ? 1 : -1
-    return [...filtered].sort((a, b) => sign * cmp(a, b, col) || a.alarm_id.localeCompare(b.alarm_id))
-  }, [filtered, sort])
-
-  // 안내 배너 건수 — 계층 필터와 무관하게 ID 제한만 반영한 실제 건수
-  const idScopedCnt = useMemo(
-    () => (alarmIdFilter ? items.filter((a) => alarmIdFilter.has(a.alarm_id)).length : 0),
-    [items, alarmIdFilter],
-  )
-
-  // 상세 패널은 URL(/alarms/:alarmId)에서 복원된다 — 필터와 무관하게 전체 목록에서 찾는다
-  const selected = alarmId ? (items.find((a) => a.alarm_id === alarmId) ?? null) : null
-
-  const pageCnt = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  // 페이지를 직접 누르기 전까지는 선택된 알람이 보이는 페이지를 자동으로 맞춘다
-  const selIdx = selected ? sorted.findIndex((a) => a.alarm_id === selected.alarm_id) : -1
-  const autoPage = selIdx >= 0 ? Math.floor(selIdx / PAGE_SIZE) + 1 : 1
-  const curPage = Math.min(pageOverride ?? autoPage, pageCnt)
-  const rows = sorted.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
-  const rangeFrom = (curPage - 1) * PAGE_SIZE + 1
-  const rangeTo = Math.min(curPage * PAGE_SIZE, sorted.length)
-
   const onFilterChange = (key, value) => {
-    setPageOverride(null)
+    setPage(1)
     // 상위를 바꾸면 하위 선택을 초기화한다
     setFilter((prev) => {
       const next = { ...prev, [key]: value }
@@ -145,13 +168,13 @@ function AlarmsPage() {
   }
 
   const toggleSort = (key) => {
-    setPageOverride(null)
+    setPage(1)
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
   }
 
   // 알람 ID 제한 해제 — 전체 목록으로 (URL의 ?alarms=도 함께 지운다)
   const clearAlarmIdFilter = () => {
-    setPageOverride(null)
+    setPage(1)
     setAlarmIdFilter(null)
     if (searchParams.has('alarms')) {
       const next = new URLSearchParams(searchParams)
@@ -162,28 +185,42 @@ function AlarmsPage() {
 
   const select = (id) => navigate(`/alarms/${id}`)
   const close = () => navigate('/alarms')
-  const jump = (id) => {
-    setPageOverride(null)
-    navigate(`/alarms/${id}`)
-  }
 
   if (error) return <ErrorState detail={error} onRetry={retry} />
-  if (!data || !catalog) return <LoadingState message="알람 목록을 불러오는 중…" />
+  if (!list || !catalog) return <LoadingState message="알람 목록을 불러오는 중…" />
+
+  const items = list.items ?? []
+  const scoped = alarmIdFilter ? items.filter((a) => alarmIdFilter.has(a.alarm_id)) : items
+  // TODO(api): 정렬 파라미터 미정의 — 서버가 돌려준 페이지를 클라이언트에서 정렬한다
+  const col = COLUMNS.find((c) => c.key === sort.key) ?? COLUMNS[1]
+  const sign = sort.dir === 'asc' ? 1 : -1
+  const sorted = [...scoped].sort((a, b) => sign * cmp(a, b, col) || a.alarm_id.localeCompare(b.alarm_id))
+
+  // 페이저는 서버 total 기준 — ID 제한 모드에서만 클라이언트 건수를 쓴다
+  const total = alarmIdFilter ? scoped.length : (list.total ?? scoped.length)
+  const pageCnt = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const curPage = Math.min(page, pageCnt)
+  const rows = alarmIdFilter ? sorted.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE) : sorted
+  const rangeFrom = total === 0 ? 0 : (curPage - 1) * PAGE_SIZE + 1
+  const rangeTo = Math.min(curPage * PAGE_SIZE, total)
+
+  const shown = detail?.forId === alarmId ? detail : null
+  const selected = shown?.alarm ?? null
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[22px] font-extrabold text-navy">알람 목록</div>
         <div className="text-xs text-g1">
-          기간 내 <span className="font-mono">{data.total ?? items.length}</span>건
+          기간 내 <span className="font-mono">{total}</span>건
         </div>
       </div>
 
-      <AlarmHierarchyFilter alarms={items} value={filter} onChange={onFilterChange} areaOf={areaOf} />
+      <AlarmHierarchyFilter catalog={catalog} value={filter} onChange={onFilterChange} />
 
       {alarmIdFilter && (
         <div className="mb-3.5 flex items-center gap-3 rounded-lg border border-tint-blue-line bg-tint-blue px-3.5 py-2 text-[12.5px] font-semibold text-navy">
-          조치 연관 알람 <span className="font-mono font-bold">{idScopedCnt}</span>건 표시 중
+          조치 연관 알람 <span className="font-mono font-bold">{scoped.length}</span>건 표시 중
           <Button variant="outline" sm className="ml-auto" onClick={clearAlarmIdFilter}>
             전체 목록으로
           </Button>
@@ -193,7 +230,7 @@ function AlarmsPage() {
       <div className="flex items-start gap-5">
         <Card className="min-w-0 flex-1">
           <CardHeader title="알람" note="발생 시각 내림차순" />
-          {sorted.length === 0 ? (
+          {rows.length === 0 ? (
             <EmptyState title="조건에 맞는 알람이 없습니다" description="공정·설비·챔버·파라미터 필터를 조정해 주세요." />
           ) : (
             <div className="overflow-x-auto px-2">
@@ -250,19 +287,29 @@ function AlarmsPage() {
               </table>
             </div>
           )}
-          {sorted.length > 0 && (
+          {total > 0 && (
             <Pagination
               page={curPage}
               pageCount={pageCnt}
-              rangeLabel={`${rangeFrom} – ${rangeTo} / ${sorted.length}`}
-              onPage={setPageOverride}
+              rangeLabel={`${rangeFrom} – ${rangeTo} / ${total}`}
+              onPage={setPage}
             />
           )}
         </Card>
 
         <div className="w-[470px] flex-none">
           {selected ? (
-            <AlarmDetailPanel alarm={selected} alarms={items} catalog={catalog} area={areaOf(selected)} onSelect={jump} />
+            <AlarmDetailPanel
+              alarm={selected}
+              siblings={shown.siblings}
+              wafer={shown.wafer}
+              limit={shown.limit}
+              run={shown.run}
+              area={areaOf(selected)}
+              onSelect={select}
+            />
+          ) : alarmId && !shown ? (
+            <LoadingState message="알람 상세를 불러오는 중…" />
           ) : alarmId ? (
             <DashedCard className="flex flex-col items-start gap-3 px-[18px] py-4">
               <div className="text-[13px] font-extrabold text-navy">

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getActions } from '../../../shared/api/agent.js'
+import { getTraceCatalog } from '../../../shared/api/detection.js'
 import { fmtShort, isoToParts } from '../../../shared/api/format.js'
 import { ACTION_TABS } from '../mock/actions.js'
-import { sortActions } from '../actionsSort.js'
+import { matchTab, sortActions, tabParams } from '../actionsSort.js'
 import ActionDetailPanel from '../components/ActionDetailPanel.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -11,6 +12,7 @@ import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import Pagination from '../../../shared/components/ui/Pagination.jsx'
 import {
   FilterBar,
   FilterField,
@@ -32,36 +34,69 @@ import {
 } from '../../../shared/components/ui/statusStyles.js'
 
 const ALL = '전체'
-
-// 탭 판정 — 승인 대기만 approval_status, 나머지는 send_status 기준 (명세)
-const matchTab = (a, key) =>
-  key === 'ALL' ? true : key === 'PENDING' ? a.approval_status === 'PENDING' : a.send_status === key
-
-// 공정은 챔버 ID 앞 세그먼트(ETC·PHO)로 유도한다 — incident 외 값 창작 없음
-const areaOf = (a) => a.incident.chamber_id.split('-')[0]
+const PAGE_SIZE = 20
+// 탭 배지용 조회 — 같은 필터의 전체 집합을 한 번 받아 다섯 탭을 센다 (건수 하드코딩 금지)
+const COUNT_SIZE = 500
 
 const HEADERS = ['조치', 'incident', '파라미터', '조치 코드', '심각도', '승인', '전송', '알람', '시각', '']
+
+// 조건부 파라미터는 '전체'일 때 키 자체를 빼서 보낸다 (빈 문자열 금지)
+const param = (key, value) => (value === ALL ? null : { [key]: value })
 
 function ActionsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [actions, setActions] = useState(null)
+  const [res, setRes] = useState(null) // 현재 탭·필터의 목록 응답
+  const [countRes, setCountRes] = useState(null) // 같은 필터의 전체 집합 (탭 배지)
+  const [catalog, setCatalog] = useState(null) // 공정·설비·챔버 계층 (GET /traces/catalog)
+  const [codes, setCodes] = useState([]) // 조치 코드 옵션 — 필터와 무관한 전체 집합에서 1회 유도
   const [error, setError] = useState(null)
   // 기본 선택은 '승인 대기'. 단, ?action=... 딥링크로 들어오면 해당 행이 어느 상태든
   // 보이도록 '전체'에서 시작한다 (초기 렌더에서 한 번만 평가)
   const [tab, setTab] = useState(() => (searchParams.get('action') ? 'ALL' : 'PENDING'))
   const [area, setArea] = useState(ALL)
+  const [equipment, setEquipment] = useState(ALL)
   const [chamber, setChamber] = useState(ALL)
   const [code, setCode] = useState(ALL)
+  const [page, setPage] = useState(1)
 
+  // 조치 코드·설비·챔버는 서버 파라미터로 넘긴다.
+  // TODO(api): GET /actions 에 area 파라미터가 없어 공정만 클라이언트에서 거른다
+  const filterParams = useMemo(
+    () => ({ ...param('action_code', code), ...param('equipment_id', equipment), ...param('chamber_id', chamber) }),
+    [code, equipment, chamber],
+  )
+
+  // 탭·필터가 바뀌면 load가 새로 만들어져 useEffect가 다시 돈다.
+  // setState는 전부 then/catch 안에서만 호출한다 (react-hooks/set-state-in-effect)
   const load = useCallback(() => {
-    getActions()
-      .then((res) => setActions(res.items))
+    Promise.all([
+      getActions({ ...filterParams, ...tabParams(tab), page, size: PAGE_SIZE }),
+      getActions({ ...filterParams, page: 1, size: COUNT_SIZE }),
+    ])
+      .then(([list, all]) => {
+        setRes(list)
+        setCountRes(all)
+      })
+      .catch((e) => setError(e.message))
+  }, [filterParams, tab, page])
+
+  // 필터 옵션 소스는 필터와 무관하므로 최초 1회만 받는다
+  const loadOptions = useCallback(() => {
+    Promise.all([getTraceCatalog(), getActions({ page: 1, size: COUNT_SIZE })])
+      .then(([cat, all]) => {
+        setCatalog(cat)
+        setCodes([...new Set(all.items.map((a) => a.action_code))])
+      })
       .catch((e) => setError(e.message))
   }, [])
+
   useEffect(() => {
     load()
   }, [load])
+  useEffect(() => {
+    loadOptions()
+  }, [loadOptions])
 
   // 열린 행은 URL에 담는다 — 새로고침·링크 공유 시 그대로 복원된다
   const openId = searchParams.get('action')
@@ -72,44 +107,66 @@ function ActionsPage() {
     setSearchParams(next, { replace: true })
   }
 
-  const src = useMemo(() => actions ?? [], [actions])
-
-  // 필터 옵션은 incident에서 유도한다 (하드코딩 금지). 설비는 선택 공정에 종속
-  const areaOptions = useMemo(() => [ALL, ...new Set(src.map(areaOf))], [src])
+  // 공정·설비·챔버 옵션은 설비 마스터에서 유도한다 (챔버 ID 절단 금지 — 라벨은 PHOTO/ETCH)
+  const equipments = useMemo(() => catalog?.equipments ?? [], [catalog])
+  const areaById = useMemo(
+    () => Object.fromEntries(equipments.map((e) => [e.equipment_id, e.area_id])),
+    [equipments],
+  )
+  const inArea = useCallback((e) => area === ALL || e.area_id === area, [area])
+  const areaOptions = useMemo(() => [ALL, ...new Set(equipments.map((e) => e.area_id))], [equipments])
+  const equipmentOptions = useMemo(
+    () => [ALL, ...equipments.filter(inArea).map((e) => e.equipment_id)],
+    [equipments, inArea],
+  )
   const chamberOptions = useMemo(
     () => [
       ALL,
-      ...new Set(src.filter((a) => area === ALL || areaOf(a) === area).map((a) => a.incident.chamber_id)),
+      ...equipments
+        .filter(inArea)
+        .filter((e) => equipment === ALL || e.equipment_id === equipment)
+        .flatMap((e) => e.chambers),
     ],
-    [src, area],
+    [equipments, inArea, equipment],
   )
-  const codeOptions = useMemo(() => [ALL, ...new Set(src.map((a) => a.action_code))], [src])
+  const codeOptions = useMemo(() => [ALL, ...codes], [codes])
 
-  // 공정 변경 시 무효해진 설비 선택은 핸들러에서 즉시 되돌린다 (useEffect setState 금지)
+  // 상위를 바꾸면 하위 선택을 즉시 되돌린다 (useEffect setState 금지)
   const onArea = (next) => {
+    setPage(1)
     setArea(next)
-    if (chamber !== ALL && next !== ALL && !chamber.startsWith(next)) setChamber(ALL)
+    setEquipment(ALL)
+    setChamber(ALL)
+  }
+  const onEquipment = (next) => {
+    setPage(1)
+    setEquipment(next)
+    setChamber(ALL)
+  }
+  const onChamber = (next) => {
+    setPage(1)
+    setChamber(next)
+  }
+  const onCode = (next) => {
+    setPage(1)
+    setCode(next)
+  }
+  const onTab = (next) => {
+    setPage(1)
+    setTab(next)
   }
 
-  // 공정·설비·조치 필터 → 탭 건수도 같은 집합 기준으로 센다
-  const filtered = useMemo(
-    () =>
-      src.filter(
-        (a) =>
-          (area === ALL || areaOf(a) === area) &&
-          (chamber === ALL || a.incident.chamber_id === chamber) &&
-          (code === ALL || a.action_code === code),
-      ),
-    [src, area, chamber, code],
-  )
+  // 공정만 클라이언트 필터 — 서버가 이미 걸러 준 집합 위에 얹는다
+  const inSelectedArea = useCallback((a) => area === ALL || areaById[a.equipment_id] === area, [area, areaById])
 
+  const countItems = useMemo(() => (countRes?.items ?? []).filter(inSelectedArea), [countRes, inSelectedArea])
   const counts = useMemo(
-    () => Object.fromEntries(ACTION_TABS.map((t) => [t.key, filtered.filter((a) => matchTab(a, t.key)).length])),
-    [filtered],
+    () => Object.fromEntries(ACTION_TABS.map((t) => [t.key, countItems.filter((a) => matchTab(a, t.key)).length])),
+    [countItems],
   )
 
-  // 정렬은 전체 집합에 한 번 — 탭은 같은 순서에 필터만 얹는다 (규칙: PENDING 최상단 → 시각 내림차순)
-  const rows = useMemo(() => sortActions(filtered).filter((a) => matchTab(a, tab)), [filtered, tab])
+  // 정렬 규칙: PENDING 최상단 → 시각 내림차순
+  const rows = useMemo(() => sortActions((res?.items ?? []).filter(inSelectedArea)), [res, inSelectedArea])
 
   if (error)
     return (
@@ -118,22 +175,25 @@ function ActionsPage() {
         detail={error}
         onRetry={() => {
           setError(null)
-          setActions(null)
+          setRes(null)
           load()
+          loadOptions()
         }}
       />
     )
-  if (!actions) return <LoadingState message="조치 목록을 불러오는 중…" />
+  if (!res || !catalog) return <LoadingState message="조치 목록을 불러오는 중…" />
 
   // 기간 표시는 데이터의 created_at 범위에서 계산한다 (정적 필터 — 값 창작 금지)
-  const dates = src.map((a) => isoToParts(a.created_at).date).sort()
+  const dates = countItems.map((a) => isoToParts(a.created_at).date).sort()
   const period = dates.length ? `${dates[0]} ~ ${dates[dates.length - 1].slice(5)}` : '—'
+  const total = res.total ?? rows.length
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-[64px] items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[22px] font-extrabold text-navy">조치 목록</div>
-        <div className="text-xs text-g1">incident 단위 · 기간 내 {src.length}건</div>
+        <div className="text-xs text-g1">incident 단위 · 기간 내 {counts.ALL ?? 0}건</div>
       </div>
 
       <FilterBar className="pt-2">
@@ -144,10 +204,13 @@ function ActionsPage() {
           <FilterSelect value={area} onChange={onArea} options={areaOptions} />
         </FilterField>
         <FilterField label="설비">
-          <FilterSelect value={chamber} onChange={setChamber} options={chamberOptions} />
+          <FilterSelect value={equipment} onChange={onEquipment} options={equipmentOptions} />
+        </FilterField>
+        <FilterField label="챔버">
+          <FilterSelect value={chamber} onChange={onChamber} options={chamberOptions} />
         </FilterField>
         <FilterField label="조치">
-          <FilterSelect value={code} onChange={setCode} options={codeOptions} />
+          <FilterSelect value={code} onChange={onCode} options={codeOptions} />
         </FilterField>
       </FilterBar>
 
@@ -159,7 +222,7 @@ function ActionsPage() {
             <button
               key={t.key}
               type="button"
-              onClick={() => setTab(t.key)}
+              onClick={() => onTab(t.key)}
               className={`inline-flex h-[34px] cursor-pointer items-center gap-2.5 rounded-lg border bg-white px-4 text-[13px] ${
                 on ? 'border-red font-bold text-red' : 'border-line font-semibold text-g1'
               }`}
@@ -206,13 +269,22 @@ function ActionsPage() {
                     isOpen={isOpen}
                     isPending={isPending}
                     onToggle={() => toggleOpen(a.action_id)}
-                    onReview={() => navigate(`/agent-runs/${a.run_id}`)}
+                    onReview={() => navigate(`/agent-runs/${a.agent_run_id}`)}
                   />
                 )
               })}
             </tbody>
           </table>
         </div>
+        {pageCount > 1 && (
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            total={total}
+            rangeLabel={`${total}건 중 ${rows.length}건`}
+            onPage={setPage}
+          />
+        )}
       </Card>
     </div>
   )
@@ -226,7 +298,7 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           <div className={CELL_ID}>{a.action_id}</div>
           <div className="mt-[3px]">
             <Link
-              to={`/agent-runs/${a.run_id}`}
+              to={`/agent-runs/${a.agent_run_id}`}
               onClick={(e) => e.stopPropagation()}
               className="font-mono text-[10.5px]"
             >

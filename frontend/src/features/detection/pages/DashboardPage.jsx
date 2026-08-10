@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAlarms, getDashboard } from '../../../shared/api/detection.js'
-import { getApprovals, getActions, getRuns } from '../../../shared/api/agent.js'
+import { getDashboard } from '../../../shared/api/detection.js'
+import { getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import { FilterBar, FilterField, FilterSelect, FilterStatic } from '../../../shared/components/ui/FilterField.jsx'
@@ -11,11 +11,14 @@ import DashParamCard from '../components/DashParamCard.jsx'
 import DashEquipCard from '../components/DashEquipCard.jsx'
 import DashRecentTable from '../components/DashRecentTable.jsx'
 
+// 알람 대시보드 — 집계는 전부 서버(GET /dashboard/summary)가 한다.
+// 화면은 응답 필드를 그대로 옮겨 그릴 뿐, 알람 목록을 받아 다시 집계하지 않는다.
+// 필터(공정·장비·챔버)는 서버 파라미터(area·equipment_id·chamber_id)로 넘어가고
+// 로더가 useCallback(deps=필터) 이므로 useEffect 는 로더 호출만 한다.
+
 const ALL = '전체'
 
-// 감시 파라미터 8종 (도메인 규칙) — 알람이 없는 종은 '기간 내 이상 없음'으로 표기
-const ALL_PARAMS = ['PH_FOCUS', 'PH_DOSE', 'PH_PEB', 'PH_DEV', 'ET_REFL', 'ET_CF4', 'ET_PRES', 'ET_ESC']
-
+// daily_trend.date("2026-06-01") → x 라벨 "6/1"
 const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 
 function DashboardPage() {
@@ -28,18 +31,17 @@ function DashboardPage() {
   const [chamber, setChamber] = useState(ALL)
 
   const load = useCallback(() => {
-    Promise.all([getAlarms(), getApprovals(), getActions(), getRuns(), getDashboard('2026-06-04', ALL)])
-      .then(([alarms, approvals, actions, runs, dashboard]) =>
-        setData({
-          alarms: alarms.items,
-          approvals: approvals.items,
-          actions: actions.items,
-          runs: runs.items,
-          hierarchy: dashboard.hierarchy,
-        }),
+    const scope = {}
+    if (area !== ALL) scope.area = area
+    if (equipment !== ALL) scope.equipment_id = equipment
+    if (chamber !== ALL) scope.chamber_id = chamber
+    // 실행 실패·전송 실패는 summary 에 없다 — 각 목록의 total 로 건수만 가져온다
+    Promise.all([getDashboard(scope), getRuns({ status: 'FAILED', size: 1 }), getActions({ send_status: 'FAILED', size: 1 })])
+      .then(([summary, failedRuns, failedActions]) =>
+        setData({ summary, runFailed: failedRuns.total, sendFailed: failedActions.total }),
       )
       .catch((e) => setError(e.message))
-  }, [])
+  }, [area, equipment, chamber])
   useEffect(() => {
     load()
   }, [load])
@@ -62,18 +64,16 @@ function DashboardPage() {
       </LoadingState>
     )
 
-  const { alarms, approvals, actions, runs, hierarchy } = data
-
-  // 설비 → 공정 매핑 (계층 데이터에서 유도)
-  const areaOfEqp = {}
-  for (const h of hierarchy) for (const e of h.equipments) areaOfEqp[e.id] = h.area
-
-  // 필터 옵션 — 상위 선택으로 하위 옵션을 좁힌다
-  const scopedAreas = hierarchy.filter((h) => area === ALL || h.area === area)
-  const scopedEqps = scopedAreas.flatMap((h) => h.equipments).filter((e) => equipment === ALL || e.id === equipment)
-  const areaOpts = [ALL, ...hierarchy.map((h) => h.area)]
-  const eqpOpts = [ALL, ...scopedAreas.flatMap((h) => h.equipments.map((e) => e.id))]
-  const chOpts = [ALL, ...scopedEqps.flatMap((e) => e.chambers)]
+  const { summary, runFailed, sendFailed } = data
+  // hierarchy: [{ area_id, equipment_id, chambers[] }] — 필터 선택지는 항상 전체 계층에서 만든다
+  const hierarchy = summary.hierarchy ?? []
+  const scopedRows = hierarchy.filter((h) => area === ALL || h.area_id === area)
+  const areaOpts = [ALL, ...new Set(hierarchy.map((h) => h.area_id))]
+  const eqpOpts = [ALL, ...scopedRows.map((h) => h.equipment_id)]
+  const chOpts = [
+    ALL,
+    ...scopedRows.filter((h) => equipment === ALL || h.equipment_id === equipment).flatMap((h) => h.chambers),
+  ]
 
   const changeArea = (v) => {
     setArea(v)
@@ -85,77 +85,30 @@ function DashboardPage() {
     setChamber(ALL)
   }
 
-  // 필터 적용 대상: 추이 · 파라미터별 · 설비별 · 최근 알람 (처리 필요 밴드는 전역)
-  const filtered = alarms.filter(
-    (a) =>
-      (area === ALL || areaOfEqp[a.equipment_id] === area) &&
-      (equipment === ALL || a.equipment_id === equipment) &&
-      (chamber === ALL || a.chamber_id === chamber),
-  )
+  // 추이 — R03 점선 위치는 has_r03_consec 플래그 그대로 (알람을 뒤져 유도하지 않는다)
+  const daily = (summary.daily_trend ?? []).map((d) => ({
+    label: dayLabel(d.date),
+    oos: d.oos_count,
+    ooc: d.ooc_count,
+    r03: d.has_r03_consec,
+  }))
 
-  // 처리 필요 — 승인 대기(requested_at 내림차순) + 실행/전송 실패 건수 집계
-  const pendings = approvals
-    .filter((p) => p.status === 'PENDING')
-    .sort((a, b) => b.requested_at.localeCompare(a.requested_at))
-    .map((p) => ({
-      ...p,
-      // 같은 incident의 R03_CONSEC 알람에서 룰 표기를 유도 (승인이 걸린 근거 룰)
-      rule: alarms.find(
-        (a) =>
-          a.lot_id === p.incident.lot_id &&
-          a.chamber_id === p.incident.chamber_id &&
-          a.sensor_id === p.sensor_id &&
-          a.rule_id === 'R03_CONSEC',
-      )?.rule_id,
-    }))
-  const runFailed = runs.filter((r) => r.status === 'FAILED').length
-  const sendFailed = actions.filter((a) => a.send_status === 'FAILED').length
+  // 파라미터별 — 알람 0건인 종은 sensor_catalog 와의 차집합
+  const topSensors = summary.top_sensors ?? []
+  const sensorCatalog = summary.sensor_catalog ?? []
+  const params = topSensors.map((s) => ({
+    name: s.sensor_id,
+    n: s.alarm_count,
+    chambers: (s.chamber_ids ?? []).join(' · '),
+  }))
+  const quiet = sensorCatalog.filter((s) => !topSensors.some((t) => t.sensor_id === s))
 
-  // 알람 추이 — 일별 judgement 집계. 날짜 축은 전체 데이터 기간으로 고정, 건수는 필터 반영
-  const dayKeys = [...new Set(alarms.map((a) => a.occurred_at.slice(0, 10)))].sort()
-  const daily = dayKeys.map((d) => {
-    const rows = filtered.filter((a) => a.occurred_at.startsWith(d))
-    return {
-      label: dayLabel(d),
-      oos: rows.filter((a) => a.judgement === 'OOS').length,
-      ooc: rows.filter((a) => a.judgement === 'OOC').length,
-      r03: rows.some((a) => a.rule_id === 'R03_CONSEC'),
-    }
-  })
-
-  // 파라미터별 집계
-  const bySensor = {}
-  for (const a of filtered) (bySensor[a.sensor_id] ??= []).push(a)
-  const params = Object.entries(bySensor)
-    .map(([name, rows]) => ({
-      name,
-      n: rows.length,
-      chambers: [...new Set(rows.map((r) => r.chamber_id))].sort().join(' · '),
-    }))
-    .sort((x, y) => y.n - x.n || x.name.localeCompare(y.name))
-  const quiet = ALL_PARAMS.filter((p) => !bySensor[p])
-
-  // 설비별 집계 — 챔버 목록은 계층 데이터 기준(0건 챔버 포함), 건수 내림차순
-  const equips = scopedAreas
-    .flatMap((h) => h.equipments)
-    .filter((e) => equipment === ALL || e.id === equipment)
-    .map((e) => {
-      const rows = filtered.filter((a) => a.equipment_id === e.id)
-      return {
-        id: e.id,
-        n: rows.length,
-        chambers: e.chambers
-          .filter((c) => chamber === ALL || c === chamber)
-          .map((c) => ({ id: c, n: rows.filter((a) => a.chamber_id === c).length }))
-          .sort((x, y) => y.n - x.n || x.id.localeCompare(y.id)),
-      }
-    })
-    .sort((x, y) => y.n - x.n || x.id.localeCompare(y.id))
-
-  // 최근 알람 — 시각 내림차순 6건 (동시각은 알람 ID 내림차순)
-  const recents = [...filtered]
-    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id))
-    .slice(0, 6)
+  // 설비별 — 서버가 내려준 순서·건수를 그대로 쓴다 (0건 챔버 포함)
+  const equips = (summary.equipment_counts ?? []).map((e) => ({
+    id: e.equipment_id,
+    n: e.alarm_count,
+    chambers: (e.chambers ?? []).map((c) => ({ id: c.chamber_id, n: c.alarm_count })),
+  }))
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -178,7 +131,7 @@ function DashboardPage() {
       </div>
 
       <DashActionBand
-        pendings={pendings}
+        pendings={summary.pending_approvals ?? []}
         runFailed={runFailed}
         sendFailed={sendFailed}
         onReview={(runId) => navigate(`/agent-runs/${runId}`)}
@@ -189,7 +142,7 @@ function DashboardPage() {
         <DashParamCard
           params={params}
           quiet={quiet}
-          totalKinds={ALL_PARAMS.length}
+          totalKinds={sensorCatalog.length}
           onSelect={(sensor) => navigate(`/alarms?sensor=${sensor}`)}
         />
       </div>
@@ -199,7 +152,7 @@ function DashboardPage() {
           equips={equips}
           onSelectChamber={(eqp, ch) => navigate(`/alarms?equipment=${eqp}&chamber=${ch}`)}
         />
-        <DashRecentTable recents={recents} />
+        <DashRecentTable recents={summary.recent_alarms ?? []} />
       </div>
     </div>
   )

@@ -1,7 +1,10 @@
 // 자연어 분석 — 디자인 v2 06 (읽기 전용 · 허용 테이블 16종)
+// 응답 스키마는 명세 AnalysisQueryResponse:
+//   {question, sql, columns, rows(dict[]), row_count, metric, metric_result, group_by, visualization, latency_ms}
+// 거부 응답은 {question, rejected, reason, latency_ms} 뿐이다 (sql·rows 없음).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { postQuery, validateSql } from '../../../shared/api/analytics.js'
-import { NL_CHIPS, NL_INITIAL_HISTORY, NL_REJECT_REASONS } from '../mock/queries.js'
+import { NL_CHIPS, NL_INITIAL_HISTORY } from '../mock/queries.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -13,7 +16,16 @@ import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 // 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
 
-const rejectReason = (code) => NL_REJECT_REASONS[code] ?? NL_REJECT_REASONS.REJECT_NON_SELECT
+// reason 은 "POLICY_REJECTED: 사유" 형태다 — 접두어는 배지로, 뒤 문장은 사유로 나눠 쓴다
+const reasonCode = (reason) => String(reason ?? '').split(':')[0].trim()
+const reasonText = (reason) => String(reason ?? '').split(':').slice(1).join(':').trim() || String(reason ?? '')
+
+// 정렬·차트 기준 컬럼 — visualization.y 우선, 없으면 마지막 컬럼
+const yColumnOf = (d) => {
+  const columns = d?.columns ?? []
+  const y = d?.visualization?.y
+  return columns.includes(y) ? y : columns[columns.length - 1]
+}
 
 // 단계 진행 표시 카드 (SQL 생성 / 쿼리 실행)
 function PhaseCard({ label, note }) {
@@ -30,7 +42,7 @@ function AnalyticsPage() {
   const [question, setQuestion] = useState('')
   const [activeQ, setActiveQ] = useState('')
   const [def, setDef] = useState(null)
-  const [rejectCode, setRejectCode] = useState('REJECT_NON_SELECT')
+  const [rejected, setRejected] = useState(null) // 거부 응답 원본 {question, rejected, reason, latency_ms}
   const [phase, setPhase] = useState(null) // gen | unknown | rejected | run | done
   const [tab, setTab] = useState('table')
   const [sortAsc, setSortAsc] = useState(false)
@@ -38,7 +50,7 @@ function AnalyticsPage() {
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
   const [editing, setEditing] = useState(false)
-  const [checks, setChecks] = useState(null)
+  const [validation, setValidation] = useState(null) // {valid, reason, checks}
   const [validating, setValidating] = useState(false)
   const [verifyNotice, setVerifyNotice] = useState(null)
   const timers = useRef([])
@@ -54,14 +66,14 @@ function AnalyticsPage() {
   }
 
   const pushHistory = (entry) =>
-    setHistory((h) => (h.some((x) => x.q === entry.q) ? h : [entry, ...h]))
+    setHistory((h) => (h.some((x) => x.question === entry.question) ? h : [entry, ...h]))
 
   // SQL 생성 직후 1회 자동 검증 (useEffect 아님 — 응답 콜백에서 수행)
   const verify = (sql, notice) => {
     setValidating(true)
     validateSql(sql).then((res) => {
       setValidating(false)
-      setChecks(res.checks ?? [])
+      setValidation({ valid: res.valid, reason: res.reason ?? '', checks: res.checks ?? [] })
       if (notice) {
         const failed = (res.checks ?? []).filter((c) => !c.ok).length
         setVerifyNotice(res.valid ? { ok: true, text: '재검증 통과' } : { ok: false, text: `재검증 실패 ${failed}건` })
@@ -80,7 +92,7 @@ function AnalyticsPage() {
     setTab('table')
     setSortAsc(false)
     setEditing(false)
-    setChecks(null)
+    setValidation(null)
     setVerifyNotice(null)
     postQuery(query).then((d) => {
       // mock에 없는 질문: 이력에 남기지 않고 안내 카드로 예시 칩 사용 유도
@@ -89,11 +101,10 @@ function AnalyticsPage() {
         return
       }
       after(400, () => {
-        if (d.reject) {
-          const code = d.reject_code ?? 'REJECT_NON_SELECT'
-          setRejectCode(code)
+        if (d.rejected) {
+          setRejected(d)
           setPhase('rejected')
-          pushHistory({ q: query, ok: false, rows: 0, lat: d.lat, code, reason: rejectReason(code) })
+          pushHistory({ question: query, ok: false, row_count: 0, latency_ms: d.latency_ms, reason: d.reason })
         } else {
           setDef(d)
           setSqlText(d.sql)
@@ -101,7 +112,13 @@ function AnalyticsPage() {
           verify(d.sql, false)
           after(800, () => {
             setPhase('done')
-            pushHistory({ q: query, ok: true, rows: d.rows ? d.rows.length : 0, lat: d.lat })
+            pushHistory({
+              question: query,
+              ok: true,
+              row_count: d.row_count ?? (d.rows ?? []).length,
+              latency_ms: d.latency_ms,
+              reason: null,
+            })
           })
         }
       })
@@ -118,28 +135,27 @@ function AnalyticsPage() {
     if (def) setSqlText(def.sql)
   }
 
+  // rows 는 객체 배열이다 — 정렬 키는 컬럼명으로 접근한다
+  const sortKey = yColumnOf(def)
   const rows = useMemo(() => {
-    if (!def || !def.rows) return []
-    if (def.noSort) return def.rows
-    return [...def.rows].sort((a, b) => (sortAsc ? a[1] - b[1] : b[1] - a[1]))
-  }, [def, sortAsc])
+    const list = def?.rows ?? []
+    if (!sortKey || list.length < 2) return list
+    if (!list.every((r) => typeof r[sortKey] === 'number')) return list
+    return [...list].sort((a, b) => (sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
+  }, [def, sortAsc, sortKey])
 
-  // 0건 그룹 각주 — 결과 첫 컬럼이 챔버 ID일 때만 계산
+  // 0건 그룹 각주 — 그룹 컬럼 값이 전부 챔버 ID일 때만 계산
   const footnote = useMemo(() => {
     const list = def?.rows ?? []
-    if (list.length === 0) return null
-    if (!list.every((r) => ALL_CHAMBERS.includes(r[0]))) return null
-    const missing = ALL_CHAMBERS.filter((c) => !list.some((r) => r[0] === c))
+    const key = def?.visualization?.x ?? def?.group_by?.[0] ?? def?.columns?.[0]
+    if (!key || list.length === 0) return null
+    if (!list.every((r) => ALL_CHAMBERS.includes(r[key]))) return null
+    const missing = ALL_CHAMBERS.filter((c) => !list.some((r) => r[key] === c))
     if (missing.length === 0) return null
     return `${missing.join(', ')}는 기간 내 알람 0건이라 결과에 나오지 않는다`
   }, [def])
 
-  const historyItems = useMemo(
-    () => history.map((h) => (h.ok ? h : { ...h, reason: h.reason ?? rejectReason(h.code) })),
-    [history],
-  )
-
-  const hasSql = (phase === 'run' || phase === 'done') && def && !def.reject
+  const hasSql = (phase === 'run' || phase === 'done') && def && !def.rejected
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -193,7 +209,9 @@ function AnalyticsPage() {
             onStartEdit={() => setEditing(true)}
             onCancelEdit={cancelEdit}
             onReverify={reverify}
-            checks={checks}
+            checks={validation?.checks}
+            valid={validation?.valid}
+            reason={validation?.reason}
             validating={validating}
             verifyNotice={verifyNotice}
           />
@@ -212,26 +230,28 @@ function AnalyticsPage() {
             />
           )}
 
-          {phase === 'rejected' && (
+          {phase === 'rejected' && rejected && (
             <Card className="animate-[om-fadein_.25s] p-5" style={{ borderColor: 'var(--color-tint-red-line)' }}>
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-tint-red text-[19px] font-extrabold text-red">
                   !
                 </span>
                 <div className="text-base font-extrabold text-red">
-                  실행할 수 없는 요청입니다 — {rejectReason(rejectCode)}
+                  실행할 수 없는 요청입니다 — {reasonText(rejected.reason)}
                 </div>
                 <Badge variant="t-red" className="ml-auto">
-                  {rejectCode}
+                  {reasonCode(rejected.reason)}
                 </Badge>
               </div>
+              {/* 서버가 준 reason 을 그대로 인용한다 (문구 창작 금지) */}
               <div className="mt-3 rounded-lg border border-tint-red-line bg-row-red px-3.5 py-3 text-[13px] text-ink">
-                요청 &quot;<span className="font-mono">{activeQ}</span>&quot; 은{' '}
-                <span className="font-bold text-red">{rejectReason(rejectCode)}</span> 정책에 따라 SQL을 생성하지
+                요청 &quot;<span className="font-mono">{rejected.question ?? activeQ}</span>&quot; 은{' '}
+                <span className="font-mono font-bold text-red">{rejected.reason}</span> 사유로 SQL을 생성하지
                 않았습니다.
               </div>
-              <div className="mt-2.5 text-xs text-g1">
-                구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다
+              <div className="mt-2.5 flex items-center gap-3 text-xs text-g1">
+                <span>구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다</span>
+                <span className="ml-auto font-mono">{(rejected.latency_ms ?? 0).toLocaleString()}ms</span>
               </div>
             </Card>
           )}
@@ -245,13 +265,14 @@ function AnalyticsPage() {
               onTab={setTab}
               sortAsc={sortAsc}
               onToggleSort={() => setSortAsc((s) => !s)}
+              sortKey={sortKey}
               rows={rows}
               footnote={footnote}
             />
           )}
         </div>
 
-        <NlqHistoryPanel items={historyItems} activeQ={activeQ} onRerun={ask} />
+        <NlqHistoryPanel items={history} activeQ={activeQ} onRerun={ask} />
       </div>
     </div>
   )

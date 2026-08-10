@@ -1,679 +1,892 @@
-// 대시보드 mock — 모든 값은 alarms-data.js 51건 / RUN 확정표 / 승인 큐 2건에서 파생한 실측 집계
-// 스코프 키: 전체 · 공정(PHOTO·ETCH) · 장비(PHO-01·ETC-01) · 챔버 4개
-// 계층은 도메인 규칙 "AREA > EQUIPMENT > CHAMBER"를 따른다
-export const DASHBOARD = {
-  date: '2026-06-04',
+// 대시보드 fixture — 명세 DashboardSummaryResponse 스키마
+// TODO(api): 실서버 연결 시 이 파일만 교체.
+//
+// scopes 딕셔너리 구조는 제거했다. 서버가 date?·area?·equipment_id?·chamber_id? 로 필터하므로
+// mock 도 shared/api/detection.js 의 getDashboard(params) 에서 같은 파라미터로 내부 집계한다.
+// v1.7 에서 제거된 KPI(당일 알람·계측 PASS율·활성 조치)는 넣지 않는다.
+
+export const DASHBOARD_BASE = {
+  reference_date: '2026-06-04',
+  date_range: [
+  "2026-06-01",
+  "2026-06-02",
+  "2026-06-03",
+  "2026-06-04"
+],
   hierarchy: [
-    {
-      "area": "PHOTO",
-      "equipments": [
-        {
-          "id": "PHO-01",
-          "model": "PH-9000",
-          "chambers": [
-            "PHO-01-C1",
-            "PHO-01-C2"
-          ]
-        }
-      ]
-    },
-    {
-      "area": "ETCH",
-      "equipments": [
-        {
-          "id": "ETC-01",
-          "model": "ET-7500",
-          "chambers": [
-            "ETC-01-C1",
-            "ETC-01-C2"
-          ]
-        }
-      ]
-    }
-  ],
-  scopes: {
-    "전체": {
-      "kpi": {
-        "today": 6,
-        "todayOos": 6,
-        "todayOoc": 0,
-        "total": 51,
-        "totalOos": 37,
-        "totalOoc": 14
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 4
-        },
-        {
-          "label": "6/2",
-          "oos": 11,
-          "ooc": 3
-        },
-        {
-          "label": "6/3",
-          "oos": 20,
-          "ooc": 7
-        },
-        {
-          "label": "6/4",
-          "oos": 6,
-          "ooc": 0
-        }
-      ],
-      "pending": 2,
-      "active": 10,
-      "recent": [
-        {
-          "id": "ALM-0051",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:29",
-          "crit": false
-        },
-        {
-          "id": "ALM-0050",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:25",
-          "crit": false
-        },
-        {
-          "id": "ALM-0049",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:20",
-          "crit": false
-        },
-        {
-          "id": "ALM-0048",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R03_CONSEC",
-          "time": "07:15",
-          "crit": true
-        },
-        {
-          "id": "ALM-0047",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:15",
-          "crit": false
-        }
-      ]
-    },
-    "PHOTO": {
-      "kpi": {
-        "today": 0,
-        "todayOos": 0,
-        "todayOoc": 0,
-        "total": 22,
-        "totalOos": 17,
-        "totalOoc": 5
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/2",
-          "oos": 0,
-          "ooc": 3
-        },
-        {
-          "label": "6/3",
-          "oos": 17,
-          "ooc": 2
-        },
-        {
-          "label": "6/4",
-          "oos": 0,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 4,
-      "recent": [
-        {
-          "id": "ALM-0040",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:42",
-          "crit": false
-        },
-        {
-          "id": "ALM-0039",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0038",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0037",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:34",
-          "crit": false
-        },
-        {
-          "id": "ALM-0036",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:30",
-          "crit": false
-        }
-      ]
-    },
-    "ETCH": {
-      "kpi": {
-        "today": 6,
-        "todayOos": 6,
-        "todayOoc": 0,
-        "total": 29,
-        "totalOos": 20,
-        "totalOoc": 9
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 4
-        },
-        {
-          "label": "6/2",
-          "oos": 11,
-          "ooc": 0
-        },
-        {
-          "label": "6/3",
-          "oos": 3,
-          "ooc": 5
-        },
-        {
-          "label": "6/4",
-          "oos": 6,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 6,
-      "recent": [
-        {
-          "id": "ALM-0051",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:29",
-          "crit": false
-        },
-        {
-          "id": "ALM-0050",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:25",
-          "crit": false
-        },
-        {
-          "id": "ALM-0049",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:20",
-          "crit": false
-        },
-        {
-          "id": "ALM-0048",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R03_CONSEC",
-          "time": "07:15",
-          "crit": true
-        },
-        {
-          "id": "ALM-0047",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:15",
-          "crit": false
-        }
-      ]
-    },
-    "PHO-01": {
-      "kpi": {
-        "today": 0,
-        "todayOos": 0,
-        "todayOoc": 0,
-        "total": 22,
-        "totalOos": 17,
-        "totalOoc": 5
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/2",
-          "oos": 0,
-          "ooc": 3
-        },
-        {
-          "label": "6/3",
-          "oos": 17,
-          "ooc": 2
-        },
-        {
-          "label": "6/4",
-          "oos": 0,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 4,
-      "recent": [
-        {
-          "id": "ALM-0040",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:42",
-          "crit": false
-        },
-        {
-          "id": "ALM-0039",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0038",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0037",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:34",
-          "crit": false
-        },
-        {
-          "id": "ALM-0036",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:30",
-          "crit": false
-        }
-      ]
-    },
-    "ETC-01": {
-      "kpi": {
-        "today": 6,
-        "todayOos": 6,
-        "todayOoc": 0,
-        "total": 29,
-        "totalOos": 20,
-        "totalOoc": 9
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 4
-        },
-        {
-          "label": "6/2",
-          "oos": 11,
-          "ooc": 0
-        },
-        {
-          "label": "6/3",
-          "oos": 3,
-          "ooc": 5
-        },
-        {
-          "label": "6/4",
-          "oos": 6,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 6,
-      "recent": [
-        {
-          "id": "ALM-0051",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:29",
-          "crit": false
-        },
-        {
-          "id": "ALM-0050",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:25",
-          "crit": false
-        },
-        {
-          "id": "ALM-0049",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:20",
-          "crit": false
-        },
-        {
-          "id": "ALM-0048",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R03_CONSEC",
-          "time": "07:15",
-          "crit": true
-        },
-        {
-          "id": "ALM-0047",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:15",
-          "crit": false
-        }
-      ]
-    },
-    "PHO-01-C1": {
-      "kpi": {
-        "today": 0,
-        "todayOos": 0,
-        "todayOoc": 0,
-        "total": 22,
-        "totalOos": 17,
-        "totalOoc": 5
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/2",
-          "oos": 0,
-          "ooc": 3
-        },
-        {
-          "label": "6/3",
-          "oos": 17,
-          "ooc": 2
-        },
-        {
-          "label": "6/4",
-          "oos": 0,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 4,
-      "recent": [
-        {
-          "id": "ALM-0040",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:42",
-          "crit": false
-        },
-        {
-          "id": "ALM-0039",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0038",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:38",
-          "crit": false
-        },
-        {
-          "id": "ALM-0037",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:34",
-          "crit": false
-        },
-        {
-          "id": "ALM-0036",
-          "sensor": "PH_FOCUS",
-          "eqp": "PHO-01-C1",
-          "rule": "R01_OOS",
-          "time": "6/3 22:30",
-          "crit": false
-        }
-      ]
-    },
-    "PHO-01-C2": {
-      "kpi": {
-        "today": 0,
-        "todayOos": 0,
-        "todayOoc": 0,
-        "total": 0,
-        "totalOos": 0,
-        "totalOoc": 0
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/2",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/3",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/4",
-          "oos": 0,
-          "ooc": 0
-        }
-      ],
-      "pending": 0,
-      "active": 0,
-      "recent": []
-    },
-    "ETC-01-C1": {
-      "kpi": {
-        "today": 6,
-        "todayOos": 6,
-        "todayOoc": 0,
-        "total": 14,
-        "totalOos": 9,
-        "totalOoc": 5
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/2",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/3",
-          "oos": 3,
-          "ooc": 5
-        },
-        {
-          "label": "6/4",
-          "oos": 6,
-          "ooc": 0
-        }
-      ],
-      "pending": 1,
-      "active": 3,
-      "recent": [
-        {
-          "id": "ALM-0051",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:29",
-          "crit": false
-        },
-        {
-          "id": "ALM-0050",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:25",
-          "crit": false
-        },
-        {
-          "id": "ALM-0049",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:20",
-          "crit": false
-        },
-        {
-          "id": "ALM-0048",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R03_CONSEC",
-          "time": "07:15",
-          "crit": true
-        },
-        {
-          "id": "ALM-0047",
-          "sensor": "ET_CF4",
-          "eqp": "ETC-01-C1",
-          "rule": "R01_OOS",
-          "time": "07:15",
-          "crit": false
-        }
-      ]
-    },
-    "ETC-01-C2": {
-      "kpi": {
-        "today": 0,
-        "todayOos": 0,
-        "todayOoc": 0,
-        "total": 15,
-        "totalOos": 11,
-        "totalOoc": 4
-      },
-      "days": [
-        {
-          "label": "6/1",
-          "oos": 0,
-          "ooc": 4
-        },
-        {
-          "label": "6/2",
-          "oos": 11,
-          "ooc": 0
-        },
-        {
-          "label": "6/3",
-          "oos": 0,
-          "ooc": 0
-        },
-        {
-          "label": "6/4",
-          "oos": 0,
-          "ooc": 0
-        }
-      ],
-      "pending": 0,
-      "active": 3,
-      "recent": [
-        {
-          "id": "ALM-0015",
-          "sensor": "ET_REFL",
-          "eqp": "ETC-01-C2",
-          "rule": "R01_OOS",
-          "time": "6/2 15:39",
-          "crit": false
-        },
-        {
-          "id": "ALM-0014",
-          "sensor": "ET_REFL",
-          "eqp": "ETC-01-C2",
-          "rule": "R01_OOS",
-          "time": "6/2 15:34",
-          "crit": false
-        },
-        {
-          "id": "ALM-0013",
-          "sensor": "ET_REFL",
-          "eqp": "ETC-01-C2",
-          "rule": "R01_OOS",
-          "time": "6/2 15:29",
-          "crit": false
-        },
-        {
-          "id": "ALM-0012",
-          "sensor": "ET_REFL",
-          "eqp": "ETC-01-C2",
-          "rule": "R01_OOS",
-          "time": "6/2 15:24",
-          "crit": false
-        },
-        {
-          "id": "ALM-0011",
-          "sensor": "ET_REFL",
-          "eqp": "ETC-01-C2",
-          "rule": "R01_OOS",
-          "time": "6/2 15:19",
-          "crit": false
-        }
-      ]
-    }
+  {
+    "area_id": "PHOTO",
+    "equipment_id": "PHO-01",
+    "chambers": [
+      "PHO-01-C1",
+      "PHO-01-C2"
+    ]
   },
+  {
+    "area_id": "ETCH",
+    "equipment_id": "ETC-01",
+    "chambers": [
+      "ETC-01-C1",
+      "ETC-01-C2"
+    ]
+  }
+],
+  pending_approvals: [
+  {
+    "approval_id": "APR-0003",
+    "action_id": "ACT-0010",
+    "agent_run_id": "RUN-20260604-0010",
+    "incident": {
+      "lot_id": "LOT-260010",
+      "chamber_id": "ETC-01-C1"
+    },
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "action_code": "EQP_HOLD",
+    "severity": "HIGH",
+    "requested_at": "2026-06-04 07:11"
+  },
+  {
+    "approval_id": "APR-0002",
+    "action_id": "ACT-0005",
+    "agent_run_id": "RUN-20260603-0005",
+    "incident": {
+      "lot_id": "LOT-260007",
+      "chamber_id": "PHO-01-C1"
+    },
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "action_code": "EQP_HOLD",
+    "severity": "HIGH",
+    "requested_at": "2026-06-03 06:39"
+  }
+],
 }
+
+// 집계 원본 — AlarmItem 스키마 (recent_alarms·daily_trend·top_sensors·equipment_counts 산출용)
+export const DASHBOARD_ALARMS = [
+  {
+    "alarm_id": "ALM-0001",
+    "lot_hist_id": "LH-00052",
+    "lot_id": "LOT-260003",
+    "wafer_no": 2,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 22.46)",
+    "occurred_at": "2026-06-01 23:17:23"
+  },
+  {
+    "alarm_id": "ALM-0002",
+    "lot_hist_id": "LH-00054",
+    "lot_id": "LOT-260003",
+    "wafer_no": 4,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 21.496)",
+    "occurred_at": "2026-06-01 23:22:23"
+  },
+  {
+    "alarm_id": "ALM-0003",
+    "lot_hist_id": "LH-00058",
+    "lot_id": "LOT-260003",
+    "wafer_no": 8,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 21.962)",
+    "occurred_at": "2026-06-01 23:32:09"
+  },
+  {
+    "alarm_id": "ALM-0004",
+    "lot_hist_id": "LH-00060",
+    "lot_id": "LOT-260003",
+    "wafer_no": 10,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 19.679)",
+    "occurred_at": "2026-06-01 23:36:49"
+  },
+  {
+    "alarm_id": "ALM-0005",
+    "lot_hist_id": "LH-00072",
+    "lot_id": "LOT-260004",
+    "wafer_no": 2,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 31.196, min 26.7, max 34.203)",
+    "occurred_at": "2026-06-02 07:20:23"
+  },
+  {
+    "alarm_id": "ALM-0006",
+    "lot_hist_id": "LH-00074",
+    "lot_id": "LOT-260004",
+    "wafer_no": 4,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at MAIN_ETCH (mean 31.838, min 26.602, max 38.128)",
+    "occurred_at": "2026-06-02 07:25:36"
+  },
+  {
+    "alarm_id": "ALM-0007",
+    "lot_hist_id": "LH-00076",
+    "lot_id": "LOT-260004",
+    "wafer_no": 6,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at MAIN_ETCH (mean 28.707, min 26.495, max 31.67)",
+    "occurred_at": "2026-06-02 07:30:49"
+  },
+  {
+    "alarm_id": "ALM-0008",
+    "lot_hist_id": "LH-00076",
+    "lot_id": "LOT-260004",
+    "wafer_no": 6,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R03_CONSEC",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS for 3 consecutive WAFER at MAIN_ETCH",
+    "occurred_at": "2026-06-02 07:30:49"
+  },
+  {
+    "alarm_id": "ALM-0009",
+    "lot_hist_id": "LH-00078",
+    "lot_id": "LOT-260004",
+    "wafer_no": 8,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at MAIN_ETCH (mean 28.119, min 23.074, max 33.119)",
+    "occurred_at": "2026-06-02 07:35:44"
+  },
+  {
+    "alarm_id": "ALM-0010",
+    "lot_hist_id": "LH-00080",
+    "lot_id": "LOT-260004",
+    "wafer_no": 10,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at MAIN_ETCH (mean 28.308, min 22.289, max 34.047)",
+    "occurred_at": "2026-06-02 07:40:26"
+  },
+  {
+    "alarm_id": "ALM-0011",
+    "lot_hist_id": "LH-00092",
+    "lot_id": "LOT-260005",
+    "wafer_no": 2,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 37.439, min 26.919, max 43.386)",
+    "occurred_at": "2026-06-02 15:19:49"
+  },
+  {
+    "alarm_id": "ALM-0012",
+    "lot_hist_id": "LH-00094",
+    "lot_id": "LOT-260005",
+    "wafer_no": 4,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 4,
+    "detail": "OOS 4 points at MAIN_ETCH (mean 40.868, min 36.347, max 45.832)",
+    "occurred_at": "2026-06-02 15:24:38"
+  },
+  {
+    "alarm_id": "ALM-0013",
+    "lot_hist_id": "LH-00096",
+    "lot_id": "LOT-260005",
+    "wafer_no": 6,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 4,
+    "detail": "OOS 4 points at MAIN_ETCH (mean 39.416, min 34.439, max 43.617)",
+    "occurred_at": "2026-06-02 15:29:45"
+  },
+  {
+    "alarm_id": "ALM-0014",
+    "lot_hist_id": "LH-00098",
+    "lot_id": "LOT-260005",
+    "wafer_no": 8,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 4,
+    "detail": "OOS 4 points at MAIN_ETCH (mean 40.038, min 36.551, max 43.982)",
+    "occurred_at": "2026-06-02 15:34:43"
+  },
+  {
+    "alarm_id": "ALM-0015",
+    "lot_hist_id": "LH-00100",
+    "lot_id": "LOT-260005",
+    "wafer_no": 10,
+    "chamber_id": "ETC-01-C2",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_REFL",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 36.625, min 29.984, max 44.756)",
+    "occurred_at": "2026-06-02 15:39:42"
+  },
+  {
+    "alarm_id": "ALM-0016",
+    "lot_hist_id": "LH-00101",
+    "lot_id": "LOT-260006",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at EXPOSE (mean 36.755)",
+    "occurred_at": "2026-06-02 22:38:32"
+  },
+  {
+    "alarm_id": "ALM-0017",
+    "lot_hist_id": "LH-00103",
+    "lot_id": "LOT-260006",
+    "wafer_no": 3,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at EXPOSE (mean 36.027)",
+    "occurred_at": "2026-06-02 22:42:30"
+  },
+  {
+    "alarm_id": "ALM-0018",
+    "lot_hist_id": "LH-00109",
+    "lot_id": "LOT-260006",
+    "wafer_no": 9,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 3,
+    "detail": "OOC 3 points at EXPOSE (mean 45.558)",
+    "occurred_at": "2026-06-02 22:54:15"
+  },
+  {
+    "alarm_id": "ALM-0019",
+    "lot_hist_id": "LH-00121",
+    "lot_id": "LOT-260007",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at EXPOSE (mean 57.512, min 47.995, max 67.226)",
+    "occurred_at": "2026-06-03 06:37:47"
+  },
+  {
+    "alarm_id": "ALM-0020",
+    "lot_hist_id": "LH-00123",
+    "lot_id": "LOT-260007",
+    "wafer_no": 3,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at EXPOSE (mean 56.776, min 44.616, max 69.377)",
+    "occurred_at": "2026-06-03 06:41:45"
+  },
+  {
+    "alarm_id": "ALM-0021",
+    "lot_hist_id": "LH-00125",
+    "lot_id": "LOT-260007",
+    "wafer_no": 5,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at EXPOSE (mean 57.433, min 52.193, max 65.353)",
+    "occurred_at": "2026-06-03 06:45:45"
+  },
+  {
+    "alarm_id": "ALM-0022",
+    "lot_hist_id": "LH-00125",
+    "lot_id": "LOT-260007",
+    "wafer_no": 5,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R03_CONSEC",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS for 3 consecutive WAFER at EXPOSE",
+    "occurred_at": "2026-06-03 06:45:45"
+  },
+  {
+    "alarm_id": "ALM-0023",
+    "lot_hist_id": "LH-00127",
+    "lot_id": "LOT-260007",
+    "wafer_no": 7,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at EXPOSE (mean 70.121, min 56.816, max 79.859)",
+    "occurred_at": "2026-06-03 06:49:46"
+  },
+  {
+    "alarm_id": "ALM-0024",
+    "lot_hist_id": "LH-00129",
+    "lot_id": "LOT-260007",
+    "wafer_no": 9,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at EXPOSE (mean 51.452, min 29.038, max 65.924)",
+    "occurred_at": "2026-06-03 06:53:46"
+  },
+  {
+    "alarm_id": "ALM-0025",
+    "lot_hist_id": "LH-00141",
+    "lot_id": "LOT-260008",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at EXPOSE (mean 57.533, min 50.323, max 64.16)",
+    "occurred_at": "2026-06-03 14:39:36"
+  },
+  {
+    "alarm_id": "ALM-0026",
+    "lot_hist_id": "LH-00141",
+    "lot_id": "LOT-260008",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 2,
+    "recipe_step_name": "DEVELOP",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at DEVELOP (mean 42.95)",
+    "occurred_at": "2026-06-03 14:39:36"
+  },
+  {
+    "alarm_id": "ALM-0027",
+    "lot_hist_id": "LH-00143",
+    "lot_id": "LOT-260008",
+    "wafer_no": 3,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 84.701, min 68.756, max 98.029)",
+    "occurred_at": "2026-06-03 14:43:36"
+  },
+  {
+    "alarm_id": "ALM-0028",
+    "lot_hist_id": "LH-00145",
+    "lot_id": "LOT-260008",
+    "wafer_no": 5,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at EXPOSE (mean 65.835, min 49.917, max 78.465)",
+    "occurred_at": "2026-06-03 14:47:13"
+  },
+  {
+    "alarm_id": "ALM-0029",
+    "lot_hist_id": "LH-00147",
+    "lot_id": "LOT-260008",
+    "wafer_no": 7,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at EXPOSE (mean 70.403, min 56.276, max 91.671)",
+    "occurred_at": "2026-06-03 14:51:08"
+  },
+  {
+    "alarm_id": "ALM-0030",
+    "lot_hist_id": "LH-00149",
+    "lot_id": "LOT-260008",
+    "wafer_no": 9,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at EXPOSE (mean 69.34, min 54.221, max 79.835)",
+    "occurred_at": "2026-06-03 14:54:42"
+  },
+  {
+    "alarm_id": "ALM-0031",
+    "lot_hist_id": "LH-00153",
+    "lot_id": "LOT-260008",
+    "wafer_no": 3,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 76.934)",
+    "occurred_at": "2026-06-03 15:43:05"
+  },
+  {
+    "alarm_id": "ALM-0032",
+    "lot_hist_id": "LH-00155",
+    "lot_id": "LOT-260008",
+    "wafer_no": 5,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 76.306)",
+    "occurred_at": "2026-06-03 15:48:09"
+  },
+  {
+    "alarm_id": "ALM-0033",
+    "lot_hist_id": "LH-00157",
+    "lot_id": "LOT-260008",
+    "wafer_no": 7,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 76.393)",
+    "occurred_at": "2026-06-03 15:52:49"
+  },
+  {
+    "alarm_id": "ALM-0034",
+    "lot_hist_id": "LH-00161",
+    "lot_id": "LOT-260009",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 94.063, min 67.438, max 114.935)",
+    "occurred_at": "2026-06-03 22:26:40"
+  },
+  {
+    "alarm_id": "ALM-0035",
+    "lot_hist_id": "LH-00161",
+    "lot_id": "LOT-260009",
+    "wafer_no": 1,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 2,
+    "recipe_step_name": "DEVELOP",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at DEVELOP (mean 31.737)",
+    "occurred_at": "2026-06-03 22:26:40"
+  },
+  {
+    "alarm_id": "ALM-0036",
+    "lot_hist_id": "LH-00163",
+    "lot_id": "LOT-260009",
+    "wafer_no": 3,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 88.036, min 70.254, max 102.536)",
+    "occurred_at": "2026-06-03 22:30:30"
+  },
+  {
+    "alarm_id": "ALM-0037",
+    "lot_hist_id": "LH-00165",
+    "lot_id": "LOT-260009",
+    "wafer_no": 5,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 85.87, min 79.448, max 93.669)",
+    "occurred_at": "2026-06-03 22:34:27"
+  },
+  {
+    "alarm_id": "ALM-0038",
+    "lot_hist_id": "LH-00167",
+    "lot_id": "LOT-260009",
+    "wafer_no": 7,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 92.098, min 80.393, max 113.033)",
+    "occurred_at": "2026-06-03 22:38:35"
+  },
+  {
+    "alarm_id": "ALM-0039",
+    "lot_hist_id": "LH-00167",
+    "lot_id": "LOT-260009",
+    "wafer_no": 7,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 2,
+    "recipe_step_name": "DEVELOP",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at DEVELOP (mean 39.183, min 26.128, max 65.002)",
+    "occurred_at": "2026-06-03 22:38:35"
+  },
+  {
+    "alarm_id": "ALM-0040",
+    "lot_hist_id": "LH-00169",
+    "lot_id": "LOT-260009",
+    "wafer_no": 9,
+    "chamber_id": "PHO-01-C1",
+    "equipment_id": "PHO-01",
+    "sensor_id": "PH_FOCUS",
+    "recipe_step_no": 1,
+    "recipe_step_name": "EXPOSE",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at EXPOSE (mean 92.272, min 71.575, max 103.793)",
+    "occurred_at": "2026-06-03 22:42:21"
+  },
+  {
+    "alarm_id": "ALM-0041",
+    "lot_hist_id": "LH-00171",
+    "lot_id": "LOT-260009",
+    "wafer_no": 1,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at MAIN_ETCH (mean 75.302, min 73.667, max 76.796)",
+    "occurred_at": "2026-06-03 23:12:41"
+  },
+  {
+    "alarm_id": "ALM-0042",
+    "lot_hist_id": "LH-00173",
+    "lot_id": "LOT-260009",
+    "wafer_no": 3,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 74.066, min 73.586, max 75.243)",
+    "occurred_at": "2026-06-03 23:17:24"
+  },
+  {
+    "alarm_id": "ALM-0043",
+    "lot_hist_id": "LH-00175",
+    "lot_id": "LOT-260009",
+    "wafer_no": 5,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 76.166)",
+    "occurred_at": "2026-06-03 23:22:20"
+  },
+  {
+    "alarm_id": "ALM-0044",
+    "lot_hist_id": "LH-00177",
+    "lot_id": "LOT-260009",
+    "wafer_no": 7,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R02_OOC",
+    "judgement": "OOC",
+    "hit_cnt": 2,
+    "detail": "OOC 2 points at MAIN_ETCH (mean 76.507)",
+    "occurred_at": "2026-06-03 23:27:11"
+  },
+  {
+    "alarm_id": "ALM-0045",
+    "lot_hist_id": "LH-00179",
+    "lot_id": "LOT-260009",
+    "wafer_no": 9,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 1,
+    "detail": "OOS 1 points at MAIN_ETCH (mean 74.171, min 73.438, max 74.723)",
+    "occurred_at": "2026-06-03 23:31:50"
+  },
+  {
+    "alarm_id": "ALM-0046",
+    "lot_hist_id": "LH-00191",
+    "lot_id": "LOT-260010",
+    "wafer_no": 1,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 2,
+    "detail": "OOS 2 points at MAIN_ETCH (mean 73.55, min 72.061, max 74.28)",
+    "occurred_at": "2026-06-04 07:10:41"
+  },
+  {
+    "alarm_id": "ALM-0047",
+    "lot_hist_id": "LH-00193",
+    "lot_id": "LOT-260010",
+    "wafer_no": 3,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 4,
+    "detail": "OOS 4 points at MAIN_ETCH (mean 72.747, min 71.527, max 73.474)",
+    "occurred_at": "2026-06-04 07:15:24"
+  },
+  {
+    "alarm_id": "ALM-0048",
+    "lot_hist_id": "LH-00193",
+    "lot_id": "LOT-260010",
+    "wafer_no": 3,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R03_CONSEC",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS for 3 consecutive WAFER at MAIN_ETCH",
+    "occurred_at": "2026-06-04 07:15:24"
+  },
+  {
+    "alarm_id": "ALM-0049",
+    "lot_hist_id": "LH-00195",
+    "lot_id": "LOT-260010",
+    "wafer_no": 5,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 73.206, min 72.259, max 74.599)",
+    "occurred_at": "2026-06-04 07:20:18"
+  },
+  {
+    "alarm_id": "ALM-0050",
+    "lot_hist_id": "LH-00197",
+    "lot_id": "LOT-260010",
+    "wafer_no": 7,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 4,
+    "detail": "OOS 4 points at MAIN_ETCH (mean 72.643, min 71.384, max 73.972)",
+    "occurred_at": "2026-06-04 07:25:02"
+  },
+  {
+    "alarm_id": "ALM-0051",
+    "lot_hist_id": "LH-00199",
+    "lot_id": "LOT-260010",
+    "wafer_no": 9,
+    "chamber_id": "ETC-01-C1",
+    "equipment_id": "ETC-01",
+    "sensor_id": "ET_CF4",
+    "recipe_step_no": 1,
+    "recipe_step_name": "MAIN_ETCH",
+    "rule_id": "R01_OOS",
+    "judgement": "OOS",
+    "hit_cnt": 3,
+    "detail": "OOS 3 points at MAIN_ETCH (mean 72.341, min 69.935, max 74.841)",
+    "occurred_at": "2026-06-04 07:29:49"
+  }
+]
+
+export const AREA_OF_EQUIPMENT = {
+  "PHO-01": "PHOTO",
+  "ETC-01": "ETCH"
+}
+
+// 감시 파라미터 8종 — 알람 0건인 종은 "기간 내 이상 없음"으로 표기
+export const ALL_SENSORS = ['PH_FOCUS','PH_DOSE','PH_PEB','PH_DEV','ET_REFL','ET_CF4','ET_PRES','ET_ESC']

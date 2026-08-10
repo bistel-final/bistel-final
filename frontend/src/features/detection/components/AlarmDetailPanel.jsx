@@ -4,21 +4,9 @@ import { Card, DashedCard } from '../../../shared/components/ui/Card.jsx'
 import { actionCodeVariant, approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
 import AlarmMiniTrace from './AlarmMiniTrace.jsx'
 
-// 파라미터 → fault code 매핑. agent feature의 FAULT_BY_SENSOR와 값을 동일하게 맞춘 로컬 상수
-// (feature 간 import 금지 규칙 때문에 복제한다 — 원본이 바뀌면 함께 갱신할 것)
-const FAULT_BY_PARAM = {
-  PH_FOCUS: { code: 'FOC', name: '포커스 이탈', cause: 'PH_FOCUS 연속 OOS — 포커스 이탈로 CD_ADI 불량 유발' },
-  ET_REFL: { code: 'RFM', name: 'RF 정합 이상', cause: '반사파 상승 = RF 정합 불량, 실효 전력 저하' },
-  ET_CF4: { code: 'MFD', name: 'CF4 유량 저하', cause: 'CF4 유량 저하로 식각 부족' },
-}
-
 // 시안 .btn.btn-primary.btn-sm 을 Link에 입힌 클래스
 const BTN_PRIMARY_SM =
   'inline-flex h-7 items-center justify-center gap-1.5 rounded-lg border border-transparent bg-blue px-3.5 text-xs font-bold text-white hover:bg-navy hover:text-white'
-
-// 같은 incident = lot_id + chamber_id + sensor_id
-const incidentKey = (a) =>
-  `${a.incident?.lot_id ?? a.lot_id}|${a.incident?.chamber_id ?? a.chamber_id}|${a.sensor_id}`
 
 // "06-03 06:45:45" — 시안 헤더 표기(초 포함)
 const fmtShortSec = (iso) => {
@@ -27,13 +15,10 @@ const fmtShortSec = (iso) => {
   return `${d.slice(5)} ${t.slice(0, 8)}`
 }
 
-function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect }) {
-  const siblings = alarms
-    .filter((a) => incidentKey(a) === incidentKey(alarm))
-    .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id))
+// alarm: AlarmItem (incident 는 (lot_id, chamber_id) 두 개뿐 — sensor_id 등은 형제 필드)
+// siblings: 같은 incident 알람 목록 · wafer/limit: POST /traces/search 응답 · run: GET /agent/runs/{id}
+function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, area, onSelect }) {
   const pos = siblings.findIndex((a) => a.alarm_id === alarm.alarm_id)
-
-  const waferTrace = (catalog?.wafers ?? []).find((w) => w.lot_hist_id === alarm.lot_hist_id) ?? null
 
   const traceQuery = new URLSearchParams({
     area,
@@ -44,7 +29,8 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect }) {
     wafer: alarm.wafer_no ?? '',
   }).toString()
 
-  const fault = FAULT_BY_PARAM[alarm.sensor_id] ?? null
+  // 권고 조치는 Agent 실행 응답이 원본 — 없으면 알람에 붙은 조치 코드로 대체한다
+  const actionCode = run?.recommended_action ?? alarm.action_code ?? null
 
   return (
     <aside className="flex animate-[om-fadein_.2s_ease-out] flex-col gap-3.5 rounded-[10px] border border-line border-l-[3px] border-l-blue bg-white p-5">
@@ -69,7 +55,7 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect }) {
             크게 보기 →
           </Link>
         </div>
-        <AlarmMiniTrace wafer={waferTrace} limits={catalog?.limits} />
+        <AlarmMiniTrace wafer={wafer} limit={limit} />
       </Card>
 
       <div className="rounded-lg border border-line bg-soft p-3.5">
@@ -98,17 +84,16 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect }) {
 
       <div className="rounded-lg border border-tint-red-line bg-row-red p-4">
         <div className="mb-3 text-[13px] font-extrabold text-red">Agent 판단</div>
-        {fault ? (
+        {run ? (
           <>
             <div className="flex items-baseline gap-2.5">
-              <span className="font-mono text-xl font-extrabold text-red">{fault.code}</span>
-              <span className="text-sm font-bold text-ink">{fault.name}</span>
+              <span className="font-mono text-xl font-extrabold text-red">{run.fault_code || '—'}</span>
+              <span className="text-sm font-bold text-ink">{run.fault_name ?? '실측 미제공'}</span>
             </div>
-            <div className="mt-2 text-xs text-ink">{fault.cause}</div>
+            <div className="mt-2 text-xs text-ink">{run.cause_summary ?? '원인 문구 실측 미제공'}</div>
           </>
         ) : (
-          // TODO(data): 이 파라미터의 fault code·원인 실측 미제공
-          <div className="text-xs font-semibold text-g1">fault code 실측 미제공</div>
+          <div className="text-xs font-semibold text-g1">Agent 분석 없음</div>
         )}
         <div className="mt-3.5 flex flex-wrap items-center gap-2.5 border-t border-tint-red-line pt-3">
           <span className="text-[11.5px] text-g1">조치</span>
@@ -119,10 +104,8 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect }) {
           ) : (
             <span className="font-mono text-xs font-bold text-g2">—</span>
           )}
-          {alarm.action_code && (
-            <Badge variant={alarm.action_code === 'EQP_HOLD' ? 'bg-red' : actionCodeVariant(alarm.action_code)}>
-              {alarm.action_code}
-            </Badge>
+          {actionCode && (
+            <Badge variant={actionCode === 'EQP_HOLD' ? 'bg-red' : actionCodeVariant(actionCode)}>{actionCode}</Badge>
           )}
           {alarm.approval_status && (
             <span className={`text-xs font-bold ${approvalClass(alarm.approval_status)}`}>

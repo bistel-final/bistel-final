@@ -1,5 +1,6 @@
 // 생성 SQL — 좌측 SQL 원문(플레인 pre) + 우측 230px 검증 5항목 (디자인 v2 06)
-// 검증 항목은 POST /analytics/validate 응답(checks)을 그대로 렌더한다.
+// 검증 항목은 POST /analytics/validate 응답(checks)을 그대로 렌더하고,
+// valid=false 면 같은 응답의 reason 을 그대로 노출한다.
 // "SQL 수정 · 재검증"을 누르면 pre 대신 textarea로 전환해 편집 후 재검증한다.
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -23,10 +24,13 @@ function NlqSqlPanel({
   onCancelEdit,
   onReverify,
   checks,
+  valid,
+  reason,
   validating,
   verifyNotice,
 }) {
   const list = checks ?? []
+  const failReason = valid === false && reason ? reason : null
 
   return (
     <Card>
@@ -58,6 +62,11 @@ function NlqSqlPanel({
                 {CHECK_LABELS[c.key] ?? c.label ?? c.key}
               </CheckRow>
             ))
+          )}
+          {failReason && (
+            <span className="rounded-md border border-tint-red-line bg-tint-red px-2.5 py-1.5 font-mono text-[11px] font-semibold text-red">
+              {failReason}
+            </span>
           )}
           {verifyNotice && (
             <Badge variant={verifyNotice.ok ? 't-green' : 't-red'} className="self-start">

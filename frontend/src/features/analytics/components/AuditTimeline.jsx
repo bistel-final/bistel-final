@@ -1,5 +1,6 @@
 // 감사로그 타임라인 — append-only 기록의 세로 dot·rail 뷰 (조회 전용, 쓰기 UI 없음). 디자인 v2 07.
-// fixture 구조: ev/ac/subject/entity/entity_id/at(ISO)/before·after("status = …" 문자열)/note
+// 명세 AuditLogItem: audit_id · occurred_at(ISO) · actor_type · actor_id · event_type ·
+// entity_type · entity_id · before/after(dict|null) · detail
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import StateBox from '../../../shared/components/ui/StateBox.jsx'
@@ -32,29 +33,30 @@ function AuditTimeline({ items, title, note }) {
       ) : (
         <div className="flex flex-col px-5 pb-5 pt-1">
           {items.map((e, i) => (
-            <div key={`${e.ev}-${e.entity_id}-${e.at}`} className="flex gap-4 pb-3.5">
+            <div key={e.audit_id} className="flex gap-4 pb-3.5">
               <div className="flex w-3 flex-none flex-col items-center">
-                <span className={`mt-4 h-3 w-3 flex-none rounded-full ${dotClass(e.ev)}`} />
+                <span className={`mt-4 h-3 w-3 flex-none rounded-full ${dotClass(e.event_type)}`} />
                 {i < items.length - 1 && <span className="mt-1 w-0.5 flex-1 bg-line" />}
               </div>
               {/* 항목 카드 배경 — 시안 값: HUMAN 이벤트 #FBF8F8 · 그 외 #FBFCFD */}
               <div
                 className="min-w-0 flex-1 rounded-[10px] border border-line px-[18px] py-4"
-                style={{ background: e.ac === 'HUMAN' ? '#FBF8F8' : '#FBFCFD' }}
+                style={{ background: e.actor_type === 'HUMAN' ? '#FBF8F8' : '#FBFCFD' }}
               >
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-[13px] font-extrabold text-navy">{e.ev}</span>
-                  <Badge variant={actorVariant(e.ac)}>{e.ac}</Badge>
-                  <span className="ml-auto font-mono text-[11px] text-g1">{fmtAt(e.at)}</span>
+                  <span className="font-mono text-[13px] font-extrabold text-navy">{e.event_type}</span>
+                  <Badge variant={actorVariant(e.actor_type)}>{e.actor_type}</Badge>
+                  <span className="ml-auto font-mono text-[11px] text-g1">{fmtAt(e.occurred_at)}</span>
                 </div>
                 <div className="mt-2.5 flex gap-6">
                   <span className="font-mono text-[11.5px] text-g1">
-                    {e.entity} · {e.entity_id}
+                    {e.entity_type} · {e.entity_id}
                   </span>
                   <span className="text-[11.5px] text-g1">
-                    주체 <span className="font-mono font-semibold text-ink">{e.subject}</span>
+                    주체 <span className="font-mono font-semibold text-ink">{e.actor_id}</span>
                   </span>
                 </div>
+                {/* before 가 null 이면 after 만 — 사유는 응답의 detail 문구를 그대로 쓴다 */}
                 <div className="mt-3 flex flex-wrap items-center gap-3.5">
                   {e.before && (
                     <>
@@ -63,7 +65,7 @@ function AuditTimeline({ items, title, note }) {
                     </>
                   )}
                   <StateBox tone="green">{e.after}</StateBox>
-                  {e.note && <span className="text-[11.5px] text-g1">{e.note}</span>}
+                  {e.detail && <span className="text-[11.5px] text-g1">{e.detail}</span>}
                 </div>
               </div>
             </div>

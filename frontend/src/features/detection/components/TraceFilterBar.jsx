@@ -58,9 +58,10 @@ function PickRow({ on, onToggle, children }) {
 
 const DATE_CLS = 'h-9 rounded-lg border border-line bg-white px-2.5 font-mono text-[12.5px] font-semibold text-navy'
 
-function TraceFilterBar({ rows, value, onSearch }) {
+function TraceFilterBar({ catalog, rows, value, onSearch }) {
   const [draft, setDraft] = useState(value)
-  const f = resolveFilters(rows, draft)
+  // 선택지: AREA·설비·챔버·파라미터·레시피·LOT 은 catalog, WAFER 는 조회 응답(rows)에서 나온다
+  const f = resolveFilters(catalog, rows, draft)
   const o = f.options
 
   const patch = (next) => setDraft({ ...f, ...next })
@@ -73,7 +74,9 @@ function TraceFilterBar({ rows, value, onSearch }) {
           <FilterSelect
             value={f.area}
             options={o.areas}
-            onChange={(v) => patch({ area: v, equipment: '', chamber: '', sensors: [], lot: '', wafers: [] })}
+            onChange={(v) =>
+              patch({ area: v, equipment: '', chamber: '', sensors: [], recipe: '', lot: '', wafers: [] })
+            }
           />
         </FilterField>
         <FilterField label="설비">
@@ -102,9 +105,8 @@ function TraceFilterBar({ rows, value, onSearch }) {
       </div>
 
       <div className="flex items-end gap-4 pb-4 pt-0">
-        {/* TODO(data): recipe_id 실측 미제공 — alarms·trace 어디에도 레시피 식별자가 없다 */}
         <FilterField label="레시피">
-          <FilterSelect value="" options={[{ value: '', label: '실측 미제공' }]} disabled onChange={() => {}} />
+          <FilterSelect value={f.recipe} options={o.recipes} mono onChange={(v) => patch({ recipe: v })} />
         </FilterField>
         <FilterField label="LOT">
           <FilterSelect value={f.lot} options={o.lots} mono onChange={(v) => patch({ lot: v, wafers: [] })} />
