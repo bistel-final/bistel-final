@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getAlarms, getTraceCatalog } from '../../../shared/api/detection.js'
 import { fmtShort } from '../../../shared/api/format.js'
-import StatusBadge from '../../../shared/components/StatusBadge.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
+import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
+import Pagination from '../../../shared/components/ui/Pagination.jsx'
+import {
+  CELL_DIM,
+  CELL_ID,
+  CELL_MONO,
+  TD_CLS,
+  TH_CLS,
+  judgementClass,
+  rowClass,
+  ruleVariant,
+} from '../../../shared/components/ui/statusStyles.js'
 import AlarmHierarchyFilter from '../components/AlarmHierarchyFilter.jsx'
 import AlarmDetailPanel from '../components/AlarmDetailPanel.jsx'
 
@@ -17,21 +30,16 @@ const AREA_BY_PREFIX = { PHO: 'PHOTO', ETC: 'ETCH' }
 const areaOf = (a) => AREA_BY_PREFIX[String(a.equipment_id ?? a.chamber_id ?? '').slice(0, 3)] ?? '기타'
 
 const COLUMNS = [
-  { key: 'alarm_id', label: '알람', w: '86px' },
-  { key: 'occurred_at', label: '시각', w: '104px' },
-  { key: 'lot_id', label: 'LOT', w: '96px' },
-  { key: 'wafer_no', label: 'W', w: '32px', num: true },
-  { key: 'chamber_id', label: '챔버', w: '88px' },
-  { key: 'sensor_id', label: '파라미터', w: '84px' },
-  { key: 'rule_id', label: '룰', w: '96px' },
-  { key: 'judgement', label: '타입', w: '54px' },
-  { key: 'action_id', label: '조치', w: '84px' },
+  { key: 'alarm_id', label: '알람' },
+  { key: 'occurred_at', label: '시각' },
+  { key: 'lot_id', label: 'LOT' },
+  { key: 'wafer_no', label: 'W', num: true },
+  { key: 'chamber_id', label: '챔버' },
+  { key: 'sensor_id', label: '파라미터' },
+  { key: 'rule_id', label: '룰' },
+  { key: 'judgement', label: '타입' },
+  { key: 'action_id', label: '조치' },
 ]
-const GRID = COLUMNS.map((c) => c.w).join(' ')
-
-// R03_CONSEC만 적색 강조, R01/R02는 회색 계열
-const ruleTone = (r) => (r === 'R03_CONSEC' ? 'oos' : 'neutral')
-const judTone = (j) => (j === 'OOS' ? 'oos' : 'ooc')
 
 const cmp = (a, b, col) => {
   const x = a[col.key] ?? ''
@@ -43,11 +51,26 @@ const cmp = (a, b, col) => {
 function AlarmsPage() {
   const { alarmId } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [data, setData] = useState(null)
   const [catalog, setCatalog] = useState(null)
   const [error, setError] = useState(null)
-  const [filter, setFilter] = useState({ area: ALL, equipment: ALL, chamber: ALL, sensor: ALL })
+  // 다른 화면(대시보드 등)이 쿼리 파라미터로 이관한 계층 필터 — 마운트 시 1회만 읽는다
+  const [filter, setFilter] = useState(() => ({
+    area: searchParams.get('area') ?? ALL,
+    equipment: searchParams.get('equipment') ?? ALL,
+    chamber: searchParams.get('chamber') ?? ALL,
+    sensor: searchParams.get('sensor') ?? ALL,
+  }))
+  // 조치 목록 '알람 N건'에서 이관한 알람 ID 제한 목록 (?alarms=ALM-0001,ALM-0002,…)
+  const [alarmIdFilter, setAlarmIdFilter] = useState(() => {
+    const ids = (searchParams.get('alarms') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return ids.length ? new Set(ids) : null
+  })
   const [sort, setSort] = useState({ key: 'occurred_at', dir: 'desc' })
   const [pageOverride, setPageOverride] = useState(null)
 
@@ -76,12 +99,13 @@ function AlarmsPage() {
     () =>
       items.filter(
         (a) =>
+          (!alarmIdFilter || alarmIdFilter.has(a.alarm_id)) &&
           (filter.area === ALL || areaOf(a) === filter.area) &&
           (filter.equipment === ALL || a.equipment_id === filter.equipment) &&
           (filter.chamber === ALL || a.chamber_id === filter.chamber) &&
           (filter.sensor === ALL || a.sensor_id === filter.sensor),
       ),
-    [items, filter],
+    [items, filter, alarmIdFilter],
   )
 
   const sorted = useMemo(() => {
@@ -89,6 +113,12 @@ function AlarmsPage() {
     const sign = sort.dir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => sign * cmp(a, b, col) || a.alarm_id.localeCompare(b.alarm_id))
   }, [filtered, sort])
+
+  // 안내 배너 건수 — 계층 필터와 무관하게 ID 제한만 반영한 실제 건수
+  const idScopedCnt = useMemo(
+    () => (alarmIdFilter ? items.filter((a) => alarmIdFilter.has(a.alarm_id)).length : 0),
+    [items, alarmIdFilter],
+  )
 
   // 상세 패널은 URL(/alarms/:alarmId)에서 복원된다 — 필터와 무관하게 전체 목록에서 찾는다
   const selected = alarmId ? (items.find((a) => a.alarm_id === alarmId) ?? null) : null
@@ -99,13 +129,11 @@ function AlarmsPage() {
   const autoPage = selIdx >= 0 ? Math.floor(selIdx / PAGE_SIZE) + 1 : 1
   const curPage = Math.min(pageOverride ?? autoPage, pageCnt)
   const rows = sorted.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
+  const rangeFrom = (curPage - 1) * PAGE_SIZE + 1
+  const rangeTo = Math.min(curPage * PAGE_SIZE, sorted.length)
 
   const onFilterChange = (key, value) => {
     setPageOverride(null)
-    if (key === 'reset') {
-      setFilter({ area: ALL, equipment: ALL, chamber: ALL, sensor: ALL })
-      return
-    }
     // 상위를 바꾸면 하위 선택을 초기화한다
     setFilter((prev) => {
       const next = { ...prev, [key]: value }
@@ -121,6 +149,17 @@ function AlarmsPage() {
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
   }
 
+  // 알람 ID 제한 해제 — 전체 목록으로 (URL의 ?alarms=도 함께 지운다)
+  const clearAlarmIdFilter = () => {
+    setPageOverride(null)
+    setAlarmIdFilter(null)
+    if (searchParams.has('alarms')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('alarms')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
   const select = (id) => navigate(`/alarms/${id}`)
   const close = () => navigate('/alarms')
   const jump = (id) => {
@@ -132,151 +171,119 @@ function AlarmsPage() {
   if (!data || !catalog) return <LoadingState message="알람 목록을 불러오는 중…" />
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">알람 목록</div>
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">알람 목록</div>
+        <div className="text-xs text-g1">
+          기간 내 <span className="font-mono">{data.total ?? items.length}</span>건
+        </div>
+      </div>
 
-      <AlarmHierarchyFilter
-        alarms={items}
-        value={filter}
-        onChange={onFilterChange}
-        areaOf={areaOf}
-        resultCnt={filtered.length}
-        totalCnt={data.total ?? items.length}
-      />
+      <AlarmHierarchyFilter alarms={items} value={filter} onChange={onFilterChange} areaOf={areaOf} />
 
-      <div className={selected ? 'grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]' : 'grid grid-cols-1'}>
-        <div className="min-w-0 overflow-hidden rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
+      {alarmIdFilter && (
+        <div className="mb-3.5 flex items-center gap-3 rounded-lg border border-tint-blue-line bg-tint-blue px-3.5 py-2 text-[12.5px] font-semibold text-navy">
+          조치 연관 알람 <span className="font-mono font-bold">{idScopedCnt}</span>건 표시 중
+          <Button variant="outline" sm className="ml-auto" onClick={clearAlarmIdFilter}>
+            전체 목록으로
+          </Button>
+        </div>
+      )}
+
+      <div className="flex items-start gap-5">
+        <Card className="min-w-0 flex-1">
+          <CardHeader title="알람" note="발생 시각 내림차순" />
           {sorted.length === 0 ? (
             <EmptyState title="조건에 맞는 알람이 없습니다" description="공정·설비·챔버·파라미터 필터를 조정해 주세요." />
           ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
-                <div
-                  className="grid gap-2 border-b border-line bg-page px-4 py-2.5 text-[12px] font-extrabold text-slate"
-                  style={{ gridTemplateColumns: GRID }}
-                >
-                  {COLUMNS.map((c) => {
-                    const on = sort.key === c.key
-                    return (
-                      <button
-                        key={c.key}
-                        type="button"
-                        onClick={() => toggleSort(c.key)}
-                        className={`flex cursor-pointer items-center gap-1 truncate bg-transparent p-0 text-left text-[12px] font-extrabold hover:text-brand ${
-                          on ? 'text-navy' : 'text-slate'
-                        }`}
-                      >
-                        {c.label}
-                        <span className="text-[9px] leading-none">{on ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {rows.map((a) => {
-                  const on = selected?.alarm_id === a.alarm_id
-                  return (
-                    <div
+            <div className="overflow-x-auto px-2">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    {COLUMNS.map((c) => {
+                      const on = sort.key === c.key
+                      return (
+                        <th
+                          key={c.key}
+                          onClick={() => toggleSort(c.key)}
+                          className={`${TH_CLS} cursor-pointer select-none ${on ? 'text-navy' : ''}`}
+                        >
+                          {c.label} <span className={`text-[9px] ${on ? 'text-navy' : 'text-g2'}`}>{on && sort.dir === 'asc' ? '▴' : '▾'}</span>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((a, i) => (
+                    <tr
                       key={a.alarm_id}
                       onClick={() => select(a.alarm_id)}
-                      className="grid cursor-pointer items-center gap-2 border-b border-line-soft px-4 py-2 transition-colors duration-[120ms] hover:bg-line-soft"
-                      style={{ gridTemplateColumns: GRID, background: on ? '#DBEAFE' : 'transparent' }}
+                      className={`cursor-pointer ${rowClass(i, { sel: selected?.alarm_id === a.alarm_id })}`}
                     >
-                      <span className="truncate font-mono text-[13px] font-extrabold text-navy">{a.alarm_id}</span>
-                      <span className="font-mono text-[12.5px] font-semibold text-ink">{fmtShort(a.occurred_at)}</span>
-                      <span className="truncate font-mono text-[12.5px] font-semibold text-ink">{a.lot_id}</span>
-                      <span className="font-mono text-[12.5px] font-semibold text-ink">{a.wafer_no}</span>
-                      <span className="truncate font-mono text-[12.5px] font-semibold text-ink">{a.chamber_id}</span>
-                      <span className="truncate font-mono text-[12.5px] font-semibold text-ink">{a.sensor_id}</span>
-                      <span className="min-w-0">
-                        <StatusBadge tone={ruleTone(a.rule_id)} mono className="text-[10.5px]">
-                          {a.rule_id}
-                        </StatusBadge>
-                      </span>
-                      <span className="min-w-0">
-                        <StatusBadge tone={judTone(a.judgement)} mono className="text-[10.5px]">
-                          {a.judgement}
-                        </StatusBadge>
-                      </span>
-                      <span className="min-w-0 truncate">
+                      <td className={`${TD_CLS} ${CELL_ID}`}>{a.alarm_id}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.occurred_at)}</td>
+                      <td className={`${TD_CLS} ${CELL_MONO}`}>{a.lot_id}</td>
+                      <td className={`${TD_CLS} ${CELL_MONO}`}>{a.wafer_no}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{a.chamber_id}</td>
+                      <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.sensor_id}</td>
+                      <td className={TD_CLS}>
+                        <Badge variant={ruleVariant(a.rule_id)}>{String(a.rule_id).slice(0, 3)}</Badge>
+                      </td>
+                      <td className={`${TD_CLS} ${CELL_MONO} font-bold ${judgementClass(a.judgement)}`}>{a.judgement}</td>
+                      <td className={TD_CLS}>
                         {a.action_id ? (
                           <Link
                             to={`/actions?action=${a.action_id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="font-mono text-[12.5px] font-extrabold text-brand hover:text-brand-light"
+                            className={CELL_MONO}
                           >
                             {a.action_id}
                           </Link>
                         ) : (
-                          <span className="font-mono text-[12.5px] font-bold text-slate-light">—</span>
+                          <span className={`${CELL_MONO} text-g2`}>—</span>
                         )}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           {sorted.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
-              <span className="mr-auto text-[12.5px] font-bold text-slate">
-                총 <span className="font-mono font-extrabold text-navy">{sorted.length}</span>건 · {curPage}/{pageCnt}{' '}
-                페이지
-              </span>
-              <button
-                type="button"
-                disabled={curPage === 1}
-                onClick={() => setPageOverride(curPage - 1)}
-                className="h-[28px] rounded-[7px] border border-line-input bg-white px-2.5 text-[12.5px] font-extrabold text-slate enabled:cursor-pointer enabled:hover:bg-line-soft disabled:opacity-35"
-              >
-                ‹
-              </button>
-              {Array.from({ length: pageCnt }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setPageOverride(i + 1)}
-                  className="h-[28px] w-[28px] cursor-pointer rounded-[7px] border font-mono text-[12.5px] font-extrabold"
-                  style={
-                    curPage === i + 1
-                      ? { background: '#1E5FC2', color: '#FFFFFF', borderColor: '#1E5FC2' }
-                      : { background: '#FFFFFF', color: '#475569', borderColor: '#CBD5E1' }
-                  }
-                >
-                  {i + 1}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={curPage === pageCnt}
-                onClick={() => setPageOverride(curPage + 1)}
-                className="h-[28px] rounded-[7px] border border-line-input bg-white px-2.5 text-[12.5px] font-extrabold text-slate enabled:cursor-pointer enabled:hover:bg-line-soft disabled:opacity-35"
-              >
-                ›
-              </button>
-            </div>
+            <Pagination
+              page={curPage}
+              pageCount={pageCnt}
+              rangeLabel={`${rangeFrom} – ${rangeTo} / ${sorted.length}`}
+              onPage={setPageOverride}
+            />
+          )}
+        </Card>
+
+        <div className="w-[470px] flex-none">
+          {selected ? (
+            <AlarmDetailPanel alarm={selected} alarms={items} catalog={catalog} area={areaOf(selected)} onSelect={jump} />
+          ) : alarmId ? (
+            <DashedCard className="flex flex-col items-start gap-3 px-[18px] py-4">
+              <div className="text-[13px] font-extrabold text-navy">
+                <span className="font-mono">{alarmId}</span> 알람을 찾을 수 없습니다
+              </div>
+              <Button variant="outline" sm onClick={close}>
+                목록으로 →
+              </Button>
+            </DashedCard>
+          ) : (
+            <DashedCard className="px-[18px] py-4">
+              <div className="text-[13px] font-extrabold text-navy">행을 누르면 상세가 열린다</div>
+              <div className="mt-2 text-[11.5px] leading-[1.6] text-g1">
+                선택한 알람은 <span className="font-mono text-blue">/alarms/:alarmId</span> 주소에 남아
+                <br />
+                공유되고 뒤로가기가 목록으로 돌아온다.
+              </div>
+            </DashedCard>
           )}
         </div>
-
-        {selected && (
-          <AlarmDetailPanel
-            alarm={selected}
-            alarms={items}
-            catalog={catalog}
-            area={areaOf(selected)}
-            onClose={close}
-            onSelect={jump}
-          />
-        )}
       </div>
-
-      {alarmId && !selected && (
-        <div className="rounded-xl border border-line bg-white px-4 py-3 text-[13px] font-semibold text-slate shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-          <span className="font-mono font-extrabold text-navy">{alarmId}</span> 알람을 찾을 수 없습니다.{' '}
-          <button type="button" onClick={close} className="cursor-pointer font-bold text-brand hover:text-brand-light">
-            목록으로
-          </button>
-        </div>
-      )}
     </div>
   )
 }
