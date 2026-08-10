@@ -1,30 +1,35 @@
-// 근거 카드 공통 껍데기 — 모든 카드는 하단에 「읽는 법」 한 줄을 반드시 갖는다
-function RunEvidenceCard({ index, title, meta, children, reading }) {
-  return (
-    <div className="rounded-xl border border-line bg-white px-[18px] py-4 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="flex h-[20px] w-[20px] flex-none items-center justify-center rounded-md bg-line-soft font-mono text-[11px] font-extrabold text-brand">
-          {index}
-        </span>
-        <span className="text-sm font-extrabold text-navy">{title}</span>
-        {meta && <span className="ml-auto font-mono text-[11.5px] font-bold text-slate-light">{meta}</span>}
-      </div>
-      {children}
-      <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-line-soft bg-page px-3 py-2">
-        <span className="mt-px flex-none text-[11px] font-extrabold text-slate-light">읽는 법</span>
-        <span className="text-[12.5px] font-semibold leading-[1.5] text-ink">{reading}</span>
-      </div>
-    </div>
-  )
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import { DashedCard } from '../../../shared/components/ui/Card.jsx'
+
+// 좌측 3px 색 보더 — fdc 토큰 5색만 허용
+const BORDER = {
+  red: 'border-l-red',
+  blue: 'border-l-blue',
+  green: 'border-l-green',
+  navy: 'border-l-navy',
+  amber: 'border-l-amber',
 }
 
-// 실측이 없는 조합은 값을 만들어내지 않고 이 카드로 대체한다
-export function RunNoData({ label, note }) {
+// 근거 카드 항목 껍데기 — 제목/부제 · 좌측 미니 차트(DashedCard) · 우측 250px 「읽는 법」
+function RunEvidenceCard({ color = 'red', title, sub, read, tag, tagVariant = 't-navy', children }) {
   return (
-    <div className="flex min-h-[132px] flex-col items-center justify-center gap-1.5 rounded-[10px] border-2 border-dashed border-line-input bg-page px-5 py-6 text-center">
-      <div className="font-mono text-[13px] font-extrabold text-navy">{label}</div>
-      <div className="text-[12.5px] font-bold text-slate">실측 미제공</div>
-      {note && <div className="mt-0.5 text-[11.5px] font-semibold leading-[1.5] text-slate-light">{note}</div>}
+    <div className={`rounded-lg border border-line border-l-[3px] px-[18px] py-4 ${BORDER[color] ?? BORDER.red}`}>
+      <div className="mb-3 flex items-baseline gap-3.5">
+        <span className="text-[13.5px] font-extrabold text-navy">⊙ {title}</span>
+        <span className="text-[11.5px] text-g1">{sub}</span>
+      </div>
+      <div className="flex items-stretch gap-4">
+        <DashedCard className="flex flex-1 items-center px-3.5 py-2.5">{children}</DashedCard>
+        <div className="w-[250px] flex-none rounded-lg border border-line bg-soft p-3.5">
+          <div className="mb-2 text-[11px] font-extrabold text-navy">읽는 법</div>
+          <div className="text-xs leading-[1.6] text-ink">{read}</div>
+          {tag && (
+            <div className="mt-2.5">
+              <Badge variant={tagVariant}>{tag}</Badge>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

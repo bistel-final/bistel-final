@@ -1,9 +1,9 @@
-// 승인 결과·409 충돌 사유를 알리는 토스트 (화면 우상단 고정)
+// 승인 결과·409 충돌 사유를 알리는 토스트 (화면 우상단 고정) — fdc 틴트 토큰만 사용
 const TONE = {
-  ok: { bg: '#DCFCE7', border: '#86EFAC', color: '#16A34A' },
-  oos: { bg: '#FEE2E2', border: '#FECACA', color: '#DC2626' },
-  ooc: { bg: '#FEF3C7', border: '#FDE68A', color: '#D97706' },
-  info: { bg: '#EDF2FA', border: '#C7DBF7', color: '#1E5FC2' },
+  ok: { border: 'border-tint-green-line', icon: 'bg-tint-green text-green', title: 'text-green' },
+  oos: { border: 'border-tint-red-line', icon: 'bg-tint-red text-red', title: 'text-red' },
+  ooc: { border: 'border-tint-amber-line', icon: 'bg-tint-amber text-tint-amber-text', title: 'text-tint-amber-text' },
+  info: { border: 'border-tint-blue-line', icon: 'bg-tint-blue text-blue', title: 'text-blue' },
 }
 
 function RunToast({ toast, onClose }) {
@@ -12,25 +12,21 @@ function RunToast({ toast, onClose }) {
   return (
     <div className="pointer-events-none fixed right-7 top-[74px] z-50 flex justify-end">
       <div
-        className="pointer-events-auto flex max-w-[420px] animate-[om-fadein_.2s_ease-out] items-start gap-3 rounded-xl border bg-white px-4 py-3 shadow-[0_6px_20px_rgba(15,42,92,.14)]"
-        style={{ borderColor: t.border }}
+        className={`pointer-events-auto flex max-w-[420px] animate-[om-fadein_.2s_ease-out] items-start gap-3 rounded-[10px] border bg-white px-4 py-3 shadow-[0_6px_20px_rgba(30,58,92,.14)] ${t.border}`}
       >
         <span
-          className="mt-px flex h-[22px] w-[22px] flex-none items-center justify-center rounded-md text-[12px] font-extrabold"
-          style={{ background: t.bg, color: t.color }}
+          className={`mt-px flex h-[22px] w-[22px] flex-none items-center justify-center rounded-md text-xs font-extrabold ${t.icon}`}
         >
           !
         </span>
         <div className="flex flex-col gap-1">
-          <div className="font-mono text-[12.5px] font-extrabold" style={{ color: t.color }}>
-            {toast.title}
-          </div>
-          <div className="text-[13px] font-semibold leading-[1.5] text-ink">{toast.message}</div>
+          <div className={`font-mono text-[12.5px] font-extrabold ${t.title}`}>{toast.title}</div>
+          <div className="text-[13px] leading-[1.5] text-ink">{toast.message}</div>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="ml-1 cursor-pointer border-none bg-transparent p-0 text-[15px] font-extrabold text-slate-light hover:text-ink"
+          className="ml-1 cursor-pointer border-none bg-transparent p-0 text-[15px] font-extrabold text-g2 hover:text-ink"
           aria-label="알림 닫기"
         >
           ×

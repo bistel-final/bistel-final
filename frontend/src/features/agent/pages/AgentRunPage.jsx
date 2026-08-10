@@ -12,13 +12,12 @@ import RunApprovalCard from '../components/RunApprovalCard.jsx'
 import RunTransitionCard from '../components/RunTransitionCard.jsx'
 import RunToolCallsCard from '../components/RunToolCallsCard.jsx'
 import RunEvidencePanel from '../components/RunEvidencePanel.jsx'
-import RunImpactPanel from '../components/RunImpactPanel.jsx'
 import RunToast from '../components/RunToast.jsx'
 
 const TOAST_MS = 5000
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
 
-// Agent 분석·승인 — 좌열은 판정→조치→승인 흐름, 우열은 그 판정을 뒷받침하는 근거 5종
+// Agent 분석 · 승인 (디자인 v2) — 네이비 헤더 바 · 좌 360px 판정 컬럼 · 우 근거 카드 5개
 function AgentRunPage() {
   const { runId } = useParams()
   const [data, setData] = useState(null)
@@ -77,6 +76,7 @@ function AgentRunPage() {
     return {
       runAlarms,
       equipmentId: runAlarms[0]?.equipment_id ?? null,
+      consec: runAlarms.find((a) => a.rule_id === 'R03_CONSEC') ?? null,
       rules: Object.entries(ruleCnt).map(([rule_id, count]) => ({ rule_id, count })),
       approval: approvals.find((p) => p.action_id === action?.action_id) ?? null,
     }
@@ -99,19 +99,24 @@ function AgentRunPage() {
     )
 
   const { run, action, catalog } = data
-  const { runAlarms, equipmentId, rules, approval } = derived
+  const { runAlarms, equipmentId, consec, rules, approval } = derived
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <RunContextBar run={run} equipmentId={equipmentId} />
+    <div className="animate-[om-fadein_.3s_ease-out]">
       <RunToast toast={toast} onClose={() => setToast(null)} />
 
-      <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">Agent 분석·승인</div>
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">Agent 분석 · 승인</div>
+        <div className="text-xs text-g1">대시보드 「검토」 에서 바로 들어온다</div>
+      </div>
 
-      <div className="grid grid-cols-[404px_minmax(0,1fr)] items-start gap-4">
-        <div className="flex flex-col gap-3.5">
-          <RunVerdictCard run={run} anomaly={catalog.anomaly} />
-          <RunActionCard action={action} rules={rules} />
+      <RunContextBar run={run} equipmentId={equipmentId} />
+
+      <div className="mt-5 flex items-start gap-5">
+        {/* 좌 360px 판정 컬럼 — 흰 카드, 좌측 3px 적색 보더 */}
+        <div className="flex w-[360px] flex-none flex-col gap-4 rounded-[10px] border border-line border-l-[3px] border-l-red bg-white p-5">
+          <RunVerdictCard run={run} />
+          <RunActionCard action={action} consec={consec} rules={rules} />
           <RunApprovalCard
             action={action}
             approval={approval}
@@ -119,20 +124,17 @@ function AgentRunPage() {
             onDecided={setDecided}
             onToast={showToast}
           />
-          <RunTransitionCard threadId={run.thread_id} />
+          <RunTransitionCard />
           <RunToolCallsCard toolCalls={run.tool_calls} nodes={run.nodes} />
         </div>
 
-        <div className="flex flex-col gap-3.5">
-          <RunEvidencePanel run={run} runAlarms={runAlarms} allAlarms={data.alarms} catalog={catalog} />
-          <RunImpactPanel
-            run={run}
-            runAlarms={runAlarms}
-            allAlarms={data.alarms}
-            action={action}
-            equipmentId={equipmentId}
-          />
-        </div>
+        <RunEvidencePanel
+          run={run}
+          runAlarms={runAlarms}
+          allAlarms={data.alarms}
+          catalog={catalog}
+          equipmentId={equipmentId}
+        />
       </div>
     </div>
   )

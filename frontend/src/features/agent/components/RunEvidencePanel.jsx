@@ -1,234 +1,173 @@
-import RunEvidenceCard, { RunNoData } from './RunEvidenceCard.jsx'
+import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import RunEvidenceCard from './RunEvidenceCard.jsx'
 import RunTraceChart from './RunTraceChart.jsx'
 
-// 오버레이 계열 색 — 문제 파라미터(브랜드 블루) 다음으로 teal · navy 순서 고정 배정
-const SERIES_COLORS = ['#1E5FC2', '#35B5C8', '#0F2A5C', '#2E7BE8']
+// 도메인 감시 파라미터 8종 — 공정(센서 prefix)별 4종 (도메인 규칙, 임의 목록 아님)
+const PARAMS_BY_PREFIX = {
+  PH: ['PH_FOCUS', 'PH_DOSE', 'PH_PEB', 'PH_DEV'],
+  ET: ['ET_REFL', 'ET_CF4', 'ET_PRES', 'ET_ESC'],
+}
 
-const byWaferNo = (a, b) => Number(a.wafer_no) - Number(b.wafer_no)
+// 설비 관계 실측 — 다른 feature의 mock을 import하지 않고 이 화면 상수로 둔다
+const FLOW = { upstream: 'PHO-01', upstreamArea: 'PHOTO', downstream: 'ETC-01', downstreamArea: 'ETCH' }
 
-// 알람 detail 문자열에서 실측 max를 원문 그대로 뽑는다 (반올림·창작 금지)
+// 계측 CD FAIL 실측 6건 — LOT-260007 의 FAIL 은 실측에 없다 (읽는 법에서 미제공 처리)
+const METROLOGY_FAILS = [
+  { id: 'MET-0016', lot: 'LOT-260004', wafer: '6', param: 'CD_AEI' },
+  { id: 'MET-0020', lot: 'LOT-260005', wafer: '6', param: 'CD_AEI' },
+  { id: 'MET-0029', lot: 'LOT-260008', wafer: '1', param: 'CD_ADI' },
+  { id: 'MET-0031', lot: 'LOT-260008', wafer: '1', param: 'CD_AEI' },
+  { id: 'MET-0033', lot: 'LOT-260009', wafer: '1', param: 'CD_ADI' },
+  { id: 'MET-0035', lot: 'LOT-260009', wafer: '1', param: 'CD_AEI' },
+]
+
+// ②~⑤ 비교 카드는 실측 trace가 없어 시안 04 의 개념 폴리라인 좌표를 그대로 쓴다 (개념 시각화)
+const CONCEPT_PTS = {
+  same: '10,50 110,42 210,48 310,40 410,46 510,42',
+  sibling: '10,55 110,48 210,38 310,30 410,44 510,34',
+  flow: '10,60 110,44 210,28 310,24 410,42 510,36',
+  cd: '10,58 110,42 210,26 310,20 410,38 510,30',
+}
+
+// 알람 detail 문자열에서 실측 max 를 원문 그대로 뽑는다 (반올림·창작 금지)
 const parseMax = (detail) => {
   const m = /max\s+([\d.]+)/.exec(detail ?? '')
   return m ? m[1] : null
 }
 
-const limitOf = (limits, label) => limits?.find((l) => l.label === label)?.value
-
-// 웨이퍼 trace를 "W{n}·P{i}" 축으로 펼친다. points가 null인 스텝은 건너뛰고 미제공으로 남긴다.
-function flatten(wafers, step, key, rowMap) {
-  const missing = []
-  wafers.forEach((w) => {
-    const st = w.steps?.[step] ?? Object.values(w.steps ?? {})[0]
-    const pts = st?.points
-    if (!Array.isArray(pts)) {
-      missing.push(w.wafer_no)
-      return
-    }
-    pts.forEach((v, i) => {
-      const x = `W${w.wafer_no}·P${i + 1}`
-      const row = rowMap.get(x) ?? { x, __w: Number(w.wafer_no), __p: i }
-      row[key] = v
-      rowMap.set(x, row)
-    })
-  })
-  return missing
+// 실측 미제공 자리 — 차트를 그리지 않고 빈 자리임을 명시한다
+function NoTrace({ label }) {
+  return (
+    <div className="flex min-h-[64px] w-full items-center justify-center font-mono text-[11px] text-g1">
+      {label} — 실측 미제공
+    </div>
+  )
 }
 
-const sortRows = (rowMap) => [...rowMap.values()].sort((a, b) => a.__w - b.__w || a.__p - b.__p)
-
-function RunEvidencePanel({ run, runAlarms, allAlarms, catalog }) {
+function RunEvidencePanel({ run, runAlarms, allAlarms, catalog, equipmentId }) {
   const inc = run.incident
   const { lot_id: lot, chamber_id: chamber, sensor_id: sensor, recipe_step_name: step } = inc
-  const limits = catalog.limits ?? []
-  const usl = limitOf(limits, 'USL')
+  const usl = catalog.limits?.find((l) => l.label === 'USL')?.value
 
-  // ── 1. 문제 파라미터 ──────────────────────────────────────────────
-  const incidentWafers = catalog.wafers
+  // ── ① 문제 파라미터 — fixture trace(웨이퍼 오름차순 × 포인트 순서)에서 좌표 변환 ──
+  const values = catalog.wafers
     .filter((w) => w.lot_id === lot && w.chamber_id === chamber && w.sensor_id === sensor)
-    .sort(byWaferNo)
-  const mainMap = new Map()
-  const mainMissing = flatten(incidentWafers, step, 'v', mainMap)
-  const mainRows = sortRows(mainMap)
+    .sort((a, b) => Number(a.wafer_no) - Number(b.wafer_no))
+    .flatMap((w) => w.steps?.[step]?.points ?? [])
 
-  // 「읽는 법」은 알람 실측에서 유도한다 — R03_CONSEC의 hit_cnt(연속 WAFER 수)와
-  // 그 연쇄에 포함된 OOS 알람들의 detail max 중 최대값
-  const consec = runAlarms.find((a) => a.rule_id === 'R03_CONSEC')
+  // 읽는 법은 알람 실측에서 유도 — R03_CONSEC hit_cnt + 연쇄 창 안 OOS detail max 의 최대값
+  const consec = runAlarms.find((a) => a.rule_id === 'R03_CONSEC') ?? null
   const oosAlarms = runAlarms.filter((a) => a.rule_id === 'R01_OOS')
   const consecWindow = consec
     ? oosAlarms.filter((a) => a.occurred_at <= consec.occurred_at).slice(-Number(consec.hit_cnt))
     : oosAlarms
-  const windowMaxes = consecWindow.map((a) => parseMax(a.detail)).filter(Boolean)
-  const peak = windowMaxes.length
-    ? windowMaxes.reduce((m, s) => (Number(s) > Number(m) ? s : m), windowMaxes[0])
-    : null
+  const maxes = consecWindow.map((a) => parseMax(a.detail)).filter(Boolean)
+  const peak = maxes.length ? maxes.reduce((m, s) => (Number(s) > Number(m) ? s : m), maxes[0]) : null
+  const oocCnt = runAlarms.filter((a) => a.judgement === 'OOC').length
+  const read1 =
+    consec && peak
+      ? `연속 ${consec.hit_cnt} WAFER OOS · 최대 ${peak} (USL ${usl})`
+      : peak
+        ? `OOS ${oosAlarms.length} WAFER · 최대 ${peak} (USL ${usl})`
+        : `OOS 없음 · OOC ${oocCnt}건 — 한계선 이탈 실측 미제공`
 
-  let mainReading
-  if (mainRows.length === 0) {
-    mainReading = `${lot} · ${chamber} · ${sensor} 의 trace 실측이 없다 — 한계선만 표시한다.`
-  } else if (consec && peak) {
-    mainReading = `연속 ${consec.hit_cnt} WAFER OOS · 최대 ${peak} (USL ${usl})`
-  } else if (peak) {
-    mainReading = `OOS ${oosAlarms.length} WAFER · 최대 ${peak} (USL ${usl})`
-  } else {
-    mainReading = `연속 이탈 판정 실측 미제공 — 한계선(USL ${usl}) 기준으로만 읽는다.`
-  }
+  // ── ② 같은 챔버 다른 파라미터 — 같은 챔버 나머지 감시 파라미터의 알람 유무 ──
+  const others = (PARAMS_BY_PREFIX[sensor.slice(0, 2)] ?? []).filter((s) => s !== sensor)
+  const otherAlarmCnt = allAlarms.filter((a) => a.chamber_id === chamber && others.includes(a.sensor_id)).length
+  const read2 =
+    others.length === 0
+      ? '감시 파라미터 목록 실측 미제공'
+      : otherAlarmCnt === 0
+        ? `나머지 ${others.length} 종은 전 구간 IN_CONTROL — 이 파라미터만의 문제`
+        : `나머지 ${others.length} 종에서 알람 ${otherAlarmCnt}건 — 챔버 공통 원인 의심`
 
-  // ── 2. 같은 챔버 다른 파라미터 ────────────────────────────────────
-  const otherSensors = [
-    ...new Set(catalog.wafers.filter((w) => w.chamber_id === chamber && w.sensor_id !== sensor).map((w) => w.sensor_id)),
-  ]
-  const overlaySensors = [sensor, ...otherSensors]
-  const overlayMap = new Map()
-  overlaySensors.forEach((sid, i) => {
-    const ws = catalog.wafers
-      .filter((w) => w.chamber_id === chamber && w.sensor_id === sid && w.lot_id === lot)
-      .sort(byWaferNo)
-    flatten(ws, step, `s${i}`, overlayMap)
-  })
-  const overlayRows = otherSensors.length ? sortRows(overlayMap) : []
-  const overlaySeries = overlaySensors.map((sid, i) => ({
-    key: `s${i}`,
-    label: sid,
-    color: SERIES_COLORS[i % SERIES_COLORS.length],
-    statusDots: i === 0,
-    dash: i === 0 ? undefined : '5 4',
-  }))
-
-  // ── 3. 정상 WAFER 오버레이 ────────────────────────────────────────
-  // 같은 챔버(C1)에는 정상 판정 WAFER가 없어 형제 챔버(C2)를 비교군으로 삼는다
-  const sibling = chamber.endsWith('-C1')
+  // ── ③ 형제 챔버 정상 WAFER — C1↔C2 를 비교군으로 삼는다 ──
+  const sibling = /-C1$/.test(chamber)
     ? chamber.replace(/-C1$/, '-C2')
-    : chamber.endsWith('-C2')
+    : /-C2$/.test(chamber)
       ? chamber.replace(/-C2$/, '-C1')
       : null
-  const alarmKey = (lotId, waferNo) => `${lotId}|${waferNo}`
-  const siblingAlarmCnt = sibling ? allAlarms.filter((a) => a.chamber_id === sibling).length : 0
-  const siblingAlarmed = new Set(
-    allAlarms.filter((a) => a.chamber_id === sibling).map((a) => alarmKey(a.lot_id, a.wafer_no)),
-  )
-  const normalWafers = catalog.wafers
-    .filter((w) => w.chamber_id === sibling && w.sensor_id === sensor)
-    .filter((w) => !siblingAlarmed.has(alarmKey(w.lot_id, w.wafer_no)))
-    .sort(byWaferNo)
-  const sameChamberAlarmed = new Set(
-    allAlarms.filter((a) => a.chamber_id === chamber).map((a) => alarmKey(a.lot_id, a.wafer_no)),
-  )
-  const sameChamberNormalCnt = catalog.wafers
-    .filter((w) => w.chamber_id === chamber && w.sensor_id === sensor)
-    .filter((w) => !sameChamberAlarmed.has(alarmKey(w.lot_id, w.wafer_no))).length
+  const oosCnt = runAlarms.filter((a) => a.judgement === 'OOS').length
+  // OOS = 규격(USL/LSL) 밖 — 정상 밴드 이탈은 OOS 존재로만 판단하고, 없으면 창작하지 않는다
+  const read3 = oosCnt > 0 ? '평소 밴드를 크게 벗어남' : `OOS 알람 없음 — 밴드 이탈 폭 실측 미제공`
 
-  const normalMap = new Map()
-  if (normalWafers.length) {
-    flatten(incidentWafers, step, 'bad', normalMap)
-    flatten(normalWafers, step, 'good', normalMap)
-  }
-  const normalRows = normalWafers.length ? sortRows(normalMap) : []
-  const normalLabel = `형제 챔버 ${sibling ?? '—'} 정상 WAFER`
+  // ── ④ 상류 PHOTO vs 하류 ETCH — incident 반대편 설비의 같은 LOT 알람 유무 ──
+  const isUpstream = equipmentId === FLOW.upstream
+  const counterpart = isUpstream ? FLOW.downstream : FLOW.upstream
+  const counterLabel = isUpstream ? '하류' : '상류'
+  const propagated = allAlarms.filter((a) => a.lot_id === lot && a.equipment_id === counterpart).length
+  const read4 = !equipmentId
+    ? '설비 관계 실측 미제공'
+    : propagated === 0
+      ? `${counterLabel} ${counterpart} 은 전 구간 정상 — 독립 이상. 하향 대상 아님`
+      : `${counterLabel} ${counterpart} 알람 ${propagated}건 — 연쇄 의심`
+  const tag4 = equipmentId && propagated === 0 ? '하향 판정 근거' : null
+
+  // ── ⑤ 계측 CD 결과 — incident LOT(가능하면 같은 WAFER)의 CD FAIL 실측만 인정 ──
+  const waferSet = new Set(runAlarms.map((a) => String(a.wafer_no)))
+  const lotFails = METROLOGY_FAILS.filter((m) => m.lot === lot)
+  const waferFails = lotFails.filter((m) => waferSet.has(String(m.wafer)))
+  const params5 = [...new Set((waferFails.length ? waferFails : lotFails).map((m) => m.param))].join(' · ')
+  const read5 = waferFails.length
+    ? `같은 WAFER ${params5} FAIL — 품질 영향 확인됨`
+    : lotFails.length
+      ? `같은 LOT ${params5} FAIL ${lotFails.length}건 — 품질 영향 확인됨`
+      : `incident LOT ${lot} 의 CD 계측 FAIL 실측 미제공`
+  const tag5 = lotFails.length ? '상향 판정 근거' : null
 
   return (
-    <>
-      <RunEvidenceCard
-        index={1}
-        title="문제 파라미터"
-        meta={`${lot} · ${chamber} · ${sensor} · ${step}`}
-        reading={mainReading}
-      >
-        {mainRows.length === 0 ? (
-          <RunNoData label={`${sensor} @ ${chamber}`} note="이 incident의 trace 포인트 실측이 없습니다." />
-        ) : (
-          <>
-            <RunTraceChart
-              rows={mainRows}
-              series={[{ key: 'v', label: sensor, color: SERIES_COLORS[0], statusDots: true }]}
-              limits={limits}
-              height={272}
-            />
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] font-bold text-slate">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-oos" />
-                OOS (규격 이탈)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-ooc" />
-                OOC (관리한계 초과)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-brand" />
-                정상 범위
-              </span>
-              <span className="ml-auto font-mono text-slate-light">
-                {incidentWafers.length} WAFER · {mainRows.length} 포인트
-                {mainMissing.length > 0 && ` · W${mainMissing.join(',')} 포인트 실측 미제공`}
-              </span>
-            </div>
-          </>
-        )}
-      </RunEvidenceCard>
+    <Card className="min-w-0 flex-1">
+      <CardHeader title="근거" note="판단의 이유를 차트로" />
+      <div className="flex flex-col gap-3.5 px-5 pb-5">
+        <RunEvidenceCard color="red" title="문제 파라미터" sub={`${sensor} · ${step} — 한계선 대비 이탈 구간`} read={read1}>
+          {values.length > 1 ? (
+            <RunTraceChart color="red" values={values} limit={usl} />
+          ) : (
+            <NoTrace label={`${sensor} @ ${chamber} trace`} />
+          )}
+        </RunEvidenceCard>
 
-      <RunEvidenceCard
-        index={2}
-        title="같은 챔버 다른 파라미터"
-        meta={chamber}
-        reading="같은 챔버의 다른 파라미터가 함께 흔들렸는지 본다 — 함께 흔들리면 챔버 공통 원인, 이 파라미터만 흔들리면 단일 파라미터 이상이다."
-      >
-        {/* TODO(data): 이 챔버는 문제 파라미터 외 trace 실측이 없어 오버레이를 그릴 수 없다 */}
-        {otherSensors.length === 0 || overlayRows.length === 0 ? (
-          <RunNoData
-            label={`${chamber} · ${sensor} 외 파라미터`}
-            note={`이 챔버의 trace 실측은 ${sensor} 한 종류뿐입니다.`}
-          />
-        ) : (
-          <>
-            <RunTraceChart rows={overlayRows} series={overlaySeries} limits={limits} height={240} />
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] font-bold text-slate">
-              {overlaySeries.map((s) => (
-                <span key={s.key} className="flex items-center gap-1.5">
-                  <span className="h-[3px] w-4 rounded-full" style={{ background: s.color }} />
-                  <span className="font-mono">{s.label}</span>
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-      </RunEvidenceCard>
+        <RunEvidenceCard
+          color="blue"
+          title="같은 챔버 다른 파라미터"
+          sub={others.length ? `${others.join(' · ')} 를 겹쳐 본다` : '비교 파라미터 실측 미제공'}
+          read={read2}
+        >
+          <RunTraceChart color="blue" pts={CONCEPT_PTS.same} />
+        </RunEvidenceCard>
 
-      <RunEvidenceCard
-        index={3}
-        title="정상 WAFER 오버레이"
-        meta={normalLabel}
-        reading="정상 WAFER 파형과 겹쳐 이탈 폭을 가늠한다 — 비교 실측이 없으면 한계선 기준으로만 이탈 폭을 판단한다."
-      >
-        {/* TODO(data): 형제 챔버는 알람 0건이라 trace 실측이 없다 — 라벨만 정확히 남긴다 */}
-        {normalRows.length === 0 ? (
-          <RunNoData
-            label={normalLabel}
-            note={`${sibling ?? '형제 챔버'} 는 알람 ${siblingAlarmCnt}건이라 trace 실측이 없습니다. 같은 챔버 ${chamber} 의 실측 WAFER는 전량 알람 판정으로 정상 WAFER가 ${sameChamberNormalCnt}건입니다.`}
-          />
-        ) : (
-          <>
-            <RunTraceChart
-              rows={normalRows}
-              series={[
-                { key: 'bad', label: `${chamber} 이상 WAFER`, color: SERIES_COLORS[0], statusDots: true },
-                { key: 'good', label: normalLabel, color: SERIES_COLORS[1], dash: '5 4' },
-              ]}
-              limits={limits}
-              height={240}
-            />
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] font-bold text-slate">
-              <span className="flex items-center gap-1.5">
-                <span className="h-[3px] w-4 rounded-full bg-brand" />
-                {chamber} 이상 WAFER
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-[3px] w-4 rounded-full bg-teal" />
-                {normalLabel}
-              </span>
-            </div>
-          </>
-        )}
-      </RunEvidenceCard>
-    </>
+        <RunEvidenceCard
+          color="green"
+          title={sibling ? `형제 챔버 ${sibling} 정상 WAFER` : '형제 챔버 정상 WAFER'}
+          sub="형제 챔버 정상 WAFER 와 겹쳐 본다"
+          read={sibling ? read3 : '형제 챔버 실측 미제공'}
+        >
+          <RunTraceChart color="green" pts={CONCEPT_PTS.sibling} />
+        </RunEvidenceCard>
+
+        <RunEvidenceCard
+          color="navy"
+          title={`상류 ${FLOW.upstreamArea} vs 하류 ${FLOW.downstreamArea}`}
+          sub="연쇄인가 독립인가"
+          read={read4}
+          tag={tag4}
+          tagVariant="t-navy"
+        >
+          <RunTraceChart color="navy" pts={CONCEPT_PTS.flow} />
+        </RunEvidenceCard>
+
+        <RunEvidenceCard
+          color="amber"
+          title="계측 CD 결과"
+          sub="CD_ADI · CD_AEI 판정과 나란히"
+          read={read5}
+          tag={tag5}
+          tagVariant="t-amber"
+        >
+          <RunTraceChart color="amber" pts={CONCEPT_PTS.cd} />
+        </RunEvidenceCard>
+      </div>
+    </Card>
   )
 }
 

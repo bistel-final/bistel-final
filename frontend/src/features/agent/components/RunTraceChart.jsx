@@ -1,137 +1,44 @@
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-
-// 한계선 스타일 — 규격(USL/LSL)은 굵은 빨강, 관리(UCL/LCL)는 주황, TARGET은 회색
-const LIMIT_STYLE = {
-  USL: { color: '#DC2626', width: 2, dash: '7 5' },
-  LSL: { color: '#DC2626', width: 2, dash: '7 5' },
-  UCL: { color: '#D97706', width: 2, dash: '6 4' },
-  LCL: { color: '#D97706', width: 2, dash: '6 4' },
-  TARGET: { color: '#94A3B8', width: 1.5, dash: undefined },
+// 근거 카드 미니 차트 — 시안 04 규격: viewBox 520×90, 기준선 점선 + 폴리라인.
+// pts(시안 좌표 문자열)를 그대로 받거나, values+limit(실측)에서 좌표를 계산한다.
+// 색은 전부 fdc.css :root 토큰 값 (임의 색 금지)
+const COLORS = {
+  red: '#B03A4E',
+  blue: '#2062A8',
+  green: '#2E7D4F',
+  navy: '#1E3A5C',
+  amber: '#B97F14',
 }
 
-const AXIS_TICK = {
-  fill: '#64748B',
-  fontSize: 11,
-  fontWeight: 700,
-  fontFamily: 'ui-monospace, SF Mono, Menlo, monospace',
-}
+const X0 = 10
+const X1 = 510
+const Y_TOP = 14
+const Y_BOT = 84
 
-const limitValue = (limits, label) => limits?.find((l) => l.label === label)?.value
+function RunTraceChart({ color = 'red', pts, values, limit }) {
+  let points = pts
+  let baseY = 70 // 시안 좌표 모드의 기준선 위치
 
-// 포인트 판정: 규격 이탈 OOS(빨강) → 관리한계 초과 OOC(주황) → 정상(브랜드 블루)
-function toneOf(v, limits) {
-  const usl = limitValue(limits, 'USL')
-  const lsl = limitValue(limits, 'LSL')
-  const ucl = limitValue(limits, 'UCL')
-  const lcl = limitValue(limits, 'LCL')
-  if ((usl !== undefined && v > usl) || (lsl !== undefined && v < lsl)) return { color: '#DC2626', oos: true }
-  if ((ucl !== undefined && v > ucl) || (lcl !== undefined && v < lcl)) return { color: '#D97706', oos: false }
-  return { color: '#1E5FC2', oos: false }
-}
+  // 실측 모드 — 기준선(USL)을 같은 스케일 위에 놓아 이탈 폭이 실제 비율로 보이게 한다
+  if (!points && Array.isArray(values) && values.length > 1) {
+    const lims = typeof limit === 'number' ? [limit] : []
+    const lo = Math.min(...values, ...lims)
+    const hi = Math.max(...values, ...lims)
+    const span = hi - lo || 1
+    const y = (v) => Y_BOT - ((v - lo) / span) * (Y_BOT - Y_TOP)
+    if (lims.length) baseY = Number(y(limit).toFixed(1))
+    points = values
+      .map((v, i) => `${(X0 + ((X1 - X0) * i) / (values.length - 1)).toFixed(1)},${y(v).toFixed(1)}`)
+      .join(' ')
+  }
 
-function RunTraceChart({ rows, series, limits, height = 260 }) {
-  const values = rows.flatMap((r) => series.map((s) => r[s.key]).filter((v) => typeof v === 'number'))
-  const limitVals = (limits ?? []).map((l) => l.value)
-  const lo = Math.min(...values, ...limitVals)
-  const hi = Math.max(...values, ...limitVals)
-  const pad = Math.max(6, (hi - lo) * 0.08)
+  if (!points) return null
 
   return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rows} margin={{ top: 18, right: 46, bottom: 4, left: 0 }}>
-          <CartesianGrid stroke="#EDF2FA" vertical={false} />
-          {(limits ?? []).map((l) => {
-            const st = LIMIT_STYLE[l.label] ?? LIMIT_STYLE.TARGET
-            return (
-              <ReferenceLine
-                key={l.label}
-                y={l.value}
-                stroke={st.color}
-                strokeWidth={st.width}
-                strokeDasharray={st.dash}
-                label={{
-                  value: l.label,
-                  position: 'right',
-                  fill: st.color === '#94A3B8' ? '#64748B' : st.color,
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  fontFamily: 'ui-monospace, SF Mono, Menlo, monospace',
-                }}
-              />
-            )
-          })}
-          <XAxis
-            dataKey="x"
-            axisLine={false}
-            tickLine={false}
-            interval={0}
-            tick={{ ...AXIS_TICK, fontSize: 10 }}
-          />
-          <YAxis
-            type="number"
-            domain={[Math.floor(lo - pad), Math.ceil(hi + pad)]}
-            ticks={limitVals.length ? [...limitVals].sort((a, b) => a - b) : undefined}
-            axisLine={false}
-            tickLine={false}
-            width={40}
-            tick={AXIS_TICK}
-          />
-          <Tooltip
-            contentStyle={{
-              borderRadius: 10,
-              border: '1px solid #E2E8F0',
-              boxShadow: '0 4px 14px rgba(15,42,92,.10)',
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-            labelStyle={{ color: '#0F2A5C', fontFamily: 'ui-monospace, Menlo, monospace', fontWeight: 800 }}
-            formatter={(v, name) => [typeof v === 'number' ? v.toFixed(3) : v, name]}
-          />
-          {series.map((s) => (
-            <Line
-              key={s.key}
-              dataKey={s.key}
-              name={s.label}
-              stroke={s.color}
-              strokeWidth={2}
-              strokeDasharray={s.dash}
-              connectNulls={false}
-              isAnimationActive
-              animationDuration={800}
-              dot={
-                s.statusDots
-                  ? (props) => {
-                      const { cx, cy, value, index } = props
-                      if (typeof value !== 'number') return null
-                      const t = toneOf(value, limits)
-                      return (
-                        <g key={`${s.key}-${index}`}>
-                          <circle cx={cx} cy={cy} r={t.oos ? 5 : 4} fill={t.color} stroke="#FFFFFF" strokeWidth={2} />
-                          {/* 라벨은 이탈 포인트에만 — 모든 점에 숫자를 붙이지 않는다 */}
-                          {t.oos && (
-                            <text
-                              x={cx}
-                              y={cy - 11}
-                              textAnchor="middle"
-                              fill={t.color}
-                              fontSize={10.5}
-                              fontWeight={800}
-                              fontFamily="ui-monospace, SF Mono, Menlo, monospace"
-                            >
-                              {value.toFixed(1)}
-                            </text>
-                          )}
-                        </g>
-                      )
-                    }
-                  : { r: 3, fill: s.color, stroke: '#FFFFFF', strokeWidth: 1.5 }
-              }
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+    <svg viewBox="0 0 520 90" className="block w-full">
+      {/* 기준선 — fdc --g2 */}
+      <line x1={X0} y1={baseY} x2={X1} y2={baseY} stroke="#98A5B3" strokeWidth="1" strokeDasharray="4 4" opacity=".8" />
+      <polyline points={points} fill="none" stroke={COLORS[color] ?? COLORS.red} strokeWidth="2" />
+    </svg>
   )
 }
 

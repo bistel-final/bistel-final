@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { decideApproval } from '../../../shared/api/agent.js'
-import StatusBadge from '../../../shared/components/StatusBadge.jsx'
+import Badge from '../../../shared/components/ui/Badge.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
 
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
+const STATUS_VARIANT = { PENDING: 't-amber', APPROVED: 't-green', REJECTED: 't-red' }
 
 // 이미 처리된 건의 재결정은 서버에서 409로 막힌다 — 화면에서도 같은 사유를 보여준다
 const conflictMessage = (status) =>
   `이미 ${DECIDED_LABEL[status] ?? status} 처리된 승인 건입니다. 재결정할 수 없습니다.`
 
+const inputCls =
+  'h-9 w-full rounded-lg border border-line bg-soft px-3 text-[13px] text-ink disabled:cursor-not-allowed disabled:text-g2'
+
+// 승인 섹션 — 결정자·코멘트 입력 후 승인/반려. 기존 동작 유지(decideApproval · 409 토스트 · AUTO 안내)
 function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
   const [decidedBy, setDecidedBy] = useState('')
   const [comment, setComment] = useState('')
@@ -16,18 +22,16 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
   // 자동 조치(LOT_HOLD·MONITOR)는 HITL 승인 대상이 아니다 — 폼 대신 안내만 노출
   if (action && action.approval_status === 'AUTO') {
     return (
-      <div className="rounded-xl border border-line bg-white px-[18px] py-4 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-        <div className="mb-3 text-sm font-extrabold text-navy">승인</div>
-        <div className="flex items-start gap-3 rounded-[10px] border border-[#C7DBF7] bg-line-soft px-3.5 py-3">
-          <StatusBadge tone="info" mono>
-            AUTO
-          </StatusBadge>
-          <div className="flex flex-col gap-1">
-            <div className="text-[14px] font-extrabold text-brand">자동 조치 — 승인 불필요</div>
-            <div className="text-[12.5px] font-semibold leading-[1.5] text-slate">
-              {action.action_code} 는 기본 결정표에서 자동 승인으로 정해진 조치입니다. 승인 절차 없이{' '}
-              <span className="font-mono font-bold text-navy">{action.channel}</span> 채널로 전송됩니다.
-            </div>
+      <div>
+        <div className="mb-2 text-xs font-bold text-g1">승인</div>
+        <div className="rounded-lg border border-line bg-soft p-4">
+          <div className="flex items-center gap-2.5">
+            <Badge variant="t-blue">AUTO</Badge>
+            <span className="text-[13px] font-extrabold text-navy">자동 조치 — 승인 불필요</span>
+          </div>
+          <div className="mt-2 text-xs leading-[1.6] text-g1">
+            {action.action_code} 는 기본 결정표의 자동 승인 조치입니다. 승인 절차 없이{' '}
+            <span className="font-mono font-bold text-navy">{action.channel}</span> 채널로 전송됩니다.
           </div>
         </div>
       </div>
@@ -86,33 +90,16 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
       })
   }
 
-  const inputCls =
-    'w-full rounded-lg border border-line-input px-3 py-2 text-[13.5px] font-semibold text-navy placeholder:font-normal placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:bg-page disabled:text-slate-light'
-
   return (
-    <div className="rounded-xl border border-line bg-white px-[18px] py-4 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-sm font-extrabold text-navy">승인</span>
-        <StatusBadge tone={status === 'PENDING' && !locked ? 'ooc' : 'neutral'} mono>
-          {status ?? '—'}
-        </StatusBadge>
-        {approval?.approval_id && (
-          <span className="ml-auto font-mono text-[12px] font-bold text-slate">{approval.approval_id}</span>
-        )}
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-xs font-bold text-g1">
+        승인
+        {status && <Badge variant={STATUS_VARIANT[status] ?? 't-gray'}>{status}</Badge>}
+        {approval?.approval_id && <span className="ml-auto font-mono text-[11px] font-bold text-g2">{approval.approval_id}</span>}
       </div>
-
-      {locked && (
-        <div
-          onClick={notifyLocked}
-          className="mb-3 cursor-pointer rounded-[10px] border border-[#FECACA] bg-oos-soft px-3.5 py-2.5 text-[12.5px] font-bold leading-[1.5] text-oos"
-        >
-          {decided ? `${DECIDED_LABEL[decided.status] ?? decided.status} 처리됨` : '결정 불가'} — {lockReason}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2.5">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[11.5px] font-bold text-slate-light">결정자</span>
+      <div className="flex flex-col gap-3 rounded-lg border border-line p-4">
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] text-g1">결정자</span>
           <input
             type="text"
             value={decided?.decided_by ?? decidedBy}
@@ -122,50 +109,42 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
             className={`${inputCls} font-mono`}
           />
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[11.5px] font-bold text-slate-light">코멘트</span>
-          <textarea
-            rows={2}
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] text-g1">코멘트</span>
+          <input
+            type="text"
             value={decided?.comment ?? comment}
             disabled={locked || sending}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="결정 근거를 남겨 주세요 (선택)"
-            className={`${inputCls} resize-none leading-[1.5]`}
+            placeholder="결정 근거 (선택)"
+            className={inputCls}
           />
         </label>
-      </div>
-
-      <div className="mt-3.5 flex items-center gap-2.5" onClick={locked ? notifyLocked : undefined}>
-        <button
-          type="button"
-          aria-disabled={locked || sending}
-          onClick={() => submit('APPROVED')}
-          className={`flex-1 rounded-lg border-none px-4 py-2.5 text-[14px] font-extrabold text-white ${
-            locked || sending ? 'cursor-not-allowed bg-[#94A3B8]' : 'cursor-pointer bg-brand hover:bg-brand-light'
-          }`}
-        >
-          {sending ? '전송 중…' : '승인'}
-        </button>
-        <button
-          type="button"
-          aria-disabled={locked || sending}
-          onClick={() => submit('REJECTED')}
-          className={`flex-1 rounded-lg border bg-white px-4 py-2.5 text-[14px] font-extrabold ${
-            locked || sending
-              ? 'cursor-not-allowed border-line-input text-slate-light'
-              : 'cursor-pointer border-oos text-oos hover:bg-oos-soft'
-          }`}
-        >
-          반려
-        </button>
-      </div>
-
-      {decided && (
-        <div className="mt-3 rounded-[10px] border border-line bg-page px-3.5 py-2.5 text-[12.5px] font-semibold leading-[1.55] text-slate">
-          결정 요청을 보냈습니다. run 상태·전송 상태는 서버 커밋 후 갱신됩니다.
-          {/* TODO(api): 결정 후 run/action 상태 재조회(POST 응답에 갱신 상태 미포함) */}
+        {/* 잠긴 상태에서도 클릭하면 409 사유를 토스트로 알린다 — disabled 로 클릭을 삼키지 않는다 */}
+        <div className="mt-1 flex gap-2.5">
+          <Button
+            variant="primary"
+            aria-disabled={locked || sending}
+            onClick={() => submit('APPROVED')}
+            className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            {sending ? '전송 중…' : '승인'}
+          </Button>
+          <Button
+            variant="outline-red"
+            aria-disabled={locked || sending}
+            onClick={() => submit('REJECTED')}
+            className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            반려
+          </Button>
         </div>
-      )}
+        {locked && (
+          <div className="rounded-lg border border-tint-red-line bg-row-red px-3 py-2 text-[11.5px] leading-[1.5] text-red">
+            {decided ? `${DECIDED_LABEL[decided.status] ?? decided.status} 처리됨` : '결정 불가'} — {lockReason}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
