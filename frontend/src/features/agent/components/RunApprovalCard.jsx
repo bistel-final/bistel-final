@@ -68,14 +68,14 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
     decideApproval(approval.approval_id, {
       decision,
       decided_by: decidedBy.trim(),
-      comment: comment.trim(),
+      decision_comment: comment.trim(),
     })
       .then((res) => {
         setSending(false)
         onDecided({
           status: res?.status ?? decision,
           decided_by: res?.decided_by ?? decidedBy.trim(),
-          comment: res?.comment ?? comment.trim(),
+          comment: res?.decision_comment ?? comment.trim(),
           approval_id: res?.approval_id ?? approval.approval_id,
         })
         onToast({

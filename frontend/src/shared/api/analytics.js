@@ -19,7 +19,13 @@ export function validateSql(sql) {
       { key: 'no_danger', label: '위험 함수 없음', ok: !/(DELETE|UPDATE|INSERT|DROP|ALTER|TRUNCATE|GRANT)\b/.test(upper) },
       { key: 'limit', label: 'LIMIT 500 강제', ok: /\bLIMIT\b/.test(upper) },
     ]
-    return mockResponse({ valid: checks.every((c) => c.ok), checks })
+    const failed = checks.filter((c) => !c.ok)
+    return mockResponse({
+      valid: failed.length === 0,
+      normalized_sql: failed.length === 0 ? String(sql).trim() : null,
+      reason: failed.length === 0 ? '' : failed.map((c) => c.label).join(' · '),
+      checks,
+    })
   }
   return apiClient.post('/analytics/validate', { sql }).then((r) => r.data)
 }

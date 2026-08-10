@@ -18,7 +18,7 @@ const BTN_PRIMARY_SM =
 
 // 같은 incident = lot_id + chamber_id + sensor_id
 const incidentKey = (a) =>
-  `${a.incident?.lot_id ?? a.lot_id}|${a.incident?.chamber_id ?? a.chamber_id}|${a.incident?.sensor_id ?? a.sensor_id}`
+  `${a.incident?.lot_id ?? a.lot_id}|${a.incident?.chamber_id ?? a.chamber_id}|${a.sensor_id}`
 
 // "06-03 06:45:45" — 시안 헤더 표기(초 포함)
 const fmtShortSec = (iso) => {

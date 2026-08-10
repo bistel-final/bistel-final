@@ -104,7 +104,7 @@ function DashboardPage() {
         (a) =>
           a.lot_id === p.incident.lot_id &&
           a.chamber_id === p.incident.chamber_id &&
-          a.sensor_id === p.incident.sensor_id &&
+          a.sensor_id === p.sensor_id &&
           a.rule_id === 'R03_CONSEC',
       )?.rule_id,
     }))
