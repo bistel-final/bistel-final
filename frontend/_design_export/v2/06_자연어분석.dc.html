@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="자연어 분석">
+  <dc-import name="Sidebar" active="{{ 6 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">자연어 분석</div>
+      <div class="top-note">읽기 전용 · 허용 테이블 16종</div>
+    </div>
+    <div class="card" style="padding:18px 20px">
+      <div style="display:flex;gap:12px">
+        <input class="input input-lg mono" value="챔버별 알람 건수 내림차순" readOnly></input>
+        <span class="btn btn-primary" style="height:44px;padding:0 34px;flex:none">질문</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <span class="badge t-blue" style="height:28px;padding:0 16px;font-size:11.5px;font-family:inherit">전체 알람이 몇 건이야?</span>
+        <span class="badge t-blue" style="height:28px;padding:0 16px;font-size:11.5px;font-family:inherit">센서별 OOS 알람 수</span>
+        <span class="badge t-blue" style="height:28px;padding:0 16px;font-size:11.5px;font-family:inherit">ETCH 챔버별 CD_AEI 평균</span>
+        <span class="badge t-blue" style="height:28px;padding:0 16px;font-size:11.5px;font-family:inherit">규칙별 알람 분포</span>
+        <span class="badge t-red" style="height:28px;padding:0 16px;font-size:11.5px;font-family:inherit">알람 테이블 전부 지워줘</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="card-h"><span class="card-t">생성 SQL</span><span class="card-note">sqlglot 검증 통과 · 실행 전 확인</span></div>
+      <div style="display:flex;gap:18px;padding:0 20px 18px;align-items:stretch">
+        <pre class="mono" style="flex:1;background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:16px 18px;font-size:12px;line-height:1.7;color:var(--ink);overflow:auto">SELECT chamber_id, COUNT(*) AS cnt
+FROM fdc_alarm
+GROUP BY chamber_id
+ORDER BY cnt DESC
+LIMIT 500</pre>
+        <div style="width:230px;flex:none;display:flex;flex-direction:column;gap:10px">
+          <span class="check-row"><span class="check-dot">✓</span>단일 SELECT</span>
+          <span class="check-row"><span class="check-dot">✓</span>허용 테이블</span>
+          <span class="check-row"><span class="check-dot">✓</span>컬럼 검증</span>
+          <span class="check-row"><span class="check-dot">✓</span>위험 함수 없음</span>
+          <span class="check-row"><span class="check-dot">✓</span>LIMIT 500 강제</span>
+          <span class="btn btn-outline btn-sm" style="margin-top:auto">SQL 수정 · 재검증</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-top:18px">
+      <div class="card" style="flex:1;min-width:0">
+        <div class="card-h"><span class="card-t">결과</span><span class="card-note mono">3행 · 940ms</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 16px">
+          <div style="display:flex;gap:8px">
+            <span class="btn btn-outline btn-sm" style="min-width:60px">표</span>
+            <span class="btn btn-outline btn-sm" style="min-width:60px">통계</span>
+            <span class="btn btn-primary btn-sm" style="min-width:60px">차트</span>
+          </div>
+          <span class="mono" style="font-size:11px;color:var(--g1)">chart_type = bar · x = chamber_id · y = cnt</span>
+        </div>
+        <div style="padding:6px 24px 20px;display:flex;flex-direction:column;gap:22px">
+          <sc-for list="{{ bars }}" as="b" hint-placeholder-count="3">
+            <div>
+              <div class="mono" style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">{{ b.name }}</div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <div class="hbar-track" style="flex:1"><div class="hbar-fill" style="{{ b.fillStyle }}"></div></div>
+                <span class="mono" style="font-size:12px;font-weight:700;color:var(--navy);width:26px">{{ b.n }}</span>
+              </div>
+            </div>
+          </sc-for>
+          <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--g1)">PHO-01-C2 는 기간 내 알람 0 건이라 결과에 나오지 않는다</div>
+        </div>
+      </div>
+      <div class="card" style="width:360px;flex:none">
+        <div class="card-h"><span class="card-t">최근 질의</span><span class="card-note">성공 · 거부 모두</span></div>
+        <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ recents }}" as="q" hint-placeholder-count="5">
+            <div style="border:1px solid {{ q.bd }};background:{{ q.bg }};border-radius:8px;padding:14px">
+              <div style="font-size:12.5px;font-weight:700;color:var(--ink)">{{ q.text }}</div>
+              <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+                <span class="badge {{ q.badgeCls }}">{{ q.badge }}</span>
+                <span class="mono" style="font-size:11px;color:var(--g1)">{{ q.rows }}</span>
+                <sc-if value="{{ q.hasReason }}" hint-placeholder-val="{{ false }}">
+                  <span class="mono" style="font-size:11px;font-weight:700;color:var(--red)">{{ q.reason }}</span>
+                </sc-if>
+                <span class="mono" style="font-size:11px;color:var(--g2);margin-left:auto">{{ q.ms }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const bars = [
+      {name:'PHO-01-C1', n:'22', fillStyle:'width:100%'},
+      {name:'ETC-01-C2', n:'15', fillStyle:'width:68.2%'},
+      {name:'ETC-01-C1', n:'14', fillStyle:'width:63.6%'},
+    ];
+    const ok = {bd:'#E2E7EE', bg:'#fff', badge:'성공', badgeCls:'t-green', hasReason:false, reason:''};
+    const no = {bd:'#E3BAC3', bg:'#FBF0F2', badge:'거부', badgeCls:'bg-red', hasReason:true};
+    const recents = [
+      {...ok, text:'챔버별 알람 건수 내림차순', rows:'3행', ms:'940ms'},
+      {...ok, text:'전체 알람이 몇 건이야?', rows:'1행', ms:'1,240ms'},
+      {...no, text:'알람 테이블 전부 지워줘', rows:'0행', reason:'SELECT 외 구문 거부', ms:'310ms'},
+      {...ok, text:'센서별 OOS 알람 수', rows:'3행', ms:'870ms'},
+      {...no, text:'document_chunk 보여줘', rows:'0행', reason:'허용 목록 밖 테이블', ms:'120ms'},
+    ];
+    return { bars, recents };
+  }
+}
+</script>
+</body>
+</html>

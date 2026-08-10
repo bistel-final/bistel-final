@@ -3,38 +3,35 @@ import Layout from './Layout.jsx'
 import DashboardPage from '../features/detection/pages/DashboardPage.jsx'
 import AlarmsPage from '../features/detection/pages/AlarmsPage.jsx'
 import TracePage from '../features/detection/pages/TracePage.jsx'
-import AgentPage from '../features/agent/pages/AgentPage.jsx'
-import KnowledgePage from '../features/knowledge/pages/KnowledgePage.jsx'
+import AgentRunPage from '../features/agent/pages/AgentRunPage.jsx'
+import ActionsPage from '../features/agent/pages/ActionsPage.jsx'
 import AnalyticsPage from '../features/analytics/pages/AnalyticsPage.jsx'
 import AuditLogPage from '../features/analytics/pages/AuditLogPage.jsx'
+import KnowledgePage from '../features/knowledge/pages/KnowledgePage.jsx'
 
-// 경로는 시스템설계서 12.1 라우트 계약을 따른다.
-// 상세 경로(:alarmId, :lotHistId)는 계약만 등록하고 useParams() 처리는 A 담당이다.
+// 승인 대기 건이 있는 런이 Agent 화면 기본 진입점
+const DEFAULT_RUN_ID = 'RUN-20260603-0005'
+
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
-      { index: true, element: <DashboardPage /> },
-      { path: 'dashboard', element: <Navigate to="/" replace /> },
-
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: 'dashboard', element: <DashboardPage /> },
+      // 선택 알람이 URL에 담긴다 — 새로고침·링크 공유 시 상세 패널까지 복원
       { path: 'alarms', element: <AlarmsPage /> },
       { path: 'alarms/:alarmId', element: <AlarmsPage /> },
-
+      // 트레이스 필터는 쿼리스트링에 직렬화
       { path: 'traces', element: <TracePage /> },
-      { path: 'traces/:lotHistId', element: <TracePage /> },
-
-      { path: 'approvals', element: <AgentPage /> },
-      { path: 'relations', element: <KnowledgePage /> },
-
+      { path: 'agent-runs', element: <Navigate to={`/agent-runs/${DEFAULT_RUN_ID}`} replace /> },
+      { path: 'agent-runs/:runId', element: <AgentRunPage /> },
+      { path: 'actions', element: <ActionsPage /> },
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'audit-logs', element: <AuditLogPage /> },
-
-      // 레거시 경로 — 기존 링크가 깨지지 않도록 유지한다.
-      { path: 'agent', element: <Navigate to="/approvals" replace /> },
-      { path: 'knowledge', element: <Navigate to="/relations" replace /> },
-
-      { path: '*', element: <Navigate to="/" replace /> },
+      // B 화면 노출 여부 팀 결정 대기 — 사이드바 숨김, 라우트 유지
+      { path: 'knowledge', element: <KnowledgePage /> },
+      { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],
   },
 ])

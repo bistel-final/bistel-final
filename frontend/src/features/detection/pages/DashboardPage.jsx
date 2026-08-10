@@ -1,326 +1,205 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getDashboard } from '../../../shared/api/detection.js'
+import { getAlarms, getDashboard } from '../../../shared/api/detection.js'
+import { getApprovals, getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import { FilterBar, FilterField, FilterSelect, FilterStatic } from '../../../shared/components/ui/FilterField.jsx'
+import DashActionBand from '../components/DashActionBand.jsx'
+import DashTrendChart from '../components/DashTrendChart.jsx'
+import DashParamCard from '../components/DashParamCard.jsx'
+import DashEquipCard from '../components/DashEquipCard.jsx'
+import DashRecentTable from '../components/DashRecentTable.jsx'
 
-const CHAMBER_STYLE = {
-  NORMAL: { accent: '#16A34A', badgeBg: '#DCFCE7', badgeColor: '#16A34A', cardBg: '#FFFFFF', cardBorder: '#E2E8F0' },
-  ALARM: { accent: '#D97706', badgeBg: '#FEF3C7', badgeColor: '#D97706', cardBg: '#FFFFFF', cardBorder: '#E2E8F0' },
-  CRITICAL: { accent: '#DC2626', badgeBg: '#FEE2E2', badgeColor: '#DC2626', cardBg: '#FEF5F5', cardBorder: '#FECACA' },
-}
+const ALL = '전체'
 
-const ruleBadge = (rule, crit) =>
-  crit
-    ? { bg: '#DC2626', color: '#FFFFFF' }
-    : rule.includes('OOC')
-      ? { bg: '#FEF3C7', color: '#D97706' }
-      : { bg: '#FEE2E2', color: '#DC2626' }
+// 감시 파라미터 8종 (도메인 규칙) — 알람이 없는 종은 '기간 내 이상 없음'으로 표기
+const ALL_PARAMS = ['PH_FOCUS', 'PH_DOSE', 'PH_PEB', 'PH_DEV', 'ET_REFL', 'ET_CF4', 'ET_PRES', 'ET_ESC']
+
+const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 
 function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
-  const [date, setDate] = useState('2026-06-04')
-  const [area, setArea] = useState('전체')
-  const [hoverIdx, setHoverIdx] = useState(-1)
-  const [flash, setFlash] = useState(false)
-  const [p, setP] = useState(0) // KPI count-up 진행도
-  const rafRef = useRef()
+  // 계층 필터: 공정 > 장비 > 챔버 — 상위 변경 시 하위 리셋
+  const [area, setArea] = useState(ALL)
+  const [equipment, setEquipment] = useState(ALL)
+  const [chamber, setChamber] = useState(ALL)
 
   const load = useCallback(() => {
-    getDashboard('2026-06-04', '전체')
-      .then(setData)
+    Promise.all([getAlarms(), getApprovals(), getActions(), getRuns(), getDashboard('2026-06-04', ALL)])
+      .then(([alarms, approvals, actions, runs, dashboard]) =>
+        setData({
+          alarms: alarms.items,
+          approvals: approvals.items,
+          actions: actions.items,
+          runs: runs.items,
+          hierarchy: dashboard.hierarchy,
+        }),
+      )
       .catch((e) => setError(e.message))
   }, [])
   useEffect(() => {
     load()
   }, [load])
 
-  // count-up: 1100ms ease-out cubic (dc.html 동작)
-  useEffect(() => {
-    if (!data) return
-    const t0 = performance.now()
-    const step = (t) => {
-      const x = Math.min(1, (t - t0) / 1100)
-      setP(1 - Math.pow(1 - x, 3))
-      if (x < 1) rafRef.current = requestAnimationFrame(step)
-    }
-    rafRef.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [data])
-
-  // 최근 알람 첫 행 LIVE flash (7초 주기)
-  useEffect(() => {
-    let off
-    const live = setInterval(() => {
-      setFlash(true)
-      off = setTimeout(() => setFlash(false), 1900)
-    }, 7000)
-    return () => {
-      clearInterval(live)
-      clearTimeout(off)
-    }
-  }, [])
-
-  if (error) return <ErrorState detail={error} onRetry={() => { setError(null); load() }} />
+  if (error)
+    return (
+      <ErrorState
+        detail={error}
+        onRetry={() => {
+          setError(null)
+          load()
+        }}
+      />
+    )
   if (!data)
     return (
       <LoadingState message="대시보드 데이터를 불러오는 중…">
-        <div className="grid grid-cols-5 gap-4">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-[118px]" />
-          ))}
-        </div>
-        <Skeleton className="h-[320px]" />
+        <Skeleton className="h-[150px]" />
+        <Skeleton className="h-[360px]" />
       </LoadingState>
     )
 
-  const kpi = data.kpiByArea[area]
-  const days = data.dayByArea[area]
-  const chambers = data.chambers.filter((c) => area === '전체' || c.area === area)
-  const recent = data.recentByArea[area]
+  const { alarms, approvals, actions, runs, hierarchy } = data
+
+  // 설비 → 공정 매핑 (계층 데이터에서 유도)
+  const areaOfEqp = {}
+  for (const h of hierarchy) for (const e of h.equipments) areaOfEqp[e.id] = h.area
+
+  // 필터 옵션 — 상위 선택으로 하위 옵션을 좁힌다
+  const scopedAreas = hierarchy.filter((h) => area === ALL || h.area === area)
+  const scopedEqps = scopedAreas.flatMap((h) => h.equipments).filter((e) => equipment === ALL || e.id === equipment)
+  const areaOpts = [ALL, ...hierarchy.map((h) => h.area)]
+  const eqpOpts = [ALL, ...scopedAreas.flatMap((h) => h.equipments.map((e) => e.id))]
+  const chOpts = [ALL, ...scopedEqps.flatMap((e) => e.chambers)]
+
+  const changeArea = (v) => {
+    setArea(v)
+    setEquipment(ALL)
+    setChamber(ALL)
+  }
+  const changeEquipment = (v) => {
+    setEquipment(v)
+    setChamber(ALL)
+  }
+
+  // 필터 적용 대상: 추이 · 파라미터별 · 설비별 · 최근 알람 (처리 필요 밴드는 전역)
+  const filtered = alarms.filter(
+    (a) =>
+      (area === ALL || areaOfEqp[a.equipment_id] === area) &&
+      (equipment === ALL || a.equipment_id === equipment) &&
+      (chamber === ALL || a.chamber_id === chamber),
+  )
+
+  // 처리 필요 — 승인 대기(requested_at 내림차순) + 실행/전송 실패 건수 집계
+  const pendings = approvals
+    .filter((p) => p.status === 'PENDING')
+    .sort((a, b) => b.requested_at.localeCompare(a.requested_at))
+    .map((p) => ({
+      ...p,
+      // 같은 incident의 R03_CONSEC 알람에서 룰 표기를 유도 (승인이 걸린 근거 룰)
+      rule: alarms.find(
+        (a) =>
+          a.lot_id === p.incident.lot_id &&
+          a.chamber_id === p.incident.chamber_id &&
+          a.sensor_id === p.incident.sensor_id &&
+          a.rule_id === 'R03_CONSEC',
+      )?.rule_id,
+    }))
+  const runFailed = runs.filter((r) => r.status === 'FAILED').length
+  const sendFailed = actions.filter((a) => a.send_status === 'FAILED').length
+
+  // 알람 추이 — 일별 judgement 집계. 날짜 축은 전체 데이터 기간으로 고정, 건수는 필터 반영
+  const dayKeys = [...new Set(alarms.map((a) => a.occurred_at.slice(0, 10)))].sort()
+  const daily = dayKeys.map((d) => {
+    const rows = filtered.filter((a) => a.occurred_at.startsWith(d))
+    return {
+      label: dayLabel(d),
+      oos: rows.filter((a) => a.judgement === 'OOS').length,
+      ooc: rows.filter((a) => a.judgement === 'OOC').length,
+      r03: rows.some((a) => a.rule_id === 'R03_CONSEC'),
+    }
+  })
+
+  // 파라미터별 집계
+  const bySensor = {}
+  for (const a of filtered) (bySensor[a.sensor_id] ??= []).push(a)
+  const params = Object.entries(bySensor)
+    .map(([name, rows]) => ({
+      name,
+      n: rows.length,
+      chambers: [...new Set(rows.map((r) => r.chamber_id))].sort().join(' · '),
+    }))
+    .sort((x, y) => y.n - x.n || x.name.localeCompare(y.name))
+  const quiet = ALL_PARAMS.filter((p) => !bySensor[p])
+
+  // 설비별 집계 — 챔버 목록은 계층 데이터 기준(0건 챔버 포함), 건수 내림차순
+  const equips = scopedAreas
+    .flatMap((h) => h.equipments)
+    .filter((e) => equipment === ALL || e.id === equipment)
+    .map((e) => {
+      const rows = filtered.filter((a) => a.equipment_id === e.id)
+      return {
+        id: e.id,
+        n: rows.length,
+        chambers: e.chambers
+          .filter((c) => chamber === ALL || c === chamber)
+          .map((c) => ({ id: c, n: rows.filter((a) => a.chamber_id === c).length }))
+          .sort((x, y) => y.n - x.n || x.id.localeCompare(y.id)),
+      }
+    })
+    .sort((x, y) => y.n - x.n || x.id.localeCompare(y.id))
+
+  // 최근 알람 — 시각 내림차순 6건 (동시각은 알람 ID 내림차순)
+  const recents = [...filtered]
+    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id))
+    .slice(0, 6)
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-[18px]">
-      <div className="flex items-center gap-4">
-        <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">운영 대시보드</div>
-        <div className="ml-auto flex items-center gap-3">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-line-input bg-white px-3 py-2 font-mono text-sm font-semibold text-navy"
-          />
-          <div className="flex overflow-hidden rounded-lg border border-line-input bg-white">
-            {data.areas.map((a) => (
-              <div
-                key={a}
-                onClick={() => setArea(a)}
-                className="cursor-pointer px-[18px] py-2 text-sm font-bold transition-colors duration-150"
-                style={area === a ? { background: '#1E5FC2', color: '#FFFFFF' } : { background: '#FFFFFF', color: '#475569' }}
-              >
-                {a}
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">알람 대시보드</div>
+        <FilterBar className="pb-0 pt-0">
+          <FilterField label="기간">
+            <FilterStatic minWidth={190}>2026-06-01 ~ 06-04</FilterStatic>
+          </FilterField>
+          <FilterField label="공정">
+            <FilterSelect value={area} onChange={changeArea} options={areaOpts} />
+          </FilterField>
+          <FilterField label="장비">
+            <FilterSelect value={equipment} onChange={changeEquipment} options={eqpOpts} />
+          </FilterField>
+          <FilterField label="챔버">
+            <FilterSelect value={chamber} onChange={setChamber} options={chOpts} />
+          </FilterField>
+        </FilterBar>
       </div>
-      <div className="grid grid-cols-5 gap-4">
-        <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
-          <div className="text-[13.5px] font-bold text-slate">
-            당일 알람 <span className="font-mono">(6/4)</span>
-          </div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-navy">
-            {Math.round(kpi.today * p)}
-            <span className="ml-[3px] text-[17px] font-bold text-slate">건</span>
-          </div>
-          <div className="mt-1.5 text-[13px] font-semibold">
-            <span className="text-oos">OOS {kpi.todayOos}</span>
-            <span className="mx-1.5 text-[#94A3B8]">·</span>
-            <span className="text-ooc">OOC {kpi.todayOoc}</span>
-          </div>
-        </div>
-        <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
-          <div className="text-[13.5px] font-bold text-slate">전체 알람</div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-navy">
-            {Math.round(kpi.total * p)}
-            <span className="ml-[3px] text-[17px] font-bold text-slate">건</span>
-          </div>
-          <div className="mt-1.5 text-[13px] font-semibold">
-            <span className="text-oos">OOS {kpi.totalOos}</span>
-            <span className="mx-1.5 text-[#94A3B8]">·</span>
-            <span className="text-ooc">OOC {kpi.totalOoc}</span>
-          </div>
-        </div>
-        <div
-          onClick={() => navigate('/agent')}
-          className="cursor-pointer rounded-xl border border-brand bg-[linear-gradient(160deg,#1E5FC2,#2E7BE8)] px-5 py-[18px] shadow-[0_4px_12px_rgba(30,95,194,.3)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_10px_24px_rgba(30,95,194,.4)]"
-        >
-          <div className="flex items-center gap-1.5 text-[13.5px] font-bold text-[#D5E2F5]">
-            <span className="h-[7px] w-[7px] animate-[om-pulse_1.6s_infinite] rounded-full bg-[#FBBF24]" />
-            승인 대기
-          </div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-white">
-            {Math.round(data.pending * p)}
-            <span className="ml-[3px] text-[17px] font-bold text-[#D5E2F5]">건</span>
-          </div>
-          <div className="mt-1.5 text-[13px] font-bold text-white">Agent 분석·승인으로 이동 →</div>
-        </div>
-        <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
-          <div className="text-[13.5px] font-bold text-slate">계측 PASS율</div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-ok">
-            {(data.passRate * p).toFixed(1)}
-            <span className="ml-[3px] text-[17px] font-bold text-slate">%</span>
-          </div>
-          <div className="mt-1.5 font-mono text-[13px] font-semibold text-slate">{data.passMeta}</div>
-        </div>
-        <div className="rounded-xl border border-line bg-white px-5 py-[18px] shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]">
-          <div className="text-[13.5px] font-bold text-slate">활성 조치</div>
-          <div className="mt-1.5 font-mono text-4xl font-extrabold text-navy">
-            {Math.round(data.active * p)}
-            <span className="ml-[3px] text-[17px] font-bold text-slate">건</span>
-          </div>
-          <div className="mt-1.5 text-[13px] font-semibold text-slate">진행 중 Action</div>
-        </div>
+
+      <DashActionBand
+        pendings={pendings}
+        runFailed={runFailed}
+        sendFailed={sendFailed}
+        onReview={(runId) => navigate(`/agent-runs/${runId}`)}
+      />
+
+      <div className="mt-[18px] flex items-stretch gap-5">
+        <DashTrendChart daily={daily} />
+        <DashParamCard
+          params={params}
+          quiet={quiet}
+          totalKinds={ALL_PARAMS.length}
+          onSelect={(sensor) => navigate(`/alarms?sensor=${sensor}`)}
+        />
       </div>
-      <div>
-        <div className="mb-2.5 text-base font-extrabold text-navy">챔버 상태</div>
-        <div className="grid grid-cols-4 gap-4">
-          {chambers.map((ch) => {
-            const st = CHAMBER_STYLE[ch.status]
-            return (
-              <div
-                key={ch.name}
-                className="rounded-xl border border-t-4 px-[18px] py-4 shadow-[0_1px_3px_rgba(15,42,92,.05)] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-[3px] hover:shadow-[0_8px_20px_rgba(15,42,92,.12)]"
-                style={{ background: st.cardBg, borderColor: st.cardBorder, borderTopColor: st.accent }}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="font-mono text-[17px] font-extrabold text-navy">{ch.name}</div>
-                  <span
-                    className="ml-auto rounded-full px-2.5 py-1 text-[12.5px] font-extrabold tracking-[.3px]"
-                    style={{ background: st.badgeBg, color: st.badgeColor }}
-                  >
-                    {ch.status}
-                  </span>
-                </div>
-                <div className="mt-2.5 text-[13.5px] font-semibold text-slate">{ch.note}</div>
-                {ch.hold && (
-                  <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-oos-soft px-2.5 py-[5px] text-[12.5px] font-extrabold text-oos">
-                    <span className="h-[7px] w-[7px] animate-[om-pulse_1.4s_infinite] rounded-full bg-oos" />
-                    EQP_HOLD 승인 대기
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-      <div className="grid grid-cols-[3fr_2fr] gap-4">
-        <div className="rounded-xl border border-line bg-white px-[22px] py-5 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-          <div className="mb-3.5 flex items-center gap-3.5">
-            <div className="text-base font-extrabold text-navy">
-              일자별 알람 추이 <span className="font-mono text-[13.5px] text-slate">(6/1–6/4)</span>
-            </div>
-            <div className="ml-auto flex gap-3.5 text-[12.5px] font-bold text-slate">
-              <span className="flex items-center gap-1.5">
-                <span className="h-[11px] w-[11px] rounded-[3px] bg-oos" />
-                OOS
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-[11px] w-[11px] rounded-[3px] bg-teal" />
-                OOC
-              </span>
-            </div>
-          </div>
-          <div className="relative h-[264px]">
-            <div className="absolute inset-0 bottom-6 left-[30px]">
-              <div className="absolute bottom-0 left-0 right-0 border-b-2 border-line-input" />
-              <div className="absolute bottom-20 left-0 right-0 border-b border-line-soft" />
-              <div className="absolute bottom-40 left-0 right-0 border-b border-line-soft" />
-              <div className="absolute bottom-60 left-0 right-0 border-b border-line-soft" />
-              <div className="absolute inset-0 flex items-end justify-around">
-                {days.map((d, i) => (
-                  <div
-                    key={d.label}
-                    onMouseEnter={() => setHoverIdx(i)}
-                    onMouseLeave={() => setHoverIdx(-1)}
-                    className="relative flex w-[72px] cursor-pointer flex-col-reverse items-stretch"
-                  >
-                    <div
-                      className="origin-bottom rounded-b bg-oos"
-                      style={{ height: d.oos * 8, animation: `om-grow .7s ${i * 0.12}s cubic-bezier(.2,.8,.3,1) both` }}
-                    />
-                    <div
-                      className="mb-0.5 origin-bottom rounded-t bg-teal"
-                      style={{ height: d.ooc * 8, animation: `om-grow .7s ${i * 0.12 + 0.1}s cubic-bezier(.2,.8,.3,1) both` }}
-                    />
-                    {hoverIdx === i && (
-                      <div
-                        className="absolute left-1/2 z-[5] -translate-x-1/2 whitespace-nowrap rounded-lg bg-navy px-[13px] py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(15,42,92,.3)]"
-                        style={{ bottom: (d.oos + d.ooc) * 8 + 12 }}
-                      >
-                        <div className="mb-[3px] font-mono font-extrabold">
-                          {d.label} · 총 {d.oos + d.ooc}건
-                        </div>
-                        <div>
-                          <span className="text-[#FCA5A5]">OOS</span> {d.oos}{' '}
-                          <span className="ml-2 text-[#7DD8E5]">OOC</span> {d.ooc}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="absolute bottom-6 left-0 top-0 w-[26px] font-mono text-xs font-semibold text-slate-light">
-              <span className="absolute -bottom-1.5 right-1">0</span>
-              <span className="absolute bottom-[74px] right-1">10</span>
-              <span className="absolute bottom-[154px] right-1">20</span>
-              <span className="absolute bottom-[234px] right-1">30</span>
-            </div>
-            <div className="absolute bottom-0 left-[30px] right-0 flex h-5 justify-around font-mono text-[13px] font-bold text-slate">
-              <span>6/1</span>
-              <span>6/2</span>
-              <span>6/3</span>
-              <span>6/4</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col rounded-xl border border-line bg-white px-[22px] py-5 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-          <div className="mb-3 flex items-center">
-            <div className="text-base font-extrabold text-navy">최근 알람</div>
-            <span className="ml-auto flex items-center gap-1.5 text-xs font-extrabold text-ok">
-              <span className="h-2 w-2 animate-[om-pulse_1.8s_infinite] rounded-full bg-ok" />
-              LIVE
-            </span>
-          </div>
-          {recent.length === 0 && (
-            <div className="flex flex-1 items-center justify-center rounded-[10px] bg-page text-[14.5px] font-semibold text-slate">
-              선택한 AREA에 해당하는 알람이 없습니다
-            </div>
-          )}
-          <div className="flex flex-col">
-            {recent.map((a, i) => {
-              const badge = ruleBadge(a.rule, a.crit)
-              return (
-                <div
-                  key={a.id + a.rule}
-                  className="grid cursor-pointer grid-cols-[92px_1fr_auto_72px] items-center gap-3 rounded-lg border-b border-line-soft px-2.5 py-[11px] transition-colors duration-150 hover:bg-line-soft"
-                  style={{
-                    background: a.crit ? '#FEF2F2' : 'transparent',
-                    animation: i === 0 && flash && area !== 'PHOTO' ? 'om-flash 1.8s ease-out' : 'none',
-                  }}
-                >
-                  <span className="font-mono text-sm font-extrabold text-navy">{a.id}</span>
-                  <span className="font-mono text-[13.5px] font-semibold text-ink">
-                    {a.sensor}
-                    <span className="font-medium text-slate-light"> · {a.eqp}</span>
-                  </span>
-                  <span
-                    className="rounded-md px-[9px] py-1 font-mono text-xs font-extrabold"
-                    style={{ background: badge.bg, color: badge.color }}
-                  >
-                    {a.rule}
-                  </span>
-                  <span className="text-right font-mono text-[13px] font-semibold text-slate">{a.time}</span>
-                </div>
-              )
-            })}
-          </div>
-          <div className="mt-auto pt-3">
-            <a
-              href="/alarms"
-              onClick={(e) => {
-                e.preventDefault()
-                navigate('/alarms')
-              }}
-              className="text-[13.5px] font-bold"
-            >
-              알람 목록 전체 보기 →
-            </a>
-          </div>
-        </div>
+
+      <div className="mt-[18px] flex items-stretch gap-5">
+        <DashEquipCard
+          equips={equips}
+          onSelectChamber={(eqp, ch) => navigate(`/alarms?equipment=${eqp}&chamber=${ch}`)}
+        />
+        <DashRecentTable recents={recents} />
       </div>
     </div>
   )

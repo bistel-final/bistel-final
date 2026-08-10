@@ -1,31 +1,51 @@
 @import "tailwindcss";
 
-/* 디자인 토큰 — dc.html 시안에서 추출 */
+/* 디자인 토큰 — _design_export/v2/fdc.css :root 그대로 (hex 변형 금지) */
 @theme {
-  --font-sans: "Pretendard Variable", Pretendard, -apple-system, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
 
-  --color-navy: #0f2a5c; /* 사이드바·제목 */
-  --color-brand: #1e5fc2; /* 브랜드 블루 액센트 */
-  --color-brand-light: #2e7be8;
-  --color-teal: #35b5c8;
-  --color-page: #f5f8fc; /* 콘텐츠 배경 */
-  --color-ink: #1e293b; /* 본문 텍스트 */
-  --color-slate: #475569;
-  --color-slate-light: #64748b;
-  --color-line: #e2e8f0;
-  --color-line-soft: #edf2fa;
-  --color-line-input: #cbd5e1;
-  --color-sidebar-dim: #8fa5ce;
-  --color-sidebar-text: #b7c6e4;
+  --color-navy: #1e3a5c; /* 사이드바 배경, 제목, 헤더 바 */
+  --color-navy2: #2e527c; /* 사이드바 활성 메뉴 */
+  --color-blue: #2062a8; /* 브랜드 액센트: 버튼, 링크, 차트 */
+  --color-red: #b03a4e; /* EQP_HOLD · R03 · OOS · HUMAN · HIGH */
+  --color-amber: #b97f14; /* LOT_HOLD · OOC · MEDIUM */
+  --color-green: #2e7d4f; /* MONITOR · IN_CONTROL · SENT */
+  --color-ink: #22384f; /* 본문 */
+  --color-g1: #5a6b7e; /* 보조 텍스트 */
+  --color-g2: #98a5b3; /* 흐린 텍스트, SYSTEM */
+  --color-line: #e2e7ee;
+  --color-bg: #f4f6f9;
 
-  /* 상태색 (연한 배경 + 진한 글자 조합) */
-  --color-oos: #dc2626;
-  --color-oos-soft: #fee2e2;
-  --color-ooc: #d97706;
-  --color-ooc-soft: #fef3c7;
-  --color-ok: #16a34a;
-  --color-ok-soft: #dcfce7;
+  /* 틴트(연한 배경) — fdc.css .t-* 파생값 */
+  --color-tint-red: #f9edef;
+  --color-tint-red-line: #e3bac3;
+  --color-tint-amber: #faf3e1;
+  --color-tint-amber-line: #e2cc98;
+  --color-tint-amber-text: #8f6a10;
+  --color-tint-green: #ebf4ee;
+  --color-tint-green-line: #bad8c5;
+  --color-tint-gray: #eff2f5;
+  --color-tint-gray-line: #d8dee5;
+  --color-tint-blue: #ebf2f9;
+  --color-tint-blue-line: #bbd2e8;
+  --color-tint-navy: #ebeff4;
+  --color-tint-navy-line: #c2cedc;
+
+  /* fdc.css 파생 서피스 (row-red #FBF0F2, alt #F8FAFC, 인풋 #F7F9FB 등) */
+  --color-row-red: #fbf0f2;
+  --color-row-sel: #eff5fb;
+  --color-alt: #f8fafc;
+  --color-soft: #f7f9fb;
+  --color-cell-line: #edf1f5;
+  --color-side-dim: #8fa5bd;
+  --color-side-text: #c3d0de;
+  --color-side-num: #7e93ab;
+  --color-side-num-on: #b9cbde;
+  --color-side-foot: #9fb2c6;
+  --color-dot-green: #3fbf7f;
+  --color-dash-line: #cbd4de;
+  --color-state-green-bg: #eff7f1;
 }
 
 /* 전역 요소 스타일은 @layer base 안에 둔다 —
@@ -37,6 +57,8 @@
     padding: 0;
     height: 100%;
     font-family: var(--font-sans);
+    color: #22384f;
+    background: #f4f6f9;
   }
 
   #root {
@@ -44,12 +66,11 @@
   }
 
   a {
-    color: #1e5fc2;
+    color: #2062a8;
     text-decoration: none;
   }
   a:hover {
-    color: #2e7be8;
-    text-decoration: underline;
+    color: #1e3a5c;
   }
 }
 
@@ -62,22 +83,6 @@
   50% {
     opacity: 0.45;
     transform: scale(0.8);
-  }
-}
-@keyframes om-grow {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-@keyframes om-shimmer {
-  0% {
-    background-position: -400px 0;
-  }
-  100% {
-    background-position: 400px 0;
   }
 }
 @keyframes om-spin {
@@ -95,26 +100,11 @@
     transform: none;
   }
 }
-@keyframes om-flash {
+@keyframes om-shimmer {
   0% {
-    background: #dbeafe;
-    box-shadow: inset 3px 0 0 #1e5fc2;
+    background-position: -400px 0;
   }
   100% {
-    background: transparent;
-    box-shadow: none;
-  }
-}
-@keyframes om-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-@keyframes om-pop {
-  from {
-    transform: translate(-50%, -50%) scale(0);
-  }
-  to {
-    transform: translate(-50%, -50%) scale(1);
+    background-position: 400px 0;
   }
 }

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="알람 대시보드">
+  <dc-import name="Sidebar" active="{{ 1 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">알람 대시보드</div>
+      <div class="filter-bar" style="padding:0">
+        <div class="f-field"><span class="f-label">기간</span><span class="select" style="min-width:190px">2026-06-01 ~ 06-04 <span class="chev">▾</span></span></div>
+        <div class="f-field"><span class="f-label">공정</span><span class="select">전체 <span class="chev">▾</span></span></div>
+        <div class="f-field"><span class="f-label">장비</span><span class="select">전체 <span class="chev">▾</span></span></div>
+        <div class="f-field"><span class="f-label">챔버</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--red);padding:16px 20px;margin-top:8px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+        <span class="card-t">처리 필요</span>
+        <span class="card-note">내가 판단해야 하는 것만</span>
+      </div>
+      <div style="display:flex;gap:16px;align-items:stretch">
+        <div style="flex:1;background:#FBF0F2;border:1px solid #E3BAC3;border-radius:8px;padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:13px;font-weight:800;color:var(--red)">승인 대기</span>
+            <span class="badge bg-red">2</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ pendings }}" as="p" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:16px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
+                <span class="cell-id" style="font-size:12.5px">{{ p.id }}</span>
+                <span class="cell-mono" style="font-size:12px">{{ p.incident }}</span>
+                <span class="badge t-red">EQP_HOLD</span>
+                <span class="cell-dim" style="font-size:11px">R03_CONSEC</span>
+                <span class="mono" style="font-size:11px;color:var(--g1);margin-left:auto">{{ p.ago }}</span>
+                <a class="btn btn-primary btn-sm" href="04_Agent분석승인.dc.html">검토</a>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="width:170px;flex:none;background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+          <span style="font-size:12.5px;font-weight:700;color:var(--g1)">실행 실패</span>
+          <span class="mono" style="font-size:28px;font-weight:800;color:var(--g2)">0</span>
+          <span style="font-size:11px;color:var(--g2)">재실행 대상 없음</span>
+        </div>
+        <div style="width:170px;flex:none;background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+          <span style="font-size:12.5px;font-weight:700;color:var(--g1)">전송 실패</span>
+          <span class="mono" style="font-size:28px;font-weight:800;color:var(--g2)">0</span>
+          <span style="font-size:11px;color:var(--g2)">재시도 대상 없음</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:stretch;margin-top:18px">
+      <div class="card" style="flex:1;min-width:0;padding:16px 20px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span class="card-t">알람 추이</span>
+          <span style="display:flex;align-items:center;gap:16px">
+            <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--red)"><span style="width:8px;height:8px;border-radius:50%;background:var(--red)"></span>OOS</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--green)"><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>OOC</span>
+            <span class="card-note">일 단위 · 기간을 좁히면 시간 단위</span>
+          </span>
+        </div>
+        <svg viewBox="0 0 860 300" style="width:100%;display:block" font-family="IBM Plex Mono,monospace">
+          <line x1="60" y1="250" x2="820" y2="250" stroke="#E2E7EE" stroke-width="1"></line>
+          <line x1="60" y1="173.3" x2="820" y2="173.3" stroke="#E2E7EE" stroke-width="1"></line>
+          <line x1="60" y1="96.7" x2="820" y2="96.7" stroke="#E2E7EE" stroke-width="1"></line>
+          <line x1="60" y1="20" x2="820" y2="20" stroke="#E2E7EE" stroke-width="1"></line>
+          <text x="52" y="254" font-size="10" fill="#5A6B7E" text-anchor="end">0</text>
+          <text x="52" y="177" font-size="10" fill="#5A6B7E" text-anchor="end">10</text>
+          <text x="52" y="100" font-size="10" fill="#5A6B7E" text-anchor="end">20</text>
+          <text x="52" y="24" font-size="10" fill="#5A6B7E" text-anchor="end">30</text>
+          <line x1="340" y1="34" x2="340" y2="250" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4"></line>
+          <line x1="560" y1="34" x2="560" y2="250" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4"></line>
+          <line x1="780" y1="34" x2="780" y2="250" stroke="#98A5B3" stroke-width="1" stroke-dasharray="4 4"></line>
+          <rect x="318" y="10" rx="9" width="44" height="18" fill="#B03A4E"></rect>
+          <text x="340" y="22.5" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">R03</text>
+          <rect x="538" y="10" rx="9" width="44" height="18" fill="#B03A4E"></rect>
+          <text x="560" y="22.5" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">R03</text>
+          <rect x="758" y="10" rx="9" width="44" height="18" fill="#B03A4E"></rect>
+          <text x="780" y="22.5" font-size="9.5" font-weight="700" fill="#fff" text-anchor="middle">R03</text>
+          <polyline points="120,219.3 340,227 560,196.3 780,250" fill="none" stroke="#2E7D4F" stroke-width="2"></polyline>
+          <polyline points="120,250 340,165.7 560,96.7 780,204" fill="none" stroke="#B03A4E" stroke-width="2"></polyline>
+          <circle cx="120" cy="219.3" r="4.5" fill="#fff" stroke="#2E7D4F" stroke-width="2"></circle>
+          <circle cx="340" cy="227" r="4.5" fill="#fff" stroke="#2E7D4F" stroke-width="2"></circle>
+          <circle cx="560" cy="196.3" r="4.5" fill="#fff" stroke="#2E7D4F" stroke-width="2"></circle>
+          <circle cx="780" cy="250" r="4.5" fill="#fff" stroke="#2E7D4F" stroke-width="2"></circle>
+          <circle cx="120" cy="250" r="4.5" fill="#fff" stroke="#B03A4E" stroke-width="2"></circle>
+          <circle cx="340" cy="165.7" r="4.5" fill="#fff" stroke="#B03A4E" stroke-width="2"></circle>
+          <circle cx="560" cy="96.7" r="4.5" fill="#fff" stroke="#B03A4E" stroke-width="2"></circle>
+          <circle cx="780" cy="204" r="4.5" fill="#fff" stroke="#B03A4E" stroke-width="2"></circle>
+          <text x="120" y="272" font-size="10" fill="#5A6B7E" text-anchor="middle">6/1</text>
+          <text x="340" y="272" font-size="10" fill="#5A6B7E" text-anchor="middle">6/2</text>
+          <text x="560" y="272" font-size="10" fill="#5A6B7E" text-anchor="middle">6/3</text>
+          <text x="780" y="272" font-size="10" fill="#5A6B7E" text-anchor="middle">6/4</text>
+        </svg>
+        <div style="background:#F7F9FB;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:11.5px;color:var(--g1);margin-top:4px">점선은 <span class="mono" style="font-weight:700;color:var(--navy)">R03_CONSEC</span> 발생 시점 — 장비 정지 판정이 걸린 날</div>
+      </div>
+      <div class="card" style="width:400px;flex:none">
+        <div class="card-h"><span class="card-t">파라미터별</span><span class="card-note">막대를 누르면 필터</span></div>
+        <div style="padding:0 20px 18px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ params }}" as="b" hint-placeholder-count="3">
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                <span class="mono" style="font-size:12px;font-weight:700;color:var(--navy)">{{ b.name }}</span>
+                <span class="mono" style="font-size:12px;font-weight:700;color:var(--blue)">{{ b.n }}건</span>
+              </div>
+              <div class="hbar-track"><div class="hbar-fill" style="{{ b.fillStyle }}"></div></div>
+              <div class="cell-sub">{{ b.chamber }}</div>
+            </div>
+          </sc-for>
+          <div class="dashed-card" style="padding:12px 14px">
+            <div style="font-size:12px;font-weight:700;color:var(--navy)">알람이 발생한 파라미터 3 종</div>
+            <div style="font-size:11px;color:var(--g1);margin-top:4px">나머지 5 종은 기간 내 이상 없음</div>
+            <div class="mono" style="font-size:10px;color:var(--g2);margin-top:6px">PH_DOSE · PH_PEB · PH_DEV · ET_PRES · ET_ESC</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:stretch;margin-top:18px">
+      <div class="card" style="width:520px;flex:none">
+        <div class="card-h"><span class="card-t">설비별</span><span class="card-note">챔버까지 펼치기</span></div>
+        <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:18px">
+          <sc-for list="{{ equips }}" as="e" hint-placeholder-count="2">
+            <div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                <span class="mono" style="font-size:13px;font-weight:800;color:var(--navy)">{{ e.name }}</span>
+                <span class="mono" style="font-size:13px;font-weight:800;color:var(--navy)">{{ e.n }}건</span>
+              </div>
+              <div class="hbar-track" style="height:14px"><div style="height:100%;border-radius:999px;background:var(--navy);{{ e.fillStyle }}"></div></div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                <sc-for list="{{ e.chambers }}" as="c" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:12px;padding-left:20px">
+                    <span class="cell-dim" style="font-size:11px;width:88px;flex:none">{{ c.name }}</span>
+                    <div class="hbar-track" style="flex:1;height:8px"><div class="hbar-fill" style="opacity:.55;{{ c.fillStyle }}"></div></div>
+                    <span class="mono" style="font-size:11px;font-weight:600;color:{{ c.fg }};width:56px;text-align:right;flex:none">{{ c.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="card" style="flex:1;min-width:0">
+        <div class="card-h"><span class="card-t">최근 알람</span><span class="card-note">시간순 · 누르면 파형</span></div>
+        <div style="padding:0 12px 10px">
+          <table class="tbl">
+            <thead><tr><th>알람</th><th>시각</th><th>파라미터</th><th>챔버</th><th>룰</th><th>타입</th><th>조치</th></tr></thead>
+            <tbody>
+              <sc-for list="{{ recents }}" as="r" hint-placeholder-count="6">
+                <tr class="{{ r.cls }}">
+                  <td><a class="cell-id" href="02_알람목록.dc.html">{{ r.id }}</a></td>
+                  <td class="cell-dim">{{ r.time }}</td>
+                  <td class="cell-mono" style="font-weight:600">ET_CF4</td>
+                  <td class="cell-dim">ETC-01-C1</td>
+                  <td><span class="badge {{ r.ruleCls }}">{{ r.rule }}</span></td>
+                  <td class="cell-mono tx-red" style="font-weight:700">OOS</td>
+                  <td><a class="cell-mono" href="05_조치목록.dc.html">ACT-0010</a></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const pendings = [
+      {id:'APR-0003', incident:'LOT-260010 · ETC-01-C1 · ET_CF4', ago:'38분 전'},
+      {id:'APR-0002', incident:'LOT-260007 · PHO-01-C1 · PH_FOCUS', ago:'25시간 전'},
+    ];
+    const params = [
+      {name:'PH_FOCUS', n:'22', chamber:'PHO-01-C1', fillStyle:'width:100%'},
+      {name:'ET_REFL', n:'15', chamber:'ETC-01-C2', fillStyle:'width:68.2%'},
+      {name:'ET_CF4', n:'14', chamber:'ETC-01-C1', fillStyle:'width:63.6%'},
+    ];
+    const equips = [
+      {name:'ETC-01', n:'29', fillStyle:'width:100%', chambers:[
+        {name:'ETC-01-C2', fillStyle:'width:51.7%', label:'15건', fg:'#22384F'},
+        {name:'ETC-01-C1', fillStyle:'width:48.3%', label:'14건', fg:'#22384F'},
+      ]},
+      {name:'PHO-01', n:'22', fillStyle:'width:75.9%', chambers:[
+        {name:'PHO-01-C1', fillStyle:'width:75.9%', label:'22건', fg:'#22384F'},
+        {name:'PHO-01-C2', fillStyle:'width:0%', label:'이상 없음', fg:'#98A5B3'},
+      ]},
+    ];
+    const recents = [
+      {id:'ALM-0051', time:'06-04 07:29', rule:'R01'},
+      {id:'ALM-0050', time:'06-04 07:25', rule:'R01'},
+      {id:'ALM-0049', time:'06-04 07:20', rule:'R01'},
+      {id:'ALM-0048', time:'06-04 07:15', rule:'R03'},
+      {id:'ALM-0047', time:'06-04 07:15', rule:'R01'},
+      {id:'ALM-0046', time:'06-04 07:10', rule:'R01'},
+    ];
+    recents.forEach((r,i)=>{
+      r.ruleCls = r.rule==='R03' ? 'bg-red' : 't-gray';
+      r.cls = r.rule==='R03' ? 'row-red' : (i%2===1 ? 'alt' : '');
+    });
+    return { pendings, params, equips, recents };
+  }
+}
+</script>
+</body>
+</html>

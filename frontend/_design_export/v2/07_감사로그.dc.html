@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="감사로그">
+  <dc-import name="Sidebar" active="{{ 7 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">감사로그</div>
+      <div class="top-note">append-only · 수정 · 삭제 경로 없음</div>
+    </div>
+    <div class="filter-bar">
+      <div class="f-field"><span class="f-label">기간</span><span class="select" style="min-width:190px">2026-06-01 ~ 06-04 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">이벤트</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">주체</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">대상 ID</span><span class="select mono">APR-0001 <span class="chev">▾</span></span></div>
+      <div class="f-note">대상 ID 로 한 건의 생애를 따라간다</div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start">
+      <div class="card" style="flex:1;min-width:0">
+        <div class="card-h"><span class="card-t">APR-0001 의 이력</span><span class="card-note">시각 오름차순 · 6건</span></div>
+        <div style="padding:4px 20px 20px;display:flex;flex-direction:column;gap:0;position:relative">
+          <sc-for list="{{ events }}" as="e" hint-placeholder-count="6">
+            <div style="display:flex;gap:16px;padding-bottom:14px;position:relative">
+              <div style="width:12px;flex:none;display:flex;flex-direction:column;align-items:center">
+                <span style="width:12px;height:12px;border-radius:50%;background:{{ e.dot }};margin-top:16px;flex:none"></span>
+                <sc-if value="{{ e.rail }}" hint-placeholder-val="{{ true }}">
+                  <span style="width:2px;flex:1;background:#E2E7EE;margin-top:4px"></span>
+                </sc-if>
+              </div>
+              <div style="flex:1;background:{{ e.bg }};border:1px solid var(--line);border-radius:10px;padding:16px 18px">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span class="mono" style="font-size:13px;font-weight:800;color:var(--navy)">{{ e.name }}</span>
+                  <span class="badge {{ e.actorCls }}">{{ e.actor }}</span>
+                  <span class="mono" style="font-size:11px;color:var(--g1);margin-left:auto">{{ e.time }}</span>
+                </div>
+                <div style="display:flex;gap:24px;margin-top:10px">
+                  <span class="mono" style="font-size:11.5px;color:var(--g1)">{{ e.entity }}</span>
+                  <span style="font-size:11.5px;color:var(--g1)">주체 <span class="mono" style="font-weight:600;color:var(--ink)">{{ e.subject }}</span></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;margin-top:12px">
+                  <sc-if value="{{ e.before }}" hint-placeholder-val="{{ false }}">
+                    <span class="state-box state-red">{{ e.before }}</span>
+                    <span style="color:var(--g2)">→</span>
+                  </sc-if>
+                  <span class="state-box state-green">{{ e.after }}</span>
+                  <sc-if value="{{ e.note }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:11.5px;color:var(--g1)">{{ e.note }}</span>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="width:360px;flex:none;display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-h"><span class="card-t">이벤트 유형별</span><span class="card-note">같은 필터의 전체 집계</span></div>
+          <div style="padding:0 20px 18px;display:flex;flex-direction:column;gap:13px">
+            <sc-for list="{{ counts }}" as="c" hint-placeholder-count="9">
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+                  <span class="mono" style="font-size:10.5px;font-weight:600;color:{{ c.fg }}">{{ c.name }}</span>
+                  <span class="mono" style="font-size:11px;font-weight:700;color:{{ c.fg }}">{{ c.n }}</span>
+                </div>
+                <div class="hbar-track" style="height:7px"><div class="hbar-fill {{ c.fillCls }}" style="width:{{ c.pct }}"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:10px;padding:20px">
+          <div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:16px">이 화면이 증명하는 것</div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ proofs }}" as="p" hint-placeholder-count="5">
+              <div style="display:flex;gap:10px">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--red);margin-top:5px;flex:none"></span>
+                <span>
+                  <span style="display:block;font-size:12.5px;font-weight:700;color:var(--ink)">{{ p.t }}</span>
+                  <span style="display:block;font-size:11.5px;color:var(--g1);margin-top:4px">{{ p.d }}</span>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const actorCls = a => a==='AGENT'?'bg-navy':(a==='HUMAN'?'bg-red':'bg-gray');
+    const mk = (name,actor,entity,subject,time,before,after,note,dot,rail) => ({
+      name, actor, actorCls:actorCls(actor), entity, subject, time,
+      before: before||false, after, note: note||false, dot, rail: rail!==false,
+      bg: actor==='HUMAN' ? '#FBF8F8' : '#FBFCFD'
+    });
+    const events = [
+      mk('AGENT_RUN_STARTED','AGENT','agent_run · RUN-20260602-0002','system','06-02 07:15:02', null,'status = RUNNING','신규 생성 — before 없음','#2062A8'),
+      mk('APPROVAL_REQUESTED','AGENT','approval_request · APR-0001','system','06-02 07:21:23', null,'status = PENDING','신규 생성 — before 없음','#B97F14'),
+      mk('ACTION_APPROVED','HUMAN','approval_request · APR-0001','bang','06-02 07:31:23', 'status = PENDING','status = APPROVED',null,'#2E7D4F'),
+      mk('ACTION_SEND_STARTED','SYSTEM','action_history · ACT-0002','backend','06-02 07:31:23', 'send_status = WAITING','send_status = SENDING',null,'#2062A8'),
+      mk('ACTION_SENT','SYSTEM','action_history · ACT-0002','n8n','06-02 07:31:43', 'send_status = SENDING','send_status = SENT',null,'#2E7D4F'),
+      mk('AGENT_RUN_COMPLETED','AGENT','agent_run · RUN-20260602-0002','system','06-02 07:31:44', 'status = RUNNING','status = COMPLETED',null,'#2062A8',false),
+    ];
+    const counts = [
+      ['AGENT_RUN_STARTED',10],['AGENT_RUN_COMPLETED',8],['APPROVAL_REQUESTED',3],['ACTION_APPROVED',1],
+      ['ACTION_REJECTED',0],['ACTION_SEND_STARTED',8],['ACTION_SENT',8],['ACTION_SEND_FAILED',0],['AGENT_RUN_FAILED',0],
+    ].map(([name,n])=>({
+      name, n:String(n), pct:(n===0?'4%':(n*10)+'%'),
+      fillCls: n===0?'dim':'', fg: n===0?'#98A5B3':'#22384F'
+    }));
+    const proofs = [
+      {t:'누가 승인했나', d:'ACTION_APPROVED 의 주체가 HUMAN · bang'},
+      {t:'언제 바뀌었나', d:'PENDING → APPROVED 시각까지'},
+      {t:'무엇이 바뀌었나', d:'before / after 로 상태 전이 그대로'},
+      {t:'전송됐나', d:'ACTION_SENT 가 남으면 n8n 이 받았다는 뜻'},
+      {t:'고칠 수 없다', d:'append-only · 서비스에 UPDATE · DELETE 경로 없음'},
+    ];
+    return { events, counts, proofs };
+  }
+}
+</script>
+</body>
+</html>

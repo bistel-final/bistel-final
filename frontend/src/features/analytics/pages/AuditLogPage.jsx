@@ -1,38 +1,52 @@
+// 감사로그 — 디자인 v2 07 (append-only · 수정 · 삭제 경로 없음, 조회 전용 화면)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAuditLogs } from '../../../shared/api/analytics.js'
-import { AUDIT_EVENT_TYPES } from '../mock/auditLogs.js'
-import JsonDiff from '../../../shared/components/JsonDiff.jsx'
+import { isoToParts } from '../../../shared/api/format.js'
+import AuditFilterBar from '../components/AuditFilterBar.jsx'
+import AuditTimeline from '../components/AuditTimeline.jsx'
+import AuditEventTypeBars from '../components/AuditEventTypeBars.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 
-const PAGE_SIZE = 8
+const DEF_FROM = '2026-06-01'
+const DEF_TO = '2026-06-04'
+const ALL = '전체'
 
-const evColor = (ev) =>
-  ev.includes('FAILED')
-    ? ['#FEE2E2', '#DC2626']
-    : ev === 'ACTION_SENT' || ev.includes('COMPLETED')
-      ? ['#DCFCE7', '#16A34A']
-      : ev.includes('REQUESTED') || ev.includes('DECIDED')
-        ? ['#FEF3C7', '#D97706']
-        : ['#EDF2FA', '#1E5FC2']
+// 시각이 분 단위인 항목은 같은 분 안에서 생애주기 흐름 순서로 보조 정렬한다
+// (TODO(data): audit_log 초 단위 확보 시 이 보조 정렬은 제거)
+const FLOW_RANK = {
+  AGENT_RUN_STARTED: 0,
+  APPROVAL_REQUESTED: 1,
+  ACTION_APPROVED: 2,
+  ACTION_REJECTED: 2,
+  ACTION_SEND_STARTED: 3,
+  ACTION_SENT: 4,
+  ACTION_SEND_FAILED: 4,
+  AGENT_RUN_COMPLETED: 5,
+  AGENT_RUN_FAILED: 5,
+}
 
-const acColor = (k) =>
-  k === 'HUMAN' ? ['#0F2A5C', '#FFFFFF'] : k === 'AGENT' ? ['#DBEAFE', '#1E5FC2'] : ['#F1F5F9', '#475569']
+const flowRank = (ev) => FLOW_RANK[ev] ?? 9
+
+// "이 화면이 증명하는 것" — 디자인 v2 07 시안 5항목 그대로
+const PROOFS = [
+  ['누가 승인했나', 'ACTION_APPROVED 의 주체가 HUMAN · bang'],
+  ['언제 바뀌었나', 'PENDING → APPROVED 시각까지'],
+  ['무엇이 바뀌었나', 'before / after 로 상태 전이 그대로'],
+  ['전송됐나', 'ACTION_SENT 가 남으면 n8n 이 받았다는 뜻'],
+  ['고칠 수 없다', 'append-only · 서비스에 UPDATE · DELETE 경로 없음'],
+]
 
 function AuditLogPage() {
-  const [logs, setLogs] = useState(null)
+  const [res, setRes] = useState(null)
   const [error, setError] = useState(null)
-  const [events, setEvents] = useState([])
-  const [actor, setActor] = useState('전체')
-  const [from, setFrom] = useState('2026-06-01')
-  const [to, setTo] = useState('2026-06-04')
+  const [eventType, setEventType] = useState(ALL)
+  const [actor, setActor] = useState(ALL)
   const [target, setTarget] = useState('')
-  const [page, setPage] = useState(1)
-  const [open, setOpen] = useState(null)
 
   const load = useCallback(() => {
     getAuditLogs()
-      .then((data) => setLogs([...data].sort((a, b) => b.ts.localeCompare(a.ts))))
+      .then(setRes)
       .catch((e) => setError(e.message))
   }, [])
   useEffect(() => {
@@ -41,231 +55,82 @@ function AuditLogPage() {
 
   const retry = () => {
     setError(null)
-    setLogs(null)
+    setRes(null)
     load()
   }
 
+  const eventTypes = useMemo(() => res?.event_types ?? [], [res])
+  const q = target.trim().toLowerCase()
+
+  // 서버 명세에 대상 ID 필터가 없어 조회 결과 전체에 클라이언트 필터를 적용한다
   const filtered = useMemo(() => {
-    if (!logs) return []
-    return logs.filter(
-      (e) =>
-        (events.length === 0 || events.includes(e.ev)) &&
-        (actor === '전체' || e.ac === actor) &&
-        e.ts.slice(0, 10) >= from &&
-        e.ts.slice(0, 10) <= to &&
-        (!target || e.entId.toLowerCase().includes(target.toLowerCase())),
-    )
-  }, [logs, events, actor, from, to, target])
+    const items = res?.items ?? []
+    const hit = items.filter((e) => {
+      const { date } = isoToParts(e.at)
+      return (
+        (eventType === ALL || e.ev === eventType) &&
+        (actor === ALL || e.ac === actor) &&
+        date >= DEF_FROM &&
+        date <= DEF_TO &&
+        // TODO(api): entity_id 파라미터 제안 반영 대기
+        (!q || String(e.entity_id).toLowerCase().includes(q))
+      )
+    })
+    // 시각 오름차순 기본 + 같은 시각은 생애주기 흐름 랭크 보조 정렬
+    return [...hit].sort((a, b) => a.at.localeCompare(b.at) || flowRank(a.ev) - flowRank(b.ev))
+  }, [res, eventType, actor, q])
+
+  const pristine = eventType === ALL && actor === ALL && q === ''
+
+  // 집계는 현재 화면 slice가 아니라 같은 필터의 전체 집합 기준이다.
+  // 필터가 기본값이면 응답의 event_type_counts를 그대로 사용한다.
+  const counts = useMemo(() => {
+    if (!res) return {}
+    if (pristine) return res.event_type_counts ?? {}
+    return Object.fromEntries(eventTypes.map((t) => [t, filtered.filter((e) => e.ev === t).length]))
+  }, [res, pristine, eventTypes, filtered])
 
   if (error) return <ErrorState detail={error} onRetry={retry} />
-  if (!logs) return <LoadingState message="감사로그를 불러오는 중…" />
-
-  const pageCnt = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const curPage = Math.min(page, pageCnt)
-  const rows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
-  const typeCnts = AUDIT_EVENT_TYPES.map((t) => ({ name: t, cnt: filtered.filter((e) => e.ev === t).length }))
-  const typeMax = Math.max(1, ...typeCnts.map((t) => t.cnt))
-  const todayCnt = logs.filter((e) => e.ts.startsWith('2026-06-04')).length
-  const failedCnt = logs.filter((e) => e.ev.includes('FAILED')).length
-  const resetPage = () => setPage(1)
-
-  const toggleEvent = (t) => {
-    setEvents((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
-    resetPage()
-  }
+  if (!res) return <LoadingState message="감사로그를 불러오는 중…" />
 
   return (
-    <div className="flex animate-[om-fadein_.3s_ease-out] flex-col gap-3.5">
-      <div className="text-[21px] font-extrabold tracking-[-.3px] text-navy">감사로그</div>
-      <div className="flex flex-col gap-[11px] rounded-xl border border-line bg-white px-[18px] py-3.5 shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-        <div className="flex flex-wrap items-center gap-[7px]">
-          <span className="mr-[3px] text-[13px] font-bold text-slate">이벤트</span>
-          {AUDIT_EVENT_TYPES.map((t) => {
-            const on = events.includes(t)
-            return (
-              <div
-                key={t}
-                onClick={() => toggleEvent(t)}
-                className="cursor-pointer rounded-full border px-[11px] py-[5px] font-mono text-[11.5px] font-extrabold"
-                style={
-                  on
-                    ? { background: '#1E5FC2', color: '#FFFFFF', borderColor: '#1E5FC2' }
-                    : { background: '#FFFFFF', color: '#475569', borderColor: '#CBD5E1' }
-                }
-              >
-                {t}
-              </div>
-            )
-          })}
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-bold text-slate">행위자</span>
-            <div className="flex overflow-hidden rounded-lg border border-line-input bg-white">
-              {['전체', 'SYSTEM', 'AGENT', 'HUMAN'].map((l) => (
-                <div
-                  key={l}
-                  onClick={() => {
-                    setActor(l)
-                    resetPage()
-                  }}
-                  className="cursor-pointer px-[13px] py-[7px] text-[13px] font-bold"
-                  style={
-                    actor === l ? { background: '#1E5FC2', color: '#FFFFFF' } : { background: '#FFFFFF', color: '#475569' }
-                  }
-                >
-                  {l}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-bold text-slate">기간</span>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value)
-                resetPage()
-              }}
-              className="rounded-lg border border-line-input px-2.5 py-[7px] font-mono text-[13px] font-semibold text-navy"
-            />
-            <span className="font-bold text-[#94A3B8]">~</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value)
-                resetPage()
-              }}
-              className="rounded-lg border border-line-input px-2.5 py-[7px] font-mono text-[13px] font-semibold text-navy"
-            />
-          </div>
-          <input
-            type="text"
-            value={target}
-            onChange={(e) => {
-              setTarget(e.target.value)
-              resetPage()
-            }}
-            placeholder="대상 ID 검색 (예: APR-0001)"
-            className="w-[230px] rounded-lg border border-line-input px-3 py-2 font-mono text-[13px] font-semibold text-navy"
-          />
-        </div>
+    <div className="animate-[om-fadein_.3s_ease-out]">
+      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+        <div className="text-[22px] font-extrabold text-navy">감사로그</div>
+        <div className="text-xs text-g1">append-only · 수정 · 삭제 경로 없음</div>
       </div>
-      <div className="grid grid-cols-[7fr_3fr] items-start gap-4">
-        <div className="overflow-hidden rounded-xl border border-line bg-white shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-          <div className="grid grid-cols-[150px_130px_210px_200px_1fr] gap-2 border-b border-line bg-page px-4 py-3 text-xs font-extrabold text-slate">
-            <span>발생시각</span>
-            <span>행위자</span>
-            <span>이벤트</span>
-            <span>대상</span>
-            <span>요약</span>
-          </div>
-          {filtered.length === 0 && (
-            <div className="p-12 text-center text-[15px] font-semibold text-slate">
-              조건에 맞는 로그가 없습니다. 필터를 조정해 주세요.
-            </div>
-          )}
-          {rows.map((e) => {
-            const key = e.ev + e.entId + e.ts
-            const ec = evColor(e.ev)
-            const ac = acColor(e.ac)
-            const isOpen = open === key
-            return (
-              <div key={key}>
-                <div
-                  onClick={() => setOpen(isOpen ? null : key)}
-                  className="grid cursor-pointer grid-cols-[150px_130px_210px_200px_1fr] items-center gap-2 border-b border-line-soft px-4 py-2.5 transition-colors duration-[120ms] hover:bg-line-soft"
-                  style={{ background: isOpen ? '#EDF2FA' : 'transparent' }}
-                >
-                  <span className="font-mono text-[12.5px] font-bold text-ink">{e.ts.slice(5)}</span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="flex h-5 w-5 flex-none items-center justify-center rounded-md text-[10.5px] font-extrabold"
-                      style={{ background: ac[0], color: ac[1] }}
-                    >
-                      {e.ac[0]}
-                    </span>
-                    <span className="font-mono text-[12.5px] font-bold text-ink">{e.actor}</span>
-                  </span>
+
+      <AuditFilterBar
+        eventTypes={eventTypes}
+        eventType={eventType}
+        onEventType={setEventType}
+        actor={actor}
+        onActor={setActor}
+        target={target}
+        onTarget={setTarget}
+      />
+
+      <div className="flex items-start gap-5">
+        <AuditTimeline
+          items={filtered}
+          title={q ? `${target.trim()} 의 이력` : '전체 이력'}
+          note={`시각 오름차순 · ${filtered.length}건`}
+        />
+
+        <div className="flex w-[360px] flex-none flex-col gap-4">
+          <AuditEventTypeBars eventTypes={eventTypes} counts={counts} />
+
+          {/* 좌측 3px 적 보더 카드 — 시안 그대로 */}
+          <div className="rounded-[10px] border border-line bg-white p-5" style={{ borderLeft: '3px solid var(--color-red)' }}>
+            <div className="mb-4 text-sm font-extrabold text-navy">이 화면이 증명하는 것</div>
+            <div className="flex flex-col gap-4">
+              {PROOFS.map(([t, d]) => (
+                <div key={t} className="flex gap-2.5">
+                  <span className="mt-[5px] h-[7px] w-[7px] flex-none rounded-full bg-red" />
                   <span>
-                    <span
-                      className="rounded-md px-2 py-[3px] font-mono text-[10.5px] font-extrabold"
-                      style={{ background: ec[0], color: ec[1] }}
-                    >
-                      {e.ev}
-                    </span>
+                    <span className="block text-[12.5px] font-bold text-ink">{t}</span>
+                    <span className="mt-1 block text-[11.5px] text-g1">{d}</span>
                   </span>
-                  <span className="font-mono text-[12.5px] font-semibold text-slate">
-                    {e.entType} <span className="font-extrabold text-navy">{e.entId}</span>
-                  </span>
-                  <span className="text-[13px] font-semibold text-ink">{e.summary}</span>
-                </div>
-                {isOpen && (
-                  <div className="animate-[om-fadein_.2s] border-b border-line bg-page px-[18px] py-3.5">
-                    {e.diff ? (
-                      <JsonDiff diff={e.diff} />
-                    ) : (
-                      <div className="text-[13px] font-semibold text-slate-light">
-                        상태 변경 데이터 없음 (이벤트 기록 전용)
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          <div className="flex items-center gap-1.5 px-4 py-3">
-            <span className="mr-auto text-[12.5px] font-bold text-slate">총 {filtered.length}건</span>
-            {Array.from({ length: pageCnt }, (_, i) => (
-              <div
-                key={i}
-                onClick={() => {
-                  setPage(i + 1)
-                  setOpen(null)
-                }}
-                className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-[7px] border font-mono text-[13px] font-extrabold"
-                style={
-                  curPage === i + 1
-                    ? { background: '#1E5FC2', color: '#FFFFFF', borderColor: '#1E5FC2' }
-                    : { background: '#FFFFFF', color: '#475569', borderColor: '#CBD5E1' }
-                }
-              >
-                {i + 1}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-3.5">
-          <div className="grid grid-cols-2 gap-3.5">
-            <div className="rounded-xl border border-line bg-white px-[17px] py-[15px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-              <div className="text-[12.5px] font-bold text-slate">오늘 이벤트</div>
-              <div className="mt-1 font-mono text-3xl font-extrabold text-navy">{todayCnt}</div>
-            </div>
-            <div className="rounded-xl border border-line bg-white px-[17px] py-[15px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-              <div className="text-[12.5px] font-bold text-slate">실패 이벤트</div>
-              <div className="mt-1 font-mono text-3xl font-extrabold text-oos">{failedCnt}</div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-line bg-white px-[18px] py-[17px] shadow-[0_1px_3px_rgba(15,42,92,.05)]">
-            <div className="mb-[13px] text-sm font-extrabold text-navy">이벤트 유형별 건수</div>
-            <div className="flex flex-col gap-[9px]">
-              {typeCnts.map((b) => (
-                <div key={b.name}>
-                  <div className="flex items-center gap-1.5 font-mono text-[11px] font-extrabold text-slate">
-                    <span>{b.name}</span>
-                    <span className="ml-auto text-[12.5px] text-navy">{b.cnt}</span>
-                  </div>
-                  <div className="mt-[3px] h-2 overflow-hidden rounded bg-line-soft">
-                    <div
-                      className="h-full rounded"
-                      style={{
-                        width: `${(b.cnt / typeMax) * 100}%`,
-                        background: b.name.includes('FAILED') ? '#DC2626' : '#1E5FC2',
-                      }}
-                    />
-                  </div>
                 </div>
               ))}
             </div>

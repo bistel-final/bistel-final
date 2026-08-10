@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<nav class="sidebar" style="min-height:100vh">
+  <div class="side-logo">
+    <div class="side-brand">BISTelligence</div>
+    <div class="side-sub">FDC ANOMALY AGENT PLATFORM</div>
+  </div>
+  <div class="side-menu">
+    <sc-for list="{{ items }}" as="it" hint-placeholder-count="7">
+      <a class="side-item {{ it.cls }}" href="{{ it.href }}"><span class="side-num">{{ it.num }}</span><span>{{ it.label }}</span></a>
+    </sc-for>
+  </div>
+  <div class="side-foot"><span class="dot-green"></span><span>Agent 파이프라인 가동 중</span></div>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;236px&quot;,&quot;height&quot;:&quot;900px&quot;},&quot;active&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:1,&quot;max&quot;:7}}">
+class Component extends DCLogic {
+  renderVals() {
+    const active = Number(this.props.active ?? 2);
+    const labels = ['알람 대시보드','알람 목록','트레이스 뷰어','Agent 분석 · 승인','조치 목록','자연어 분석','감사로그'];
+    const hrefs = ['01_알람대시보드.dc.html','02_알람목록.dc.html','03_트레이스뷰어.dc.html','04_Agent분석승인.dc.html','05_조치목록.dc.html','06_자연어분석.dc.html','07_감사로그.dc.html'];
+    return { items: labels.map((label,i)=>({label, num:String(i+1), href:hrefs[i], cls:(i+1===active)?'on':''})) };
+  }
+}
+</script>
+</body>
+</html>

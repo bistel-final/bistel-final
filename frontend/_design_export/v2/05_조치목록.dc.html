@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="fdc.css">
+</helmet>
+<div class="app" data-screen-label="조치 목록">
+  <dc-import name="Sidebar" active="{{ 5 }}" hint-size="236px,100vh"></dc-import>
+  <main class="main">
+    <div class="topbar">
+      <div class="h1">조치 목록</div>
+      <div class="top-note">incident 단위 · 기간 내 10건</div>
+    </div>
+    <div class="filter-bar">
+      <div class="f-field"><span class="f-label">기간</span><span class="select" style="min-width:190px">2026-06-01 ~ 06-04 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">공정</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">설비</span><span class="select">전체 <span class="chev">▾</span></span></div>
+      <div class="f-field"><span class="f-label">조치</span><span class="select">전체 <span class="chev">▾</span></span></div>
+    </div>
+    <div class="tab-row">
+      <span class="tab on">승인 대기 <span class="n">2</span></span>
+      <span class="tab">전송 실패 <span class="n">0</span></span>
+      <span class="tab">진행 중 <span class="n">0</span></span>
+      <span class="tab">완료 <span class="n">8</span></span>
+      <span class="tab">전체 <span class="n">10</span></span>
+      <span class="f-note" style="padding-bottom:0">기본은 승인 대기 — 사람이 볼 게 먼저</span>
+    </div>
+    <div class="card">
+      <div class="card-h"><span class="card-t">조치</span><span class="card-note">조치 시각 내림차순</span></div>
+      <div style="padding:0 12px 8px">
+        <table class="tbl">
+          <thead><tr>
+            <th>조치</th><th>incident</th><th>파라미터</th><th>조치 코드</th><th>심각도</th><th>승인</th><th>전송</th><th>알람</th><th>시각</th><th></th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+              <tr class="{{ r.cls }}">
+                <td>
+                  <div class="cell-id">{{ r.id }}</div>
+                  <div style="margin-top:3px"><a class="mono" style="font-size:10.5px" href="04_Agent분석승인.dc.html">상세 →</a></div>
+                </td>
+                <td>
+                  <div class="cell-mono" style="font-weight:600">{{ r.incident }}</div>
+                  <div class="cell-sub">LOT · 챔버</div>
+                </td>
+                <td class="cell-mono" style="font-weight:600">{{ r.param }}</td>
+                <td><span class="badge {{ r.codeCls }}">{{ r.code }}</span></td>
+                <td class="cell-mono {{ r.sevCls }}" style="font-weight:700">{{ r.sev }}</td>
+                <td><span class="{{ r.apprCls }}" style="font-size:12px;font-weight:700">{{ r.appr }}</span></td>
+                <td>
+                  <sc-if value="{{ r.sent }}" hint-placeholder-val="{{ true }}"><span class="badge t-green">SENT</span></sc-if>
+                  <sc-if value="{{ r.notSent }}" hint-placeholder-val="{{ false }}"><span style="color:#98A5B3">—</span></sc-if>
+                </td>
+                <td><a class="cell-mono" style="font-weight:700" href="02_알람목록.dc.html">{{ r.alarms }}건</a></td>
+                <td class="cell-dim">{{ r.time }}</td>
+                <td style="text-align:right">
+                  <sc-if value="{{ r.review }}" hint-placeholder-val="{{ false }}">
+                    <a class="btn btn-primary btn-sm" href="04_Agent분석승인.dc.html">검토 →</a>
+                  </sc-if>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const mk = (id,incident,param,code,sev,appr,send,alarms,time,pending) => ({
+      id, incident, param, code, sev, alarms:String(alarms), time,
+      codeCls: code==='EQP_HOLD'?'t-red':(code==='LOT_HOLD'?'t-amber':'t-green'),
+      sevCls: sev==='HIGH'?'tx-red':(sev==='MEDIUM'?'tx-amber':'tx-g1'),
+      appr, apprCls: appr==='승인 대기'?'tx-red':(appr==='승인됨'?'tx-green':'tx-g1'),
+      sent: send==='SENT', notSent: send!=='SENT',
+      review: !!pending, cls: pending?'row-red':''
+    });
+    const rows = [
+      mk('ACT-0010','LOT-260010 · ETC-01-C1','ET_CF4','EQP_HOLD','HIGH','승인 대기','—',6,'06-04 07:11',true),
+      mk('ACT-0005','LOT-260007 · PHO-01-C1','PH_FOCUS','EQP_HOLD','HIGH','승인 대기','—',6,'06-03 06:39',true),
+      mk('ACT-0008','LOT-260009 · ETC-01-C1','ET_CF4','LOT_HOLD','MEDIUM','자동','SENT',5,'06-03 23:14'),
+      mk('ACT-0009','LOT-260009 · PHO-01-C1','PH_FOCUS','LOT_HOLD','MEDIUM','자동','SENT',7,'06-03 22:29'),
+      mk('ACT-0006','LOT-260008 · ETC-01-C1','ET_CF4','MONITOR','LOW','자동','SENT',3,'06-03 15:45'),
+      mk('ACT-0007','LOT-260008 · PHO-01-C1','PH_FOCUS','LOT_HOLD','MEDIUM','자동','SENT',6,'06-03 14:43'),
+      mk('ACT-0004','LOT-260006 · PHO-01-C1','PH_FOCUS','MONITOR','LOW','자동','SENT',3,'06-02 22:42'),
+      mk('ACT-0003','LOT-260005 · ETC-01-C2','ET_REFL','LOT_HOLD','MEDIUM','자동','SENT',5,'06-02 15:20'),
+      mk('ACT-0002','LOT-260004 · ETC-01-C2','ET_REFL','EQP_HOLD','HIGH','승인됨','SENT',6,'06-02 07:21'),
+      mk('ACT-0001','LOT-260003 · ETC-01-C2','ET_REFL','MONITOR','LOW','자동','SENT',4,'06-01 23:20'),
+    ];
+    rows.forEach((r,i)=>{ if(!r.cls && i%2===1) r.cls='alt'; });
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>
