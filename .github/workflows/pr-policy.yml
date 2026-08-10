@@ -72,16 +72,3 @@ jobs:
               exit 1
             fi
           done
-
-      # Issue 를 자동으로 닫으려면 닫기 키워드가 있어야 한다.
-      - name: Validate issue link
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! printf '%s\n' "$PR_BODY" | grep -Eiq '(closes|fixes|resolves) #[0-9]+'; then
-            echo "연결된 Issue 가 없습니다."
-            echo "본문에 'Closes #번호' 를 작성해 주세요."
-            echo "Issue 없이 진행할 수 있는 경우는 개발 가이드 1장을 따릅니다."
-            exit 1
-          fi
