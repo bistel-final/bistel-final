@@ -1,7 +1,7 @@
 # 05. Agent 워크플로
 
-> 기준 요구사항: v1.8 / 시스템설계서: v1.2 / 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 
 조치 결정표·상향·하향 규칙은 `02-domain-rules.md` 4절, Tool 예산은 `01-project-rules.md` 5절에 있다.
 이 문서는 그래프 구조·트랜잭션·복구를 다룬다.
@@ -205,7 +205,7 @@ incident 전체 판정 근거는 `load_incident`가 모든 `fdc_alarm` 행을 Re
 ```
 1. incident advisory lock
 2. 유효 action_history 재조회
-3. 없으면 1건 생성
+3. 없으면 1건 생성하고 `created_by_agent_run_id`에 현재 실행을 최초 1회 기록
 4. 자동:     AUTO/WAITING, approved_by='system', approved_at=created_at
 5. EQP_HOLD: PENDING/WAITING, 승인자 NULL
 6. EQP_HOLD 는 action + approval_request(action_id 포함)를 같은 트랜잭션에서
@@ -213,7 +213,7 @@ incident 전체 판정 근거는 `load_incident`가 모든 `fdc_alarm` 행을 Re
 8. EQP_HOLD 는 커밋 이후 interrupt
 ```
 
-FAILED 재실행에서 유효 action이 이미 있으면 새 행을 만들지 않는다.
+FAILED 재실행에서 유효 action이 이미 있으면 새 행을 만들지 않고 기존 `created_by_agent_run_id`도 갱신하지 않는다. 이 컬럼은 최신 처리 실행이 아니라 조치 생성 provenance다.
 자동조치 `AUTO/FAILED`와 승인 완료 `APPROVED/FAILED`는 같은 action_id로 **approval_gate를 우회**해 곧바로 `send_action`으로 간다. 신규 `PENDING/WAITING`만 approval_request를 만들고 interrupt한다.
 
 ### 승인·반려 결정

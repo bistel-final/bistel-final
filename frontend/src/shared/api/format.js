@@ -3,7 +3,10 @@ const SEOUL = '+09:00'
 
 export function toIso(ts) {
   if (!ts) return null
-  const withSec = ts.length === 16 ? `${ts}:00` : ts
+  const value = String(ts)
+  // canonical API fixture가 이미 ISO 8601이면 offset을 중복해서 붙이지 않는다.
+  if (/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return value
+  const withSec = value.length === 16 ? `${value}:00` : value
   return `${withSec.replace(' ', 'T')}${SEOUL}`
 }
 
@@ -22,7 +25,15 @@ export const fmtShort = (iso) => {
 }
 export const fmtTime = (iso) => isoToParts(iso).time
 
-// 목록 응답 규격 {items, total, page, size}
-export function page(items, { page: p = 1, size = items.length } = {}) {
-  return { items, total: items.length, page: p, size }
+// 목록 응답 규격 {items, total, page, size}. Mock도 실제 API의 기본값과 slicing을 따른다.
+export function page(items, { page: requestedPage = 1, size: requestedSize = 20 } = {}) {
+  const currentPage = Math.max(1, Number(requestedPage) || 1)
+  const size = Math.min(100, Math.max(1, Number(requestedSize) || 20))
+  const start = (currentPage - 1) * size
+  return {
+    items: items.slice(start, start + size),
+    total: items.length,
+    page: currentPage,
+    size,
+  }
 }

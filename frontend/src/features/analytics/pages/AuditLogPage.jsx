@@ -16,23 +16,25 @@ const PAGE_SIZE = 50
 
 // 시각이 분 단위인 항목은 같은 분 안에서 생애주기 흐름 순서로 보조 정렬한다
 // (TODO(data): audit_log 초 단위 확보 시 이 보조 정렬은 제거)
+// 이벤트 9종은 설계 11장 고정값이다 — ACTION_APPROVED·ACTION_SEND_STARTED 는 존재하지 않는다.
+// 승인·반려는 APPROVAL_DECIDED 하나로 기록한다.
 const FLOW_RANK = {
-  AGENT_RUN_STARTED: 0,
-  APPROVAL_REQUESTED: 1,
-  ACTION_APPROVED: 2,
-  ACTION_REJECTED: 2,
-  ACTION_SEND_STARTED: 3,
-  ACTION_SENT: 4,
-  ACTION_SEND_FAILED: 4,
-  AGENT_RUN_COMPLETED: 5,
-  AGENT_RUN_FAILED: 5,
+  DETECTION_COMPLETED: 0,
+  AGENT_RUN_STARTED: 1,
+  CLASSIFICATION_COMPLETED: 2,
+  APPROVAL_REQUESTED: 3,
+  APPROVAL_DECIDED: 4,
+  ACTION_SENT: 5,
+  ACTION_SEND_FAILED: 5,
+  AGENT_RUN_COMPLETED: 6,
+  AGENT_RUN_FAILED: 6,
 }
 
 const flowRank = (ev) => FLOW_RANK[ev] ?? 9
 
-// "이 화면이 증명하는 것" — 디자인 v2 07 시안 5항목 그대로
+// "이 화면이 증명하는 것" — 디자인 v2 07 시안 5항목, 이벤트명만 설계 11장 기준으로 정정
 const PROOFS = [
-  ['누가 승인했나', 'ACTION_APPROVED 의 주체가 HUMAN · bang'],
+  ['누가 승인했나', 'APPROVAL_DECIDED 의 주체가 HUMAN · bang'],
   ['언제 바뀌었나', 'PENDING → APPROVED 시각까지'],
   ['무엇이 바뀌었나', 'before / after 로 상태 전이 그대로'],
   ['전송됐나', 'ACTION_SENT 가 남으면 n8n 이 받았다는 뜻'],

@@ -5,7 +5,7 @@ import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import HBar from '../../../shared/components/ui/HBar.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
-import { TH_CLS, TD_CLS, CELL_ID, CELL_MONO, rowClass } from '../../../shared/components/ui/statusStyles.js'
+import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 
 const TABS = [
   ['table', '표'],
@@ -84,13 +84,7 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
       <div className="flex items-center justify-between px-5 pb-4">
         <div className="flex gap-2">
           {TABS.map(([key, label]) => (
-            <Button
-              key={key}
-              sm
-              variant={tab === key ? 'primary' : 'outline'}
-              style={{ minWidth: 60 }}
-              onClick={() => onTab(key)}
-            >
+            <Button key={key} sm variant={tab === key ? 'primary' : 'outline'} onClick={() => onTab(key)}>
               {label}
             </Button>
           ))}
@@ -181,7 +175,7 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
             ))
           ) : (
             <div className="rounded-lg border border-line bg-soft px-4 py-3.5 text-xs text-g1">
-              차트로 표현할 수 없는 결과 형태 — 표 탭을 이용하세요
+              응답의 visualization이 표 렌더링을 지정했습니다. 표 탭을 이용해 주세요.
             </div>
           )}
           <Footnote text={footnote} />

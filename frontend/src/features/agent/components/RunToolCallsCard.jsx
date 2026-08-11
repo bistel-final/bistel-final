@@ -6,8 +6,8 @@ import { DashedCard } from '../../../shared/components/ui/Card.jsx'
 // 반드시 구분선 아래 「노드」 구획에만 둔다 (계약 사항).
 const SUCCESS = 'SUCCESS'
 
-// 실측 ms 만 표기 — 없으면 "—" (창작 금지)
-const fmtMs = (ms) => (typeof ms === 'number' ? `${ms.toLocaleString('en-US')}ms` : '—')
+const fmtMs = (latencyMs) =>
+  typeof latencyMs === 'number' ? `${latencyMs.toLocaleString('en-US')}ms` : '—'
 
 function Row({ name, ms, ok = true, tool = true }) {
   return (

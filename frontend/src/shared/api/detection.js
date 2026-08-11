@@ -148,10 +148,10 @@ export function getAlarms(params = {}) {
 
 export function getAlarm(alarmId) {
   if (USE_MOCK) {
-    const a = ALARMS.find((x) => x.alarm_id === alarmId)
+    const a = ALARMS.find((item) => item.alarm_id === alarmId)
     return mockResponse(a ? toItem(a) : null)
   }
-  return apiClient.get(`/alarms/${alarmId}`).then((r) => r.data)
+  return apiClient.get(`/alarms/${alarmId}`).then((response) => response.data)
 }
 
 // GET /traces/catalog — 조회 선택지 + 센서별 한계선·단위
@@ -182,5 +182,7 @@ export function searchTraces(body = {}) {
     )
     return mockResponse({ wafers, limits, total: wafers.length, measured_step_stats: MEASURED_STEP_STATS })
   }
-  return apiClient.post('/traces/search', body).then((r) => r.data)
+  return apiClient.post('/traces/search', body).then((response) => response.data)
 }
+
+export { MEASURED_STEP_STATS }

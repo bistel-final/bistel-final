@@ -6,7 +6,7 @@ import { alarmSummary, detailNumbers } from './TraceModel.jsx'
 
 // 우측 330px 컬럼 — 구간 통계 · anomaly_score · 이 구간의 알람 (시안 v2 03_트레이스뷰어)
 
-const JUD_VARIANT = { OOS: 'bg-red', OOC: 'bg-amber', OK: 'bg-green' }
+const JUD_VARIANT = { OOS: 'bg-red', OOC: 'bg-amber', OK: 'bg-green', IN_CONTROL: 'bg-green' }
 const num = (v) => (v == null ? '—' : v.toFixed(3))
 const isR03 = (a) => String(a.rule_id).startsWith('R03')
 const ruleShort = (r) => String(r).split('_')[0]
@@ -76,8 +76,10 @@ function TraceSidePanel({ statsBySensor, anomaly, alarms, limitOf, focus }) {
   const r03s = alarms.filter(isR03)
   const rest = alarms.filter((a) => !isR03(a)).slice().reverse() // 최신 알람이 위
 
-  const scorePct = Math.min(100, Math.max(0, anomaly.score * 100))
-  const thPct = Math.min(100, Math.max(0, anomaly.threshold * 100))
+  const hasScore = typeof anomaly.score === 'number'
+  const hasThreshold = typeof anomaly.threshold === 'number'
+  const scorePct = hasScore ? Math.min(100, Math.max(0, anomaly.score * 100)) : 0
+  const thPct = hasThreshold ? Math.min(100, Math.max(0, anomaly.threshold * 100)) : 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -102,12 +104,16 @@ function TraceSidePanel({ statsBySensor, anomaly, alarms, limitOf, focus }) {
         <CardHeader title="anomaly_score" note="참고 값" mono />
         <div className="px-5 pb-[18px]">
           <div className="flex items-baseline gap-3.5">
-            <span className="font-mono text-[30px] font-extrabold text-blue">{anomaly.score.toFixed(2)}</span>
-            <span className="font-mono text-xs text-g1">임계 {anomaly.threshold.toFixed(2)}</span>
+            <span className="font-mono text-[30px] font-extrabold text-blue">
+              {hasScore ? anomaly.score.toFixed(2) : '—'}
+            </span>
+            <span className="font-mono text-xs text-g1">
+              임계 {hasThreshold ? anomaly.threshold.toFixed(2) : '—'}
+            </span>
           </div>
           <div className="relative mt-3 h-2.5 rounded-full bg-cell-line">
-            <div className="absolute left-0 top-0 h-full rounded-full bg-blue" style={{ width: `${scorePct}%` }} />
-            <div className="absolute top-[-3px] h-4 w-0.5 bg-navy" style={{ left: `${thPct}%` }} />
+            {hasScore && <div className="absolute left-0 top-0 h-full rounded-full bg-blue" style={{ width: `${scorePct}%` }} />}
+            {hasThreshold && <div className="absolute top-[-3px] h-4 w-0.5 bg-navy" style={{ left: `${thPct}%` }} />}
           </div>
           <div className="mt-3.5 text-xs font-bold text-ink">판정에는 쓰지 않는다.</div>
           <div className="mt-1 text-[11.5px] text-g1">표시 · LLM 근거 · 평가 전용</div>

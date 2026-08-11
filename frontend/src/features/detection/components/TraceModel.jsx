@@ -214,8 +214,9 @@ export function selectRows(rows, f, sensor) {
         r.lot_id === f.lot &&
         (sensor ? r.sensor_id === sensor : f.sensors.includes(r.sensor_id)) &&
         f.wafers.includes(r.wafer_no) &&
-        dateOf(r.occurred_at) >= f.from &&
-        dateOf(r.occurred_at) <= f.to,
+        // 기간 미지정은 무제한이다. 빈 문자열과 비교하면 `<= ''` 가 항상 거짓이라 전부 걸러진다.
+        (!f.from || dateOf(r.occurred_at) >= f.from) &&
+        (!f.to || dateOf(r.occurred_at) <= f.to),
     )
     .sort((a, b) => msOf(a.occurred_at) - msOf(b.occurred_at) || numAsc(a.wafer_no, b.wafer_no))
 }
@@ -277,8 +278,8 @@ export function scopedAlarms(alarms, f) {
         a.lot_id === f.lot &&
         f.sensors.includes(a.sensor_id) &&
         f.wafers.includes(a.wafer_no) &&
-        dateOf(a.occurred_at) >= f.from &&
-        dateOf(a.occurred_at) <= f.to,
+        (!f.from || dateOf(a.occurred_at) >= f.from) &&
+        (!f.to || dateOf(a.occurred_at) <= f.to),
     )
     .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id))
 }

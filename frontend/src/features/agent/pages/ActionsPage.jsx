@@ -269,7 +269,7 @@ function ActionsPage() {
                     isOpen={isOpen}
                     isPending={isPending}
                     onToggle={() => toggleOpen(a.action_id)}
-                    onReview={() => navigate(`/agent-runs/${a.agent_run_id}`)}
+                    onReview={() => navigate(`/agent-runs/${a.created_by_agent_run_id}`)}
                   />
                 )
               })}
@@ -298,7 +298,7 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           <div className={CELL_ID}>{a.action_id}</div>
           <div className="mt-[3px]">
             <Link
-              to={`/agent-runs/${a.agent_run_id}`}
+              to={`/agent-runs/${a.created_by_agent_run_id}`}
               onClick={(e) => e.stopPropagation()}
               className="font-mono text-[10.5px]"
             >

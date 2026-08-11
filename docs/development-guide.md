@@ -379,7 +379,7 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - **다른 팀원 1명 이상의 승인(Approve)이 있어야 병합할 수 있습니다.** 문서상 권장이 아니라 `main` 브랜치 보호 규칙으로 강제됩니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_2_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
+- API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_10_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`로 **고정**합니다. 저장소 설정에서 merge commit과 rebase를 비활성화했으므로 PR 화면에 다른 선택지가 나오지 않습니다.
@@ -478,3 +478,29 @@ git branch -D feat/detection-summary
 코드·계약·보안 강제 규칙은 **`docs/ai-context/01-project-rules.md`를 단일 출처**로 합니다. 사람과 AI 도구가 같은 문서를 봅니다.
 
 원본 근거는 `docs/specifications/` 의 요구사항 정의서·시스템 설계서이며, 요약본과 충돌하면 원본이 우선합니다.
+
+### API 계약을 바꿀 때
+
+API 명세서는 손으로 쓰지 않습니다. Backend Pydantic DTO에서 역산해 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를 지켜야 세 문서가 어긋나지 않습니다.
+
+```bash
+# 1. 원본 스펙을 먼저 고친다 (요구사항 → 시스템설계서 순)
+# 2. Backend DTO 를 고친다
+#    backend/app/{common,detection,knowledge,agent,analytics}/schemas.py
+# 3. 계약 테스트로 확인한다
+cd backend && pytest tests/contract -q
+
+# 4. 명세서 세 형식을 다시 만든다
+cd .. && source .venv/bin/activate
+pip install -r docs/deliverables/api/requirements.txt   # 최초 1회 (reportlab)
+python docs/deliverables/api/build_api_spec.py
+
+# 5. CSV·Markdown·PDF 세 개를 한 커밋에 함께 담는다
+git add docs/deliverables/api/API명세서.{csv,md,pdf}
+```
+
+- **생성 결과를 직접 편집하지 않습니다.** 고칠 것이 있으면 DTO 또는 생성기를 고치고 다시 만듭니다.
+- 세 형식 중 하나만 커밋하면 나머지 둘이 옛 계약을 가리킵니다. 반드시 함께 담습니다.
+- `reportlab`은 문서 도구 전용 의존성이라 `backend/requirements.txt`에 넣지 않습니다.
+
+자세한 절차와 글꼴 설정은 `docs/deliverables/api/README.md`에 있습니다.

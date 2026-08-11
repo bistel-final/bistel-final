@@ -1,7 +1,7 @@
 # C — Agent · HITL
 
-> 기준 요구사항: v1.8 / 시스템설계서: v1.2 / 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 > 담당: 방대혁 · 모듈 `backend/app/agent/` · `frontend/src/features/agent/`
 > 추가 역할: 공통 통합 관리 · React 공통 골격 · release captain
 
@@ -61,7 +61,7 @@ LangGraph 에이전트, 조치 결정, HITL 승인, n8n 전송, 감사로그를 
 **승인 게이트를 설정으로 우회할 수 없다.** `HITL_REQUIRED_SEVERITY=HIGH` 외의 값은
 설정 검증 오류로 기동을 거부한다.
 
-**조치는 결정 시점에 선생성한다.** 승인·반려 때 새 행을 만들지 않고 기존 행을 갱신한다.
+**조치는 결정 시점에 선생성한다.** 승인·반려 때 새 행을 만들지 않고 기존 행을 갱신한다. `action_history.created_by_agent_run_id`에 최초 생성 실행을 한 번만 기록하고, 수동 재실행에서 같은 action을 재사용해도 바꾸지 않는다.
 
 **전송 payload를 State에서 만들지 않는다.** `send_action`은 저장된 `action_history`를
 `FOR UPDATE`로 다시 읽어 효과 필드로 `request_hash`를 계산한다. n8n은 요청 필드로
@@ -126,16 +126,20 @@ AGENT_RUN_COMPLETED  AGENT_RUN_FAILED
 
 ```http
 POST /agent/runs                      {alarm_id} → 202
+GET  /agent/runs                      status?, equipment_id?, chamber_id?, date_from?, date_to?, page, size
 GET  /agent/runs/{run_id}
-GET  /approvals                       status=PENDING?, page, size
+GET  /approvals                       status?, page, size
 POST /approvals/{approval_id}/decision  {decision, decided_by, decision_comment?}
+GET  /actions                         approval_status?, send_status?, action_code?, equipment_id?,
+                                      chamber_id?, date_from?, date_to?, page, size
 GET  /actions/{action_id}
 ```
 
 | 경로 | 내용 |
 |---|---|
-| `/approvals` | 승인 큐 — PENDING 목록, 근거(센서·관계·문서), 권고 조치, 승인/반려 |
-| `/alarms/:alarmId` | Agent 분석 결과 표시 (A와 공동) |
+| `/actions` | 조치 목록 — 승인 대기 기본 필터, 전송 상태, Agent 실행 상세 이동 |
+| `/agent-runs/:runId` | 센서·관계·문서 근거, 권고 조치, 승인/반려 |
+| `/alarms/:alarmId` | Agent 분석 결과 요약 (A와 공동) |
 
 ---
 

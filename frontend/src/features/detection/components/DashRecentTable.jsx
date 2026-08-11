@@ -14,7 +14,7 @@ import { fmtShort } from '../../../shared/api/format.js'
 
 const HEADERS = ['알람', '시각', '파라미터', '챔버', '룰', '타입', '조치']
 
-// 최근 알람 테이블 — 최신 6건. R03 행은 row-red + bg-red 배지, 짝수행 alt.
+// 최근 알람 테이블 — API 계약의 최신 5건. R03 행은 row-red + bg-red 배지, 짝수행 alt.
 function DashRecentTable({ recents }) {
   return (
     <Card className="min-w-0 flex-1">

@@ -1,4 +1,4 @@
-# LangGraph 기반 반도체 FDC 이상감지 에이전트 - 역할분담 개정안 (v9.5 최종)
+# LangGraph 기반 반도체 FDC 이상감지 에이전트 - 역할분담 개정안 (v9.6 최종)
 
 > 총 4명이 팀장·팀원 구분 없이 A·B·C·D 역할을 하나씩 맡는다.
 >
@@ -8,7 +8,7 @@
 >
 > **멘토 원안(`03_시스템_범위_안내.pdf`)에는 React 풀스택이 "범위 밖"으로 명시적으로 적혀 있고, 기본 UI는 Streamlit 7화면이다.** 2026.07.31 멘토링에서 UI를 React+FastAPI로 전환하기로 확정했으므로 본 개정안은 이를 초기 필수 범위로 반영한다. 핵심 도메인 범위(FDC Detection/Classification, HITL, Text2SQL 등)는 멘토 원안을 유지하고 UI·API 구현 방식만 변경한다.
 
-> **문서 적용 우선순위**: 역할·Tool 소유권·Full-stack 책임은 본 역할분담을 따르고, 기능 동작·상태 전이·수용 기준은 배포 데이터 실측을 반영한 `요구사항정의서_v1_8_최종.md`를 우선한다. v9.3의 승인 시 action_history 생성 문구와 Fault 분류 표본 단위는 v9.4에서 최신 요구사항에 맞게 정정했으며, v9.5는 시스템설계서 v1.2의 DB·Tool 예산·fixture 보강과 역할을 동기화한다.
+> **문서 적용 우선순위**: 역할·Tool 소유권·Full-stack 책임은 본 역할분담을 따르고, 기능 동작·상태 전이·수용 기준은 배포 데이터 실측과 확정 UI/API 계약을 반영한 `요구사항정의서_v1_9_최종.md`를 우선한다. 구현 구조·DTO·트랜잭션은 `시스템설계서_v1_10_최종.md`를 따른다. v9.6은 8개 업무 화면, 파라미터·추이 중심 알람 대시보드, Trace 검색 계약, 조치·Agent 실행 상세 분리를 역할에 동기화한 버전이다.
 
 ## 0. 현재 완료된 기반구축
 
@@ -132,9 +132,9 @@ React 공통 골격은 1주차에 대혁님이 AI 코딩 도구를 사용해 생
 
 | 역할 | 담당자 | Backend·AI 담당 | 담당 Tool | React 담당 | 자체 평가 | 목표 채용 직무 | 난이도·강도 |
 |---|---|---|---|---|---|---|---|
-| A. Detection Full-stack | **신동원** | 요약·규칙·이상감지 모델·알람 API | FDC 요약 조회 | 운영 대시보드·알람·trace | 규칙 판정·모델 평가(분리) | ML·Data Engineer | 4/5 · 4.5/5 |
+| A. Detection Full-stack | **신동원** | 요약·규칙·이상감지 모델·알람 API | FDC 요약 조회 | 알람 대시보드·알람·Trace | 규칙 판정·모델 평가(분리) | ML·Data Engineer | 4/5 · 4.5/5 |
 | B. Knowledge Full-stack | **강연권** | Neo4j 관계·RAG 검색·근거 API | 관계 조회·문서 검색 | 관계 그래프·문서 근거 | Retrieval 품질 | RAG·Graph Engineer | 4/5 · 4/5 |
-| C. Agent Full-stack | **방대혁** | LangGraph·분류·HITL·조치·n8n·배치 트리거 | 조치 전송(멱등) | 에이전트 분석·승인 큐 | 분류·HITL·Tool | AI Agent Engineer | 5/5 · 5/5 |
+| C. Agent Full-stack | **방대혁** | LangGraph·분류·HITL·조치·n8n·배치 트리거 | 조치 전송(멱등) | 조치 목록·Agent 실행 근거·승인 | 분류·HITL·Tool | AI Agent Engineer | 5/5 · 5/5 |
 | D. Analytics Full-stack | **천승현** | Text2SQL·통계·차트 계획·감사로그 | Text2SQL 분석 | 자연어 분석·동적 차트·감사로그 | SQL·통계·차트 | AI Backend·Full-stack | 4.5/5 · 4.5/5 |
 
 ## 3. A - Detection Full-stack
@@ -183,7 +183,7 @@ get_fdc_summary(lot_hist_id: str) -> dict
 
 **점수 정의(A·C 공통 계약)**: `anomaly_score`는 0~1 범위로 정규화하고, 값이 높을수록 이상도가 높다. A와 C가 동일한 점수 방향과 스케일을 사용한다 — 그래야 A의 `0.62`(이상 여부)와 C의 `0.80`(심각도 보조 신호)을 같은 축에서 비교할 수 있다. `anomaly_*` 필드는 멘토 원안 Tool 반환에는 없지만, C의 `decide_action()`이 점수를 입력으로 쓰기 때문에 의도적으로 확장했다.
 
-`fdc_summary`에는 한 WAFER(`lot_hist_id`)당 센서·RECIPE STEP별 복수 행이 있으므로 Tool은 이 복수 행을 고정된 feature 집계 규칙으로 변환하여 **lot_hist_id당 anomaly_score를 정확히 1개** 반환한다. 시스템설계서 v1.2 5.3의 11개 feature(`target_dev/std_norm/range_norm/ooc_ratio/oos_ratio`의 mean·max + `coverage_ratio`)를 사용하고, 누락 파생값은 학습 그룹 중앙값으로 대체하되 coverage 저하를 별도 feature로 남긴다.
+`fdc_summary`에는 한 WAFER(`lot_hist_id`)당 센서·RECIPE STEP별 복수 행이 있으므로 Tool은 이 복수 행을 고정된 feature 집계 규칙으로 변환하여 **lot_hist_id당 anomaly_score를 정확히 1개** 반환한다. 시스템설계서 v1.10 5.3의 11개 feature(`target_dev/std_norm/range_norm/ooc_ratio/oos_ratio`의 mean·max + `coverage_ratio`)를 사용하고, 누락 파생값은 학습 그룹 중앙값으로 대체하되 coverage 저하를 별도 feature로 남긴다.
 
 **재현성 규칙**: 정규화 공식(예: min-max의 기준 범위), 모델 버전, 임계값 산정 근거를 코드·문서에 기록한다. 정규화 기준 통계는 학습 데이터에서만 산출하고, 평가 데이터 전체를 이용해 정규화하지 않는다(데이터 누수 방지).
 
@@ -194,12 +194,13 @@ GET /dashboard/summary
 GET /summaries/{lot_hist_id}
 GET /alarms
 GET /alarms/{alarm_id}
-GET /traces/{lot_hist_id}
+GET /traces/catalog
+POST /traces/search
 ```
 
 ### 3.4 React
 
-- 운영 대시보드
+- 알람 대시보드
 - 알람 목록
 - 알람 상세
 - 센서 trace
@@ -217,7 +218,7 @@ GET /traces/{lot_hist_id}
 - 잘못된 ID 입력 시 예외 대신 Tool은 `{"ok": false, "reason": "..."}`, FastAPI 엔드포인트는 `404`/`422`로 응답한다(9.2 참고)
 - Tool 단독 테스트 통과
 - 대시보드·알람·trace 실제 API 연결
-- 대시보드 최초 진입 시 date·AREA 미지정 요청으로 최신 데이터 일자(`2026-06-04`)와 알람 6건·OOS 6건·OOC 0건·계측 PASS율 70.0%를 표시하고, API의 `reference_date`를 날짜 선택기에 반영
+- 대시보드 최초 진입 시 `date_from`·`date_to`·계층 필터를 생략해 자동 적용된 전체 데이터 기간 `2026-06-01~2026-06-04`, `reference_date=2026-06-04`, 알람 51건·OOS 37건·OOC 14건을 표시한다. 기간 추이·파라미터 상위 5개·설비별 건수·최근 알람 5건·전체 승인 대기 목록을 Backend 응답 그대로 사용한다
 - 이상감지 평가 지표 산출
 
 ### 3.6 확보 역량
@@ -331,7 +332,7 @@ GET /documents/{document_id}
 - Node·Edge·조건 분기
 - A·B가 만든 Tool 연결
 - 근거 부족 시 추가 관계·문서 조회
-- Tool 호출 횟수·재시도 제한 — `.env`의 `AGENT_MAX_TOOL_CALLS`(기본 `8`), `AGENT_MAX_RETRY`(기본 `3`)를 코드에서 강제한다. 조치 생성 가능 경로는 진단 단계부터 최초 `send_action` 1회분을 예약해 선택 조회가 이를 소비하지 못하게 하고, Tool 호출 수는 HITL 중단·재개와 checkpoint 유실 복구 전후를 합산한다. 단계별 배분·영속 호출 이력 복원·전송 재시도 규칙은 시스템설계서 v1.2 7.4.1을 따른다
+- Tool 호출 횟수·재시도 제한 — `.env`의 `AGENT_MAX_TOOL_CALLS`(기본 `8`), `AGENT_MAX_RETRY`(기본 `3`)를 코드에서 강제한다. 조치 생성 가능 경로는 진단 단계부터 최초 `send_action` 1회분을 예약해 선택 조회가 이를 소비하지 못하게 하고, Tool 호출 수는 HITL 중단·재개와 checkpoint 유실 복구 전후를 합산한다. 단계별 배분·영속 호출 이력 복원·전송 재시도 규칙은 시스템설계서 v1.10 7.4.1을 따른다
 - 자율성 레벨 스위치 — `.env`의 `AGENT_AUTONOMY_LEVEL`로 동작을 전환한다. `1`=고정 순서 폴백(합격선), `2`=조건 분기·재시도(기본값·핵심 목표), `3`=완전 자율 ReAct(스트레치, 15.3 참고). 같은 Tool·State로 3단계를 전환할 수 있게 구현한다
 - Fault Code 분류(FOC/RFM/MFD/TMD)
 - 원인 분석
@@ -347,7 +348,7 @@ GET /documents/{document_id}
 
   **조치 단위와 판정 우선순위**: incident key는 `(lot_id, chamber_id)`이다. 자동 배치는 동일 incident의 알람을 모두 집계하고, OOS 계수는 알람 행 수가 아니라 DISTINCT `wafer_no`로 계산한 뒤 `R03_CONSEC(EQP_HOLD) → OOS 3장 이상(LOT_HOLD) → OOS 1~2장(NOTIFY) → OOC만 발생(MONITOR)` 순으로 조치 1건만 정한다. 순차 처리 중 중간 조치를 전송한 뒤 상향하는 방식은 초기 범위 밖이다.
 
-  **상향 조건**(한 단계 올림): ① 동일 챔버의 동일 `(sensor_id, recipe_step_no, rule_id)` 알람이 직전·현재의 2개 연속 LOT에서 반복, ② 동일 LOT·WAFER에 직접 연결된 `CD_AEI=FAIL`, ③ 동일 LOT·WAFER의 NEXT_STEP 하류 `track_in_at <= alarm.occurred_at`. 세 조건이 겹쳐도 한 단계만 올리고 결과 상한은 `LOT_HOLD`이며, `EQP_HOLD`는 R03_CONSEC 등 챔버 수준 근거로만 결정한다. **하향 조건**: 순수 연쇄 이상은 하류 조치를 생략한다. 그 밖에는 기본 조치가 `NOTIFY`이고 상향 조건이 없으며, 챔버상 바로 다음 실제 처리 WAFER의 동일 판별 키 요약이 IN_CONTROL일 때만 `MONITOR`로 낮춘다. 동일 키의 이후 관측까지 중간 WAFER를 건너뛰지 않는다. 세부 업무 규칙은 요구사항정의서 v1.8 8.2, 판정 DTO·조회 기준과 양성/음성 fixture는 시스템설계서 v1.2 7.7·15.2를 따른다. `SEVERITY_HIGH_THRESHOLD=0.80`은 **보조 위험 신호**일 뿐 단독으로 `EQP_HOLD`를 만들지 않는다
+  **상향 조건**(한 단계 올림): ① 동일 챔버의 동일 `(sensor_id, recipe_step_no, rule_id)` 알람이 직전·현재의 2개 연속 LOT에서 반복, ② 동일 LOT·WAFER에 직접 연결된 `CD_AEI=FAIL`, ③ 동일 LOT·WAFER의 NEXT_STEP 하류 `track_in_at <= alarm.occurred_at`. 세 조건이 겹쳐도 한 단계만 올리고 결과 상한은 `LOT_HOLD`이며, `EQP_HOLD`는 R03_CONSEC 등 챔버 수준 근거로만 결정한다. **하향 조건**: 순수 연쇄 이상은 하류 조치를 생략한다. 그 밖에는 기본 조치가 `NOTIFY`이고 상향 조건이 없으며, 챔버상 바로 다음 실제 처리 WAFER의 동일 판별 키 요약이 IN_CONTROL일 때만 `MONITOR`로 낮춘다. 동일 키의 이후 관측까지 중간 WAFER를 건너뛰지 않는다. 세부 업무 규칙은 요구사항정의서 v1.9 8.2, 판정 DTO·조회 기준과 양성/음성 fixture는 시스템설계서 v1.10 7.7·15.2를 따른다. `SEVERITY_HIGH_THRESHOLD=0.80`은 **보조 위험 신호**일 뿐 단독으로 `EQP_HOLD`를 만들지 않는다
 
   **"조치하지 않는다"의 DB 처리**: `code_action`에는 `NO_ACTION` 코드가 없으므로 새 코드를 만들지 않는다. 상류 원인으로 설명되어 하류 장비를 조치하지 않는 경우 `agent_run.recommended_action`은 `NULL`로 두고(스키마상 NULL 허용), `action_history` 생성과 `send_action()` 호출을 생략한다. 조치를 생략한 사유는 `agent_run.action_reason`과 감사로그에 기록한다. 단발 정상 복귀 하향은 위 조건을 만족한 기본 `NOTIFY`에만 적용하여 `MONITOR`로 바꾼다
 - `EQP_HOLD` HITL Interrupt
@@ -356,8 +357,8 @@ GET /documents/{document_id}
 - 조치 전송 Tool(멱등 처리)
 - n8n Webhook 연동
 - 미처리 `fdc_alarm`을 `(lot_id, chamber_id)` incident로 묶고 **incident당 대표 alarm_id 1건·agent_run 1건**으로 Agent를 실행하는 배치 트리거를 담당한다. **초기 필수 범위의 배치는 스케줄러·주기 폴링이 아니라 관리 명령을 명시적으로 1회 실행하는 방식**으로 확정하고, 자동 주기 실행은 후속 확장으로 둔다. 동일 incident에 포함된 모든 alarm_id를 같은 실행의 처리 대상으로 표시해 후속 배치에서 중복 선택되지 않게 한다. UI의 "분석 실행" 버튼에 alarm_id 1건을 전달해도 소속 incident 전체를 조회하며, 동일 데이터를 즉시 다시 실행하면 신규 Agent 실행·조치·전송이 모두 0건이어야 한다
-- `agent_run.alarm_id`에는 incident의 `occurred_at ASC, alarm_id ASC` 첫 알람을 대표로 기록하고, 포함된 전체 alarm_ids는 `agent_run_alarm`과 `agent_run.evidence_json.incident.alarm_ids` 양쪽에 보존한다(시스템설계서 v1.2 4.1)
-- 전체 51건 자동 배치는 1단계에서 모든 incident의 기본 조치·상향/하향 조건과 상하류 연결을 `BatchIncidentPlan`으로 먼저 계산하고, 2단계 Agent 실행에서 이 계획을 근거로 결합한다. 따라서 실행 순서와 관계없이 ALM-0031 결과에 같은 LOT의 상류 PHOTO LOT_HOLD 계획 근거가 포함되어야 한다(시스템설계서 v1.2 4.3)
+- `agent_run.alarm_id`에는 incident의 `occurred_at ASC, alarm_id ASC` 첫 알람을 대표로 기록하고, 포함된 전체 alarm_ids는 `agent_run_alarm`과 `agent_run.evidence_json.incident.alarm_ids` 양쪽에 보존한다(시스템설계서 v1.10 4.1)
+- 전체 51건 자동 배치는 1단계에서 모든 incident의 기본 조치·상향/하향 조건과 상하류 연결을 `BatchIncidentPlan`으로 먼저 계산하고, 2단계 Agent 실행에서 이 계획을 근거로 결합한다. 따라서 실행 순서와 관계없이 ALM-0031 결과에 같은 LOT의 상류 PHOTO LOT_HOLD 계획 근거가 포함되어야 한다(시스템설계서 v1.10 4.3)
 - Agent 실행마다 실제 사용한 모델명 `agent_run.llm_model`과 실제 처리시간 `latency_ms`를 성공·실패 모두 필수 기록한다. `latency_ms`는 LLM·Tool·코드 처리시간 합계이며 HITL 사람 대기시간은 제외한다. `input_tokens`·`output_tokens`는 제공자가 반환할 때 기록한다
 - Agent·승인·조치 이벤트 감사로그 기록
 - Classification·HITL 평가
@@ -413,9 +414,11 @@ send_action(
 
 ```http
 POST /agent/runs
+GET /agent/runs
 GET /agent/runs/{run_id}
 GET /approvals
 POST /approvals/{approval_id}/decision
+GET /actions
 GET /actions/{action_id}
 ```
 
@@ -429,7 +432,8 @@ GET /actions/{action_id}
 - Agent 실행 상태
 - Fault Code·원인·조치 표시
 - 사용된 센서·관계·문서 근거
-- 승인 대기 큐
+- 조치 목록(승인 대기 기본 필터)
+- Agent 실행 근거·승인 상세
 - 승인·반려
 - 조치 전송 결과
 
@@ -595,38 +599,38 @@ GET /audit-logs
 
 대시보드는 프로젝트 범위에 포함한다. 다만 운영 대시보드와 자연어 동적 분석을 구분한다.
 
-### 7.1 A 담당 - 운영 대시보드
+### 7.1 A 담당 - 알람 대시보드
 
-운영 대시보드는 항상 같은 기준의 고정 지표를 SQL과 규칙으로 계산한다.
+알람 대시보드는 항상 같은 기준의 고정 지표와 안정 정렬된 목록을 SQL과 규칙으로 계산한다.
 
 - 조회 기준일 알람 수
 - OOS·OOC 건수
-- 챔버별 상태
-- 계측 합격률
-- **승인 대기 건수** — 이 데이터는 C가 소유한 `approval_request`의 결과다. A는 이 값을 직접 집계하거나 승인 테이블을 재구현하지 않고, C가 제공하는 승인 조회 API(`GET /approvals` 또는 `ApprovalService`)를 그대로 호출해서 건수만 표시한다.
-- 최근 알람
+- 일자별 OOS·OOC 추이와 R03 발생 여부
+- 알람이 많은 파라미터 상위 5개
+- 설비·챔버별 알람 건수
+- **승인 대기 목록** — 이 데이터는 C가 소유한 `approval_request`의 결과다. A는 승인 테이블을 재구현하지 않고 C의 `ApprovalService.list_pending()`을 사용한다
+- 최근 알람 5건
 
 권장 API:
 
 ```http
-GET /dashboard/summary?date=2026-06-04&area=ETCH
+GET /dashboard/summary?date_from=2026-06-01&date_to=2026-06-04&area=ETCH
 ```
 
-`/dashboard/summary`가 승인 대기 건수를 포함할 경우, A의 서비스 코드 내부에서 C의 승인 조회 API(또는 공유 서비스 함수)를 호출해 값을 채운다. A와 C가 승인 집계 로직을 각자 중복 구현하지 않는다.
+`/dashboard/summary`의 승인 대기 목록은 날짜·AREA·설비·챔버 필터와 무관한 전체 PENDING이며 `requested_at DESC, approval_id DESC`로 정렬한다. A의 서비스 코드 내부에서 C의 공유 서비스 함수를 호출해 채우고, 승인 조회 로직을 중복 구현하지 않는다.
 
-대시보드의 “당일”은 시스템 오늘 날짜가 아니라 **조회 기준일**을 뜻한다. `date`와 `area`를 모두 생략하면 `fdc_alarm`의 최신 데이터 일자(배포 데이터는 `2026-06-04`)를 사용하고, `area`만 지정하면 해당 AREA에 데이터가 존재하는 최신 일자를 사용한다. API 응답에는 실제 적용한 `reference_date`를 포함한다. React 최초 진입은 AREA 전체·date 미지정으로 호출하여 알람 6건이 있는 `2026-06-04`를 표시하고, 날짜 선택기에서 배포 데이터 범위 `2026-06-01~2026-06-04`를 이동할 수 있게 한다.
+`date_from`·`date_to`를 모두 생략하면 선택한 AREA·설비·챔버 범위의 알람 최소·최대 일자를 자동 적용하고, 한쪽만 지정하면 해당 계층의 데이터 경계로 보완한다. API는 실제 적용 기간을 `date_range`, 기간 안의 최신 데이터 일자를 `reference_date`로 반환한다. React 최초 진입은 전체 계층·기간 경계를 생략하여 `2026-06-01~2026-06-04`와 51건을 표시하고, 사용자가 기간을 선택한 뒤에는 계층 필터를 바꿔도 선택 기간을 유지한다. 해당 기간에 데이터가 없으면 Empty 상태를 표시한다.
 
-사용자가 날짜를 직접 고르기 전 AREA를 변경하면 date를 생략해 해당 AREA의 최신 일자를 다시 선택한다(PHOTO `2026-06-03` 19건, ETCH `2026-06-04` 6건). 사용자가 날짜를 직접 선택한 뒤에는 AREA를 변경해도 해당 날짜를 유지하고, 데이터가 없으면 Empty 상태를 표시한다.
-
-KPI 산식은 다음으로 고정한다.
+대시보드 집계·정렬은 다음으로 고정한다.
 
 - 알람·OOS·OOC는 Asia/Seoul 기준 조회일의 `fdc_alarm` 행을 계수하고 AREA는 `dim_chamber.area_id`로 판별한다. 한 WAFER의 복수 규칙 알람도 각각 계수한다
-- 계측 PASS율은 같은 조회일·AREA의 `PASS / (PASS+FAIL) × 100`을 소수 첫째 자리로 표시한다. 날짜는 `metrology.measured_at`, AREA는 `dim_process_step.area_id`를 사용하며 분모 0이면 API는 null, 화면은 N/A로 표시한다
-- 챔버 상태는 조회 대상 AREA의 `dim_chamber` 전체를 기준으로 알람을 LEFT JOIN하여 무알람 챔버도 응답한다. `CRITICAL`(R03_CONSEC) → `ALARM`(R03 없이 OOS) → `WARNING`(OOC만) → `NORMAL`(알람 없음) 우선순위다. 전체 AREA·기본일 `2026-06-04`에는 ETC-01-C1이 `CRITICAL`, 나머지 3개 챔버가 `NORMAL`이다
+- 일자별 추이는 날짜 오름차순이며 OOS·OOC 건수와 R03_CONSEC 존재 여부를 포함한다
+- 파라미터 상위 목록은 `alarm_count DESC, sensor_id ASC` 상위 5건이다
+- 설비·챔버별 건수는 ID 오름차순으로 안정 정렬한다
 - 최근 알람은 조회일·AREA 범위의 `occurred_at DESC, alarm_id DESC` 상위 5건이다
-- 승인 대기 수는 날짜·AREA와 무관한 전체 `approval_request.status='PENDING'` 건수이며 C API 또는 공유 ApprovalService를 사용한다
+- 승인 대기 목록은 날짜·AREA와 무관한 전체 `approval_request.status='PENDING'`이며 C의 공유 ApprovalService를 사용한다
 
-운영 대시보드는 LLM을 사용하지 않는다. 운영 지표는 빠르고 일관되게 표시되어야 한다.
+알람 대시보드는 LLM을 사용하지 않는다. 계측 PASS율과 챔버 상태 카드는 이 화면의 초기 범위에서 제외하고, 필요한 추가 통계는 D의 자연어 분석 화면에서 조회한다.
 
 ### 7.2 D 담당 - 자연어 동적 분석
 
@@ -637,24 +641,23 @@ KPI 산식은 다음으로 고정한다.
 - "PHOTO 포커스 센서의 95백분위를 비교해줘."
 - "최근 10개 WAFER의 평균 압력을 선 그래프로 보여줘."
 
-React에서는 다음처럼 구성할 수 있다.
+React에서는 별도 `/analytics` 화면으로 제공하고 알람 대시보드에서 이동 링크만 제공할 수 있다.
 
 ```text
-대시보드
-├─ 운영 현황 탭 - A
-└─ 자연어 분석 탭 - D
+알람 대시보드(/dashboard) - A
+자연어 분석(/analytics)    - D
 ```
 
-기능은 분리하되 사용자 화면에서는 하나의 데이터 활용 영역으로 연결한다.
+두 기능은 계약·책임을 분리하되 공통 내비게이션으로 연결한다.
 
 ### 7.3 대시보드 우선순위
 
-대시보드는 기획 범위에 처음부터 포함하되 실제 구현은 핵심 Agent·HITL 흐름보다 우선하지 않는다. A의 운영 대시보드(고정 지표)와 D의 자연어 동적 분석(가변 질의)은 각자 자기 도메인 일정(14번 표) 안에서 독립적으로 개발되며, 5주차는 두 기능을 각각 새로 만드는 시점이 아니라 이미 완성된 두 화면을 하나의 대시보드 탭 구조로 묶는 통합 시점이다.
+대시보드는 기획 범위에 처음부터 포함하되 실제 구현은 핵심 Agent·HITL 흐름보다 우선하지 않는다. A의 알람 대시보드(고정 집계)와 D의 자연어 분석(가변 질의)은 8개 화면 계약 안에서 독립적으로 개발한다.
 
 - 1주차: KPI·필터·API 응답 스키마 확정, Mock 화면 생성
 - 2~3주차: A가 조회 API와 고정 지표 구현 / D는 자기 일정대로 자연어 분석·동적 차트 기능을 독립적으로 완성
-- 4주차: 운영 대시보드 실제 API 연결(승인 대기 건수는 C의 API를 호출)
-- 5주차: A의 운영 현황 탭과 D의 자연어 분석 탭을 대시보드 공통 UI(탭 구조)로 통합
+- 4주차: 알람 대시보드 실제 API 연결(승인 대기 목록은 C의 공유 서비스를 호출)
+- 5주차: `/dashboard`와 `/analytics`의 공통 필터·이동 흐름·디자인 통합
 - 6주차: 디자인·통합 테스트
 
 ## 8. n8n을 A에서 C로 이동한 이유
@@ -1072,7 +1075,7 @@ MCP wrapping을 포함한 도전 과제는 핵심 기능과 평가가 완료된 
 - PostgreSQL/pgvector·Neo4j·n8n·Backend·Frontend 전체 이미지의 최종 태그·digest를 시스템 설계서와 루트 Compose에 기록한다. Frontend는 Node 버전과 `frontend/package-lock.json`을 고정하고 `npm ci`로 설치한다
 - PostgreSQL Checkpoint 테이블은 배포 `01_schema.sql`을 수정하지 않고 별도 1회 초기화 절차로 생성한다. `PostgresSaver.setup()`을 애플리케이션 시작 때마다 실행하지 않으며 공용 DB 적용 전 팀 공유·멘토 확인을 거친다
 - 배포 원본 업무 스키마는 수정하지 않되, Agent 런타임용 `agent_run_alarm`·`action_delivery`·컬럼·인덱스와 Checkpoint는 C가 초안을 맡고 D는 Text2SQL 로그·계정 권한을 검토한다. 실제 migration·bootstrap 반영은 공통 통합 변경으로 4명이 함께 리뷰한다
-- 기존 공용 교육장 서버의 배포 기본 DB 자격증명·과도한 readonly 권한도 그대로 사용하지 않는다. 원본 `01_schema.sql`은 수정하지 않고 팀·멘토님께 변경 시각과 짧은 재접속 구간을 공유한 뒤, 공통 통합 담당(C)이 `kosa_app`·`kosa_readonly`·`kosa_query_logger`·`kosa_n8n_delivery`의 1회 최소권한 전환과 기존 project role 세션·pool 재시작을 수행한다. D는 readonly 16개 테이블 SELECT·logger 고정 INSERT와 각 계정의 쓰기/비허용 접근 거부를 검증한다. 비밀번호 원문은 Git·PR·문서·명령행·로그에 남기지 않으며 세부 절차는 시스템설계서 v1.2 13.2.2를 따른다
+- 기존 공용 교육장 서버의 배포 기본 DB 자격증명·과도한 readonly 권한도 그대로 사용하지 않는다. 원본 `01_schema.sql`은 수정하지 않고 팀·멘토님께 변경 시각과 짧은 재접속 구간을 공유한 뒤, 공통 통합 담당(C)이 `kosa_app`·`kosa_readonly`·`kosa_query_logger`·`kosa_n8n_delivery`의 1회 최소권한 전환과 기존 project role 세션·pool 재시작을 수행한다. D는 readonly 16개 테이블 SELECT·logger 고정 INSERT와 각 계정의 쓰기/비허용 접근 거부를 검증한다. 비밀번호 원문은 Git·PR·문서·명령행·로그에 남기지 않으며 세부 절차는 시스템설계서 v1.10 13.2.2를 따른다
 
 ### 16.3 공통 코드 관리
 
@@ -1091,12 +1094,11 @@ MCP wrapping을 포함한 도전 과제는 핵심 기능과 평가가 완료된 
 - Backend API 계약이 바뀌는 PR은 같은 PR에서 Frontend 타입·연결 코드와 `docs/` 계약 문서를 함께 갱신한다.
 - **대혁님은 최종 통합 시 release captain 역할을 맡는다.** 다만 통합 중 발견된 기능별 오류는 별도 역할로 떠안지 않고 해당 A·B·C·D 담당자가 직접 수정한다.
 
-### 16.4 상태 확인
+### 16.4 외부 서비스 장애 대응
 
-- `GET /health`: API 프로세스가 살아 있으면 외부 서비스 장애와 무관하게 200
-- `GET /health/ready`: PostgreSQL·Neo4j·n8n이 모두 준비됐을 때만 200, 하나라도 실패하면 의존성별 상태와 함께 503
-- 외부 서비스 장애가 readiness 실패로 표시되더라도 FastAPI 프로세스는 종료되지 않아야 한다
-- 공통 엔드포인트 구현과 장애 주입 검증은 4명 공동 책임이며, 기능별 장애 원인은 해당 담당자가 수정한다
+- 외부 서비스(PostgreSQL·Neo4j·n8n) 장애 중에도 FastAPI 프로세스는 종료되지 않아야 한다
+- 장애가 발생한 기능의 API만 503으로 격리하고 나머지 기능은 정상 동작한다
+- 장애 주입 검증은 4명 공동 책임이며, 기능별 장애 원인은 해당 담당자가 수정한다
 
 ## 17. 채용요건 대비 경험
 
@@ -1133,7 +1135,7 @@ MCP wrapping을 포함한 도전 과제는 핵심 기능과 평가가 완료된 
 - 최종 E2E 골든 시나리오 4건(15.1)은 4명이 공동 책임진다.
 - **공통 산출물 책임**: 각 담당자는 자신의 도메인에 대한 Tool·API 명세, 설계 내용, 테스트·평가 결과, Trouble Shooting을 직접 작성한다. 최종 요구사항 정의서·시스템 설계서·테스트 평가 결과서와 종료 산출물(사용설명서·완료보고서·실행 가이드 — 멘토 원안상 발표자료로 대체 가능)은 4명이 공동으로 통합한다.
 
-## 19. 최종 변경사항 요약 (v9.1 → v9.5)
+## 19. 최종 변경사항 요약 (v9.1 → v9.6)
 
 - Tool 반환 형식을 v9.1의 자체 제작 `{data, error, meta}` 래퍼에서 **멘토 개발 가이드 원안의 `{ok, ...필드..., reason}` 형식**으로 정정(9.2). Agent Tool의 `latency_ms`·호출 상태는 `agent_tool_call`, 독립 D Analytics 호출은 `nl_query_log`에 별도 기록
 - C의 책임에 멘토 원안의 구체적 안전장치를 명시: `AGENT_AUTONOMY_LEVEL`(1/2/3, 기본 2), `AGENT_MAX_TOOL_CALLS=8`, `AGENT_MAX_RETRY=3`
@@ -1166,7 +1168,7 @@ MCP wrapping을 포함한 도전 과제는 핵심 기능과 평가가 완료된 
 - 런타임은 incident당 agent_run 1건으로 확정하고, 동일 분류 로직의 오프라인 fdc_alarm 51개 행(FOC 22 / RFM 15 / MFD 14)을 C 평가 집합으로 분리하여 Accuracy·Macro-F1 0.80 비강제 목표를 추가. 기존 lot_history 표본 20/15/15와 구분
 - D의 잘못된 SQL 제한 재시도를 구체화: 읽기 의도의 구문·스키마·컬럼 오류만 1회 교정 재생성, 정책 위반은 즉시 거부, AST 재귀 검증
 - `(lot_id, chamber_id)` incident 전체 집계·DISTINCT wafer_no 계수·조치 1건 원칙, 전체 배치 순서와 무관한 ALM-0031 상류 근거, 즉시 재배치 신규 실행 0건 기준을 C 책임에 추가
-- 운영 대시보드 고정 KPI·필터는 A, 동적 자연어 분석은 D로 유지하고 `/health`·`/health/ready` 성공·실패 의미와 전체 이미지·Node 재현성 기준을 공통 통합에 추가
+- 운영 대시보드 고정 KPI·필터는 A, 동적 자연어 분석은 D로 유지하고 외부 서비스 장애 시 기능별 격리 기준과 전체 이미지·Node 재현성 기준을 공통 통합에 추가
 - 대시보드의 “당일”을 조회 기준일로 정정하고 date 미지정 시 최신 데이터 일자, AREA만 지정 시 해당 AREA 최신 일자를 사용하도록 확정. 배포 기본 조회일 `2026-06-04`, 최초 알람 6건, API `reference_date` 반환과 `WAITING → CANCELED` 반려 전이를 명시
 - 대시보드 KPI 산식·챔버 상태·최근 5건·PASS율 null/N/A·AREA 변경 시 자동/수동 기준일 동작을 확정하고 배포 기대값(6건·OOS 6·OOC 0·PASS 70.0%) 추가
 - IsolationForest는 fdc_alarm을 추가 생성하지 않는 것으로 확정하여 규칙 알람 51건을 유지하고, ML 알람 생성은 범위 밖으로 이동
@@ -1181,3 +1183,12 @@ MCP wrapping을 포함한 도전 과제는 핵심 기능과 평가가 완료된 
 - 단일 `bistel-final` 모노레포 아래 `backend/`·`frontend/`·`docs/`·루트 Compose 구조를 확정하고 기능 폴더별 README 의무를 제거
 - 도전 과제(MCP·Level 3 등)와 범위 밖 후속 확장(ML 알람·승인 만료 등)을 별도 절로 분리
 - A·B·C·D 역할 소유권, 각 담당자의 React 실제 연결, 대혁님의 React 공통 초안·release captain 역할은 변경하지 않음. 기능 동작·수용 기준은 요구사항정의서 v1.8을 우선 적용
+
+## 20. v9.6 정합 보정
+
+- 기능 동작·수용 기준의 우선 문서를 `요구사항정의서_v1_9_최종.md`, 구현 계약을 `시스템설계서_v1_10_최종.md`로 갱신했다.
+- 최종 UI를 8개 업무 화면으로 확정했다. A는 알람 대시보드·알람·Trace, B는 관계·문서 근거, C는 조치 목록·Agent 실행 근거·승인, D는 자연어 분석·감사로그를 맡는다.
+- A의 Trace API를 `GET /traces/catalog`와 `POST /traces/search`로 교체하고, C의 목록 API `GET /agent/runs`·`GET /actions`를 명시했다.
+- 알람 대시보드에서 계측 PASS율·챔버 상태 카드를 제외하고 일자별 추이·파라미터 상위 5개·설비별 건수·승인 대기 목록·최근 알람 5건을 제공하도록 책임을 정렬했다.
+- `/dashboard`와 `/analytics`는 별도 화면으로 유지하며 공통 내비게이션으로 연결한다. 기존의 단일 탭 통합 제안은 적용하지 않는다.
+- 역할 소유권과 난이도·강도는 변경하지 않는다. C가 가장 높은 난이도를 맡고, React 공통 골격은 방대혁이 관리하되 각 기능의 실제 연결·검증은 담당자가 수행한다.

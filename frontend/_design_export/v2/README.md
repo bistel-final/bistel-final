@@ -1,7 +1,7 @@
 # Design Handoff: BISTel FDC Anomaly Agent Platform — 화면 7종
 
 ## Overview
-반도체 FDC(Fault Detection & Classification) 이상 감지 Agent 플랫폼의 7개 화면 하이파이 디자인.
+반도체 FDC(Fault Detection & Classification) 이상 감지 Agent 플랫폼의 7개 화면 하이파이 디자인 번들이다. 최종 요구사항 v1.9의 8개 화면 중 Knowledge 화면은 이 번들 이후 추가된 범위이므로 현재 React 구현과 `docs/specifications/`를 따른다.
 알람 대시보드 → 알람 목록 → 트레이스 뷰어 → Agent 분석·승인 → 조치 목록 → 자연어 분석 → 감사로그.
 
 ## About the Design Files
@@ -80,7 +80,7 @@
 질문 입력 + 예시 칩 5개(마지막 "알람 테이블 전부 지워줘"는 적색). 생성 SQL 카드(코드 블록 + 검증 체크 5항목 + SQL 수정·재검증). 결과 카드(표/통계/차트 탭, bar 차트 PHO-01-C1 22 · ETC-01-C2 15 · ETC-01-C1 14, "PHO-01-C2 는 기간 내 알람 0건" 안내). 우측 360px 최근 질의 5건(성공 3 · 거부 2, 거부는 적색 틴트+사유). 헤더 우측 "읽기 전용 · 허용 테이블 16종".
 
 ### 07 감사로그 (`07_감사로그.dc.html`)
-필터(기간·이벤트·주체·대상 ID=APR-0001). 좌 타임라인 "APR-0001 의 이력" 6건(시각 오름차순): AGENT_RUN_STARTED 07:15:02 → APPROVAL_REQUESTED 07:21:23 → ACTION_APPROVED(HUMAN·bang) 07:31:23 → ACTION_SEND_STARTED 07:31:23 → ACTION_SENT(n8n) 07:31:43 → AGENT_RUN_COMPLETED 07:31:44. 각 카드: 이벤트명 + 주체 배지 + entity·id + before(적)→after(녹) 상태 박스 (신규 생성은 after만). 우측 360px: 이벤트 유형별 집계 9종(10·8·3·1·0·8·8·0·0, 0건은 회색 바), "이 화면이 증명하는 것" 5항목 카드(적색 보더). 헤더 우측 "append-only · 수정 · 삭제 경로 없음".
+필터(기간·이벤트·주체·대상 ID=APR-0001). 좌 타임라인은 시각 오름차순의 상태 전이를 보여준다. 최종 구현은 원본 시안의 `ACTION_APPROVED`·`ACTION_SEND_STARTED` 이름을 사용하지 않고 시스템설계서 11장의 `APPROVAL_DECIDED`·`ACTION_SENT` 등 감사 이벤트 9종을 따른다. 각 카드: 이벤트명 + 주체 배지 + entity·id + before(적)→after(녹) 상태 박스(신규 생성은 after만). 우측 360px: 이벤트 유형별 집계와 "이 화면이 증명하는 것" 5항목 카드(적색 보더). 헤더 우측 "append-only · 수정 · 삭제 경로 없음".
 
 ## Interactions & Behavior (프로토타입에 구현된 범위)
 - 사이드바 메뉴 = 화면 간 링크. 알람 행 조치 → 05, 크게 보기 → 03, 분석 보기/검토 → 04, 알람 수 → 02.

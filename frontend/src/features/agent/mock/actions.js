@@ -5,7 +5,7 @@
 export const ACTIONS = [
   {
     "action_id": "ACT-0001",
-    "agent_run_id": "RUN-20260601-0001",
+    "created_by_agent_run_id": "RUN-20260601-0001",
     "incident": {
       "lot_id": "LOT-260003",
       "chamber_id": "ETC-01-C2"
@@ -35,7 +35,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0002",
-    "agent_run_id": "RUN-20260602-0002",
+    "created_by_agent_run_id": "RUN-20260602-0002",
     "incident": {
       "lot_id": "LOT-260004",
       "chamber_id": "ETC-01-C2"
@@ -67,7 +67,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0003",
-    "agent_run_id": "RUN-20260602-0003",
+    "created_by_agent_run_id": "RUN-20260602-0003",
     "incident": {
       "lot_id": "LOT-260005",
       "chamber_id": "ETC-01-C2"
@@ -98,7 +98,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0004",
-    "agent_run_id": "RUN-20260602-0004",
+    "created_by_agent_run_id": "RUN-20260602-0004",
     "incident": {
       "lot_id": "LOT-260006",
       "chamber_id": "PHO-01-C1"
@@ -127,7 +127,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0005",
-    "agent_run_id": "RUN-20260603-0005",
+    "created_by_agent_run_id": "RUN-20260603-0005",
     "incident": {
       "lot_id": "LOT-260007",
       "chamber_id": "PHO-01-C1"
@@ -159,7 +159,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0006",
-    "agent_run_id": "RUN-20260603-0007",
+    "created_by_agent_run_id": "RUN-20260603-0007",
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "ETC-01-C1"
@@ -188,7 +188,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0007",
-    "agent_run_id": "RUN-20260603-0006",
+    "created_by_agent_run_id": "RUN-20260603-0006",
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "PHO-01-C1"
@@ -220,7 +220,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0008",
-    "agent_run_id": "RUN-20260603-0009",
+    "created_by_agent_run_id": "RUN-20260603-0009",
     "incident": {
       "lot_id": "LOT-260009",
       "chamber_id": "ETC-01-C1"
@@ -251,7 +251,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0009",
-    "agent_run_id": "RUN-20260603-0008",
+    "created_by_agent_run_id": "RUN-20260603-0008",
     "incident": {
       "lot_id": "LOT-260009",
       "chamber_id": "PHO-01-C1"
@@ -284,7 +284,7 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0010",
-    "agent_run_id": "RUN-20260604-0010",
+    "created_by_agent_run_id": "RUN-20260604-0010",
     "incident": {
       "lot_id": "LOT-260010",
       "chamber_id": "ETC-01-C1"

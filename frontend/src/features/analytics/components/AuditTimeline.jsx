@@ -3,20 +3,28 @@
 // entity_type · entity_id · before/after(dict|null) · detail
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 import StateBox from '../../../shared/components/ui/StateBox.jsx'
 import { actorVariant } from '../../../shared/components/ui/statusStyles.js'
-import EmptyState from '../../../shared/components/EmptyState.jsx'
 
-// dot 색 — 이벤트: APPROVED/SENT → green · REQUESTED → amber · 그 외 → blue
-const dotClass = (ev) =>
-  ev.includes('APPROVED') || ev.includes('SENT') ? 'bg-green' : ev.includes('REQUESTED') ? 'bg-amber' : 'bg-blue'
+const dotClass = (eventType) =>
+  eventType.includes('APPROVED') || eventType.includes('SENT')
+    ? 'bg-green'
+    : eventType.includes('REJECTED') || eventType.includes('FAILED')
+      ? 'bg-red'
+      : eventType.includes('REQUESTED')
+        ? 'bg-amber'
+        : 'bg-blue'
 
-// "MM-DD HH:mm[:ss]" — 분 단위 실측(ISO 변환 시 :00 패딩)은 초를 표기하지 않는다.
-// TODO(data): audit_log CSV로 초 단위 확보 시 패딩 판별 없이 그대로 노출.
 const fmtAt = (iso) => {
-  const [date, rest] = String(iso).split('T')
-  const time = (rest ?? '').slice(0, 8)
-  return `${date.slice(5)} ${time.endsWith(':00') ? time.slice(0, 5) : time}`
+  const [date, rest] = String(iso ?? '').split('T')
+  return date && rest ? `${date.slice(5)} ${rest.slice(0, 8)}` : '—'
+}
+
+const renderState = (value) => {
+  if (value == null) return null
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
 }
 
 function AuditTimeline({ items, title, note }) {
@@ -25,10 +33,7 @@ function AuditTimeline({ items, title, note }) {
       <CardHeader title={title} note={note} />
       {items.length === 0 ? (
         <div className="px-5 pb-5">
-          <EmptyState
-            title="조건에 맞는 감사 기록이 없습니다"
-            description="이벤트·주체·대상 ID 필터를 조정해 주세요."
-          />
+          <EmptyState title="조건에 맞는 감사 기록이 없습니다" description="이벤트·주체·대상 ID 필터를 조정해 주세요." />
         </div>
       ) : (
         <div className="flex flex-col px-5 pb-5 pt-1">
@@ -38,7 +43,6 @@ function AuditTimeline({ items, title, note }) {
                 <span className={`mt-4 h-3 w-3 flex-none rounded-full ${dotClass(e.event_type)}`} />
                 {i < items.length - 1 && <span className="mt-1 w-0.5 flex-1 bg-line" />}
               </div>
-              {/* 항목 카드 배경 — 시안 값: HUMAN 이벤트 #FBF8F8 · 그 외 #FBFCFD */}
               <div
                 className="min-w-0 flex-1 rounded-[10px] border border-line px-[18px] py-4"
                 style={{ background: e.actor_type === 'HUMAN' ? '#FBF8F8' : '#FBFCFD' }}
@@ -58,9 +62,11 @@ function AuditTimeline({ items, title, note }) {
                 </div>
                 {/* before 가 null 이면 after 만 — 사유는 응답의 detail 문구를 그대로 쓴다 */}
                 <div className="mt-3 flex flex-wrap items-center gap-3.5">
-                  {e.before && (
+                  {event.before != null && (
                     <>
-                      <StateBox tone="red">{e.before}</StateBox>
+                      <StateBox tone="red">
+                        <pre className="whitespace-pre-wrap font-mono text-[10.5px]">{renderState(event.before)}</pre>
+                      </StateBox>
                       <span className="text-g2">→</span>
                     </>
                   )}

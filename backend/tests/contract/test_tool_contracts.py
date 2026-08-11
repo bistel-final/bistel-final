@@ -36,7 +36,11 @@ WAFER = {
 SENSOR = {
     "sensor_id": "PH_FOCUS",
     "sensor_name": "Focus Offset",
+    "unit": "nm",
     "recipe_step_no": 1,
+    "point_cnt": 3,
+    "ooc_point_cnt": 0,
+    "oos_point_cnt": 1,
     "judgement": Judgement.OOS,
 }
 
@@ -70,6 +74,14 @@ class TestSuccessContract:
 
         assert isinstance(result.anomaly_score, float)
         assert len(result.sensors) == 2
+
+    @pytest.mark.parametrize(
+        "field",
+        ["point_cnt", "ooc_point_cnt", "oos_point_cnt"],
+    )
+    def test_sensor_counts_are_nonnegative(self, field: str) -> None:
+        with pytest.raises(ValidationError):
+            _fdc_success(sensors=[{**SENSOR, field: -1}])
 
 
 class TestSuccessRequiresResult:

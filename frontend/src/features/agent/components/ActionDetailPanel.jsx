@@ -4,10 +4,17 @@ import { getAction, getRun } from '../../../shared/api/agent.js'
 import { fmtDateTime } from '../../../shared/api/format.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
 
-const SEND_LABEL = { WAITING: '전송 대기', SENDING: '전송 중', SENT: '전송 완료', FAILED: '전송 실패' }
+const SEND_LABEL = {
+  WAITING: '전송 대기',
+  SENDING: '전송 중',
+  SENT: '전송 완료',
+  FAILED: '전송 실패',
+  CANCELED: '전송 취소',
+}
 
 // 값이 없으면 창작하지 않고 "—" 로 표기한다 (규칙: 데이터 창작 금지)
 const DASH = '—'
@@ -35,8 +42,8 @@ function ActionDetailPanel({ actionId }) {
     getAction(actionId)
       .then((data) =>
         // 런 조회가 실패해도 조치 상세는 그대로 보여준다 — 원인 분류만 "—"로 떨어진다
-        data?.agent_run_id
-          ? getRun(data.agent_run_id).then(
+        data?.created_by_agent_run_id
+          ? getRun(data.created_by_agent_run_id).then(
               (run) => ({ data, run }),
               () => ({ data, run: null }),
             )
@@ -65,6 +72,8 @@ function ActionDetailPanel({ actionId }) {
         }}
       />
     )
+  if (!action && detail?.id === actionId)
+    return <EmptyState title="해당 조치를 찾을 수 없습니다" description={actionId} />
   if (!action) return <LoadingState message="조치 상세를 불러오는 중…" />
 
   // GET /agent/runs/{id} 응답 그대로 — 값이 없으면 창작하지 않고 "—" 카드로 떨어진다
@@ -78,8 +87,8 @@ function ActionDetailPanel({ actionId }) {
           <span className="font-mono font-bold text-navy">{action.action_id}</span>
         </Field>
         <Field label="Agent 런">
-          <Link to={`/agent-runs/${action.agent_run_id}`} className="font-mono font-bold">
-            {action.agent_run_id}
+          <Link to={`/agent-runs/${action.created_by_agent_run_id}`} className="font-mono font-bold">
+            {action.created_by_agent_run_id}
           </Link>
         </Field>
         <Field label="LOT · 챔버">
@@ -113,7 +122,7 @@ function ActionDetailPanel({ actionId }) {
         </Field>
       </div>
 
-      {fault ? (
+      {action.reason ? (
         <div className="rounded-lg border border-line bg-white px-3.5 py-3">
           <div className="flex items-center gap-2">
             <Badge variant="t-blue">{fault.code}</Badge>
@@ -126,25 +135,14 @@ function ActionDetailPanel({ actionId }) {
         <div className="text-[12.5px] font-semibold text-g2">원인 분류 {DASH}</div>
       )}
 
-      <div>
-        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] font-bold text-g1">
-          <span>연관 알람</span>
-          <span className="font-mono font-extrabold text-navy">{action.alarm_count}건</span>
-          <Link to={`/alarms?alarms=${action.alarm_ids.join(',')}`} className="ml-1 font-sans text-xs font-bold">
-            알람 목록에서 보기 →
+      <div className="flex items-center gap-2 text-[12.5px] font-bold text-g1">
+        <span>incident 알람</span>
+        <span className="font-mono font-extrabold text-navy">{action.alarm_count}건</span>
+        {action.created_by_agent_run_id && (
+          <Link to={`/agent-runs/${action.created_by_agent_run_id}`} className="ml-1 font-sans text-xs font-bold">
+            생성 실행에서 보기 →
           </Link>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {action.alarm_ids.map((id) => (
-            <Link
-              key={id}
-              to={`/alarms/${id}`}
-              className="rounded-md border border-line bg-white px-2 py-[3px] font-mono text-[11.5px] font-bold text-g1 hover:border-blue hover:text-blue"
-            >
-              {id}
-            </Link>
-          ))}
-        </div>
+        )}
       </div>
     </div>
   )

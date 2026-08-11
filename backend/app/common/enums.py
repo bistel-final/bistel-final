@@ -47,13 +47,6 @@ class Severity(StrEnum):
     HIGH = "HIGH"
 
 
-class ChamberStatus(StrEnum):
-    NORMAL = "NORMAL"
-    WARNING = "WARNING"
-    ALARM = "ALARM"
-    CRITICAL = "CRITICAL"
-
-
 class ToolCallStatus(StrEnum):
     SUCCESS = "SUCCESS"
     ERROR = "ERROR"
