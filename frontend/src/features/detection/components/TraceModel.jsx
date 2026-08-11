@@ -1,6 +1,10 @@
 // 트레이스 뷰어 파생 로직 — 순수 함수만 모아둔 파일 (컴포넌트 없음)
 //
+<<<<<<< Updated upstream
 // 데이터 출처는 GET /traces/catalog · POST /traces/search · GET /alarms 뿐이다. 값 창작 금지:
+=======
+// 데이터 출처는 getTraceCatalog() / searchTraces() / getAlarms()뿐이다. 값 창작 금지:
+>>>>>>> Stashed changes
 // 없는 수치는 null 로 돌려주고 화면에서 "실측 미제공"으로 표기한다.
 //
 // 한계선은 센서별로 다르다. 전역 상수를 두지 말고 반드시 search 응답의 limits[sensor_id]
@@ -214,8 +218,9 @@ export function selectRows(rows, f, sensor) {
         r.lot_id === f.lot &&
         (sensor ? r.sensor_id === sensor : f.sensors.includes(r.sensor_id)) &&
         f.wafers.includes(r.wafer_no) &&
-        dateOf(r.occurred_at) >= f.from &&
-        dateOf(r.occurred_at) <= f.to,
+        // 기간 미지정은 무제한이다. 빈 문자열과 비교하면 `<= ''` 가 항상 거짓이라 전부 걸러진다.
+        (!f.from || dateOf(r.occurred_at) >= f.from) &&
+        (!f.to || dateOf(r.occurred_at) <= f.to),
     )
     .sort((a, b) => msOf(a.occurred_at) - msOf(b.occurred_at) || numAsc(a.wafer_no, b.wafer_no))
 }

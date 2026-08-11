@@ -3,8 +3,13 @@
 //   {question, sql, columns, rows(dict[]), row_count, metric, metric_result, group_by, visualization, latency_ms}
 // 거부 응답은 {question, rejected, reason, latency_ms} 뿐이다 (sql·rows 없음).
 import { useEffect, useMemo, useRef, useState } from 'react'
+<<<<<<< Updated upstream
 import { postQuery, validateSql } from '../../../shared/api/analytics.js'
 import { NL_CHIPS, NL_INITIAL_HISTORY } from '../mock/queries.js'
+=======
+import { getQueryHistory, postQuery, validateSql } from '../../../shared/api/analytics.js'
+import { NL_CHIPS, NL_REJECT_REASONS } from '../mock/queries.js'
+>>>>>>> Stashed changes
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -16,6 +21,7 @@ import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 // 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
 
+<<<<<<< Updated upstream
 // reason 은 "POLICY_REJECTED: 사유" 형태다 — 접두어는 배지로, 뒤 문장은 사유로 나눠 쓴다
 const reasonCode = (reason) => String(reason ?? '').split(':')[0].trim()
 const reasonText = (reason) => String(reason ?? '').split(':').slice(1).join(':').trim() || String(reason ?? '')
@@ -26,6 +32,9 @@ const yColumnOf = (d) => {
   const y = d?.visualization?.y
   return columns.includes(y) ? y : columns[columns.length - 1]
 }
+=======
+const rejectReason = (code) => NL_REJECT_REASONS[code] ?? code ?? NL_REJECT_REASONS.REJECT_NON_SELECT
+>>>>>>> Stashed changes
 
 // 단계 진행 표시 카드 (SQL 생성 / 쿼리 실행)
 function PhaseCard({ label, note }) {
@@ -46,7 +55,8 @@ function AnalyticsPage() {
   const [phase, setPhase] = useState(null) // gen | unknown | rejected | run | done
   const [tab, setTab] = useState('table')
   const [sortAsc, setSortAsc] = useState(false)
-  const [history, setHistory] = useState(NL_INITIAL_HISTORY)
+  const [history, setHistory] = useState([])
+  const [queryError, setQueryError] = useState(null)
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
   const [editing, setEditing] = useState(false)
@@ -57,6 +67,20 @@ function AnalyticsPage() {
 
   useEffect(() => {
     const t = timers.current
+    getQueryHistory({ size: 5 })
+      .then((response) =>
+        setHistory(
+          response.items.map((item) => ({
+            q: item.question,
+            ok: !item.is_rejected && item.is_valid,
+            rows: item.row_cnt ?? 0,
+            lat: item.latency_ms ?? 0,
+            code: item.reject_reason,
+            reason: item.reject_reason,
+          })),
+        ),
+      )
+      .catch(() => setHistory([]))
     return () => t.forEach(clearTimeout)
   }, [])
   const after = (ms, fn) => timers.current.push(setTimeout(fn, ms))
@@ -71,6 +95,7 @@ function AnalyticsPage() {
   // SQL 생성 직후 1회 자동 검증 (useEffect 아님 — 응답 콜백에서 수행)
   const verify = (sql, notice) => {
     setValidating(true)
+<<<<<<< Updated upstream
     validateSql(sql).then((res) => {
       setValidating(false)
       setValidation({ valid: res.valid, reason: res.reason ?? '', checks: res.checks ?? [] })
@@ -80,6 +105,19 @@ function AnalyticsPage() {
         after(2600, () => setVerifyNotice(null))
       }
     })
+=======
+    validateSql(sql)
+      .then((res) => {
+        setChecks(res.checks ?? [])
+        if (notice) {
+          const failed = (res.checks ?? []).filter((c) => !c.ok).length
+          setVerifyNotice(res.valid ? { ok: true, text: '재검증 통과' } : { ok: false, text: `재검증 실패 ${failed}건` })
+          after(2600, () => setVerifyNotice(null))
+        }
+      })
+      .catch((requestError) => setQueryError(requestError.message))
+      .finally(() => setValidating(false))
+>>>>>>> Stashed changes
   }
 
   const ask = (q) => {
@@ -94,6 +132,7 @@ function AnalyticsPage() {
     setEditing(false)
     setValidation(null)
     setVerifyNotice(null)
+<<<<<<< Updated upstream
     postQuery(query).then((d) => {
       // mock에 없는 질문: 이력에 남기지 않고 안내 카드로 예시 칩 사용 유도
       if (!d) {
@@ -120,9 +159,37 @@ function AnalyticsPage() {
               reason: null,
             })
           })
+=======
+    setQueryError(null)
+    postQuery(query)
+      .then((d) => {
+        if (!d) {
+          setPhase('unknown')
+          return
+>>>>>>> Stashed changes
         }
+        after(400, () => {
+          if (d.is_rejected) {
+            const code = d.reject_reason ?? 'REJECT_NON_SELECT'
+            setRejectCode(code)
+            setPhase('rejected')
+            pushHistory({ q: query, ok: false, rows: 0, lat: d.latency_ms ?? 0, code, reason: code })
+          } else {
+            setDef(d)
+            setSqlText(d.sql)
+            setPhase('run')
+            verify(d.sql, false)
+            after(800, () => {
+              setPhase('done')
+              pushHistory({ q: query, ok: true, rows: d.row_count ?? d.rows?.length ?? 0, lat: d.latency_ms ?? 0 })
+            })
+          }
+        })
       })
-    })
+      .catch((requestError) => {
+        setQueryError(requestError.message)
+        setPhase(null)
+      })
   }
 
   const reverify = () => {
@@ -138,24 +205,50 @@ function AnalyticsPage() {
   // rows 는 객체 배열이다 — 정렬 키는 컬럼명으로 접근한다
   const sortKey = yColumnOf(def)
   const rows = useMemo(() => {
+<<<<<<< Updated upstream
     const list = def?.rows ?? []
     if (!sortKey || list.length < 2) return list
     if (!list.every((r) => typeof r[sortKey] === 'number')) return list
     return [...list].sort((a, b) => (sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
   }, [def, sortAsc, sortKey])
+=======
+    if (!def || !def.rows) return []
+    const yKey = def.visualization?.y ?? def.columns?.at(-1)
+    if (!yKey) return def.rows
+    return [...def.rows].sort((a, b) =>
+      sortAsc ? Number(a[yKey]) - Number(b[yKey]) : Number(b[yKey]) - Number(a[yKey]),
+    )
+  }, [def, sortAsc])
+>>>>>>> Stashed changes
 
   // 0건 그룹 각주 — 그룹 컬럼 값이 전부 챔버 ID일 때만 계산
   const footnote = useMemo(() => {
     const list = def?.rows ?? []
+<<<<<<< Updated upstream
     const key = def?.visualization?.x ?? def?.group_by?.[0] ?? def?.columns?.[0]
     if (!key || list.length === 0) return null
     if (!list.every((r) => ALL_CHAMBERS.includes(r[key]))) return null
     const missing = ALL_CHAMBERS.filter((c) => !list.some((r) => r[key] === c))
+=======
+    if (list.length === 0) return null
+    const firstColumn = def?.columns?.[0]
+    if (!firstColumn || !list.every((row) => ALL_CHAMBERS.includes(row[firstColumn]))) return null
+    const missing = ALL_CHAMBERS.filter((chamber) => !list.some((row) => row[firstColumn] === chamber))
+>>>>>>> Stashed changes
     if (missing.length === 0) return null
     return `${missing.join(', ')}는 기간 내 알람 0건이라 결과에 나오지 않는다`
   }, [def])
 
+<<<<<<< Updated upstream
   const hasSql = (phase === 'run' || phase === 'done') && def && !def.rejected
+=======
+  const historyItems = useMemo(
+    () => history.map((h) => (h.ok ? h : { ...h, reason: h.reason ?? rejectReason(h.code) })),
+    [history],
+  )
+
+  const hasSql = (phase === 'run' || phase === 'done') && def && !def.is_rejected
+>>>>>>> Stashed changes
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -222,6 +315,10 @@ function AnalyticsPage() {
       <div className="mt-[18px] flex items-start gap-5">
         <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
           {phase === 'gen' && <PhaseCard label="SQL 생성 중…" note="1/2 단계 · LLM API 스키마 매핑" />}
+
+          {queryError && (
+            <EmptyState title="질의를 처리하지 못했습니다" description={queryError} />
+          )}
 
           {phase === 'unknown' && (
             <EmptyState

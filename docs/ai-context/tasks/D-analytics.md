@@ -1,7 +1,7 @@
 # D — Analytics
 
-> 기준 요구사항: v1.8 / 시스템설계서: v1.2 / 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 > 담당: 천승현 · 모듈 `backend/app/analytics/` · `frontend/src/features/analytics/`
 
 Text2SQL 자연어 질의, SQL 안전장치, 통계·동적 차트, 감사로그 조회 화면, Text2SQL 평가를 책임진다.
@@ -67,6 +67,8 @@ lot_history  fdc_trace  fdc_summary  fdc_alarm  metrology  action_history
 `agent_run`·`approval_request`·`audit_log`·`document*`·`checkpoint*`·`action_delivery`·시스템 카탈로그는 **불허**.
 해당 질문은 `POLICY_REJECTED`로 끝내고 전용 화면/API를 안내한다.
 
+Tool 경계는 `{ok:false, reason:"POLICY_REJECTED: ..."}`를 유지한다. REST `POST /analytics/query`는 정책 거부를 HTTP 200 + `is_valid=false`, `is_rejected=true`, `reject_reason`으로 반환하고 SQL을 실행하지 않는다. 요청 body 누락·타입·길이 오류만 422다.
+
 ---
 
 ## sqlglot 검증 순서 (12단계 — 순서를 바꾸지 않는다)
@@ -121,8 +123,10 @@ lot_history  fdc_trace  fdc_summary  fdc_alarm  metrology  action_history
 ```http
 POST /analytics/query        {question}
 POST /analytics/validate     {sql}   검증만, 실행하지 않음
+GET  /analytics/history      is_valid?, is_rejected?, date_from?, date_to?, page, size
 GET  /analytics/evaluations  latest=true, page, size
-GET  /audit-logs             event_type?, actor_type?, date_from?, date_to?, page, size
+GET  /audit-logs             event_type?, actor_type?, entity_type?, entity_id?,
+                             date_from?, date_to?, page, size
 ```
 
 | 경로 | 내용 |
@@ -131,7 +135,7 @@ GET  /audit-logs             event_type?, actor_type?, date_from?, date_to?, pag
 | `/audit-logs` | 기간·이벤트·주체 필터, 이벤트 수 통계, before/after 펼침 |
 
 `event_type_counts`는 현재 페이지가 아니라 **동일 필터 전체 결과의 집계**다.
-정책 거부와 실행 오류를 화면에서 구분 표시한다.
+정책 거부(HTTP 200 구조화 응답)와 실행 오류를 화면에서 구분 표시한다. `POST /analytics/query`는 요청별 `timeout=150000ms`를 써서 LLM 최대 2회 시도를 지원한다.
 
 ---
 

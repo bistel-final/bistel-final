@@ -1,9 +1,9 @@
 # AI 작업 문서
 
-> 기준 요구사항: v1.8
-> 기준 시스템설계서: v1.2
-> 기준 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9
+> 기준 시스템설계서: v1.10
+> 기준 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 
 이 폴더는 AI 코딩 도구(Claude Code · Codex 등)와 팀원이 **빠르게 문맥을 잡기 위한 요약본**이다.
 원본은 `docs/specifications/` 이며, 세 문서 합계가 약 137K 토큰이라 통째로 읽히지 않는다.
@@ -15,9 +15,9 @@
 충돌하면 위쪽이 이긴다.
 
 ```
-1. docs/specifications/요구사항정의서_v1_8_최종.md      기능 동작·상태 전이·수용 기준
-2. docs/specifications/시스템설계서_v1_2_최종.md        구현 구조·DTO·트랜잭션
-3. docs/specifications/FDC_프로젝트_역할분담_v9.5(최종).md  역할·Tool 소유권
+1. docs/specifications/요구사항정의서_v1_9_최종.md       기능 동작·상태 전이·수용 기준
+2. docs/specifications/시스템설계서_v1_10_최종.md        구현 구조·DTO·트랜잭션
+3. docs/specifications/FDC_프로젝트_역할분담_v9.6(최종).md  역할·Tool 소유권
 4. docs/ai-context/**                                   요약·작업 지침
 5. 코드
 ```
@@ -76,7 +76,7 @@ docs/ai-context/01-project-rules.md  강제 규칙
 | Fault 분류·오프라인 평가 | 설계 7.6 · 요구사항 FR-C-15 |
 | Text2SQL 검증·실행 | 설계 9.2~9.5 · 요구사항 9.2 |
 | 골드 질문셋 | 요구사항 9.1 |
-| API DTO | 설계 10.1~10.5 |
+| API DTO·엔드포인트 명세 | 설계 10.1~10.5 · `../deliverables/api/API명세서.md` |
 | Tool 5종 계약 | 설계 10.6 · 요구사항 6장 |
 | 감사로그 이벤트 9종 | 설계 11장 · 요구사항 11.1 |
 | React 화면·라우트 | 설계 12.1~12.2 |
@@ -93,9 +93,9 @@ docs/ai-context/01-project-rules.md  강제 규칙
 | `01-project-rules.md` | 강제 규칙 · 계층 · Tool/REST 계약 · 예산 · DB 접근 · Git | 전원 |
 | `02-domain-rules.md` | FDC 도메인 · **불변 수치** · 판정/조치 규칙 · Fault Code | 전원 |
 | `03-database-rules.md` | 원본 스키마 보존 · migration · ID·시간 · 계정 권한 | 전원 |
-| `04-api-tool-contracts.md` | API 목록 · Tool 5종 · DTO · health | 전원 |
+| `04-api-tool-contracts.md` | API 목록 · Tool 5종 · DTO | 전원 |
 | `05-agent-workflow.md` | State · Node · 배치 · 승인 · 전송 · 복구 · 감사 | C |
-| `06-frontend-guide.md` | 7화면 · 라우트 · 상태 원칙 · polling · 실행 | 전원 |
+| `06-frontend-guide.md` | 8화면 · 라우트 · 상태 원칙 · polling · 실행 | 전원 |
 | `07-testing-guide.md` | 테스트 계층 · 실행 · E2E 격리 · 평가 artifact | 전원 |
 | `PROMPT_TEMPLATE.md` | 도구 무관 요청 양식 | 전원 |
 | `tasks/*.md` | 역할별 범위 · 요구사항 ID · 완료 기준 | 각 담당자 |

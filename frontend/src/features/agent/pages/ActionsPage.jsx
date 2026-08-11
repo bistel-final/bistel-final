@@ -34,9 +34,20 @@ import {
 } from '../../../shared/components/ui/statusStyles.js'
 
 const ALL = '전체'
+<<<<<<< Updated upstream
 const PAGE_SIZE = 20
 // 탭 배지용 조회 — 같은 필터의 전체 집합을 한 번 받아 다섯 탭을 센다 (건수 하드코딩 금지)
 const COUNT_SIZE = 500
+=======
+const SEND_VARIANT = { WAITING: 't-amber', SENDING: 't-blue', SENT: 't-green', FAILED: 't-red', CANCELED: 't-gray' }
+
+// 탭 판정 — 승인 대기만 approval_status, 나머지는 send_status 기준 (명세)
+const matchTab = (a, key) =>
+  key === 'ALL' ? true : key === 'PENDING' ? a.approval_status === 'PENDING' : a.send_status === key
+
+// 공정은 챔버 ID 앞 세그먼트(ETC·PHO)로 유도한다 — incident 외 값 창작 없음
+const areaOf = (a) => a.incident.chamber_id.split('-')[0]
+>>>>>>> Stashed changes
 
 const HEADERS = ['조치', 'incident', '파라미터', '조치 코드', '심각도', '승인', '전송', '알람', '시각', '']
 
@@ -70,6 +81,7 @@ function ActionsPage() {
   // 탭·필터가 바뀌면 load가 새로 만들어져 useEffect가 다시 돈다.
   // setState는 전부 then/catch 안에서만 호출한다 (react-hooks/set-state-in-effect)
   const load = useCallback(() => {
+<<<<<<< Updated upstream
     Promise.all([
       getActions({ ...filterParams, ...tabParams(tab), page, size: PAGE_SIZE }),
       getActions({ ...filterParams, page: 1, size: COUNT_SIZE }),
@@ -88,6 +100,10 @@ function ActionsPage() {
         setCatalog(cat)
         setCodes([...new Set(all.items.map((a) => a.action_code))])
       })
+=======
+    getActions({ size: 100 })
+      .then((res) => setActions(res.items))
+>>>>>>> Stashed changes
       .catch((e) => setError(e.message))
   }, [])
 
@@ -269,7 +285,13 @@ function ActionsPage() {
                     isOpen={isOpen}
                     isPending={isPending}
                     onToggle={() => toggleOpen(a.action_id)}
+<<<<<<< Updated upstream
                     onReview={() => navigate(`/agent-runs/${a.agent_run_id}`)}
+=======
+                    onReview={() =>
+                      a.created_by_agent_run_id && navigate(`/agent-runs/${a.created_by_agent_run_id}`)
+                    }
+>>>>>>> Stashed changes
                   />
                 )
               })}
@@ -297,6 +319,7 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
         <td className={TD_CLS}>
           <div className={CELL_ID}>{a.action_id}</div>
           <div className="mt-[3px]">
+<<<<<<< Updated upstream
             <Link
               to={`/agent-runs/${a.agent_run_id}`}
               onClick={(e) => e.stopPropagation()}
@@ -304,6 +327,19 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
             >
               상세 →
             </Link>
+=======
+            {a.created_by_agent_run_id ? (
+              <Link
+                to={`/agent-runs/${a.created_by_agent_run_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="font-mono text-[10.5px]"
+              >
+                생성 실행 →
+              </Link>
+            ) : (
+              <span className="font-mono text-[10.5px] text-g2">legacy</span>
+            )}
+>>>>>>> Stashed changes
           </div>
         </td>
         <td className={TD_CLS}>
@@ -323,21 +359,28 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           </span>
         </td>
         <td className={TD_CLS}>
-          {a.send_status === 'SENT' ? <Badge variant="t-green">SENT</Badge> : <span className="text-g2">—</span>}
+          {a.send_status ? (
+            <Badge variant={SEND_VARIANT[a.send_status] ?? 't-gray'}>{a.send_status}</Badge>
+          ) : (
+            <span className="text-g2">—</span>
+          )}
         </td>
         <td className={TD_CLS}>
-          {/* 알람 N건 → 해당 알람들만 필터된 알람 목록으로 이동 */}
-          <Link
-            to={`/alarms?alarms=${a.alarm_ids.join(',')}`}
-            onClick={(e) => e.stopPropagation()}
-            className={`${CELL_MONO} font-bold`}
-          >
-            {a.alarm_count ?? a.alarm_ids.length}건
-          </Link>
+          {a.created_by_agent_run_id ? (
+            <Link
+              to={`/agent-runs/${a.created_by_agent_run_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className={`${CELL_MONO} font-bold`}
+            >
+              {a.alarm_count}건
+            </Link>
+          ) : (
+            <span className={`${CELL_MONO} font-bold`}>{a.alarm_count}건</span>
+          )}
         </td>
         <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.created_at)}</td>
         <td className={`${TD_CLS} text-right`}>
-          {isPending && (
+          {isPending && a.created_by_agent_run_id && (
             <Button
               sm
               onClick={(e) => {

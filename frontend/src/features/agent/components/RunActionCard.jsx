@@ -4,6 +4,7 @@ import { severityClass } from '../../../shared/components/ui/statusStyles.js'
 // 조치 코드 solid 배지 — EQP_HOLD 적 · LOT_HOLD 황 · MONITOR 녹 (상태→색 매핑 고정)
 const CODE_VARIANT = { EQP_HOLD: 'bg-red', LOT_HOLD: 'bg-amber', MONITOR: 'bg-green' }
 
+<<<<<<< Updated upstream
 // 권고 조치 섹션 — t-amber 톤 박스. 값은 run 응답의 recommended_action · severity · action_reason
 function RunActionCard({ run, consec, rules }) {
   const code = run?.recommended_action ?? null
@@ -14,6 +15,11 @@ function RunActionCard({ run, consec, rules }) {
       : rules?.length
         ? `근거 ${rules.map((r) => `${r.rule_id} ×${r.count}`).join(' · ')}`
         : '근거 룰 실측 미제공'
+=======
+// 권고 조치 섹션 — t-amber 톤 박스. 근거 문구는 알람 실측(R03 hit_cnt 등)에서 유도한다
+function RunActionCard({ action, reason }) {
+  const basis = reason ?? action?.reason ?? '조치 근거가 제공되지 않았습니다.'
+>>>>>>> Stashed changes
 
   return (
     <div>

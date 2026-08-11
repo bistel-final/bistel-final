@@ -19,9 +19,23 @@ export const actorVariant = (ac) => (ac === 'AGENT' ? 'bg-navy' : ac === 'HUMAN'
 export const severityClass = (sev) =>
   sev === 'HIGH' ? 'text-red' : sev === 'MEDIUM' ? 'text-amber' : 'text-g1'
 
-// 승인 상태 텍스트: 승인 대기 적 · 승인됨 녹 · 자동 회색
-export const approvalLabel = (s) => (s === 'PENDING' ? '승인 대기' : s === 'APPROVED' ? '승인됨' : '자동')
-export const approvalClass = (s) => (s === 'PENDING' ? 'text-red' : s === 'APPROVED' ? 'text-green' : 'text-g1')
+// 승인 상태 텍스트: API enum 전체를 빠짐없이 표시한다.
+const APPROVAL_LABELS = {
+  AUTO: '자동',
+  PENDING: '승인 대기',
+  APPROVED: '승인됨',
+  REJECTED: '반려됨',
+  EXPIRED: '만료됨',
+}
+export const approvalLabel = (status) => APPROVAL_LABELS[status] ?? status ?? '—'
+export const approvalClass = (status) =>
+  status === 'PENDING'
+    ? 'text-red'
+    : status === 'APPROVED'
+      ? 'text-green'
+      : status === 'REJECTED' || status === 'EXPIRED'
+        ? 'text-red'
+        : 'text-g1'
 
 // .tbl 대응 공통 클래스 (fdc.css)
 export const TH_CLS = 'whitespace-nowrap border-b border-line px-3 py-2.5 text-left text-[11px] font-semibold text-g1'

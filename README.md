@@ -18,20 +18,20 @@ PHOTO·ETCH 2개 AREA의 센서 데이터(FDC trace)를 WAFER 단위로 요약�
 
 ```text
 backend/    FastAPI · AI · Tool · 마이그레이션 · 운영 스크립트
-frontend/   React 데이터 플랫폼 (7화면)
+frontend/   React 데이터 플랫폼 (8화면)
 infra/      bootstrap · nginx · n8n workflow          (미생성)
 docs/       사양 원본과 AI 작업 문서
 ```
 
-`infra/`를 비롯한 일부 디렉터리는 해당 산출물이 생기는 시점에 만듭니다. 전체 목표 구조는 [시스템 설계서 2.1](docs/specifications/시스템설계서_v1_2_최종.md)을 따릅니다.
+`infra/`를 비롯한 일부 디렉터리는 해당 산출물이 생기는 시점에 만듭니다. 전체 목표 구조는 [시스템 설계서 2.1](docs/specifications/시스템설계서_v1_10_최종.md)을 따릅니다.
 
 ## 문서
 
 **원본 사양** — 기능 동작·수용 기준의 최종 근거
 
-- [요구사항 정의서 v1.8](docs/specifications/요구사항정의서_v1_8_최종.md)
-- [시스템 설계서 v1.2](docs/specifications/시스템설계서_v1_2_최종.md)
-- [역할분담 v9.5](docs/specifications/FDC_프로젝트_역할분담_v9.5\(최종\).md)
+- [요구사항 정의서 v1.9](docs/specifications/요구사항정의서_v1_9_최종.md)
+- [시스템 설계서 v1.10](docs/specifications/시스템설계서_v1_10_최종.md)
+- [역할분담 v9.6](docs/specifications/FDC_프로젝트_역할분담_v9.6\(최종\).md)
 
 **작업 문서**
 
@@ -39,6 +39,19 @@ docs/       사양 원본과 AI 작업 문서
 - [강제 규칙](docs/ai-context/01-project-rules.md) — 계약·보안·계층·예산
 - [도메인 규칙과 불변 수치](docs/ai-context/02-domain-rules.md)
 - [개발 규칙](docs/development-guide.md) — Git · PR · 테스트 실행
+
+**API 산출물**
+
+- [API 명세서 Markdown](docs/deliverables/api/API명세서.md) — 검색·리뷰용
+- [API 명세서 CSV](docs/deliverables/api/API명세서.csv) — 표 편집·검토용
+- [API 명세서 PDF](docs/deliverables/api/API명세서.pdf) — 제출·회람용
+- 세 형식은 `docs/deliverables/api/build_api_spec.py`에서 함께 생성합니다.
+
+**제출용 PDF** — 원본 사양 md에 아키텍처·화면 그림을 얹어 만든 최종 제출본
+
+- [시스템 설계서 PDF](docs/deliverables/system-design/시스템설계서.pdf) — `build.py`가 그림 11종을 얹어 생성
+- [요구사항 정의서 PDF](docs/deliverables/requirements-spec/요구사항정의서.pdf) — `build.py`가 그림·실제 화면 캡처 10종을 얹어 생성
+- 두 스크립트 모두 원본 md는 고치지 않습니다. 그림은 렌더링 단계에서만 끼워 넣습니다(`docs/deliverables/_shared/doc_pdf.py`).
 
 AI 코딩 도구는 `CLAUDE.md`(Claude Code)와 `AGENTS.md`(Codex)를 통해 위 문서로 진입합니다.
 

@@ -1,39 +1,52 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+<<<<<<< Updated upstream
 import { getAction, getApprovals, getRun } from '../../../shared/api/agent.js'
 import { getAlarms, searchTraces } from '../../../shared/api/detection.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+=======
+import { getRun } from '../../../shared/api/agent.js'
+>>>>>>> Stashed changes
 import EmptyState from '../../../shared/components/EmptyState.jsx'
-import RunContextBar from '../components/RunContextBar.jsx'
-import RunVerdictCard from '../components/RunVerdictCard.jsx'
+import ErrorState from '../../../shared/components/ErrorState.jsx'
+import LoadingState from '../../../shared/components/LoadingState.jsx'
 import RunActionCard from '../components/RunActionCard.jsx'
 import RunApprovalCard from '../components/RunApprovalCard.jsx'
-import RunTransitionCard from '../components/RunTransitionCard.jsx'
-import RunToolCallsCard from '../components/RunToolCallsCard.jsx'
+import RunContextBar from '../components/RunContextBar.jsx'
 import RunEvidencePanel from '../components/RunEvidencePanel.jsx'
 import RunToast from '../components/RunToast.jsx'
+import RunToolCallsCard from '../components/RunToolCallsCard.jsx'
+import RunTransitionCard from '../components/RunTransitionCard.jsx'
+import RunVerdictCard from '../components/RunVerdictCard.jsx'
 
+const POLL_MS = 2000
 const TOAST_MS = 5000
+<<<<<<< Updated upstream
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
 // 근거 카드 ②④ 는 incident 밖 알람까지 훑는다 — GET /alarms 에 alarm_ids 파라미터가 없어 넓게 받는다
 // TODO(api): alarm_ids 필터 파라미터 미정의
 const ALARM_SCAN_SIZE = 200
+=======
+const POLL_STATUSES = new Set(['RUNNING'])
+>>>>>>> Stashed changes
 
-// Agent 분석 · 승인 (디자인 v2) — 네이비 헤더 바 · 좌 360px 판정 컬럼 · 우 근거 카드 5개
 function AgentRunPage() {
   const { runId } = useParams()
-  const [data, setData] = useState(null)
+  const [run, setRun] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
   const [decided, setDecided] = useState(null)
+  const timerRef = useRef(null)
 
-  const showToast = useCallback((t) => {
-    const next = { ...t }
+  const showToast = useCallback((value) => {
+    const next = { ...value }
     setToast(next)
-    window.setTimeout(() => setToast((cur) => (cur === next ? null : cur)), TOAST_MS)
+    window.setTimeout(() => setToast((current) => (current === next ? null : current)), TOAST_MS)
   }, [])
 
+<<<<<<< Updated upstream
   // 로더는 useCallback으로 감싸고 useEffect에서는 호출만 한다 (effect 본문 setState 금지)
   const load = useCallback(() => {
     getRun(runId)
@@ -75,11 +88,27 @@ function AgentRunPage() {
       })
       .catch((e) => setError(e.message))
   }, [runId, showToast])
+=======
+  const load = useCallback(
+    ({ quiet = false } = {}) =>
+      getRun(runId)
+        .then((next) => {
+          setRun(next)
+          setError(null)
+        })
+        .catch((requestError) => setError(requestError.message))
+        .finally(() => {
+          if (!quiet) setLoading(false)
+        }),
+    [runId],
+  )
+>>>>>>> Stashed changes
 
   useEffect(() => {
     load()
   }, [load])
 
+<<<<<<< Updated upstream
   const derived = useMemo(() => {
     if (!data?.run) return null
     const { run, alarms, approvals } = data
@@ -95,16 +124,56 @@ function AgentRunPage() {
       approval: approvals.find((p) => p.agent_run_id === run.agent_run_id) ?? null,
     }
   }, [data])
+=======
+  useEffect(() => {
+    window.clearInterval(timerRef.current)
+    if (!POLL_STATUSES.has(run?.status)) return undefined
+    timerRef.current = window.setInterval(() => load({ quiet: true }), POLL_MS)
+    return () => window.clearInterval(timerRef.current)
+  }, [load, run?.status])
+>>>>>>> Stashed changes
 
-  const retry = () => {
-    setError(null)
-    setData(null)
-    load()
+  const onDecided = (result) => {
+    setDecided(result)
+    setRun((current) =>
+      current
+        ? {
+            ...current,
+            status: result.agent_run_status ?? current.status,
+            action: current.action
+              ? {
+                  ...current.action,
+                  approval_status: result.status,
+                  send_status: result.send_status ?? current.action.send_status,
+                }
+              : null,
+            approval: current.approval
+              ? {
+                  ...current.approval,
+                  status: result.status,
+                  decided_by: result.decided_by,
+                  decision_comment: result.comment,
+                }
+              : null,
+          }
+        : current,
+    )
+    if (result.agent_run_status === 'RUNNING') load({ quiet: true })
   }
 
-  if (error) return <ErrorState title="Agent 실행을 불러오지 못했습니다" detail={error} onRetry={retry} />
-  if (!data) return <LoadingState message="Agent 실행 결과를 불러오는 중…" />
-  if (!data.run)
+  if (error && !run)
+    return (
+      <ErrorState
+        title="Agent 실행을 불러오지 못했습니다"
+        detail={error}
+        onRetry={() => {
+          setLoading(true)
+          load()
+        }}
+      />
+    )
+  if (loading) return <LoadingState message="Agent 실행 결과를 불러오는 중…" />
+  if (!run)
     return (
       <EmptyState
         title="해당 Agent 실행을 찾을 수 없습니다"
@@ -112,36 +181,45 @@ function AgentRunPage() {
       />
     )
 
+<<<<<<< Updated upstream
   const { run, action, trace } = data
   const { runAlarms, equipmentId, consec, rules, approval } = derived
 
+=======
+>>>>>>> Stashed changes
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <RunToast toast={toast} onClose={() => setToast(null)} />
 
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[22px] font-extrabold text-navy">Agent 분석 · 승인</div>
-        <div className="text-xs text-g1">대시보드 「검토」 에서 바로 들어온다</div>
+        <div className="text-xs text-g1">
+          {POLL_STATUSES.has(run.status) ? '2초 간격으로 실행 상태를 갱신합니다.' : '저장된 실행 결과'}
+        </div>
       </div>
 
-      <RunContextBar run={run} equipmentId={equipmentId} />
+      <RunContextBar run={run} equipmentId={run.equipment_id} />
 
       <div className="mt-5 flex items-start gap-5">
-        {/* 좌 360px 판정 컬럼 — 흰 카드, 좌측 3px 적색 보더 */}
         <div className="flex w-[360px] flex-none flex-col gap-4 rounded-[10px] border border-line border-l-[3px] border-l-red bg-white p-5">
           <RunVerdictCard run={run} />
+<<<<<<< Updated upstream
           <RunActionCard run={run} consec={consec} rules={rules} />
+=======
+          <RunActionCard action={run.action} reason={run.action_reason} />
+>>>>>>> Stashed changes
           <RunApprovalCard
-            action={action}
-            approval={approval}
+            action={run.action}
+            approval={run.approval}
             decided={decided}
-            onDecided={setDecided}
+            onDecided={onDecided}
             onToast={showToast}
           />
-          <RunTransitionCard />
-          <RunToolCallsCard toolCalls={run.tool_calls} nodes={run.nodes} />
+          {run.status === 'WAITING_APPROVAL' && <RunTransitionCard />}
+          <RunToolCallsCard toolCalls={run.tool_calls ?? []} />
         </div>
 
+<<<<<<< Updated upstream
         <RunEvidencePanel
           run={run}
           runAlarms={runAlarms}
@@ -149,6 +227,9 @@ function AgentRunPage() {
           trace={trace}
           equipmentId={equipmentId}
         />
+=======
+        <RunEvidencePanel run={run} />
+>>>>>>> Stashed changes
       </div>
     </div>
   )

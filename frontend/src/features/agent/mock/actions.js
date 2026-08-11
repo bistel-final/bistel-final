@@ -5,7 +5,19 @@
 export const ACTIONS = [
   {
     "action_id": "ACT-0001",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260601-0001",
+=======
+    "created_by_agent_run_id": "RUN-20260601-0001",
+    "action_code": "MONITOR",
+    "severity": "LOW",
+    "send_channel": "EMAIL",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-01 23:20",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260003",
       "chamber_id": "ETC-01-C2"
@@ -35,7 +47,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0002",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260602-0002",
+=======
+    "created_by_agent_run_id": "RUN-20260602-0002",
+    "action_code": "EQP_HOLD",
+    "severity": "HIGH",
+    "send_channel": "MES",
+    "approval_status": "APPROVED",
+    "send_status": "SENT",
+    "approved_by": "bang",
+    "approved_at": "2026-06-02 07:31:23",
+    "created_at": "2026-06-02 07:21:23",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260004",
       "chamber_id": "ETC-01-C2"
@@ -67,7 +91,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0003",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260602-0003",
+=======
+    "created_by_agent_run_id": "RUN-20260602-0003",
+    "action_code": "LOT_HOLD",
+    "severity": "MEDIUM",
+    "send_channel": "MES",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-02 15:20",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260005",
       "chamber_id": "ETC-01-C2"
@@ -98,7 +134,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0004",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260602-0004",
+=======
+    "created_by_agent_run_id": "RUN-20260602-0004",
+    "action_code": "MONITOR",
+    "severity": "LOW",
+    "send_channel": "EMAIL",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-02 22:42",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260006",
       "chamber_id": "PHO-01-C1"
@@ -127,7 +175,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0005",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260603-0005",
+=======
+    "created_by_agent_run_id": "RUN-20260603-0005",
+    "action_code": "EQP_HOLD",
+    "severity": "HIGH",
+    "send_channel": "MES",
+    "approval_status": "PENDING",
+    "send_status": "WAITING",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-03 06:39",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260007",
       "chamber_id": "PHO-01-C1"
@@ -159,7 +219,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0006",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260603-0007",
+=======
+    "created_by_agent_run_id": "RUN-20260603-0007",
+    "action_code": "MONITOR",
+    "severity": "LOW",
+    "send_channel": "EMAIL",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-03 15:45",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "ETC-01-C1"
@@ -188,7 +260,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0007",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260603-0006",
+=======
+    "created_by_agent_run_id": "RUN-20260603-0006",
+    "action_code": "LOT_HOLD",
+    "severity": "MEDIUM",
+    "send_channel": "MES",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-03 14:43",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260008",
       "chamber_id": "PHO-01-C1"
@@ -220,7 +304,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0008",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260603-0009",
+=======
+    "created_by_agent_run_id": "RUN-20260603-0009",
+    "action_code": "LOT_HOLD",
+    "severity": "MEDIUM",
+    "send_channel": "MES",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-03 23:14",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260009",
       "chamber_id": "ETC-01-C1"
@@ -251,7 +347,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0009",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260603-0008",
+=======
+    "created_by_agent_run_id": "RUN-20260603-0008",
+    "action_code": "LOT_HOLD",
+    "severity": "MEDIUM",
+    "send_channel": "MES",
+    "approval_status": "AUTO",
+    "send_status": "SENT",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-03 22:29",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260009",
       "chamber_id": "PHO-01-C1"
@@ -284,7 +392,19 @@ export const ACTIONS = [
   },
   {
     "action_id": "ACT-0010",
+<<<<<<< Updated upstream
     "agent_run_id": "RUN-20260604-0010",
+=======
+    "created_by_agent_run_id": "RUN-20260604-0010",
+    "action_code": "EQP_HOLD",
+    "severity": "HIGH",
+    "send_channel": "MES",
+    "approval_status": "PENDING",
+    "send_status": "WAITING",
+    "approved_by": null,
+    "approved_at": null,
+    "created_at": "2026-06-04 07:11",
+>>>>>>> Stashed changes
     "incident": {
       "lot_id": "LOT-260010",
       "chamber_id": "ETC-01-C1"
@@ -322,6 +442,7 @@ export const APPROVALS = [
     "approval_id": "APR-0001",
     "agent_run_id": "RUN-20260602-0002",
     "action_id": "ACT-0002",
+<<<<<<< Updated upstream
     "incident": {
       "lot_id": "LOT-260004",
       "chamber_id": "ETC-01-C2"
@@ -330,6 +451,10 @@ export const APPROVALS = [
     "sensor_id": "ET_REFL",
     "action_code": "EQP_HOLD",
     "severity": "HIGH",
+=======
+    "agent_run_id": "RUN-20260602-0002",
+    "status": "APPROVED",
+>>>>>>> Stashed changes
     "requested_at": "2026-06-02 07:21:23",
     "status": "APPROVED",
     "decided_by": "bang",
@@ -340,6 +465,7 @@ export const APPROVALS = [
     "approval_id": "APR-0002",
     "agent_run_id": "RUN-20260603-0005",
     "action_id": "ACT-0005",
+<<<<<<< Updated upstream
     "incident": {
       "lot_id": "LOT-260007",
       "chamber_id": "PHO-01-C1"
@@ -348,6 +474,10 @@ export const APPROVALS = [
     "sensor_id": "PH_FOCUS",
     "action_code": "EQP_HOLD",
     "severity": "HIGH",
+=======
+    "agent_run_id": "RUN-20260603-0005",
+    "status": "PENDING",
+>>>>>>> Stashed changes
     "requested_at": "2026-06-03 06:39",
     "status": "PENDING",
     "decided_by": null,
@@ -358,6 +488,7 @@ export const APPROVALS = [
     "approval_id": "APR-0003",
     "agent_run_id": "RUN-20260604-0010",
     "action_id": "ACT-0010",
+<<<<<<< Updated upstream
     "incident": {
       "lot_id": "LOT-260010",
       "chamber_id": "ETC-01-C1"
@@ -366,6 +497,10 @@ export const APPROVALS = [
     "sensor_id": "ET_CF4",
     "action_code": "EQP_HOLD",
     "severity": "HIGH",
+=======
+    "agent_run_id": "RUN-20260604-0010",
+    "status": "PENDING",
+>>>>>>> Stashed changes
     "requested_at": "2026-06-04 07:11",
     "status": "PENDING",
     "decided_by": null,

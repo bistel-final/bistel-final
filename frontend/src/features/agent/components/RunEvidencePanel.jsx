@@ -1,49 +1,17 @@
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
-import RunEvidenceCard from './RunEvidenceCard.jsx'
-import RunTraceChart from './RunTraceChart.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 
-// 도메인 감시 파라미터 8종 — 공정(센서 prefix)별 4종 (도메인 규칙, 임의 목록 아님)
-const PARAMS_BY_PREFIX = {
-  PH: ['PH_FOCUS', 'PH_DOSE', 'PH_PEB', 'PH_DEV'],
-  ET: ['ET_REFL', 'ET_CF4', 'ET_PRES', 'ET_ESC'],
-}
+const DASH = '—'
 
-// 설비 관계 실측 — 다른 feature의 mock을 import하지 않고 이 화면 상수로 둔다
-const FLOW = { upstream: 'PHO-01', upstreamArea: 'PHOTO', downstream: 'ETC-01', downstreamArea: 'ETCH' }
-
-// 계측 CD FAIL 실측 6건 — LOT-260007 의 FAIL 은 실측에 없다 (읽는 법에서 미제공 처리)
-const METROLOGY_FAILS = [
-  { id: 'MET-0016', lot: 'LOT-260004', wafer: '6', param: 'CD_AEI' },
-  { id: 'MET-0020', lot: 'LOT-260005', wafer: '6', param: 'CD_AEI' },
-  { id: 'MET-0029', lot: 'LOT-260008', wafer: '1', param: 'CD_ADI' },
-  { id: 'MET-0031', lot: 'LOT-260008', wafer: '1', param: 'CD_AEI' },
-  { id: 'MET-0033', lot: 'LOT-260009', wafer: '1', param: 'CD_ADI' },
-  { id: 'MET-0035', lot: 'LOT-260009', wafer: '1', param: 'CD_AEI' },
-]
-
-// ②~⑤ 비교 카드는 실측 trace가 없어 시안 04 의 개념 폴리라인 좌표를 그대로 쓴다 (개념 시각화)
-const CONCEPT_PTS = {
-  same: '10,50 110,42 210,48 310,40 410,46 510,42',
-  sibling: '10,55 110,48 210,38 310,30 410,44 510,34',
-  flow: '10,60 110,44 210,28 310,24 410,42 510,36',
-  cd: '10,58 110,42 210,26 310,20 410,38 510,30',
-}
-
-// 알람 detail 문자열에서 실측 max 를 원문 그대로 뽑는다 (반올림·창작 금지)
-const parseMax = (detail) => {
-  const m = /max\s+([\d.]+)/.exec(detail ?? '')
-  return m ? m[1] : null
-}
-
-// 실측 미제공 자리 — 차트를 그리지 않고 빈 자리임을 명시한다
-function NoTrace({ label }) {
+function JsonBlock({ value }) {
   return (
-    <div className="flex min-h-[64px] w-full items-center justify-center font-mono text-[11px] text-g1">
-      {label} — 실측 미제공
-    </div>
+    <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-soft p-3 font-mono text-[11px] leading-5 text-ink">
+      {JSON.stringify(value, null, 2)}
+    </pre>
   )
 }
 
+<<<<<<< Updated upstream
 function RunEvidencePanel({ run, runAlarms, allAlarms, trace, equipmentId }) {
   // incident 는 (lot_id, chamber_id) 두 개뿐 — sensor_id·recipe_step_name 은 run 의 형제 필드
   const { lot_id: lot, chamber_id: chamber } = run.incident ?? {}
@@ -125,58 +93,68 @@ function RunEvidencePanel({ run, runAlarms, allAlarms, trace, equipmentId }) {
       ? `같은 LOT ${params5} FAIL ${lotFails.length}건 — 품질 영향 확인됨`
       : `incident LOT ${lot} 의 CD 계측 FAIL 실측 미제공`
   const tag5 = lotFails.length ? '상향 판정 근거' : null
+=======
+function EvidenceSection({ title, note, children }) {
+  return (
+    <section className="rounded-lg border border-line bg-white p-4">
+      <div className="mb-2 text-[13px] font-extrabold text-navy">{title}</div>
+      {note && <div className="mb-3 text-xs leading-5 text-g1">{note}</div>}
+      {children}
+    </section>
+  )
+}
+
+function RunEvidencePanel({ run }) {
+  const evidence = run.evidence ?? {}
+  const documents = evidence.document_hits ?? []
+  const upstream = evidence.upstream ?? []
+  const errors = evidence.errors ?? []
+>>>>>>> Stashed changes
 
   return (
     <Card className="min-w-0 flex-1">
-      <CardHeader title="근거" note="판단의 이유를 차트로" />
-      <div className="flex flex-col gap-3.5 px-5 pb-5">
-        <RunEvidenceCard color="red" title="문제 파라미터" sub={`${sensor} · ${step} — 한계선 대비 이탈 구간`} read={read1}>
-          {values.length > 1 ? (
-            <RunTraceChart color="red" values={values} limit={usl} />
+      <CardHeader title="판단 근거" note="Agent 실행 응답에 저장된 근거만 표시" />
+      <div className="grid grid-cols-1 gap-3.5 px-5 pb-5 xl:grid-cols-2">
+        <EvidenceSection title="대표 FDC 요약" note={run.representative_alarm_id ?? DASH}>
+          {evidence.representative_fdc ? <JsonBlock value={evidence.representative_fdc} /> : <EmptyState title="대표 FDC 근거 없음" />}
+        </EvidenceSection>
+
+        <EvidenceSection title="R03 연속 이상 근거">
+          {evidence.r03_fdc || run.r03_fdc_evidence ? (
+            <JsonBlock value={evidence.r03_fdc ?? run.r03_fdc_evidence} />
           ) : (
-            <NoTrace label={`${sensor} @ ${chamber} trace`} />
+            <EmptyState title="R03 근거 없음" description="해당 incident에 R03_CONSEC 근거가 없습니다." />
           )}
-        </RunEvidenceCard>
+        </EvidenceSection>
 
-        <RunEvidenceCard
-          color="blue"
-          title="같은 챔버 다른 파라미터"
-          sub={others.length ? `${others.join(' · ')} 를 겹쳐 본다` : '비교 파라미터 실측 미제공'}
-          read={read2}
-        >
-          <RunTraceChart color="blue" pts={CONCEPT_PTS.same} />
-        </RunEvidenceCard>
+        <EvidenceSection title="설비 관계" note="Neo4j 관계 조회 Tool 결과">
+          {evidence.equipment_context ? <JsonBlock value={evidence.equipment_context} /> : <EmptyState title="관계 근거 없음" />}
+        </EvidenceSection>
 
-        <RunEvidenceCard
-          color="green"
-          title={sibling ? `형제 챔버 ${sibling} 정상 WAFER` : '형제 챔버 정상 WAFER'}
-          sub="형제 챔버 정상 WAFER 와 겹쳐 본다"
-          read={sibling ? read3 : '형제 챔버 실측 미제공'}
-        >
-          <RunTraceChart color="green" pts={CONCEPT_PTS.sibling} />
-        </RunEvidenceCard>
+        <EvidenceSection title="상류 기여 근거" note={`${upstream.length}건`}>
+          {upstream.length ? <JsonBlock value={upstream} /> : <EmptyState title="상류 근거 없음" />}
+        </EvidenceSection>
 
-        <RunEvidenceCard
-          color="navy"
-          title={`상류 ${FLOW.upstreamArea} vs 하류 ${FLOW.downstreamArea}`}
-          sub="연쇄인가 독립인가"
-          read={read4}
-          tag={tag4}
-          tagVariant="t-navy"
-        >
-          <RunTraceChart color="navy" pts={CONCEPT_PTS.flow} />
-        </RunEvidenceCard>
+        <EvidenceSection title="문서 검색 근거" note={`${documents.length}건`}>
+          {documents.length ? (
+            <div className="flex flex-col gap-2">
+              {documents.map((document, index) => (
+                <div key={document.chunk_id ?? `${document.document_id}-${index}`} className="rounded-lg bg-soft p-3">
+                  <div className="text-xs font-bold text-navy">{document.title ?? document.document_id ?? DASH}</div>
+                  <div className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-g1">
+                    {document.content ?? DASH}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="문서 근거 없음" />
+          )}
+        </EvidenceSection>
 
-        <RunEvidenceCard
-          color="amber"
-          title="계측 CD 결과"
-          sub="CD_ADI · CD_AEI 판정과 나란히"
-          read={read5}
-          tag={tag5}
-          tagVariant="t-amber"
-        >
-          <RunTraceChart color="amber" pts={CONCEPT_PTS.cd} />
-        </RunEvidenceCard>
+        <EvidenceSection title="부분 실패" note={`${errors.length}건`}>
+          {errors.length ? <JsonBlock value={errors} /> : <EmptyState title="Tool 오류 없음" />}
+        </EvidenceSection>
       </div>
     </Card>
   )

@@ -1,9 +1,9 @@
 # 01. 프로젝트 강제 규칙
 
-> 기준 요구사항: v1.8
-> 기준 시스템설계서: v1.2
-> 기준 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9
+> 기준 시스템설계서: v1.10
+> 기준 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 
 이 문서는 코드·계약·보안 강제 규칙의 **단일 출처**다. 사람과 AI 도구가 같은 규칙을 쓴다.
 각 규칙은 새로 해석하지 않고 원본 절 번호를 근거로 둔다. 원본과 충돌하면 원본이 우선한다.
@@ -75,14 +75,13 @@ DEPENDENCY_ERROR:  POLICY_REJECTED:  IDEMPOTENCY_CONFLICT:
 | 존재하지 않는 리소스 | 404 |
 | 진행 중 incident 수동 재실행, 승인 중복·EXPIRED | 409 |
 | 요청 본문·쿼리 형식 오류 | 422 |
-| Text2SQL 정책 위반 | 422 |
-| 의존성 준비 실패 (`/health/ready`) | 503 |
+| Text2SQL 정책 거부 | 200 + `is_valid=false`, `is_rejected=true`, `reject_reason` |
 | 모델·LLM 산출물 미준비 | 503 |
 | 예기치 못한 서버 오류 | 500 |
 
 공통 오류 본문은 `{code, message, details}`다. 500 응답과 로그에 비밀번호·전체 DSN·API Key·내부 SQL 원문을 노출하지 않는다.
 
-Tool과 REST는 같은 Service를 쓰되 **오류 표현을 분리한다.** Tool 실패를 HTTP 상태코드로 바꾸지 않는다.
+Tool과 REST는 같은 Service를 쓰되 **오류 표현을 분리한다.** Tool 실패를 HTTP 상태코드로 바꾸지 않는다. Text2SQL 정책 거부는 SQL을 실행하지 않은 정상적인 안전 판정 결과이므로 REST에서 200으로 반환하되, 요청 body 누락·타입·길이 오류만 422다. `PolicyRejectedError`와 Tool의 `POLICY_REJECTED:` 접두어는 유지한다.
 
 근거: 설계 2.3 / NFR-10·NFR-11
 

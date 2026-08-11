@@ -91,6 +91,13 @@ class InvalidRequestError(AppError):
 
 
 class PolicyRejectedError(AppError):
+    """정책 거부를 HTTP 오류로 표현해야 하는 경로에서만 사용한다.
+
+    ``POST /analytics/query``는 사용자가 거부 사유와 질의 이력을 화면에서 확인할
+    수 있도록 이 예외를 발생시키지 않고 HTTP 200의 구조화 응답을 반환한다. Tool
+    경로는 별도 계약인 ``POLICY_REJECTED:`` reason 접두어를 그대로 사용한다.
+    """
+
     status_code = 422
     code = ErrorCode.POLICY_REJECTED
     message = "정책상 허용되지 않는 요청입니다."

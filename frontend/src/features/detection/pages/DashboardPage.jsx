@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getDashboard } from '../../../shared/api/detection.js'
+<<<<<<< Updated upstream
 import { getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
+=======
+>>>>>>> Stashed changes
 import ErrorState from '../../../shared/components/ErrorState.jsx'
-import { FilterBar, FilterField, FilterSelect, FilterStatic } from '../../../shared/components/ui/FilterField.jsx'
+import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
+import { FilterBar, FilterField, FilterSelect } from '../../../shared/components/ui/FilterField.jsx'
 import DashActionBand from '../components/DashActionBand.jsx'
-import DashTrendChart from '../components/DashTrendChart.jsx'
-import DashParamCard from '../components/DashParamCard.jsx'
 import DashEquipCard from '../components/DashEquipCard.jsx'
+import DashParamCard from '../components/DashParamCard.jsx'
 import DashRecentTable from '../components/DashRecentTable.jsx'
+import DashTrendChart from '../components/DashTrendChart.jsx'
 
 // 알람 대시보드 — 집계는 전부 서버(GET /dashboard/summary)가 한다.
 // 화면은 응답 필드를 그대로 옮겨 그릴 뿐, 알람 목록을 받아 다시 집계하지 않는다.
@@ -17,20 +21,28 @@ import DashRecentTable from '../components/DashRecentTable.jsx'
 // 로더가 useCallback(deps=필터) 이므로 useEffect 는 로더 호출만 한다.
 
 const ALL = '전체'
+<<<<<<< Updated upstream
 
 // daily_trend.date("2026-06-01") → x 라벨 "6/1"
 const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
+=======
+const DATE_CLS = 'h-9 rounded-lg border border-line bg-white px-2.5 font-mono text-[12.5px] font-semibold text-navy'
+const dayLabel = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
+>>>>>>> Stashed changes
 
 function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
-  // 계층 필터: 공정 > 장비 > 챔버 — 상위 변경 시 하위 리셋
   const [area, setArea] = useState(ALL)
   const [equipment, setEquipment] = useState(ALL)
   const [chamber, setChamber] = useState(ALL)
+  // null은 "API 기본 범위 사용", 빈 문자열은 사용자가 해당 경계를 지운 상태다.
+  const [dateFrom, setDateFrom] = useState(null)
+  const [dateTo, setDateTo] = useState(null)
 
   const load = useCallback(() => {
+<<<<<<< Updated upstream
     const scope = {}
     if (area !== ALL) scope.area = area
     if (equipment !== ALL) scope.equipment_id = equipment
@@ -42,20 +54,62 @@ function DashboardPage() {
       )
       .catch((e) => setError(e.message))
   }, [area, equipment, chamber])
+=======
+    const filter = {
+      ...(area === ALL ? {} : { area }),
+      ...(equipment === ALL ? {} : { equipment_id: equipment }),
+      ...(chamber === ALL ? {} : { chamber_id: chamber }),
+      ...(dateFrom ? { date_from: dateFrom } : {}),
+      ...(dateTo ? { date_to: dateTo } : {}),
+    }
+    getDashboard(filter)
+      .then((response) => {
+        setData(response)
+        setError(null)
+      })
+      .catch((requestError) => setError(requestError.message))
+  }, [area, chamber, dateFrom, dateTo, equipment])
+
+>>>>>>> Stashed changes
   useEffect(() => {
     load()
   }, [load])
 
-  if (error)
-    return (
-      <ErrorState
-        detail={error}
-        onRetry={() => {
-          setError(null)
-          load()
-        }}
-      />
-    )
+  const hierarchy = useMemo(() => data?.hierarchy ?? [], [data])
+  const areaOptions = useMemo(() => [ALL, ...new Set(hierarchy.map((node) => node.area_id))], [hierarchy])
+  const equipmentOptions = useMemo(
+    () => [
+      ALL,
+      ...new Set(
+        hierarchy.filter((node) => area === ALL || node.area_id === area).map((node) => node.equipment_id),
+      ),
+    ],
+    [area, hierarchy],
+  )
+  const chamberOptions = useMemo(
+    () => [
+      ALL,
+      ...new Set(
+        hierarchy
+          .filter((node) => area === ALL || node.area_id === area)
+          .filter((node) => equipment === ALL || node.equipment_id === equipment)
+          .flatMap((node) => node.chambers),
+      ),
+    ],
+    [area, equipment, hierarchy],
+  )
+
+  const changeArea = (value) => {
+    setArea(value)
+    setEquipment(ALL)
+    setChamber(ALL)
+  }
+  const changeEquipment = (value) => {
+    setEquipment(value)
+    setChamber(ALL)
+  }
+
+  if (error && !data) return <ErrorState detail={error} onRetry={load} />
   if (!data)
     return (
       <LoadingState message="대시보드 데이터를 불러오는 중…">
@@ -64,6 +118,7 @@ function DashboardPage() {
       </LoadingState>
     )
 
+<<<<<<< Updated upstream
   const { summary, runFailed, sendFailed } = data
   // hierarchy: [{ area_id, equipment_id, chambers[] }] — 필터 선택지는 항상 전체 계층에서 만든다
   const hierarchy = summary.hierarchy ?? []
@@ -109,31 +164,81 @@ function DashboardPage() {
     n: e.alarm_count,
     chambers: (e.chambers ?? []).map((c) => ({ id: c.chamber_id, n: c.alarm_count })),
   }))
+=======
+  const daily = (data.daily_trend ?? []).map((item) => ({
+    label: dayLabel(item.date),
+    oos: item.oos_count,
+    ooc: item.ooc_count,
+    r03: item.has_r03_consec,
+  }))
+  const params = (data.top_sensors ?? []).map((item) => ({
+    name: item.sensor_id,
+    n: item.alarm_count,
+    chambers: item.chamber_ids.join(' · '),
+  }))
+  const observed = new Set(params.map((item) => item.name))
+  const quiet = (data.sensor_catalog ?? []).filter((sensor) => !observed.has(sensor))
+  const equips = (data.equipment_counts ?? []).map((item) => ({
+    id: item.equipment_id,
+    n: item.alarm_count,
+    chambers: item.chambers.map((entry) => ({ id: entry.chamber_id, n: entry.alarm_count })),
+  }))
+  const pendings = (data.pending_approvals ?? []).map((item) => ({ ...item, rule: item.rule_id }))
+  const period = data.date_range?.length === 2 ? `${data.date_range[0]} ~ ${data.date_range[1]}` : data.reference_date
+>>>>>>> Stashed changes
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
-        <div className="text-[22px] font-extrabold text-navy">알람 대시보드</div>
+        <div>
+          <div className="text-[22px] font-extrabold text-navy">알람 대시보드</div>
+          <div className="mt-1 text-xs text-g1">
+            조회 기간 {period ?? '—'} · 기준일 {data.reference_date ?? '—'} · 알람 {data.alarm_count}건 · OOS{' '}
+            {data.oos_count} · OOC {data.ooc_count}
+          </div>
+        </div>
         <FilterBar className="pb-0 pt-0">
           <FilterField label="기간">
-            <FilterStatic minWidth={190}>2026-06-01 ~ 06-04</FilterStatic>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={dateFrom ?? data.date_range?.[0] ?? ''}
+                max={dateTo || undefined}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className={DATE_CLS}
+                aria-label="대시보드 시작일"
+              />
+              <span className="text-[13px] font-bold text-g2">~</span>
+              <input
+                type="date"
+                value={dateTo ?? data.date_range?.[1] ?? ''}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+                className={DATE_CLS}
+                aria-label="대시보드 종료일"
+              />
+            </div>
           </FilterField>
           <FilterField label="공정">
-            <FilterSelect value={area} onChange={changeArea} options={areaOpts} />
+            <FilterSelect value={area} onChange={changeArea} options={areaOptions} />
           </FilterField>
           <FilterField label="장비">
-            <FilterSelect value={equipment} onChange={changeEquipment} options={eqpOpts} />
+            <FilterSelect value={equipment} onChange={changeEquipment} options={equipmentOptions} />
           </FilterField>
           <FilterField label="챔버">
-            <FilterSelect value={chamber} onChange={setChamber} options={chOpts} />
+            <FilterSelect value={chamber} onChange={setChamber} options={chamberOptions} />
           </FilterField>
         </FilterBar>
       </div>
 
       <DashActionBand
+<<<<<<< Updated upstream
         pendings={summary.pending_approvals ?? []}
         runFailed={runFailed}
         sendFailed={sendFailed}
+=======
+        pendings={pendings}
+>>>>>>> Stashed changes
         onReview={(runId) => navigate(`/agent-runs/${runId}`)}
       />
 
@@ -142,7 +247,11 @@ function DashboardPage() {
         <DashParamCard
           params={params}
           quiet={quiet}
+<<<<<<< Updated upstream
           totalKinds={sensorCatalog.length}
+=======
+          totalKinds={data.sensor_catalog?.length ?? params.length}
+>>>>>>> Stashed changes
           onSelect={(sensor) => navigate(`/alarms?sensor=${sensor}`)}
         />
       </div>
@@ -150,9 +259,15 @@ function DashboardPage() {
       <div className="mt-[18px] flex items-stretch gap-5">
         <DashEquipCard
           equips={equips}
-          onSelectChamber={(eqp, ch) => navigate(`/alarms?equipment=${eqp}&chamber=${ch}`)}
+          onSelectChamber={(equipmentId, chamberId) =>
+            navigate(`/alarms?equipment=${equipmentId}&chamber=${chamberId}`)
+          }
         />
+<<<<<<< Updated upstream
         <DashRecentTable recents={summary.recent_alarms ?? []} />
+=======
+        <DashRecentTable recents={(data.recent_alarms ?? []).slice(0, 5)} />
+>>>>>>> Stashed changes
       </div>
     </div>
   )

@@ -22,6 +22,17 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
   const [decisionComment, setDecisionComment] = useState('')
   const [sending, setSending] = useState(false)
 
+  if (!action) {
+    return (
+      <div>
+        <div className="mb-2 text-xs font-bold text-g1">승인</div>
+        <div className="rounded-lg border border-line bg-soft p-4 text-xs leading-[1.6] text-g1">
+          Agent가 조치를 결정한 뒤 승인 필요 여부가 표시됩니다.
+        </div>
+      </div>
+    )
+  }
+
   // 자동 조치(LOT_HOLD·MONITOR)는 HITL 승인 대상이 아니다 — 폼 대신 안내만 노출
   if (action && action.approval_status === 'AUTO') {
     return (
@@ -76,15 +87,27 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
       .then((res) => {
         setSending(false)
         onDecided({
+<<<<<<< Updated upstream
           status: res?.approval_status ?? RESULT_OF[decision],
+=======
+          status: res?.approval_status ?? (decision === 'APPROVE' ? 'APPROVED' : 'REJECTED'),
+>>>>>>> Stashed changes
           decided_by: res?.decided_by ?? decidedBy.trim(),
           decision_comment: res?.decision_comment ?? decisionComment.trim(),
           approval_id: res?.approval_id ?? approval.approval_id,
+          send_status: res?.send_status ?? null,
+          agent_run_status: res?.agent_run_status ?? null,
         })
         onToast({
+<<<<<<< Updated upstream
           tone: decision === DECISION.APPROVE ? 'ok' : 'oos',
           title: `APPROVAL ${decision}`,
           message: `${approval.approval_id} 를 ${DECIDED_LABEL[RESULT_OF[decision]]} 처리했습니다.`,
+=======
+          tone: decision === 'APPROVE' ? 'ok' : 'oos',
+          title: `APPROVAL ${decision}`,
+          message: `${approval.approval_id} 를 ${decision === 'APPROVE' ? '승인 완료' : '반려'} 처리했습니다.`,
+>>>>>>> Stashed changes
         })
       })
       .catch((e) => {
@@ -128,7 +151,11 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="primary"
             aria-disabled={locked || sending}
+<<<<<<< Updated upstream
             onClick={() => submit(DECISION.APPROVE)}
+=======
+            onClick={() => submit('APPROVE')}
+>>>>>>> Stashed changes
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             {sending ? '전송 중…' : '승인'}
@@ -136,7 +163,11 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="outline-red"
             aria-disabled={locked || sending}
+<<<<<<< Updated upstream
             onClick={() => submit(DECISION.REJECT)}
+=======
+            onClick={() => submit('REJECT')}
+>>>>>>> Stashed changes
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             반려

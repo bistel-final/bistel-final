@@ -99,12 +99,16 @@ class WaferContext(ToolModel):
 class SensorSummaryItem(ToolModel):
     sensor_id: NonEmptyId
     sensor_name: str
+    unit: str | None = None
     recipe_step_no: int
     recipe_step_name: str | None = None
     value_mean: float | None = None
     value_std: float | None = None
     value_min: float | None = None
     value_max: float | None = None
+    point_cnt: int = Field(ge=0)
+    ooc_point_cnt: int = Field(ge=0)
+    oos_point_cnt: int = Field(ge=0)
     spec_lower: float | None = None
     ctrl_lower: float | None = None
     target: float | None = None

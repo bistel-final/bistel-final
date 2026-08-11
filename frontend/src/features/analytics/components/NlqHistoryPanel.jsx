@@ -28,6 +28,7 @@ function NlqHistoryPanel({ items, activeQ, onRerun }) {
             <div className="text-[12.5px] font-bold text-ink">{h.question}</div>
             <div className="mt-2.5 flex items-center gap-3">
               <Badge variant={h.ok ? 't-green' : 'bg-red'}>{h.ok ? '성공' : '거부'}</Badge>
+<<<<<<< Updated upstream
               <span className="font-mono text-[11px] text-g1">{h.row_count ?? 0}행</span>
               {!h.ok && h.reason && (
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-bold text-red">
@@ -37,6 +38,11 @@ function NlqHistoryPanel({ items, activeQ, onRerun }) {
               <span className="ml-auto font-mono text-[11px] text-g2">
                 {(h.latency_ms ?? 0).toLocaleString()}ms
               </span>
+=======
+              <span className="font-mono text-[11px] text-g1">{h.rows}행</span>
+              {!h.ok && h.reason && <span className="font-mono text-[11px] font-bold text-red">{h.reason}</span>}
+              <span className="ml-auto font-mono text-[11px] text-g2">{(h.lat ?? 0).toLocaleString()}ms</span>
+>>>>>>> Stashed changes
             </div>
           </div>
         ))}

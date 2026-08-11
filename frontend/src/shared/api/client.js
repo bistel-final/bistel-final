@@ -8,6 +8,7 @@ const env = import.meta.env ?? {}
 export const USE_MOCK = env.VITE_USE_MOCK !== 'false'
 
 export const MOCK_DELAY_MS = 300
+export const ANALYTICS_QUERY_TIMEOUT_MS = 150000
 
 // mock 데이터를 실제 API처럼 지연 반환
 export function mockResponse(data) {

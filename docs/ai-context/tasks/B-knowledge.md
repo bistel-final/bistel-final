@@ -1,7 +1,7 @@
 # B — Knowledge
 
-> 기준 요구사항: v1.8 / 시스템설계서: v1.2 / 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 > 담당: 강연권 · 모듈 `backend/app/knowledge/` · `frontend/src/features/knowledge/`
 
 Neo4j 관계 조회와 pgvector 문서 검색, Tool·API·관계 화면, 검색 품질 평가를 책임진다.
@@ -75,6 +75,8 @@ Chamber는 `chamber_id`·`chamber_no`만, Equipment는 장비 속성만 가진�
 
 **검색 결과 0건은 오류가 아니다.** HTTP 200 + 빈 hits.
 
+**문서 식별자 이름을 분리한다.** API `document_id`는 DB `document.doc_id`·`document_chunk.doc_id`에 대응한다. `doc_type`은 `SPEC | MANUAL | TROUBLESHOOT | null`만 허용한다.
+
 ---
 
 ## API
@@ -94,7 +96,7 @@ GET  /documents/{document_id}
 
 | 경로 | 내용 |
 |---|---|
-| `/relations` | 장비·챔버 검색, upstream/downstream/sibling 관계도, 문서 hit·score·본문 |
+| `/knowledge` | 장비·챔버 검색, upstream/downstream/sibling 관계도, 문서 hit·score·본문 |
 
 노드 선택·문서 펼치기, 검색 0건은 Empty 표시. 관계도 라이브러리는 자유 선택하되 **API DTO는 바꾸지 않는다.**
 

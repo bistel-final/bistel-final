@@ -1,7 +1,7 @@
 # 03. 데이터베이스 규칙
 
-> 기준 요구사항: v1.8 / 시스템설계서: v1.2 / 역할분담: v9.5
-> 마지막 동기화: 2026-08-05
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-11
 
 DB 접근 pool·계정 요약은 `01-project-rules.md` 6절에 있다. 이 문서는 스키마·마이그레이션·권한의 상세를 다룬다.
 
@@ -47,12 +47,15 @@ Migration runner는 fail-fast + **단일 `BEGIN ... COMMIT`** 을 쓴다. DDL �
 
 ```sql
 approval_request.action_id          -- 승인↔조치 직접 연결 (FK + 부분 UNIQUE)
+action_history.created_by_agent_run_id -- 조치를 최초 생성한 실행 (FK, legacy NULL)
 action_history.send_started_at      -- SENDING 진입 시각 (고착 판정용)
 action_history.send_attempt_count   -- 시도 횟수
 agent_run.requested_alarm_id        -- 수동 실행 시 사용자가 준 alarm_id (NOT NULL)
 agent_run.severity                  -- decide_action 결과 (CHECK LOW|MEDIUM|HIGH)
 agent_run.last_active_at            -- heartbeat, stale run 판정용
 ```
+
+`created_by_agent_run_id`는 조치 생성 시 한 번만 기록한다. FAILED 수동 재실행이 같은 `action_id`를 재사용해도 갱신하지 않고, 배포 기준 legacy 조치는 `NULL`을 허용한다. 즉 이 컬럼은 최신 실행이 아니라 **생성 provenance**다.
 
 ### 2.3 incident key NOT NULL — 순서가 중요하다
 
