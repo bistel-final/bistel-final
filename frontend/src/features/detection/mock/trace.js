@@ -1,10 +1,5 @@
-<<<<<<< Updated upstream
 // 트레이스 fixture — 명세 스키마(POST /traces/search · GET /traces/catalog)에 맞춘 mock
 // TODO(api): 실서버 연결 시 이 파일만 교체하면 된다.
-=======
-// 센서 Trace fixture
-// TODO(api): GET /traces/catalog · POST /traces/search 미구현 — fdc_trace.csv 연결 시 이 파일만 교체
->>>>>>> Stashed changes
 //
 // 포인트 복원식: 스텝 3포인트 = [3*mean − min − max, min, max] (알람 detail 역산, §2 통계와 일치 검증)
 // TODO(data): 포인트별 measured_at 실측 미확보 — occurred_at + 20초 간격 mock

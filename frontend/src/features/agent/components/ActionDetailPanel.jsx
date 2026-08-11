@@ -2,12 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAction, getRun } from '../../../shared/api/agent.js'
 import { fmtDateTime } from '../../../shared/api/format.js'
-<<<<<<< Updated upstream
-=======
-import EmptyState from '../../../shared/components/EmptyState.jsx'
->>>>>>> Stashed changes
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
 
@@ -45,8 +42,8 @@ function ActionDetailPanel({ actionId }) {
     getAction(actionId)
       .then((data) =>
         // 런 조회가 실패해도 조치 상세는 그대로 보여준다 — 원인 분류만 "—"로 떨어진다
-        data?.agent_run_id
-          ? getRun(data.agent_run_id).then(
+        data?.created_by_agent_run_id
+          ? getRun(data.created_by_agent_run_id).then(
               (run) => ({ data, run }),
               () => ({ data, run: null }),
             )
@@ -79,11 +76,8 @@ function ActionDetailPanel({ actionId }) {
     return <EmptyState title="해당 조치를 찾을 수 없습니다" description={actionId} />
   if (!action) return <LoadingState message="조치 상세를 불러오는 중…" />
 
-<<<<<<< Updated upstream
   // GET /agent/runs/{id} 응답 그대로 — 값이 없으면 창작하지 않고 "—" 카드로 떨어진다
   const fault = run?.fault_code ? { code: run.fault_code, name: run.fault_name, cause: run.cause_summary } : null
-=======
->>>>>>> Stashed changes
   const approval = action.approval_status
 
   return (
@@ -93,19 +87,9 @@ function ActionDetailPanel({ actionId }) {
           <span className="font-mono font-bold text-navy">{action.action_id}</span>
         </Field>
         <Field label="Agent 런">
-<<<<<<< Updated upstream
-          <Link to={`/agent-runs/${action.agent_run_id}`} className="font-mono font-bold">
-            {action.agent_run_id}
+          <Link to={`/agent-runs/${action.created_by_agent_run_id}`} className="font-mono font-bold">
+            {action.created_by_agent_run_id}
           </Link>
-=======
-          {action.created_by_agent_run_id ? (
-            <Link to={`/agent-runs/${action.created_by_agent_run_id}`} className="font-mono font-bold">
-              {action.created_by_agent_run_id}
-            </Link>
-          ) : (
-            <span className="font-mono text-g2">legacy · 연결 없음</span>
-          )}
->>>>>>> Stashed changes
         </Field>
         <Field label="LOT · 챔버">
           <span className="font-mono font-bold">
@@ -140,7 +124,6 @@ function ActionDetailPanel({ actionId }) {
 
       {action.reason ? (
         <div className="rounded-lg border border-line bg-white px-3.5 py-3">
-<<<<<<< Updated upstream
           <div className="flex items-center gap-2">
             <Badge variant="t-blue">{fault.code}</Badge>
             <span className="text-[13px] font-extrabold text-navy">{fault.name}</span>
@@ -150,13 +133,6 @@ function ActionDetailPanel({ actionId }) {
       ) : (
         // 연결된 런이 없거나 런에 fault_code 가 없는 경우
         <div className="text-[12.5px] font-semibold text-g2">원인 분류 {DASH}</div>
-=======
-          <div className="text-[11px] font-bold text-g1">조치 근거</div>
-          <div className="mt-1.5 text-[12.5px] font-semibold text-ink">{action.reason}</div>
-        </div>
-      ) : (
-        <div className="text-[12.5px] font-semibold text-g2">조치 근거 {DASH}</div>
->>>>>>> Stashed changes
       )}
 
       <div className="flex items-center gap-2 text-[12.5px] font-bold text-g1">

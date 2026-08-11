@@ -2,7 +2,17 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
-import { fmtShort } from '../../../shared/api/format.js'
+import { toIso } from '../../../shared/api/format.js'
+
+// 데모용 기준 시각 — fixture가 2026-06-04 07:49 시점의 스냅샷이라는 전제로 상대시각을 계산한다.
+// 실서비스 전환 시 서버 현재 시각으로 대체한다.
+const DEMO_NOW = '2026-06-04 07:49'
+
+// 60분 미만 "N분 전", 이상 "N시간 전"
+const agoOf = (iso) => {
+  const min = Math.floor((new Date(toIso(DEMO_NOW)) - new Date(iso)) / 60000)
+  return min < 60 ? `${min}분 전` : `${Math.floor(min / 60)}시간 전`
+}
 
 // 실행 실패 / 전송 실패 회색 카드 — 건수는 데이터 집계값 (0이 정상 상태)
 function FailCard({ title, count, emptyNote, note }) {
@@ -16,16 +26,12 @@ function FailCard({ title, count, emptyNote, note }) {
 }
 
 // 「처리 필요」 밴드 — 좌측 3px 적색 보더, 승인 대기 리스트 + 실행/전송 실패 카드
-<<<<<<< Updated upstream
 // pendings: DashboardSummary.pending_approvals
 //   [{ approval_id, action_id, agent_run_id, incident:{lot_id,chamber_id}, equipment_id, sensor_id,
 //      action_code, severity, requested_at }]
 //   sensor_id 는 incident 가 아니라 최상위 필드다 (incident 는 lot_id·chamber_id 두 개뿐).
 // TODO(api): 승인 근거 룰(R03_CONSEC) 은 응답에 없다 — 값을 만들지 않고 표기를 생략한다.
 function DashActionBand({ pendings, runFailed, sendFailed, onReview }) {
-=======
-function DashActionBand({ pendings, runFailed = null, sendFailed = null, onReview }) {
->>>>>>> Stashed changes
   return (
     <Card className="mt-2 border-l-[3px] border-l-red px-5 py-4">
       <div className="mb-3 flex items-baseline justify-between">
@@ -54,12 +60,7 @@ function DashActionBand({ pendings, runFailed = null, sendFailed = null, onRevie
                   {p.incident.lot_id} · {p.incident.chamber_id} · {p.sensor_id}
                 </span>
                 <Badge variant={actionCodeVariant(p.action_code)}>{p.action_code}</Badge>
-<<<<<<< Updated upstream
                 <span className="ml-auto font-mono text-[11px] text-g1">{agoOf(p.requested_at)}</span>
-=======
-                {p.rule && <span className="font-mono text-[11px] text-g1">{p.rule}</span>}
-                <span className="ml-auto font-mono text-[11px] text-g1">{fmtShort(p.requested_at)}</span>
->>>>>>> Stashed changes
                 <Button sm onClick={() => onReview(p.agent_run_id)}>
                   검토
                 </Button>
@@ -67,12 +68,8 @@ function DashActionBand({ pendings, runFailed = null, sendFailed = null, onRevie
             ))}
           </div>
         </div>
-        {runFailed != null && (
-          <FailCard title="실행 실패" count={runFailed} emptyNote="재실행 대상 없음" note="재실행 필요" />
-        )}
-        {sendFailed != null && (
-          <FailCard title="전송 실패" count={sendFailed} emptyNote="재시도 대상 없음" note="재시도 필요" />
-        )}
+        <FailCard title="실행 실패" count={runFailed} emptyNote="재실행 대상 없음" note="재실행 필요" />
+        <FailCard title="전송 실패" count={sendFailed} emptyNote="재시도 대상 없음" note="재시도 필요" />
       </div>
     </Card>
   )

@@ -2,18 +2,12 @@ import { Link } from 'react-router-dom'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, DashedCard } from '../../../shared/components/ui/Card.jsx'
 import { actionCodeVariant, approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
+import AlarmMiniTrace from './AlarmMiniTrace.jsx'
 
 // 시안 .btn.btn-primary.btn-sm 을 Link에 입힌 클래스
 const BTN_PRIMARY_SM =
   'inline-flex h-7 items-center justify-center gap-1.5 rounded-lg border border-transparent bg-blue px-3.5 text-xs font-bold text-white hover:bg-navy hover:text-white'
 
-<<<<<<< Updated upstream
-=======
-// API의 incident key는 lot_id + chamber_id다. 센서가 달라도 같은 incident에 속한다.
-const incidentKey = (a) =>
-  `${a.incident?.lot_id ?? a.lot_id}|${a.incident?.chamber_id ?? a.chamber_id}`
-
->>>>>>> Stashed changes
 // "06-03 06:45:45" — 시안 헤더 표기(초 포함)
 const fmtShortSec = (iso) => {
   if (!iso) return ''
@@ -21,29 +15,11 @@ const fmtShortSec = (iso) => {
   return `${d.slice(5)} ${t.slice(0, 8)}`
 }
 
-<<<<<<< Updated upstream
 // alarm: AlarmItem (incident 는 (lot_id, chamber_id) 두 개뿐 — sensor_id 등은 형제 필드)
 // siblings: 같은 incident 알람 목록 · wafer/limit: POST /traces/search 응답 · run: GET /agent/runs/{id}
 function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, area, onSelect }) {
   const pos = siblings.findIndex((a) => a.alarm_id === alarm.alarm_id)
 
-=======
-function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect, onStartAgent, creatingRun }) {
-  const siblings = alarms
-    .filter((a) => incidentKey(a) === incidentKey(alarm))
-    .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id))
-  const pos = siblings.findIndex((a) => a.alarm_id === alarm.alarm_id)
-
-  const sensor = (catalog?.sensors ?? []).find((item) => item.sensor_id === alarm.sensor_id) ?? null
-  const sensorLimits = [
-    ['LSL', sensor?.spec_lower],
-    ['LCL', sensor?.ctrl_lower],
-    ['TARGET', sensor?.target],
-    ['UCL', sensor?.ctrl_upper],
-    ['USL', sensor?.spec_upper],
-  ].filter(([, value]) => value != null)
-
->>>>>>> Stashed changes
   const traceQuery = new URLSearchParams({
     area,
     equipment: alarm.equipment_id ?? '',
@@ -79,21 +55,7 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect, onStartAgent
             크게 보기 →
           </Link>
         </div>
-<<<<<<< Updated upstream
         <AlarmMiniTrace wafer={wafer} limit={limit} />
-=======
-        <div className="flex flex-wrap gap-1.5 border-t border-line pb-1 pt-3">
-          {sensorLimits.length ? (
-            sensorLimits.map(([label, value]) => (
-              <span key={label} className="rounded-md bg-soft px-2 py-1 font-mono text-[10.5px] font-semibold text-g1">
-                {label} {value} {sensor?.unit ?? ''}
-              </span>
-            ))
-          ) : (
-            <span className="text-xs text-g2">카탈로그에 센서 한계선이 없습니다.</span>
-          )}
-        </div>
->>>>>>> Stashed changes
       </Card>
 
       <div className="rounded-lg border border-line bg-soft p-3.5">
@@ -156,18 +118,6 @@ function AlarmDetailPanel({ alarm, alarms, catalog, area, onSelect, onStartAgent
             <Link to={`/agent-runs/${alarm.latest_agent_run_id}`} className={BTN_PRIMARY_SM}>
               분석 보기 →
             </Link>
-          </div>
-        )}
-        {!alarm.latest_agent_run_id && (
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={onStartAgent}
-              disabled={creatingRun}
-              className={`${BTN_PRIMARY_SM} disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              {creatingRun ? '실행 요청 중…' : 'Agent 분석 시작 →'}
-            </button>
           </div>
         )}
       </div>

@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-<<<<<<< Updated upstream
 import { getAlarm, getAlarms, getTraceCatalog, searchTraces } from '../../../shared/api/detection.js'
 import { getRun } from '../../../shared/api/agent.js'
-=======
-import { createAgentRun } from '../../../shared/api/agent.js'
-import { getAlarm, getAlarms, getTraceCatalog } from '../../../shared/api/detection.js'
->>>>>>> Stashed changes
 import { fmtShort } from '../../../shared/api/format.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -62,11 +57,6 @@ function AlarmsPage() {
   const [list, setList] = useState(null)
   const [catalog, setCatalog] = useState(null)
   const [detail, setDetail] = useState(null)
-<<<<<<< Updated upstream
-=======
-  const [detailError, setDetailError] = useState(null)
-  const [creatingRun, setCreatingRun] = useState(false)
->>>>>>> Stashed changes
   const [error, setError] = useState(null)
   // 다른 화면(대시보드 등)이 쿼리 파라미터로 이관한 계층 필터 — 마운트 시 1회만 읽는다
   const [filter, setFilter] = useState(() => ({
@@ -86,7 +76,6 @@ function AlarmsPage() {
   const [sort, setSort] = useState({ key: 'occurred_at', dir: 'desc' })
   const [page, setPage] = useState(1)
 
-<<<<<<< Updated upstream
   // 계층 필터는 서버 파라미터로 전달한다 (전량 로드 후 클라이언트 필터 금지)
   const scope = useMemo(
     () => ({
@@ -101,14 +90,6 @@ function AlarmsPage() {
   const loadCatalog = useCallback(() => {
     getTraceCatalog()
       .then(setCatalog)
-=======
-  const load = useCallback(() => {
-    Promise.all([getAlarms({ size: 100 }), getTraceCatalog()])
-      .then(([alarmRes, traceRes]) => {
-        setData(alarmRes)
-        setCatalog(traceRes)
-      })
->>>>>>> Stashed changes
       .catch((e) => setError(e.message))
   }, [])
   useEffect(() => {
@@ -165,20 +146,6 @@ function AlarmsPage() {
     return (a) => byEquipment[a?.equipment_id] ?? ''
   }, [catalog])
 
-  const loadDetail = useCallback(() => {
-    if (!alarmId) return
-    getAlarm(alarmId)
-      .then((alarm) => {
-        setDetail({ alarmId, alarm })
-        setDetailError(null)
-      })
-      .catch((requestError) => setDetailError({ alarmId, message: requestError.message }))
-  }, [alarmId])
-
-  useEffect(() => {
-    loadDetail()
-  }, [loadDetail])
-
   const retry = () => {
     setError(null)
     setList(null)
@@ -188,50 +155,6 @@ function AlarmsPage() {
     loadDetail()
   }
 
-<<<<<<< Updated upstream
-=======
-  const items = useMemo(() => data?.items ?? [], [data])
-
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (a) =>
-          (!alarmIdFilter || alarmIdFilter.has(a.alarm_id)) &&
-          (filter.area === ALL || areaOf(a) === filter.area) &&
-          (filter.equipment === ALL || a.equipment_id === filter.equipment) &&
-          (filter.chamber === ALL || a.chamber_id === filter.chamber) &&
-          (filter.sensor === ALL || a.sensor_id === filter.sensor),
-      ),
-    [items, filter, alarmIdFilter],
-  )
-
-  const sorted = useMemo(() => {
-    const col = COLUMNS.find((c) => c.key === sort.key) ?? COLUMNS[1]
-    const sign = sort.dir === 'asc' ? 1 : -1
-    return [...filtered].sort((a, b) => sign * cmp(a, b, col) || a.alarm_id.localeCompare(b.alarm_id))
-  }, [filtered, sort])
-
-  // 안내 배너 건수 — 계층 필터와 무관하게 ID 제한만 반영한 실제 건수
-  const idScopedCnt = useMemo(
-    () => (alarmIdFilter ? items.filter((a) => alarmIdFilter.has(a.alarm_id)).length : 0),
-    [items, alarmIdFilter],
-  )
-
-  // 상세 패널은 목록 페이지와 별개로 GET /alarms/{alarm_id}를 호출해 딥링크에서도 복원한다.
-  // `/alarms` 처럼 alarmId 가 없을 때 detail 도 null 이면 undefined === undefined 가 참이 되어
-  // null.alarm 을 읽게 된다. detail 존재 여부를 먼저 확인한다.
-  const selected = detail && detail.alarmId === alarmId ? detail.alarm : null
-
-  const pageCnt = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  // 페이지를 직접 누르기 전까지는 선택된 알람이 보이는 페이지를 자동으로 맞춘다
-  const selIdx = selected ? sorted.findIndex((a) => a.alarm_id === selected.alarm_id) : -1
-  const autoPage = selIdx >= 0 ? Math.floor(selIdx / PAGE_SIZE) + 1 : 1
-  const curPage = Math.min(pageOverride ?? autoPage, pageCnt)
-  const rows = sorted.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
-  const rangeFrom = (curPage - 1) * PAGE_SIZE + 1
-  const rangeTo = Math.min(curPage * PAGE_SIZE, sorted.length)
-
->>>>>>> Stashed changes
   const onFilterChange = (key, value) => {
     setPage(1)
     // 상위를 바꾸면 하위 선택을 초기화한다
@@ -262,18 +185,6 @@ function AlarmsPage() {
 
   const select = (id) => navigate(`/alarms/${id}`)
   const close = () => navigate('/alarms')
-
-  const startAgent = () => {
-    if (!selected || creatingRun) return
-    setCreatingRun(true)
-    createAgentRun(selected.alarm_id)
-      .then((accepted) => {
-        if (!accepted?.agent_run_id) throw new Error('Agent 실행 ID가 응답에 없습니다.')
-        navigate(`/agent-runs/${accepted.agent_run_id}`)
-      })
-      .catch((requestError) => setDetailError({ alarmId: selected.alarm_id, message: requestError.message }))
-      .finally(() => setCreatingRun(false))
-  }
 
   if (error) return <ErrorState detail={error} onRetry={retry} />
   if (!list || !catalog) return <LoadingState message="알람 목록을 불러오는 중…" />
@@ -387,7 +298,6 @@ function AlarmsPage() {
         </Card>
 
         <div className="w-[470px] flex-none">
-<<<<<<< Updated upstream
           {selected ? (
             <AlarmDetailPanel
               alarm={selected}
@@ -401,21 +311,6 @@ function AlarmsPage() {
           ) : alarmId && !shown ? (
             <LoadingState message="알람 상세를 불러오는 중…" />
           ) : alarmId ? (
-=======
-          {detailError && detailError.alarmId === alarmId ? (
-            <ErrorState title="알람 상세를 불러오지 못했습니다" detail={detailError.message} onRetry={loadDetail} />
-          ) : selected ? (
-            <AlarmDetailPanel
-              alarm={selected}
-              alarms={items}
-              catalog={catalog}
-              area={areaOf(selected)}
-              onSelect={jump}
-              onStartAgent={startAgent}
-              creatingRun={creatingRun}
-            />
-          ) : detail && detail.alarmId === alarmId ? (
->>>>>>> Stashed changes
             <DashedCard className="flex flex-col items-start gap-3 px-[18px] py-4">
               <div className="text-[13px] font-extrabold text-navy">
                 <span className="font-mono">{alarmId}</span> 알람을 찾을 수 없습니다
@@ -424,8 +319,6 @@ function AlarmsPage() {
                 목록으로 →
               </Button>
             </DashedCard>
-          ) : alarmId ? (
-            <LoadingState message="알람 상세를 불러오는 중…" />
           ) : (
             <DashedCard className="px-[18px] py-4">
               <div className="text-[13px] font-extrabold text-navy">행을 누르면 상세가 열린다</div>

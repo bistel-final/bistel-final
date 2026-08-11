@@ -87,11 +87,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
       .then((res) => {
         setSending(false)
         onDecided({
-<<<<<<< Updated upstream
           status: res?.approval_status ?? RESULT_OF[decision],
-=======
-          status: res?.approval_status ?? (decision === 'APPROVE' ? 'APPROVED' : 'REJECTED'),
->>>>>>> Stashed changes
           decided_by: res?.decided_by ?? decidedBy.trim(),
           decision_comment: res?.decision_comment ?? decisionComment.trim(),
           approval_id: res?.approval_id ?? approval.approval_id,
@@ -99,15 +95,9 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           agent_run_status: res?.agent_run_status ?? null,
         })
         onToast({
-<<<<<<< Updated upstream
           tone: decision === DECISION.APPROVE ? 'ok' : 'oos',
           title: `APPROVAL ${decision}`,
           message: `${approval.approval_id} 를 ${DECIDED_LABEL[RESULT_OF[decision]]} 처리했습니다.`,
-=======
-          tone: decision === 'APPROVE' ? 'ok' : 'oos',
-          title: `APPROVAL ${decision}`,
-          message: `${approval.approval_id} 를 ${decision === 'APPROVE' ? '승인 완료' : '반려'} 처리했습니다.`,
->>>>>>> Stashed changes
         })
       })
       .catch((e) => {
@@ -151,11 +141,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="primary"
             aria-disabled={locked || sending}
-<<<<<<< Updated upstream
             onClick={() => submit(DECISION.APPROVE)}
-=======
-            onClick={() => submit('APPROVE')}
->>>>>>> Stashed changes
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             {sending ? '전송 중…' : '승인'}
@@ -163,11 +149,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           <Button
             variant="outline-red"
             aria-disabled={locked || sending}
-<<<<<<< Updated upstream
             onClick={() => submit(DECISION.REJECT)}
-=======
-            onClick={() => submit('REJECT')}
->>>>>>> Stashed changes
             className={`flex-1 ${locked || sending ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             반려

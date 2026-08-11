@@ -1,10 +1,6 @@
 // 트레이스 뷰어 파생 로직 — 순수 함수만 모아둔 파일 (컴포넌트 없음)
 //
-<<<<<<< Updated upstream
 // 데이터 출처는 GET /traces/catalog · POST /traces/search · GET /alarms 뿐이다. 값 창작 금지:
-=======
-// 데이터 출처는 getTraceCatalog() / searchTraces() / getAlarms()뿐이다. 값 창작 금지:
->>>>>>> Stashed changes
 // 없는 수치는 null 로 돌려주고 화면에서 "실측 미제공"으로 표기한다.
 //
 // 한계선은 센서별로 다르다. 전역 상수를 두지 말고 반드시 search 응답의 limits[sensor_id]
@@ -282,8 +278,8 @@ export function scopedAlarms(alarms, f) {
         a.lot_id === f.lot &&
         f.sensors.includes(a.sensor_id) &&
         f.wafers.includes(a.wafer_no) &&
-        dateOf(a.occurred_at) >= f.from &&
-        dateOf(a.occurred_at) <= f.to,
+        (!f.from || dateOf(a.occurred_at) >= f.from) &&
+        (!f.to || dateOf(a.occurred_at) <= f.to),
     )
     .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id))
 }
