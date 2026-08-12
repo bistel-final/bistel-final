@@ -69,7 +69,7 @@ git commit
 git push -u origin feat/detection-summary-tool
 ```
 
-PR 제목은 `[담당영역] 변경 요약`, 본문에 `## 변경 내용`·`## 변경 이유`가 있어야 PR Policy를 통과합니다. Issue를 닫으려면 본문에 `Closes #13`을 넣습니다.
+PR 제목은 `<type>: <한 줄 요약>`, 본문에 `## 변경 내용`·`## 변경 이유`가 있어야 PR Policy를 통과합니다. 담당 영역은 제목이 아니라 라벨로 표시합니다. Issue를 닫으려면 본문에 `Closes #13`을 넣습니다.
 
 **⑦ 검사와 리뷰 통과** (8·9장) — PR Policy 자동 검사 + **팀원 1명 이상 승인**
 
@@ -253,6 +253,8 @@ http://localhost:8000/docs          OpenAPI 문서
 http://localhost:8000/health        API 프로세스 생존 (외부 장애와 무관하게 200)
 http://localhost:8000/health/ready  PostgreSQL·Neo4j·n8n 준비 상태 (하나라도 실패 시 503)
 ```
+
+두 health 경로는 배포·운영 및 개발 진단용 내부 엔드포인트다. 사용자 업무 기능과 API 명세서의 22개 엔드포인트에는 포함하지 않는다.
 
 GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않습니다. 실행 결과는 PR의 `확인 방법`과 체크리스트에 기록합니다.
 

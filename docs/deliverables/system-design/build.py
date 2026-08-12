@@ -70,18 +70,20 @@ def main() -> None:
         md_path=SRC,
         out_path=OUT,
         doc_title="시스템 설계서",
-        subtitle="2026.08.11 · PhotoEtch",
+        subtitle="2026.08.12 · PhotoEtch",
         topic="LangGraph 기반 반도체 FDC 이상감지 에이전트",
         cover_mode="blockquote",
         heading_images=IMAGES,
         # 제출용 세 문서(요구사항 정의서·시스템 설계서·API 명세서)의 표지 표를
         # 작성일 · 최종 수정일 · 팀명 · 팀원 네 줄로 통일한다.
         # 문서 버전 · 기준 문서 · 목표 제출일 · 저장소는 내부 진행용이라 싣지 않는다.
-        drop_cover_labels={"문서 버전", "기준 문서", "목표 제출일", "저장소"},
+        # "최종 수정일"은 원본 블록쿼트에도 있지만 extra_cover_rows 에서 점(.)
+        # 표기로 다시 넣으므로, 여기서 하이픈(-) 표기 원본 줄은 제거해 중복을 막는다.
+        drop_cover_labels={"문서 버전", "기준 문서", "목표 제출일", "저장소", "최종 수정일"},
         # 원본 머리말의 "작성일"은 최종 수정 시점이다. 개정 이력 v0.1 기준으로 실제 작성일을 쓴다.
         cover_overrides={"작성일": "2026.08.04"},
         extra_cover_rows=[
-            ["최종 수정일", "2026.08.11"],
+            ["최종 수정일", "2026.08.12"],
             ["팀명", "PhotoEtch"],
             ["팀원", TEAM_MEMBERS],
         ],

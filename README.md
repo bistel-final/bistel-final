@@ -39,6 +39,7 @@ docs/       사양 원본과 AI 작업 문서
 - [강제 규칙](docs/ai-context/01-project-rules.md) — 계약·보안·계층·예산
 - [도메인 규칙과 불변 수치](docs/ai-context/02-domain-rules.md)
 - [개발 규칙](docs/development-guide.md) — Git · PR · 테스트 실행
+- [Task 분해 WBS v3](docs/planning/Task분해_WBS_v3.md) — Task ID·범위·선행관계·완료 기준의 Git 기준본
 
 **API 산출물**
 
@@ -77,6 +78,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | `http://localhost:8000/health/ready` | PostgreSQL·Neo4j·n8n readiness. 하나라도 실패하면 의존성별 상태와 함께 503 |
 
 `/health/ready`가 503이어도 API 프로세스는 종료되지 않습니다.
+두 health 경로는 내부 운영·개발 진단용이며, 제출용 API 명세서의 22개 업무 API에는 포함하지 않습니다.
 
 ## Frontend 실행
 
@@ -114,3 +116,10 @@ npm run build
 ## 배포 패키지
 
 기준정보·생산 데이터·문서 임베딩·Neo4j 관계는 멘토 배포패키지로 적재가 완료된 상태입니다. `01_schema.sql`·원본 CSV·`master.cypher`는 **수정하지 않습니다.** 추가 테이블·컬럼·인덱스는 `backend/migrations/`의 별도 마이그레이션으로만 관리합니다.
+
+기준·생산 데이터는 재적재하지 않고 source manifest와 읽기 전용으로 비교합니다. 상세 안전 규칙은 [bootstrap README](infra/bootstrap/README.md)를 따릅니다.
+
+```bash
+python backend/scripts/verify_source_data.py --profile runtime
+python backend/scripts/verify_source_data.py --profile evaluation
+```

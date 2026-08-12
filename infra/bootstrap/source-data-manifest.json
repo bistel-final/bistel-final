@@ -1,0 +1,250 @@
+{
+  "format_version": 2,
+  "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "source": {
+    "tables": {
+      "action_history": {
+        "columns": [
+          "action_id",
+          "lot_id",
+          "recipe_step_name",
+          "equipment_id",
+          "chamber_id",
+          "trigger_alarm_lot_hist_id",
+          "action_code",
+          "reason",
+          "approval_required",
+          "approval_status",
+          "approved_by",
+          "approved_at",
+          "send_channel",
+          "sent_at",
+          "send_status",
+          "created_at"
+        ],
+        "content_hash": "a166f3f8446b9f256816d8bf34575a292be187ad63b8920534ff38b5ec2390c8",
+        "row_count": 10
+      },
+      "code_action": {
+        "columns": [
+          "action_code",
+          "action_name",
+          "impact_scope",
+          "approval_required",
+          "severity_level",
+          "description"
+        ],
+        "content_hash": "1288ef0ca6f7a9090af0ff499c388197c76ebb721f85f04779c5662e8d0bf7df",
+        "row_count": 4
+      },
+      "code_fault": {
+        "columns": [
+          "fault_code",
+          "fault_name",
+          "main_sensor_id",
+          "main_recipe_step",
+          "description"
+        ],
+        "content_hash": "a13b6b2db41891b42ac93f9f533ec4cb7d9fceb44dbdf8015b4b5e9bfff6177b",
+        "row_count": 5
+      },
+      "dim_chamber": {
+        "columns": [
+          "chamber_id",
+          "equipment_id",
+          "chamber_no",
+          "model_code",
+          "area_id",
+          "step_id"
+        ],
+        "content_hash": "29f48a665b7c86deea5411325b6253e186173b1ace3c03943a6a783508443911",
+        "row_count": 4
+      },
+      "dim_equipment": {
+        "columns": [
+          "equipment_id",
+          "equipment_name",
+          "model_code",
+          "model_name",
+          "area_id",
+          "step_id",
+          "criticality",
+          "install_date",
+          "chamber_cnt",
+          "next_equipment_id"
+        ],
+        "content_hash": "0a99b902edabbd80ab1ce0a44527e179cfd45d7cac791f141ca9d95677bfde06",
+        "row_count": 2
+      },
+      "dim_metrology_item": {
+        "columns": [
+          "measure_type",
+          "measure_name",
+          "step_id",
+          "unit",
+          "target_value",
+          "spec_lower",
+          "spec_upper",
+          "description"
+        ],
+        "content_hash": "4e35e5f379e9574cb2e02632f1f135eb5ce74d4981dc292f7636ad51b88552b1",
+        "row_count": 2
+      },
+      "dim_process_step": {
+        "columns": [
+          "step_id",
+          "step_name",
+          "area_id",
+          "area_name",
+          "step_seq",
+          "layer",
+          "model_code",
+          "next_step_id",
+          "description"
+        ],
+        "content_hash": "3cd3bfb47cdc740166c43d40174bc061738c5c9cc30bd2267b1dc47cdde7609f",
+        "row_count": 2
+      },
+      "dim_recipe": {
+        "columns": [
+          "recipe_id",
+          "step_id",
+          "model_code",
+          "recipe_name",
+          "description"
+        ],
+        "content_hash": "89d34466699b141acedd625051ffd5c0263b92ef6bd22d3365249bbd1e53b707",
+        "row_count": 2
+      },
+      "dim_recipe_step": {
+        "columns": [
+          "recipe_id",
+          "recipe_step_no",
+          "recipe_step_name",
+          "duration_ratio",
+          "description"
+        ],
+        "content_hash": "ba6c6f9ae915954435f24862c46da3ddb03f919603b64e33292e7658afe79f6e",
+        "row_count": 4
+      },
+      "dim_sensor": {
+        "columns": [
+          "sensor_id",
+          "sensor_name",
+          "unit",
+          "model_code",
+          "target_value",
+          "spec_lower",
+          "ctrl_lower",
+          "ctrl_upper",
+          "spec_upper",
+          "description"
+        ],
+        "content_hash": "26958c66c69302571c0898d56f8c07539b0fd8026da2696f60533335d8233716",
+        "row_count": 8
+      },
+      "fdc_alarm": {
+        "columns": [
+          "alarm_id",
+          "lot_hist_id",
+          "lot_id",
+          "wafer_no",
+          "chamber_id",
+          "equipment_id",
+          "sensor_id",
+          "recipe_step_no",
+          "recipe_step_name",
+          "rule_id",
+          "judgement",
+          "hit_cnt",
+          "detail",
+          "occurred_at"
+        ],
+        "content_hash": "7f589bcbf1f3d336cfe0b25cc5ddf72c3021f9dad4523c968b3f2d907570cd9b",
+        "row_count": 51
+      },
+      "fdc_rule": {
+        "columns": [
+          "rule_id",
+          "rule_name",
+          "judgement",
+          "threshold_cnt",
+          "description"
+        ],
+        "content_hash": "12b91c99146288d4a66f815848760233c9c0bfbb65bbddacf8bce2df9d1d270a",
+        "row_count": 3
+      },
+      "fdc_summary": {
+        "columns": [
+          "lot_hist_id",
+          "sensor_id",
+          "recipe_step_no",
+          "recipe_step_name",
+          "value_mean",
+          "value_std",
+          "value_min",
+          "value_max",
+          "point_cnt",
+          "ooc_point_cnt",
+          "oos_point_cnt",
+          "judgement"
+        ],
+        "content_hash": "3a478a500f2f5a585d041d746e3a66916d99c75c4cb65ec69a010f216b544465",
+        "row_count": 1600
+      },
+      "fdc_trace": {
+        "columns": [
+          "lot_hist_id",
+          "sensor_id",
+          "seq_no",
+          "recipe_step_no",
+          "recipe_step_name",
+          "measured_at",
+          "value"
+        ],
+        "content_hash": "2bd8bfe5f9db4a12c232aea991db63f97d8a4592f7f5f5314e333edc9ae384ca",
+        "row_count": 4800
+      },
+      "lot_history": {
+        "columns": [
+          "lot_hist_id",
+          "lot_id",
+          "wafer_no",
+          "device_id",
+          "step_id",
+          "area_id",
+          "equipment_id",
+          "chamber_id",
+          "recipe_id",
+          "track_in_at",
+          "track_out_at",
+          "duration_sec",
+          "chamber_wafer_cum",
+          "lot_seq",
+          "fault_code"
+        ],
+        "content_hash": "7fe1ded5883e0beed100525c284641df2a72eadd75c520c52b1a6391be45ef13",
+        "row_count": 200
+      },
+      "metrology": {
+        "columns": [
+          "metrology_id",
+          "lot_hist_id",
+          "lot_id",
+          "wafer_no",
+          "step_id",
+          "measure_type",
+          "unit",
+          "measured_value",
+          "spec_center",
+          "spec_lower",
+          "spec_upper",
+          "judgement",
+          "measured_at"
+        ],
+        "content_hash": "ac26ffb09ec3b6c84a0ab608895bee6f83c83a0b0635cad120555338d58050f7",
+        "row_count": 40
+      }
+    }
+  }
+}

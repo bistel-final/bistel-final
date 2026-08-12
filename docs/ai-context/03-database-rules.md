@@ -1,7 +1,7 @@
 # 03. 데이터베이스 규칙
 
 > 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
-> 마지막 동기화: 2026-08-11
+> 마지막 동기화: 2026-08-12
 
 DB 접근 pool·계정 요약은 `01-project-rules.md` 6절에 있다. 이 문서는 스키마·마이그레이션·권한의 상세를 다룬다.
 
@@ -193,6 +193,24 @@ lot_history  fdc_trace  fdc_summary  fdc_alarm  metrology  action_history
 **운영 `kosa_agent`와 평가 `kosa_text2sql`의 `action_history` 스키마가 다르다.**
 `001_agent_runtime.sql`은 `kosa_agent`에만 적용하므로 `send_started_at`·`send_attempt_count`가 운영에만 있다.
 allowlist 컬럼 캐시와 프롬프트 스키마 컨텍스트를 **pool별로 각각** 만든다. (설계 9.5)
+
+---
+
+## 9. Source data preflight
+
+`infra/bootstrap/source-data-manifest.json` v2는 위 16개 base table의 **원본 컬럼 목록·행 수·canonical content hash**를 단일 `source.tables` 기준값으로 저장한다. runtime과 evaluation 프로파일은 fresh bootstrap에서 같은 원본 01→02→03을 적재하므로 기준값을 공유한다.
+
+```bash
+python backend/scripts/verify_source_data.py --profile runtime
+python backend/scripts/verify_source_data.py --profile evaluation
+```
+
+- 검증은 public table SELECT만 수행하며 read-only transaction과 statement timeout 30초를 적용한다.
+- `nl_query_log`는 누적 평가 이력이므로 대상에서 제외한다.
+- `001_agent_runtime.sql`이 runtime `action_history`에 추가한 컬럼은 source hash에서 제외하고 `verify_migrations.py`가 검증한다.
+- manifest 최초 생성·변경은 migration 적용 전 승인된 원본 DB에서만 `--generate --confirm`으로 수행한다. `--confirm` 없는 generate는 미리보기만 한다.
+- 프로파일 DB명, format version, hash algorithm, 테이블·컬럼·행 수·hash 형식이 다르면 즉시 실패한다.
+- 출력에는 host 별칭·port·DB명만 허용하며 계정·비밀번호·전체 DSN을 남기지 않는다.
 
 ---
 
