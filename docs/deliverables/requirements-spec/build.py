@@ -69,7 +69,7 @@ def main() -> None:
         md_path=SRC,
         out_path=OUT,
         doc_title="요구사항 정의서",
-        subtitle="2026.08.11 · PhotoEtch",
+        subtitle="2026.08.12 · PhotoEtch",
         topic="LangGraph 기반 반도체 FDC 이상감지 에이전트",
         cover_mode="table",
         heading_images=HEADING_IMAGES,

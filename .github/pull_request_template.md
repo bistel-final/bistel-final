@@ -22,6 +22,9 @@ Squash merge 라서 이 제목이 그대로 main 의 커밋 메시지가 됩니�
 
 ## 확인 사항 (선택)
 
-- 실행하거나 확인한 내용을 간단히 작성해 주세요.
+- 대상 요구사항 ID:
+- 실행한 테스트 명령과 결과:
+- 결과 artifact 또는 관련 Notion Task:
+- 미완료·미검증 항목:
 - [ ] AI 문서나 원본 사양을 변경했다면 `CLAUDE.md`·`AGENTS.md`의 일치 여부와 `specifications/`·`ai-context/`의 버전 동기화를 확인했다
 - [ ] E2E를 실행했다면 공용 서버가 아닌 격리 DB에서 수행했다

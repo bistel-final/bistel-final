@@ -1,7 +1,7 @@
 # 04. API · Tool 계약
 
 > 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
-> 마지막 동기화: 2026-08-11
+> 마지막 동기화: 2026-08-12
 
 Tool 반환 규격과 REST 상태코드 표는 `01-project-rules.md` 3·4절에 있다. 이 문서는 엔드포인트 목록과 DTO를 다룬다.
 
@@ -82,6 +82,8 @@ GET  /audit-logs                     event_type?, actor_type?, entity_type?, ent
 ```
 
 전체 22개다. `GET /alarms`의 복수 파라미터는 **AND**로 적용한다.
+
+`GET /health`와 `GET /health/ready`는 배포·운영 및 개발 진단용 내부 엔드포인트이므로 위 22개 업무 API와 API 명세서 개수에 포함하지 않는다. 내부 health 계약은 요구사항 FR-I-05와 설계 10.1을 따른다.
 
 배열 조건이 있으면 `POST` + JSON body 를 쓴다(`/traces/search`·`/documents/search`). query string 에는 배열 표준 표기가 없다.
 

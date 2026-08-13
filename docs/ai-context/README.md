@@ -3,7 +3,7 @@
 > 기준 요구사항: v1.9
 > 기준 시스템설계서: v1.10
 > 기준 역할분담: v9.6
-> 마지막 동기화: 2026-08-11
+> 마지막 동기화: 2026-08-12
 
 이 폴더는 AI 코딩 도구(Claude Code · Codex 등)와 팀원이 **빠르게 문맥을 잡기 위한 요약본**이다.
 원본은 `docs/specifications/` 이며, 세 문서 합계가 약 137K 토큰이라 통째로 읽히지 않는다.
@@ -99,6 +99,8 @@ docs/ai-context/01-project-rules.md  강제 규칙
 | `07-testing-guide.md` | 테스트 계층 · 실행 · E2E 격리 · 평가 artifact | 전원 |
 | `PROMPT_TEMPLATE.md` | 도구 무관 요청 양식 | 전원 |
 | `tasks/*.md` | 역할별 범위 · 요구사항 ID · 완료 기준 | 각 담당자 |
+
+Task ID·범위·선행관계·완료 기준의 Git 기준본은 `docs/planning/Task분해_WBS_v3.md`다. 담당자·진행 상태·일정·블로커는 Notion Task DB에서 실시간 관리하며, 상태만 바뀌는 경우 Git 기준본을 수정하지 않는다.
 
 전부 읽을 필요는 없다. 위 라우팅에 따라 **필요한 것만 조합**한다.
 
