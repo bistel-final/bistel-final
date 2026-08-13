@@ -38,11 +38,11 @@ def _valid_manifest(cache_dir: Path, revision: str = "fixed-revision") -> dict:
 
 class TestResolveRevision:
     def test_env_revision_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EMBEDDING_MODEL_REVISION", "env-revision")
+        monkeypatch.setenv("EMBEDDING_MODEL_REVISION", pem.EXPECTED_MODEL_REVISION)
 
-        assert pem.resolve_revision() == "env-revision"
+        assert pem.resolve_revision() == pem.EXPECTED_MODEL_REVISION
 
-    @pytest.mark.parametrize("value", [None, "", "   ", "change_me"])
+    @pytest.mark.parametrize("value", [None, "", "   ", "change_me", "main"])
     def test_missing_empty_or_placeholder_revision_fails(
         self, monkeypatch: pytest.MonkeyPatch, value: str | None
     ) -> None:
@@ -53,12 +53,21 @@ class TestResolveRevision:
         with pytest.raises(RuntimeError, match="EMBEDDING_MODEL_REVISION"):
             pem.resolve_revision()
 
+    def test_wrong_commit_hash_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "EMBEDDING_MODEL_REVISION",
+            "0000000000000000000000000000000000000000",
+        )
+
+        with pytest.raises(RuntimeError, match="공식 revision"):
+            pem.resolve_revision()
+
 
 class TestResolveModelId:
     def test_env_model_id_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EMBEDDING_MODEL", "env/model")
+        monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
-        assert pem.resolve_model_id() == "env/model"
+        assert pem.resolve_model_id() == "BAAI/bge-m3"
 
     @pytest.mark.parametrize("value", [None, "", "   "])
     def test_missing_or_empty_model_id_fails(
@@ -71,6 +80,12 @@ class TestResolveModelId:
         with pytest.raises(RuntimeError, match="EMBEDDING_MODEL"):
             pem.resolve_model_id()
 
+    def test_wrong_model_id_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/other-model")
+
+        with pytest.raises(RuntimeError, match="BAAI/bge-m3"):
+            pem.resolve_model_id()
+
 
 class TestResolveEmbeddingDimension:
     def test_missing_dimension_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,9 +95,9 @@ class TestResolveEmbeddingDimension:
             pem.resolve_embedding_dimension()
 
     def test_env_dimension_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("EMBEDDING_DIM", "768")
+        monkeypatch.setenv("EMBEDDING_DIM", "1024")
 
-        assert pem.resolve_embedding_dimension() == 768
+        assert pem.resolve_embedding_dimension() == 1024
 
     @pytest.mark.parametrize("value", ["abc", "1.5"])
     def test_non_integer_dimension_fails(
@@ -100,6 +115,12 @@ class TestResolveEmbeddingDimension:
         monkeypatch.setenv("EMBEDDING_DIM", value)
 
         with pytest.raises(RuntimeError, match="EMBEDDING_DIM 은 1 이상"):
+            pem.resolve_embedding_dimension()
+
+    def test_wrong_dimension_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EMBEDDING_DIM", "768")
+
+        with pytest.raises(RuntimeError, match="1024"):
             pem.resolve_embedding_dimension()
 
 
@@ -258,6 +279,21 @@ class TestManifest:
 
         assert any("sha256 불일치" in error for error in errors)
 
+    def test_extra_cache_file_is_reported(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        manifest = _valid_manifest(cache_dir)
+        _write_model_file(cache_dir, "extra.bin", "unexpected")
+
+        errors = pem.validate_manifest(
+            manifest=manifest,
+            model_id="BAAI/bge-m3",
+            revision="fixed-revision",
+            cache_dir=cache_dir,
+            embedding_dimension=1024,
+        )
+
+        assert any("manifest 미등록 파일" in error for error in errors)
+
     def test_parent_path_reference_is_rejected(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
         manifest = _valid_manifest(cache_dir)
@@ -271,7 +307,37 @@ class TestManifest:
             embedding_dimension=1024,
         )
 
-        assert any("상위 경로 참조 금지" in error for error in errors)
+        assert any("상대 하위 경로만 허용" in error for error in errors)
+
+    def test_absolute_path_reference_is_rejected(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        manifest = _valid_manifest(cache_dir)
+        manifest["files"][0]["path"] = "C:/outside/config.json"
+
+        errors = pem.validate_manifest(
+            manifest=manifest,
+            model_id="BAAI/bge-m3",
+            revision="fixed-revision",
+            cache_dir=cache_dir,
+            embedding_dimension=1024,
+        )
+
+        assert any("상대 하위 경로만 허용" in error for error in errors)
+
+    def test_duplicate_manifest_path_is_rejected(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        manifest = _valid_manifest(cache_dir)
+        manifest["files"].append(dict(manifest["files"][0]))
+
+        errors = pem.validate_manifest(
+            manifest=manifest,
+            model_id="BAAI/bge-m3",
+            revision="fixed-revision",
+            cache_dir=cache_dir,
+            embedding_dimension=1024,
+        )
+
+        assert any("manifest path 중복" in error for error in errors)
 
 
 class TestRun:
@@ -316,9 +382,7 @@ class TestRun:
         pem.save_manifest(manifest, manifest_path)
         before = manifest_path.read_text(encoding="utf-8")
 
-        def fake_prefetch(
-            model_id: str, revision: str, target_cache_dir: Path
-        ) -> Path:
+        def fake_prefetch(model_id: str, revision: str, target_cache_dir: Path) -> Path:
             assert (model_id, revision) == ("BAAI/bge-m3", "fixed-revision")
             assert target_cache_dir == cache_dir
             return target_cache_dir
@@ -345,9 +409,7 @@ class TestRun:
         cache_dir = tmp_path / "cache"
         manifest_path = tmp_path / "manifest.json"
 
-        def fake_prefetch(
-            model_id: str, revision: str, target_cache_dir: Path
-        ) -> Path:
+        def fake_prefetch(model_id: str, revision: str, target_cache_dir: Path) -> Path:
             assert (model_id, revision) == ("BAAI/bge-m3", "fixed-revision")
             _write_model_file(target_cache_dir)
             return target_cache_dir

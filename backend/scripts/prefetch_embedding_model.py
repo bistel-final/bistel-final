@@ -16,9 +16,10 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from dotenv import load_dotenv
@@ -29,6 +30,10 @@ MANIFEST_PATH = (
 )
 MANIFEST_FORMAT_VERSION = 1
 HASH_ALGORITHM = "sha256"
+EXPECTED_MODEL_ID = "BAAI/bge-m3"
+EXPECTED_EMBEDDING_DIMENSION = 1024
+EXPECTED_MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
+COMMIT_HASH_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 def load_dotenv_file() -> None:
@@ -44,16 +49,25 @@ def require_env(name: str) -> str:
 
 def resolve_revision() -> str:
     revision = require_env("EMBEDDING_MODEL_REVISION")
-    if revision == "change_me":
+    if not COMMIT_HASH_PATTERN.fullmatch(revision):
         raise RuntimeError(
-            "EMBEDDING_MODEL_REVISION 에 정확한 Hugging Face commit hash 를 "
-            "설정하세요."
+            "EMBEDDING_MODEL_REVISION 은 40자리 소문자 commit hash 여야 합니다: "
+            f"{revision}"
+        )
+    if revision != EXPECTED_MODEL_REVISION:
+        raise RuntimeError(
+            f"EMBEDDING_MODEL_REVISION 이 공식 revision 과 다릅니다: {revision}"
         )
     return revision
 
 
 def resolve_model_id() -> str:
-    return require_env("EMBEDDING_MODEL")
+    model_id = require_env("EMBEDDING_MODEL")
+    if model_id != EXPECTED_MODEL_ID:
+        raise RuntimeError(
+            f"EMBEDDING_MODEL 은 {EXPECTED_MODEL_ID} 이어야 합니다: {model_id}"
+        )
+    return model_id
 
 
 def resolve_embedding_dimension() -> int:
@@ -68,6 +82,11 @@ def resolve_embedding_dimension() -> int:
 
     if dimension <= 0:
         raise RuntimeError(f"EMBEDDING_DIM 은 1 이상이어야 합니다: {dimension}")
+    if dimension != EXPECTED_EMBEDDING_DIMENSION:
+        raise RuntimeError(
+            f"EMBEDDING_DIM 은 {EXPECTED_EMBEDDING_DIMENSION} 이어야 합니다: "
+            f"{dimension}"
+        )
     return dimension
 
 
@@ -183,6 +202,17 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> dict[str, Any]:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+def _is_invalid_manifest_path(path: str) -> bool:
+    posix_path = PurePosixPath(path)
+    windows_path = PureWindowsPath(path)
+    return (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or ".." in posix_path.parts
+        or ".." in windows_path.parts
+    )
+
+
 def validate_manifest(
     *,
     manifest: dict[str, Any],
@@ -215,6 +245,14 @@ def validate_manifest(
         errors.append("files 목록 누락")
         return errors
 
+    try:
+        actual_files = collect_model_files(cache_dir)
+    except RuntimeError as exc:
+        errors.append(str(exc))
+        actual_files = []
+    actual_paths = {file["path"] for file in actual_files}
+    expected_paths: set[str] = set()
+
     for index, entry in enumerate(expected_files):
         if not isinstance(entry, dict):
             errors.append(f"files[{index}] 형식 오류")
@@ -226,9 +264,13 @@ def validate_manifest(
         if not isinstance(relative_path, str) or not relative_path:
             errors.append(f"files[{index}].path 형식 오류")
             continue
-        if ".." in Path(relative_path).parts:
-            errors.append(f"{relative_path}: 상위 경로 참조 금지")
+        if _is_invalid_manifest_path(relative_path):
+            errors.append(f"{relative_path}: 상대 하위 경로만 허용")
             continue
+        if relative_path in expected_paths:
+            errors.append(f"{relative_path}: manifest path 중복")
+            continue
+        expected_paths.add(relative_path)
         if not isinstance(expected_size, int) or isinstance(expected_size, bool):
             errors.append(f"{relative_path}: size_bytes 형식 오류")
             continue
@@ -252,6 +294,10 @@ def validate_manifest(
         actual_sha256 = _sha256_file(actual_path)
         if actual_sha256 != expected_sha256:
             errors.append(f"{relative_path}: sha256 불일치")
+
+    missing_from_manifest = sorted(actual_paths - expected_paths)
+    for relative_path in missing_from_manifest:
+        errors.append(f"{relative_path}: manifest 미등록 파일")
 
     return errors
 
