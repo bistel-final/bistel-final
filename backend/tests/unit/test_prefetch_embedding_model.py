@@ -339,6 +339,23 @@ class TestManifest:
 
         assert any("manifest path 중복" in error for error in errors)
 
+    def test_equivalent_manifest_path_is_rejected(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "cache"
+        manifest = _valid_manifest(cache_dir)
+        duplicate = dict(manifest["files"][0])
+        duplicate["path"] = "./config.json"
+        manifest["files"].append(duplicate)
+
+        errors = pem.validate_manifest(
+            manifest=manifest,
+            model_id="BAAI/bge-m3",
+            revision="fixed-revision",
+            cache_dir=cache_dir,
+            embedding_dimension=1024,
+        )
+
+        assert any("manifest path 중복" in error for error in errors)
+
 
 class TestRun:
     def test_dry_run_does_not_prefetch(

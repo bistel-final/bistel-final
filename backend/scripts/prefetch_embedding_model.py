@@ -202,15 +202,22 @@ def load_manifest(manifest_path: Path = MANIFEST_PATH) -> dict[str, Any]:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
-def _is_invalid_manifest_path(path: str) -> bool:
+def _normalize_manifest_path(path: str) -> str | None:
+    if "\\" in path:
+        return None
     posix_path = PurePosixPath(path)
     windows_path = PureWindowsPath(path)
-    return (
+    if (
         posix_path.is_absolute()
         or windows_path.is_absolute()
         or ".." in posix_path.parts
         or ".." in windows_path.parts
-    )
+    ):
+        return None
+    normalized_path = posix_path.as_posix()
+    if not normalized_path or normalized_path == ".":
+        return None
+    return normalized_path
 
 
 def validate_manifest(
@@ -264,13 +271,14 @@ def validate_manifest(
         if not isinstance(relative_path, str) or not relative_path:
             errors.append(f"files[{index}].path 형식 오류")
             continue
-        if _is_invalid_manifest_path(relative_path):
+        normalized_path = _normalize_manifest_path(relative_path)
+        if normalized_path is None:
             errors.append(f"{relative_path}: 상대 하위 경로만 허용")
             continue
-        if relative_path in expected_paths:
+        if normalized_path in expected_paths:
             errors.append(f"{relative_path}: manifest path 중복")
             continue
-        expected_paths.add(relative_path)
+        expected_paths.add(normalized_path)
         if not isinstance(expected_size, int) or isinstance(expected_size, bool):
             errors.append(f"{relative_path}: size_bytes 형식 오류")
             continue
@@ -278,7 +286,7 @@ def validate_manifest(
             errors.append(f"{relative_path}: sha256 형식 오류")
             continue
 
-        actual_path = cache_dir / relative_path
+        actual_path = cache_dir / normalized_path
         if not actual_path.exists():
             errors.append(f"{relative_path}: 파일 누락")
             continue
