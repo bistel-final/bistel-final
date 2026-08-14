@@ -126,7 +126,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 | V4-A-2.1 | P0 | window evaluation 구현. 완료: 신규 가이드 식으로 4,800건(IN 4,542/OOC 216/OOS 42) reference output 결정론 비교 | FR-A-02 | V4-A-1.3 | 1.5h |
 | V4-A-2.2 | P0 | Trace 알람 구현. 완료: raw point OOS 후보·발행 키·시각·중복 제거와 TRACE 126건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
 | V4-A-2.3 | P0 | Summary 알람 구현. 완료: 비OOS 표본 mean 분포의 CL±3σ와 Summary mean 판정, 보정 시각 포함 SUMMARY 47건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
-| V4-A-2.4 | P0 | R03 구현·적재. 완료: `(chamber, parameter, recipe step)`, 비OOS reset, LOT 경계 유지, `run==3` 1회 발행 규칙으로 corrected source를 계산한다. 전용 transaction에서 `r03_alarm_history`를 rebuild해 원자 교체하고 3건·`member_refs`·`policy_version`을 검증하며 실패 시 이전 상태로 rollback한다 | FR-A-02 | V4-A-2.1, V4-CM-2.1 | 1.0h |
+| V4-A-2.4 | P0 | R03 구현·적재. 완료: `(chamber, parameter, recipe step)`, 비OOS reset, LOT 경계 유지, `run==3` 1회 발행 규칙으로 corrected source를 계산한다. `source`·`lot_hist_id`·`parameter_id`·`recipe_step_no`·`policy_version` canonical JSON의 SHA-256 앞 20 lowercase hex로 `R03-<20hex>`를 만들고 같은 source·policy rebuild에서 ID 불변을 검증한다. 전용 transaction에서 `r03_alarm_history`를 rebuild해 원자 교체하고 3건·`member_refs`·`policy_version`·hash 충돌 0건을 확인하며 실패 시 이전 상태로 rollback한다 | FR-A-02 | V4-A-2.1, V4-CM-2.1 | 1.0h |
 
 ### V4-A-3. 비지도 이상 점수
 
@@ -155,7 +155,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 |---|---|---|---|---|---:|
 | V4-A-5.1 | P1 | 알람 목록·상세 API. 완료: `date_from`·`date_to`·`area`(허용값 `photo`, `etch`, `ALL`)는 필수, equipment·chamber·parameter는 선택 필터다. corrected 전체 기간 `2026-08-01~2026-08-12`와 `area=ALL`에서 기본 TRACE 126+SUMMARY 47=`total=173`, 같은 필터의 `source=R03`은 3건, `include_derived=true`면 `total=176`; 단건은 `GET /alarms/{source}/{alarm_id}`, 안정 정렬·404/422 | FR-A-06 | V4-A-2.4, V4-CM-2.2 | 1.5h |
 | V4-A-5.2 | P1 | parameter·Trace API. 완료: `GET /parameters`, 최소 `GET /trace`, 확장 catalog/search가 corrected seq 0~5·step·한계선에서 같은 결과를 반환 | FR-A-06 | V4-A-1.4 | 1.5h |
-| V4-A-5.3 | P1 | dataset bounds·대시보드 API. 완료: `GET /dataset/bounds`가 dataset epoch/revision, min/max date `2026-08-01~2026-08-12`, area·equipment·chamber·parameter 선택지를 반환한다. Frontend는 min/max를 `date_from`·`date_to`와 `area=ALL`로 명시 전송하며 trend·parameter·chamber 집계가 같은 필터를 사용하고 LLM 호출 0회 | FR-A-06 | V4-A-5.1 | 1.5h |
+| V4-A-5.3 | P1 | dataset bounds·대시보드 API. 완료: `GET /dataset/bounds`가 dataset epoch/revision, min/max date `2026-08-01~2026-08-12`, area·equipment·chamber·parameter 선택지를 반환한다. Frontend는 min/max를 `date_from`·`date_to`와 `area=ALL`로 명시 전송하며 trend·parameter·chamber 집계가 같은 필터를 사용한다. 필터 결과 0건도 `date_range=[date_from,date_to]`, count 0, 빈 목록으로 응답하고 `date_range=[]`은 거부하며 LLM 호출은 0회다 | FR-A-06 | V4-A-5.1 | 1.5h |
 | V4-A-5.4 | P1 | C 승인 목록 결합. 완료: C ApprovalService 직접 재사용, A SQL/HTTP self-call 0건 | FR-A-06 | V4-A-5.3, V4-C-7.1 | 1.0h |
 
 ### V4-A-6. Detection React
@@ -163,7 +163,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 | ID | 우선 | 작업·완료 기준 | 근거 | 선행 | 시간 |
 |---|---|---|---|---|---:|
 | V4-A-6.1 | P1 | 대시보드 실연동. 완료: 첫 진입에 `GET /dataset/bounds`를 호출해 초기 `date_from`·`date_to`·`area=ALL`을 명시 전송하고 line trend·bar comparison·필터·적용 기간·실데이터 표시 | FR-A-07 | V4-A-5.3, V4-A-5.4 | 2.0h |
-| V4-A-6.2 | P1 | 알람 목록·상세. 완료: source 표시·Agent 실행 연결, `/alarms/:alarmId`의 `:alarmId`를 `TRACE:TAL-...`·`SUMMARY:SAL-...`·`R03:R03-...` composite token으로 직렬화해 direct URL에서 AlarmRef 복원, source 없는 legacy ID는 선택 요구, Mock 0건 | FR-A-07, FR-C-13 | V4-A-5.1, V4-C-7.1 | 1.5h |
+| V4-A-6.2 | P1 | 알람 목록·상세. 완료: source 표시·Agent 실행 연결, 분석 실행은 `POST /agent/runs`에 `{alarm:{source,alarm_id}}`만 전송하고 legacy `{alarm_id}` payload는 0건이다. `/alarms/:alarmId`의 `:alarmId`를 `TRACE:TAL-...`·`SUMMARY:SAL-...`·`R03:R03-<20hex>` composite token으로 직렬화해 direct URL에서 AlarmRef를 복원하며 source 없는 legacy ID는 선택을 요구하고 Mock은 0건이다 | FR-A-07, FR-C-13 | V4-A-5.1, V4-C-7.1 | 1.5h |
 | V4-A-6.3 | P1 | Trace viewer. 완료: seq 0~5·step 구분·한계선·다중 series, Loading/Error/Empty/Success | FR-A-07 | V4-A-5.2 | 1.5h |
 | V4-A-6.4 | P1 | Frontend 계약 테스트. 완료: query alias·enum 임의 변환 0건, build·route·empty fixture 통과 | FR-A-07 | V4-A-6.1, V4-A-6.2, V4-A-6.3 | 1.0h |
 
@@ -321,10 +321,10 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 
 | ID | 우선 | 작업·완료 기준 | 근거 | 선행 | 시간 |
 |---|---|---|---|---|---:|
-| V4-C-7.1 | P1 | Agent/action/approval API. 완료: 요구사항 11.1의 C 업무 API와 `POST /agent/runs/{run_id}/retry`, n8n write-back `POST /internal/actions/{action_id}/delivery`, 운영자용 `POST /actions/{action_id}/deliveries/{channel}/retry`, AlarmRef·channel 상태와 404/409/422/503 계약 | FR-C-01, FR-C-04, FR-C-05, FR-C-06, FR-C-13 | V4-C-3.4, V4-C-5.3, V4-C-6.2 | 1.5h |
+| V4-C-7.1 | P1 | Agent/action/approval API. 완료: `POST /agent/runs`는 `{alarm:{source,alarm_id}}`만 허용하고 source 없는 `{alarm_id}`는 422로 거부한다. 요구사항 11.1의 나머지 C 업무 API와 `POST /agent/runs/{run_id}/retry`, n8n write-back `POST /internal/actions/{action_id}/delivery`, 운영자용 `POST /actions/{action_id}/deliveries/{channel}/retry`, AlarmRef·channel 상태와 404/409/422/503 계약을 검증한다 | FR-C-01, FR-C-04, FR-C-05, FR-C-06, FR-C-13 | V4-C-3.4, V4-C-5.3, V4-C-6.2 | 1.5h |
 | V4-C-7.2 | P1 | n8n 이메일 adapter. 완료: WARNING email과 action/approval commit 이후 EQP_HOLD 승인요청 email, workflow write-back·timeout·실패 기록 | FR-C-06, FR-C-12 | V4-C-5.3, V4-CM-2.4 | 1.5h |
 | V4-C-7.3 | P1 | MES Mock adapter. 완료: 승인된 EQP_HOLD만 호출, 비활성 설정, 실제 MES credential 0건 | FR-C-06, FR-C-12 | V4-C-6.3 | 1.5h |
-| V4-C-7.4 | P1 | `send_action` Tool 계약·channel 멱등성. 완료: 입력은 `action_id`만 허용하고 run/channel은 저장 상태에서 파생, 성공·실패 Result와 reason 접두어 contract test, `(action_id,channel)`별 효과 최대 1회와 hash 충돌 fixture를 통과한다. 응답 유실은 `UNKNOWN`으로 기록하고 자동 retry 0건이다 | FR-C-06, FR-C-12 | V4-C-7.2, V4-C-7.3, V4-CM-2.4 | 1.5h |
+| V4-C-7.4 | P1 | `send_action` Tool 계약·channel 멱등성. 완료: 입력은 `action_id`만 허용하고 run/channel은 저장 상태에서 파생한다. `{ok,action_id,reason}` 골격과 `deliveries:[{channel,status,sent,duplicate}]`를 검증하고 단일 top-level `sent`는 거부한다. 성공·실패 reason 접두어, `(action_id,channel)`별 효과 최대 1회와 hash 충돌 fixture를 통과하며 응답 유실은 `UNKNOWN`으로 기록하고 자동 retry는 0건이다 | FR-C-06, FR-C-12 | V4-C-7.2, V4-C-7.3, V4-CM-2.4 | 1.5h |
 
 ### V4-C-8. 배치·복구·E2E
 

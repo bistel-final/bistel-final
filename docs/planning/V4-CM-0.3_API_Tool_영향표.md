@@ -67,7 +67,7 @@
 
 | endpoint | 판정 | v2 핵심 변경 | 소유/Task |
 |---|---|---|---|
-| `POST /agent/runs` | 변경 | body는 `AlarmRef`; 단일 alarm ID 금지 | C / V4-C-7.1 |
+| `POST /agent/runs` | 변경 | body는 `{alarm:{source,alarm_id}}`; 단일 `{alarm_id}` 금지·422 | C / V4-C-7.1 |
 | `GET /agent/runs`, `GET /agent/runs/{run_id}` | 변경 | `predicted_*`, provenance, AlarmRef 목록, 채널별 delivery | C / V4-C-7.1 |
 | `POST /agent/runs/{run_id}/retry` | 추가 | FAILED만 새 run·`retry_of_run_id`; 기존 action 재사용 규칙 | C / V4-C-7.1, V4-C-8.1 |
 | `GET /actions`, `GET /actions/{action_id}` | 변경 | 3단계 action·EMAIL/MES_MOCK 복수 delivery | C / V4-C-7.1 |
@@ -95,11 +95,14 @@ PostgreSQL·Neo4j·n8n을 병렬 timeout으로 검사하고 Neo4j success marker
 | `get_fdc_summary` | 변경 | `lot_hist_id` | parameter Summary·limit·evaluation과 nullable structured `AnomalySignal(score, model_version, score_method, display_threshold?, is_anomaly?, action_threshold?, threshold_version?, threshold_validation_status)`. 모델·threshold 미준비 시 summary는 정상 반환하고 signal은 null이며 synthetic label 원문은 반환 금지 | A / V4-A-4.1~4.4 |
 | `get_equipment_context` | 변경 | `chamber_id` | 정적 설비·AREA·ProcessStep adjacency, `relation_id`, `graph_revision`; LOT routing 없음 | B / V4-B-2.3, V4-B-4.1 |
 | `search_documents` | 변경 | query·model_code?·top_k | `corpus_revision`이 있는 DocumentHit | B / V4-B-3.3, V4-B-4.2 |
-| `send_action` | 변경 | `action_id`만 | 실행 가능한 channel별 status·sent·duplicate | C / V4-C-7.4 |
+| `send_action` | 변경 | `action_id`만 | `{ok,action_id,reason}` + 실행 가능한 `deliveries:[{channel,status,sent,duplicate}]`; 단일 top-level `sent` 폐기 | C / V4-C-7.4 |
 | `generate_analysis_plan` | 유지 | question | SQL·metric·visualization; Agent Tool 예산 밖 | D / V4-D-5.1 |
 
 `send_action` 입력의 구 `agent_run_id`·channel은 폐기한다. Service가 action·approval·delivery
 저장 상태에서 run과 실행 channel을 파생한다.
+
+멘토 원안의 단일 `sent`는 EMAIL·MES Mock의 부분 성공·중복·`UNKNOWN`을 표현할 수 없어
+채널별 `deliveries`로 의도적으로 확장한다. 공통 `{ok, action_id, reason}` 골격은 유지한다.
 
 WAFER별 `get_fdc_summary`의 `AnomalySignal`은 C의 조치 함수에 직접 전달하지 않는다. A의 내부
 `build_incident_model_signal(lot_hist_ids, action_policy_version)`가 중복 제거·안정 정렬한 incident

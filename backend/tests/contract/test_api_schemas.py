@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -38,6 +38,7 @@ from app.common.tool_contracts import (
 )
 from app.detection.schemas import (
     AlarmItem,
+    DashboardSummaryResponse,
     ParameterLimits,
     TraceCatalogResponse,
     TraceSearchRequest,
@@ -178,6 +179,34 @@ class TestDetectionSchemas:
         alarm = AlarmItem(**_alarm_payload(), approval_status="EXPIRED")
 
         assert alarm.approval_status == "EXPIRED"
+
+    def test_dashboard_empty_result_keeps_explicit_request_range(self) -> None:
+        requested_range = [date(2026, 8, 8), date(2026, 8, 9)]
+        payload: dict[str, object] = {
+            "date_range": requested_range,
+            "area": "ALL",
+            "hierarchy": [],
+            "parameter_catalog": [],
+            "alarm_count": 0,
+            "trace_oos_count": 0,
+            "summary_ooc_count": 0,
+            "r03_count": 0,
+            "source_counts": {},
+            "daily_trend": [],
+            "top_parameters": [],
+            "equipment_counts": [],
+            "recent_alarms": [],
+        }
+
+        response = DashboardSummaryResponse(**payload)
+
+        assert response.date_range == requested_range
+        assert response.alarm_count == 0
+        assert response.daily_trend == []
+        assert response.recent_alarms == []
+
+        with pytest.raises(ValidationError, match="date_range"):
+            DashboardSummaryResponse(**{**payload, "date_range": []})
 
     def test_trace_from_alias_and_time_order(self) -> None:
         request = TraceSearchRequest.model_validate(

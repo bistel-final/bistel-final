@@ -255,8 +255,8 @@ EQP_HOLD는 action·approval transaction을 먼저 커밋하고 승인 요청 �
 
 ### 5.4 Tool·API·화면
 
-- Tool: `send_action(action_id)` — 실행할 channel과 Agent 실행 문맥은 저장된 action·policy·delivery에서 파생하며 LLM 입력으로 받지 않는다.
-- API: `POST /agent/runs`, `GET /agent/runs`, `GET /agent/runs/{run_id}`, `POST /agent/runs/{run_id}/retry`, `GET /approvals`, `POST /approvals/{approval_id}/decision`, `GET /actions`, `GET /actions/{action_id}`
+- Tool: `send_action(action_id)` — 실행할 channel과 Agent 실행 문맥은 저장된 action·policy·delivery에서 파생하며 LLM 입력으로 받지 않는다. 반환은 `{ok, action_id, reason}` 골격과 채널별 `deliveries:[{channel,status,sent,duplicate}]`를 사용한다. 단일 top-level `sent`는 EMAIL·MES Mock의 부분 성공과 `UNKNOWN`을 표현할 수 없어 사용하지 않는다.
+- API: `POST /agent/runs`의 body는 `{alarm:{source,alarm_id}}`이고, 그 외 `GET /agent/runs`, `GET /agent/runs/{run_id}`, `POST /agent/runs/{run_id}/retry`, `GET /approvals`, `POST /approvals/{approval_id}/decision`, `GET /actions`, `GET /actions/{action_id}`를 제공한다.
 - 내부 전송 API: n8n write-back `POST /internal/actions/{action_id}/delivery`, 운영자 FAILED 재시도 `POST /actions/{action_id}/deliveries/{channel}/retry`
 - 화면: Agent 실행 근거, 원인 가설, 조치 목록, 승인·반려, 채널별 전송 결과
 
@@ -271,7 +271,7 @@ EQP_HOLD는 action·approval transaction을 먼저 커밋하고 승인 요청 �
   VERIFIED threshold artifact를 선행으로 요구한다.
 - incident당 활성 실행·유효 조치 중복 0건을 검증한다.
 - FAILED 수동 재실행은 `retry_of_run_id`를 가진 새 run으로 기록한다. action 생성 전 실패만 새 action을 허용하고, 생성 후 실패는 기존 action을 `REUSED`로 연결해 action·approval·delivery를 추가하지 않는다.
-- `send_action(action_id)`는 action ID만 입력받고 run·channel을 저장 상태에서 파생하는 계약 테스트와 채널별 멱등 테스트를 통과해야 한다.
+- `send_action(action_id)`는 action ID만 입력받고 run·channel을 저장 상태에서 파생하는 계약 테스트, 채널별 반환 계약, 채널별 멱등 테스트를 통과해야 한다.
 - 자동조치, 승인, 반려, Tool 실패, 이메일 실패, MES Mock 실패 시나리오를 검증한다.
 - `EQP_HOLD` 승인 전 MES 호출 0회, 승인 후 1회, 반려 후 0회여야 한다.
 - 공개 Fault GT가 없으므로 실제 공정 Accuracy·Macro-F1·혼동행렬 합격선을 두지 않는다. 합성 라벨을
