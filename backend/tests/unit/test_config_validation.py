@@ -21,8 +21,7 @@ BASE_ENV = {
     "AGENT_MAX_TOOL_CALLS": "8",
     "AGENT_MAX_RETRY": "3",
     "HITL_REQUIRED_SEVERITY": "HIGH",
-    "ANOMALY_SCORE_THRESHOLD": "0.62",
-    "SEVERITY_HIGH_THRESHOLD": "0.80",
+    "MODEL_SIGNAL_ENABLED": "false",
 }
 
 
@@ -48,8 +47,7 @@ class TestDefaults:
         assert config.AGENT_MAX_TOOL_CALLS == 8
         assert config.AGENT_MAX_RETRY == 3
         assert config.HITL_REQUIRED_SEVERITY == "HIGH"
-        assert config.ANOMALY_SCORE_THRESHOLD == pytest.approx(0.62)
-        assert config.SEVERITY_HIGH_THRESHOLD == pytest.approx(0.80)
+        assert config.MODEL_SIGNAL_ENABLED is False
 
 
 class TestApprovalGateCannotBeBypassed:
@@ -170,31 +168,41 @@ class TestTimeoutAndRetryBounds:
             load_config(monkeypatch, **{name: "5s"})
 
 
-class TestThresholdRange:
-    @pytest.mark.parametrize("value", ["0", "0.62", "1"])
-    def test_allowed_range(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-        config = load_config(monkeypatch, ANOMALY_SCORE_THRESHOLD=value)
-
-        assert 0.0 <= config.ANOMALY_SCORE_THRESHOLD <= 1.0
-
-    @pytest.mark.parametrize(
-        "name, value",
-        [
-            ("ANOMALY_SCORE_THRESHOLD", "1.1"),
-            ("ANOMALY_SCORE_THRESHOLD", "-0.1"),
-            ("SEVERITY_HIGH_THRESHOLD", "2"),
-            ("SEVERITY_HIGH_THRESHOLD", "-1"),
-        ],
-    )
-    def test_out_of_range_is_rejected(
+class TestModelSignalGate:
+    @pytest.mark.parametrize("value", ["true", "TRUE", " True "])
+    def test_explicit_true_enables_gate(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        name: str,
         value: str,
     ) -> None:
-        with pytest.raises(RuntimeError, match=name):
-            load_config(monkeypatch, **{name: value})
+        config = load_config(monkeypatch, MODEL_SIGNAL_ENABLED=value)
 
-    def test_non_float_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        with pytest.raises(RuntimeError, match="실수"):
-            load_config(monkeypatch, SEVERITY_HIGH_THRESHOLD="high")
+        assert config.MODEL_SIGNAL_ENABLED is True
+
+    @pytest.mark.parametrize("value", ["false", "FALSE", " False "])
+    def test_explicit_false_disables_gate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        config = load_config(monkeypatch, MODEL_SIGNAL_ENABLED=value)
+
+        assert config.MODEL_SIGNAL_ENABLED is False
+
+    @pytest.mark.parametrize("value", ["1", "0", "yes", "no", "on", "off", "enabled"])
+    def test_non_boolean_values_are_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="true 또는 false"):
+            load_config(monkeypatch, MODEL_SIGNAL_ENABLED=value)
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_value_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="MODEL_SIGNAL_ENABLED"):
+            load_config(monkeypatch, MODEL_SIGNAL_ENABLED=value)

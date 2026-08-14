@@ -1,13 +1,21 @@
 import pytest
 from pydantic import ValidationError
 
-from app.common.enums import Judgement
+from app.common.enums import (
+    AlarmType,
+    DeliveryChannel,
+    DeliveryStatus,
+    IncidentModelSignalStatus,
+    ThresholdValidationStatus,
+)
 from app.common.tool_contracts import (
     AGENT_TOOL_NAMES,
     REASON_PREFIXES,
     TOOL_RESULT_MODELS,
     AnalysisPlanToolInput,
     AnalysisPlanToolResult,
+    AnomalySignal,
+    ChannelDeliveryResult,
     DocumentHit,
     DocumentSearchToolInput,
     DocumentSearchToolResult,
@@ -16,7 +24,10 @@ from app.common.tool_contracts import (
     EquipmentNode,
     FdcSummaryToolInput,
     FdcSummaryToolResult,
+    GraphRelationRef,
+    IncidentModelSignal,
     MetricPlan,
+    ParameterSummaryItem,
     SendActionToolInput,
     SendActionToolResult,
     VisualizationPlan,
@@ -25,23 +36,67 @@ from app.common.tool_contracts import (
 )
 
 WAFER = {
-    "lot_hist_id": "LH-00101",
-    "lot_id": "LOT-260007",
-    "wafer_no": 5,
-    "chamber_id": "PHO-01-C1",
-    "equipment_id": "PHO-01",
-    "step_id": "CT-PHOTO",
+    "lot_hist_id": "LH-00181",
+    "lot_id": "LOT004",
+    "wafer_no": 6,
+    "chamber_id": "EQP04-PM2",
+    "equipment_id": "EQP04",
+    "step_id": "CT-ETCH",
+    "recipe_id": "RECIPE02",
 }
 
-SENSOR = {
-    "sensor_id": "PH_FOCUS",
-    "sensor_name": "Focus Offset",
+PARAMETER = {
+    "parameter_id": "PH_FOCUS",
+    "parameter_name": "Focus Offset",
     "unit": "nm",
     "recipe_step_no": 1,
     "point_cnt": 3,
     "ooc_point_cnt": 0,
     "oos_point_cnt": 1,
-    "judgement": Judgement.OOS,
+    "alarm_type": AlarmType.OOS,
+}
+
+EQUIPMENT = {
+    "equipment_id": "EQP04",
+    "equipment_name": "Dry Etcher #4",
+    "model_code": "ET-7500",
+    "area_id": "etch",
+    "step_id": "CT-ETCH",
+}
+
+RELATION = {
+    "relation_id": "REL-aabbcc",
+    "relation_type": "NEXT_STEP",
+    "from_label": "ProcessStep",
+    "from_business_id": "PHOTO",
+    "to_label": "ProcessStep",
+    "to_business_id": "ETCH",
+}
+
+DOCUMENT = {
+    "chunk_id": "CHK-001",
+    "document_id": "DOC-001",
+    "corpus_revision": "CORPUS-20260814",
+    "title": "Fault Guide",
+    "score": 0.82,
+    "content": "점검 절차",
+}
+
+SCORE_ONLY_SIGNAL = {
+    "score": 0.71,
+    "model_version": "IFOREST-20260814",
+    "score_method": "MINMAX-V1",
+    "threshold_validation_status": ThresholdValidationStatus.UNVERIFIED,
+}
+
+VERIFIED_SIGNAL = {
+    **SCORE_ONLY_SIGNAL,
+    # train q95 구현 전 계약 불변식만 검증하는 합성 예시이며 운영 threshold가 아니다.
+    "display_threshold": 0.65,
+    "is_anomaly": True,
+    "action_threshold": 0.68,
+    "threshold_version": "ACTION-THRESHOLD-V1",
+    "threshold_validation_status": ThresholdValidationStatus.VERIFIED,
 }
 
 
@@ -49,436 +104,603 @@ def _fdc_success(**overrides: object) -> FdcSummaryToolResult:
     payload = {
         "ok": True,
         "wafer": WaferContext(**WAFER),
-        "sensors": [SENSOR],
-        "anomaly_score": 0.71,
-        "anomaly_threshold": 0.62,
-        "is_anomaly": True,
+        "parameters": [ParameterSummaryItem(**PARAMETER)],
     }
     payload.update(overrides)
     return FdcSummaryToolResult(**payload)
 
 
-class TestSuccessContract:
-    def test_success_reason_is_empty(self) -> None:
-        result = _fdc_success(is_anomaly=True)
+class TestFdcSummaryContract:
+    def test_success_allows_model_not_ready_as_nullable_evidence(self) -> None:
+        result = _fdc_success()
 
-        assert result.ok is True
-        assert result.reason == ""
+        assert result.anomaly is None
 
-    def test_success_with_nonempty_reason_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="빈 문자열"):
-            DocumentSearchToolResult(ok=True, reason="조회 성공")
+    def test_success_accepts_structured_verified_anomaly_signal(self) -> None:
+        result = _fdc_success(anomaly=AnomalySignal(**VERIFIED_SIGNAL))
 
-    def test_wafer_has_exactly_one_anomaly_score(self) -> None:
-        result = _fdc_success(sensors=[SENSOR, {**SENSOR, "recipe_step_no": 2}])
+        assert result.anomaly is not None
+        assert result.anomaly.is_anomaly is True
+        assert result.anomaly.threshold_validation_status == "VERIFIED"
 
-        assert isinstance(result.anomaly_score, float)
-        assert len(result.sensors) == 2
+    def test_score_only_signal_is_evidence_but_not_action_gate(self) -> None:
+        result = _fdc_success(anomaly=AnomalySignal(**SCORE_ONLY_SIGNAL))
+
+        assert result.anomaly is not None
+        assert result.anomaly.score == 0.71
+        assert result.anomaly.is_anomaly is None
+        assert result.anomaly.threshold_validation_status == "UNVERIFIED"
 
     @pytest.mark.parametrize(
-        "field",
-        ["point_cnt", "ooc_point_cnt", "oos_point_cnt"],
+        ("field", "value"),
+        [
+            ("display_threshold", 0.65),
+            ("is_anomaly", True),
+        ],
     )
-    def test_sensor_counts_are_nonnegative(self, field: str) -> None:
+    def test_display_threshold_and_flag_are_a_consistent_pair(
+        self,
+        field: str,
+        value: object,
+    ) -> None:
+        with pytest.raises(ValidationError, match="함께 제공"):
+            AnomalySignal(**SCORE_ONLY_SIGNAL, **{field: value})
+
+        with pytest.raises(ValidationError, match="일치"):
+            AnomalySignal(
+                **SCORE_ONLY_SIGNAL,
+                display_threshold=0.65,
+                is_anomaly=False,
+            )
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("action_threshold", 0.68),
+            ("threshold_version", "ACTION-THRESHOLD-V1"),
+        ],
+    )
+    def test_action_threshold_requires_versioned_pair(
+        self,
+        field: str,
+        value: object,
+    ) -> None:
+        with pytest.raises(ValidationError, match="함께 제공"):
+            AnomalySignal(**SCORE_ONLY_SIGNAL, **{field: value})
+
+    def test_verified_threshold_requires_complete_action_bundle(self) -> None:
+        with pytest.raises(ValidationError, match="VERIFIED"):
+            AnomalySignal(
+                **{
+                    **SCORE_ONLY_SIGNAL,
+                    "threshold_validation_status": "VERIFIED",
+                }
+            )
+
+    def test_action_threshold_must_not_be_below_display_threshold(self) -> None:
+        with pytest.raises(ValidationError, match="작을 수 없습니다"):
+            AnomalySignal(
+                **{
+                    **VERIFIED_SIGNAL,
+                    "action_threshold": 0.64,
+                }
+            )
+
+        boundary = AnomalySignal(
+            **{
+                **VERIFIED_SIGNAL,
+                "action_threshold": 0.65,
+            }
+        )
+        assert boundary.action_threshold == boundary.display_threshold
+
+    def test_unverified_candidate_threshold_cannot_gate_action(self) -> None:
+        signal = AnomalySignal(
+            **SCORE_ONLY_SIGNAL,
+            action_threshold=0.68,
+            threshold_version="CANDIDATE-V1",
+        )
+
+        assert signal.threshold_validation_status == "UNVERIFIED"
+
+    @pytest.mark.parametrize("missing", ["model_version", "score_method"])
+    def test_action_gate_signal_requires_model_provenance(self, missing: str) -> None:
+        payload = {
+            key: value for key, value in VERIFIED_SIGNAL.items() if key != missing
+        }
+
         with pytest.raises(ValidationError):
-            _fdc_success(sensors=[{**SENSOR, field: -1}])
+            AnomalySignal(**payload)
+
+    def test_runtime_signal_rejects_synthetic_label(self) -> None:
+        with pytest.raises(ValidationError):
+            AnomalySignal(**SCORE_ONLY_SIGNAL, synthetic_label="ANOMALY")
+        assert "synthetic_label" not in AnomalySignal.model_fields
+
+    def test_threshold_status_is_exported_in_json_schema(self) -> None:
+        schema = AnomalySignal.model_json_schema()
+
+        assert schema["$defs"]["ThresholdValidationStatus"]["enum"] == [
+            "VERIFIED",
+            "UNVERIFIED",
+        ]
+
+    def test_legacy_scalar_anomaly_fields_are_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            _fdc_success(anomaly_score=0.71)
+
+    @pytest.mark.parametrize("missing", ["wafer", "parameters"])
+    def test_rule_data_is_required_on_success(self, missing: str) -> None:
+        with pytest.raises(ValidationError, match=missing):
+            _fdc_success(**{missing: None if missing == "wafer" else []})
+
+    def test_parameter_terminology_is_canonical(self) -> None:
+        item = ParameterSummaryItem(**PARAMETER)
+
+        assert item.parameter_id == "PH_FOCUS"
+        assert item.alarm_type is AlarmType.OOS
+        assert "sensor_id" not in item.model_fields
+        assert "judgement" not in item.model_fields
+
+    @pytest.mark.parametrize("field", ["point_cnt", "ooc_point_cnt", "oos_point_cnt"])
+    def test_parameter_counts_are_nonnegative(self, field: str) -> None:
+        with pytest.raises(ValidationError):
+            ParameterSummaryItem(**{**PARAMETER, field: -1})
 
 
-class TestSuccessRequiresResult:
-    def test_empty_fdc_success_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="필수 값이 없습니다"):
-            FdcSummaryToolResult(ok=True)
+READY_INCIDENT_SIGNAL = {
+    "enabled": True,
+    "status": IncidentModelSignalStatus.READY,
+    "incident_score": 0.83,
+    # 임의 계약 fixture이며 운영 threshold가 아니다.
+    "display_threshold": 0.65,
+    "action_threshold": 0.68,
+    "expected_member_count": 3,
+    "valid_member_count": 3,
+    "max_score_lot_hist_id": "LH-00183",
+    "model_version": "IFOREST-20260814",
+    "score_method": "MINMAX-V1",
+    "threshold_version": "ACTION-THRESHOLD-V1",
+    "action_policy_version": "ACTION-POLICY-V1",
+    "reason": "",
+}
 
-    def test_empty_analysis_plan_success_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="필수 값이 없습니다"):
-            AnalysisPlanToolResult(ok=True)
 
-    def test_empty_equipment_context_success_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="필수 값이 없습니다"):
-            EquipmentContextToolResult(ok=True)
+class TestIncidentModelSignalContract:
+    def test_ready_requires_complete_full_coverage_bundle(self) -> None:
+        signal = IncidentModelSignal(**READY_INCIDENT_SIGNAL)
+
+        assert signal.status is IncidentModelSignalStatus.READY
+        assert signal.expected_member_count == signal.valid_member_count == 3
 
     @pytest.mark.parametrize(
         "missing",
-        ["wafer", "sensors", "anomaly_score", "anomaly_threshold"],
+        [
+            "incident_score",
+            "display_threshold",
+            "action_threshold",
+            "max_score_lot_hist_id",
+            "model_version",
+            "score_method",
+            "threshold_version",
+        ],
     )
-    def test_each_required_field_is_enforced(self, missing: str) -> None:
-        empty = [] if missing == "sensors" else None
+    def test_ready_requires_complete_provenance_and_threshold(
+        self,
+        missing: str,
+    ) -> None:
+        payload = {key: value for key, value in READY_INCIDENT_SIGNAL.items()}
+        payload[missing] = None
 
-        with pytest.raises(ValidationError, match=missing):
-            _fdc_success(**{missing: empty})
+        with pytest.raises(ValidationError, match="완전한"):
+            IncidentModelSignal(**payload)
 
-    def test_send_action_success_requires_sent_true(self) -> None:
-        with pytest.raises(ValidationError, match="sent"):
-            SendActionToolResult(ok=True, action_id="ACT-0001", sent=False)
+    @pytest.mark.parametrize(
+        ("expected", "valid"),
+        [(3, 0), (3, 2)],
+    )
+    def test_ready_requires_positive_full_coverage(
+        self,
+        expected: int,
+        valid: int,
+    ) -> None:
+        with pytest.raises(ValidationError, match="full coverage"):
+            IncidentModelSignal(
+                **{
+                    **READY_INCIDENT_SIGNAL,
+                    "expected_member_count": expected,
+                    "valid_member_count": valid,
+                }
+            )
 
-    def test_send_action_success_requires_action_id(self) -> None:
-        with pytest.raises(ValidationError, match="action_id"):
-            SendActionToolResult(ok=True, sent=True)
+    def test_ready_requires_enabled_and_empty_reason(self) -> None:
+        with pytest.raises(ValidationError, match="enabled=true"):
+            IncidentModelSignal(**{**READY_INCIDENT_SIGNAL, "enabled": False})
+        with pytest.raises(ValidationError, match="reason은 빈"):
+            IncidentModelSignal(
+                **{**READY_INCIDENT_SIGNAL, "reason": "unexpected fallback"}
+            )
 
-    def test_send_action_success(self) -> None:
-        result = SendActionToolResult(ok=True, action_id="ACT-0001", sent=True)
+    def test_ready_action_threshold_is_not_below_display_threshold(self) -> None:
+        with pytest.raises(ValidationError, match="작을 수 없습니다"):
+            IncidentModelSignal(**{**READY_INCIDENT_SIGNAL, "action_threshold": 0.64})
 
-        assert result.sent is True
+        boundary = IncidentModelSignal(
+            **{**READY_INCIDENT_SIGNAL, "action_threshold": 0.65}
+        )
+        assert boundary.action_threshold == boundary.display_threshold
 
-    def test_document_search_allows_zero_hits(self) -> None:
-        # 검색 결과 0건은 오류가 아니다.
+    @pytest.mark.parametrize(
+        ("status", "enabled"),
+        [
+            (IncidentModelSignalStatus.DISABLED, False),
+            (IncidentModelSignalStatus.UNAVAILABLE, True),
+        ],
+    )
+    def test_non_ready_is_explicit_and_carries_no_action_bundle(
+        self,
+        status: IncidentModelSignalStatus,
+        enabled: bool,
+    ) -> None:
+        signal = IncidentModelSignal(
+            enabled=enabled,
+            status=status,
+            expected_member_count=3,
+            valid_member_count=0,
+            action_policy_version="ACTION-POLICY-V1",
+            reason=f"{status}: action 적용 불가",
+        )
+
+        assert signal.incident_score is None
+        assert signal.action_threshold is None
+
+    @pytest.mark.parametrize(
+        ("status", "enabled"),
+        [
+            (IncidentModelSignalStatus.DISABLED, True),
+            (IncidentModelSignalStatus.UNAVAILABLE, False),
+        ],
+    )
+    def test_non_ready_enabled_flag_matches_status(
+        self,
+        status: IncidentModelSignalStatus,
+        enabled: bool,
+    ) -> None:
+        with pytest.raises(ValidationError, match="enabled"):
+            IncidentModelSignal(
+                enabled=enabled,
+                status=status,
+                expected_member_count=3,
+                valid_member_count=0,
+                action_policy_version="ACTION-POLICY-V1",
+                reason="fallback",
+            )
+
+    @pytest.mark.parametrize(
+        "status, enabled",
+        [
+            (IncidentModelSignalStatus.DISABLED, False),
+            (IncidentModelSignalStatus.UNAVAILABLE, True),
+        ],
+    )
+    def test_non_ready_requires_reason(
+        self,
+        status: IncidentModelSignalStatus,
+        enabled: bool,
+    ) -> None:
+        with pytest.raises(ValidationError, match="reason"):
+            IncidentModelSignal(
+                enabled=enabled,
+                status=status,
+                expected_member_count=3,
+                valid_member_count=0,
+                action_policy_version="ACTION-POLICY-V1",
+            )
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("incident_score", 0.71),
+            ("display_threshold", 0.65),
+            ("action_threshold", 0.68),
+            ("max_score_lot_hist_id", "LH-00181"),
+            ("model_version", "IFOREST-V1"),
+            ("score_method", "MINMAX-V1"),
+            ("threshold_version", "THRESHOLD-V1"),
+        ],
+    )
+    def test_non_ready_rejects_action_bundle_fields(
+        self,
+        field: str,
+        value: object,
+    ) -> None:
+        with pytest.raises(ValidationError, match="action 적용 가능한"):
+            IncidentModelSignal(
+                enabled=True,
+                status="UNAVAILABLE",
+                expected_member_count=3,
+                valid_member_count=2,
+                action_policy_version="ACTION-POLICY-V1",
+                reason="coverage incomplete",
+                **{field: value},
+            )
+
+    def test_valid_member_count_cannot_exceed_expected(self) -> None:
+        with pytest.raises(ValidationError, match="초과"):
+            IncidentModelSignal(
+                enabled=True,
+                status="UNAVAILABLE",
+                expected_member_count=2,
+                valid_member_count=3,
+                action_policy_version="ACTION-POLICY-V1",
+                reason="invalid aggregation",
+            )
+
+    def test_wafer_signal_cannot_be_reused_as_ready_incident_payload(self) -> None:
+        wafer_payload = AnomalySignal(**VERIFIED_SIGNAL).model_dump()
+
+        with pytest.raises(ValidationError):
+            IncidentModelSignal(
+                enabled=True,
+                status="READY",
+                expected_member_count=1,
+                valid_member_count=1,
+                max_score_lot_hist_id="LH-00181",
+                action_policy_version="ACTION-POLICY-V1",
+                **wafer_payload,
+            )
+
+    @pytest.mark.parametrize("field", ["synthetic_label", "member_signal"])
+    def test_runtime_incident_signal_rejects_non_contract_inputs(
+        self,
+        field: str,
+    ) -> None:
+        with pytest.raises(ValidationError):
+            IncidentModelSignal(**READY_INCIDENT_SIGNAL, **{field: "forbidden"})
+
+    def test_action_policy_version_is_required_for_every_status(self) -> None:
+        with pytest.raises(ValidationError):
+            IncidentModelSignal(
+                enabled=False,
+                status="DISABLED",
+                expected_member_count=1,
+                valid_member_count=0,
+                reason="model signal gate disabled",
+            )
+
+    def test_status_is_exported_in_json_schema(self) -> None:
+        schema = IncidentModelSignal.model_json_schema()
+
+        assert schema["$defs"]["IncidentModelSignalStatus"]["enum"] == [
+            "READY",
+            "DISABLED",
+            "UNAVAILABLE",
+        ]
+
+
+class TestEquipmentContextContract:
+    def test_success_carries_stable_graph_provenance(self) -> None:
+        result = EquipmentContextToolResult(
+            ok=True,
+            equipment=EquipmentNode(**EQUIPMENT),
+            graph_revision="GRAPH-20260813",
+            relations=[GraphRelationRef(**RELATION)],
+        )
+
+        assert result.relations[0].relation_id == "REL-aabbcc"
+        assert result.graph_revision == "GRAPH-20260813"
+
+    def test_graph_revision_is_required_on_success(self) -> None:
+        with pytest.raises(ValidationError, match="graph_revision"):
+            EquipmentContextToolResult(
+                ok=True,
+                equipment=EquipmentNode(**EQUIPMENT),
+            )
+
+    def test_fixed_equipment_upstream_downstream_is_not_in_contract(self) -> None:
+        fields = set(EquipmentContextToolResult.model_fields)
+
+        assert "upstream" not in fields
+        assert "downstream" not in fields
+        assert {"adjacent_steps", "relations", "graph_revision"} <= fields
+
+
+class TestDocumentContract:
+    def test_hit_requires_corpus_revision(self) -> None:
+        hit = DocumentHit(**DOCUMENT)
+
+        assert hit.corpus_revision == "CORPUS-20260814"
+
+        missing_revision = {
+            key: value for key, value in DOCUMENT.items() if key != "corpus_revision"
+        }
+        with pytest.raises(ValidationError):
+            DocumentHit(**missing_revision)
+
+    def test_zero_hits_is_success(self) -> None:
         assert DocumentSearchToolResult(ok=True).hits == []
 
-    def test_success_rejects_empty_string_value(self) -> None:
+
+class TestSendActionContract:
+    def test_input_accepts_only_action_id(self) -> None:
+        request = SendActionToolInput(action_id="ACT-001")
+
+        assert request.action_id == "ACT-001"
         with pytest.raises(ValidationError):
-            AnalysisPlanToolResult(
+            SendActionToolInput(action_id="ACT-001", agent_run_id="RUN-001")
+
+    def test_success_returns_channel_wise_state(self) -> None:
+        result = SendActionToolResult(
+            ok=True,
+            action_id="ACT-001",
+            deliveries=[
+                ChannelDeliveryResult(
+                    channel=DeliveryChannel.EMAIL,
+                    status=DeliveryStatus.SENT,
+                    sent=True,
+                    duplicate=False,
+                ),
+                ChannelDeliveryResult(
+                    channel=DeliveryChannel.MES_MOCK,
+                    status=DeliveryStatus.BLOCKED,
+                    sent=False,
+                    duplicate=False,
+                ),
+            ],
+        )
+
+        assert result.deliveries[0].sent is True
+        assert result.deliveries[1].status is DeliveryStatus.BLOCKED
+
+    def test_duplicate_reports_no_new_external_effect(self) -> None:
+        item = ChannelDeliveryResult(
+            channel=DeliveryChannel.EMAIL,
+            status=DeliveryStatus.SENT,
+            sent=False,
+            duplicate=True,
+        )
+
+        assert item.duplicate is True
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"status": DeliveryStatus.WAITING, "sent": True, "duplicate": False},
+            {"status": DeliveryStatus.SENT, "sent": True, "duplicate": True},
+        ],
+    )
+    def test_inconsistent_effect_flags_are_rejected(
+        self,
+        payload: dict[str, object],
+    ) -> None:
+        with pytest.raises(ValidationError):
+            ChannelDeliveryResult(channel=DeliveryChannel.EMAIL, **payload)
+
+    def test_success_requires_nonempty_unique_channels(self) -> None:
+        with pytest.raises(ValidationError, match="deliveries"):
+            SendActionToolResult(ok=True, action_id="ACT-001")
+
+        delivery = {
+            "channel": DeliveryChannel.EMAIL,
+            "status": DeliveryStatus.SENT,
+            "sent": True,
+            "duplicate": False,
+        }
+        with pytest.raises(ValidationError, match="중복"):
+            SendActionToolResult(
                 ok=True,
-                sql="",
-                metric=MetricPlan(type="count"),
-                visualization=VisualizationPlan(chart_type="table"),
+                action_id="ACT-001",
+                deliveries=[delivery, delivery],
             )
 
-    def test_success_rejects_whitespace_only_value(self) -> None:
-        with pytest.raises(ValidationError):
-            AnalysisPlanToolResult(
-                ok=True,
-                sql="   ",
-                metric=MetricPlan(type="count"),
-                visualization=VisualizationPlan(chart_type="table"),
+    def test_unknown_delivery_state_is_supported(self) -> None:
+        item = ChannelDeliveryResult(
+            channel=DeliveryChannel.EMAIL,
+            status=DeliveryStatus.UNKNOWN,
+            sent=False,
+            duplicate=False,
+        )
+
+        assert item.status is DeliveryStatus.UNKNOWN
+
+
+class TestToolFailureInvariant:
+    @pytest.mark.parametrize("prefix", REASON_PREFIXES)
+    def test_allowed_reason_prefixes(self, prefix: str) -> None:
+        result = DocumentSearchToolResult(ok=False, reason=f"{prefix} 상세")
+
+        assert result.hits == []
+
+    @pytest.mark.parametrize("reason", ["", "ERROR: 실패", "not_found: 없음"])
+    def test_unknown_reason_prefix_is_rejected(self, reason: str) -> None:
+        with pytest.raises(ValidationError, match="접두어"):
+            DocumentSearchToolResult(ok=False, reason=reason)
+
+    def test_failure_rejects_nonempty_object_and_list_payload(self) -> None:
+        with pytest.raises(ValidationError, match="None"):
+            FdcSummaryToolResult(
+                ok=False,
+                reason="NOT_FOUND: 없음",
+                wafer=WaferContext(**WAFER),
             )
 
-    def test_send_action_success_rejects_blank_action_id(self) -> None:
-        with pytest.raises(ValidationError):
-            SendActionToolResult(ok=True, action_id="   ", sent=True)
+        with pytest.raises(ValidationError, match="비어야"):
+            SendActionToolResult(
+                ok=False,
+                reason="TIMEOUT: 응답 유실",
+                deliveries=[
+                    {
+                        "channel": "EMAIL",
+                        "status": "UNKNOWN",
+                        "sent": False,
+                        "duplicate": False,
+                    }
+                ],
+            )
 
-    def test_send_action_success_rejects_empty_action_id(self) -> None:
-        with pytest.raises(ValidationError):
-            SendActionToolResult(ok=True, action_id="", sent=True)
+    def test_fail_helper_builds_empty_payload(self) -> None:
+        result = fail(FdcSummaryToolResult, "MODEL_NOT_READY: 모델 없음")
 
-    def test_analysis_plan_success(self) -> None:
+        assert result.ok is False
+        assert result.wafer is None
+        assert result.parameters == []
+        assert result.anomaly is None
+
+
+class TestSharedToolRules:
+    def test_all_success_results_require_empty_reason(self) -> None:
+        with pytest.raises(ValidationError, match="빈 문자열"):
+            DocumentSearchToolResult(ok=True, reason="성공")
+
+    @pytest.mark.parametrize("model", TOOL_RESULT_MODELS.values())
+    def test_result_does_not_contain_runtime_metadata(self, model: type) -> None:
+        assert {"latency_ms", "called_at"}.isdisjoint(model.model_fields)
+
+    @pytest.mark.parametrize("model", TOOL_RESULT_MODELS.values())
+    def test_extra_fields_are_forbidden(self, model: type) -> None:
+        with pytest.raises(ValidationError):
+            model(ok=False, reason="NOT_FOUND: 없음", latency_ms=1)
+
+    def test_tool_registry_and_agent_budget_scope(self) -> None:
+        assert set(TOOL_RESULT_MODELS) == {
+            "get_fdc_summary",
+            "get_equipment_context",
+            "search_documents",
+            "send_action",
+            "generate_analysis_plan",
+        }
+        assert "generate_analysis_plan" not in AGENT_TOOL_NAMES
+
+
+class TestInputBoundaries:
+    @pytest.mark.parametrize(
+        "model, field",
+        [
+            (FdcSummaryToolInput, "lot_hist_id"),
+            (EquipmentContextToolInput, "chamber_id"),
+        ],
+    )
+    def test_tool_identifier_limit(self, model: type, field: str) -> None:
+        assert model(**{field: "A" * 20})
+        with pytest.raises(ValidationError):
+            model(**{field: "A" * 21})
+
+    @pytest.mark.parametrize("top_k", [1, 4, 10])
+    def test_document_top_k_range(self, top_k: int) -> None:
+        assert DocumentSearchToolInput(query="정비", top_k=top_k).top_k == top_k
+
+    @pytest.mark.parametrize("top_k", [0, 11])
+    def test_document_top_k_rejects_out_of_range(self, top_k: int) -> None:
+        with pytest.raises(ValidationError):
+            DocumentSearchToolInput(query="정비", top_k=top_k)
+
+    def test_analysis_plan_contract_is_unchanged(self) -> None:
         result = AnalysisPlanToolResult(
             ok=True,
-            sql="SELECT count(*) FROM fdc_alarm",
+            sql="SELECT count(*) FROM v_alarm_event",
             metric=MetricPlan(type="count"),
             visualization=VisualizationPlan(chart_type="table"),
         )
 
         assert result.group_by == []
-
-
-class TestFailureContract:
-    @pytest.mark.parametrize("prefix", REASON_PREFIXES)
-    def test_allowed_prefixes(self, prefix: str) -> None:
-        result = DocumentSearchToolResult(ok=False, reason=f"{prefix} 상세 사유")
-
-        assert result.ok is False
-        assert result.hits == []
-
-    @pytest.mark.parametrize(
-        "reason",
-        ["알 수 없는 오류", "ERROR: 실패", "not_found: 없음", ""],
-    )
-    def test_rejected_prefixes(self, reason: str) -> None:
-        with pytest.raises(ValidationError, match="접두어"):
-            DocumentSearchToolResult(ok=False, reason=reason)
-
-    def test_failure_object_field_must_be_none(self) -> None:
-        with pytest.raises(ValidationError, match="None 이어야"):
-            FdcSummaryToolResult(
-                ok=False,
-                reason="NOT_FOUND: 없는 lot_hist_id",
-                wafer=WaferContext(**WAFER),
-            )
-
-    @pytest.mark.parametrize("field", ["anomaly_score", "anomaly_threshold"])
-    def test_failure_numeric_field_must_be_none(self, field: str) -> None:
-        with pytest.raises(ValidationError, match="None 이어야"):
-            FdcSummaryToolResult(
-                ok=False,
-                reason="NOT_FOUND: 없음",
-                **{field: 0.9},
-            )
-
-    @pytest.mark.parametrize("sql", ["", "   "])
-    def test_failure_rejects_empty_string_instead_of_none(self, sql: str) -> None:
-        # "" 는 falsy 지만 None 이 아니므로 거부한다.
-        # 필드의 min_length 가 모델 validator 보다 먼저 걸리는 이중 방어다.
-        with pytest.raises(ValidationError):
-            AnalysisPlanToolResult(ok=False, reason="LLM_NOT_READY: 미준비", sql=sql)
-
-    def test_failure_rejects_non_none_string_at_model_level(self) -> None:
-        with pytest.raises(ValidationError, match="None 이어야"):
-            AnalysisPlanToolResult(
-                ok=False,
-                reason="LLM_NOT_READY: 미준비",
-                sql="SELECT 1",
-            )
-
-    def test_failure_list_field_must_be_empty(self) -> None:
-        with pytest.raises(ValidationError, match="목록 필드는 비어야"):
-            AnalysisPlanToolResult(
-                ok=False,
-                reason="POLICY_REJECTED: 쓰기 시도",
-                group_by=["chamber_id"],
-            )
-
-    def test_failure_drops_action_id(self) -> None:
-        # 호출자는 Input 과 agent_tool_call.input_json 으로 action_id 를 이미 안다.
-        result = SendActionToolResult(ok=False, reason="TIMEOUT: n8n 응답 없음")
-
-        assert result.action_id is None
-        assert result.sent is False
-
-    def test_failure_cannot_echo_action_id(self) -> None:
-        with pytest.raises(ValidationError, match="None 이어야"):
-            SendActionToolResult(
-                ok=False,
-                reason="TIMEOUT: n8n 응답 없음",
-                action_id="ACT-0001",
-            )
-
-    def test_failure_cannot_report_sent(self) -> None:
-        with pytest.raises(ValidationError, match="False 여야"):
-            SendActionToolResult(
-                ok=False,
-                reason="TIMEOUT: n8n 응답 없음",
-                sent=True,
-            )
-
-    def test_failure_cannot_report_is_anomaly(self) -> None:
-        with pytest.raises(ValidationError, match="False 여야"):
-            FdcSummaryToolResult(
-                ok=False,
-                reason="MODEL_NOT_READY: 모델 없음",
-                is_anomaly=True,
-            )
-
-    def test_fail_helper_produces_empty_result(self) -> None:
-        result = fail(FdcSummaryToolResult, "DEPENDENCY_ERROR: DB 연결 실패")
-
-        assert result.ok is False
-        assert result.wafer is None
-        assert result.sensors == []
-
-
-class TestNoRuntimeMetadata:
-    @pytest.mark.parametrize("model", TOOL_RESULT_MODELS.values())
-    def test_latency_and_status_are_not_in_result(self, model: type) -> None:
-        fields = set(model.model_fields)
-
-        assert "latency_ms" not in fields
-        assert "status" not in fields
-        assert "called_at" not in fields
-
-    @pytest.mark.parametrize("model", TOOL_RESULT_MODELS.values())
-    def test_extra_field_is_rejected(self, model: type) -> None:
-        with pytest.raises(ValidationError):
-            model(ok=False, reason="NOT_FOUND: 없음", latency_ms=12)
-
-
-class TestInputBoundaries:
-    @pytest.mark.parametrize("top_k", [1, 4, 10])
-    def test_top_k_allowed_range(self, top_k: int) -> None:
-        assert DocumentSearchToolInput(query="반사파", top_k=top_k).top_k == top_k
-
-    @pytest.mark.parametrize("top_k", [0, 11, -1])
-    def test_top_k_out_of_range(self, top_k: int) -> None:
-        with pytest.raises(ValidationError):
-            DocumentSearchToolInput(query="반사파", top_k=top_k)
-
-    def test_top_k_defaults_to_four(self) -> None:
-        assert DocumentSearchToolInput(query="반사파").top_k == 4
-
-    @pytest.mark.parametrize(
-        "model, field",
-        [
-            (FdcSummaryToolInput, "lot_hist_id"),
-            (EquipmentContextToolInput, "chamber_id"),
-        ],
-    )
-    def test_identifier_length(self, model: type, field: str) -> None:
-        assert model(**{field: "A" * 20})
-
-        with pytest.raises(ValidationError):
-            model(**{field: ""})
-
-        with pytest.raises(ValidationError):
-            model(**{field: "A" * 21})
-
-    @pytest.mark.parametrize(
-        "model, field",
-        [
-            (FdcSummaryToolInput, "lot_hist_id"),
-            (EquipmentContextToolInput, "chamber_id"),
-        ],
-    )
-    def test_identifier_rejects_whitespace_only(self, model: type, field: str) -> None:
-        with pytest.raises(ValidationError):
-            model(**{field: "   "})
-
-    def test_identifier_is_stripped(self) -> None:
-        assert FdcSummaryToolInput(lot_hist_id="  LH-00101  ").lot_hist_id == "LH-00101"
-
-    def test_query_rejects_whitespace_only(self) -> None:
-        with pytest.raises(ValidationError):
-            DocumentSearchToolInput(query="   ")
-
-    @pytest.mark.parametrize("length", [1, 1000])
-    def test_question_allowed_length(self, length: int) -> None:
-        assert AnalysisPlanToolInput(question="질" * length)
-
-    @pytest.mark.parametrize("length", [0, 1001])
-    def test_question_rejected_length(self, length: int) -> None:
-        with pytest.raises(ValidationError):
-            AnalysisPlanToolInput(question="질" * length)
-
-    def test_send_action_requires_both_identifiers(self) -> None:
-        assert SendActionToolInput(action_id="ACT-0001", agent_run_id="RUN-0001")
-
-        with pytest.raises(ValidationError):
-            SendActionToolInput(action_id="ACT-0001")
-
-
-class TestToolOwnership:
-    def test_analytics_tool_is_outside_agent_budget(self) -> None:
-        assert "generate_analysis_plan" not in AGENT_TOOL_NAMES
-        assert len(AGENT_TOOL_NAMES) == 4
-
-    def test_all_five_tools_have_result_models(self) -> None:
-        assert set(TOOL_RESULT_MODELS) == AGENT_TOOL_NAMES | {"generate_analysis_plan"}
-
-    def test_analysis_plan_has_no_agent_budget_fields(self) -> None:
-        fields = set(AnalysisPlanToolResult.model_fields)
-
-        assert "agent_run_id" not in fields
-        assert "tool_call_count" not in fields
-
-
-class TestSharedDtoIdentifiers:
-    @pytest.mark.parametrize("blank", ["", "   ", "\t"])
-    @pytest.mark.parametrize(
-        "field",
-        ["lot_hist_id", "lot_id", "chamber_id", "equipment_id", "step_id"],
-    )
-    def test_wafer_context_rejects_blank_id(self, field: str, blank: str) -> None:
-        with pytest.raises(ValidationError):
-            WaferContext(**{**WAFER, field: blank})
-
-    def test_wafer_context_strips_id(self) -> None:
-        wafer = WaferContext(**{**WAFER, "lot_hist_id": "  LH-00101  "})
-
-        assert wafer.lot_hist_id == "LH-00101"
-
-    @pytest.mark.parametrize("field", ["equipment_id", "model_code", "area_id"])
-    def test_equipment_node_rejects_blank_id(self, field: str) -> None:
-        payload = {
-            "equipment_id": "PHO-01",
-            "equipment_name": "Photo Scanner #1",
-            "model_code": "PH-9000",
-            "area_id": "PHOTO",
-        }
-
-        with pytest.raises(ValidationError):
-            EquipmentNode(**{**payload, field: "   "})
-
-    @pytest.mark.parametrize("field", ["chunk_id", "document_id"])
-    def test_document_hit_rejects_blank_id(self, field: str) -> None:
-        payload = {
-            "chunk_id": "CHK-1",
-            "document_id": "DOC-SPEC-ET7500",
-            "title": "ET-7500",
-            "score": 0.8,
-            "content": "본문",
-        }
-
-        with pytest.raises(ValidationError):
-            DocumentHit(**{**payload, field: ""})
-
-    def test_optional_id_rejects_blank_but_allows_none(self) -> None:
-        assert WaferContext(**WAFER, recipe_id=None).recipe_id is None
-
-        with pytest.raises(ValidationError):
-            WaferContext(**WAFER, recipe_id="   ")
-
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_document_hit_rejects_blank_model_code(self, blank: str) -> None:
-        payload = {
-            "chunk_id": "CHK-1",
-            "document_id": "DOC-SPEC-ET7500",
-            "title": "ET-7500",
-            "score": 0.8,
-            "content": "본문",
-        }
-
-        with pytest.raises(ValidationError):
-            DocumentHit(**payload, model_code=blank)
-
-        assert DocumentHit(**payload, model_code=None).model_code is None
-
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_search_input_rejects_blank_model_code(self, blank: str) -> None:
-        with pytest.raises(ValidationError):
-            DocumentSearchToolInput(query="반사파", model_code=blank)
-
-    def test_search_input_strips_model_code(self) -> None:
-        assert (
-            DocumentSearchToolInput(query="반사파", model_code=" ET-7500 ").model_code
-            == "ET-7500"
-        )
-
-
-class TestAnomalyFlagConsistency:
-    def test_flag_matches_threshold(self) -> None:
-        result = _fdc_success(
-            anomaly_score=0.71, anomaly_threshold=0.62, is_anomaly=True
-        )
-
-        assert result.is_anomaly is True
-
-    def test_boundary_equal_is_anomaly(self) -> None:
-        # score == threshold 는 이상으로 판정한다.
-        result = _fdc_success(
-            anomaly_score=0.62, anomaly_threshold=0.62, is_anomaly=True
-        )
-
-        assert result.is_anomaly is True
-
-    @pytest.mark.parametrize(
-        "score, threshold, flag",
-        [
-            (0.71, 0.62, False),
-            (0.10, 0.62, True),
-            (0.62, 0.62, False),
-        ],
-    )
-    def test_inconsistent_flag_is_rejected(
-        self,
-        score: float,
-        threshold: float,
-        flag: bool,
-    ) -> None:
-        with pytest.raises(ValidationError, match="일치하지 않습니다"):
-            _fdc_success(
-                anomaly_score=score,
-                anomaly_threshold=threshold,
-                is_anomaly=flag,
-            )
-
-    def test_failure_result_skips_consistency_check(self) -> None:
-        result = fail(FdcSummaryToolResult, "MODEL_NOT_READY: 모델 없음")
-
-        assert result.is_anomaly is False
-        assert result.anomaly_score is None
-
-
-class TestRelationContract:
-    def test_empty_relations_are_valid_success(self) -> None:
-        # ETC-01-C1 은 downstream 이 없다. 관계가 비어도 성공이다.
-        result = EquipmentContextToolResult(
-            ok=True,
-            equipment=EquipmentNode(
-                equipment_id="ETC-01",
-                equipment_name="Dry Etcher #1",
-                model_code="ET-7500",
-                area_id="ETCH",
-            ),
-        )
-
-        assert result.upstream == []
-        assert result.downstream == []
-        assert result.sibling_chambers == []
+        assert AnalysisPlanToolInput(question="알람 수").question == "알람 수"

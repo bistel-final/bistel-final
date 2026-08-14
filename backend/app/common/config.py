@@ -30,18 +30,13 @@ def get_int_env(name: str, default: str, minimum: int) -> int:
     return value
 
 
-def get_ratio_env(name: str, default: str) -> float:
+def get_bool_env(name: str, default: str) -> bool:
     raw = get_env(name, default)
+    normalized = raw.strip().lower()
 
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"{name} 은 실수여야 합니다: {raw}") from exc
-
-    if not 0.0 <= value <= 1.0:
-        raise RuntimeError(f"{name} 은 0~1 범위여야 합니다: {value}")
-
-    return value
+    if normalized not in {"true", "false"}:
+        raise RuntimeError(f"{name} 은 true 또는 false여야 합니다: {raw}")
+    return normalized == "true"
 
 
 # PostgreSQL
@@ -94,8 +89,10 @@ AGENT_MAX_RETRY = get_int_env("AGENT_MAX_RETRY", "3", minimum=0)
 
 CLASSIFICATION_OUTPUT_RETRY = get_int_env("CLASSIFICATION_OUTPUT_RETRY", "1", minimum=0)
 
-ANOMALY_SCORE_THRESHOLD = get_ratio_env("ANOMALY_SCORE_THRESHOLD", "0.62")
-SEVERITY_HIGH_THRESHOLD = get_ratio_env("SEVERITY_HIGH_THRESHOLD", "0.80")
+# score threshold는 model manifest의 AnomalySignal로만 주입한다. 환경변수
+# threshold는 version 검증을 우회하므로 지원하지 않는다.
+# 실제 gate 사용은 C 정책 후속이다.
+MODEL_SIGNAL_ENABLED = get_bool_env("MODEL_SIGNAL_ENABLED", "false")
 
 # 승인 게이트는 설정으로 우회할 수 없다. HIGH 외의 값이면 기동을 거부한다.
 # EQP_HOLD 만 사람 승인 대상이라는 안전장치가 환경변수로 무력화되면 안 되기 때문이다.

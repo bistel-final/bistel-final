@@ -117,10 +117,9 @@ export const TRACE_CATALOG = {
     "lot_id": "LOT-260010"
   }
 ],
+  // 모델 manifest·corrected fixture 준비 전에는 임의 score/threshold를 만들지 않는다.
+  anomaly: null,
 }
-
-// 참고 지표 — 판정에는 쓰지 않는다
-export const TRACE_ANOMALY = { anomaly_score: 0.84, anomaly_threshold: 0.62 }
 
 // 알람이 없어 포인트 복원이 불가능한 조합의 구간 통계 (지시서 §2 제공값)
 export const MEASURED_STEP_STATS = {

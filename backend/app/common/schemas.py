@@ -3,7 +3,12 @@ from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.common.ids import NonEmptyId
+from app.common.enums import AlarmSource
+from app.common.ids import (
+    NonEmptyId,
+    format_alarm_ref_token,
+    parse_alarm_ref_token,
+)
 
 
 class ApiModel(BaseModel):
@@ -29,6 +34,21 @@ class PageResponse(ApiModel, Generic[ItemT]):
 class IncidentRef(ApiModel):
     lot_id: NonEmptyId
     chamber_id: NonEmptyId
+
+
+class AlarmRef(ApiModel):
+    """서로 다른 저장·파생 알람 ID 공간을 구분하는 공통 식별자."""
+
+    source: AlarmSource
+    alarm_id: NonEmptyId
+
+    def to_token(self) -> str:
+        return format_alarm_ref_token(self.source, self.alarm_id)
+
+    @classmethod
+    def from_token(cls, token: str) -> "AlarmRef":
+        source, alarm_id = parse_alarm_ref_token(token)
+        return cls(source=source, alarm_id=alarm_id)
 
 
 class HealthResponse(ApiModel):

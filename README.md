@@ -2,7 +2,15 @@
 
 LangGraph 기반 반도체 FDC 이상감지 에이전트의 FastAPI·React 모노레포입니다.
 
-PHOTO·ETCH 2개 AREA의 센서 데이터(FDC trace)를 WAFER 단위로 요약해 규칙과 이상감지 모델로 감지(Detection)하고, 발생한 알람에 대해 LangGraph 에이전트가 장비 관계(Neo4j)와 장비 매뉴얼(RAG)을 근거로 이상 유형을 분류·원인 분석·조치 권고(Classification)합니다. EQUIPMENT HOLD는 사람 승인(HITL) 후에만 전송하며 전 과정을 감사로그로 기록합니다.
+> [!CAUTION]
+> **신규 `kosa_0813.zip` 기준 v2 전환 중입니다.** 구 v1.9/v1.10/v9.6 문서, 51건 알람,
+> Fault 정답, ACT-0001~0010, 4단계 조치와 기존 API/PDF 산출물은 구현 기준으로 사용하지 않습니다.
+> 현재 기준은 v2 요구사항·설계·역할분담 v10과 WBS v4입니다.
+
+PHOTO·ETCH 2개 AREA의 parameter 데이터(FDC trace)를 WAFER 단위로 요약해 규칙과 비지도
+이상 점수로 감지(Detection)하고, 발생한 알람에 대해 LangGraph 에이전트가 장비 관계(Neo4j)와
+장비 문서(RAG)를 근거로 원인 가설과 조치를 제시합니다. `EQP_HOLD`는 승인요청 이메일을 먼저
+보내고 사람 승인(HITL) 후에만 MES Mock을 호출하며 전 과정을 감사로그로 기록합니다.
 
 ## 기술 스택
 
@@ -19,40 +27,45 @@ PHOTO·ETCH 2개 AREA의 센서 데이터(FDC trace)를 WAFER 단위로 요약�
 ```text
 backend/    FastAPI · AI · Tool · 마이그레이션 · 운영 스크립트
 frontend/   React 데이터 플랫폼 (8화면)
-infra/      bootstrap · nginx · n8n workflow          (미생성)
+infra/      source/bootstrap · nginx · n8n workflow
 docs/       사양 원본과 AI 작업 문서
 ```
 
-`infra/`를 비롯한 일부 디렉터리는 해당 산출물이 생기는 시점에 만듭니다. 전체 목표 구조는 [시스템 설계서 2.1](docs/specifications/시스템설계서_v1_10_최종.md)을 따릅니다.
+일부 하위 산출물은 해당 V4 Task에서 추가합니다. 전체 목표 구조는
+[시스템 설계서 v2.0 작업본 2.1](docs/specifications/시스템설계서_v2_0_작업본.md)을 따릅니다.
 
 ## 문서
 
-**원본 사양** — 기능 동작·수용 기준의 최종 근거
+**v2 전환 기준** — 기능 동작·수용 기준과 현재 작업 범위의 근거
 
-- [요구사항 정의서 v1.9](docs/specifications/요구사항정의서_v1_9_최종.md)
-- [시스템 설계서 v1.10](docs/specifications/시스템설계서_v1_10_최종.md)
-- [역할분담 v9.6](docs/specifications/FDC_프로젝트_역할분담_v9.6\(최종\).md)
+- [요구사항 정의서 v2.0 작업본](docs/specifications/요구사항정의서_v2_0_작업본.md)
+- [시스템 설계서 v2.0 작업본](docs/specifications/시스템설계서_v2_0_작업본.md)
+- [역할분담 v10.0 작업본](docs/specifications/FDC_프로젝트_역할분담_v10_0_작업본.md)
+- [Task 분해 WBS v4 작업본](docs/planning/Task분해_WBS_v4_작업본.md)
+- [API·Tool v2 영향표](docs/planning/V4-CM-0.3_API_Tool_영향표.md)
 
 **작업 문서**
 
 - [AI 작업 문서](docs/ai-context/README.md) — 라우팅 표 · 문서 우선순위
-- [강제 규칙](docs/ai-context/01-project-rules.md) — 계약·보안·계층·예산
-- [도메인 규칙과 불변 수치](docs/ai-context/02-domain-rules.md)
 - [개발 규칙](docs/development-guide.md) — Git · PR · 테스트 실행
-- [Task 분해 WBS v3](docs/planning/Task분해_WBS_v3.md) — Task ID·범위·선행관계·완료 기준의 Git 기준본
 
-**API 산출물**
+`docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 v1.9/v1.10/v9.6 구 이력으로
+사용 중지 상태입니다. v2 재생성 전에는 AI 작업 문서의 라우팅을 따라 원본과 해당 V4 Task를 직접 읽습니다.
 
-- [API 명세서 Markdown](docs/deliverables/api/API명세서.md) — 검색·리뷰용
-- [API 명세서 CSV](docs/deliverables/api/API명세서.csv) — 표 편집·검토용
-- [API 명세서 PDF](docs/deliverables/api/API명세서.pdf) — 제출·회람용
-- 세 형식은 `docs/deliverables/api/build_api_spec.py`에서 함께 생성합니다.
+**구 API 산출물 — 전환 중 / 사용 중지**
 
-**제출용 PDF** — 원본 사양 md에 아키텍처·화면 그림을 얹어 만든 최종 제출본
+- [API 명세서 Markdown](docs/deliverables/api/API명세서.md)
+- [API 명세서 CSV](docs/deliverables/api/API명세서.csv)
+- [API 명세서 PDF](docs/deliverables/api/API명세서.pdf)
+
+위 v2.1 3종은 신규 v2 baseline 이전 산출물이므로 현재 계약 기준이 아닙니다. 재생성 전 API 계약은
+시스템 설계서 v2.0 작업본 8~9장과 `V4-CM-0.3_API_Tool_영향표.md`를 따릅니다.
+
+**구 제출용 PDF — v2 재생성 전 사용 중지**
 
 - [시스템 설계서 PDF](docs/deliverables/system-design/시스템설계서.pdf) — `build.py`가 그림 11종을 얹어 생성
 - [요구사항 정의서 PDF](docs/deliverables/requirements-spec/요구사항정의서.pdf) — `build.py`가 그림·실제 화면 캡처 10종을 얹어 생성
-- 두 스크립트 모두 원본 md는 고치지 않습니다. 그림은 렌더링 단계에서만 끼워 넣습니다(`docs/deliverables/_shared/doc_pdf.py`).
+- 두 PDF는 구 baseline 제출본입니다. v2 원본 확정 뒤 재생성하며, 그 전에는 구현 근거로 사용하지 않습니다.
 
 AI 코딩 도구는 `CLAUDE.md`(Claude Code)와 `AGENTS.md`(Codex)를 통해 위 문서로 진입합니다.
 
@@ -78,7 +91,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | `http://localhost:8000/health/ready` | PostgreSQL·Neo4j·n8n readiness. 하나라도 실패하면 의존성별 상태와 함께 503 |
 
 `/health/ready`가 503이어도 API 프로세스는 종료되지 않습니다.
-두 health 경로는 내부 운영·개발 진단용이며, 제출용 API 명세서의 22개 업무 API에는 포함하지 않습니다.
+두 health 경로는 내부 운영·개발 진단용이며 업무 API 목록에는 포함하지 않습니다. 차기 API 명세를
+재생성할 때도 별도 운영 endpoint로 둡니다.
 
 ## Frontend 실행
 
@@ -109,17 +123,19 @@ npm run build
 
 `pytest`는 `backend/pytest.ini` 설정에 따라 **`e2e` 마커가 지정된 테스트를 제외하고 실행**합니다.
 
-> **E2E는 격리 DB에서만 실행합니다.** `pytest -m e2e`는 `action_history`·`agent_run`·`approval_request`·`audit_log` 등 실행 데이터를 비운 상태를 전제하므로, 공용 개발 서버에서 실행하면 배포 정답 데이터(ACT-0001~0010)가 손상됩니다.
+> **Agent E2E는 공용 서버의 전용 논리 DB `kosa_agent_e2e`에서만 실행합니다.** reset guard는
+> host·DB·token을 확인하고 `kosa_agent`·`kosa_text2sql` reset을 거부해야 합니다.
 >
-> 제외는 **마커 기반**입니다. 모든 E2E 테스트에 `@pytest.mark.e2e`를 반드시 지정합니다. 경로 자동 마킹과 공용 호스트 거부 검사가 구현되기 전까지는 **공용 서버에 연결된 상태에서 E2E를 실행하지 않습니다.** 절차는 [개발 규칙 4장](docs/development-guide.md)을 따릅니다.
+> 제외는 **마커 기반**입니다. 모든 E2E 테스트에 `@pytest.mark.e2e`를 반드시 지정합니다.
+> V4-CM-3.4·V4-C-8.2의 reset guard가 구현·검증되기 전에는 `pytest -m e2e`를 실행하지 않습니다.
+> 절차는 [개발 규칙 4장](docs/development-guide.md)을 따릅니다.
 
 ## 배포 패키지
 
-기준정보·생산 데이터·문서 임베딩·Neo4j 관계는 멘토 배포패키지로 적재가 완료된 상태입니다. `01_schema.sql`·원본 CSV·`master.cypher`는 **수정하지 않습니다.** 추가 테이블·컬럼·인덱스는 `backend/migrations/`의 별도 마이그레이션으로만 관리합니다.
+신규 ZIP·원본 Generator는 불변 입력으로 보존하고 직접 수정하지 않습니다. V4-CM-1에서 별도
+corrected generator·corrected copy·manifest를 만들고 검증한 뒤 profile별 공용 DB에 적재합니다.
+원본과 corrected layer, Runtime, evaluation artifact를 서로 같은 기준값으로 취급하지 않습니다.
 
-기준·생산 데이터는 재적재하지 않고 source manifest와 읽기 전용으로 비교합니다. 상세 안전 규칙은 [bootstrap README](infra/bootstrap/README.md)를 따릅니다.
-
-```bash
-python backend/scripts/verify_source_data.py --profile runtime
-python backend/scripts/verify_source_data.py --profile evaluation
-```
+상세 전환 순서와 안전 조건은 WBS `V4-CM-1.*`·`V4-CM-2.*`와
+[bootstrap README](infra/bootstrap/README.md)를 따릅니다. 구 2-profile 검증 명령은 v4 manifest 전환 전에는
+신규 데이터 완료 증빙으로 사용하지 않습니다.

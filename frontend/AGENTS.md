@@ -32,4 +32,4 @@
   다른 feature를 직접 import하지 않는다.
 - TypeScript를 새로 도입하지 않고 현재 JSX·ESLint·의존성 버전을 유지한다.
 
-> 이 파일은 `frontend/AGENTS.md`와 내용이 같아야 한다.
+> 이 파일은 `frontend/CLAUDE.md`와 내용이 같아야 한다.
