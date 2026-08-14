@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import csv
 import errno
-import fcntl
 import hashlib
 import inspect
 import json
@@ -18,6 +17,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import unicodedata
 import uuid
 from collections import Counter
@@ -25,7 +25,17 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, TextIO
+from typing import Any, BinaryIO
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - native Windows에서만 실행된다.
+    _fcntl = None
+
+try:
+    import msvcrt as _msvcrt
+except ImportError:  # pragma: no cover - POSIX에서만 실행된다.
+    _msvcrt = None
 
 import manifest_v3 as manifest_v3_module
 from manifest_v3 import (
@@ -59,6 +69,8 @@ GENERATOR_REVISION = "corrected-builder-v1"
 RECEIPT_FORMAT_VERSION = 1
 DEFAULT_OUTPUT_ROOT = REPOSITORY_ROOT / "data" / "corrected"
 LOCK_FILENAME = ".active.lock"
+_IS_WINDOWS = sys.platform == "win32"
+_WINDOWS_LOCK_RETRY_SECONDS = 0.05
 
 ACTIVE_KEYS = {
     "format_version",
@@ -937,6 +949,43 @@ def _safe_remove_staging(staging: Path, context: BuildContext) -> None:
         raise VerificationError("staging 정리에 실패했습니다") from exc
 
 
+def _acquire_os_lock(lock_file: BinaryIO) -> None:
+    if _IS_WINDOWS:
+        if _msvcrt is None:
+            raise OSError("Windows 파일 잠금 모듈을 불러오지 못했습니다")
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"\0")
+            lock_file.flush()
+        lock_file.seek(0)
+        retry_errnos = {errno.EACCES, errno.EAGAIN, errno.EDEADLK}
+        while True:
+            try:
+                _msvcrt.locking(lock_file.fileno(), _msvcrt.LK_NBLCK, 1)
+                return
+            except OSError as exc:
+                if exc.errno not in retry_errnos:
+                    raise
+                time.sleep(_WINDOWS_LOCK_RETRY_SECONDS)
+
+    if _fcntl is None:
+        raise OSError("POSIX 파일 잠금 모듈을 불러오지 못했습니다")
+    _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_EX)
+
+
+def _release_os_lock(lock_file: BinaryIO) -> None:
+    if _IS_WINDOWS:
+        if _msvcrt is None:
+            raise OSError("Windows 파일 잠금 모듈을 불러오지 못했습니다")
+        lock_file.seek(0)
+        _msvcrt.locking(lock_file.fileno(), _msvcrt.LK_UNLCK, 1)
+        return
+
+    if _fcntl is None:
+        raise OSError("POSIX 파일 잠금 모듈을 불러오지 못했습니다")
+    _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_UN)
+
+
 @contextmanager
 def _exclusive_lock(path: Path) -> Any:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -946,17 +995,19 @@ def _exclusive_lock(path: Path) -> Any:
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags, 0o600)
-        lock_file: TextIO = os.fdopen(descriptor, "a+", encoding="utf-8")
+        lock_file: BinaryIO = os.fdopen(descriptor, "a+b")
     except OSError as exc:
         raise VerificationError("active lock을 열 수 없습니다") from exc
     try:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        yield
+        _acquire_os_lock(lock_file)
     except OSError as exc:
+        lock_file.close()
         raise VerificationError("active lock을 사용할 수 없습니다") from exc
+    try:
+        yield
     finally:
         try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            _release_os_lock(lock_file)
         finally:
             lock_file.close()
 

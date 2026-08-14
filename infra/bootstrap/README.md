@@ -99,9 +99,9 @@ CLI 종료 코드는 자동화에서 다음 계약으로 사용한다.
 CSV를 위 형식으로 다시 직렬화하므로 source 파일과 byte-identical임을 보장하지 않는다.
 실제 `seq_no`, `dim_parameter`, 시각 보정은 후속 Task가 stage로 추가한다.
 
-이 스크립트는 파일 잠금에 POSIX `fcntl`을 사용하므로 macOS·Linux·WSL2에서 실행한다.
-native Windows는 지원하지 않으며 Windows 사용자는 WSL2 환경에서 실행한다. CI는
-`ubuntu-latest`에서 검증한다.
+파일 잠금은 macOS·Linux에서 POSIX `fcntl`, native Windows에서 `msvcrt`를 사용한다.
+따라서 팀의 macOS·Windows 환경에서 같은 CLI를 실행할 수 있다. Linux CI와 플랫폼별
+잠금 adapter 계약 테스트로 동시 실행 직렬화를 검증한다.
 
 ```bash
 cd backend

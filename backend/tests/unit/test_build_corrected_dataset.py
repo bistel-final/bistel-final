@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import errno
 import hashlib
 import io
 import json
@@ -429,6 +430,41 @@ class TestStageContract:
 
 
 class TestActiveAndBuildIntegrity:
+    def test_windows_lock_backend_initializes_byte_and_retries(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[int | str] = []
+
+        class FakeMsvcrt:
+            LK_NBLCK = 1
+            LK_UNLCK = 2
+            attempts = 0
+
+            @classmethod
+            def locking(cls, _fd: int, mode: int, size: int) -> None:
+                assert size == 1
+                calls.append(mode)
+                if mode == cls.LK_NBLCK and cls.attempts == 0:
+                    cls.attempts += 1
+                    raise OSError(errno.EACCES, "locked")
+
+        monkeypatch.setattr(corrected, "_IS_WINDOWS", True)
+        monkeypatch.setattr(corrected, "_msvcrt", FakeMsvcrt)
+        monkeypatch.setattr(
+            corrected.time, "sleep", lambda _seconds: calls.append("sleep")
+        )
+
+        lock_path = tmp_path / ".active.lock"
+        with corrected._exclusive_lock(lock_path):
+            assert lock_path.read_bytes() == b"\0"
+
+        assert calls == [
+            FakeMsvcrt.LK_NBLCK,
+            "sleep",
+            FakeMsvcrt.LK_NBLCK,
+            FakeMsvcrt.LK_UNLCK,
+        ]
+
     def test_active_extra_key_is_rejected(self, tmp_path: Path) -> None:
         _, output_root, _ = _execute(tmp_path)
         active_path = output_root / "v1" / "active.json"
