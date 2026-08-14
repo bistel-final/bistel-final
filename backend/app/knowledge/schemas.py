@@ -9,6 +9,8 @@ from app.common.tool_contracts import (
     ChamberNode,
     DocumentHit,
     EquipmentNode,
+    GraphRelationRef,
+    ParameterNode,
     ProcessStepNode,
 )
 
@@ -25,8 +27,10 @@ class ChamberRelationResponse(ApiModel):
     area: AreaNode | None = None
     step: ProcessStepNode | None = None
     sibling_chambers: list[ChamberNode]
-    upstream: list[EquipmentNode]
-    downstream: list[EquipmentNode]
+    adjacent_steps: list[ProcessStepNode]
+    parameters: list[ParameterNode]
+    relations: list[GraphRelationRef]
+    graph_revision: NonEmptyId
 
 
 class EquipmentRelationResponse(ApiModel):
@@ -34,8 +38,10 @@ class EquipmentRelationResponse(ApiModel):
     chambers: list[ChamberNode]
     area: AreaNode | None = None
     step: ProcessStepNode | None = None
-    upstream: list[EquipmentNode]
-    downstream: list[EquipmentNode]
+    adjacent_steps: list[ProcessStepNode]
+    parameters: list[ParameterNode]
+    relations: list[GraphRelationRef]
+    graph_revision: NonEmptyId
 
 
 class DocumentSearchRequest(ApiModel):
@@ -60,6 +66,7 @@ class DocumentChunkItem(ApiModel):
 class DocumentDetailResponse(ApiModel):
     # API의 document_id는 DB document.doc_id/document_chunk.doc_id에 대응한다.
     document_id: NonEmptyId
+    corpus_revision: NonEmptyId
     title: str
     doc_type: DocumentType | None = None
     model_code: NonEmptyId | None = None

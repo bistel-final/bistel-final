@@ -1,15 +1,18 @@
 import uuid
 from typing import Annotated
 
-from pydantic import StringConstraints
+from pydantic import StringConstraints, TypeAdapter
 
-# 식별자는 공백 제거 후 빈 문자열을 허용하지 않는다(설계 10.1).
-# str_min_length 를 전역 적용하면 성공 결과의 reason="" 까지 막히므로 전용 타입을 쓴다.
-# strip 을 타입 자체에 포함해 모델의 str_strip_whitespace 설정에 의존하지 않는다.
+from app.common.enums import AlarmSource
+
+# 식별자는 공백 제거 후 빈 문자열을 허용하지 않는다(설계 9.1).
+# strip을 타입 자체에 포함해 모델의 ConfigDict 설정에 의존하지 않는다.
 NonEmptyId = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
+
+_NON_EMPTY_ID_ADAPTER = TypeAdapter(NonEmptyId)
 
 # 원본 varchar 길이를 바꾸지 않는다. prefix + hex 길이가 컬럼 상한 이내여야 한다.
 AGENT_RUN_ID_PREFIX = "RUN-"
@@ -49,3 +52,27 @@ def new_tool_call_id() -> str:
 
 def new_thread_id() -> str:
     return str(uuid.uuid4())
+
+
+def format_alarm_ref_token(
+    source: AlarmSource | str,
+    alarm_id: str,
+) -> str:
+    """AlarmRef를 React deep-link용 source-qualified token으로 직렬화한다."""
+
+    normalized_source = AlarmSource(source)
+    normalized_alarm_id = _NON_EMPTY_ID_ADAPTER.validate_python(alarm_id)
+    return f"{normalized_source.value}:{normalized_alarm_id}"
+
+
+def parse_alarm_ref_token(token: str) -> tuple[AlarmSource, str]:
+    """source-qualified token을 손실 없이 AlarmRef 구성값으로 복원한다."""
+
+    normalized_token = _NON_EMPTY_ID_ADAPTER.validate_python(token)
+    source_value, separator, alarm_id = normalized_token.partition(":")
+    if not separator:
+        raise ValueError("AlarmRef token에는 source 구분자 ':'가 필요합니다")
+
+    source = AlarmSource(source_value)
+    normalized_alarm_id = _NON_EMPTY_ID_ADAPTER.validate_python(alarm_id)
+    return source, normalized_alarm_id

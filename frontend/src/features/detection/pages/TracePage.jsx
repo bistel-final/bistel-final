@@ -127,8 +127,8 @@ function TracePage() {
 
   // 센서별 한계선 — 응답 limits 우선, 없으면 catalog.sensors (PH_DOSE 처럼 trace 없는 센서)
   const limitOf = (sensorId) => sensorLimit(result.limits, catalog, sensorId)
-  const a = result.anomaly ?? catalog.anomaly ?? {}
-  const anomaly = { score: a.anomaly_score ?? 0, threshold: a.anomaly_threshold ?? 0 }
+  const a = result.anomaly ?? catalog.anomaly
+  const anomaly = a ? { score: a.score, threshold: a.display_threshold } : {}
   const focus = new Set(split(searchParams.get('wafer')).map(Number).filter((w) => f.wafers.includes(w)))
   const inScope = selectRows(rows, f)
   const scoped = scopedAlarms(alarms, f)

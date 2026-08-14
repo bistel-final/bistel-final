@@ -2,10 +2,17 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.common.enums import ChartType, Judgement
+from app.common.enums import (
+    AlarmType,
+    ChartType,
+    DeliveryChannel,
+    DeliveryStatus,
+    IncidentModelSignalStatus,
+    ThresholdValidationStatus,
+)
 from app.common.ids import NonEmptyId
 
-# 실패 reason 은 아래 접두어 중 하나로 시작한다. 임의 접두어를 만들지 않는다.
+# 실패 reason은 아래 접두어 중 하나로 시작한다. 임의 접두어를 만들지 않는다.
 REASON_PREFIXES: tuple[str, ...] = (
     "NOT_FOUND:",
     "TIMEOUT:",
@@ -24,7 +31,6 @@ def _tool_id() -> Any:
 
 
 class ToolModel(BaseModel):
-    # 공백만 있는 식별자가 통과하지 않도록 검증 전에 strip 한다.
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
@@ -41,7 +47,7 @@ class ToolResult(ToolModel):
 
         if self.ok:
             if self.reason != "":
-                raise ValueError("성공 결과의 reason 은 빈 문자열이어야 합니다")
+                raise ValueError("성공 결과의 reason은 빈 문자열이어야 합니다")
 
             for name in self.required_on_success:
                 if self._is_empty(getattr(self, name)):
@@ -54,20 +60,19 @@ class ToolResult(ToolModel):
             raise ValueError(f"실패 reason 접두어는 다음 중 하나여야 합니다: {allowed}")
 
         # 실패 결과는 모든 payload 필드가 비어 있어야 한다.
-        # 빈 문자열·0 처럼 falsy 하지만 null 이 아닌 값도 거부한다.
         for name in payload:
             value = getattr(self, name)
 
             if isinstance(value, bool):
                 if value is not False:
                     raise ValueError(
-                        f"실패 결과의 bool 필드는 False 여야 합니다: {name}"
+                        f"실패 결과의 bool 필드는 False여야 합니다: {name}"
                     )
             elif isinstance(value, list):
                 if value:
                     raise ValueError(f"실패 결과의 목록 필드는 비어야 합니다: {name}")
             elif value is not None:
-                raise ValueError(f"실패 결과의 필드는 None 이어야 합니다: {name}")
+                raise ValueError(f"실패 결과의 필드는 None이어야 합니다: {name}")
 
         return self
 
@@ -75,32 +80,29 @@ class ToolResult(ToolModel):
     def _is_empty(value: Any) -> bool:
         if isinstance(value, bool):
             return value is False
-
-        # strip 후 빈 문자열도 값이 없는 것으로 본다.
         if isinstance(value, str):
             return value == ""
-
         return value is None or value == []
 
 
 # ---------------------------------------------------------------------
-# 공유 payload — REST DTO 와 Tool 결과가 함께 사용한다
+# 공유 payload — REST DTO와 Tool 결과가 함께 사용한다
 # ---------------------------------------------------------------------
 class WaferContext(ToolModel):
     lot_hist_id: NonEmptyId
     lot_id: NonEmptyId
-    wafer_no: int
+    wafer_no: int = Field(ge=1)
     chamber_id: NonEmptyId
     equipment_id: NonEmptyId
     step_id: NonEmptyId
     recipe_id: NonEmptyId | None = None
 
 
-class SensorSummaryItem(ToolModel):
-    sensor_id: NonEmptyId
-    sensor_name: str
+class ParameterSummaryItem(ToolModel):
+    parameter_id: NonEmptyId
+    parameter_name: str = Field(min_length=1)
     unit: str | None = None
-    recipe_step_no: int
+    recipe_step_no: int = Field(ge=1)
     recipe_step_name: str | None = None
     value_mean: float | None = None
     value_std: float | None = None
@@ -114,7 +116,7 @@ class SensorSummaryItem(ToolModel):
     target: float | None = None
     ctrl_upper: float | None = None
     spec_upper: float | None = None
-    judgement: Judgement
+    alarm_type: AlarmType
 
 
 class AreaNode(ToolModel):
@@ -124,14 +126,14 @@ class AreaNode(ToolModel):
 
 class ProcessStepNode(ToolModel):
     step_id: NonEmptyId
-    step_name: str
+    step_name: str = Field(min_length=1)
     step_seq: int | None = None
     layer: str | None = None
 
 
 class EquipmentNode(ToolModel):
     equipment_id: NonEmptyId
-    equipment_name: str
+    equipment_name: str = Field(min_length=1)
     model_code: NonEmptyId
     area_id: NonEmptyId
     step_id: NonEmptyId | None = None
@@ -146,13 +148,29 @@ class ChamberNode(ToolModel):
     step_id: NonEmptyId | None = None
 
 
+class ParameterNode(ToolModel):
+    parameter_id: NonEmptyId
+    parameter_name: str = Field(min_length=1)
+    unit: str | None = None
+
+
+class GraphRelationRef(ToolModel):
+    relation_id: NonEmptyId
+    relation_type: NonEmptyId
+    from_label: NonEmptyId
+    from_business_id: NonEmptyId
+    to_label: NonEmptyId
+    to_business_id: NonEmptyId
+
+
 class DocumentHit(ToolModel):
     chunk_id: NonEmptyId
     document_id: NonEmptyId
-    title: str
+    corpus_revision: NonEmptyId
+    title: str = Field(min_length=1)
     section: str | None = None
     score: float = Field(ge=-1.0, le=1.0)
-    content: str
+    content: str = Field(min_length=1)
     model_code: NonEmptyId | None = None
 
 
@@ -170,6 +188,137 @@ class VisualizationPlan(ToolModel):
     y: str | None = None
 
 
+class AnomalySignal(ToolModel):
+    """모델 provenance와 threshold 용도를 분리한 선택적 판정보조 신호."""
+
+    score: float = Field(ge=0.0, le=1.0)
+    model_version: NonEmptyId
+    score_method: NonEmptyId
+    display_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    is_anomaly: bool | None = None
+    action_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    threshold_version: NonEmptyId | None = None
+    threshold_validation_status: ThresholdValidationStatus
+
+    @model_validator(mode="after")
+    def _validate_threshold_contract(self) -> "AnomalySignal":
+        has_display_threshold = self.display_threshold is not None
+        has_display_flag = self.is_anomaly is not None
+        if has_display_threshold != has_display_flag:
+            raise ValueError(
+                "display_threshold와 is_anomaly는 함께 제공하거나 함께 생략해야 합니다"
+            )
+        if has_display_threshold and self.is_anomaly != (
+            self.score >= self.display_threshold
+        ):
+            raise ValueError("is_anomaly가 score·display_threshold와 일치하지 않습니다")
+
+        has_action_threshold = self.action_threshold is not None
+        has_threshold_version = self.threshold_version is not None
+        if has_action_threshold != has_threshold_version:
+            raise ValueError(
+                "action_threshold와 threshold_version은 함께 제공해야 합니다"
+            )
+        if (
+            has_display_threshold
+            and has_action_threshold
+            and self.action_threshold < self.display_threshold
+        ):
+            raise ValueError(
+                "action_threshold는 display_threshold보다 작을 수 없습니다"
+            )
+        if (
+            self.threshold_validation_status is ThresholdValidationStatus.VERIFIED
+            and not has_action_threshold
+        ):
+            raise ValueError(
+                "VERIFIED threshold에는 action_threshold와 "
+                "threshold_version이 필요합니다"
+            )
+        return self
+
+
+class IncidentModelSignal(ToolModel):
+    """incident 전체 member를 검증·집계한 action 정책 입력 계약.
+
+    WAFER 단위 ``AnomalySignal``은 표시·근거 DTO이고 조치 가능 여부를 말하지 않는다.
+    실제 집계와 version allowlist 판정은 A batch service의 후속 구현 책임이다.
+    """
+
+    enabled: bool
+    status: IncidentModelSignalStatus
+    incident_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    display_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    action_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    expected_member_count: int = Field(ge=1)
+    valid_member_count: int = Field(ge=0)
+    max_score_lot_hist_id: NonEmptyId | None = None
+    model_version: NonEmptyId | None = None
+    score_method: NonEmptyId | None = None
+    threshold_version: NonEmptyId | None = None
+    action_policy_version: NonEmptyId
+    reason: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def _validate_incident_signal(self) -> "IncidentModelSignal":
+        if self.valid_member_count > self.expected_member_count:
+            raise ValueError(
+                "valid_member_count는 expected_member_count를 초과할 수 없습니다"
+            )
+
+        action_fields = (
+            "incident_score",
+            "display_threshold",
+            "action_threshold",
+            "max_score_lot_hist_id",
+            "model_version",
+            "score_method",
+            "threshold_version",
+        )
+
+        if self.status is IncidentModelSignalStatus.READY:
+            if not self.enabled:
+                raise ValueError("READY signal은 enabled=true여야 합니다")
+            if self.reason != "":
+                raise ValueError("READY signal의 reason은 빈 문자열이어야 합니다")
+            if (
+                self.expected_member_count <= 0
+                or self.expected_member_count != self.valid_member_count
+            ):
+                raise ValueError(
+                    "READY signal은 expected_member_count == "
+                    "valid_member_count > 0인 full coverage여야 합니다"
+                )
+            missing = [name for name in action_fields if getattr(self, name) is None]
+            if missing:
+                raise ValueError(
+                    "READY signal에 완전한 incident score·threshold·provenance가 "
+                    f"필요합니다: {', '.join(missing)}"
+                )
+            if self.action_threshold < self.display_threshold:
+                raise ValueError(
+                    "action_threshold는 display_threshold보다 작을 수 없습니다"
+                )
+            return self
+
+        if self.reason == "":
+            raise ValueError("DISABLED·UNAVAILABLE signal에는 reason이 필요합니다")
+
+        if self.status is IncidentModelSignalStatus.DISABLED:
+            if self.enabled:
+                raise ValueError("DISABLED signal은 enabled=false여야 합니다")
+        elif not self.enabled:
+            raise ValueError("UNAVAILABLE signal은 enabled=true여야 합니다")
+
+        populated = [name for name in action_fields if getattr(self, name) is not None]
+        if populated:
+            raise ValueError(
+                "DISABLED·UNAVAILABLE signal에는 action 적용 가능한 score·threshold·"
+                f"provenance를 넣을 수 없습니다: {', '.join(populated)}"
+            )
+        return self
+
+
 # ---------------------------------------------------------------------
 # Tool 1 — get_fdc_summary  (구현 A, 사용 C)
 # ---------------------------------------------------------------------
@@ -178,32 +327,11 @@ class FdcSummaryToolInput(ToolModel):
 
 
 class FdcSummaryToolResult(ToolResult):
-    # anomaly_score 는 WAFER 당 정확히 1개다. 없으면 성공이 아니다.
-    required_on_success: ClassVar[tuple[str, ...]] = (
-        "wafer",
-        "sensors",
-        "anomaly_score",
-        "anomaly_threshold",
-    )
+    required_on_success: ClassVar[tuple[str, ...]] = ("wafer", "parameters")
 
     wafer: WaferContext | None = None
-    sensors: list[SensorSummaryItem] = Field(default_factory=list)
-    anomaly_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    anomaly_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    is_anomaly: bool = False
-
-    @model_validator(mode="after")
-    def _validate_anomaly_flag(self) -> "FdcSummaryToolResult":
-        # 설계 5.3: is_anomaly 는 모델의 predict() 가 아니라 정규화 점수 비교로 정한다.
-        # 경계값(score == threshold)은 이상으로 판정한다.
-        if not self.ok:
-            return self
-
-        expected = self.anomaly_score >= self.anomaly_threshold
-        if self.is_anomaly != expected:
-            raise ValueError("is_anomaly 가 점수·임계값과 일치하지 않습니다")
-
-        return self
+    parameters: list[ParameterSummaryItem] = Field(default_factory=list)
+    anomaly: AnomalySignal | None = None
 
 
 # ---------------------------------------------------------------------
@@ -214,15 +342,19 @@ class EquipmentContextToolInput(ToolModel):
 
 
 class EquipmentContextToolResult(ToolResult):
-    # 상하류·형제 챔버는 없을 수 있다. ETC-01-C1 은 downstream 이 없다.
-    required_on_success: ClassVar[tuple[str, ...]] = ("equipment",)
+    required_on_success: ClassVar[tuple[str, ...]] = (
+        "equipment",
+        "graph_revision",
+    )
 
     equipment: EquipmentNode | None = None
     area: AreaNode | None = None
     step: ProcessStepNode | None = None
     sibling_chambers: list[ChamberNode] = Field(default_factory=list)
-    upstream: list[EquipmentNode] = Field(default_factory=list)
-    downstream: list[EquipmentNode] = Field(default_factory=list)
+    adjacent_steps: list[ProcessStepNode] = Field(default_factory=list)
+    parameters: list[ParameterNode] = Field(default_factory=list)
+    relations: list[GraphRelationRef] = Field(default_factory=list)
+    graph_revision: NonEmptyId | None = None
 
 
 # ---------------------------------------------------------------------
@@ -235,7 +367,7 @@ class DocumentSearchToolInput(ToolModel):
 
 
 class DocumentSearchToolResult(ToolResult):
-    # 검색 결과 0건은 오류가 아니므로 필수 값을 두지 않는다.
+    # 검색 결과 0건은 오류가 아니다.
     hits: list[DocumentHit] = Field(default_factory=list)
 
 
@@ -244,29 +376,50 @@ class DocumentSearchToolResult(ToolResult):
 # ---------------------------------------------------------------------
 class SendActionToolInput(ToolModel):
     action_id: str = _tool_id()
-    agent_run_id: str = _tool_id()
+
+
+class ChannelDeliveryResult(ToolModel):
+    channel: DeliveryChannel
+    status: DeliveryStatus
+    sent: bool
+    duplicate: bool
+
+    @model_validator(mode="after")
+    def _validate_effect_flags(self) -> "ChannelDeliveryResult":
+        if self.sent and self.duplicate:
+            raise ValueError("sent와 duplicate은 동시에 true일 수 없습니다")
+        if self.sent and self.status is not DeliveryStatus.SENT:
+            raise ValueError("sent=true이면 status는 SENT여야 합니다")
+        return self
 
 
 class SendActionToolResult(ToolResult):
-    # 실패 시 action_id 도 None 이다. 호출자는 Input 과 agent_tool_call.input_json
-    # 으로 이미 알고 있으므로 결과에서 되돌려줄 필요가 없다.
-    required_on_success: ClassVar[tuple[str, ...]] = ("action_id", "sent")
+    required_on_success: ClassVar[tuple[str, ...]] = ("action_id", "deliveries")
 
-    action_id: str | None = Field(default=None, min_length=1, max_length=20)
-    sent: bool = False
+    action_id: NonEmptyId | None = None
+    deliveries: list[ChannelDeliveryResult] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_unique_channels(self) -> "SendActionToolResult":
+        channels = [delivery.channel for delivery in self.deliveries]
+        if len(channels) != len(set(channels)):
+            raise ValueError("deliveries에는 같은 channel을 중복할 수 없습니다")
+        return self
 
 
 # ---------------------------------------------------------------------
 # Tool 5 — generate_analysis_plan  (구현·사용 D, 독립 실행)
-#   LangGraph 가 호출하지 않으므로 AGENT_MAX_TOOL_CALLS 예산에 포함하지 않는다.
 # ---------------------------------------------------------------------
 class AnalysisPlanToolInput(ToolModel):
     question: str = Field(min_length=1, max_length=1000)
 
 
 class AnalysisPlanToolResult(ToolResult):
-    # group_by 는 비어 있을 수 있다(전체 집계).
-    required_on_success: ClassVar[tuple[str, ...]] = ("sql", "metric", "visualization")
+    required_on_success: ClassVar[tuple[str, ...]] = (
+        "sql",
+        "metric",
+        "visualization",
+    )
 
     sql: str | None = Field(default=None, min_length=1)
     metric: MetricPlan | None = None
@@ -282,7 +435,7 @@ TOOL_RESULT_MODELS: dict[str, type[ToolResult]] = {
     "generate_analysis_plan": AnalysisPlanToolResult,
 }
 
-# LangGraph 가 호출하며 agent_tool_call 에 기록하는 Tool.
+# LangGraph가 호출하며 agent_tool_call에 기록하는 Tool.
 AGENT_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "get_fdc_summary",

@@ -1,5 +1,11 @@
 # Development Guide
 
+> [!CAUTION]
+> **신규 `kosa_0813.zip` 기준 v2 전환 중입니다.** 이 문서의 Git·브랜치·PR 절차는 계속
+> 사용하지만 도메인·데이터·API·E2E 기준은 v2 요구사항·시스템설계서·역할분담 v10과 WBS v4가
+> 우선합니다. `docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`의 구 본문과
+> 51건 알람·Fault 정답·ACT-0001~0010·4단계 조치를 구현 근거로 사용하지 않습니다.
+
 ## 1. 전체 작업 흐름
 
 ```text
@@ -20,18 +26,19 @@
 
 ### 한 작업을 처음부터 끝까지
 
-`FR-A-05` Tool 구현을 예로 든 전체 순서입니다. 각 단계의 상세 규칙은 아래 장에서 다룹니다.
+`V4-A-4.1~4.2` Summary Tool 구현을 예로 든 전체 순서입니다. 각 단계의 상세 규칙은 아래 장에서 다룹니다.
 
 **① Issue 생성** — 무엇을, 왜, 어디까지 하면 끝인지 먼저 적습니다.
 
 ```text
 제목  [A] get_fdc_summary Tool 구현
 본문  담당 영역   A
-      목적       Agent 가 WAFER 센서 요약과 한계선을 조회할 수 있게 한다
+      목적       Agent 가 WAFER parameter 요약과 nullable anomaly signal을 조회할 수 있게 한다
+      대상 Task  V4-A-4.1, V4-A-4.2
       대상 요구사항 FR-A-05
       완료 기준   잘못된 lot_hist_id 에 ok:false 반환, 예외 미발생
-                 lot_hist_id 당 anomaly_score 정확히 1개
-      선행 작업   #12 (detection/schemas.py)
+                 모델 미준비 시 규칙 summary 정상 + AnomalySignal=null
+      선행 작업   V4-A-1.4, V4-CM-0.2
 ```
 
 **② 작업 시작 전 상태 확인** — 작업 유실을 막습니다.
@@ -204,16 +211,18 @@ pytest
 
 > 제외는 **마커 기반**입니다. `tests/e2e/`에 두더라도 `@pytest.mark.e2e`를 빼먹으면 일반 `pytest`에서 실행됩니다. 모든 E2E 테스트에 마커를 반드시 지정합니다. 경로 자동 마킹(`conftest.py`)과 공용 호스트 거부 검사는 추후 구현합니다.
 
-### E2E 실행 (파괴적 — 격리 DB에서만)
+### E2E 실행 (파괴적 — `kosa_agent_e2e` 전용)
 
-E2E는 `action_history`·`agent_run`·`agent_run_alarm`·`agent_tool_call`·`approval_request`·`audit_log`·`action_delivery`·운영 `nl_query_log`와 Checkpoint 실행 데이터를 **비운 상태**를 전제합니다. 공용 개발 서버에서 실행하면 멘토 배포 정답 데이터(ACT-0001~0010)가 손상됩니다.
+Agent E2E는 학원 공용 PostgreSQL 서버의 전용 논리 DB `kosa_agent_e2e`에서만 수행합니다.
+`action_history`·`agent_run`·`agent_run_alarm`·`agent_tool_call`·`approval_request`·`audit_log`·
+`action_delivery`와 Checkpoint 실행 데이터만 reset하며 corrected source·reference·corpus·schema는 보존합니다.
 
-**격리 DB 검증 장치가 구현되기 전까지는 공용 서버에 연결된 `.env` 상태에서 E2E를 실행하지 않습니다.** 대상 DB를 직접 확인한 뒤 수동으로 실행합니다.
+**V4-CM-3.4·V4-C-8.2의 host·DB·token reset guard가 구현·검증되기 전에는 E2E를 실행하지
+않습니다.** guard는 `kosa_agent`·`kosa_text2sql`을 대상으로 한 reset을 반드시 거부해야 합니다.
 
 ```bash
-# 1. 접속 대상이 격리 DB인지 눈으로 확인한다. 공용 서버면 여기서 중단한다.
-#    (backend/scripts/reset_agent_e2e_db.py 는 아직 미구현이다.
-#     DB명 검사만으로는 공용 DB를 구분할 수 없으므로 호스트까지 함께 확인한다.)
+# 1. reset guard로 허용된 host + kosa_agent_e2e + 확인 token을 검증한다.
+#    guard가 미구현이거나 대상이 다르면 여기서 중단한다.
 
 # 2. E2E만 실행한다.
 cd backend
@@ -222,22 +231,22 @@ pytest -m e2e
 
 지켜야 할 조건입니다.
 
-- 대상은 **격리 Compose DB 또는 전용 테스트 DB**입니다. 공용 교육장 서버를 대상으로 실행하지 않습니다.
+- 대상은 공용 서버 안의 **전용 논리 DB `kosa_agent_e2e`**뿐입니다. `kosa_agent`·`kosa_text2sql`을 reset하지 않습니다.
 - 공용 PostgreSQL·Neo4j·n8n 컨테이너를 `docker stop`으로 멈추지 않습니다. 장애 주입은 dependency override·Tool mock·테스트 webhook으로 합니다.
-- `ACT-0001~0010`은 DB에 적재하지 않고 `backend/tests/fixtures/expected_actions.json`으로 비교합니다.
-- 기준 데이터(`fdc_alarm` 51건 등 입력 6종, 기준정보, 문서 3·청크 39)는 보존합니다.
+- 제공 `action_history` 48건은 Runtime seed·조치 정답으로 사용하지 않습니다.
+- corrected source·reference·corpus·migration schema와 평가 전용 synthetic artifact를 보존합니다.
 
-근거: 요구사항 13장 「테스트 데이터 격리 원칙」 · 시스템설계서 14.1~14.2
+근거: 요구사항 v2.0 13장 · 시스템설계서 v2.0 14장 · WBS V4-CM-3.4, V4-C-8.2
 
 ### 테스트 계층
 
 | 계층        | 대상                                                              | 마커            |
 | ----------- | ----------------------------------------------------------------- | --------------- |
-| Unit        | 요약, R03, feature,`decide_action`, sqlglot, chart 규칙         | 없음            |
+| Unit        | 요약, R03, feature, base/gated `decide_action`, sqlglot, chart 규칙 | 없음         |
 | Contract    | Tool 5종 정상·오류·timeout JSON                                 | `contract`    |
 | Integration | PostgreSQL Repository, Neo4j, pgvector, checkpoint, 승인 트랜잭션 | `integration` |
-| E2E         | FastAPI + React + DB + n8n 골든 시나리오                          | `e2e`         |
-| Evaluation  | ML, Fault 분류, RAG, 관계, Text2SQL, Level 1·2                   | `evaluation`  |
+| E2E         | FastAPI + React + `kosa_agent_e2e` + n8n 상태·복구 시나리오       | `e2e`         |
+| Evaluation  | 비지도·synthetic agreement, RAG, 관계, Text2SQL, Agent rubric     | `evaluation`  |
 
 필요한 경우 FastAPI를 실행해 실제 연동을 확인합니다.
 
@@ -381,7 +390,8 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - **다른 팀원 1명 이상의 승인(Approve)이 있어야 병합할 수 있습니다.** 문서상 권장이 아니라 `main` 브랜치 보호 규칙으로 강제됩니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 원본(`docs/specifications/시스템설계서_v1_10_최종.md` 10장·10.6)을 먼저 고치고 요약(`docs/ai-context/04-api-tool-contracts.md`)을 동기화했는지 확인합니다.
+- API·Tool 계약을 변경한 경우 v2 요구사항·시스템설계서 8~9장과
+  `docs/planning/V4-CM-0.3_API_Tool_영향표.md`, 해당 V4 Task를 먼저 정렬했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`로 **고정**합니다. 저장소 설정에서 merge commit과 rebase를 비활성화했으므로 PR 화면에 다른 선택지가 나오지 않습니다.
@@ -477,9 +487,11 @@ git branch -D feat/detection-summary
 
 ## 11. 계약·보안 규칙
 
-코드·계약·보안 강제 규칙은 **`docs/ai-context/01-project-rules.md`를 단일 출처**로 합니다. 사람과 AI 도구가 같은 문서를 봅니다.
+v2 전환 중 코드·계약·보안의 기준은 요구사항정의서 v2.0 → 시스템설계서 v2.0 → 역할분담 v10.0
+→ WBS v4의 해당 Task 순서입니다. `docs/ai-context/README.md`는 이 원본으로 보내는 라우팅 인덱스입니다.
 
-원본 근거는 `docs/specifications/` 의 요구사항 정의서·시스템 설계서이며, 요약본과 충돌하면 원본이 우선합니다.
+`docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 구 이력으로 사용 중지 상태이며
+v2 재생성 전까지 단일 출처나 구현 근거로 사용하지 않습니다.
 
 ### API 계약을 바꿀 때
 

@@ -11,7 +11,6 @@ import {
   WAFER_TRACES,
   TRACE_CATALOG,
   TRACE_SENSORS,
-  TRACE_ANOMALY,
   MEASURED_STEP_STATS,
 } from '../../features/detection/mock/trace.js'
 import { ACTIONS } from '../../features/agent/mock/actions.js'
@@ -156,7 +155,7 @@ export function getAlarm(alarmId) {
 
 // GET /traces/catalog — 조회 선택지 + 센서별 한계선·단위
 export function getTraceCatalog() {
-  if (USE_MOCK) return mockResponse({ ...TRACE_CATALOG, anomaly: TRACE_ANOMALY })
+  if (USE_MOCK) return mockResponse(TRACE_CATALOG)
   return apiClient.get('/traces/catalog').then((r) => r.data)
 }
 

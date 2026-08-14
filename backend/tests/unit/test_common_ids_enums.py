@@ -14,12 +14,19 @@ from app.common.audit import (
 )
 from app.common.enums import (
     ActionCode,
+    AlarmSource,
+    AlarmType,
+    ApprovalStatus,
     ChartType,
-    Judgement,
-    SendChannel,
+    DeliveryChannel,
+    DeliveryStatus,
+    FaultHypothesis,
+    IncidentModelSignalStatus,
+    RunStatus,
     Severity,
+    ThresholdValidationStatus,
     requires_approval,
-    resolve_send_channel,
+    resolve_delivery_channels,
     resolve_severity,
 )
 
@@ -58,43 +65,92 @@ class TestIds:
         assert len(generated) == 500
 
     def test_deployed_fixture_format_does_not_collide(self) -> None:
-        # 배포 fixture 의 ACT-0001 형식과 신규 형식이 문자열 PK 로 공존한다.
+        # evaluation profile의 제공 Mock ACT-0001과 신규 Runtime ID는 공존한다.
         assert ids.new_action_id() != "ACT-0001"
         assert len("ACT-0001") <= ids.ACTION_ID_MAX_LENGTH
 
 
 class TestEnumValues:
     def test_string_serialization(self) -> None:
-        assert Judgement.IN_CONTROL == "IN_CONTROL"
+        assert AlarmSource.TRACE == "TRACE"
+        assert AlarmType.IN == "IN"
         assert ChartType.TABLE == "table"
         assert f"{Severity.HIGH}" == "HIGH"
 
     def test_chart_type_is_lowercase(self) -> None:
         assert [c.value for c in ChartType] == ["table", "bar", "line", "histogram"]
 
-    def test_judgement_members(self) -> None:
-        assert [j.value for j in Judgement] == ["IN_CONTROL", "OOC", "OOS"]
+    @pytest.mark.parametrize(
+        "enum_type, expected",
+        [
+            (AlarmSource, ["TRACE", "SUMMARY", "R03"]),
+            (AlarmType, ["IN", "OOC", "OOS"]),
+            (ActionCode, ["MONITORING", "WARNING", "EQP_HOLD"]),
+            (FaultHypothesis, ["FOC", "RFM", "MFD", "TMD", "OTH"]),
+            (
+                RunStatus,
+                ["RUNNING", "WAITING_APPROVAL", "COMPLETED", "FAILED"],
+            ),
+            (
+                ApprovalStatus,
+                ["AUTO", "PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+            ),
+            (DeliveryChannel, ["EMAIL", "MES_MOCK"]),
+            (
+                DeliveryStatus,
+                [
+                    "BLOCKED",
+                    "WAITING",
+                    "SENDING",
+                    "SENT",
+                    "FAILED",
+                    "CANCELED",
+                    "UNKNOWN",
+                ],
+            ),
+            (ThresholdValidationStatus, ["VERIFIED", "UNVERIFIED"]),
+            (
+                IncidentModelSignalStatus,
+                ["READY", "DISABLED", "UNAVAILABLE"],
+            ),
+        ],
+    )
+    def test_v2_enum_members(self, enum_type: type, expected: list[str]) -> None:
+        assert [member.value for member in enum_type] == expected
+
+    def test_legacy_action_values_are_not_active(self) -> None:
+        assert {"MONITOR", "NOTIFY", "LOT_HOLD"}.isdisjoint(ActionCode)
+        assert "MES" not in DeliveryChannel
 
 
 class TestActionDerivedValues:
     @pytest.mark.parametrize(
-        "action, severity, channel, approval",
+        "action, severity, channels, approval",
         [
-            (ActionCode.MONITOR, Severity.LOW, SendChannel.EMAIL, False),
-            (ActionCode.NOTIFY, Severity.MEDIUM, SendChannel.EMAIL, False),
-            (ActionCode.LOT_HOLD, Severity.MEDIUM, SendChannel.MES, False),
-            (ActionCode.EQP_HOLD, Severity.HIGH, SendChannel.MES, True),
+            (ActionCode.MONITORING, Severity.LOW, (), False),
+            (
+                ActionCode.WARNING,
+                Severity.MEDIUM,
+                (DeliveryChannel.EMAIL,),
+                False,
+            ),
+            (
+                ActionCode.EQP_HOLD,
+                Severity.HIGH,
+                (DeliveryChannel.EMAIL, DeliveryChannel.MES_MOCK),
+                True,
+            ),
         ],
     )
     def test_decision_table(
         self,
         action: ActionCode,
         severity: Severity,
-        channel: SendChannel,
+        channels: tuple[DeliveryChannel, ...],
         approval: bool,
     ) -> None:
         assert resolve_severity(action) is severity
-        assert resolve_send_channel(action) is channel
+        assert resolve_delivery_channels(action) == channels
         assert requires_approval(action) is approval
 
     def test_only_eqp_hold_requires_approval(self) -> None:
@@ -192,7 +248,7 @@ class TestAppendAuditLog:
                 event_type=AuditEvent.ACTION_SENT,
                 actor_type="AGENT",
                 entity_id="ACT-0001",
-                after={"channel": "MES"},
+                after={"channel": "MES_MOCK"},
             ),
         )
 
