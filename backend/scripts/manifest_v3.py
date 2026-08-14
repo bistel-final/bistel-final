@@ -322,6 +322,11 @@ def _hash_canonical_rows(rows: Iterable[Mapping[str, Any]]) -> str:
     ).hexdigest()
 
 
+def hash_canonical_rows(rows: Iterable[Mapping[str, Any]]) -> str:
+    """후속 artifact producer가 사용하는 canonical row hash 공개 API."""
+    return _hash_canonical_rows(rows)
+
+
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -380,6 +385,11 @@ def _scan_for_sensitive_values(value: Any, *, path: tuple[str, ...] = ()) -> Non
         raise ManifestSchemaError(f"URI/DSN을 기록할 수 없습니다: {location}")
     if _is_absolute_path(value):
         raise ManifestSchemaError(f"로컬 절대 경로를 기록할 수 없습니다: {location}")
+
+
+def scan_for_sensitive_values(value: Any) -> None:
+    """후속 artifact producer용 비밀정보·절대경로 검사 공개 API."""
+    _scan_for_sensitive_values(value)
 
 
 def _require_exact_keys(
@@ -897,6 +907,11 @@ def _atomic_save_json(path: Path, payload: Mapping[str, Any]) -> None:
     finally:
         if temporary_name is not None and Path(temporary_name).exists():
             Path(temporary_name).unlink()
+
+
+def atomic_save_json(path: Path, payload: Mapping[str, Any]) -> None:
+    """같은 filesystem의 임시 파일을 이용해 JSON을 원자 교체한다."""
+    _atomic_save_json(path, payload)
 
 
 def write_manifest_with_confirmation(
