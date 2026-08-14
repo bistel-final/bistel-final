@@ -94,10 +94,19 @@ CLI 종료 코드는 자동화에서 다음 계약으로 사용한다.
 ## 4. Corrected copy 빌드
 
 `V4-CM-1.2`는 원본 ZIP을 수정하거나 압축 해제하지 않고 PostgreSQL CSV 8개를
-결정론적인 corrected build로 복사한다. 현재 `CORRECTION_STAGES`는 비어 있으므로
-행·열 값은 source와 같고, UTF-8(BOM 없음)·LF·`QUOTE_MINIMAL` 쓰기 형식만 고정된다.
-CSV를 위 형식으로 다시 직렬화하므로 source 파일과 byte-identical임을 보장하지 않는다.
-실제 `seq_no`, `dim_parameter`, 시각 보정은 후속 Task가 stage로 추가한다.
+결정론적인 corrected build로 복사하는 기반을 만들었다. CSV를 UTF-8(BOM 없음)·LF·
+`QUOTE_MINIMAL` 형식으로 다시 직렬화하므로 source 파일과 byte-identical임을 보장하지 않는다.
+
+현재 registry에는 다음 correction stage가 등록돼 있다.
+
+| 순서 | stage | version | reads | writes | 보정 |
+|---:|---|---:|---|---|---|
+| 1 | `trace_seq_no` | 1 | `fdc_trace`, `trace_alarm_history` | `fdc_trace` | Step 1은 0~2, Step 2는 3~5가 되도록 `seq_no=ordv` 적용 |
+
+`trace_seq_no`는 원본 Step-local 상태만 변환하고, 이미 전역 0~5이면 빈 patch로 통과한다.
+두 상태가 섞였거나 Step·point 계약이 다르면 추측하지 않고 실패한다. 현재 Trace 알람은 전부
+Step 1이라 값은 바꾸지 않으며, Step 2 Trace 알람이 발견되면 알람 보정 정책이 없으므로 빌드를
+중단한다. `dim_parameter`와 Summary 알람 시각 보정은 후속 Task가 stage로 추가한다.
 
 파일 잠금은 macOS·Linux에서 POSIX `fcntl`, native Windows에서 `msvcrt`를 사용한다.
 따라서 팀의 macOS·Windows 환경에서 같은 CLI를 실행할 수 있다. Linux CI와 플랫폼별
