@@ -91,7 +91,94 @@ CLI 종료 코드는 자동화에서 다음 계약으로 사용한다.
 | `5` | manifest schema 오류 |
 | `6` | 후속 Task 소유 artifact 미등록 |
 
-## 4. DB bootstrap profile 계약
+## 4. Corrected copy 빌드
+
+`V4-CM-1.2`는 원본 ZIP을 수정하거나 압축 해제하지 않고 PostgreSQL CSV 8개를
+결정론적인 corrected build로 복사한다. 현재 `CORRECTION_STAGES`는 비어 있으므로
+행·열 값은 source와 같고, UTF-8(BOM 없음)·LF·`QUOTE_MINIMAL` 쓰기 형식만 고정된다.
+CSV를 위 형식으로 다시 직렬화하므로 source 파일과 byte-identical임을 보장하지 않는다.
+실제 `seq_no`, `dim_parameter`, 시각 보정은 후속 Task가 stage로 추가한다.
+
+파일 잠금은 macOS·Linux에서 POSIX `fcntl`, native Windows에서 `msvcrt`를 사용한다.
+따라서 팀의 macOS·Windows 환경에서 같은 CLI를 실행할 수 있다. Linux CI와 플랫폼별
+잠금 adapter 계약 테스트로 동시 실행 직렬화를 검증한다.
+
+```bash
+cd backend
+
+# 최초 build 생성 및 active pointer 등록
+python scripts/build_corrected_dataset.py \
+  --archive /path/to/kosa_0813.zip
+
+# 현재 active build의 입력·generator·stage identity와 파일 무결성 확인
+python scripts/build_corrected_dataset.py \
+  --archive /path/to/kosa_0813.zip \
+  --check
+
+# generator revision이나 stage가 바뀐 build로 active pointer를 교체할 때만 사용
+python scripts/build_corrected_dataset.py \
+  --archive /path/to/kosa_0813.zip \
+  --confirm
+```
+
+출력은 `.gitignore` 대상인 `data/corrected/v1/` 아래에 둔다.
+
+```text
+data/corrected/v1/
+├── .staging/<uuid>/
+├── builds/<build_id>/
+│   ├── postgres/*.csv
+│   ├── correction-report.json
+│   └── build-receipt.json
+└── active.json
+```
+
+- build는 생성 후 수정하지 않는다. 새 입력·generator·stage는 새 `build_id`를 만든다.
+- `active.json`만 원자 교체하며, 기존 build는 rollback 근거로 보존한다.
+- 최초 등록과 동일 build 재실행은 `--confirm`이 필요 없다. 기존 active와 다른 build로
+  바꾸는 경우에만 `--confirm`이 필요하다.
+- `build-receipt.json`은 source ZIP, generator component, stage 순서, table별 의미 hash와
+  byte hash를 기록한다. `registration_status=UNREGISTERED`는 공식 corrected manifest가
+  `V4-CM-1.7` 소유임을 뜻한다.
+- `correction-report.json`은 table별 전후 행 수·column·변경량·적용 stage를 기록한다.
+- `--check`는 active pointer, receipt hash, CSV 의미/byte hash와 현재 build identity를 모두
+  확인하며 어떤 파일도 만들거나 교체하지 않는다.
+- 빌더는 PostgreSQL·Neo4j·n8n에 접속하지 않는다.
+
+### 로컬 산출물 복구
+
+- active build가 손상됐으면 자동으로 덮어쓰거나 삭제하지 않는다. 실행 중인 corrected
+  builder가 없는지 확인한 뒤 `data/corrected/v1` 전체를 이름이 겹치지 않는 별도
+  quarantine 디렉터리로 **이동해 보존**하고, 등록 ZIP으로 다시 생성한다.
+- 강제 종료로 `.staging/<uuid>`가 남았으면 다른 builder가 사용 중이지 않은 UUID인지
+  확인한 뒤 개별 디렉터리만 quarantine으로 이동한다. `.staging`, `v1`, `corrected`,
+  `data` 자체를 재귀 삭제하지 않는다.
+- `builds/<build_id>`는 rollback·충돌 조사 근거이므로 자동 또는 수동으로 덮어쓰지 않는다.
+- active가 다른 candidate로 바뀌어야 할 때 출력되는 기존/후보 build ID, 변경 identity,
+  변경 table을 확인한 후에만 `--confirm`을 사용한다.
+
+종료 코드는 source manifest 검증기와 같은 공통 계약을 사용한다.
+
+| code | 의미 |
+|---:|---|
+| `0` | 생성·교체·동일 build no-op 또는 `--check` 일치 |
+| `1` | `--check`에서 현재 build identity 불일치 |
+| `2` | 잘못된 CLI 또는 안전 경계 위반 |
+| `3` | active 변경에 `--confirm` 필요 |
+| `4` | artifact metadata 불일치 |
+| `5` | manifest·receipt·report·CSV schema/hash 오류 |
+| `6` | active pointer, build 또는 receipt가 없거나 무결성 오류 |
+
+집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_build_corrected_dataset.py
+ruff check scripts/build_corrected_dataset.py scripts/manifest_v3.py \
+  tests/unit/test_build_corrected_dataset.py
+```
+
+## 5. DB bootstrap profile 계약
 
 DB manifest는 source/corrected file manifest와 전체 hash를 공유하지 않는다. Runtime은
 `action_history=0`, evaluation은 최종 Mock fixture 48건이므로 profile마다 별도
@@ -122,7 +209,7 @@ marker와 함께 등록한다. 이번 Task는 경로 registry와 정적 계약�
 0건으로 요구하지 않는다. `nl_query_log`는 모든 profile·stage에서 `schema_only`로만
 검증하며 immutable content hash나 bootstrap empty 기준을 둘 수 없다.
 
-## 5. Synthetic evaluation 격리
+## 6. Synthetic evaluation 격리
 
 Synthetic label은 다음 envelope를 사용하고 DB bootstrap profile을 갖지 않는다.
 
@@ -142,7 +229,7 @@ corrected, Runtime, Text2SQL/RAG 입력으로 유입하지 않는다.
 generator revision·seed·file hash의 정확한 schema와 회귀 테스트를 먼저 확장한 뒤 파일을
 생성한다.
 
-## 6. 보안·운영 원칙
+## 7. 보안·운영 원칙
 
 - manifest에는 전체 DSN, 사용자명, 비밀번호, credential, secret을 기록하지 않는다.
 - URI userinfo와 POSIX·Windows 로컬 절대 경로를 기록하지 않는다.
