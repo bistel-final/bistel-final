@@ -379,6 +379,13 @@ graph fingerprint를 가리킬 때만 허용한다.
 4. 팀이 추적 가능한 `approval_ref`
 5. 실행 직전 transaction 안에서 다시 확인한 기존 graph fingerprint
 
+논리 백업 v2는 graph data와 함께 **현재 schema fingerprint**를 증빙에 묶는다. Neo4j 기본
+LOOKUP index와 NODE UNIQUENESS constraint가 소유한 RANGE backing index만 허용하며, 독립
+사용자 index·다른 constraint는 공식 dump 없이는 거부한다. 교체는 schema DDL을 변경하지
+않고 기존 constraint/index를 그대로 유지한다. preflight·backup·restore receipt의 schema
+fingerprint가 모두 같고 실행 transaction 직전에도 동일할 때만 삭제·seed를 시작한다. 구
+epoch 복구를 위해 `Sensor.sensor_id`와 finite float property도 backup/restore 범위에 포함한다.
+
 backup 생성과 오프라인 restore 검증은 다음처럼 분리한다.
 
 ```bash
@@ -419,8 +426,12 @@ ruff format --check scripts/master_cypher.py scripts/neo4j_target.py \
   tests/unit/test_bootstrap_neo4j_graph.py
 ```
 
-V4-CM-1.6 구현·단위 테스트 단계에서는 공용 Neo4j에 접속하거나 적용하지 않는다. 실제
-`preflight` 이후 적용은 구현 리뷰·팀 공유와 대상 승인 뒤 별도 운영 단계에서 수행한다.
+V4-CM-1.6의 최초 구현·단위 테스트에서는 공용 Neo4j에 적용하지 않았다. 이후 운영 단계에서
+GitHub 이슈 `#41`을 적용 근거로 preflight, 논리 백업 v2, 오프라인 restore 검증을 순서대로 통과한
+뒤 구 24 nodes·26 relationships를 신규 38 nodes·81 relationships로 원자 교체했다. 교체 전후
+schema fingerprint는 같고, 관계 81건의 `relation_id`는 전부 존재하며 중복 0건이다. 복구용
+backup·manifest·restore receipt는 저장소 밖 backup root에 보존하고, 저장소에는 비밀정보가
+없는 `REPLACED` success marker만 등록한다.
 
 ## 7. Synthetic evaluation 격리
 

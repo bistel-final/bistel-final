@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -46,6 +47,7 @@ from master_cypher import (
     canonical_sha256,
     graph_manifest_sha256,
     parse_registered_archive,
+    serialize_business_value,
     sha256_bytes,
     sha256_file,
     validate_generated_artifacts,
@@ -59,8 +61,8 @@ from neo4j_target import (
 )
 
 MARKER_ROOT = BOOTSTRAP_ROOT / "markers"
-BACKUP_SCHEMA_VERSION = "neo4j-logical-v1"
-RESTORE_ALGORITHM_VERSION = "neo4j-logical-restore-v1"
+BACKUP_SCHEMA_VERSION = "neo4j-logical-v2"
+RESTORE_ALGORITHM_VERSION = "neo4j-logical-restore-v2"
 PREFLIGHT_TTL = timedelta(hours=24)
 APPROVAL_REF_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -68,6 +70,7 @@ SUCCESS_STATUSES = frozenset(
     {"APPLIED", "REPLACED", "ADOPTED_EXISTING", "VERIFIED_EXISTING"}
 )
 ALL_MARKER_STATUSES = SUCCESS_STATUSES | {"RESTORED"}
+SNAPSHOT_BUSINESS_KEYS = {**BUSINESS_KEYS, "Sensor": ("sensor_id",)}
 
 PREFLIGHT_KEYS = frozenset(
     {
@@ -76,6 +79,7 @@ PREFLIGHT_KEYS = frozenset(
         "database",
         "target_fingerprint_sha256",
         "existing_graph_fingerprint_sha256",
+        "schema_fingerprint_sha256",
         "node_count",
         "relationship_count",
         "source_member_sha256",
@@ -91,6 +95,7 @@ BACKUP_MANIFEST_KEYS = frozenset(
         "target_fingerprint_sha256",
         "backup_file_sha256",
         "backup_graph_fingerprint_sha256",
+        "schema_fingerprint_sha256",
         "backup_schema_version",
         "node_count",
         "relationship_count",
@@ -106,6 +111,7 @@ RESTORE_RECEIPT_KEYS = frozenset(
         "backup_manifest_sha256",
         "backup_file_sha256",
         "backup_graph_fingerprint_sha256",
+        "schema_fingerprint_sha256",
         "restore_algorithm_version",
         "verified_at",
     }
@@ -117,6 +123,7 @@ BACKUP_FILE_KEYS = frozenset(
         "backup_schema_version",
         "database",
         "target_fingerprint_sha256",
+        "schema_fingerprint_sha256",
         "created_at",
         "nodes",
         "relationships",
@@ -149,6 +156,7 @@ MARKER_REQUIRED = {
             "applied_at",
             "backup_file_sha256",
             "backup_graph_fingerprint_sha256",
+            "schema_fingerprint_sha256",
             "approval_ref",
             "preflight_receipt_sha256",
             "backup_manifest_sha256",
@@ -162,6 +170,7 @@ MARKER_REQUIRED = {
             "restored_at",
             "backup_file_sha256",
             "backup_graph_fingerprint_sha256",
+            "schema_fingerprint_sha256",
             "backup_manifest_sha256",
             "restore_receipt_sha256",
             "approval_ref",
@@ -181,8 +190,14 @@ RETURN labels(a) AS from_labels, properties(a) AS from_properties,
        labels(b) AS to_labels, properties(b) AS to_properties
 """
 DELETE_QUERY = "MATCH (n) DETACH DELETE n"
-INDEX_QUERY = "SHOW INDEXES YIELD type RETURN type"
-CONSTRAINT_QUERY = "SHOW CONSTRAINTS YIELD name RETURN name"
+INDEX_QUERY = """SHOW INDEXES
+YIELD name, type, entityType, labelsOrTypes, properties, owningConstraint
+RETURN name, type, entityType, labelsOrTypes, properties, owningConstraint
+"""
+CONSTRAINT_QUERY = """SHOW CONSTRAINTS
+YIELD name, type, entityType, labelsOrTypes, properties, ownedIndex
+RETURN name, type, entityType, labelsOrTypes, properties, ownedIndex
+"""
 
 
 class Neo4jBootstrapError(RuntimeError):
@@ -206,11 +221,27 @@ class BackupError(Neo4jBootstrapError):
 
 
 @dataclass(frozen=True)
+class SnapshotNode:
+    label: str
+    properties: dict[str, str | int | float]
+
+    @property
+    def business_id(self) -> str:
+        keys = SNAPSHOT_BUSINESS_KEYS.get(self.label)
+        if keys is None or any(key not in self.properties for key in keys):
+            raise GraphStateError("snapshot business key를 복원할 수 없습니다")
+        return "+".join(
+            f"{key}={serialize_business_value(self.properties[key])}"
+            for key in sorted(keys)
+        )
+
+
+@dataclass(frozen=True)
 class RelationshipSnapshot:
     relation_type: str
-    from_node: NodeSpec
-    to_node: NodeSpec
-    properties: dict[str, str | int]
+    from_node: NodeSpec | SnapshotNode
+    to_node: NodeSpec | SnapshotNode
+    properties: dict[str, str | int | float]
 
     @property
     def relation_id(self) -> str | None:
@@ -220,7 +251,7 @@ class RelationshipSnapshot:
 
 @dataclass(frozen=True)
 class GraphSnapshot:
-    nodes: tuple[NodeSpec, ...]
+    nodes: tuple[NodeSpec | SnapshotNode, ...]
     relationships: tuple[RelationshipSnapshot, ...]
 
     @property
@@ -262,15 +293,17 @@ def _rows(result: Any) -> list[dict[str, Any]]:
         raise GraphStateError("Neo4j query 결과를 순회할 수 없습니다") from exc
 
 
-def _supported_properties(value: Any) -> dict[str, str | int]:
+def _supported_properties(value: Any) -> dict[str, str | int | float]:
     if not isinstance(value, Mapping):
         raise GraphStateError("Neo4j property payload가 object가 아닙니다")
-    result: dict[str, str | int] = {}
+    result: dict[str, str | int | float] = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise GraphStateError("Neo4j property key가 문자열이 아닙니다")
-        if isinstance(item, bool) or not isinstance(item, str | int):
+        if isinstance(item, bool) or not isinstance(item, str | int | float):
             raise GraphStateError("지원하지 않는 Neo4j property type입니다")
+        if isinstance(item, float) and not math.isfinite(item):
+            raise GraphStateError("Neo4j float property가 finite 값이 아닙니다")
         result[key] = item
     return result
 
@@ -279,8 +312,8 @@ def _single_label(value: Any) -> str:
     if not isinstance(value, list | tuple) or len(value) != 1:
         raise GraphStateError("노드는 bk-v1 label 하나만 가져야 합니다")
     label = value[0]
-    if not isinstance(label, str) or label not in BUSINESS_KEYS:
-        raise GraphStateError("bk-v1 allowlist 밖의 node label입니다")
+    if not isinstance(label, str) or label not in SNAPSHOT_BUSINESS_KEYS:
+        raise GraphStateError("snapshot allowlist 밖의 node label입니다")
     return label
 
 
@@ -288,10 +321,10 @@ def snapshot_from_rows(
     node_rows: Sequence[Mapping[str, Any]],
     relationship_rows: Sequence[Mapping[str, Any]],
 ) -> GraphSnapshot:
-    nodes: list[NodeSpec] = []
-    identities: dict[tuple[str, str], NodeSpec] = {}
+    nodes: list[NodeSpec | SnapshotNode] = []
+    identities: dict[tuple[str, str], NodeSpec | SnapshotNode] = {}
     for row in node_rows:
-        node = NodeSpec(
+        node = SnapshotNode(
             _single_label(row.get("labels")),
             _supported_properties(row.get("properties")),
         )
@@ -303,11 +336,11 @@ def snapshot_from_rows(
 
     relationships: list[RelationshipSnapshot] = []
     for row in relationship_rows:
-        from_node = NodeSpec(
+        from_node = SnapshotNode(
             _single_label(row.get("from_labels")),
             _supported_properties(row.get("from_properties")),
         )
-        to_node = NodeSpec(
+        to_node = SnapshotNode(
             _single_label(row.get("to_labels")),
             _supported_properties(row.get("to_properties")),
         )
@@ -403,15 +436,119 @@ def inspect_graph(query_runner: Any) -> GraphSnapshot:
     )
 
 
-def validate_supported_schema(query_runner: Any) -> None:
-    indexes = _rows(query_runner.run(INDEX_QUERY))
-    unsupported = [
-        row for row in indexes if str(row.get("type", "")).upper() != "LOOKUP"
-    ]
-    if unsupported:
-        raise GraphStateError("사용자 index가 있어 공식 Neo4j dump가 필요합니다")
-    if _rows(query_runner.run(CONSTRAINT_QUERY)):
-        raise GraphStateError("constraint가 있어 공식 Neo4j dump가 필요합니다")
+def _schema_identifier(value: Any, *, field: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise GraphStateError(f"Neo4j {field} 형식이 잘못됐습니다")
+    return value
+
+
+def _schema_string_list(value: Any, *, field: str) -> list[str]:
+    if not isinstance(value, list | tuple) or not value:
+        raise GraphStateError(f"Neo4j {field} 목록이 잘못됐습니다")
+    return [_schema_identifier(item, field=field) for item in value]
+
+
+def supported_schema_payload(query_runner: Any) -> dict[str, Any]:
+    """Return a deterministic fingerprint payload for schema kept in-place.
+
+    Logical graph replace never drops schema.  Therefore only Neo4j lookup indexes
+    and RANGE indexes owned by NODE UNIQUENESS constraints are supported.  A
+    standalone user index or any other constraint still requires an official dump.
+    """
+
+    constraints: list[dict[str, Any]] = []
+    constraint_by_name: dict[str, dict[str, Any]] = {}
+    for row in _rows(query_runner.run(CONSTRAINT_QUERY)):
+        name = _schema_identifier(row.get("name"), field="constraint name")
+        constraint_type = str(row.get("type", "")).upper()
+        entity_type = str(row.get("entityType", "")).upper()
+        labels = _schema_string_list(row.get("labelsOrTypes"), field="constraint label")
+        properties = _schema_string_list(
+            row.get("properties"), field="constraint property"
+        )
+        owned_index = _schema_identifier(row.get("ownedIndex"), field="owned index")
+        if constraint_type != "UNIQUENESS" or entity_type != "NODE":
+            raise GraphStateError(
+                "지원하지 않는 constraint가 있어 공식 Neo4j dump가 필요합니다"
+            )
+        item = {
+            "name": name,
+            "type": constraint_type,
+            "entity_type": entity_type,
+            "labels_or_types": labels,
+            "properties": properties,
+            "owned_index": owned_index,
+        }
+        if name in constraint_by_name:
+            raise GraphStateError("Neo4j constraint 이름이 중복됐습니다")
+        constraint_by_name[name] = item
+        constraints.append(item)
+
+    indexes: list[dict[str, Any]] = []
+    owned_index_names: set[str] = set()
+    for row in _rows(query_runner.run(INDEX_QUERY)):
+        name = _schema_identifier(row.get("name"), field="index name")
+        index_type = str(row.get("type", "")).upper()
+        entity_type = str(row.get("entityType", "")).upper()
+        owner = row.get("owningConstraint")
+        if index_type == "LOOKUP":
+            if owner is not None:
+                raise GraphStateError("LOOKUP index에 constraint owner가 있습니다")
+            item = {
+                "name": name,
+                "type": index_type,
+                "entity_type": entity_type,
+                "labels_or_types": None,
+                "properties": None,
+                "owning_constraint": None,
+            }
+        elif index_type == "RANGE":
+            if not isinstance(owner, str):
+                raise GraphStateError(
+                    "독립 사용자 index가 있어 공식 Neo4j dump가 필요합니다"
+                )
+            owner_name = _schema_identifier(owner, field="owning constraint")
+            if owner_name not in constraint_by_name:
+                raise GraphStateError(
+                    "독립 사용자 index가 있어 공식 Neo4j dump가 필요합니다"
+                )
+            labels = _schema_string_list(row.get("labelsOrTypes"), field="index label")
+            properties = _schema_string_list(
+                row.get("properties"), field="index property"
+            )
+            constraint = constraint_by_name[owner_name]
+            if (
+                constraint["owned_index"] != name
+                or constraint["entity_type"] != entity_type
+                or constraint["labels_or_types"] != labels
+                or constraint["properties"] != properties
+            ):
+                raise GraphStateError("constraint와 backing index가 일치하지 않습니다")
+            owned_index_names.add(name)
+            item = {
+                "name": name,
+                "type": index_type,
+                "entity_type": entity_type,
+                "labels_or_types": labels,
+                "properties": properties,
+                "owning_constraint": owner_name,
+            }
+        else:
+            raise GraphStateError(
+                "지원하지 않는 index가 있어 공식 Neo4j dump가 필요합니다"
+            )
+        indexes.append(item)
+
+    expected_owned = {item["owned_index"] for item in constraints}
+    if owned_index_names != expected_owned:
+        raise GraphStateError("constraint backing index가 누락됐습니다")
+    indexes.sort(key=lambda item: canonical_json_bytes(item))
+    constraints.sort(key=lambda item: canonical_json_bytes(item))
+    return {"indexes": indexes, "constraints": constraints}
+
+
+def validate_supported_schema(query_runner: Any) -> str:
+    return canonical_sha256(supported_schema_payload(query_runner))
 
 
 def graph_state(
@@ -493,7 +630,7 @@ def validate_receipt(payload: Mapping[str, Any], artifact_type: str) -> None:
         raise EvidenceError("Neo4j receipt key 집합이 잘못됐습니다")
     if (
         payload.get("artifact_type") != artifact_type
-        or payload.get("format_version") != 1
+        or payload.get("format_version") != 2
     ):
         raise EvidenceError("Neo4j receipt metadata가 잘못됐습니다")
     validate_database_name(str(payload.get("database", "")))
@@ -792,15 +929,19 @@ def _backup_payload(
     snapshot: GraphSnapshot,
     target: Neo4jBootstrapTarget,
     *,
+    schema_fingerprint_sha256: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    if not SHA256_PATTERN.fullmatch(schema_fingerprint_sha256):
+        raise BackupError("schema fingerprint 형식이 잘못됐습니다")
     payload = snapshot_payload(snapshot)
     return {
         "artifact_type": "neo4j_logical_backup",
-        "format_version": 1,
+        "format_version": 2,
         "backup_schema_version": BACKUP_SCHEMA_VERSION,
         "database": target.database,
         "target_fingerprint_sha256": target.target_fingerprint_sha256,
+        "schema_fingerprint_sha256": schema_fingerprint_sha256,
         "created_at": utc_text(now),
         "nodes": payload["nodes"],
         "relationships": payload["relationships"],
@@ -812,7 +953,7 @@ def snapshot_from_backup(payload: Mapping[str, Any]) -> GraphSnapshot:
         raise BackupError("backup file key 집합이 잘못됐습니다")
     if (
         payload.get("artifact_type") != "neo4j_logical_backup"
-        or payload.get("format_version") != 1
+        or payload.get("format_version") != 2
         or payload.get("backup_schema_version") != BACKUP_SCHEMA_VERSION
     ):
         raise BackupError("backup file metadata가 잘못됐습니다")
@@ -822,6 +963,7 @@ def snapshot_from_backup(payload: Mapping[str, Any]) -> GraphSnapshot:
         raise BackupError(str(exc)) from exc
     validate_database_name(str(payload.get("database", "")))
     _validate_sha(payload, "target_fingerprint_sha256")
+    _validate_sha(payload, "schema_fingerprint_sha256")
     nodes = payload.get("nodes")
     if not isinstance(nodes, list):
         raise BackupError("backup node 목록이 잘못됐습니다")
@@ -899,6 +1041,7 @@ def create_backup_artifacts(
     snapshot: GraphSnapshot,
     target: Neo4jBootstrapTarget,
     *,
+    schema_fingerprint_sha256: str,
     backup_root: Path,
     now: datetime | None = None,
 ) -> tuple[Path, Path, dict[str, Any]]:
@@ -907,17 +1050,23 @@ def create_backup_artifacts(
     directory = backup_root / "backups"
     backup_path = directory / f"neo4j_graph.{target.database}.{stamp}.json"
     manifest_path = directory / f"neo4j_graph.{target.database}.{stamp}.manifest.json"
-    backup_payload = _backup_payload(snapshot, target, now=moment)
+    backup_payload = _backup_payload(
+        snapshot,
+        target,
+        schema_fingerprint_sha256=schema_fingerprint_sha256,
+        now=moment,
+    )
     backup_bytes = canonical_json_bytes(backup_payload) + b"\n"
     backup_file_sha = sha256_bytes(backup_bytes)
     backup_graph_sha = snapshot_fingerprint(snapshot)
     manifest = {
         "artifact_type": "neo4j_backup_manifest",
-        "format_version": 1,
+        "format_version": 2,
         "database": target.database,
         "target_fingerprint_sha256": target.target_fingerprint_sha256,
         "backup_file_sha256": backup_file_sha,
         "backup_graph_fingerprint_sha256": backup_graph_sha,
+        "schema_fingerprint_sha256": schema_fingerprint_sha256,
         "backup_schema_version": BACKUP_SCHEMA_VERSION,
         "node_count": snapshot.node_count,
         "relationship_count": snapshot.relationship_count,
@@ -952,6 +1101,8 @@ def load_backup_bundle(
         backup_payload.get("database") != manifest["database"]
         or backup_payload.get("target_fingerprint_sha256")
         != manifest["target_fingerprint_sha256"]
+        or backup_payload.get("schema_fingerprint_sha256")
+        != manifest["schema_fingerprint_sha256"]
     ):
         raise BackupError("backup file과 manifest target이 다릅니다")
     backup_bytes = canonical_json_bytes(backup_payload) + b"\n"
@@ -972,14 +1123,18 @@ def build_preflight_receipt(
     context: LoaderContext,
     snapshot: GraphSnapshot,
     *,
+    schema_fingerprint_sha256: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    if not SHA256_PATTERN.fullmatch(schema_fingerprint_sha256):
+        raise EvidenceError("schema fingerprint 형식이 잘못됐습니다")
     payload = {
         "artifact_type": "neo4j_preflight_receipt",
-        "format_version": 1,
+        "format_version": 2,
         "database": context.target.database,
         "target_fingerprint_sha256": context.target.target_fingerprint_sha256,
         "existing_graph_fingerprint_sha256": snapshot_fingerprint(snapshot),
+        "schema_fingerprint_sha256": schema_fingerprint_sha256,
         "node_count": snapshot.node_count,
         "relationship_count": snapshot.relationship_count,
         "source_member_sha256": SOURCE_MEMBER_SHA256,
@@ -1005,12 +1160,13 @@ def build_restore_receipt(
         raise EvidenceError("backup manifest target이 현재 target과 다릅니다")
     payload = {
         "artifact_type": "neo4j_restore_verification_receipt",
-        "format_version": 1,
+        "format_version": 2,
         "database": target.database,
         "target_fingerprint_sha256": target.target_fingerprint_sha256,
         "backup_manifest_sha256": sha256_file(manifest_path),
         "backup_file_sha256": manifest["backup_file_sha256"],
         "backup_graph_fingerprint_sha256": manifest["backup_graph_fingerprint_sha256"],
+        "schema_fingerprint_sha256": manifest["schema_fingerprint_sha256"],
         "restore_algorithm_version": RESTORE_ALGORITHM_VERSION,
         "verified_at": utc_text(now),
     }
@@ -1069,6 +1225,10 @@ def validate_replace_evidence(
             backup_manifest["backup_graph_fingerprint_sha256"],
             expected_existing_fingerprint,
         ),
+        (
+            backup_manifest["schema_fingerprint_sha256"],
+            preflight["schema_fingerprint_sha256"],
+        ),
         (backup_manifest["node_count"], preflight["node_count"]),
         (
             backup_manifest["relationship_count"],
@@ -1091,6 +1251,10 @@ def validate_replace_evidence(
             restore_receipt["backup_graph_fingerprint_sha256"],
             backup_manifest["backup_graph_fingerprint_sha256"],
         ),
+        (
+            restore_receipt["schema_fingerprint_sha256"],
+            backup_manifest["schema_fingerprint_sha256"],
+        ),
     )
     if any(actual != expected for actual, expected in fixed_pairs):
         raise EvidenceError("replace evidence 교차 검증값이 다릅니다")
@@ -1100,6 +1264,7 @@ def validate_replace_evidence(
         "backup_graph_fingerprint_sha256": backup_manifest[
             "backup_graph_fingerprint_sha256"
         ],
+        "schema_fingerprint_sha256": backup_manifest["schema_fingerprint_sha256"],
         "approval_ref": approval_ref,
         "preflight_receipt_sha256": sha256_file(preflight_path),
         "backup_manifest_sha256": sha256_file(backup_manifest_path),
@@ -1146,15 +1311,30 @@ def read_current_snapshot(
     driver_factory: Callable[[Neo4jBootstrapTarget], Any] = _driver_for,
     require_supported_schema: bool = False,
 ) -> GraphSnapshot:
+    snapshot, _ = read_current_state(
+        target,
+        driver_factory=driver_factory,
+        require_supported_schema=require_supported_schema,
+    )
+    return snapshot
+
+
+def read_current_state(
+    target: Neo4jBootstrapTarget,
+    *,
+    driver_factory: Callable[[Neo4jBootstrapTarget], Any] = _driver_for,
+    require_supported_schema: bool = True,
+) -> tuple[GraphSnapshot, str | None]:
     driver = driver_factory(target)
     try:
         with _open_session(driver, target.database, read_only=True) as session:
             validate_connected_database(session, target.database)
 
-            def read(tx: Any) -> GraphSnapshot:
-                if require_supported_schema:
-                    validate_supported_schema(tx)
-                return inspect_graph(tx)
+            def read(tx: Any) -> tuple[GraphSnapshot, str | None]:
+                schema_fingerprint = (
+                    validate_supported_schema(tx) if require_supported_schema else None
+                )
+                return inspect_graph(tx), schema_fingerprint
 
             return _execute_read(session, read)
     finally:
@@ -1168,8 +1348,8 @@ def _run_seed(tx: Any, parsed: ParsedMasterCypher) -> None:
 
 def _adopt_relationships(tx: Any, parsed: ParsedMasterCypher) -> None:
     for index, relation in enumerate(parsed.relationships):
-        from_keys = BUSINESS_KEYS[relation.from_node.label]
-        to_keys = BUSINESS_KEYS[relation.to_node.label]
+        from_keys = SNAPSHOT_BUSINESS_KEYS[relation.from_node.label]
+        to_keys = SNAPSHOT_BUSINESS_KEYS[relation.to_node.label]
         from_pattern = ", ".join(f"{key}: $f_{key}" for key in from_keys)
         to_pattern = ", ".join(f"{key}: $t_{key}" for key in to_keys)
         query = (
@@ -1203,8 +1383,8 @@ def _restore_snapshot(tx: Any, snapshot: GraphSnapshot) -> None:
             item.to_node.business_id,
         ),
     ):
-        from_keys = BUSINESS_KEYS[relation.from_node.label]
-        to_keys = BUSINESS_KEYS[relation.to_node.label]
+        from_keys = SNAPSHOT_BUSINESS_KEYS[relation.from_node.label]
+        to_keys = SNAPSHOT_BUSINESS_KEYS[relation.to_node.label]
         from_pattern = ", ".join(f"{key}: $f_{key}" for key in from_keys)
         to_pattern = ", ".join(f"{key}: $t_{key}" for key in to_keys)
         query = (
@@ -1228,6 +1408,7 @@ def mutate_graph(
     mode: str,
     *,
     expected_existing_fingerprint: str | None = None,
+    expected_schema_fingerprint: str | None = None,
     restore_snapshot: GraphSnapshot | None = None,
     driver_factory: Callable[[Neo4jBootstrapTarget], Any] = _driver_for,
 ) -> GraphSnapshot:
@@ -1257,7 +1438,11 @@ def mutate_graph(
                         )
                     _adopt_relationships(tx, context.parsed)
                 elif mode == "replace":
-                    validate_supported_schema(tx)
+                    actual_schema_fingerprint = validate_supported_schema(tx)
+                    if actual_schema_fingerprint != expected_schema_fingerprint:
+                        raise GraphStateError(
+                            "transaction 시점 schema fingerprint가 다릅니다"
+                        )
                     if snapshot_fingerprint(current) != expected_existing_fingerprint:
                         raise GraphStateError(
                             "transaction 시점 graph fingerprint가 다릅니다"
@@ -1265,7 +1450,11 @@ def mutate_graph(
                     tx.run(DELETE_QUERY)
                     _run_seed(tx, context.parsed)
                 elif mode == "restore-backup":
-                    validate_supported_schema(tx)
+                    actual_schema_fingerprint = validate_supported_schema(tx)
+                    if actual_schema_fingerprint != expected_schema_fingerprint:
+                        raise GraphStateError(
+                            "transaction 시점 schema fingerprint가 다릅니다"
+                        )
                     if snapshot_fingerprint(current) != expected_existing_fingerprint:
                         raise GraphStateError(
                             "transaction 시점 graph fingerprint가 다릅니다"
@@ -1463,10 +1652,16 @@ def run(
         return 0
 
     if mode == "preflight":
-        snapshot = read_current_snapshot(
+        snapshot, schema_fingerprint = read_current_state(
             context.target, driver_factory=driver_factory, require_supported_schema=True
         )
-        receipt = build_preflight_receipt(context, snapshot, now=now)
+        assert schema_fingerprint is not None
+        receipt = build_preflight_receipt(
+            context,
+            snapshot,
+            schema_fingerprint_sha256=schema_fingerprint,
+            now=now,
+        )
         output = validate_backup_path(Path(args.receipt_out), backup_root)
         save_external_artifact(output, receipt, backup_root)
         local_marker = load_marker(context.target.database, root=marker_root)
@@ -1485,11 +1680,16 @@ def run(
         return 0
 
     if mode == "backup":
-        snapshot = read_current_snapshot(
+        snapshot, schema_fingerprint = read_current_state(
             context.target, driver_factory=driver_factory, require_supported_schema=True
         )
+        assert schema_fingerprint is not None
         backup_path, manifest_path, _ = create_backup_artifacts(
-            snapshot, context.target, backup_root=backup_root, now=now
+            snapshot,
+            context.target,
+            schema_fingerprint_sha256=schema_fingerprint,
+            backup_root=backup_root,
+            now=now,
         )
         print(
             f"BACKUP_OK database={context.target.database} "
@@ -1555,6 +1755,7 @@ def run(
             context,
             mode,
             expected_existing_fingerprint=args.expected_existing_fingerprint,
+            expected_schema_fingerprint=evidence["schema_fingerprint_sha256"],
             driver_factory=driver_factory,
         )
         marker = build_marker(context, snapshot, "REPLACED", now=now, extra=evidence)
@@ -1592,6 +1793,10 @@ def run(
                 receipt["backup_graph_fingerprint_sha256"],
                 backup_manifest["backup_graph_fingerprint_sha256"],
             ),
+            (
+                receipt["schema_fingerprint_sha256"],
+                backup_manifest["schema_fingerprint_sha256"],
+            ),
         )
         if any(actual != expected for actual, expected in expected_pairs):
             raise EvidenceError("restore evidence 교차 검증값이 다릅니다")
@@ -1603,6 +1808,7 @@ def run(
             context,
             mode,
             expected_existing_fingerprint=args.expected_current_fingerprint,
+            expected_schema_fingerprint=backup_manifest["schema_fingerprint_sha256"],
             restore_snapshot=backup_snapshot,
             driver_factory=driver_factory,
         )
@@ -1615,6 +1821,9 @@ def run(
                 "backup_file_sha256": backup_manifest["backup_file_sha256"],
                 "backup_graph_fingerprint_sha256": backup_manifest[
                     "backup_graph_fingerprint_sha256"
+                ],
+                "schema_fingerprint_sha256": backup_manifest[
+                    "schema_fingerprint_sha256"
                 ],
                 "backup_manifest_sha256": sha256_file(manifest_path),
                 "restore_receipt_sha256": sha256_file(restore_path),

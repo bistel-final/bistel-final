@@ -37,6 +37,45 @@ CORRECTED_PATH = BOOTSTRAP_ROOT / "master_graph.cypher"
 MANIFEST_PATH = BOOTSTRAP_ROOT / "manifests" / "neo4j.graph.json"
 
 
+def _lookup_index_rows():
+    return [
+        {
+            "name": "index_nodes",
+            "type": "LOOKUP",
+            "entityType": "NODE",
+            "labelsOrTypes": None,
+            "properties": None,
+            "owningConstraint": None,
+        },
+        {
+            "name": "index_relationships",
+            "type": "LOOKUP",
+            "entityType": "RELATIONSHIP",
+            "labelsOrTypes": None,
+            "properties": None,
+            "owningConstraint": None,
+        },
+    ]
+
+
+def _default_schema_fingerprint():
+    payload = {
+        "indexes": [
+            {
+                "name": row["name"],
+                "type": row["type"],
+                "entity_type": row["entityType"],
+                "labels_or_types": None,
+                "properties": None,
+                "owning_constraint": None,
+            }
+            for row in _lookup_index_rows()
+        ],
+        "constraints": [],
+    }
+    return master.canonical_sha256(payload)
+
+
 def _raw_source() -> str:
     corrected = CORRECTED_PATH.read_text(encoding="utf-8")
     seed = re.sub(r" \{relation_id:'REL-[0-9a-f]{20}'\}", "", corrected)
@@ -107,9 +146,9 @@ class FakeTx:
         if query == bootstrap.RELATIONSHIP_QUERY:
             return _snapshot_rows(self.snapshot)[1]
         if query == bootstrap.INDEX_QUERY:
-            return [{"type": item} for item in self.driver.index_types]
+            return copy.deepcopy(self.driver.index_rows)
         if query == bootstrap.CONSTRAINT_QUERY:
-            return [{"name": item} for item in self.driver.constraints]
+            return copy.deepcopy(self.driver.constraint_rows)
         if query == bootstrap.DELETE_QUERY:
             self.snapshot = bootstrap.GraphSnapshot((), ())
             return []
@@ -219,8 +258,8 @@ class FakeDriver:
         self.database = database
         self.snapshot = snapshot
         self.parsed = parsed
-        self.index_types = ["LOOKUP"]
-        self.constraints = []
+        self.index_rows = _lookup_index_rows()
+        self.constraint_rows = []
         self.closed = False
         self.session_access_modes = []
 
@@ -473,6 +512,7 @@ def test_replace_and_restore_recheck_fingerprint_and_rollback(context, parsed) -
         context,
         "replace",
         expected_existing_fingerprint=legacy_fingerprint,
+        expected_schema_fingerprint=_default_schema_fingerprint(),
         driver_factory=_factory(driver),
     )
     expected_fingerprint = context.manifest["expected_graph_fingerprint_sha256"]
@@ -482,6 +522,7 @@ def test_replace_and_restore_recheck_fingerprint_and_rollback(context, parsed) -
         context,
         "restore-backup",
         expected_existing_fingerprint=expected_fingerprint,
+        expected_schema_fingerprint=_default_schema_fingerprint(),
         restore_snapshot=legacy,
         driver_factory=_factory(driver),
     )
@@ -493,21 +534,71 @@ def test_replace_and_restore_recheck_fingerprint_and_rollback(context, parsed) -
             context,
             "replace",
             expected_existing_fingerprint="0" * 64,
+            expected_schema_fingerprint=_default_schema_fingerprint(),
+            driver_factory=_factory(driver),
+        )
+    assert driver.snapshot == original
+
+    with pytest.raises(bootstrap.GraphStateError, match="schema fingerprint"):
+        bootstrap.mutate_graph(
+            context,
+            "replace",
+            expected_existing_fingerprint=legacy_fingerprint,
+            expected_schema_fingerprint="0" * 64,
             driver_factory=_factory(driver),
         )
     assert driver.snapshot == original
 
 
-def test_user_indexes_and_constraints_reject_backup_scope(parsed) -> None:
+def test_constraint_backed_indexes_are_fingerprinted_and_standalone_rejected(
+    parsed,
+) -> None:
     snapshot = bootstrap.expected_snapshot(parsed)
     driver = FakeDriver("kosa_graph", snapshot, parsed)
     tx = FakeTx(driver, snapshot, parsed)
-    driver.index_types = ["LOOKUP", "RANGE"]
-    with pytest.raises(bootstrap.GraphStateError, match="index"):
+    driver.constraint_rows = [
+        {
+            "name": "area_id",
+            "type": "UNIQUENESS",
+            "entityType": "NODE",
+            "labelsOrTypes": ["Area"],
+            "properties": ["area_id"],
+            "ownedIndex": "area_id",
+        }
+    ]
+    driver.index_rows.append(
+        {
+            "name": "area_id",
+            "type": "RANGE",
+            "entityType": "NODE",
+            "labelsOrTypes": ["Area"],
+            "properties": ["area_id"],
+            "owningConstraint": "area_id",
+        }
+    )
+    fingerprint = bootstrap.validate_supported_schema(tx)
+    assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+
+    driver.index_rows[-1]["owningConstraint"] = None
+    with pytest.raises(bootstrap.GraphStateError, match="독립 사용자 index"):
         bootstrap.validate_supported_schema(tx)
-    driver.index_types = ["LOOKUP"]
-    driver.constraints = ["unique_area"]
-    with pytest.raises(bootstrap.GraphStateError, match="constraint"):
+
+
+def test_unsupported_constraint_still_requires_official_dump(parsed) -> None:
+    snapshot = bootstrap.expected_snapshot(parsed)
+    driver = FakeDriver("kosa_graph", snapshot, parsed)
+    driver.constraint_rows = [
+        {
+            "name": "area_exists",
+            "type": "NODE_PROPERTY_EXISTENCE",
+            "entityType": "NODE",
+            "labelsOrTypes": ["Area"],
+            "properties": ["area_id"],
+            "ownedIndex": "area_exists",
+        }
+    ]
+    tx = FakeTx(driver, snapshot, parsed)
+    with pytest.raises(bootstrap.GraphStateError, match="공식 Neo4j dump"):
         bootstrap.validate_supported_schema(tx)
 
 
@@ -526,6 +617,7 @@ def test_marker_status_contract_and_readiness(context, parsed) -> None:
         extra={
             "backup_file_sha256": "1" * 64,
             "backup_graph_fingerprint_sha256": "2" * 64,
+            "schema_fingerprint_sha256": "6" * 64,
             "backup_manifest_sha256": "3" * 64,
             "restore_receipt_sha256": "4" * 64,
             "approval_ref": "KOSA-123",
@@ -555,6 +647,7 @@ def test_backup_round_trip_keeps_file_and_graph_hash_distinct(
     backup_path, manifest_path, manifest = bootstrap.create_backup_artifacts(
         snapshot,
         context.target,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
         backup_root=root,
         now=datetime(2026, 8, 16, tzinfo=UTC),
     )
@@ -571,6 +664,7 @@ def test_backup_round_trip_keeps_file_and_graph_hash_distinct(
         bootstrap.create_backup_artifacts(
             snapshot,
             context.target,
+            schema_fingerprint_sha256=_default_schema_fingerprint(),
             backup_root=root,
             now=datetime(2026, 8, 16, tzinfo=UTC),
         )
@@ -584,6 +678,7 @@ def test_backup_payload_and_manifest_target_are_cross_checked(
     backup_path, manifest_path, _ = bootstrap.create_backup_artifacts(
         snapshot,
         context.target,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
         backup_root=root,
         now=datetime(2026, 8, 16, tzinfo=UTC),
     )
@@ -596,9 +691,36 @@ def test_backup_payload_and_manifest_target_are_cross_checked(
         bootstrap.load_backup_bundle(manifest_path, root)
 
 
+def test_backup_round_trip_supports_legacy_sensor_float(
+    context, tmp_path: Path
+) -> None:
+    root = tmp_path / "external"
+    sensor = bootstrap.SnapshotNode(
+        "Sensor",
+        {
+            "sensor_id": "OLD-SENSOR-01",
+            "sensor_name": "legacy",
+            "spec_upper": 1.25,
+            "spec_lower": -1.25,
+        },
+    )
+    snapshot = bootstrap.GraphSnapshot((sensor,), ())
+    _, manifest_path, _ = bootstrap.create_backup_artifacts(
+        snapshot,
+        context.target,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
+        backup_root=root,
+        now=datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    _, _, restored, _ = bootstrap.load_backup_bundle(manifest_path, root)
+    assert bootstrap.snapshot_payload(restored) == bootstrap.snapshot_payload(snapshot)
+
+
 def test_backup_payload_rejects_unknown_keys(context, parsed) -> None:
     payload = bootstrap._backup_payload(
-        bootstrap.expected_snapshot(parsed), context.target
+        bootstrap.expected_snapshot(parsed),
+        context.target,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
     )
     payload["nodes"][0]["extra"] = "forbidden"
     with pytest.raises(bootstrap.BackupError, match="node schema"):
@@ -615,7 +737,10 @@ def test_receipt_output_inside_repository_is_rejected(tmp_path: Path) -> None:
 def test_receipt_exact_schema_and_ttl(context, parsed, tmp_path: Path) -> None:
     now = datetime(2026, 8, 16, tzinfo=UTC)
     receipt = bootstrap.build_preflight_receipt(
-        context, bootstrap.expected_snapshot(parsed), now=now
+        context,
+        bootstrap.expected_snapshot(parsed),
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
+        now=now,
     )
     bootstrap.validate_receipt(receipt, "neo4j_preflight_receipt")
     extra = dict(receipt)
@@ -647,11 +772,20 @@ def test_replace_evidence_rejects_expired_preflight(
     root.mkdir(parents=True)
     snapshot = bootstrap.expected_snapshot(parsed)
     now = datetime(2026, 8, 16, tzinfo=UTC)
-    preflight = bootstrap.build_preflight_receipt(context, snapshot, now=now)
+    preflight = bootstrap.build_preflight_receipt(
+        context,
+        snapshot,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
+        now=now,
+    )
     preflight_path = root / "receipts" / "preflight.json"
     bootstrap.save_external_artifact(preflight_path, preflight, root)
     _, manifest_path, _ = bootstrap.create_backup_artifacts(
-        snapshot, context.target, backup_root=root, now=now
+        snapshot,
+        context.target,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
+        backup_root=root,
+        now=now,
     )
     restore = bootstrap.build_restore_receipt(
         manifest_path, root, context.target, now=now
@@ -792,7 +926,11 @@ def test_driver_is_closed_on_read_success_and_failure(context, parsed) -> None:
 def test_secrets_are_not_present_in_marker_or_receipt(context, parsed) -> None:
     snapshot = bootstrap.expected_snapshot(parsed)
     marker = bootstrap.build_marker(context, snapshot, "APPLIED")
-    receipt = bootstrap.build_preflight_receipt(context, snapshot)
+    receipt = bootstrap.build_preflight_receipt(
+        context,
+        snapshot,
+        schema_fingerprint_sha256=_default_schema_fingerprint(),
+    )
     serialized = json.dumps([marker, receipt])
     assert "do-not-print" not in serialized
     assert "neo4j.example.invalid" not in serialized
