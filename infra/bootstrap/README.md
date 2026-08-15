@@ -11,7 +11,8 @@
 | dataset epoch | `dataset-epoch.json` | 등록됨 | V4-CM-0.1 |
 | source files | `source-data-manifest.json` | **v3 등록됨** | V4-CM-1.1 |
 | corrected files | `corrected-data-manifest.json` | `NOT_REGISTERED` | V4-CM-1.7 |
-| DB bootstrap stage | `manifests/{profile}.{stage}.json` | `NOT_REGISTERED` | V4-CM-1.5 이후 |
+| DB base schema stage | `manifests/{profile}.base_schema.json` | **v3 등록됨** | V4-CM-1.5 |
+| 후속 DB bootstrap stage | `manifests/{profile}.{stage}.json` | `NOT_REGISTERED` | V4-CM-1.7 이후 |
 | synthetic evaluation | `synthetic-evaluation-manifest.json` | `NOT_REGISTERED` | 평가 소유 Task |
 
 미등록 artifact를 빈 JSON placeholder로 만들지 않는다. 검증기는 파일이 없으면 DB 연결이나
@@ -229,9 +230,84 @@ manifest registry는 `(profile, bootstrap_stage)`를 key로 사용한다.
 | evaluation | `evaluation_mock` | `reference_extensions` | `001_reference_extensions` |
 | runtime | `runtime_clean` | `runtime_clean` | `001_reference_extensions`, `002_agent_runtime_clean` |
 
-위 여섯 조합 외에는 DB 접근 전에 거부한다. 실제 파일은 각 bootstrap Task가 성공
-marker와 함께 등록한다. 이번 Task는 경로 registry와 정적 계약만 제공하며 DB에 연결하지
-않는다.
+위 여섯 조합 외에는 DB 접근 전에 거부한다. `base_schema` 두 manifest는 V4-CM-1.5에서
+등록했으며 나머지는 각 후속 bootstrap Task가 등록한다.
+
+### Base schema 생성·검증
+
+`001_base_schema.sql`은 등록된 `03_schema_clean.sql`의 구조를 보존한 corrected overlay다.
+아래 설명 주석만 v2 기준으로 보정했다.
+
+- WAFER 번호 `1~25`
+- `fault_code=NRM`은 공개 Fault 정답이 아닌 placeholder
+- `metrology.alarm_result`는 제품 CD PASS/FAIL이며 Fault Mode 정답이 아님
+- `dim_parameter`는 raw Trace/evaluation 고정 5선이고 Summary 동적 CL±3σ는 별도 계산
+- source 경로 `클린데이터셋`
+
+SQL에는 data·role·database·transaction·destructive 문장이 없고, 9개 base table과 명시적
+index 4개, COMMENT 11개만 있다. PK가 만드는 constraint index 9개를 포함한 적용 후 전체
+index 기대값은 13개다. 세 DB는 이 단계에서 모든 table이 0행이어야 한다.
+
+bootstrap runner는 앱 DSN을 읽지 않고 루트 `.env`의 다음 전용 키만 읽는다.
+
+```text
+POSTGRES_BOOTSTRAP_HOST
+POSTGRES_BOOTSTRAP_PORT
+POSTGRES_BOOTSTRAP_USER
+POSTGRES_BOOTSTRAP_PASSWORD
+POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256
+```
+
+host allowlist 값은 `sha256(lowercase(host) + ":" + decimal port)`다. 실제 host·user·password·
+fingerprint는 Git에 기록하지 않는다. 실행은 한 번에 한 DB만 허용한다.
+
+```bash
+cd backend
+
+# SQL·manifest·target 설정만 확인, DB 접속 없음
+python scripts/bootstrap_base_schema.py --dry-run --database kosa_agent_e2e
+
+# read-only transaction으로 identity·public schema·상태·lock 확인
+python scripts/bootstrap_base_schema.py --preflight --database kosa_agent_e2e
+
+# 대상 이름을 한 번 더 확인해야 실제 DDL 적용
+python scripts/bootstrap_base_schema.py \
+  --database kosa_agent_e2e \
+  --confirm-target kosa_agent_e2e
+
+# exact empty schema가 이미 있고 marker만 없을 때 DDL 없이 복구
+python scripts/bootstrap_base_schema.py \
+  --database kosa_agent_e2e \
+  --recover-marker \
+  --confirm-target kosa_agent_e2e
+
+# 객체가 전혀 없는 E2E DB에서만 DDL rollback을 주입 검증
+python scripts/bootstrap_base_schema.py \
+  --database kosa_agent_e2e \
+  --verify-rollback \
+  --confirm-target kosa_agent_e2e
+```
+
+mutation은 DB identity와 `public` search path를 다시 검사하고 고정 advisory transaction lock을
+먼저 획득한다. exact empty·marker 일치 상태는 no-op이고, partial schema·추가 객체·1행 이상
+데이터·marker 불일치는 변경하지 않고 실패한다. rollback 주입은 `kosa_agent_e2e` 외 DB에서
+거부된다.
+
+성공 marker는 `markers/base_schema.<database>.json`에 원자적으로 저장한다. 실제 신규 적용은
+`APPLIED`, 기존 exact empty schema 확인 후 marker만 복구하면 `VERIFIED_EXISTING`이다. marker는
+DB명·profile·source/SQL/signature hash·검증 건수만 담고 host·user·password·DSN은 담지 않는다.
+동시 저장은 macOS/Linux의 `fcntl`, native Windows의 `msvcrt` lock으로 직렬화한다.
+
+집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_base_schema_sql.py tests/unit/test_bootstrap_base_schema.py
+ruff check scripts/db_target.py scripts/bootstrap_base_schema.py \
+  tests/unit/test_base_schema_sql.py tests/unit/test_bootstrap_base_schema.py
+ruff format --check scripts/db_target.py scripts/bootstrap_base_schema.py \
+  tests/unit/test_base_schema_sql.py tests/unit/test_bootstrap_base_schema.py
+```
 
 검증 시 `--mode bootstrap|steady-state`는 manifest가 아닌 CLI 인자다. bootstrap은
 승인된 fresh/reset 직후의 빈 Runtime 상태를 확인하고, steady-state는 누적 Runtime row를
