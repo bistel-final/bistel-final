@@ -25,12 +25,46 @@ import manifest_v3 as mv3  # noqa: E402
 
 def _csv_payload(table: str) -> bytes:
     stream = io.StringIO(newline="")
-    writer = csv.writer(stream, lineterminator="\r\n")
-    columns = list(mv3.SOURCE_EXPECTED_COLUMNS[table])
-    writer.writerow(columns)
-    row_count = 48 if table == "action_history" else 1
-    for index in range(row_count):
-        writer.writerow([f"{table}-{index + 1}", *([""] * (len(columns) - 1))])
+    columns = mv3.SOURCE_EXPECTED_COLUMNS[table]
+    writer = csv.DictWriter(stream, fieldnames=list(columns), lineterminator="\r\n")
+    writer.writeheader()
+    if table == "fdc_trace":
+        rows = []
+        for step in (1, 2):
+            for point in range(3):
+                row = {column: "" for column in columns}
+                row.update(
+                    {
+                        "lot_hist_id": "LH-TEST-1",
+                        "parameter_id": "PH_DOSE",
+                        "seq_no": str(point),
+                        "recipe_step_no": str(step),
+                        "step_seq": str(step),
+                        "measured_at": f"2026-08-01 00:00:{(step - 1) * 3 + point:02d}",
+                        "value": str(10 + point),
+                    }
+                )
+                rows.append(row)
+    elif table == "trace_alarm_history":
+        row = {column: "" for column in columns}
+        row.update(
+            {
+                "alarm_id": "TAL-TEST-1",
+                "step_no": "1",
+                "step_seq": "1",
+                "seq_no": "0",
+                "alarm_type": "OOS",
+            }
+        )
+        rows = [row]
+    else:
+        row_count = 48 if table == "action_history" else 1
+        rows = []
+        for index in range(row_count):
+            row = {column: "" for column in columns}
+            row[columns[0]] = f"{table}-{index + 1}"
+            rows.append(row)
+    writer.writerows(rows)
     return b"\xef\xbb\xbf" + stream.getvalue().encode("utf-8")
 
 

@@ -38,6 +38,15 @@ except ImportError:  # pragma: no cover - POSIX에서만 실행된다.
     _msvcrt = None
 
 import manifest_v3 as manifest_v3_module
+from corrections.trace_seq_no import (
+    STAGE_ID as TRACE_SEQ_NO_STAGE_ID,
+)
+from corrections.trace_seq_no import (
+    STAGE_VERSION as TRACE_SEQ_NO_STAGE_VERSION,
+)
+from corrections.trace_seq_no import (
+    apply as apply_trace_seq_no,
+)
 from manifest_v3 import (
     DATASET_EPOCH,
     DATASET_EPOCH_PATH,
@@ -143,7 +152,15 @@ class StageSpec:
     transform: Callable[[Dataset], TablePatch]
 
 
-CORRECTION_STAGES: tuple[StageSpec, ...] = ()
+CORRECTION_STAGES: tuple[StageSpec, ...] = (
+    StageSpec(
+        stage_id=TRACE_SEQ_NO_STAGE_ID,
+        version=TRACE_SEQ_NO_STAGE_VERSION,
+        reads=frozenset({"fdc_trace", "trace_alarm_history"}),
+        writes=frozenset({"fdc_trace"}),
+        transform=apply_trace_seq_no,
+    ),
+)
 
 
 @dataclass(frozen=True)
