@@ -1,0 +1,17 @@
+{
+  "database": "kosa_agent_e2e",
+  "profile": "runtime",
+  "source_member_sha256": "bf6cc620065850a0e15e052179a1ba25b9fc3bec30966ca2480d77fb27212d9b",
+  "corrected_sql_sha256": "ce8bc9b38fe4f4b915eb2bd76f8f3617977b282f8ef7112025a7930198df0fa2",
+  "schema_signature_sha256": "567151fe642ebd13e9ec7646976404addeb1759f327629c88a91cd866f2393ca",
+  "status": "APPLIED",
+  "recorded_at": "2026-08-15T11:34:35.540822+00:00",
+  "verification": {
+    "table_count": 9,
+    "explicit_index_count": 4,
+    "constraint_index_count": 9,
+    "total_index_count": 13,
+    "action_history_rows": 0
+  },
+  "applied_at": "2026-08-15T11:34:35.540822+00:00"
+}
