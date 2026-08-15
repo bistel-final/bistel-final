@@ -321,6 +321,16 @@ class TestTargetGuard:
 
         assert target.password not in str(target.create_url())
 
+    def test_target_repr_hides_connection_values(self) -> None:
+        target = _target()
+        rendered = repr(target)
+
+        assert target.host not in rendered
+        assert str(target.port) not in rendered
+        assert target.username not in rendered
+        assert target.password not in rendered
+        assert target.database in rendered
+
 
 class TestCliMode:
     def _args(self, **overrides: Any) -> argparse.Namespace:
