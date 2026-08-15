@@ -38,6 +38,24 @@ except ImportError:  # pragma: no cover - POSIX에서만 실행된다.
     _msvcrt = None
 
 import manifest_v3 as manifest_v3_module
+from corrections.dim_parameter_seed import (
+    STAGE_ID as DIM_PARAMETER_SEED_STAGE_ID,
+)
+from corrections.dim_parameter_seed import (
+    STAGE_VERSION as DIM_PARAMETER_SEED_STAGE_VERSION,
+)
+from corrections.dim_parameter_seed import (
+    apply as apply_dim_parameter_seed,
+)
+from corrections.summary_alarm_time import (
+    STAGE_ID as SUMMARY_ALARM_TIME_STAGE_ID,
+)
+from corrections.summary_alarm_time import (
+    STAGE_VERSION as SUMMARY_ALARM_TIME_STAGE_VERSION,
+)
+from corrections.summary_alarm_time import (
+    apply as apply_summary_alarm_time,
+)
 from corrections.trace_seq_no import (
     STAGE_ID as TRACE_SEQ_NO_STAGE_ID,
 )
@@ -159,6 +177,20 @@ CORRECTION_STAGES: tuple[StageSpec, ...] = (
         reads=frozenset({"fdc_trace", "trace_alarm_history"}),
         writes=frozenset({"fdc_trace"}),
         transform=apply_trace_seq_no,
+    ),
+    StageSpec(
+        stage_id=DIM_PARAMETER_SEED_STAGE_ID,
+        version=DIM_PARAMETER_SEED_STAGE_VERSION,
+        reads=frozenset({"fdc_trace"}),
+        writes=frozenset({"dim_parameter"}),
+        transform=apply_dim_parameter_seed,
+    ),
+    StageSpec(
+        stage_id=SUMMARY_ALARM_TIME_STAGE_ID,
+        version=SUMMARY_ALARM_TIME_STAGE_VERSION,
+        reads=frozenset({"summary_alarm_history", "lot_history"}),
+        writes=frozenset({"summary_alarm_history"}),
+        transform=apply_summary_alarm_time,
     ),
 )
 

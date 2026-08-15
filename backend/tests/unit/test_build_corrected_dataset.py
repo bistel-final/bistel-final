@@ -21,6 +21,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 import build_corrected_dataset as corrected  # noqa: E402
 import manifest_v3 as mv3  # noqa: E402
+from corrections import dim_parameter_seed  # noqa: E402
 
 
 def _csv_payload(table: str) -> bytes:
@@ -30,21 +31,52 @@ def _csv_payload(table: str) -> bytes:
     writer.writeheader()
     if table == "fdc_trace":
         rows = []
-        for step in (1, 2):
-            for point in range(3):
-                row = {column: "" for column in columns}
-                row.update(
-                    {
-                        "lot_hist_id": "LH-TEST-1",
-                        "parameter_id": "PH_DOSE",
-                        "seq_no": str(point),
-                        "recipe_step_no": str(step),
-                        "step_seq": str(step),
-                        "measured_at": f"2026-08-01 00:00:{(step - 1) * 3 + point:02d}",
-                        "value": str(10 + point),
-                    }
-                )
-                rows.append(row)
+        for parameter_id in dim_parameter_seed.PARAMETER_ORDER:
+            for step in (1, 2):
+                for point in range(3):
+                    row = {column: "" for column in columns}
+                    row.update(
+                        {
+                            "lot_hist_id": "LH-TEST-1",
+                            "parameter_id": parameter_id,
+                            "seq_no": str(point),
+                            "recipe_step_no": str(step),
+                            "step_seq": str(step),
+                            "measured_at": (
+                                "2026-08-01 00:00:" f"{(step - 1) * 3 + point:02d}"
+                            ),
+                            "value": str(10 + point),
+                        }
+                    )
+                    rows.append(row)
+    elif table == "lot_history":
+        row = {column: "" for column in columns}
+        row.update(
+            {
+                "lot_hist_id": "LH-TEST-1",
+                "lot_id": "LOT001",
+                "wafer_no": "1",
+                "area_id": "photo",
+                "equipment_id": "EQP01",
+                "chamber_id": "EQP01-PM1",
+                "track_in_at": "2026-08-01 00:00:00",
+            }
+        )
+        rows = [row]
+    elif table == "summary_alarm_history":
+        row = {column: "" for column in columns}
+        row.update(
+            {
+                "alarm_id": "SAL-TEST-1",
+                "area": "photo",
+                "equipment": "EQP01",
+                "chamber": "EQP01-PM1",
+                "lot": "LOT001",
+                "wafer": "1",
+                "alarm_type": "OOC",
+            }
+        )
+        rows = [row]
     elif table == "trace_alarm_history":
         row = {column: "" for column in columns}
         row.update(

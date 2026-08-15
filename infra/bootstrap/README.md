@@ -102,11 +102,25 @@ CLI 종료 코드는 자동화에서 다음 계약으로 사용한다.
 | 순서 | stage | version | reads | writes | 보정 |
 |---:|---|---:|---|---|---|
 | 1 | `trace_seq_no` | 1 | `fdc_trace`, `trace_alarm_history` | `fdc_trace` | Step 1은 0~2, Step 2는 3~5가 되도록 `seq_no=ordv` 적용 |
+| 2 | `dim_parameter_seed` | 1 | `fdc_trace` | `dim_parameter` | Generator SPEC·RAG 단위 자료로 고정한 8행 seed 생성 및 Trace FK 양방향 확인 |
+| 3 | `summary_alarm_time` | 1 | `summary_alarm_history`, `lot_history` | `summary_alarm_history` | `(lot, wafer, chamber)` 유일 매칭의 `track_in_at`으로 빈 시각만 채움 |
 
 `trace_seq_no`는 원본 Step-local 상태만 변환하고, 이미 전역 0~5이면 빈 patch로 통과한다.
 두 상태가 섞였거나 Step·point 계약이 다르면 추측하지 않고 실패한다. 현재 Trace 알람은 전부
 Step 1이라 값은 바꾸지 않으며, Step 2 Trace 알람이 발견되면 알람 보정 정책이 없으므로 빌드를
-중단한다. `dim_parameter`와 Summary 알람 시각 보정은 후속 Task가 stage로 추가한다.
+중단한다.
+
+`dim_parameter_seed`는 `PH_DOSE`부터 `ET_ESC`까지 photo 4종·etch 4종을 schema 순서의
+10개 column으로 만든다. 음수는 ASCII `-`로 저장하고, `upper_only=true`는 `ET_REFL`
+하나만 허용한다. 8개 parameter가 Trace에서 모두 사용되며 Trace가 다른 parameter를
+참조하지 않는지 함께 검사한다. 기존 seed가 있으면 column·행·순서·값이 모두 같을 때만
+빈 patch로 통과한다.
+
+`summary_alarm_time`은 Summary의 `lot/wafer/chamber`를 lot history의
+`lot_id/wafer_no/chamber_id`에 연결하고 area·equipment까지 교차 확인한다. 매칭 누락·중복,
+빈 `track_in_at`, 기존 비어 있지 않은 `occurred_at` 충돌은 덮어쓰지 않고 빌드를 중단한다.
+`metrology.measured_at`은 공식 생성 규칙이 없으므로 이번 corrected copy에서도 NULL을
+그대로 보존한다.
 
 파일 잠금은 macOS·Linux에서 POSIX `fcntl`, native Windows에서 `msvcrt`를 사용한다.
 따라서 팀의 macOS·Windows 환경에서 같은 CLI를 실행할 수 있다. Linux CI와 플랫폼별
@@ -182,9 +196,15 @@ data/corrected/v1/
 
 ```bash
 cd backend
-pytest tests/unit/test_build_corrected_dataset.py
+pytest tests/unit/test_build_corrected_dataset.py \
+  tests/unit/test_correction_trace_seq_no.py \
+  tests/unit/test_correction_dim_parameter_seed.py \
+  tests/unit/test_correction_summary_alarm_time.py
 ruff check scripts/build_corrected_dataset.py scripts/manifest_v3.py \
-  tests/unit/test_build_corrected_dataset.py
+  scripts/corrections tests/unit/test_build_corrected_dataset.py \
+  tests/unit/test_correction_trace_seq_no.py \
+  tests/unit/test_correction_dim_parameter_seed.py \
+  tests/unit/test_correction_summary_alarm_time.py
 ```
 
 ## 5. DB bootstrap profile 계약
