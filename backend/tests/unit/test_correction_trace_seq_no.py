@@ -19,7 +19,11 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 import build_corrected_dataset as corrected  # noqa: E402
 import manifest_v3 as mv3  # noqa: E402
-from corrections import trace_seq_no  # noqa: E402
+from corrections import (  # noqa: E402
+    dim_parameter_seed,
+    summary_alarm_time,
+    trace_seq_no,
+)
 
 
 def _trace_table(
@@ -83,9 +87,21 @@ def _csv_payload(columns: tuple[str, ...], rows: tuple[dict[str, str], ...]) -> 
 
 
 def _pipeline_bundle(
-    tmp_path: Path, *, alarm: corrected.TableData | None = None
+    tmp_path: Path,
+    *,
+    alarm: corrected.TableData | None = None,
+    summary_lot: str = "LOT001",
 ) -> tuple[Path, Path, Path]:
-    trace = _trace_table()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    template = _trace_table()
+    trace = replace(
+        template,
+        rows=tuple(
+            {**row, "parameter_id": parameter_id}
+            for parameter_id in dim_parameter_seed.PARAMETER_ORDER
+            for row in template.rows
+        ),
+    )
     alarm = alarm or _alarm_table()
     payloads: dict[str, bytes] = {}
     for table, file_id in mv3.SOURCE_TABLE_FILES.items():
@@ -94,6 +110,34 @@ def _pipeline_bundle(
             rows = trace.rows
         elif table == "trace_alarm_history":
             rows = alarm.rows
+        elif table == "lot_history":
+            row = {column: "" for column in columns}
+            row.update(
+                {
+                    "lot_hist_id": "LH-TEST-1",
+                    "lot_id": "LOT001",
+                    "wafer_no": "1",
+                    "area_id": "photo",
+                    "equipment_id": "EQP01",
+                    "chamber_id": "EQP01-PM1",
+                    "track_in_at": "2026-08-01 00:00:00",
+                }
+            )
+            rows = (row,)
+        elif table == "summary_alarm_history":
+            row = {column: "" for column in columns}
+            row.update(
+                {
+                    "alarm_id": "SAL-TEST-1",
+                    "area": "photo",
+                    "equipment": "EQP01",
+                    "chamber": "EQP01-PM1",
+                    "lot": summary_lot,
+                    "wafer": "1",
+                    "alarm_type": "OOC",
+                }
+            )
+            rows = (row,)
         else:
             row_count = 48 if table == "action_history" else 1
             rows = tuple({column: "" for column in columns} for _ in range(row_count))
@@ -159,7 +203,9 @@ class TestTraceSeqCorrection:
 
     def test_already_global_returns_empty_patch_and_no_table_touch(self) -> None:
         source = _dataset(trace=_trace_table(global_groups=frozenset({"LH-TEST-1"})))
-        transformed, touched = corrected.run_stages(source, corrected.CORRECTION_STAGES)
+        transformed, touched = corrected.run_stages(
+            source, (corrected.CORRECTION_STAGES[0],)
+        )
         report = corrected.build_correction_report(
             source, transformed, touched=touched, build_id="0" * 64
         )
@@ -221,13 +267,35 @@ class TestTraceSeqCorrection:
             trace_seq_no.apply(_dataset(alarm=_alarm_table(step="2", seq_no="0")))
 
     def test_registry_contract_is_exact(self) -> None:
-        assert len(corrected.CORRECTION_STAGES) == 1
-        stage = corrected.CORRECTION_STAGES[0]
-        assert stage.stage_id == trace_seq_no.STAGE_ID
-        assert stage.version == trace_seq_no.STAGE_VERSION
-        assert stage.reads == frozenset({"fdc_trace", "trace_alarm_history"})
-        assert stage.writes == frozenset({"fdc_trace"})
-        assert stage.transform is trace_seq_no.apply
+        assert [stage.stage_id for stage in corrected.CORRECTION_STAGES] == [
+            trace_seq_no.STAGE_ID,
+            dim_parameter_seed.STAGE_ID,
+            summary_alarm_time.STAGE_ID,
+        ]
+        expected = (
+            (
+                trace_seq_no,
+                frozenset({"fdc_trace", "trace_alarm_history"}),
+                frozenset({"fdc_trace"}),
+            ),
+            (
+                dim_parameter_seed,
+                frozenset({"fdc_trace"}),
+                frozenset({"dim_parameter"}),
+            ),
+            (
+                summary_alarm_time,
+                frozenset({"summary_alarm_history", "lot_history"}),
+                frozenset({"summary_alarm_history"}),
+            ),
+        )
+        for stage, (module, reads, writes) in zip(
+            corrected.CORRECTION_STAGES, expected, strict=True
+        ):
+            assert stage.version == module.STAGE_VERSION
+            assert stage.reads == reads
+            assert stage.writes == writes
+            assert stage.transform is module.apply
 
     def test_actual_registry_pipeline_records_provenance_and_report(
         self, tmp_path: Path
@@ -250,17 +318,51 @@ class TestTraceSeqCorrection:
         report = json.loads((build_path / "correction-report.json").read_text())
 
         assert receipt["applied_stages"] == [
-            {"stage_id": "trace_seq_no", "stage_version": "1"}
+            {"stage_id": "trace_seq_no", "stage_version": "1"},
+            {"stage_id": "dim_parameter_seed", "stage_version": "1"},
+            {"stage_id": "summary_alarm_time", "stage_version": "1"},
         ]
-        assert any(
-            item["logical_id"].endswith("corrections/trace_seq_no.py")
+        assert {item["logical_id"] for item in receipt["generator_components"]} == {
+            "backend/scripts/build_corrected_dataset.py",
+            "backend/scripts/manifest_v3.py",
+            "backend/scripts/corrections/trace_seq_no.py",
+            "backend/scripts/corrections/dim_parameter_seed.py",
+            "backend/scripts/corrections/summary_alarm_time.py",
+        }
+        assert all(
+            mv3.HEX_SHA256_PATTERN.fullmatch(item["sha256"])
             for item in receipt["generator_components"]
         )
         trace_report = report["tables"]["fdc_trace"]
-        assert trace_report["cells_changed"] == 3
-        assert trace_report["rows_added"] == 3
-        assert trace_report["rows_removed"] == 3
+        assert trace_report["cells_changed"] == 24
+        assert trace_report["rows_added"] == 24
+        assert trace_report["rows_removed"] == 24
         assert trace_report["stage_ids"] == ["trace_seq_no"]
+        assert report["tables"]["dim_parameter"] == {
+            "row_count_before": None,
+            "row_count_after": 8,
+            "rows_added": 8,
+            "rows_removed": 0,
+            "cells_changed": 0,
+            "columns_before": None,
+            "columns_after": list(dim_parameter_seed.DIM_PARAMETER_COLUMNS),
+            "stage_ids": ["dim_parameter_seed"],
+        }
+        summary_report = report["tables"]["summary_alarm_history"]
+        assert summary_report["cells_changed"] == 1
+        assert summary_report["rows_added"] == 1
+        assert summary_report["rows_removed"] == 1
+        assert summary_report["stage_ids"] == ["summary_alarm_time"]
+        assert set(receipt["tables"]) == mv3.CORRECTED_TABLES
+        for table in mv3.SOURCE_TABLE_FILES.keys() - {
+            "fdc_trace",
+            "summary_alarm_history",
+        }:
+            if table == "dim_parameter":
+                continue
+            table_report = report["tables"][table]
+            assert table_report["cells_changed"] == 0
+            assert table_report["stage_ids"] == []
         assert corrected.execute(**common, check=True) == mv3.EXIT_OK
 
     def test_stage_contract_error_returns_cli_schema_exit_without_traceback(
@@ -293,3 +395,58 @@ class TestTraceSeqCorrection:
         assert "Step 2 Trace 알람" in captured.err
         assert "Traceback" not in captured.err
         assert "Traceback" not in captured.out
+
+    def test_summary_match_error_preserves_existing_active_build(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        valid_archive, valid_epoch, valid_manifest = _pipeline_bundle(
+            tmp_path / "valid"
+        )
+        output_root = tmp_path / "allowed" / "corrected"
+        common = {
+            "output_root": output_root,
+            "allowed_root": tmp_path / "allowed",
+            "stages": corrected.CORRECTION_STAGES,
+        }
+        assert (
+            corrected.execute(
+                archive_path=valid_archive,
+                epoch_path=valid_epoch,
+                source_manifest_path=valid_manifest,
+                **common,
+            )
+            == mv3.EXIT_OK
+        )
+        active_path = output_root / "v1" / "active.json"
+        active_before = active_path.read_bytes()
+        builds_root = output_root / "v1" / "builds"
+        builds_before = sorted(path.name for path in builds_root.iterdir())
+
+        invalid_archive, invalid_epoch, invalid_manifest = _pipeline_bundle(
+            tmp_path / "invalid", summary_lot="LOT-MISSING"
+        )
+        real_execute = corrected.execute
+
+        def execute_with_invalid_paths(**kwargs: object) -> int:
+            return real_execute(
+                **kwargs,
+                output_root=output_root,
+                allowed_root=tmp_path / "allowed",
+                epoch_path=invalid_epoch,
+                source_manifest_path=invalid_manifest,
+            )
+
+        monkeypatch.setattr(corrected, "execute", execute_with_invalid_paths)
+        exit_code = corrected.main(["--archive", str(invalid_archive)])
+        captured = capsys.readouterr()
+
+        assert exit_code == mv3.EXIT_SCHEMA
+        assert "매칭되는 lot_history가 없습니다" in captured.err
+        assert "Traceback" not in captured.err
+        assert active_path.read_bytes() == active_before
+        assert sorted(path.name for path in builds_root.iterdir()) == builds_before
+        staging_root = output_root / "v1" / ".staging"
+        assert not staging_root.exists() or not any(staging_root.iterdir())
