@@ -85,6 +85,7 @@ FORBIDDEN_SQL = re.compile(
     re.IGNORECASE,
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+APPROVAL_REF_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 SQL_WHITESPACE = re.compile(r"\s+")
 SQL_CAST = re.compile(
     r"::(?:character varying|text|boolean|smallint|integer|numeric(?:\(\d+,\d+\))?)",
@@ -780,15 +781,33 @@ def _sql_sha256(sql: str) -> str:
     return hashlib.sha256(sql.encode()).hexdigest()
 
 
+def validate_approval_ref(value: str | None) -> str:
+    if not isinstance(value, str) or not APPROVAL_REF_PATTERN.fullmatch(value):
+        raise BootstrapError("approval_ref 형식이 잘못됐습니다")
+    return value
+
+
 def build_marker(
     target: BootstrapTarget,
     *,
     status: str,
     sql_sha256: str,
     recorded_at: datetime | None = None,
+    approval_ref: str | None = None,
+    previous_marker: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if status not in {"APPLIED", "VERIFIED_EXISTING"}:
+    if status not in {"APPLIED", "VERIFIED_EXISTING", "REPAIRED"}:
         raise MarkerError("marker status가 잘못됐습니다")
+    if status == "REPAIRED":
+        try:
+            approval_ref = validate_approval_ref(approval_ref)
+        except BootstrapError as exc:
+            raise MarkerError(str(exc)) from exc
+        if previous_marker is None:
+            raise MarkerError("REPAIRED marker에는 이전 marker가 필요합니다")
+        validate_marker(previous_marker, target, sql_sha256=sql_sha256)
+    elif approval_ref is not None or previous_marker is not None:
+        raise MarkerError("repair provenance는 REPAIRED marker에서만 허용됩니다")
     now = recorded_at or datetime.now(UTC)
     if now.tzinfo is None or now.utcoffset() is None:
         raise MarkerError("marker 시각은 timezone-aware여야 합니다")
@@ -810,6 +829,18 @@ def build_marker(
     }
     if status == "APPLIED":
         payload["applied_at"] = now.isoformat()
+    elif status == "REPAIRED":
+        if previous_marker is None or approval_ref is None:  # pragma: no cover
+            raise MarkerError("REPAIRED marker provenance가 준비되지 않았습니다")
+        payload.update(
+            {
+                "repaired_at": now.isoformat(),
+                "approval_ref": approval_ref,
+                "previous_marker_status": previous_marker["status"],
+                "previous_marker_recorded_at": previous_marker["recorded_at"],
+                "previous_marker_sha256": _canonical_hash(previous_marker),
+            }
+        )
     scan_for_sensitive_values(payload)
     return payload
 
@@ -829,6 +860,16 @@ def validate_marker(
     }
     if payload.get("status") == "APPLIED":
         required.add("applied_at")
+    elif payload.get("status") == "REPAIRED":
+        required.update(
+            {
+                "repaired_at",
+                "approval_ref",
+                "previous_marker_status",
+                "previous_marker_recorded_at",
+                "previous_marker_sha256",
+            }
+        )
     if set(payload) != required:
         raise MarkerError("marker key 집합이 잘못됐습니다")
     if (
@@ -837,7 +878,7 @@ def validate_marker(
         or payload["source_member_sha256"] != SOURCE_MEMBER_SHA256
         or payload["corrected_sql_sha256"] != sql_sha256
         or payload["schema_signature_sha256"] != EXPECTED_SIGNATURE_SHA256
-        or payload["status"] not in {"APPLIED", "VERIFIED_EXISTING"}
+        or payload["status"] not in {"APPLIED", "VERIFIED_EXISTING", "REPAIRED"}
     ):
         raise MarkerError("marker provenance가 현재 계약과 다릅니다")
     expected_verification = {
@@ -849,7 +890,12 @@ def validate_marker(
     }
     if payload["verification"] != expected_verification:
         raise MarkerError("marker 검증값이 현재 계약과 다릅니다")
-    for field in ("recorded_at", "applied_at"):
+    for field in (
+        "recorded_at",
+        "applied_at",
+        "repaired_at",
+        "previous_marker_recorded_at",
+    ):
         if field not in payload:
             continue
         try:
@@ -858,6 +904,19 @@ def validate_marker(
             raise MarkerError("marker 시각 형식이 잘못됐습니다") from exc
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise MarkerError("marker 시각은 timezone-aware여야 합니다")
+    if payload["status"] == "REPAIRED":
+        try:
+            validate_approval_ref(payload["approval_ref"])
+        except BootstrapError as exc:
+            raise MarkerError(str(exc)) from exc
+        if payload["previous_marker_status"] not in {
+            "APPLIED",
+            "VERIFIED_EXISTING",
+            "REPAIRED",
+        }:
+            raise MarkerError("이전 marker status가 잘못됐습니다")
+        if not SHA256_PATTERN.fullmatch(str(payload["previous_marker_sha256"])):
+            raise MarkerError("이전 marker SHA-256 형식이 잘못됐습니다")
     scan_for_sensitive_values(payload)
 
 
@@ -885,12 +944,13 @@ def save_marker(
     *,
     sql_sha256: str,
     root: Path = MARKER_ROOT,
+    allow_replace: bool = False,
 ) -> None:
     validate_marker(payload, target, sql_sha256=sql_sha256)
     path = marker_path(target.database, root=root)
     with _exclusive_marker_lock(_marker_lock_path(target.database, root=root)):
         existing = load_marker(target, sql_sha256=sql_sha256, root=root)
-        if existing is not None and existing != payload:
+        if existing is not None and existing != payload and not allow_replace:
             raise MarkerError("기존 marker와 새 적용 기록이 충돌합니다")
         try:
             atomic_save_json(path, payload)
@@ -943,9 +1003,21 @@ def run_apply_or_recover(
     target: BootstrapTarget,
     *,
     recover_marker: bool,
+    repair_lost_schema: bool = False,
+    approval_ref: str | None = None,
     engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
     marker_root: Path = MARKER_ROOT,
 ) -> str:
+    if recover_marker and repair_lost_schema:
+        raise DatabaseStateError(
+            "marker 복구와 유실 schema 복구를 함께 실행할 수 없습니다"
+        )
+    if repair_lost_schema and target.database != "kosa_agent_e2e":
+        raise DatabaseStateError("유실 schema 복구는 kosa_agent_e2e에서만 허용됩니다")
+    if repair_lost_schema:
+        validate_approval_ref(approval_ref)
+    elif approval_ref is not None:
+        raise DatabaseStateError("approval_ref는 유실 schema 복구에서만 허용됩니다")
     sql, statements = load_and_validate_sql()
     sql_sha = _sql_sha256(sql)
     marker_payload: dict[str, Any] | None = None
@@ -955,13 +1027,33 @@ def run_apply_or_recover(
             _prepare_transaction(connection, target, readonly=False)
             marker = load_marker(target, sql_sha256=sql_sha, root=marker_root)
             inspection = inspect_database(connection)
-            if marker is not None:
+            if repair_lost_schema:
+                if marker is None:
+                    raise DatabaseStateError(
+                        "유실 schema 복구에는 기존 success marker가 필요합니다"
+                    )
+                if inspection.state != "ABSENT":
+                    raise DatabaseStateError(
+                        "유실 schema 복구는 공용 객체가 전혀 없을 때만 허용됩니다"
+                    )
+                execute_schema(connection, statements)
+                verified = inspect_database(connection)
+                if verified.state != "EXACT_EMPTY":
+                    raise DatabaseStateError("유실 schema 복구 후 검증에 실패했습니다")
+                marker_payload = build_marker(
+                    target,
+                    status="REPAIRED",
+                    sql_sha256=sql_sha,
+                    approval_ref=approval_ref,
+                    previous_marker=marker,
+                )
+            elif marker is not None:
                 if inspection.state != "EXACT_EMPTY":
                     raise DatabaseStateError("marker와 실제 DB schema 상태가 다릅니다")
                 if recover_marker:
                     raise DatabaseStateError("정상 marker가 이미 존재합니다")
                 return "NO_OP"
-            if recover_marker:
+            elif recover_marker:
                 if inspection.state != "EXACT_EMPTY":
                     raise DatabaseStateError(
                         "marker 복구는 exact empty schema에서만 허용됩니다"
@@ -993,6 +1085,7 @@ def run_apply_or_recover(
             target,
             sql_sha256=sql_sha,
             root=marker_root,
+            allow_replace=repair_lost_schema,
         )
         return str(marker_payload["status"])
     finally:
@@ -1065,6 +1158,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--recover-marker", action="store_true")
+    parser.add_argument("--repair-lost-schema", action="store_true")
+    parser.add_argument("--approval-ref")
     parser.add_argument("--verify-rollback", action="store_true")
     parser.add_argument("--confirm-target", choices=sorted(ALLOWED_DATABASES))
     return parser
@@ -1072,17 +1167,35 @@ def _parser() -> argparse.ArgumentParser:
 
 def resolve_mode(args: argparse.Namespace) -> str:
     if args.dry_run or args.preflight:
-        if args.confirm_target or args.recover_marker or args.verify_rollback:
+        if (
+            args.confirm_target
+            or args.recover_marker
+            or args.repair_lost_schema
+            or args.approval_ref
+            or args.verify_rollback
+        ):
             raise BootstrapError(
                 "dry-run/preflight는 mutation 옵션과 함께 쓸 수 없습니다"
             )
         return "dry-run" if args.dry_run else "preflight"
-    if args.recover_marker and args.verify_rollback:
-        raise BootstrapError("recover-marker와 verify-rollback은 함께 쓸 수 없습니다")
+    mutation_modes = sum(
+        (args.recover_marker, args.repair_lost_schema, args.verify_rollback)
+    )
+    if mutation_modes > 1:
+        raise BootstrapError(
+            "recover-marker·repair-lost-schema·verify-rollback은 함께 쓸 수 없습니다"
+        )
     if args.confirm_target is None:
         raise BootstrapError("접속하지 않았습니다. 명시적인 실행 모드가 필요합니다")
     if args.confirm_target != args.database:
         raise BootstrapError("--confirm-target과 --database가 다릅니다")
+    if args.repair_lost_schema:
+        if args.database != "kosa_agent_e2e":
+            raise BootstrapError("repair-lost-schema는 kosa_agent_e2e에서만 허용됩니다")
+        validate_approval_ref(args.approval_ref)
+        return "repair-lost-schema"
+    if args.approval_ref is not None:
+        raise BootstrapError("approval-ref는 repair-lost-schema에서만 허용됩니다")
     if args.recover_marker:
         return "recover-marker"
     if args.verify_rollback:
@@ -1108,6 +1221,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"PREFLIGHT_OK database={target.database} state={state}")
         elif mode == "recover-marker":
             status = run_apply_or_recover(target, recover_marker=True)
+            print(f"BOOTSTRAP_OK database={target.database} status={status}")
+        elif mode == "repair-lost-schema":
+            status = run_apply_or_recover(
+                target,
+                recover_marker=False,
+                repair_lost_schema=True,
+                approval_ref=args.approval_ref,
+            )
             print(f"BOOTSTRAP_OK database={target.database} status={status}")
         elif mode == "verify-rollback":
             run_rollback_verification(target)

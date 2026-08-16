@@ -339,6 +339,8 @@ class TestCliMode:
             "dry_run": False,
             "preflight": False,
             "recover_marker": False,
+            "repair_lost_schema": False,
+            "approval_ref": None,
             "verify_rollback": False,
             "confirm_target": None,
         }
@@ -379,6 +381,15 @@ class TestCliMode:
                 "recover-marker",
             ),
             (
+                {
+                    "database": "kosa_agent_e2e",
+                    "confirm_target": "kosa_agent_e2e",
+                    "repair_lost_schema": True,
+                    "approval_ref": "GH-45",
+                },
+                "repair-lost-schema",
+            ),
+            (
                 {"confirm_target": "kosa_agent", "verify_rollback": True},
                 "verify-rollback",
             ),
@@ -409,6 +420,55 @@ class TestCliMode:
         assert "db.example.internal" not in output.err
         assert "bootstrap_ddl" not in output.err
         assert "Traceback" not in output.err
+
+    def test_repair_lost_schema_rejects_non_e2e_database(self) -> None:
+        with pytest.raises(bootstrap.BootstrapError, match="kosa_agent_e2e"):
+            bootstrap.resolve_mode(
+                self._args(
+                    confirm_target="kosa_agent",
+                    repair_lost_schema=True,
+                    approval_ref="GH-45",
+                )
+            )
+
+    @pytest.mark.parametrize("approval_ref", [None, "", "issue-45", "GH-abc"])
+    def test_repair_lost_schema_requires_valid_approval_ref(
+        self, approval_ref: str | None
+    ) -> None:
+        with pytest.raises(bootstrap.BootstrapError, match="approval_ref"):
+            bootstrap.resolve_mode(
+                self._args(
+                    database="kosa_agent_e2e",
+                    confirm_target="kosa_agent_e2e",
+                    repair_lost_schema=True,
+                    approval_ref=approval_ref,
+                )
+            )
+
+    @pytest.mark.parametrize("recover_marker", [False, True])
+    def test_approval_ref_is_rejected_outside_repair_mode(
+        self, recover_marker: bool
+    ) -> None:
+        with pytest.raises(bootstrap.BootstrapError, match="repair-lost-schema"):
+            bootstrap.resolve_mode(
+                self._args(
+                    confirm_target="kosa_agent",
+                    approval_ref="GH-45",
+                    recover_marker=recover_marker,
+                )
+            )
+
+    def test_mutation_modes_are_mutually_exclusive(self) -> None:
+        with pytest.raises(bootstrap.BootstrapError, match="함께 쓸 수 없습니다"):
+            bootstrap.resolve_mode(
+                self._args(
+                    database="kosa_agent_e2e",
+                    confirm_target="kosa_agent_e2e",
+                    recover_marker=True,
+                    repair_lost_schema=True,
+                    approval_ref="GH-45",
+                )
+            )
 
 
 class TestBootstrapLifecycle:
@@ -484,6 +544,153 @@ class TestBootstrapLifecycle:
         )
         assert marker["status"] == "VERIFIED_EXISTING"
         assert "applied_at" not in marker
+
+    def test_repair_lost_e2e_schema_requires_marker_and_absent_database(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        target = _target("kosa_agent_e2e")
+        engine = _Engine(target)
+        sql, _ = bootstrap.load_and_validate_sql()
+        old_marker = bootstrap.build_marker(
+            target,
+            status="APPLIED",
+            sql_sha256=bootstrap._sql_sha256(sql),
+            recorded_at=datetime(2026, 8, 15, tzinfo=UTC),
+        )
+        bootstrap.save_marker(
+            old_marker,
+            target,
+            sql_sha256=bootstrap._sql_sha256(sql),
+            root=tmp_path,
+        )
+        _inspection_sequence(monkeypatch, "ABSENT", "EXACT_EMPTY")
+
+        status = bootstrap.run_apply_or_recover(
+            target,
+            recover_marker=False,
+            repair_lost_schema=True,
+            approval_ref="GH-45",
+            engine_factory=lambda _: engine,
+            marker_root=tmp_path,
+        )
+
+        assert status == "REPAIRED"
+        assert len(engine.connection.ddl) == 24
+        repaired = json.loads(
+            bootstrap.marker_path(target.database, root=tmp_path).read_text()
+        )
+        assert repaired["status"] == "REPAIRED"
+        assert repaired["recorded_at"] != old_marker["recorded_at"]
+        assert repaired["repaired_at"] == repaired["recorded_at"]
+        assert repaired["approval_ref"] == "GH-45"
+        assert repaired["previous_marker_status"] == "APPLIED"
+        assert repaired["previous_marker_recorded_at"] == old_marker["recorded_at"]
+        assert repaired["previous_marker_sha256"] == bootstrap._canonical_hash(
+            old_marker
+        )
+        assert engine.events.index("advisory_lock") < engine.events.index("ddl")
+
+    def test_repair_lost_schema_without_marker_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        target = _target("kosa_agent_e2e")
+        engine = _Engine(target)
+        _inspection_sequence(monkeypatch, "ABSENT")
+
+        with pytest.raises(bootstrap.DatabaseStateError, match="기존 success marker"):
+            bootstrap.run_apply_or_recover(
+                target,
+                recover_marker=False,
+                repair_lost_schema=True,
+                approval_ref="GH-45",
+                engine_factory=lambda _: engine,
+                marker_root=tmp_path,
+            )
+        assert engine.connection.ddl == []
+
+    def test_repair_lost_schema_direct_call_rejects_non_e2e_target(
+        self, tmp_path: Path
+    ) -> None:
+        target = _target("kosa_agent")
+
+        with pytest.raises(bootstrap.DatabaseStateError, match="kosa_agent_e2e"):
+            bootstrap.run_apply_or_recover(
+                target,
+                recover_marker=False,
+                repair_lost_schema=True,
+                approval_ref="GH-45",
+                engine_factory=lambda _: pytest.fail("DB에 연결하면 안 됩니다"),
+                marker_root=tmp_path,
+            )
+
+    @pytest.mark.parametrize("state", ["EXACT_EMPTY", "CONFLICT"])
+    def test_repair_lost_schema_refuses_non_absent_database(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        state: str,
+    ) -> None:
+        target = _target("kosa_agent_e2e")
+        engine = _Engine(target)
+        sql, _ = bootstrap.load_and_validate_sql()
+        marker = bootstrap.build_marker(
+            target, status="APPLIED", sql_sha256=bootstrap._sql_sha256(sql)
+        )
+        bootstrap.save_marker(
+            marker,
+            target,
+            sql_sha256=bootstrap._sql_sha256(sql),
+            root=tmp_path,
+        )
+        _inspection_sequence(monkeypatch, state)
+
+        with pytest.raises(bootstrap.DatabaseStateError, match="전혀 없을 때"):
+            bootstrap.run_apply_or_recover(
+                target,
+                recover_marker=False,
+                repair_lost_schema=True,
+                approval_ref="GH-45",
+                engine_factory=lambda _: engine,
+                marker_root=tmp_path,
+            )
+        assert engine.connection.ddl == []
+
+    def test_repair_lost_schema_rolls_back_when_postcheck_fails(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        target = _target("kosa_agent_e2e")
+        engine = _Engine(target)
+        sql, _ = bootstrap.load_and_validate_sql()
+        old_marker = bootstrap.build_marker(
+            target,
+            status="APPLIED",
+            sql_sha256=bootstrap._sql_sha256(sql),
+            recorded_at=datetime(2026, 8, 15, tzinfo=UTC),
+        )
+        bootstrap.save_marker(
+            old_marker,
+            target,
+            sql_sha256=bootstrap._sql_sha256(sql),
+            root=tmp_path,
+        )
+        _inspection_sequence(monkeypatch, "ABSENT", "CONFLICT")
+
+        with pytest.raises(bootstrap.DatabaseStateError, match="복구 후 검증"):
+            bootstrap.run_apply_or_recover(
+                target,
+                recover_marker=False,
+                repair_lost_schema=True,
+                approval_ref="GH-45",
+                engine_factory=lambda _: engine,
+                marker_root=tmp_path,
+            )
+        assert "transaction:rollback" in engine.events
+        assert (
+            json.loads(
+                bootstrap.marker_path(target.database, root=tmp_path).read_text()
+            )
+            == old_marker
+        )
 
     def test_advisory_lock_failure_prevents_inspection_and_ddl(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

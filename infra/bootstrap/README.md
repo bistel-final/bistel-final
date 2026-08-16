@@ -331,6 +331,13 @@ python scripts/bootstrap_base_schema.py \
   --recover-marker \
   --confirm-target kosa_agent_e2e
 
+# 성공 marker는 남아 있지만 공용 객체가 전부 유실된 E2E DB만 명시적으로 재생성
+python scripts/bootstrap_base_schema.py \
+  --database kosa_agent_e2e \
+  --repair-lost-schema \
+  --approval-ref GH-45 \
+  --confirm-target kosa_agent_e2e
+
 # 객체가 전혀 없는 E2E DB에서만 DDL rollback을 주입 검증
 python scripts/bootstrap_base_schema.py \
   --database kosa_agent_e2e \
@@ -343,9 +350,23 @@ mutation은 DB identity와 `public` search path를 다시 검사하고 고정 ad
 데이터·marker 불일치는 변경하지 않고 실패한다. rollback 주입은 `kosa_agent_e2e` 외 DB에서
 거부된다.
 
+`--repair-lost-schema`는 marker 파일을 수동 삭제하거나 공용 DB 전체를 초기화하지 않고
+marker/live schema drift만 복구하는 제한 모드다. 기존 success marker가 있고 transaction 안의
+실제 상태가 `ABSENT`일 때만 `kosa_agent_e2e`에 9개 base table을 다시 만든다. partial schema,
+추가 객체, 데이터가 있는 DB, `kosa_agent`·`kosa_text2sql`에서는 거부한다. 적용 후
+`EXACT_EMPTY` 검증과 DB commit이 모두 끝난 뒤에만 기존 marker를 원자 교체한다. 팀이 추적할
+수 있는 `--approval-ref`가 필수이며, marker는 `REPAIRED` 상태와 이전 marker의 status·기록
+시각·SHA-256을 보존한다.
+
+현재 공용 E2E DB는 이미 `EXACT_EMPTY`라 repair DDL 경로를 실환경에서 실행하지 않았다. 다음에
+marker/live drift가 발생하면 일반 `--preflight` 실패를 먼저 팀 이슈에 기록하고, 공용 객체 유실
+여부를 read-only inventory로 확인한 뒤 승인 이슈 번호를 `--approval-ref`로 전달해 이 명령을
+첫 복구 수단으로 사용한다. 실행 결과와 새 marker diff도 같은 이슈에 남긴다.
+
 성공 marker는 `markers/base_schema.<database>.json`에 원자적으로 저장한다. 실제 신규 적용은
-`APPLIED`, 기존 exact empty schema 확인 후 marker만 복구하면 `VERIFIED_EXISTING`이다. marker는
-DB명·profile·source/SQL/signature hash·검증 건수만 담고 host·user·password·DSN은 담지 않는다.
+`APPLIED`, 기존 exact empty schema 확인 후 marker만 복구하면 `VERIFIED_EXISTING`, 유실 schema를
+명시적으로 복구하면 `REPAIRED`다. marker는 DB명·profile·source/SQL/signature hash·검증 건수와
+복구 감사 근거만 담고 host·user·password·DSN은 담지 않는다.
 동시 저장은 macOS/Linux의 `fcntl`, native Windows의 `msvcrt` lock으로 직렬화한다.
 
 집중 검증:
