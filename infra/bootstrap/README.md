@@ -314,7 +314,126 @@ ruff format --check scripts/db_target.py scripts/bootstrap_base_schema.py \
 0건으로 요구하지 않는다. `nl_query_log`는 모든 profile·stage에서 `schema_only`로만
 검증하며 immutable content hash나 bootstrap empty 기준을 둘 수 없다.
 
-## 6. Synthetic evaluation 격리
+## 6. Neo4j destructive-safe loader
+
+`master_graph.cypher`는 등록된 `kosa_0813.zip`의 `master.cypher`에서 destructive 문을
+분리하고 relationship 81건에 stable `relation_id`를 주입해 만든 결정적 생성물이다.
+원본의 `MATCH (n) DETACH DELETE n`은 Neo4j로 전송하지 않는다.
+
+`manifests/neo4j.graph.json`은 다음 불변 기준을 고정한다.
+
+- node 38건, relationship 81건과 label/type 분포
+- corrected Cypher SHA-256
+- stable relationship ID 규칙 `rel-id-v1`
+- expected graph fingerprint와 legacy relation-id 미부여 graph fingerprint
+- source archive/member SHA-256과 business-key 계약 `bk-v1`
+
+loader는 앱의 `NEO4J_*` 설정을 읽지 않고 다음 전용 키만 읽는다.
+
+```text
+NEO4J_BOOTSTRAP_URI
+NEO4J_BOOTSTRAP_USER
+NEO4J_BOOTSTRAP_PASSWORD
+NEO4J_BOOTSTRAP_ALLOWED_TARGET_SHA256
+NEO4J_BOOTSTRAP_BACKUP_ROOT
+```
+
+target allowlist 값은
+`sha256(lowercase(scheme) + "://" + lowercase(host) + ":" + decimal port + "/" + database)`다.
+URI userinfo·path·query·fragment를 금지하며, 연결 후 `db.info()`의 database도 다시 확인한다.
+로그와 marker에는 database와 되돌릴 수 없는 target fingerprint만 남긴다.
+
+### 안전한 실행 순서
+
+```bash
+cd backend
+
+# ZIP·생성물·manifest·target 설정만 확인. Neo4j 접속 없음
+python scripts/bootstrap_neo4j_graph.py \
+  --dry-run --database neo4j \
+  --archive /path/to/kosa_0813.zip
+
+# graph·schema 상태를 읽고 24시간 유효 preflight receipt를 저장
+python scripts/bootstrap_neo4j_graph.py \
+  --preflight --database neo4j --confirm-target neo4j \
+  --archive /path/to/kosa_0813.zip \
+  --receipt-out /external/backup-root/preflight/neo4j.json
+
+# graph가 완전히 비어 있고 marker가 없을 때만 seed 적용
+python scripts/bootstrap_neo4j_graph.py \
+  --apply-empty --database neo4j --confirm-target neo4j \
+  --archive /path/to/kosa_0813.zip
+
+# source와 정확히 같은 legacy graph에 stable relation_id만 원자적으로 backfill
+python scripts/bootstrap_neo4j_graph.py \
+  --adopt-existing --database neo4j --confirm-target neo4j \
+  --archive /path/to/kosa_0813.zip --approval-ref KOSA-123
+```
+
+populated graph는 기본 교체하지 않는다. `--replace`는 다음 증거가 모두 같은 target과 기존
+graph fingerprint를 가리킬 때만 허용한다.
+
+1. 24시간 이내 preflight receipt
+2. 저장소 밖 backup root의 logical backup과 manifest
+3. backup을 실제로 읽어 fingerprint를 재계산한 restore verification receipt
+4. 팀이 추적 가능한 `approval_ref`
+5. 실행 직전 transaction 안에서 다시 확인한 기존 graph fingerprint
+
+논리 백업 v2는 graph data와 함께 **현재 schema fingerprint**를 증빙에 묶는다. Neo4j 기본
+LOOKUP index와 NODE UNIQUENESS constraint가 소유한 RANGE backing index만 허용하며, 독립
+사용자 index·다른 constraint는 공식 dump 없이는 거부한다. 교체는 schema DDL을 변경하지
+않고 기존 constraint/index를 그대로 유지한다. preflight·backup·restore receipt의 schema
+fingerprint가 모두 같고 실행 transaction 직전에도 동일할 때만 삭제·seed를 시작한다. 구
+epoch 복구를 위해 `Sensor.sensor_id`와 finite float property도 backup/restore 범위에 포함한다.
+
+backup 생성과 오프라인 restore 검증은 다음처럼 분리한다.
+
+```bash
+# 현재 graph의 logical backup과 manifest 생성
+python scripts/bootstrap_neo4j_graph.py \
+  --backup --database neo4j --confirm-target neo4j \
+  --archive /path/to/kosa_0813.zip
+
+# DB 접속 없이 backup을 읽고 restore verification receipt 생성
+python scripts/bootstrap_neo4j_graph.py \
+  --verify-backup \
+  --backup-manifest /external/backup-root/backups/<name>.manifest.json \
+  --receipt-out /external/backup-root/receipts/<name>.restore.json
+```
+
+교체·복구 명령은 receipt에 기록된 SHA-256과 CLI의 expected fingerprint를 모두 다시
+대조한다. `--replace`는 transaction 안에서 삭제·seed·38/81 fingerprint 검증을 한 번에
+수행하며, 하나라도 실패하면 rollback한다. `--restore-backup`도 현재 fingerprint를 다시
+확인한 뒤 backup snapshot을 원자 복원하고 `RESTORED` marker를 남긴다. 이 marker는 readiness
+성공이 아니므로, 복원 후 graph가 새 expected 기준과 정확히 같을 때만 `--recover-marker`로
+`VERIFIED_EXISTING` marker를 다시 만든다.
+
+성공 marker는 `markers/neo4j_graph.<database>.json`에 원자적으로 저장한다. 앱 readiness는
+marker가 `APPLIED`, `REPLACED`, `ADOPTED_EXISTING`, `VERIFIED_EXISTING` 중 하나이고 실제
+fingerprint가 marker의 expected 값과 일치할 때만 통과한다. `RESTORED`는 운영자 확인이 필요한
+복구 상태다. 파일 잠금은 macOS·Linux의 `fcntl`, native Windows의 `msvcrt`를 사용한다.
+
+집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_master_cypher.py tests/unit/test_bootstrap_neo4j_graph.py
+ruff check scripts/master_cypher.py scripts/neo4j_target.py \
+  scripts/bootstrap_neo4j_graph.py tests/unit/test_master_cypher.py \
+  tests/unit/test_bootstrap_neo4j_graph.py
+ruff format --check scripts/master_cypher.py scripts/neo4j_target.py \
+  scripts/bootstrap_neo4j_graph.py tests/unit/test_master_cypher.py \
+  tests/unit/test_bootstrap_neo4j_graph.py
+```
+
+V4-CM-1.6의 최초 구현·단위 테스트에서는 공용 Neo4j에 적용하지 않았다. 이후 운영 단계에서
+GitHub 이슈 `#41`을 적용 근거로 preflight, 논리 백업 v2, 오프라인 restore 검증을 순서대로 통과한
+뒤 구 24 nodes·26 relationships를 신규 38 nodes·81 relationships로 원자 교체했다. 교체 전후
+schema fingerprint는 같고, 관계 81건의 `relation_id`는 전부 존재하며 중복 0건이다. 복구용
+backup·manifest·restore receipt는 저장소 밖 backup root에 보존하고, 저장소에는 비밀정보가
+없는 `REPLACED` success marker만 등록한다.
+
+## 7. Synthetic evaluation 격리
 
 Synthetic label은 다음 envelope를 사용하고 DB bootstrap profile을 갖지 않는다.
 
@@ -334,7 +453,7 @@ corrected, Runtime, Text2SQL/RAG 입력으로 유입하지 않는다.
 generator revision·seed·file hash의 정확한 schema와 회귀 테스트를 먼저 확장한 뒤 파일을
 생성한다.
 
-## 7. 보안·운영 원칙
+## 8. 보안·운영 원칙
 
 - manifest에는 전체 DSN, 사용자명, 비밀번호, credential, secret을 기록하지 않는다.
 - URI userinfo와 POSIX·Windows 로컬 절대 경로를 기록하지 않는다.

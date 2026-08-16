@@ -12,7 +12,7 @@ import hmac
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.engine import URL
@@ -43,10 +43,10 @@ class TargetValidationError(RuntimeError):
 class BootstrapTarget:
     """Validated connection components without a printable DSN."""
 
-    host: str
-    port: int
-    username: str
-    password: str
+    host: str = field(repr=False)
+    port: int = field(repr=False)
+    username: str = field(repr=False)
+    password: str = field(repr=False)
     database: str
     profile: str
 
