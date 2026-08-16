@@ -1,0 +1,200 @@
+{
+  "format_version": 3,
+  "artifact_type": "corrected_files",
+  "dataset_epoch": "kosa_0813",
+  "source_archive_sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96",
+  "correction_version": "v1",
+  "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "tables": {
+    "action_history": {
+      "file_id": "corrected/v1/postgres/action_history.csv",
+      "columns": [
+        "action_id",
+        "lot_id",
+        "recipe_step_name",
+        "equipment_id",
+        "chamber_id",
+        "trigger_alarm_lot_hist_id",
+        "action_code",
+        "reason",
+        "approval_required",
+        "approval_status",
+        "approved_by",
+        "approved_at",
+        "notify_status",
+        "notify_at",
+        "mes_status",
+        "mes_at",
+        "created_at"
+      ],
+      "row_count": 48,
+      "content_hash": "fc4c1600dbafe018b2ad9679f28962014e0e4ffdab6d9c0bdd7da0cca83d5004"
+    },
+    "dim_parameter": {
+      "file_id": "corrected/v1/postgres/dim_parameter.csv",
+      "columns": [
+        "parameter_id",
+        "parameter_name",
+        "unit",
+        "area",
+        "target_value",
+        "spec_lower",
+        "ctrl_lower",
+        "ctrl_upper",
+        "spec_upper",
+        "upper_only"
+      ],
+      "row_count": 8,
+      "content_hash": "9a8c6315dd49603ec0b1c1ad57c26c6950c4fa69cc1b0253b513b8e100785259"
+    },
+    "evaluation": {
+      "file_id": "corrected/v1/postgres/evaluation.csv",
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "point_cnt",
+        "ooc_point_cnt",
+        "oos_point_cnt",
+        "alarm_type"
+      ],
+      "row_count": 4800,
+      "content_hash": "c7c314c536bbe78cae9edee0810d3ca481de7b31255ea9932f8548ecc4457cc3"
+    },
+    "fdc_trace": {
+      "file_id": "corrected/v1/postgres/fdc_trace.csv",
+      "columns": [
+        "lot_hist_id",
+        "parameter_id",
+        "seq_no",
+        "recipe_step_no",
+        "step_seq",
+        "measured_at",
+        "value"
+      ],
+      "row_count": 14400,
+      "content_hash": "7e69f370b6da176d115171f5444c92c37fee9693a902aac1a6f88699ee9753e7"
+    },
+    "lot_history": {
+      "file_id": "corrected/v1/postgres/lot_history.csv",
+      "columns": [
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "device_id",
+        "step_id",
+        "area_id",
+        "equipment_id",
+        "chamber_id",
+        "recipe_id",
+        "track_in_at",
+        "track_out_at",
+        "duration_sec",
+        "chamber_wafer_cum",
+        "lot_seq",
+        "fault_code"
+      ],
+      "row_count": 600,
+      "content_hash": "a0164007d284f4599c2cc1eb8a4f44dcfb8dafb024dd6a6b02875270245f7606"
+    },
+    "metrology": {
+      "file_id": "corrected/v1/postgres/metrology.csv",
+      "columns": [
+        "metrology_id",
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "step_id",
+        "measure_type",
+        "unit",
+        "measured_value",
+        "spec_center",
+        "spec_lower",
+        "spec_upper",
+        "alarm_result",
+        "measured_at"
+      ],
+      "row_count": 48,
+      "content_hash": "688b0902180743e89b89730676a30210a6f4286fb639f6f0ce9f04959a9aa53d"
+    },
+    "summary_alarm_history": {
+      "file_id": "corrected/v1/postgres/summary_alarm_history.csv",
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "statistic_type",
+        "stat_value",
+        "cl",
+        "ucl",
+        "lcl",
+        "limit_type",
+        "alarm_type"
+      ],
+      "row_count": 47,
+      "content_hash": "ac3410fbffa57ff9a0512b8286ce9692230ca492bdd31e61c1ea918f4a72629e"
+    },
+    "summary_data": {
+      "file_id": "corrected/v1/postgres/summary_data.csv",
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "value_mean",
+        "value_std",
+        "value_min",
+        "value_max",
+        "point_cnt"
+      ],
+      "row_count": 4800,
+      "content_hash": "1cb0b59a77e8bed6fc2b49c11a1cd0dc12e7d83687107964d420021c62bb1840"
+    },
+    "trace_alarm_history": {
+      "file_id": "corrected/v1/postgres/trace_alarm_history.csv",
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "seq_no",
+        "value",
+        "limit_type",
+        "limit_value",
+        "alarm_type"
+      ],
+      "row_count": 126,
+      "content_hash": "10d55265ad52aa3deeca5cc19b33cd62a65e04fc53cfa640ca46ddcd278a1a14"
+    }
+  }
+}

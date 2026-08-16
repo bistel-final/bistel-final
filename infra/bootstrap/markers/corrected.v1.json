@@ -1,0 +1,20 @@
+{
+  "artifact_type": "corrected_registration",
+  "format_version": 1,
+  "status": "REGISTERED",
+  "dataset_epoch": "kosa_0813",
+  "correction_version": "v1",
+  "source_archive_sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96",
+  "source_manifest_sha256": "b6595b2a635bfaf2b6c5dfeb88a9a42b94e3d9c44b931fefd712d45f566fdf84",
+  "corrected_manifest_sha256": "2112d6d6bfce99a3e4c7ed8199051c09bb56fe5f4f3509b7bf830cc871df894d",
+  "receipt_sha256": "90db48dd3b50b9742caae818e0b87aa09f6f3934836cd03e04967b1b02cee124",
+  "build_id": "1b1840d7ed0cd9c1322385caa1e19d6d7e7412602ffdd5062b78946d710864ec",
+  "generator_sha256": "3456630fd4d930eaf87556388e6fca232d36ee58b00d5e4604ae821c87921719",
+  "table_count": 9,
+  "verification": {
+    "action_history_rows": 48,
+    "pk_duplicate_count": 0,
+    "fk_violation_count": 0
+  },
+  "registered_at": "2026-08-16T04:32:50.008451+00:00"
+}

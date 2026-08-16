@@ -10,7 +10,7 @@
 |---|---|---|---|
 | dataset epoch | `dataset-epoch.json` | 등록됨 | V4-CM-0.1 |
 | source files | `source-data-manifest.json` | **v3 등록됨** | V4-CM-1.1 |
-| corrected files | `corrected-data-manifest.json` | `NOT_REGISTERED` | V4-CM-1.7 |
+| corrected files | `corrected-data-manifest.json` + `markers/corrected.v1.json` | **v3 등록됨** | V4-CM-1.7 |
 | DB base schema stage | `manifests/{profile}.base_schema.json` | **v3 등록됨** | V4-CM-1.5 |
 | 후속 DB bootstrap stage | `manifests/{profile}.{stage}.json` | `NOT_REGISTERED` | V4-CM-1.7 이후 |
 | synthetic evaluation | `synthetic-evaluation-manifest.json` | `NOT_REGISTERED` | 평가 소유 Task |
@@ -91,6 +91,7 @@ CLI 종료 코드는 자동화에서 다음 계약으로 사용한다.
 | `4` | artifact metadata 불일치 |
 | `5` | manifest schema 오류 |
 | `6` | 후속 Task 소유 artifact 미등록 |
+| `7` | 외부 연결·권한·미적재로 현재 검증 불가 |
 
 ## 4. Corrected copy 빌드
 
@@ -168,6 +169,55 @@ data/corrected/v1/
 - `--check`는 active pointer, receipt hash, CSV 의미/byte hash와 현재 build identity를 모두
   확인하며 어떤 파일도 만들거나 교체하지 않는다.
 - 빌더는 PostgreSQL·Neo4j·n8n에 접속하지 않는다.
+
+### Corrected manifest 등록과 통합 검증
+
+`V4-CM-1.7`은 active receipt·실제 CSV·source manifest를 다시 계산해 corrected manifest와
+등록 marker를 만든다. 등록은 marker-last 방식이라 manifest 교체 직후 중단돼 marker가 없으면
+등록 완료로 인정하지 않는다. no-op도 manifest·marker·active receipt가 모두 일치할 때만 허용한다.
+파일 역할은 source와 동일해야 하는 6종, 내용 hash가 반드시 달라야 하는 보정 2종
+(`fdc_trace`, `summary_alarm_history`), source에 없어야 하는 신규 1종(`dim_parameter`)으로
+고정한다. 세 집합은 겹치지 않고 corrected table 9종을 정확히 구성해야 한다.
+
+```bash
+cd backend
+
+# 신규·변경·marker 복구 미리보기. 파일을 쓰지 않는다.
+python scripts/verify_bootstrap_state.py --register-corrected
+
+# corrected manifest를 먼저, commit marker를 마지막에 원자 교체한다.
+python scripts/verify_bootstrap_state.py --register-corrected --confirm
+
+# source ZIP·active corrected·PK/FK·reference output 검증
+python scripts/verify_bootstrap_state.py \
+  --files-only --archive /path/to/kosa_0813.zip
+
+# 명시한 등록 stage에 대한 단일 PostgreSQL acceptance. read-only transaction이다.
+python scripts/verify_bootstrap_state.py \
+  --database kosa_agent_e2e --stage base_schema
+
+# Neo4j live graph·manifest·success marker fingerprint 3자 대조. READ session이다.
+python scripts/verify_bootstrap_state.py \
+  --neo4j --archive /path/to/kosa_0813.zip
+
+# files → PostgreSQL 3개 → Neo4j. reports/에 Git 비추적 report 1건을 남긴다.
+python scripts/verify_bootstrap_state.py \
+  --all --archive /path/to/kosa_0813.zip
+```
+
+개별 검증은 stdout만 사용하고 `--report <path>`를 명시했을 때만 report를 쓴다. `--all`은
+version-controlled `EXPECTED_STAGES`를 사용하며 inventory 결과로 합격 stage를 자동 선택하지
+않는다. 현재 기대 stage는 세 PostgreSQL DB 모두 `base_schema`다. DB profile끼리 content hash를
+서로 비교하지 않고, 각 DB를 자신에게 해당하는 등록 manifest와만 대조한다.
+
+PostgreSQL은 `SET TRANSACTION READ ONLY`, public schema `USAGE`, table별 `SELECT` 권한을
+확인한다. `CREATE` 권한은 요구하지 않는다. Neo4j는 read access mode에서 38 node·81 relation,
+relation ID 81개·중복 0, label/type 분포, graph/schema fingerprint와 success marker를 확인한다.
+리포트에는 host·port·사용자·URI·DSN·원시 예외를 기록하지 않는다.
+종합 상태는 종료 코드와 동일하게 `PASS(0)`, `FAIL(1)`, `NOT_REGISTERED(6)`,
+`UNVERIFIABLE(7)`로 기록한다. 접속·권한·설정 실패는 원시 메시지 대신
+`MISSING_CONFIGURATION`, `TARGET_IDENTITY_MISMATCH`, `NO_SCHEMA_USAGE`,
+`NO_SELECT_GRANT`, `CONNECT_OR_QUERY_FAILED` 같은 고정 reason code만 남긴다.
 
 ### 로컬 산출물 복구
 
