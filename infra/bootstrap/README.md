@@ -385,6 +385,109 @@ ruff format --check scripts/db_target.py scripts/bootstrap_base_schema.py \
 0건으로 요구하지 않는다. `nl_query_log`는 모든 profile·stage에서 `schema_only`로만
 검증하며 immutable content hash나 bootstrap empty 기준을 둘 수 없다.
 
+### Reference extension migration 적용·검증
+
+`V4-CM-2.1`의 `001_reference_extensions.sql`은 세 PostgreSQL DB에 공통으로 필요한
+reference schema만 추가한다. `vector` extension과 다음 객체만 만들며 base table row,
+`action_history`, Runtime Agent 상태를 변경하지 않는다.
+
+- `r03_alarm_history`
+- `document_corpus`, `document`, `document_chunk(vector(1024))`
+- `nl_query_log`
+- `ux_document_corpus_active` 부분 고유 index
+- TRACE·SUMMARY·R03를 정규화한 `v_alarm_event` view
+
+runner는 Base schema와 같은 bootstrap 전용 PostgreSQL 설정과 advisory lock namespace를
+공유한다. 세 DB 중 한 번에 하나만 적용하며, 공용 DB DDL은 코드 리뷰·최종 검증·팀 승인 후
+`kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql` 순서로 수행한다.
+
+```bash
+cd backend
+
+# SQL·target 설정만 검사한다. DB에 연결하지 않는다.
+python scripts/apply_reference_extensions.py \
+  --dry-run --database kosa_agent_e2e
+
+# read-only transaction으로 base schema·현재 migration 상태·lock을 검사한다.
+python scripts/apply_reference_extensions.py \
+  --preflight --database kosa_agent_e2e
+
+# E2E 전용: 실제 apply와 같은 DDL·postcheck를 실행하고 무조건 rollback한다.
+# receipt·marker를 만들지 않으며 다른 DB와 change-ref 사용을 거부한다.
+python scripts/apply_reference_extensions.py \
+  --rehearse \
+  --database kosa_agent_e2e \
+  --confirm-target kosa_agent_e2e
+
+# 승인 후에만 실제 transaction을 실행한다.
+python scripts/apply_reference_extensions.py \
+  --database kosa_agent_e2e \
+  --confirm-target kosa_agent_e2e \
+  --change-ref GH-<issue-or-pr-number>
+
+# DB commit 뒤 marker 저장이 중단된 경우에만 기존 receipt로 marker를 복구한다.
+python scripts/apply_reference_extensions.py \
+  --recover-marker \
+  --database kosa_agent_e2e \
+  --confirm-target kosa_agent_e2e \
+  --change-ref GH-<issue-or-pr-number>
+
+# 단일 DB 또는 전체 DB를 read-only로 검증한다.
+python scripts/verify_migrations.py --database kosa_agent_e2e
+python scripts/verify_migrations.py --all
+```
+
+정상 적용은 `infra/bootstrap/reports/reference_extensions.<database>.<uuid>.json`에 시도별
+receipt를 먼저 기록하고, DB commit 후
+`infra/bootstrap/markers/reference_extensions.<database>.json` marker를 마지막에 원자 저장한다.
+receipt는 `STARTED`·`COMMITTED`·`ABORTED` 상태를 보존한다. DB가 이미 exact schema인데 marker나
+복구 가능한 receipt가 전혀 없는 receipt-less adoption은 거부한다. marker가 남았는데 schema가
+전부 유실된 `LOST_SCHEMA`도 이 migration에서 자동 복구하지 않는다. partial schema, column·
+constraint·index·view·vector typmod drift, PUBLIC 권한 부여는 변경하지 않고 중단한다.
+
+공용 DB 적용 순서는 `preflight → rehearse → apply → verify`로 고정한다. `rehearse`는
+`kosa_agent_e2e`의 marker·001 객체·reference sequence가 없는 상태에서만 실행하며, 실제 apply와
+같은 `postcheck_database()`를 통과한 뒤 extension·table·view·sequence·action 상태를 transaction
+이전으로 되돌렸는지 새 read-only transaction에서 다시 확인한다. rehearsal 성공은
+`REHEARSAL_OK ... rolled_back=true`로만 출력하고 Git artifact를 만들지 않는다.
+
+검증기는 다음을 모두 확인한다.
+
+- `vector`가 `public` schema에 있고 `document_chunk.embedding`이 `vector(1024)`인지
+- 5개 table·1개 index·1개 view의 catalog signature가 marker와 같은지
+- `v_alarm_event` branch 합계·source/type·AlarmRef·lot key가 유효한지
+- `action_history` row count가 migration 전후 동일한지
+- PUBLIC에 table/view `SELECT`·DML 권한이 없는지
+- Runtime role matrix가 아직 미완성이라면 `NOT_READY(V4-CM-2.6)`로 명시되는지
+
+실패 출력은 원시 예외 대신 `MISSING_CONFIGURATION`, `TARGET_IDENTITY_MISMATCH`,
+`MIGRATION_NOT_APPLIED`, `MISSING_SUCCESS_MARKER`, `SCHEMA_DRIFT`,
+`SCHEMA_SIGNATURE_MISMATCH`, `VECTOR_VERSION_MISMATCH`, `PUBLIC_PRIVILEGE_DETECTED`,
+`CONNECT_OR_QUERY_FAILED` 같은 고정 reason code를 사용한다.
+
+`001` 적용 직후 `verify_bootstrap_state.py --all`이 즉시 PASS할 필요는 없다. 이 migration이
+schema stage를 `reference_extensions`로 올리는 반면 `corrected_base`·`evaluation_mock`
+profile manifest 등록은 `V4-CM-2.2`·`V4-CM-2.3` 소관이므로, 그 전까지 stage mismatch는 예상된
+Gate 상태다.
+
+집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_reference_extensions.py \
+  tests/unit/test_verify_migrations.py \
+  tests/unit/test_schema_lock.py \
+  tests/unit/test_alarm_event_contract.py \
+  tests/unit/test_document_contract.py \
+  tests/unit/test_nl_query_log_contract.py
+ruff check scripts/apply_reference_extensions.py scripts/verify_migrations.py \
+  scripts/schema_lock.py tests/unit/test_reference_extensions.py \
+  tests/unit/test_verify_migrations.py
+ruff format --check scripts/apply_reference_extensions.py scripts/verify_migrations.py \
+  scripts/schema_lock.py tests/unit/test_reference_extensions.py \
+  tests/unit/test_verify_migrations.py
+```
+
 ## 6. Neo4j destructive-safe loader
 
 `master_graph.cypher`는 등록된 `kosa_0813.zip`의 `master.cypher`에서 destructive 문을
