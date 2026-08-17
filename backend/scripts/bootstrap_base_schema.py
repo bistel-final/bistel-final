@@ -51,6 +51,12 @@ from manifest_v3 import (
     scan_for_sensitive_values,
     validate_manifest_schema,
 )
+from schema_lock import (
+    DATABASE_LOCK_ID,
+)
+from schema_lock import (
+    POSTGRES_SCHEMA_MUTATION_LOCK_NAMESPACE as BASE_SCHEMA_LOCK_NAMESPACE,
+)
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -65,14 +71,6 @@ SOURCE_MEMBER_SHA256 = (
 )
 CORRECTION_VERSION = "base-schema-v1"
 EMPTY_ROWS_SHA256 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-
-# Immutable coordination contract. Changing it breaks cross-version locking.
-BASE_SCHEMA_LOCK_NAMESPACE = 1_111_905_090  # 0x42465342 = "BFSB"
-DATABASE_LOCK_ID = {
-    "kosa_agent": 1,
-    "kosa_agent_e2e": 2,
-    "kosa_text2sql": 3,
-}
 
 EXPECTED_TABLE_COUNT = 9
 EXPECTED_EXPLICIT_INDEX_COUNT = 4
