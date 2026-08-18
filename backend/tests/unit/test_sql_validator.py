@@ -33,6 +33,22 @@ except ImportError:  # pragma: no cover - 구현 후 제거 대상
     validate_sql = None
 
 
+#: 검증기 호출이 필요한 테스트에 붙인다.
+#:
+#: V4-D-2.2 미구현 동안 red 의도를 유지하되 suite 전체는 green 으로 둔다.
+#: red 를 그대로 두면 팀원이 매번 83건 실패를 보게 되어 실제 회귀가 묻힌다.
+#:
+#: 조건을 `validate_sql is None` 로 두었으므로 V4-D-2.2 가 구현되면 마커가
+#: 자동으로 비활성화되고 테스트는 정상 판정으로 돌아간다. 수동 제거가 필요 없다.
+#: `strict=True` 이므로 미구현 상태에서 통과해버리면 XPASS 로 실패해
+#: 기대와 실제가 어긋난 사실이 드러난다.
+requires_validator = pytest.mark.xfail(
+    validate_sql is None,
+    strict=True,
+    reason="V4-D-2.2 sql_validator.validate_sql 미구현 — 의도된 red (V4-D-2.1)",
+)
+
+
 # --------------------------------------------------------------------------
 # 케이스 정의
 # --------------------------------------------------------------------------
@@ -484,6 +500,7 @@ def _ids(cases: tuple[SqlCase, ...]) -> list[str]:
     return [case.case_id for case in cases]
 
 
+@requires_validator
 @pytest.mark.parametrize("case", GREEN_CASES, ids=_ids(GREEN_CASES))
 def test_green_case_is_valid(case: SqlCase) -> None:
     """허용 범위 내 정상 질의는 통과해야 한다."""
@@ -493,6 +510,7 @@ def test_green_case_is_valid(case: SqlCase) -> None:
     assert result.normalized_sql, "통과한 질의는 normalized_sql을 제공해야 한다"
 
 
+@requires_validator
 @pytest.mark.parametrize("case", RED_CASES, ids=_ids(RED_CASES))
 def test_red_case_is_blocked(case: SqlCase) -> None:
     """차단 대상은 valid=false와 사유를 반환하고, 예외를 던지지 않는다."""
@@ -502,6 +520,7 @@ def test_red_case_is_blocked(case: SqlCase) -> None:
     assert result.reason, "차단된 질의는 reason이 있어야 한다"
 
 
+@requires_validator
 @pytest.mark.parametrize("case", RED_CASES, ids=_ids(RED_CASES))
 def test_red_case_reason_mentions_cause(case: SqlCase) -> None:
     """거부 사유가 원인 범주를 식별할 수 있어야 한다."""
@@ -516,6 +535,7 @@ def test_red_case_reason_mentions_cause(case: SqlCase) -> None:
     )
 
 
+@requires_validator
 @pytest.mark.parametrize(
     ("case_id", "sql", "expected_limit"),
     LIMIT_EXPECTATIONS,
@@ -526,11 +546,12 @@ def test_limit_is_enforced(case_id: str, sql: str, expected_limit: int) -> None:
     result = _validate(sql)
 
     assert result.valid is True, case_id
-    assert f"LIMIT {expected_limit}" in (result.normalized_sql or "").upper(), (
-        f"{case_id}: normalized_sql에 LIMIT {expected_limit}이 반영돼야 한다"
-    )
+    assert (
+        f"LIMIT {expected_limit}" in (result.normalized_sql or "").upper()
+    ), f"{case_id}: normalized_sql에 LIMIT {expected_limit}이 반영돼야 한다"
 
 
+@requires_validator
 def test_checks_expose_all_keys() -> None:
     """검증 결과는 단계별 check를 노출해 화면이 근거를 표시할 수 있어야 한다."""
     result = _validate("SELECT parameter FROM dim_parameter")
@@ -541,6 +562,7 @@ def test_checks_expose_all_keys() -> None:
     assert not missing, f"누락된 check key: {sorted(missing)}"
 
 
+@requires_validator
 def test_invalid_sql_does_not_raise() -> None:
     """파싱 불가 SQL도 예외 대신 valid=false로 응답해야 한다."""
     result = _validate("SELEC * FRM evaluation")
