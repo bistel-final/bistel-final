@@ -523,11 +523,10 @@ python scripts/load_corrected_base.py \
   --confirm-target kosa_agent --change-ref GH-<number>
 ```
 
-runtime 두 DB는 성공 marker를 마지막에 기록한다. evaluation DB는 action 48을 다음 stage까지
-보존하므로 success marker 대신 `alignment_report.kosa_text2sql.json`에 데이터 정렬 완료와
-`stage_acceptance_status=PENDING`, `next_stage_task=V4-CM-2.3`을 기록한다. 이 중간 상태에서
-`--all`의 유일한 실패가 evaluation `action_history` 기대 0/실제 48이면 report에
-`PENDING_V4_CM_2_3`으로 표시하며, 그 밖의 불일치는 예정 상태로 수용하지 않는다.
+runtime 두 DB는 성공 marker를 마지막에 기록한다. evaluation DB의 corrected-base alignment
+report는 action 48건을 보존한 채 다음 stage가 `V4-CM-2.3`임을 기록한다. 통합 검증기는 더 이상
+이를 PASS 가능한 중간 상태로 승격하지 않으며, 아래 Evaluation Mock marker가 생긴 뒤에만
+`evaluation_mock` stage를 PASS한다.
 
 현재 PR의 로컬 구현·단위 테스트 단계에서는 공용 DB에 mutation을 실행하지 않는다. 독립 코드
 리뷰와 최종 검증 후 사용자 승인으로 E2E → runtime → evaluation 순서로 적용한다.
@@ -543,6 +542,61 @@ ruff check scripts/load_corrected_base.py scripts/value_normalization.py \
   scripts/mutation_runtime.py tests/unit/test_load_corrected_base.py
 ruff format --check scripts/load_corrected_base.py scripts/value_normalization.py \
   scripts/mutation_runtime.py tests/unit/test_load_corrected_base.py
+```
+
+### Evaluation Mock fixture 채택·등록
+
+`V4-CM-2.3`은 `kosa_text2sql` 하나만 대상으로 한다. active corrected bundle의
+`action_history.csv` 48건을 `db-value-v1`로 정규화해 expected hash를 만들며, live DB는 이 값을
+생성하는 입력이 아니라 비교 대상이다. 기존 48건이 일치하면 DML 없이 채택하고, table이 비어
+있을 때만 동일 48건을 단일 transaction으로 INSERT한다. 한 행이라도 다르면 부분 보정 없이
+`DRIFT`로 중단한다.
+
+`fixture_type=MOCK`은 `evaluation.evaluation_mock.json`의 `action_history` metadata이며 DB
+컬럼이 아니다. 이 fixture는 Text2SQL·화면 계약 회귀에만 사용하고 Agent/Fault 학습·정답·
+runtime seed로 사용하지 않는다.
+
+```bash
+cd backend
+
+# DB 접속 없이 evaluation_mock manifest 변경만 확인·등록한다.
+python scripts/load_evaluation_mock.py --register-manifests
+python scripts/load_evaluation_mock.py --register-manifests --confirm
+
+# 공용 DB 적용 전 read-only 상태 확인과 transaction rollback rehearsal.
+python scripts/load_evaluation_mock.py \
+  --database kosa_text2sql --preflight
+python scripts/load_evaluation_mock.py \
+  --database kosa_text2sql --rehearse --confirm-target kosa_text2sql
+
+# 독립 코드리뷰·최종검증 후 승인된 change reference로만 실제 채택/적재한다.
+python scripts/load_evaluation_mock.py \
+  --database kosa_text2sql --confirm-target kosa_text2sql --change-ref GH-<number>
+
+# DB commit 뒤 marker 기록만 중단된 경우, 일치하는 receipt가 정확히 1건일 때만 복구한다.
+python scripts/load_evaluation_mock.py --recover-artifact \
+  --database kosa_text2sql --confirm-target kosa_text2sql --change-ref GH-<number>
+
+# 완료 marker와 48건 immutable hash까지 포함한 전체 Gate.
+python scripts/verify_bootstrap_state.py --all
+```
+
+성공 marker `markers/evaluation_mock.kosa_text2sql.json`은 마지막에 원자 기록한다. 영구 no-op
+판정은 action entry·dataset/correction/value-normalization·001 schema signature로 구성한
+durable fixture identity를 사용한다. 적용 당시 전체 manifest·corrected build·generator는
+ignored receipt와 marker의 감사 provenance로 남긴다. 따라서 이후 R03/corpus reference 내용만
+변해도 Mock 유실로 오판하지 않지만, 현재 reference 정합성은 통합 검증기가 별도로 검사한다.
+
+Evaluation Mock 집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_load_evaluation_mock.py \
+  tests/unit/test_verify_bootstrap_state.py
+ruff check scripts/load_evaluation_mock.py scripts/verify_bootstrap_state.py \
+  tests/unit/test_load_evaluation_mock.py tests/unit/test_verify_bootstrap_state.py
+ruff format --check scripts/load_evaluation_mock.py scripts/verify_bootstrap_state.py \
+  tests/unit/test_load_evaluation_mock.py tests/unit/test_verify_bootstrap_state.py
 ```
 
 Reference extension 집중 검증:

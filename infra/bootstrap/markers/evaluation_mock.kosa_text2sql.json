@@ -1,0 +1,22 @@
+{
+  "artifact_type": "evaluation_mock",
+  "format_version": 1,
+  "database": "kosa_text2sql",
+  "profile": "evaluation",
+  "status": "VERIFIED_EXISTING",
+  "dataset_epoch": "kosa_0813",
+  "correction_version": "corrected-base-v1",
+  "bootstrap_stage": "evaluation_mock",
+  "fixture_identity_sha256": "fc994702ed2eb5f2bdf6f280ddbb95bb74cba3a21e6cfd987e4282bc2bab2bb7",
+  "manifest_sha256_at_adoption": "816a3bd810bff16960f7926aba668c0f9db10d062f526a499976c5ab5e965405",
+  "corrected_bundle_identity_sha256": "cfa4655882bef444b5e712c438c6becf4689e848d1714b233a132735946e10ab",
+  "schema_signature_sha256": "484b3adfb89fdaf323baed41da661ec83fe2fa42d8d5a2e090cbf3ad7de95aad",
+  "action_history_rows": 48,
+  "action_history_hash": "a9bab7d6bffe9e485db86f56319bfe5618d055fa1c67b09f3db3c7ea3bba2fb6",
+  "fixture_type": "MOCK",
+  "alarm_event_rows": 173,
+  "receipt_sha256": "f6c5b339a29705c9c11912c0c871b76c0448e8d3642bd621ddf1f21d69d2ea3e",
+  "change_reference": "V4CM-23",
+  "applied_at": "2026-08-18T02:05:37.100250+00:00",
+  "recorded_at": "2026-08-18T02:05:37.102501+00:00"
+}

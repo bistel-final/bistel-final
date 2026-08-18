@@ -568,7 +568,7 @@ def test_evaluation_corrected_base_failure_is_scoped_to_action_48(
     }
 
 
-def test_evaluation_pending_collects_and_rejects_additional_table_drift(
+def test_evaluation_corrected_base_collects_additional_table_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import load_corrected_base as loader
@@ -630,49 +630,165 @@ def test_evaluation_pending_collects_and_rejects_additional_table_drift(
             "expected_policy": "immutable_content",
         },
     ]
-    passing = [
-        verifier.CheckResult(target, verifier.STATUS_PASS, 0, {})
-        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
-    ]
-    evaluation = verifier._failure_result("kosa_text2sql", captured.value)
-
-    assert verifier.is_expected_evaluation_pending([*passing, evaluation]) is False
-    assert (
-        verifier._report_payload([*passing, evaluation])["expected_intermediate_state"]
-        is None
-    )
 
 
-def test_expected_pending_requires_exact_single_evaluation_mismatch() -> None:
-    passing = [
-        verifier.CheckResult(target, verifier.STATUS_PASS, 0, {})
-        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
-    ]
-    details = {
-        "profile": "evaluation",
-        "expected_stage": "corrected_base",
-        "mismatches": [
-            {
-                "table": "action_history",
-                "mismatch_kind": "ROW_COUNT",
-                "expected_row_count": 0,
-                "actual_row_count": 48,
-                "expected_policy": "bootstrap_empty",
-            }
-        ],
+def _evaluation_mock_connection() -> tuple[Any, dict[str, Any], CorrectedConnection]:
+    import load_corrected_base as corrected_loader
+    import load_evaluation_mock as evaluation_loader
+
+    context = corrected_loader._load_input_context()
+    mock_context = evaluation_loader._load_manifest_context(require_registered=True)
+    manifest = mock_context.manifest
+    rows = {
+        table: (
+            [dict(row) for row in mock_context.expected_rows]
+            if table == "action_history"
+            else [dict(row) for row in context.expected_rows.get(table, ())]
+        )
+        for table in manifest["tables"]
     }
-    evaluation = verifier.CheckResult(
-        "kosa_text2sql", verifier.STATUS_FAIL, verifier.EXIT_MISMATCH, details
-    )
-    results = [*passing, evaluation]
-
-    assert verifier.is_expected_evaluation_pending(results) is True
-    assert verifier._report_payload(results)["expected_intermediate_state"] == (
-        "PENDING_V4_CM_2_3"
+    return (
+        evaluation_loader,
+        manifest,
+        CorrectedConnection("kosa_text2sql", manifest, rows),
     )
 
-    evaluation.details["mismatches"][0]["actual_row_count"] = 47
-    assert verifier.is_expected_evaluation_pending(results) is False
+
+def _stub_reference_postcheck(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        verifier.reference_extensions,
+        "postcheck_database",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+
+
+def test_evaluation_mock_stage_requires_and_reports_completion_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
+    marker = {
+        "fixture_type": "MOCK",
+        "status": "VERIFIED_EXISTING",
+    }
+    marker_calls: list[tuple[str, str]] = []
+    _stub_reference_postcheck(monkeypatch)
+    monkeypatch.setattr(
+        evaluation_loader,
+        "verify_completion_marker",
+        lambda _connection, target, registered: (
+            marker_calls.append((target.database, registered["bootstrap_stage"]))
+            or marker
+        ),
+    )
+
+    result = verifier.verify_database(
+        "kosa_text2sql",
+        "evaluation_mock",
+        environ={
+            "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+            "POSTGRES_BOOTSTRAP_PORT": "5432",
+            "POSTGRES_BOOTSTRAP_USER": "reader",
+            "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+            "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                "shared.example", 5432
+            ),
+        },
+        engine_factory=lambda _: FakeEngine(connection),
+    )
+
+    assert result.status == verifier.STATUS_PASS
+    assert result.details["action_history_rows"] == 48
+    assert result.details["fixture_type"] == "MOCK"
+    assert result.details["fixture_marker_status"] == "VERIFIED_EXISTING"
+    assert marker_calls == [("kosa_text2sql", "evaluation_mock")]
+
+
+@pytest.mark.parametrize(
+    "marker_error",
+    [
+        "artifact",
+        "state",
+    ],
+)
+def test_evaluation_mock_marker_failure_is_acceptance_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    marker_error: str,
+) -> None:
+    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
+    _stub_reference_postcheck(monkeypatch)
+    error = (
+        evaluation_loader.EvaluationMockArtifactError("missing marker path")
+        if marker_error == "artifact"
+        else evaluation_loader.EvaluationMockStateError("fixture identity drift")
+    )
+    monkeypatch.setattr(
+        evaluation_loader,
+        "verify_completion_marker",
+        lambda *_a, **_k: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
+        verifier.verify_database(
+            "kosa_text2sql",
+            "evaluation_mock",
+            environ={
+                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+                "POSTGRES_BOOTSTRAP_PORT": "5432",
+                "POSTGRES_BOOTSTRAP_USER": "reader",
+                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                    "shared.example", 5432
+                ),
+            },
+            engine_factory=lambda _: FakeEngine(connection),
+        )
+
+    assert captured.value.exit_code == verifier.EXIT_MISMATCH
+    assert captured.value.details["mismatches"] == [{"mismatch_kind": "FIXTURE_MARKER"}]
+    assert "missing marker path" not in json.dumps(captured.value.details)
+    assert "fixture identity drift" not in json.dumps(captured.value.details)
+
+
+def test_evaluation_mock_collects_table_and_marker_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
+    connection.rows["dim_parameter"][0]["parameter_name"] = "DRIFTED"
+    _stub_reference_postcheck(monkeypatch)
+    monkeypatch.setattr(
+        evaluation_loader,
+        "verify_completion_marker",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            evaluation_loader.EvaluationMockArtifactError("missing marker")
+        ),
+    )
+
+    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
+        verifier.verify_database(
+            "kosa_text2sql",
+            "evaluation_mock",
+            environ={
+                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+                "POSTGRES_BOOTSTRAP_PORT": "5432",
+                "POSTGRES_BOOTSTRAP_USER": "reader",
+                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                    "shared.example", 5432
+                ),
+            },
+            engine_factory=lambda _: FakeEngine(connection),
+        )
+
+    assert captured.value.details["mismatches"] == [
+        {
+            "table": "dim_parameter",
+            "mismatch_kind": "CONTENT_HASH",
+            "expected_row_count": 8,
+            "actual_row_count": 8,
+            "expected_policy": "immutable_content",
+        },
+        {"mismatch_kind": "FIXTURE_MARKER"},
+    ]
 
 
 def test_marker_candidate_is_timezone_aware(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1018,6 +1134,50 @@ def test_run_all_does_not_promote_discovered_stage(
     assert stages == list(verifier.EXPECTED_STAGES.items())
     assert exit_code == verifier.EXIT_MISMATCH
     assert results[1].details["inventory"] == "EARLY_DATA"
+
+
+def test_all_cli_writes_report_and_preserves_targets_for_marker_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    marker_details = {
+        "profile": "evaluation",
+        "expected_stage": "evaluation_mock",
+        "mismatches": [{"mismatch_kind": "FIXTURE_MARKER"}],
+    }
+    results = [
+        verifier.CheckResult("files", verifier.STATUS_PASS, 0, {}),
+        verifier.CheckResult("kosa_agent", verifier.STATUS_PASS, 0, {}),
+        verifier.CheckResult("kosa_agent_e2e", verifier.STATUS_PASS, 0, {}),
+        verifier.CheckResult(
+            "kosa_text2sql",
+            verifier.STATUS_FAIL,
+            verifier.EXIT_MISMATCH,
+            marker_details,
+        ),
+        verifier.CheckResult("neo4j", verifier.STATUS_PASS, 0, {}),
+    ]
+    monkeypatch.setattr(verifier, "_archive_path", lambda *_a, **_k: Path("zip"))
+    monkeypatch.setattr(
+        verifier,
+        "run_all",
+        lambda **_k: (results, verifier.EXIT_MISMATCH),
+    )
+    report_path = tmp_path / "bootstrap-report.json"
+
+    exit_code = verifier.main(["--all", "--report", str(report_path)])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert exit_code == verifier.EXIT_MISMATCH
+    assert report["overall_status"] == verifier.STATUS_FAIL
+    assert [target["target"] for target in report["targets"]] == [
+        "files",
+        "kosa_agent",
+        "kosa_agent_e2e",
+        "kosa_text2sql",
+        "neo4j",
+    ]
+    assert report["targets"][3]["details"] == marker_details
 
 
 def test_run_all_aborts_on_manifest_schema_error(
