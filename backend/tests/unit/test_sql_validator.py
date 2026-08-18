@@ -13,10 +13,10 @@
     base 9 table: dim_parameter, lot_history, fdc_trace, summary_data, evaluation,
                   trace_alarm_history, summary_alarm_history, metrology, action_history
 
-    TODO(V4-CM-2.1): `001_reference_extensions.sql` 적용 후 reference 6종을 추가한다.
+    reference 6종 (001_reference_extensions.sql — PR #48 로 main 병합됨):
         r03_alarm_history, v_alarm_event, nl_query_log,
         document_corpus, document, document_chunk
-        추가 시 RED_NOT_ALLOWED_CASES에서 해당 객체를 GREEN으로 옮긴다.
+    GREEN_REFERENCE_CASES 가 이 6종의 허용을 검증한다.
 
 케이스 소비 방식
     GREEN_CASES / RED_CASES / ALL_CASES는 모듈 상수로 노출한다.
@@ -24,13 +24,28 @@
 """
 
 from dataclasses import dataclass, field
+from importlib.util import find_spec
 
 import pytest
 
-try:  # V4-D-2.2 미구현 상태에서 collection이 깨지지 않도록 분리한다
-    from app.analytics.sql_validator import validate_sql
-except ImportError:  # pragma: no cover - 구현 후 제거 대상
+# V4-D-2.2 미구현만 red 로 취급한다. 미구현 = 모듈 부재, 또는 monorepo 전환으로
+# 들어온 빈 스텁처럼 모듈은 있지만 validate_sql 이 아직 없는 상태다.
+#
+# 반면 모듈 import 자체가 깨지는 경우(내부 dependency 오류·순환 import)는
+# 숨기지 않고 그대로 실패시킨다. 넓은 except ImportError 는 구현 후
+# 장애까지 xfail 로 만들어 보안 검증을 조용히 무력화한다.
+try:
+    _spec = find_spec("app.analytics.sql_validator")
+except ModuleNotFoundError:  # 부모 패키지 app.analytics 자체가 없는 경우
+    _spec = None
+
+if _spec is None:
     validate_sql = None
+else:
+    # 모듈이 존재하면 import 오류를 삼키지 않는다.
+    from app.analytics import sql_validator as _sql_validator_module
+
+    validate_sql = getattr(_sql_validator_module, "validate_sql", None)
 
 
 #: 검증기 호출이 필요한 테스트에 붙인다.
@@ -160,6 +175,78 @@ GREEN_CASES: tuple[SqlCase, ...] = (
         sql="SELECT lot_hist_id, value FROM fdc_trace LIMIT 10",
         expect_valid=True,
         note="500 이하 LIMIT은 그대로 유지한다(V4-D-2.3).",
+    ),
+)
+
+
+# --------------------------------------------------------------------------
+# GREEN — reference 6종 (001_reference_extensions.sql, PR #48)
+#
+# validator 가 이 필수 객체를 거부하면 안 된다. 컬럼명은 DDL 실제 정의를 따른다.
+# --------------------------------------------------------------------------
+
+GREEN_REFERENCE_CASES: tuple[SqlCase, ...] = (
+    SqlCase(
+        case_id="G11_r03_alarm_history",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT alarm_id, lot_hist_id, parameter_id, recipe_step_no "
+            "FROM r03_alarm_history WHERE policy_version = 'v1'"
+        ),
+        expect_valid=True,
+        note="설계서 3.3 R03 결정론적 reference 이벤트.",
+    ),
+    SqlCase(
+        case_id="G12_v_alarm_event",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT source, alarm_type, COUNT(*) AS cnt FROM v_alarm_event "
+            "GROUP BY source, alarm_type"
+        ),
+        expect_valid=True,
+        note="뷰도 허용 대상이다. TRACE/SUMMARY/R03 통합 조회(FR-A-06).",
+    ),
+    SqlCase(
+        case_id="G13_nl_query_log",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT outcome, COUNT(*) AS cnt, AVG(latency_ms) AS avg_latency "
+            "FROM nl_query_log WHERE is_valid GROUP BY outcome"
+        ),
+        expect_valid=True,
+        note="FR-D-05 Text2SQL 실행 결과 집계. 이력 패널이 쓴다.",
+    ),
+    SqlCase(
+        case_id="G14_document_corpus",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT corpus_revision, document_count, chunk_count "
+            "FROM document_corpus WHERE status = 'ACTIVE'"
+        ),
+        expect_valid=True,
+    ),
+    SqlCase(
+        case_id="G15_document_join_chunk",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT d.title, COUNT(*) AS chunk_cnt "
+            "FROM document d JOIN document_chunk c "
+            "ON d.corpus_revision = c.corpus_revision AND d.doc_id = c.doc_id "
+            "GROUP BY d.title"
+        ),
+        expect_valid=True,
+        note="복합 PK(corpus_revision, doc_id) JOIN.",
+    ),
+    SqlCase(
+        case_id="G16_reference_join_base",
+        category="GREEN_REFERENCE",
+        sql=(
+            "SELECT r.alarm_id, l.lot_id, l.chamber_id "
+            "FROM r03_alarm_history r "
+            "JOIN lot_history l ON r.lot_hist_id = l.lot_hist_id"
+        ),
+        expect_valid=True,
+        note="reference 테이블과 base 테이블 간 JOIN.",
     ),
 )
 
@@ -458,7 +545,7 @@ RED_CASES: tuple[SqlCase, ...] = (
     *RED_UNKNOWN_COLUMN_CASES,
 )
 
-ALL_CASES: tuple[SqlCase, ...] = (*GREEN_CASES, *RED_CASES)
+ALL_CASES: tuple[SqlCase, ...] = (*GREEN_CASES, *GREEN_REFERENCE_CASES, *RED_CASES)
 
 #: V4-D-2.3에서 검증할 LIMIT 주입·축소·유지 기대값.
 LIMIT_EXPECTATIONS: tuple[tuple[str, str, int], ...] = (
@@ -504,6 +591,19 @@ def _ids(cases: tuple[SqlCase, ...]) -> list[str]:
 @pytest.mark.parametrize("case", GREEN_CASES, ids=_ids(GREEN_CASES))
 def test_green_case_is_valid(case: SqlCase) -> None:
     """허용 범위 내 정상 질의는 통과해야 한다."""
+    result = _validate(case.sql)
+
+    assert result.valid is True, f"{case.case_id}: {case.note or case.sql}"
+    assert result.normalized_sql, "통과한 질의는 normalized_sql을 제공해야 한다"
+
+
+@requires_validator
+@pytest.mark.parametrize("case", GREEN_REFERENCE_CASES, ids=_ids(GREEN_REFERENCE_CASES))
+def test_reference_object_is_allowed(case: SqlCase) -> None:
+    """reference 6종(001_reference_extensions.sql)은 allowlist에 포함돼야 한다.
+
+    이 케이스가 없으면 validator가 필수 객체를 전부 거부해도 통과한다.
+    """
     result = _validate(case.sql)
 
     assert result.valid is True, f"{case.case_id}: {case.note or case.sql}"
