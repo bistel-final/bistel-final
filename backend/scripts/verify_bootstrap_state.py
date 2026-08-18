@@ -65,7 +65,7 @@ EXIT_UNVERIFIABLE = 7
 EXPECTED_STAGES = {
     "kosa_agent": "corrected_base",
     "kosa_agent_e2e": "corrected_base",
-    "kosa_text2sql": "corrected_base",
+    "kosa_text2sql": "evaluation_mock",
 }
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
@@ -840,6 +840,7 @@ def verify_database(
         raise manifest_v3.ManifestSchemaError(
             "DB manifest column 식별자가 잘못됐습니다"
         )
+    completion_marker: dict[str, Any] | None = None
     engine = engine_factory(target)
     try:
         with engine.connect() as connection, connection.begin():
@@ -966,6 +967,25 @@ def verify_database(
                     )
                 except reference_extensions.ReferenceExtensionError:
                     mismatches.append({"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"})
+            if stage == "evaluation_mock":
+                # Lazy import avoids a module cycle: the mutation runner reuses this
+                # verifier's registered corrected-bundle primitives.
+                import load_evaluation_mock as evaluation_mock
+
+                try:
+                    completion_marker = evaluation_mock.verify_completion_marker(
+                        connection,
+                        target,
+                        registered,
+                    )
+                except (
+                    evaluation_mock.EvaluationMockArtifactError,
+                    evaluation_mock.EvaluationMockStateError,
+                ):
+                    # Completion evidence is an acceptance mismatch, not a manifest
+                    # parser crash.  Keep the reason normalized so reports never
+                    # expose filesystem paths or underlying exception messages.
+                    mismatches.append({"mismatch_kind": "FIXTURE_MARKER"})
             if mismatches:
                 raise AcceptanceMismatchError(
                     "DB acceptance 계약이 다릅니다",
@@ -985,17 +1005,25 @@ def verify_database(
         ) from exc
     finally:
         engine.dispose()
+    details = {
+        "profile": target.profile,
+        "expected_stage": stage,
+        "inventory": inventory,
+        "table_count": len(expected_tables),
+        "action_history_rows": row_counts.get("action_history", 0),
+    }
+    if completion_marker is not None:
+        details.update(
+            {
+                "fixture_type": completion_marker["fixture_type"],
+                "fixture_marker_status": completion_marker["status"],
+            }
+        )
     return CheckResult(
         database,
         STATUS_PASS,
         EXIT_OK,
-        {
-            "profile": target.profile,
-            "expected_stage": stage,
-            "inventory": inventory,
-            "table_count": len(expected_tables),
-            "action_history_rows": row_counts.get("action_history", 0),
-        },
+        details,
     )
 
 
@@ -1148,35 +1176,6 @@ def aggregate_exit_code(results: Sequence[CheckResult]) -> int:
     return EXIT_OK
 
 
-def is_expected_evaluation_pending(results: Sequence[CheckResult]) -> bool:
-    """Return true only for the V4-CM-2.2 action-48 intermediate state."""
-
-    by_target = {result.target: result for result in results}
-    if set(by_target) != {"files", *EXPECTED_STAGES, "neo4j"}:
-        return False
-    if any(
-        by_target[target].status != STATUS_PASS
-        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
-    ):
-        return False
-    evaluation = by_target["kosa_text2sql"]
-    details = evaluation.details
-    expected_mismatch = {
-        "table": "action_history",
-        "mismatch_kind": "ROW_COUNT",
-        "expected_row_count": 0,
-        "actual_row_count": 48,
-        "expected_policy": "bootstrap_empty",
-    }
-    return (
-        evaluation.status == STATUS_FAIL
-        and evaluation.exit_code == EXIT_MISMATCH
-        and details.get("profile") == "evaluation"
-        and details.get("expected_stage") == "corrected_base"
-        and details.get("mismatches") == [expected_mismatch]
-    )
-
-
 def _report_payload(results: Sequence[CheckResult]) -> dict[str, Any]:
     exit_code = aggregate_exit_code(results)
     payload = {
@@ -1185,9 +1184,6 @@ def _report_payload(results: Sequence[CheckResult]) -> dict[str, Any]:
         "dataset_epoch": manifest_v3.DATASET_EPOCH,
         "overall_status": STATUS_BY_EXIT.get(exit_code, STATUS_FAIL),
         "exit_code": exit_code,
-        "expected_intermediate_state": (
-            "PENDING_V4_CM_2_3" if is_expected_evaluation_pending(results) else None
-        ),
         "targets": [result.as_dict() for result in results],
         "verified_at": datetime.now(UTC).isoformat(),
     }
