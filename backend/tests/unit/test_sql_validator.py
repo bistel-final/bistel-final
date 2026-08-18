@@ -427,6 +427,30 @@ RED_NOT_ALLOWED_CASES: tuple[SqlCase, ...] = (
         ("허용",),
         note="public 외 schema 차단.",
     ),
+    SqlCase(
+        "R35_cte_shadowing_disallowed_table",
+        "RED_NOT_ALLOWED",
+        "WITH agent_run AS (SELECT 1 AS x) SELECT * FROM agent_run",
+        False,
+        ("허용",),
+        note="비허용 물리 테이블과 같은 이름의 CTE. shadowing 위장 차단.",
+    ),
+    SqlCase(
+        "R36_cte_shadowing_allowed_table",
+        "RED_NOT_ALLOWED",
+        "WITH evaluation AS (SELECT 1 AS x) SELECT * FROM evaluation",
+        False,
+        ("허용",),
+        note="허용 테이블과 같은 이름도 참조 모호성 때문에 차단.",
+    ),
+    SqlCase(
+        "R37_table_function_not_in_denylist",
+        "RED_NOT_ALLOWED",
+        "SELECT * FROM generate_series(1, 1000000)",
+        False,
+        ("허용", "함수"),
+        note="목록 밖 테이블 함수도 기본 거부된다. fail-open 금지.",
+    ),
 )
 
 
@@ -669,6 +693,30 @@ def test_invalid_sql_does_not_raise() -> None:
 
     assert result.valid is False
     assert result.reason
+
+
+@requires_validator
+def test_manifest_failure_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """column 정의를 읽지 못하면 검증을 건너뛰지 않고 전체를 거부한다.
+
+    빈 허용으로 강등하면 방어 한 단계가 조용히 꺼진 채 SQL 이 실행된다.
+    """
+    from app.analytics import sql_validator as validator_module
+
+    monkeypatch.setattr(
+        validator_module,
+        "RUNTIME_MANIFEST_PATH",
+        tmp_path / "missing.json",
+    )
+    validator_module._manifest_columns.cache_clear()
+    try:
+        result = validator_module.validate_sql("SELECT parameter FROM dim_parameter")
+        assert result.valid is False
+        assert "manifest" in (result.reason or "")
+    finally:
+        validator_module._manifest_columns.cache_clear()
 
 
 def test_case_ids_are_unique() -> None:
