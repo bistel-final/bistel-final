@@ -15,11 +15,12 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import apply_reference_extensions as reference_extensions
+import bootstrap_base_schema as base_schema
 import bootstrap_neo4j_graph as neo4j_bootstrap
 import build_corrected_dataset as corrected_builder
 import manifest_v3
@@ -38,6 +39,12 @@ from neo4j_target import Neo4jTargetError
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from value_normalization import (
+    VALUE_NORMALIZATION_VERSION,
+    column_type_registry,
+    logical_type,
+    normalize_db_row,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap"
@@ -56,9 +63,9 @@ EXIT_NOT_REGISTERED = manifest_v3.EXIT_NOT_REGISTERED
 EXIT_UNVERIFIABLE = 7
 
 EXPECTED_STAGES = {
-    "kosa_agent": "base_schema",
-    "kosa_agent_e2e": "base_schema",
-    "kosa_text2sql": "base_schema",
+    "kosa_agent": "corrected_base",
+    "kosa_agent_e2e": "corrected_base",
+    "kosa_text2sql": "corrected_base",
 }
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
@@ -665,18 +672,70 @@ def _scalar(result: Any) -> Any:
         ) from exc
 
 
-def _db_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, datetime):
-        return value.isoformat(sep=" ")
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    return str(value)
+def _expected_column_types(table: str) -> dict[str, str]:
+    if table in base_schema.BASE_COLUMNS:
+        return column_type_registry(base_schema.BASE_COLUMNS[table])
+    if table in reference_extensions.EXPECTED_TABLE_COLUMNS:
+        columns = reference_extensions.EXPECTED_TABLE_COLUMNS[table]
+        return {name: logical_type(data_type) for name, data_type, _nullable in columns}
+    raise manifest_v3.ManifestSchemaError(f"{table}: logical type registry가 없습니다")
+
+
+def _mismatch_details(
+    *,
+    target: BootstrapTarget,
+    stage: str,
+    inventory: str,
+    table_count: int,
+    action_history_rows: int | None,
+    table: str | None = None,
+    mismatch_kind: str | None = None,
+    expected_row_count: int | None = None,
+    actual_row_count: int | None = None,
+    expected_policy: str | None = None,
+    mismatches: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "profile": target.profile,
+        "expected_stage": stage,
+        "inventory": inventory,
+        "table_count": table_count,
+        "action_history_rows": action_history_rows,
+    }
+    optional = {
+        "table": table,
+        "mismatch_kind": mismatch_kind,
+        "expected_row_count": expected_row_count,
+        "actual_row_count": actual_row_count,
+        "expected_policy": expected_policy,
+    }
+    details.update({key: value for key, value in optional.items() if value is not None})
+    if mismatches is not None:
+        details["mismatches"] = [dict(mismatch) for mismatch in mismatches]
+    return details
+
+
+def _table_mismatch(
+    table: str,
+    mismatch_kind: str,
+    *,
+    expected_row_count: int | None = None,
+    actual_row_count: int | None = None,
+    expected_policy: str | None = None,
+) -> dict[str, Any]:
+    mismatch: dict[str, Any] = {
+        "table": table,
+        "mismatch_kind": mismatch_kind,
+    }
+    optional = {
+        "expected_row_count": expected_row_count,
+        "actual_row_count": actual_row_count,
+        "expected_policy": expected_policy,
+    }
+    mismatch.update(
+        {key: value for key, value in optional.items() if value is not None}
+    )
+    return mismatch
 
 
 def _engine_for(target: BootstrapTarget) -> Engine:
@@ -765,6 +824,10 @@ def verify_database(
         expected_stage=stage,
         expected_archive_sha256=epoch["archive"]["sha256"],
     )
+    if registered["value_normalization_version"] != VALUE_NORMALIZATION_VERSION:
+        raise manifest_v3.ManifestMetadataError(
+            "DB manifest value normalization version이 다릅니다"
+        )
     target = load_bootstrap_target(database, environ=environ)
     expected_tables = set(registered["tables"])
     if any(not IDENTIFIER_PATTERN.fullmatch(table) for table in expected_tables):
@@ -795,14 +858,16 @@ def verify_database(
             if actual_tables != expected_tables:
                 raise AcceptanceMismatchError(
                     "DB object 집합이 stage 계약과 다릅니다",
-                    details={
-                        "profile": target.profile,
-                        "expected_stage": stage,
-                        "inventory": inventory,
-                        "table_count": len(actual_tables),
-                        "action_history_rows": row_counts.get("action_history"),
-                    },
+                    details=_mismatch_details(
+                        target=target,
+                        stage=stage,
+                        inventory=inventory,
+                        table_count=len(actual_tables),
+                        action_history_rows=row_counts.get("action_history"),
+                        mismatch_kind="TABLE_INVENTORY",
+                    ),
                 )
+            mismatches: list[dict[str, Any]] = []
             for table in sorted(expected_tables):
                 privilege = _scalar(
                     _sql(
@@ -816,61 +881,103 @@ def verify_database(
                         "DB table SELECT 권한이 없습니다",
                         reason_code="NO_SELECT_GRANT",
                     )
-                columns = [
-                    str(row["column_name"])
-                    for row in _rows(
-                        _sql(
-                            connection,
-                            """
-                            SELECT column_name
-                            FROM information_schema.columns
-                            WHERE table_schema = 'public' AND table_name = %s
-                            ORDER BY ordinal_position
-                            """,
-                            (table,),
-                        )
+                column_rows = _rows(
+                    _sql(
+                        connection,
+                        """
+                        SELECT a.attname AS column_name,
+                               format_type(a.atttypid, a.atttypmod) AS data_type
+                        FROM pg_class c
+                        JOIN pg_namespace n ON n.oid = c.relnamespace
+                        JOIN pg_attribute a ON a.attrelid = c.oid
+                        WHERE n.nspname = 'public' AND c.relname = %s
+                          AND c.relkind IN ('r','p')
+                          AND a.attnum > 0 AND NOT a.attisdropped
+                        ORDER BY a.attnum
+                        """,
+                        (table,),
                     )
-                ]
+                )
+                columns = [str(row["column_name"]) for row in column_rows]
                 expected = registered["tables"][table]
                 if any(not IDENTIFIER_PATTERN.fullmatch(column) for column in columns):
                     raise manifest_v3.ManifestSchemaError(
                         "DB manifest column 식별자가 잘못됐습니다"
                     )
                 if columns != expected["columns"]:
-                    raise AcceptanceMismatchError(
-                        "DB column order가 stage manifest와 다릅니다",
-                        details={
-                            "profile": target.profile,
-                            "expected_stage": stage,
-                            "inventory": inventory,
-                            "table_count": len(actual_tables),
-                            "action_history_rows": row_counts.get("action_history"),
-                        },
+                    mismatches.append(
+                        _table_mismatch(
+                            table,
+                            "COLUMN_ORDER",
+                            expected_policy=expected["verification_policy"],
+                        )
                     )
+                    continue
+                actual_types = {
+                    str(row["column_name"]): logical_type(str(row["data_type"]))
+                    for row in column_rows
+                }
+                expected_types = _expected_column_types(table)
+                if actual_types != expected_types:
+                    mismatches.append(
+                        _table_mismatch(
+                            table,
+                            "COLUMN_TYPE",
+                            expected_policy=expected["verification_policy"],
+                        )
+                    )
+                    continue
                 if expected["verification_policy"] == "schema_only":
                     continue
                 selected = ", ".join(f'"{column}"' for column in columns)
                 values = [
-                    {column: _db_text(row[column]) for column in columns}
+                    normalize_db_row(row, expected_types)
                     for row in _rows(
                         _sql(connection, f'SELECT {selected} FROM "{table}"')
                     )
                 ]
-                if (
-                    len(values) != expected["row_count"]
-                    or manifest_v3.hash_canonical_rows(values)
-                    != expected["content_hash"]
-                ):
-                    raise AcceptanceMismatchError(
-                        "DB content가 stage manifest와 다릅니다",
-                        details={
-                            "profile": target.profile,
-                            "expected_stage": stage,
-                            "inventory": inventory,
-                            "table_count": len(actual_tables),
-                            "action_history_rows": row_counts.get("action_history"),
-                        },
+                if len(values) != expected["row_count"]:
+                    mismatches.append(
+                        _table_mismatch(
+                            table,
+                            "ROW_COUNT",
+                            expected_row_count=expected["row_count"],
+                            actual_row_count=len(values),
+                            expected_policy=expected["verification_policy"],
+                        )
                     )
+                elif (
+                    manifest_v3.hash_canonical_rows(values) != expected["content_hash"]
+                ):
+                    mismatches.append(
+                        _table_mismatch(
+                            table,
+                            "CONTENT_HASH",
+                            expected_row_count=expected["row_count"],
+                            actual_row_count=len(values),
+                            expected_policy=expected["verification_policy"],
+                        )
+                    )
+            if stage != "base_schema":
+                try:
+                    reference_extensions.postcheck_database(
+                        connection,
+                        action_rows_before=row_counts.get("action_history", 0),
+                    )
+                except reference_extensions.ReferenceExtensionError:
+                    mismatches.append({"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"})
+            if mismatches:
+                raise AcceptanceMismatchError(
+                    "DB acceptance 계약이 다릅니다",
+                    details=_mismatch_details(
+                        target=target,
+                        stage=stage,
+                        inventory=inventory,
+                        table_count=len(actual_tables),
+                        action_history_rows=row_counts.get("action_history"),
+                        mismatches=mismatches,
+                    ),
+                )
     except SQLAlchemyError as exc:
         raise UnverifiableError(
             "PostgreSQL read-only 검증을 수행할 수 없습니다",
@@ -1041,6 +1148,35 @@ def aggregate_exit_code(results: Sequence[CheckResult]) -> int:
     return EXIT_OK
 
 
+def is_expected_evaluation_pending(results: Sequence[CheckResult]) -> bool:
+    """Return true only for the V4-CM-2.2 action-48 intermediate state."""
+
+    by_target = {result.target: result for result in results}
+    if set(by_target) != {"files", *EXPECTED_STAGES, "neo4j"}:
+        return False
+    if any(
+        by_target[target].status != STATUS_PASS
+        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
+    ):
+        return False
+    evaluation = by_target["kosa_text2sql"]
+    details = evaluation.details
+    expected_mismatch = {
+        "table": "action_history",
+        "mismatch_kind": "ROW_COUNT",
+        "expected_row_count": 0,
+        "actual_row_count": 48,
+        "expected_policy": "bootstrap_empty",
+    }
+    return (
+        evaluation.status == STATUS_FAIL
+        and evaluation.exit_code == EXIT_MISMATCH
+        and details.get("profile") == "evaluation"
+        and details.get("expected_stage") == "corrected_base"
+        and details.get("mismatches") == [expected_mismatch]
+    )
+
+
 def _report_payload(results: Sequence[CheckResult]) -> dict[str, Any]:
     exit_code = aggregate_exit_code(results)
     payload = {
@@ -1049,6 +1185,9 @@ def _report_payload(results: Sequence[CheckResult]) -> dict[str, Any]:
         "dataset_epoch": manifest_v3.DATASET_EPOCH,
         "overall_status": STATUS_BY_EXIT.get(exit_code, STATUS_FAIL),
         "exit_code": exit_code,
+        "expected_intermediate_state": (
+            "PENDING_V4_CM_2_3" if is_expected_evaluation_pending(results) else None
+        ),
         "targets": [result.as_dict() for result in results],
         "verified_at": datetime.now(UTC).isoformat(),
     }

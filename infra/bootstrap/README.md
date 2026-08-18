@@ -12,7 +12,8 @@
 | source files | `source-data-manifest.json` | **v3 등록됨** | V4-CM-1.1 |
 | corrected files | `corrected-data-manifest.json` + `markers/corrected.v1.json` | **v3 등록됨** | V4-CM-1.7 |
 | DB base schema stage | `manifests/{profile}.base_schema.json` | **v3 등록됨** | V4-CM-1.5 |
-| 후속 DB bootstrap stage | `manifests/{profile}.{stage}.json` | `NOT_REGISTERED` | V4-CM-1.7 이후 |
+| DB corrected base stage | `manifests/{profile}.corrected_base.json` | **v3 등록됨** | V4-CM-2.2 |
+| 후속 DB bootstrap stage | `manifests/{profile}.{stage}.json` | 일부 미등록 | V4-CM-2.3 이후 |
 | synthetic evaluation | `synthetic-evaluation-manifest.json` | `NOT_REGISTERED` | 평가 소유 Task |
 
 미등록 artifact를 빈 JSON placeholder로 만들지 않는다. 검증기는 파일이 없으면 DB 연결이나
@@ -207,7 +208,7 @@ python scripts/verify_bootstrap_state.py \
 
 개별 검증은 stdout만 사용하고 `--report <path>`를 명시했을 때만 report를 쓴다. `--all`은
 version-controlled `EXPECTED_STAGES`를 사용하며 inventory 결과로 합격 stage를 자동 선택하지
-않는다. 현재 기대 stage는 세 PostgreSQL DB 모두 `base_schema`다. DB profile끼리 content hash를
+않는다. 현재 기대 stage는 세 PostgreSQL DB 모두 `corrected_base`다. DB profile끼리 content hash를
 서로 비교하지 않고, 각 DB를 자신에게 해당하는 등록 manifest와만 대조한다.
 
 PostgreSQL은 `SET TRANSACTION READ ONLY`, public schema `USAGE`, table별 `SELECT` 권한을
@@ -243,7 +244,7 @@ relation ID 81개·중복 0, label/type 분포, graph/schema fingerprint와 succ
 | `5` | manifest·receipt·report·CSV schema/hash 오류 |
 | `6` | active pointer, build 또는 receipt가 없거나 무결성 오류 |
 
-집중 검증:
+Corrected dataset build 집중 검증:
 
 ```bash
 cd backend
@@ -280,8 +281,9 @@ manifest registry는 `(profile, bootstrap_stage)`를 key로 사용한다.
 | evaluation | `evaluation_mock` | `reference_extensions` | `001_reference_extensions` |
 | runtime | `runtime_clean` | `runtime_clean` | `001_reference_extensions`, `002_agent_runtime_clean` |
 
-위 여섯 조합 외에는 DB 접근 전에 거부한다. `base_schema` 두 manifest는 V4-CM-1.5에서
-등록했으며 나머지는 각 후속 bootstrap Task가 등록한다.
+위 여섯 조합 외에는 DB 접근 전에 거부한다. `base_schema` 두 manifest는 V4-CM-1.5,
+`corrected_base` 두 manifest는 V4-CM-2.2에서 등록했으며 나머지는 각 후속 bootstrap Task가
+등록한다. 모든 DB manifest는 `value_normalization_version=db-value-v1`을 기록한다.
 
 ### Base schema 생성·검증
 
@@ -470,7 +472,80 @@ schema stage를 `reference_extensions`로 올리는 반면 `corrected_base`·`ev
 profile manifest 등록은 `V4-CM-2.2`·`V4-CM-2.3` 소관이므로, 그 전까지 stage mismatch는 예상된
 Gate 상태다.
 
-집중 검증:
+### Corrected base data 채택·적재
+
+`V4-CM-2.2`는 등록된 active corrected build만 입력으로 허용한다. source archive,
+corrected manifest·registration marker·build receipt와 generator identity를 mutation 전에 하나의
+SHA-256 identity로 묶으며 임의 data directory 우회는 제공하지 않는다.
+
+DB와 CSV의 numeric·boolean·timestamp·JSON 값을 `db-value-v1` 규칙으로 정규화해 비교한다.
+NULL은 JSON `null`, 빈 문자열은 `""`로 서로 다르게 유지한다. CSV의 빈 cell은 load contract상
+NULL이며, 이 규칙은 다음 `evaluation_mock` action 48건 적재에도 그대로 적용한다.
+
+| database | 경로 | action_history |
+|---|---|---:|
+| `kosa_agent_e2e` | corrected base 8 table을 FK 순서로 신규 적재 | 0 유지 |
+| `kosa_agent` | 기존 내용 채택, `dim_parameter.parameter_name` 3건만 보정 | 0 유지 |
+| `kosa_text2sql` | 기존 내용 채택, 같은 3건만 보정 | 48 유지 |
+
+runner는 `action_history`, R03·corpus 4 table, `nl_query_log`에 DML을 실행하지 않는다. mutation은
+공통 advisory lock을 얻은 `REPEATABLE READ` 단일 transaction이며 timeout·FK 오류·postcheck
+실패 시 전체 rollback한다. `nl_query_log`는 누적 table이므로 schema만 검증한다.
+
+```bash
+cd backend
+
+# DB 접속 없이 corrected_base manifest 2종의 변경만 미리 본다.
+python scripts/load_corrected_base.py --register-manifests
+
+# 코드 리뷰로 확정된 manifest만 원자 등록한다.
+python scripts/load_corrected_base.py --register-manifests --confirm
+
+# 각 DB의 001 marker/signature와 EMPTY·ADOPTED·NEEDS_FIXUP·DRIFT 상태만 읽는다.
+python scripts/load_corrected_base.py \
+  --database kosa_agent_e2e --preflight
+
+# E2E 전용 실제 bulk 적재 경로를 실행하고 무조건 rollback한다.
+python scripts/load_corrected_base.py \
+  --database kosa_agent_e2e --rehearse --confirm-target kosa_agent_e2e
+
+# 승인 후 실제 적용. 세 DB를 한 명령으로 묶지 않는다.
+python scripts/load_corrected_base.py \
+  --database kosa_agent_e2e --confirm-target kosa_agent_e2e --change-ref GH-<number>
+python scripts/load_corrected_base.py \
+  --database kosa_agent --confirm-target kosa_agent --change-ref GH-<number>
+python scripts/load_corrected_base.py \
+  --database kosa_text2sql --confirm-target kosa_text2sql --change-ref GH-<number>
+
+# DB commit 뒤 완료 artifact 저장이 중단됐을 때만 사용한다.
+python scripts/load_corrected_base.py \
+  --recover-artifact --database kosa_agent \
+  --confirm-target kosa_agent --change-ref GH-<number>
+```
+
+runtime 두 DB는 성공 marker를 마지막에 기록한다. evaluation DB는 action 48을 다음 stage까지
+보존하므로 success marker 대신 `alignment_report.kosa_text2sql.json`에 데이터 정렬 완료와
+`stage_acceptance_status=PENDING`, `next_stage_task=V4-CM-2.3`을 기록한다. 이 중간 상태에서
+`--all`의 유일한 실패가 evaluation `action_history` 기대 0/실제 48이면 report에
+`PENDING_V4_CM_2_3`으로 표시하며, 그 밖의 불일치는 예정 상태로 수용하지 않는다.
+
+현재 PR의 로컬 구현·단위 테스트 단계에서는 공용 DB에 mutation을 실행하지 않는다. 독립 코드
+리뷰와 최종 검증 후 사용자 승인으로 E2E → runtime → evaluation 순서로 적용한다.
+
+Corrected base 집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_load_corrected_base.py \
+  tests/unit/test_value_normalization.py \
+  tests/unit/test_verify_bootstrap_state.py
+ruff check scripts/load_corrected_base.py scripts/value_normalization.py \
+  scripts/mutation_runtime.py tests/unit/test_load_corrected_base.py
+ruff format --check scripts/load_corrected_base.py scripts/value_normalization.py \
+  scripts/mutation_runtime.py tests/unit/test_load_corrected_base.py
+```
+
+Reference extension 집중 검증:
 
 ```bash
 cd backend

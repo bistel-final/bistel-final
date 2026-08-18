@@ -246,6 +246,50 @@ class _CatalogConnection:
         raise AssertionError(f"예상하지 않은 catalog query: {sql}")
 
 
+class _ExtendedCatalogConnection(_CatalogConnection):
+    """001이 생성한 추가 table이 있어도 base 계약만 검증한다."""
+
+    def exec_driver_sql(self, sql: str, parameters: Any = None) -> _Result:
+        result = super().exec_driver_sql(sql, parameters)
+        if "base-schema:columns" in sql:
+            result.rows.append(
+                {
+                    "table_name": "document_corpus",
+                    "ordinal_position": 1,
+                    "column_name": "corpus_revision",
+                    "data_type": "character varying(64)",
+                    "nullable": False,
+                    "column_default": None,
+                }
+            )
+        elif "base-schema:constraints" in sql:
+            result.rows.append(
+                {
+                    "table_name": "document_corpus",
+                    "contype": "p",
+                    "columns": ["corpus_revision"],
+                    "reference_table": None,
+                    "reference_columns": [],
+                    "update_action": "a",
+                    "delete_action": "a",
+                    "definition": "PRIMARY KEY",
+                }
+            )
+        elif "base-schema:indexes" in sql:
+            result.rows.append(
+                {
+                    "table_name": "document_corpus",
+                    "index_name": "document_corpus_pkey",
+                    "method": "btree",
+                    "is_unique": True,
+                    "is_primary": True,
+                    "is_constraint": True,
+                    "columns": ["corpus_revision"],
+                }
+            )
+        return result
+
+
 def _inspection(state: str) -> bootstrap.Inspection:
     return bootstrap.Inspection(
         state,
@@ -484,6 +528,18 @@ class TestBootstrapLifecycle:
         assert inspection.constraint_index_count == 9
         assert inspection.total_index_count == 13
         assert inspection.row_counts == {table: 0 for table in bootstrap.BASE_COLUMNS}
+
+    def test_base_signature_ignores_reference_extension_tables(self) -> None:
+        signature, index_counts = bootstrap.build_actual_signature(
+            _ExtendedCatalogConnection()
+        )
+
+        assert signature == bootstrap.EXPECTED_SIGNATURE
+        assert index_counts == (
+            bootstrap.EXPECTED_EXPLICIT_INDEX_COUNT,
+            bootstrap.EXPECTED_CONSTRAINT_INDEX_COUNT,
+            bootstrap.EXPECTED_TOTAL_INDEX_COUNT,
+        )
 
     def test_apply_absent_schema_and_write_applied_marker(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

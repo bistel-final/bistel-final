@@ -3,7 +3,6 @@
 import copy
 import csv
 import hashlib
-import importlib.util
 import io
 import json
 import sys
@@ -12,12 +11,11 @@ from pathlib import Path
 
 import pytest
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "scripts" / "manifest_v3.py"
-_spec = importlib.util.spec_from_file_location("manifest_v3", MODULE_PATH)
-manifest_v3 = importlib.util.module_from_spec(_spec)
-sys.modules["manifest_v3"] = manifest_v3
-_spec.loader.exec_module(manifest_v3)
-mv3 = manifest_v3
+SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+import manifest_v3 as mv3  # noqa: E402
 
 DIGEST = "a" * 64
 EMPTY_DIGEST = mv3._hash_canonical_rows([])
@@ -87,6 +85,7 @@ def _db_manifest(profile: str, stage: str) -> dict:
         "source_archive_sha256": DIGEST,
         "correction_version": "v1",
         "hash_algorithm": mv3.HASH_ALGORITHM,
+        "value_normalization_version": mv3.VALUE_NORMALIZATION_VERSION,
         "profile": profile,
         "applies_to": list(mv3.PROFILE_APPLIES_TO[profile]),
         "bootstrap_stage": stage,
@@ -440,6 +439,21 @@ class TestManifestSchemas:
         with pytest.raises(mv3.ManifestMetadataError):
             mv3.validate_manifest_schema(
                 manifest, expected_artifact_type="source_files"
+            )
+
+    def test_db_value_normalization_version_is_required_and_fixed(self) -> None:
+        manifest = _db_manifest("runtime", "base_schema")
+        manifest.pop("value_normalization_version")
+        with pytest.raises(mv3.ManifestSchemaError, match="누락"):
+            mv3.validate_manifest_schema(
+                manifest, expected_artifact_type="db_bootstrap"
+            )
+
+        manifest = _db_manifest("runtime", "base_schema")
+        manifest["value_normalization_version"] = "db-value-v0"
+        with pytest.raises(mv3.ManifestMetadataError, match="normalization"):
+            mv3.validate_manifest_schema(
+                manifest, expected_artifact_type="db_bootstrap"
             )
 
     @pytest.mark.parametrize("field", sorted(mv3.COMMON_ENVELOPE_KEYS))

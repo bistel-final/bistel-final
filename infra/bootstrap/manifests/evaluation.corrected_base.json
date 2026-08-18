@@ -1,0 +1,291 @@
+{
+  "format_version": 3,
+  "artifact_type": "db_bootstrap",
+  "dataset_epoch": "kosa_0813",
+  "source_archive_sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96",
+  "correction_version": "corrected-base-v1",
+  "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "value_normalization_version": "db-value-v1",
+  "profile": "evaluation",
+  "applies_to": [
+    "kosa_text2sql"
+  ],
+  "bootstrap_stage": "corrected_base",
+  "schema_stage": "reference_extensions",
+  "applied_migrations": [
+    "001_reference_extensions"
+  ],
+  "tables": {
+    "action_history": {
+      "columns": [
+        "action_id",
+        "lot_id",
+        "recipe_step_name",
+        "equipment_id",
+        "chamber_id",
+        "trigger_alarm_lot_hist_id",
+        "action_code",
+        "reason",
+        "approval_required",
+        "approval_status",
+        "approved_by",
+        "approved_at",
+        "notify_status",
+        "notify_at",
+        "mes_status",
+        "mes_at",
+        "created_at"
+      ],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "dim_parameter": {
+      "columns": [
+        "parameter_id",
+        "parameter_name",
+        "unit",
+        "area",
+        "target_value",
+        "spec_lower",
+        "ctrl_lower",
+        "ctrl_upper",
+        "spec_upper",
+        "upper_only"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 8,
+      "content_hash": "86aba33d81cdbbf212099d6bea5d1ca81ba0bd1022a699d3dc6f90b3cf899ab8"
+    },
+    "evaluation": {
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "point_cnt",
+        "ooc_point_cnt",
+        "oos_point_cnt",
+        "alarm_type"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 4800,
+      "content_hash": "c7c314c536bbe78cae9edee0810d3ca481de7b31255ea9932f8548ecc4457cc3"
+    },
+    "fdc_trace": {
+      "columns": [
+        "lot_hist_id",
+        "parameter_id",
+        "seq_no",
+        "recipe_step_no",
+        "step_seq",
+        "measured_at",
+        "value"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 14400,
+      "content_hash": "193fc3121dc335d2f18174c30520d038ffe5b378bd97400625c160c87f79c2da"
+    },
+    "lot_history": {
+      "columns": [
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "device_id",
+        "step_id",
+        "area_id",
+        "equipment_id",
+        "chamber_id",
+        "recipe_id",
+        "track_in_at",
+        "track_out_at",
+        "duration_sec",
+        "chamber_wafer_cum",
+        "lot_seq",
+        "fault_code"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 600,
+      "content_hash": "a0164007d284f4599c2cc1eb8a4f44dcfb8dafb024dd6a6b02875270245f7606"
+    },
+    "metrology": {
+      "columns": [
+        "metrology_id",
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "step_id",
+        "measure_type",
+        "unit",
+        "measured_value",
+        "spec_center",
+        "spec_lower",
+        "spec_upper",
+        "alarm_result",
+        "measured_at"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 48,
+      "content_hash": "2ba17e5f74540f81c3c1ad1507c5ef8d1aef5da39e5a1d2758941d39f8f3acb8"
+    },
+    "summary_alarm_history": {
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "statistic_type",
+        "stat_value",
+        "cl",
+        "ucl",
+        "lcl",
+        "limit_type",
+        "alarm_type"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 47,
+      "content_hash": "ac3410fbffa57ff9a0512b8286ce9692230ca492bdd31e61c1ea918f4a72629e"
+    },
+    "summary_data": {
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "value_mean",
+        "value_std",
+        "value_min",
+        "value_max",
+        "point_cnt"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 4800,
+      "content_hash": "e04dde914aaffed65c8b3d7f65cc1fdba563dcd2907987dae9f6ee7532fafc4f"
+    },
+    "trace_alarm_history": {
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "seq_no",
+        "value",
+        "limit_type",
+        "limit_value",
+        "alarm_type"
+      ],
+      "verification_policy": "immutable_content",
+      "row_count": 126,
+      "content_hash": "8a461d5dfc31721877dc61663bc7569c69a472f5aaf8fec7cf580703a0aecda2"
+    },
+    "document": {
+      "columns": [
+        "corpus_revision",
+        "doc_id",
+        "title",
+        "doc_type",
+        "model_code",
+        "source_path",
+        "version",
+        "content_sha256"
+      ],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document_chunk": {
+      "columns": [
+        "corpus_revision",
+        "chunk_id",
+        "doc_id",
+        "chunk_seq",
+        "section_title",
+        "content",
+        "model_code",
+        "embedding"
+      ],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document_corpus": {
+      "columns": [
+        "corpus_revision",
+        "status",
+        "embedding_model_code",
+        "embedding_dim",
+        "manifest_sha256",
+        "document_count",
+        "chunk_count",
+        "created_at",
+        "activated_at",
+        "retired_at"
+      ],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "nl_query_log": {
+      "columns": [
+        "nl_query_log_id",
+        "asked_at",
+        "question",
+        "generated_sql",
+        "outcome",
+        "is_valid",
+        "is_rejected",
+        "reject_reason",
+        "row_cnt",
+        "latency_ms",
+        "error_msg"
+      ],
+      "verification_policy": "schema_only"
+    },
+    "r03_alarm_history": {
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "lot_hist_id",
+        "lot_id",
+        "equipment_id",
+        "chamber_id",
+        "parameter_id",
+        "recipe_step_no",
+        "trigger_wafer_no",
+        "member_refs",
+        "policy_version"
+      ],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  }
+}

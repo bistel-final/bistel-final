@@ -60,6 +60,7 @@ from schema_lock import (
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from value_normalization import VALUE_NORMALIZATION_VERSION
 
 BOOTSTRAP_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap"
 BASE_SCHEMA_SQL_PATH = BOOTSTRAP_ROOT / "001_base_schema.sql"
@@ -530,6 +531,7 @@ def build_base_manifest(profile: str) -> dict[str, Any]:
         "source_archive_sha256": epoch["archive"]["sha256"],
         "correction_version": CORRECTION_VERSION,
         "hash_algorithm": HASH_ALGORITHM,
+        "value_normalization_version": VALUE_NORMALIZATION_VERSION,
         "profile": profile,
         "applies_to": list(PROFILE_APPLIES_TO[profile]),
         "bootstrap_stage": "base_schema",
@@ -596,7 +598,9 @@ def build_actual_signature(
     for row in _result_rows(connection.exec_driver_sql(COLUMNS_SQL)):
         table = str(row["table_name"])
         if table not in tables:
-            raise DatabaseStateError("예상 밖 public table column이 있습니다")
+            # Reference/runtime migrations add public tables after the base stage.
+            # They must not weaken the exact contract of the original nine tables.
+            continue
         tables[table]["columns"].append(
             {
                 "name": str(row["column_name"]),
@@ -608,6 +612,8 @@ def build_actual_signature(
 
     for row in _result_rows(connection.exec_driver_sql(CONSTRAINTS_SQL)):
         table = str(row["table_name"])
+        if table not in tables:
+            continue
         columns = _name_array(row.get("columns"))
         kind = row["contype"]
         if kind == "p":
@@ -639,12 +645,14 @@ def build_actual_signature(
     constraint_count = 0
     total_count = 0
     for row in _result_rows(connection.exec_driver_sql(INDEXES_SQL)):
+        table = str(row["table_name"])
+        if table not in tables:
+            continue
         total_count += 1
         if bool(row["is_constraint"]):
             constraint_count += 1
             continue
         explicit_count += 1
-        table = str(row["table_name"])
         tables[table]["indexes"].append(
             {
                 "name": str(row["index_name"]),

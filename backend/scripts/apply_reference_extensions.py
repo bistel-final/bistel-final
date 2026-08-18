@@ -37,12 +37,11 @@ from db_target import (
     BootstrapTarget,
     TargetValidationError,
     load_bootstrap_target,
-    set_and_validate_public_search_path,
-    validate_connected_identity,
     validate_url_components,
 )
 from dotenv import load_dotenv
 from manifest_v3 import atomic_save_json, scan_for_sensitive_values
+from mutation_runtime import prepare_transaction
 from schema_lock import advisory_lock_key
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -1295,11 +1294,12 @@ def _engine_for(target: BootstrapTarget) -> Engine:
 def _prepare_transaction(
     connection: Any, target: BootstrapTarget, *, readonly: bool
 ) -> None:
-    if readonly:
-        connection.exec_driver_sql("SET TRANSACTION READ ONLY")
-    validate_connected_identity(connection, target)
-    set_and_validate_public_search_path(connection)
-    acquire_advisory_lock(connection, target.database)
+    prepare_transaction(
+        connection,
+        target,
+        readonly=readonly,
+        acquire_lock=acquire_advisory_lock,
+    )
 
 
 def run_preflight(
