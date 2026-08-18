@@ -20,6 +20,8 @@ from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from value_normalization import VALUE_NORMALIZATION_VERSION
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap"
 DATASET_EPOCH_PATH = BOOTSTRAP_ROOT / "dataset-epoch.json"
@@ -614,6 +616,13 @@ def _validate_common_envelope(
         raise ManifestMetadataError("manifest dataset_epoch가 현재 기준과 다릅니다")
     if manifest.get("hash_algorithm") != HASH_ALGORITHM:
         raise ManifestMetadataError("manifest hash_algorithm이 현재 계약과 다릅니다")
+    if (
+        expected_artifact_type == "db_bootstrap"
+        and manifest.get("value_normalization_version") != VALUE_NORMALIZATION_VERSION
+    ):
+        raise ManifestMetadataError(
+            "manifest value_normalization_version이 현재 계약과 다릅니다"
+        )
     _require_sha256(
         manifest.get("source_archive_sha256"), context="source_archive_sha256"
     )
@@ -805,6 +814,7 @@ def validate_manifest_schema(
         "corrected_files": COMMON_ENVELOPE_KEYS | {"tables"},
         "db_bootstrap": COMMON_ENVELOPE_KEYS
         | {
+            "value_normalization_version",
             "profile",
             "applies_to",
             "bootstrap_stage",

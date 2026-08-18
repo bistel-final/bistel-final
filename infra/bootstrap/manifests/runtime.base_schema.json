@@ -1,0 +1,73 @@
+{
+  "format_version": 3,
+  "artifact_type": "db_bootstrap",
+  "dataset_epoch": "kosa_0813",
+  "source_archive_sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96",
+  "correction_version": "base-schema-v1",
+  "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "value_normalization_version": "db-value-v1",
+  "profile": "runtime",
+  "applies_to": [
+    "kosa_agent",
+    "kosa_agent_e2e"
+  ],
+  "bootstrap_stage": "base_schema",
+  "schema_stage": "base",
+  "applied_migrations": [],
+  "tables": {
+    "action_history": {
+      "columns": ["action_id", "lot_id", "recipe_step_name", "equipment_id", "chamber_id", "trigger_alarm_lot_hist_id", "action_code", "reason", "approval_required", "approval_status", "approved_by", "approved_at", "notify_status", "notify_at", "mes_status", "mes_at", "created_at"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "dim_parameter": {
+      "columns": ["parameter_id", "parameter_name", "unit", "area", "target_value", "spec_lower", "ctrl_lower", "ctrl_upper", "spec_upper", "upper_only"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evaluation": {
+      "columns": ["lot_hist_id", "area", "equipment", "chamber", "parameter", "recipe", "lot", "wafer", "step_no", "step_seq", "point_cnt", "ooc_point_cnt", "oos_point_cnt", "alarm_type"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "fdc_trace": {
+      "columns": ["lot_hist_id", "parameter_id", "seq_no", "recipe_step_no", "step_seq", "measured_at", "value"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "lot_history": {
+      "columns": ["lot_hist_id", "lot_id", "wafer_no", "wafer_id", "device_id", "step_id", "area_id", "equipment_id", "chamber_id", "recipe_id", "track_in_at", "track_out_at", "duration_sec", "chamber_wafer_cum", "lot_seq", "fault_code"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "metrology": {
+      "columns": ["metrology_id", "lot_hist_id", "lot_id", "wafer_no", "wafer_id", "step_id", "measure_type", "unit", "measured_value", "spec_center", "spec_lower", "spec_upper", "alarm_result", "measured_at"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "summary_alarm_history": {
+      "columns": ["alarm_id", "occurred_at", "area", "equipment", "chamber", "parameter", "recipe", "lot", "wafer", "step_no", "step_seq", "statistic_type", "stat_value", "cl", "ucl", "lcl", "limit_type", "alarm_type"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "summary_data": {
+      "columns": ["lot_hist_id", "area", "equipment", "chamber", "parameter", "recipe", "lot", "wafer", "step_no", "step_seq", "value_mean", "value_std", "value_min", "value_max", "point_cnt"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "trace_alarm_history": {
+      "columns": ["alarm_id", "occurred_at", "area", "equipment", "chamber", "parameter", "recipe", "lot", "wafer", "step_no", "step_seq", "seq_no", "value", "limit_type", "limit_value", "alarm_type"],
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  }
+}

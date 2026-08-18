@@ -326,8 +326,8 @@ EQP_HOLD는 action·approval transaction을 먼저 커밋하고 승인 요청 �
 ### 7.2 Profile별 reference·Runtime CREATE migration
 
 - `001_reference_extensions.sql`은 `kosa_agent`·`kosa_agent_e2e`·`kosa_text2sql`에 R03·document corpus·`nl_query_log`·통합 view를 공통 생성한다.
-- `001` 성공 후 세 DB에 corrected base data를 적재하되 `action_history=0`으로 두고 PK/FK·행 수·reference output을 검증한다.
-- corrected base data 적재 후 `kosa_text2sql`에만 제공 action 48건을 추가하고, DB 컬럼이 아닌 profile metadata `fixture_type=MOCK`으로 표시해 Text2SQL·화면 계약 회귀에만 사용한다.
+- `001` 성공 후 corrected base data를 profile별로 정렬한다. `kosa_agent`·`kosa_text2sql`은 기적재 corrected base를 채택하고 `dim_parameter.parameter_name` 3건만 보정하며, `kosa_agent_e2e`는 신규 적재한다. 최종 action 상태는 0/0/48이고 PK/FK·행 수·reference output을 검증한다. fresh bootstrap 결과는 종전과 같으며 기적재 DB의 adoption 경로만 추가한 것이다.
+- corrected base 정렬 후 `kosa_text2sql`의 제공 action 48건이 이미 있으면 제공본과 일치함을 검증하고(중복 적재 0건), 비어 있으면 적재한다. DB 컬럼이 아닌 profile metadata `fixture_type=MOCK`으로 표시해 Text2SQL·화면 계약 회귀에만 사용한다.
 - `002_agent_runtime_clean.sql`은 `001`과 corrected base data 적재 성공 후 runtime 2개 DB에만 Agent·승인·조치·감사·delivery 구조를 생성하며 action 0건 guard를 통과해야 한다.
 - 기존 구 DB의 ALTER·backfill 전용 migration을 재사용하지 않고 evaluation DB에 `002`를 적용하지 않는다.
 - `AlarmRef`, incident 실행 연결, 승인·조치·감사·Tool 호출·channel별 delivery를 지원한다.

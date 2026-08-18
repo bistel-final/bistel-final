@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -66,17 +67,65 @@ class AnalysisQueryResponse(ApiModel):
         return self
 
 
+class NlQueryOutcome(StrEnum):
+    SUCCESS = "SUCCESS"
+    POLICY_REJECTED = "POLICY_REJECTED"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    DB_ERROR = "DB_ERROR"
+
+
 class NlQueryLogItem(ApiModel):
     nl_query_log_id: int = Field(ge=1)
     asked_at: datetime
     question: str
     generated_sql: str | None = None
+    outcome: NlQueryOutcome
     is_valid: bool
     is_rejected: bool
     reject_reason: str | None = None
     row_cnt: int | None = Field(default=None, ge=0)
     latency_ms: int | None = Field(default=None, ge=0)
     error_msg: str | None = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> "NlQueryLogItem":
+        reject_reason_is_null = self.reject_reason is None
+        error_is_null = self.error_msg is None
+        has_reject_reason = bool(self.reject_reason)
+        has_error = bool(self.error_msg)
+        rules = {
+            NlQueryOutcome.SUCCESS: (
+                self.is_valid
+                and not self.is_rejected
+                and reject_reason_is_null
+                and error_is_null
+                and self.row_cnt is not None
+            ),
+            NlQueryOutcome.POLICY_REJECTED: (
+                not self.is_valid
+                and self.is_rejected
+                and has_reject_reason
+                and error_is_null
+                and self.row_cnt is None
+            ),
+            NlQueryOutcome.VALIDATION_FAILED: (
+                not self.is_valid
+                and not self.is_rejected
+                and reject_reason_is_null
+                and has_error
+                and self.row_cnt is None
+            ),
+            NlQueryOutcome.DB_ERROR: (
+                self.is_valid
+                and not self.is_rejected
+                and reject_reason_is_null
+                and has_error
+                and self.row_cnt is None
+            ),
+        }
+        if not rules[self.outcome]:
+            raise ValueError("Text2SQL outcome과 결과 필드가 일치하지 않습니다")
+        return self
 
 
 class NlQueryHistoryResponse(PageResponse[NlQueryLogItem]):
