@@ -56,8 +56,19 @@ _DSN_ENV_NAMES: dict[tuple[LogicalDb, PoolRole], str] = {
 }
 
 
+#: pool 용도별로 허용되는 DB 계정.
+#:
+#: role 이 이름표에 그치면 1차 방어선이 무너진다. QUERY 자리에 쓰기 가능한
+#: 계정을 적어두면 LLM 이 생성한 SQL 이 그대로 실행된다. DSN 오타 하나로
+#: 계정 분리 설계가 무의미해지므로 engine 생성 시점에 강제한다.
+_REQUIRED_USERNAME: dict[PoolRole, str] = {
+    PoolRole.QUERY: "kosa_readonly",
+    PoolRole.LOGGER: "kosa_query_logger",
+}
+
+
 class PoolConfigurationError(RuntimeError):
-    """DSN 미설정·형식 오류. 메시지에 비밀번호를 절대 담지 않는다."""
+    """DSN 미설정·형식 오류·계정 불일치. 메시지에 비밀번호를 절대 담지 않는다."""
 
 
 @dataclass(frozen=True)
@@ -145,6 +156,16 @@ class AnalyticsPoolFactory:
         if url.drivername != "postgresql+psycopg":
             raise PoolConfigurationError(
                 f"{env_name} 드라이버는 postgresql+psycopg 여야 한다: {url.drivername}"
+            )
+
+        # role 과 계정을 강제 연결한다. 설정 실수로 1차 방어선이 무너지는 것을
+        # 기동 시점에 막는다.
+        required = _REQUIRED_USERNAME[role]
+        if url.username != required:
+            raise PoolConfigurationError(
+                f"{env_name} 계정이 {role.value} pool 계약과 다르다: "
+                f"{url.username} (기대 {required}). "
+                "계정 권한이 1차 방어선이므로 다른 계정을 허용하지 않는다."
             )
 
         return url

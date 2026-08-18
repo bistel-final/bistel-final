@@ -123,6 +123,83 @@ def test_wrong_driver_is_rejected(
 
 
 # ---------------------------------------------------------------------------
+# role 과 계정 강제 연결
+#
+# role 이 이름표에 그치면 DSN 오타 하나로 1차 방어선이 무너진다. QUERY 자리에
+# 쓰기 가능한 계정을 적어두면 LLM 이 생성한 SQL 이 그대로 실행된다.
+# ---------------------------------------------------------------------------
+
+
+def test_query_pool_rejects_writable_account(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "TEXT2SQL_DATABASE_URL",
+        "postgresql+psycopg://kosa_app:pw@db.example.com:53001/kosa_agent",
+    )
+
+    with pytest.raises(PoolConfigurationError) as excinfo:
+        factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+
+    assert "kosa_readonly" in str(excinfo.value)
+
+
+def test_query_pool_rejects_admin_account(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """관리 계정은 모든 권한을 가지므로 가장 위험하다."""
+    monkeypatch.setenv(
+        "TEXT2SQL_DATABASE_URL",
+        "postgresql+psycopg://kosa:pw@db.example.com:53001/kosa_agent",
+    )
+
+    with pytest.raises(PoolConfigurationError):
+        factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+
+
+def test_logger_pool_rejects_readonly_account(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """logger 자리에 readonly 를 적으면 로그 기록이 조용히 실패한다."""
+    monkeypatch.setenv(
+        "TEXT2SQL_LOG_DATABASE_URL",
+        "postgresql+psycopg://kosa_readonly:pw@db.example.com:53001/kosa_agent",
+    )
+
+    with pytest.raises(PoolConfigurationError) as excinfo:
+        factory.get_engine(LogicalDb.RUNTIME, PoolRole.LOGGER)
+
+    assert "kosa_query_logger" in str(excinfo.value)
+
+
+def test_account_mismatch_error_hides_password(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "TEXT2SQL_DATABASE_URL",
+        "postgresql+psycopg://kosa_app:supersecret@db.example.com:53001/kosa_agent",
+    )
+
+    with pytest.raises(PoolConfigurationError) as excinfo:
+        factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+
+    assert "supersecret" not in str(excinfo.value)
+
+
+def test_evaluation_pools_enforce_same_accounts(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """평가 DB 도 같은 계정 계약을 따른다."""
+    monkeypatch.setenv(
+        "TEXT2SQL_EVAL_DATABASE_URL",
+        "postgresql+psycopg://kosa_app:pw@db.example.com:53001/kosa_text2sql",
+    )
+
+    with pytest.raises(PoolConfigurationError):
+        factory.get_engine(LogicalDb.EVALUATION, PoolRole.QUERY)
+
+
+# ---------------------------------------------------------------------------
 # DSN 비노출
 # ---------------------------------------------------------------------------
 

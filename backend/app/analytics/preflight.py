@@ -20,7 +20,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.analytics.db_pool import LogicalDb
+from app.analytics.db_pool import (
+    AnalyticsPoolFactory,
+    LogicalDb,
+    PoolConfigurationError,
+    PoolRole,
+    pool_factory,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "manifests"
@@ -97,6 +103,8 @@ def _load_manifest(profile: str, stage: str) -> dict:
         raise PreflightError(
             f"{profile}.{stage} manifest JSON 형식이 잘못됐다."
         ) from exc
+    except OSError as exc:
+        raise PreflightError(f"{profile}.{stage} manifest 를 읽을 수 없다.") from exc
 
     if not isinstance(payload, dict):
         raise PreflightError(f"{profile}.{stage} manifest 최상위는 object 여야 한다.")
@@ -105,7 +113,12 @@ def _load_manifest(profile: str, stage: str) -> dict:
 
 
 def read_state(logical_db: LogicalDb) -> LogicalDbState:
-    """논리 DB 하나의 bootstrap 상태를 읽는다."""
+    """논리 DB 하나의 bootstrap 상태를 읽는다.
+
+    manifest 가 없거나 손상되면 PreflightError 를 던진다. 결과 객체가
+    필요하면 run_preflight() 를 쓴다. 그쪽은 이 예외를 잡아 reason 으로
+    바꿔준다.
+    """
     profile = _PROFILE_BY_LOGICAL_DB[logical_db]
     stage = _STAGE_BY_LOGICAL_DB[logical_db]
     manifest = _load_manifest(profile, stage)
@@ -113,6 +126,16 @@ def read_state(logical_db: LogicalDb) -> LogicalDbState:
     for key in ("source_archive_sha256", "correction_version", "applies_to", "tables"):
         if key not in manifest:
             raise PreflightError(f"{profile}.{stage} manifest 에 {key} 가 없다.")
+
+    if not isinstance(manifest["applies_to"], list) or not manifest["applies_to"]:
+        raise PreflightError(
+            f"{profile}.{stage} manifest 의 applies_to 가 비어 있거나 배열이 아니다."
+        )
+
+    if not isinstance(manifest["tables"], dict):
+        raise PreflightError(
+            f"{profile}.{stage} manifest 의 tables 가 object 가 아니다."
+        )
 
     # action_history 의 검증 정책이 곧 그 논리 DB 의 변경 가능성이다.
     action = manifest["tables"].get("action_history")
@@ -140,12 +163,23 @@ def read_state(logical_db: LogicalDb) -> LogicalDbState:
     )
 
 
-def run_preflight() -> PreflightResult:
+def _resolve_actual_database(
+    logical_db: LogicalDb, factory: AnalyticsPoolFactory
+) -> str:
+    # manifest 의 applies_to 는 선언일 뿐이다. .env 에서 두 DSN 을 같은 DB 로
+    # 적어두면 선언만 보는 검사는 통과하고 평가가 Runtime 을 오염한다.
+    # 실제 설정값을 대조해야 막을 수 있다.
+    return factory.get_pool_info(logical_db, PoolRole.QUERY).database
+
+
+def run_preflight(factory: AnalyticsPoolFactory | None = None) -> PreflightResult:
     """Runtime 과 평가가 같은 source 인지, 변경 정책이 구분되는지 확인한다.
 
     예외를 던지지 않고 결과 객체로 돌려준다. 호출부(V4-D-4.x pipeline)가
     Tool 계약 {ok, ..., reason} 으로 그대로 옮길 수 있게 하기 위해서다.
     """
+    factory = factory or pool_factory
+
     try:
         runtime = read_state(LogicalDb.RUNTIME)
         evaluation = read_state(LogicalDb.EVALUATION)
@@ -198,5 +232,44 @@ def run_preflight() -> PreflightResult:
                 f"{sorted(set(runtime.applies_to) & set(evaluation.applies_to))}"
             ),
         )
+
+    # 여기까지는 manifest 선언만 봤다. 실제 DSN 이 그 선언과 같은 DB 를 보는지
+    # 대조해야 설정 실수를 잡을 수 있다.
+    try:
+        runtime_database = _resolve_actual_database(LogicalDb.RUNTIME, factory)
+        evaluation_database = _resolve_actual_database(LogicalDb.EVALUATION, factory)
+    except PoolConfigurationError as exc:
+        return PreflightResult(
+            ok=False,
+            runtime=runtime,
+            evaluation=evaluation,
+            reason=f"DSN 설정을 확인할 수 없다: {exc}",
+        )
+
+    if runtime_database == evaluation_database:
+        return PreflightResult(
+            ok=False,
+            runtime=runtime,
+            evaluation=evaluation,
+            reason=(
+                f"두 DSN 이 같은 물리 DB 에 접속한다: {runtime_database}. "
+                "평가가 Runtime 을 오염한다."
+            ),
+        )
+
+    for state, actual in (
+        (runtime, runtime_database),
+        (evaluation, evaluation_database),
+    ):
+        if actual not in state.applies_to:
+            return PreflightResult(
+                ok=False,
+                runtime=runtime,
+                evaluation=evaluation,
+                reason=(
+                    f"{state.logical_db.value} DSN 이 manifest 선언 밖의 DB 를 "
+                    f"가리킨다: {actual} (허용 {list(state.applies_to)})"
+                ),
+            )
 
     return PreflightResult(ok=True, runtime=runtime, evaluation=evaluation)

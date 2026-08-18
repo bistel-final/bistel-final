@@ -1,22 +1,51 @@
 """V4-D-1.1 preflight 단위 테스트.
 
-실물 manifest 로 계약을 확인하고, 조작된 manifest 로 각 실패 경로를 검증한다.
-DB 접속은 필요 없다. preflight 는 등록된 manifest 만 읽는다.
+실물 manifest 로 계약을 확인하고, 조작된 manifest·DSN 으로 각 실패 경로를
+검증한다. 실제 DB 접속은 필요 없다.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from app.analytics import preflight
-from app.analytics.db_pool import LogicalDb
+from app.analytics.db_pool import LogicalDb, PoolConfigurationError, PoolRole
 from app.analytics.preflight import PreflightError, read_state, run_preflight
 
 SOURCE_A = "a" * 64
 SOURCE_B = "b" * 64
+
+
+@dataclass
+class _FakeInfo:
+    database: str
+
+
+class FakeFactory:
+    """DSN 이 실제로 가리키는 DB 명을 흉내내는 가짜 pool factory."""
+
+    def __init__(
+        self,
+        runtime_database: str = "kosa_agent",
+        evaluation_database: str = "kosa_text2sql",
+        error: PoolConfigurationError | None = None,
+    ) -> None:
+        self._databases = {
+            LogicalDb.RUNTIME: runtime_database,
+            LogicalDb.EVALUATION: evaluation_database,
+        }
+        self._error = error
+        self.requested_roles: list[PoolRole] = []
+
+    def get_pool_info(self, logical_db: LogicalDb, role: PoolRole) -> _FakeInfo:
+        if self._error is not None:
+            raise self._error
+        self.requested_roles.append(role)
+        return _FakeInfo(database=self._databases[logical_db])
 
 
 def _manifest(
@@ -96,14 +125,20 @@ def manifest_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+@pytest.fixture()
+def factory() -> FakeFactory:
+    """기본 상태는 정상 설정(서로 다른 DB)이다."""
+    return FakeFactory()
+
+
 # ---------------------------------------------------------------------------
 # 실물 manifest 계약
 # ---------------------------------------------------------------------------
 
 
-def test_registered_manifests_pass_preflight() -> None:
+def test_registered_manifests_pass_preflight(factory: FakeFactory) -> None:
     """저장소에 등록된 실제 manifest 가 계약을 만족해야 한다."""
-    result = run_preflight()
+    result = run_preflight(factory)
 
     assert result.ok is True, result.reason
     assert result.runtime is not None
@@ -132,55 +167,79 @@ def test_logical_dbs_point_to_different_physical_databases() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 실패 경로
+# manifest 실패 경로
 # ---------------------------------------------------------------------------
 
 
-def test_different_source_archive_is_rejected(manifest_root: Path) -> None:
+def test_different_source_archive_is_rejected(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
     _write_pair(manifest_root, evaluation_source=SOURCE_B)
 
-    result = run_preflight()
+    result = run_preflight(factory)
 
     assert result.ok is False
     assert "source archive" in result.reason
 
 
-def test_different_correction_version_is_rejected(manifest_root: Path) -> None:
+def test_different_correction_version_is_rejected(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
     _write_pair(manifest_root, evaluation_correction="v2")
 
-    result = run_preflight()
+    result = run_preflight(factory)
 
     assert result.ok is False
     assert "correction_version" in result.reason
 
 
-def test_same_mutability_is_rejected(manifest_root: Path) -> None:
+def test_same_mutability_is_rejected(manifest_root: Path, factory: FakeFactory) -> None:
     """평가가 Runtime 처럼 쓰기 가능하면 재현성이 깨진다."""
     _write_pair(manifest_root, evaluation_policy="bootstrap_empty")
 
-    result = run_preflight()
+    result = run_preflight(factory)
 
     assert result.ok is False
 
 
-def test_overlapping_physical_database_is_rejected(manifest_root: Path) -> None:
-    """두 논리 DB 가 같은 물리 DB 를 가리키면 평가가 Runtime 을 오염시킨다."""
+def test_overlapping_declaration_is_rejected(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
+    """manifest 선언 단계에서 두 논리 DB 가 겹치면 거부한다."""
     _write_pair(manifest_root, evaluation_applies_to=["kosa_agent"])
 
-    result = run_preflight()
+    result = run_preflight(factory)
 
     assert result.ok is False
     assert "kosa_agent" in result.reason
 
 
-def test_missing_manifest_is_reported(manifest_root: Path) -> None:
-    result = run_preflight()
+def test_missing_manifest_is_reported(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
+    result = run_preflight(factory)
 
     assert result.ok is False
     assert "manifest" in result.reason
 
 
-def test_malformed_manifest_raises(manifest_root: Path) -> None:
+def test_preflight_returns_reason_instead_of_raising(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
+    """호출부가 Tool 계약 {ok, ..., reason} 으로 그대로 옮길 수 있어야 한다."""
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert isinstance(result.reason, str)
+    assert result.reason
+
+
+# ---------------------------------------------------------------------------
+# 손상된 manifest — read_state 는 예외, run_preflight 는 reason
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_json_raises_preflight_error(manifest_root: Path) -> None:
     (manifest_root / "runtime.runtime_clean.json").write_text(
         "{not json", encoding="utf-8"
     )
@@ -189,10 +248,113 @@ def test_malformed_manifest_raises(manifest_root: Path) -> None:
         read_state(LogicalDb.RUNTIME)
 
 
-def test_preflight_returns_reason_instead_of_raising(manifest_root: Path) -> None:
-    """호출부가 Tool 계약 {ok, ..., reason} 으로 그대로 옮길 수 있어야 한다."""
-    result = run_preflight()
+def test_applies_to_must_be_non_empty_list(manifest_root: Path) -> None:
+    manifest = _manifest(
+        profile="runtime",
+        stage="runtime_clean",
+        applies_to=[],
+        policy="bootstrap_empty",
+        row_count=0,
+    )
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(PreflightError):
+        read_state(LogicalDb.RUNTIME)
+
+
+def test_tables_must_be_object(manifest_root: Path) -> None:
+    manifest = _manifest(
+        profile="runtime",
+        stage="runtime_clean",
+        applies_to=["kosa_agent"],
+        policy="bootstrap_empty",
+        row_count=0,
+    )
+    manifest["tables"] = []
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(PreflightError):
+        read_state(LogicalDb.RUNTIME)
+
+
+def test_corrupted_manifest_becomes_reason_in_run_preflight(
+    manifest_root: Path, factory: FakeFactory
+) -> None:
+    """run_preflight 는 손상된 manifest 에도 예외를 던지지 않는다."""
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        "{not json", encoding="utf-8"
+    )
+
+    result = run_preflight(factory)
 
     assert result.ok is False
-    assert isinstance(result.reason, str)
     assert result.reason
+
+
+# ---------------------------------------------------------------------------
+# 실제 DSN 검증
+#
+# manifest 선언만 보면 .env 설정 실수를 놓친다. 선언은 정상인데 두 DSN 이
+# 같은 DB 로 가면 평가가 Runtime 을 오염한다.
+# ---------------------------------------------------------------------------
+
+
+def test_identical_dsn_targets_are_rejected(manifest_root: Path) -> None:
+    """manifest 선언은 정상이지만 두 DSN 이 같은 DB 를 가리키는 경우."""
+    _write_pair(manifest_root)
+    factory = FakeFactory(
+        runtime_database="kosa_agent", evaluation_database="kosa_agent"
+    )
+
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert "같은 물리 DB" in result.reason
+
+
+def test_runtime_dsn_outside_declaration_is_rejected(manifest_root: Path) -> None:
+    """DSN 이 manifest applies_to 에 없는 DB 를 가리키는 경우."""
+    _write_pair(manifest_root)
+    factory = FakeFactory(runtime_database="some_other_db")
+
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert "some_other_db" in result.reason
+
+
+def test_evaluation_dsn_outside_declaration_is_rejected(manifest_root: Path) -> None:
+    _write_pair(manifest_root)
+    factory = FakeFactory(evaluation_database="kosa_agent_e2e")
+
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert "kosa_agent_e2e" in result.reason
+
+
+def test_dsn_check_uses_query_pool_only(manifest_root: Path) -> None:
+    """logger 계정은 접근 범위가 좁아 검증에 쓰지 않는다."""
+    _write_pair(manifest_root)
+    factory = FakeFactory()
+
+    run_preflight(factory)
+
+    assert set(factory.requested_roles) == {PoolRole.QUERY}
+
+
+def test_pool_configuration_error_becomes_reason(manifest_root: Path) -> None:
+    """DSN 자체가 잘못된 경우도 예외가 아니라 reason 으로 돌아와야 한다."""
+    _write_pair(manifest_root)
+    factory = FakeFactory(
+        error=PoolConfigurationError("TEXT2SQL_DATABASE_URL 이 설정되지 않았다.")
+    )
+
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert "DSN 설정" in result.reason
