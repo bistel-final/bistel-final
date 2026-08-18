@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import apply_agent_runtime as agent_runtime
 from apply_reference_extensions import (
     MARKER_ROOT,
     ReferenceExtensionError,
@@ -90,7 +91,7 @@ def verify_database(
                     f"PUBLIC 권한이 남아 있습니다: {rendered}",
                     reason_code="PUBLIC_PRIVILEGE_DETECTED",
                 )
-            return {
+            result = {
                 "database": target.database,
                 "profile": target.profile,
                 "schema_signature_sha256": postcheck.schema_signature_sha256,
@@ -99,6 +100,51 @@ def verify_database(
                 "alarm_event_rows": postcheck.alarm_event_rows,
                 "role_matrix": "NOT_READY(V4-CM-2.6)",
             }
+            runtime_inspection = agent_runtime.inspect_database(connection)
+            if target.profile == "runtime":
+                if current_action_rows != 0 or runtime_inspection.state != "PRESENT":
+                    raise ReferenceStateError(
+                        "runtime 002 schema가 PRESENT가 아닙니다",
+                        reason_code="RUNTIME_SCHEMA_INVALID",
+                    )
+                runtime_result = agent_runtime.postcheck_database(
+                    connection,
+                    alarm_rows_before=postcheck.alarm_event_rows,
+                )
+                runtime_sql, _ = agent_runtime.load_and_validate_sql()
+                runtime_marker = agent_runtime.load_marker(
+                    target,
+                    migration_sha=agent_runtime.migration_sha256(runtime_sql),
+                )
+                if (
+                    runtime_marker is None
+                    or runtime_marker["schema_signature_sha256"]
+                    != runtime_result.schema_signature_sha256
+                ):
+                    raise ReferenceStateError(
+                        "runtime marker가 schema와 다릅니다",
+                        reason_code="RUNTIME_MARKER_INVALID",
+                    )
+                result.update(
+                    runtime_schema="PRESENT",
+                    runtime_table_count=len(agent_runtime.RUNTIME_TABLES),
+                )
+            elif runtime_inspection.state != "ABSENT":
+                raise ReferenceStateError(
+                    "evaluation DB에 runtime 002 schema가 존재합니다",
+                    reason_code="RUNTIME_SCHEMA_FORBIDDEN",
+                )
+            else:
+                runtime_marker_path = (
+                    agent_runtime.MARKER_ROOT / f"runtime_clean.{target.database}.json"
+                )
+                if runtime_marker_path.exists():
+                    raise ReferenceStateError(
+                        "evaluation DB에 runtime marker가 존재합니다",
+                        reason_code="RUNTIME_MARKER_FORBIDDEN",
+                    )
+                result.update(runtime_schema="ABSENT", runtime_table_count=0)
+            return result
     finally:
         engine.dispose()
 
@@ -147,9 +193,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"database={result['database']} "
                 f"action_rows={result['action_history_rows']} "
                 f"alarm_rows={result['alarm_event_rows']} "
+                f"runtime_schema={result['runtime_schema']} "
                 "role_matrix=NOT_READY(V4-CM-2.6)"
             )
-        except (ReferenceExtensionError, TargetValidationError) as exc:
+        except (
+            ReferenceExtensionError,
+            agent_runtime.AgentRuntimeError,
+            TargetValidationError,
+        ) as exc:
             reason = _failure_reason(exc)
             print(
                 f"MIGRATION_FAIL database={database} reason={reason}",

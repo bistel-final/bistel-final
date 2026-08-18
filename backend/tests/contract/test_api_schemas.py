@@ -708,12 +708,12 @@ class TestAnalyticsSchemas:
             audit_id=1,
             occurred_at=NOW,
             actor_type="AGENT",
-            event_type=AuditEvent.CLASSIFICATION_COMPLETED,
+            event_type=AuditEvent.HYPOTHESIS_GENERATED,
             detail="분류 완료",
         )
 
         assert item.detail == "분류 완료"
-        assert item.event_type is AuditEvent.CLASSIFICATION_COMPLETED
+        assert item.event_type is AuditEvent.HYPOTHESIS_GENERATED
 
     def test_approval_status_enum_remains_full_for_queue_rows(self) -> None:
         assert ApprovalStatus.EXPIRED.value == "EXPIRED"
