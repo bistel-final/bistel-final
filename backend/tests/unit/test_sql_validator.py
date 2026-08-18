@@ -451,6 +451,17 @@ RED_NOT_ALLOWED_CASES: tuple[SqlCase, ...] = (
         ("허용", "함수"),
         note="목록 밖 테이블 함수도 기본 거부된다. fail-open 금지.",
     ),
+    SqlCase(
+        "R38_cte_scope_bypass_new_table",
+        "RED_NOT_ALLOWED",
+        "SELECT * FROM brand_new_table, "
+        "(WITH brand_new_table AS (SELECT 1 AS x) "
+        "SELECT * FROM brand_new_table) sub",
+        False,
+        ("허용",),
+        note="서브쿼리 CTE 와 같은 이름의 바깥 테이블. 이름 매칭이 아니라 "
+        "스코프 해석으로만 잡힌다. manifest 밖 신규 테이블 우회 차단.",
+    ),
 )
 
 
@@ -715,6 +726,29 @@ def test_manifest_failure_is_fail_closed(
         result = validator_module.validate_sql("SELECT parameter FROM dim_parameter")
         assert result.valid is False
         assert "manifest" in (result.reason or "")
+    finally:
+        validator_module._manifest_columns.cache_clear()
+
+
+@requires_validator
+def test_structurally_corrupt_manifest_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """tables 가 dict 가 아닌 등 구조 손상도 예외 없이 거부되어야 한다.
+
+    특정 예외만 잡으면 목록 밖 예외(AttributeError 등)가 새어 나가
+    validate_sql 의 무예외 계약이 깨진다.
+    """
+    from app.analytics import sql_validator as validator_module
+
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text('{"tables": "not-a-dict"}', encoding="utf-8")
+    monkeypatch.setattr(validator_module, "RUNTIME_MANIFEST_PATH", corrupt)
+    validator_module._manifest_columns.cache_clear()
+    try:
+        result = validator_module.validate_sql("SELECT parameter FROM dim_parameter")
+        assert result.valid is False
+        assert result.reason
     finally:
         validator_module._manifest_columns.cache_clear()
 
