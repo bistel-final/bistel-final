@@ -5,6 +5,7 @@
   "source_archive_sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96",
   "correction_version": "base-schema-v1",
   "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "value_normalization_version": "db-value-v1",
   "profile": "evaluation",
   "applies_to": [
     "kosa_text2sql"

@@ -1,0 +1,18 @@
+{
+  "artifact_type": "corrected_base",
+  "format_version": 1,
+  "database": "kosa_agent",
+  "profile": "runtime",
+  "dataset_epoch": "kosa_0813",
+  "bootstrap_stage": "corrected_base",
+  "input_identity_sha256": "cfa4655882bef444b5e712c438c6becf4689e848d1714b233a132735946e10ab",
+  "build_id": "8825105da86198a53c75dcfa55757f0b84051136640ee53933b321de9a836d5e",
+  "value_normalization_version": "db-value-v1",
+  "change_reference": "V4CM-22",
+  "status": "APPLIED",
+  "receipt_sha256": "b7bde84d584e171c96086b78c0ee419eea4adbd67c3039eac3df22d24f8a1b13",
+  "action_history_rows": 0,
+  "alarm_event_rows": 173,
+  "applied_at": "2026-08-18T00:12:20.667669+00:00",
+  "recorded_at": "2026-08-18T00:12:20.668592+00:00"
+}

@@ -80,12 +80,24 @@ class FakeConnection:
             )
         if normalized.startswith("SELECT has_table_privilege"):
             return FakeResult(scalar=True)
-        if "FROM information_schema.columns" in normalized:
+        if "format_type(a.atttypid" in normalized and parameters:
             table = parameters[0]
+            if table in verifier.base_schema.BASE_COLUMNS:
+                contracts = verifier.base_schema.BASE_COLUMNS[table]
+                return FakeResult(
+                    [
+                        {
+                            "column_name": column.name,
+                            "data_type": column.data_type,
+                        }
+                        for column in contracts
+                    ]
+                )
+            contracts = verifier.reference_extensions.EXPECTED_TABLE_COLUMNS[table]
             return FakeResult(
                 [
-                    {"column_name": column}
-                    for column in self.manifest["tables"][table]["columns"]
+                    {"column_name": name, "data_type": data_type}
+                    for name, data_type, _nullable in contracts
                 ]
             )
         if normalized.startswith("SELECT count(*) FROM"):
@@ -110,6 +122,27 @@ class FakeEngine:
 def _manifest(profile: str = "runtime") -> dict[str, Any]:
     path = verifier.manifest_v3.resolve_bootstrap_manifest_path(profile, "base_schema")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class CorrectedConnection(FakeConnection):
+    def __init__(
+        self,
+        database: str,
+        manifest: dict[str, Any],
+        rows: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        super().__init__(database, manifest)
+        self.rows = rows
+
+    def exec_driver_sql(self, statement: str, parameters: Any = None) -> FakeResult:
+        normalized = " ".join(statement.split())
+        if normalized.startswith("SELECT count(*) FROM"):
+            table = normalized.split('"')[1]
+            return FakeResult(scalar=len(self.rows.get(table, [])))
+        if normalized.startswith("SELECT ") and ' FROM "' in normalized:
+            table = normalized.split(' FROM "', 1)[1].split('"', 1)[0]
+            return FakeResult(self.rows.get(table, []))
+        return super().exec_driver_sql(statement, parameters)
 
 
 def _stub_registration(
@@ -178,21 +211,6 @@ def _file_role_fixture() -> tuple[dict[str, Any], verifier.ActiveBundle]:
         tables=corrected_tables,
     )
     return {"tables": source_tables}, bundle
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (None, ""),
-        (True, "true"),
-        (False, "false"),
-        (42, "42"),
-        ("한글", "한글"),
-        (datetime(2026, 8, 13, 1, 2, 3), "2026-08-13 01:02:03"),
-    ],
-)
-def test_db_text_matches_csv_representation(value: Any, expected: str) -> None:
-    assert verifier._db_text(value) == expected
 
 
 @pytest.mark.parametrize(
@@ -427,7 +445,14 @@ def test_database_base_schema_passes_with_read_only_statements() -> None:
     assert engine.disposed is True
 
 
-def test_database_requires_explicit_registered_stage() -> None:
+def test_database_requires_explicit_registered_stage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setitem(
+        manifest_v3.BOOTSTRAP_MANIFEST_REGISTRY,
+        ("runtime", "corrected_base"),
+        tmp_path / "missing.json",
+    )
     with pytest.raises(manifest_v3.NotRegisteredError):
         verifier.verify_database(
             "kosa_agent",
@@ -435,6 +460,219 @@ def test_database_requires_explicit_registered_stage() -> None:
             environ={},
             engine_factory=lambda _: pytest.fail("DB connect must not run"),
         )
+
+
+def test_database_corrected_base_passes_normalized_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import load_corrected_base as loader
+
+    context = loader._load_input_context()
+    manifest = json.loads(
+        manifest_v3.resolve_bootstrap_manifest_path(
+            "runtime", "corrected_base"
+        ).read_text(encoding="utf-8")
+    )
+    rows = {
+        table: [dict(row) for row in context.expected_rows.get(table, ())]
+        for table in manifest["tables"]
+    }
+    connection = CorrectedConnection("kosa_agent", manifest, rows)
+    engine = FakeEngine(connection)
+    monkeypatch.setattr(
+        verifier.reference_extensions,
+        "postcheck_database",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+
+    result = verifier.verify_database(
+        "kosa_agent",
+        "corrected_base",
+        environ={
+            "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+            "POSTGRES_BOOTSTRAP_PORT": "5432",
+            "POSTGRES_BOOTSTRAP_USER": "reader",
+            "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+            "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                "shared.example", 5432
+            ),
+        },
+        engine_factory=lambda _: engine,
+    )
+
+    assert result.status == verifier.STATUS_PASS
+    assert result.details["expected_stage"] == "corrected_base"
+    assert result.details["action_history_rows"] == 0
+
+
+def test_evaluation_corrected_base_failure_is_scoped_to_action_48(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import load_corrected_base as loader
+
+    context = loader._load_input_context()
+    manifest = json.loads(
+        manifest_v3.resolve_bootstrap_manifest_path(
+            "evaluation", "corrected_base"
+        ).read_text(encoding="utf-8")
+    )
+    rows = {
+        table: [dict(row) for row in context.expected_rows.get(table, ())]
+        for table in manifest["tables"]
+    }
+    rows["action_history"] = [
+        {
+            column.name: (f"ACT-{index:04d}" if column.name == "action_id" else None)
+            for column in verifier.base_schema.BASE_COLUMNS["action_history"]
+        }
+        for index in range(48)
+    ]
+    connection = CorrectedConnection("kosa_text2sql", manifest, rows)
+    monkeypatch.setattr(
+        verifier.reference_extensions,
+        "postcheck_database",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+
+    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
+        verifier.verify_database(
+            "kosa_text2sql",
+            "corrected_base",
+            environ={
+                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+                "POSTGRES_BOOTSTRAP_PORT": "5432",
+                "POSTGRES_BOOTSTRAP_USER": "reader",
+                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                    "shared.example", 5432
+                ),
+            },
+            engine_factory=lambda _: FakeEngine(connection),
+        )
+
+    assert captured.value.details == {
+        "profile": "evaluation",
+        "expected_stage": "corrected_base",
+        "inventory": "EARLY_DATA",
+        "table_count": 14,
+        "action_history_rows": 48,
+        "mismatches": [
+            {
+                "table": "action_history",
+                "mismatch_kind": "ROW_COUNT",
+                "expected_row_count": 0,
+                "actual_row_count": 48,
+                "expected_policy": "bootstrap_empty",
+            }
+        ],
+    }
+
+
+def test_evaluation_pending_collects_and_rejects_additional_table_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import load_corrected_base as loader
+
+    context = loader._load_input_context()
+    manifest = json.loads(
+        manifest_v3.resolve_bootstrap_manifest_path(
+            "evaluation", "corrected_base"
+        ).read_text(encoding="utf-8")
+    )
+    rows = {
+        table: [dict(row) for row in context.expected_rows.get(table, ())]
+        for table in manifest["tables"]
+    }
+    rows["action_history"] = [
+        {
+            column.name: (f"ACT-{index:04d}" if column.name == "action_id" else None)
+            for column in verifier.base_schema.BASE_COLUMNS["action_history"]
+        }
+        for index in range(48)
+    ]
+    rows["dim_parameter"][0]["parameter_name"] = "DRIFTED"
+    connection = CorrectedConnection("kosa_text2sql", manifest, rows)
+    monkeypatch.setattr(
+        verifier.reference_extensions,
+        "postcheck_database",
+        lambda *_a, **_k: SimpleNamespace(),
+    )
+
+    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
+        verifier.verify_database(
+            "kosa_text2sql",
+            "corrected_base",
+            environ={
+                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+                "POSTGRES_BOOTSTRAP_PORT": "5432",
+                "POSTGRES_BOOTSTRAP_USER": "reader",
+                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                    "shared.example", 5432
+                ),
+            },
+            engine_factory=lambda _: FakeEngine(connection),
+        )
+
+    assert captured.value.details["mismatches"] == [
+        {
+            "table": "action_history",
+            "mismatch_kind": "ROW_COUNT",
+            "expected_row_count": 0,
+            "actual_row_count": 48,
+            "expected_policy": "bootstrap_empty",
+        },
+        {
+            "table": "dim_parameter",
+            "mismatch_kind": "CONTENT_HASH",
+            "expected_row_count": 8,
+            "actual_row_count": 8,
+            "expected_policy": "immutable_content",
+        },
+    ]
+    passing = [
+        verifier.CheckResult(target, verifier.STATUS_PASS, 0, {})
+        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
+    ]
+    evaluation = verifier._failure_result("kosa_text2sql", captured.value)
+
+    assert verifier.is_expected_evaluation_pending([*passing, evaluation]) is False
+    assert (
+        verifier._report_payload([*passing, evaluation])["expected_intermediate_state"]
+        is None
+    )
+
+
+def test_expected_pending_requires_exact_single_evaluation_mismatch() -> None:
+    passing = [
+        verifier.CheckResult(target, verifier.STATUS_PASS, 0, {})
+        for target in ("files", "kosa_agent", "kosa_agent_e2e", "neo4j")
+    ]
+    details = {
+        "profile": "evaluation",
+        "expected_stage": "corrected_base",
+        "mismatches": [
+            {
+                "table": "action_history",
+                "mismatch_kind": "ROW_COUNT",
+                "expected_row_count": 0,
+                "actual_row_count": 48,
+                "expected_policy": "bootstrap_empty",
+            }
+        ],
+    }
+    evaluation = verifier.CheckResult(
+        "kosa_text2sql", verifier.STATUS_FAIL, verifier.EXIT_MISMATCH, details
+    )
+    results = [*passing, evaluation]
+
+    assert verifier.is_expected_evaluation_pending(results) is True
+    assert verifier._report_payload(results)["expected_intermediate_state"] == (
+        "PENDING_V4_CM_2_3"
+    )
+
+    evaluation.details["mismatches"][0]["actual_row_count"] = 47
+    assert verifier.is_expected_evaluation_pending(results) is False
 
 
 def test_marker_candidate_is_timezone_aware(monkeypatch: pytest.MonkeyPatch) -> None:
