@@ -13,7 +13,8 @@
 | corrected files | `corrected-data-manifest.json` + `markers/corrected.v1.json` | **v3 등록됨** | V4-CM-1.7 |
 | DB base schema stage | `manifests/{profile}.base_schema.json` | **v3 등록됨** | V4-CM-1.5 |
 | DB corrected base stage | `manifests/{profile}.corrected_base.json` | **v3 등록됨** | V4-CM-2.2 |
-| 후속 DB bootstrap stage | `manifests/{profile}.{stage}.json` | 일부 미등록 | V4-CM-2.3 이후 |
+| evaluation Mock stage | `manifests/evaluation.evaluation_mock.json` | **v3 등록됨** | V4-CM-2.3 |
+| runtime clean stage | `manifests/runtime.runtime_clean.json` | **v3 등록됨** | V4-CM-2.4 |
 | synthetic evaluation | `synthetic-evaluation-manifest.json` | `NOT_REGISTERED` | 평가 소유 Task |
 
 미등록 artifact를 빈 JSON placeholder로 만들지 않는다. 검증기는 파일이 없으면 DB 연결이나
@@ -208,8 +209,9 @@ python scripts/verify_bootstrap_state.py \
 
 개별 검증은 stdout만 사용하고 `--report <path>`를 명시했을 때만 report를 쓴다. `--all`은
 version-controlled `EXPECTED_STAGES`를 사용하며 inventory 결과로 합격 stage를 자동 선택하지
-않는다. 현재 기대 stage는 세 PostgreSQL DB 모두 `corrected_base`다. DB profile끼리 content hash를
-서로 비교하지 않고, 각 DB를 자신에게 해당하는 등록 manifest와만 대조한다.
+않는다. 현재 기대 stage는 `kosa_agent`·`kosa_agent_e2e`의 `runtime_clean`,
+`kosa_text2sql`의 `evaluation_mock`이다. DB profile끼리 content hash를 서로 비교하지 않고,
+각 DB를 자신에게 해당하는 등록 manifest와만 대조한다.
 
 PostgreSQL은 `SET TRANSACTION READ ONLY`, public schema `USAGE`, table별 `SELECT` 권한을
 확인한다. `CREATE` 권한은 요구하지 않는다. Neo4j는 read access mode에서 38 node·81 relation,
@@ -597,6 +599,73 @@ ruff check scripts/load_evaluation_mock.py scripts/verify_bootstrap_state.py \
   tests/unit/test_load_evaluation_mock.py tests/unit/test_verify_bootstrap_state.py
 ruff format --check scripts/load_evaluation_mock.py scripts/verify_bootstrap_state.py \
   tests/unit/test_load_evaluation_mock.py tests/unit/test_verify_bootstrap_state.py
+```
+
+### Agent Runtime clean migration
+
+`V4-CM-2.4`의 `002_agent_runtime_clean.sql`은 `action_history=0`인 runtime profile 두 곳에만
+Agent 실행·예측·검토·AlarmRef 연결·Tool·조치 연결·승인·채널 delivery·감사 table 9종을
+생성한다. `kosa_text2sql`에는 적용하지 않는다. SQL 파일의 target/action guard는 오적용을
+막는 추가 방어이며, 검사부터 commit까지 쓰기를 차단하는 책임은 runner transaction의
+`LOCK TABLE action_history IN SHARE MODE`에 있다. 따라서 `psql -f` 직접 실행은 지원하지 않는다.
+
+```bash
+cd backend
+
+# DB 접속 없이 runtime_clean manifest를 canonical DDL과 맞춘다.
+python scripts/apply_agent_runtime.py --register-manifests
+
+# E2E에서 실제 DDL·postcheck 경로를 실행한 뒤 전체 rollback한다.
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent_e2e --preflight
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent_e2e --rehearse --confirm-target kosa_agent_e2e
+
+# 독립 코드리뷰·최종검증 뒤 runtime DB를 각각 적용한다.
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent_e2e --confirm-target kosa_agent_e2e \
+  --change-ref GH-<number>
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent --confirm-target kosa_agent \
+  --change-ref GH-<number>
+
+# 각 DB에서 같은 apply를 한 번 더 실행해 RUNTIME_NO_OP를 확인한다.
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent_e2e --confirm-target kosa_agent_e2e \
+  --change-ref GH-<number>
+python scripts/apply_agent_runtime.py \
+  --database kosa_agent --confirm-target kosa_agent \
+  --change-ref GH-<number>
+
+# evaluation 음성 경로: PROFILE_NOT_ALLOWED로 종료되고 DB·marker를 바꾸지 않는다.
+python scripts/apply_agent_runtime.py \
+  --database kosa_text2sql --preflight
+
+python scripts/verify_migrations.py --all
+python scripts/verify_bootstrap_state.py --all
+```
+
+`runtime.runtime_clean.json`의 `bootstrap_empty`는 적용 직후 Gate다. 이후 R03·corpus·Agent
+실행 데이터가 정상 생성되면 같은 0행 hash를 운영 불변식으로 사용하지 않는다. 운영 중 mutable
+table의 schema·제약·권한·감사 artifact 검증 전환은 `V4-CM-2.7`에서 확정한다.
+따라서 이 runner의 preflight·apply `NO_OP` 계약도 Checkpoint table이 추가되거나 Runtime action이
+생성되기 전까지만 유효하다. `V4-CM-2.5` 이후에는 새 stage manifest와 `V4-CM-2.7` steady-state
+검증기를 사용하며, 002 runner를 운영 상태 복구 도구로 재사용하지 않는다.
+
+Agent Runtime 집중 검증:
+
+```bash
+cd backend
+pytest tests/unit/test_agent_runtime_migration.py \
+  tests/unit/test_apply_agent_runtime.py \
+  tests/unit/test_verify_migrations.py \
+  tests/unit/test_verify_bootstrap_state.py
+ruff check scripts/apply_agent_runtime.py scripts/verify_migrations.py \
+  scripts/verify_bootstrap_state.py tests/unit/test_agent_runtime_migration.py \
+  tests/unit/test_apply_agent_runtime.py
+ruff format --check scripts/apply_agent_runtime.py scripts/verify_migrations.py \
+  scripts/verify_bootstrap_state.py tests/unit/test_agent_runtime_migration.py \
+  tests/unit/test_apply_agent_runtime.py
 ```
 
 Reference extension 집중 검증:

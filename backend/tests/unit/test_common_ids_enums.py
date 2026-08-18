@@ -161,7 +161,21 @@ class TestActionDerivedValues:
 
 class TestAuditEvents:
     def test_exactly_nine_events(self) -> None:
-        assert len(AuditEvent) == 9
+        assert [event.value for event in AuditEvent] == [
+            "DETECTION_COMPLETED",
+            "AGENT_RUN_STARTED",
+            "HYPOTHESIS_GENERATED",
+            "APPROVAL_REQUESTED",
+            "APPROVAL_DECIDED",
+            "ACTION_SENT",
+            "ACTION_SEND_FAILED",
+            "AGENT_RUN_COMPLETED",
+            "AGENT_RUN_FAILED",
+        ]
+
+    def test_legacy_classification_event_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            AuditEvent("CLASSIFICATION_COMPLETED")
 
     def test_every_event_has_entity_type(self) -> None:
         assert set(EVENT_ENTITY_TYPE) == set(AuditEvent)

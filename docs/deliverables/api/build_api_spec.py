@@ -44,6 +44,7 @@ from app.analytics.schemas import (  # noqa: E402
     SqlValidateRequest,
     SqlValidateResponse,
 )
+from app.common.audit import AuditEvent  # noqa: E402
 from app.detection.schemas import (  # noqa: E402
     AlarmItem,
     AlarmPageResponse,
@@ -487,17 +488,7 @@ ERROR_CODES = (
     ("INTERNAL_ERROR", 500, "예기치 못한 서버 오류"),
 )
 
-AUDIT_EVENTS = (
-    "DETECTION_COMPLETED",
-    "AGENT_RUN_STARTED",
-    "CLASSIFICATION_COMPLETED",
-    "APPROVAL_REQUESTED",
-    "APPROVAL_DECIDED",
-    "ACTION_SENT",
-    "ACTION_SEND_FAILED",
-    "AGENT_RUN_COMPLETED",
-    "AGENT_RUN_FAILED",
-)
+AUDIT_EVENTS = tuple(event.value for event in AuditEvent)
 
 
 def json_schema(model: type[BaseModel] | None) -> dict[str, Any] | None:

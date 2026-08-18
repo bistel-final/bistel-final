@@ -14,6 +14,7 @@ SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+import apply_agent_runtime as runtime_migration  # noqa: E402
 import apply_reference_extensions as migration  # noqa: E402
 import db_target  # noqa: E402
 import verify_migrations as verifier  # noqa: E402
@@ -91,7 +92,7 @@ def _patch_success(
             "vector_extension_version": "0.8.6",
         },
     )
-    monkeypatch.setattr(verifier, "action_history_count", lambda connection: 48)
+    monkeypatch.setattr(verifier, "action_history_count", lambda connection: 0)
     monkeypatch.setattr(
         verifier,
         "postcheck_database",
@@ -99,7 +100,7 @@ def _patch_success(
             signature={},
             schema_signature_sha256="a" * 64,
             vector_extension_version="0.8.6",
-            action_history_rows=48,
+            action_history_rows=0,
             alarm_event_rows=173,
         ),
     )
@@ -107,6 +108,33 @@ def _patch_success(
         verifier,
         "public_privilege_violations",
         lambda connection: [] if violations is None else violations,
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "inspect_database",
+        lambda connection: runtime_migration.RuntimeInspection(
+            "PRESENT", (), {}, "b" * 64
+        ),
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "postcheck_database",
+        lambda *args, **kwargs: runtime_migration.RuntimePostcheck(
+            signature={},
+            schema_signature_sha256="b" * 64,
+            action_history_rows=0,
+            alarm_event_rows=173,
+        ),
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "load_marker",
+        lambda *args, **kwargs: {"schema_signature_sha256": "b" * 64},
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "load_and_validate_sql",
+        lambda: ("runtime-sql", []),
     )
 
 
@@ -123,9 +151,11 @@ def test_verify_database_returns_observation_and_not_ready_warning(
         "profile": "runtime",
         "schema_signature_sha256": "a" * 64,
         "vector_extension_version": "0.8.6",
-        "action_history_rows": 48,
+        "action_history_rows": 0,
         "alarm_event_rows": 173,
         "role_matrix": "NOT_READY(V4-CM-2.6)",
+        "runtime_schema": "PRESENT",
+        "runtime_table_count": 9,
     }
     assert engine.disposed is True
 
@@ -198,6 +228,26 @@ def test_main_preserves_specific_state_reason(
     output = capsys.readouterr()
     assert "reason=SCHEMA_SIGNATURE_MISMATCH" in output.err
     assert "schema detail" not in output.err
+
+
+def test_main_normalizes_runtime_marker_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(verifier, "load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setattr(verifier, "load_bootstrap_target", lambda database: _target())
+
+    def fail(target: db_target.BootstrapTarget) -> dict[str, Any]:
+        raise runtime_migration.AgentRuntimeArtifactError(
+            "private runtime artifact path",
+            reason_code="RUNTIME_MARKER_INVALID",
+        )
+
+    monkeypatch.setattr(verifier, "verify_database", fail)
+
+    assert verifier.main(["--database", "kosa_agent"]) == 1
+    output = capsys.readouterr()
+    assert "reason=RUNTIME_MARKER_INVALID" in output.err
+    assert "private runtime artifact path" not in output.err
 
 
 def test_main_redacts_connection_error(

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
@@ -93,11 +94,19 @@ class FakeConnection:
                         for column in contracts
                     ]
                 )
-            contracts = verifier.reference_extensions.EXPECTED_TABLE_COLUMNS[table]
+            if table in verifier.reference_extensions.EXPECTED_TABLE_COLUMNS:
+                contracts = verifier.reference_extensions.EXPECTED_TABLE_COLUMNS[table]
+                return FakeResult(
+                    [
+                        {"column_name": name, "data_type": data_type}
+                        for name, data_type, _nullable in contracts
+                    ]
+                )
+            contracts = verifier.agent_runtime.EXPECTED_TABLE_COLUMNS[table]
             return FakeResult(
                 [
-                    {"column_name": name, "data_type": data_type}
-                    for name, data_type, _nullable in contracts
+                    {"column_name": column.name, "data_type": column.data_type}
+                    for column in contracts
                 ]
             )
         if normalized.startswith("SELECT count(*) FROM"):
@@ -122,6 +131,60 @@ class FakeEngine:
 def _manifest(profile: str = "runtime") -> dict[str, Any]:
     path = verifier.manifest_v3.resolve_bootstrap_manifest_path(profile, "base_schema")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_runtime_clean_marker_failure_is_collected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = json.loads(
+        manifest_v3.resolve_bootstrap_manifest_path(
+            "runtime", "runtime_clean"
+        ).read_text(encoding="utf-8")
+    )
+    connection = FakeConnection("kosa_agent", manifest)
+    monkeypatch.setattr(
+        verifier.reference_extensions,
+        "postcheck_database",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "postcheck_database",
+        lambda *args, **kwargs: verifier.agent_runtime.RuntimePostcheck(
+            {}, "a" * 64, 0, 173
+        ),
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "load_marker",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        verifier.agent_runtime,
+        "alarm_event_count",
+        lambda *args, **kwargs: 173,
+    )
+
+    with pytest.raises(verifier.AcceptanceMismatchError) as caught:
+        verifier.verify_database(
+            "kosa_agent",
+            "runtime_clean",
+            environ={
+                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
+                "POSTGRES_BOOTSTRAP_PORT": "5432",
+                "POSTGRES_BOOTSTRAP_USER": "reader",
+                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
+                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
+                    "shared.example", 5432
+                ),
+            },
+            engine_factory=lambda target: FakeEngine(connection),
+        )
+
+    mismatch_kinds = {
+        item["mismatch_kind"] for item in caught.value.details["mismatches"]
+    }
+    assert "RUNTIME_MARKER" in mismatch_kinds
 
 
 class CorrectedConnection(FakeConnection):
@@ -379,6 +442,36 @@ def test_failure_result_uses_safe_unverifiable_reason_code() -> None:
         ),
     )
     assert result.details == {"reason_code": "CONNECT_OR_QUERY_FAILED"}
+
+
+def test_run_all_preserves_other_targets_on_sqlalchemy_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        verifier,
+        "verify_files",
+        lambda **_k: verifier.CheckResult("files", verifier.STATUS_PASS, 0, {}),
+    )
+
+    def database_result(database: str, stage: str, **_kwargs: Any):
+        if database == "kosa_agent":
+            raise SQLAlchemyError("private connection detail")
+        return verifier.CheckResult(database, verifier.STATUS_PASS, 0, {})
+
+    monkeypatch.setattr(verifier, "verify_database", database_result)
+    monkeypatch.setattr(
+        verifier,
+        "verify_neo4j",
+        lambda **_k: verifier.CheckResult("neo4j", verifier.STATUS_PASS, 0, {}),
+    )
+
+    results, exit_code = verifier.run_all(archive_path=Path("unused.zip"), environ={})
+
+    assert len(results) == 5
+    assert exit_code == verifier.EXIT_UNVERIFIABLE
+    assert results[1].target == "kosa_agent"
+    assert results[1].details == {"reason_code": "CONNECT_OR_QUERY_FAILED"}
+    assert results[-1].target == "neo4j"
 
 
 def test_target_error_is_normalized_without_original_message() -> None:

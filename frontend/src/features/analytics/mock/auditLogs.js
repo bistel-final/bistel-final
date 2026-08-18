@@ -5,7 +5,7 @@
 export const AUDIT_EVENT_TYPES = [
   "DETECTION_COMPLETED",
   "AGENT_RUN_STARTED",
-  "CLASSIFICATION_COMPLETED",
+  "HYPOTHESIS_GENERATED",
   "APPROVAL_REQUESTED",
   "APPROVAL_DECIDED",
   "ACTION_SENT",
@@ -21,7 +21,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "APPROVAL_REQUESTED",
-    "entity_type": "approval_request",
+    "entity_type": "APPROVAL",
     "entity_id": "APR-0003",
     "before": null,
     "after": {
@@ -35,7 +35,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260604-0010",
     "before": null,
     "after": {
@@ -49,7 +49,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260603-0009",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260603-0009",
     "before": {
       "status": "RUNNING"
     },
@@ -64,7 +64,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0008",
     "before": {
       "send_status": "SENDING"
@@ -80,7 +80,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260603-0009",
     "before": null,
     "after": {
@@ -94,7 +94,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260603-0008",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260603-0008",
     "before": {
       "status": "RUNNING"
     },
@@ -109,7 +109,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0009",
     "before": {
       "send_status": "SENDING"
@@ -125,7 +125,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260603-0008",
     "before": null,
     "after": {
@@ -139,7 +139,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260603-0007",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260603-0007",
     "before": {
       "status": "RUNNING"
     },
@@ -154,7 +154,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0006",
     "before": {
       "send_status": "SENDING"
@@ -170,7 +170,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260603-0007",
     "before": null,
     "after": {
@@ -184,7 +184,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260603-0006",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260603-0006",
     "before": {
       "status": "RUNNING"
     },
@@ -199,7 +199,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0007",
     "before": {
       "send_status": "SENDING"
@@ -215,7 +215,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260603-0006",
     "before": null,
     "after": {
@@ -229,7 +229,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "APPROVAL_REQUESTED",
-    "entity_type": "approval_request",
+    "entity_type": "APPROVAL",
     "entity_id": "APR-0002",
     "before": null,
     "after": {
@@ -243,7 +243,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260603-0005",
     "before": null,
     "after": {
@@ -257,7 +257,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260602-0004",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260602-0004",
     "before": {
       "status": "RUNNING"
     },
@@ -272,7 +272,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0004",
     "before": {
       "send_status": "SENDING"
@@ -288,7 +288,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260602-0004",
     "before": null,
     "after": {
@@ -302,7 +302,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260602-0003",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260602-0003",
     "before": {
       "status": "RUNNING"
     },
@@ -317,7 +317,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0003",
     "before": {
       "send_status": "SENDING"
@@ -333,7 +333,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260602-0003",
     "before": null,
     "after": {
@@ -347,7 +347,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260602-0002",
     "before": {
       "status": "RUNNING"
@@ -363,7 +363,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0002",
     "before": {
       "send_status": "SENDING"
@@ -379,7 +379,7 @@ export const AUDIT_LOGS = [
     "actor_type": "HUMAN",
     "actor_id": "bang",
     "event_type": "APPROVAL_DECIDED",
-    "entity_type": "approval_request",
+    "entity_type": "APPROVAL",
     "entity_id": "APR-0001",
     "before": {
       "status": "PENDING"
@@ -396,7 +396,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "APPROVAL_REQUESTED",
-    "entity_type": "approval_request",    "entity_id": "APR-0001",
+    "entity_type": "APPROVAL",    "entity_id": "APR-0001",
     "before": null,
     "after": {
       "status": "PENDING"
@@ -409,7 +409,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260602-0002",
     "before": null,
     "after": {
@@ -423,7 +423,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_COMPLETED",
-    "entity_type": "agent_run",    "entity_id": "RUN-20260601-0001",
+    "entity_type": "AGENT_RUN",    "entity_id": "RUN-20260601-0001",
     "before": {
       "status": "RUNNING"
     },
@@ -438,7 +438,7 @@ export const AUDIT_LOGS = [
     "actor_type": "SYSTEM",
     "actor_id": "n8n",
     "event_type": "ACTION_SENT",
-    "entity_type": "action_history",
+    "entity_type": "ACTION",
     "entity_id": "ACT-0001",
     "before": {
       "send_status": "SENDING"
@@ -454,7 +454,7 @@ export const AUDIT_LOGS = [
     "actor_type": "AGENT",
     "actor_id": "system",
     "event_type": "AGENT_RUN_STARTED",
-    "entity_type": "agent_run",
+    "entity_type": "AGENT_RUN",
     "entity_id": "RUN-20260601-0001",
     "before": null,
     "after": {

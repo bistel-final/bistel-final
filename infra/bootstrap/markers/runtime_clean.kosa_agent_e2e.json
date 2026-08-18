@@ -1,0 +1,16 @@
+{
+  "artifact_type": "runtime_clean",
+  "format_version": 1,
+  "database": "kosa_agent_e2e",
+  "profile": "runtime",
+  "status": "APPLIED",
+  "migration_sha256": "b4e7a15bcee70e11400b67eed56eb82e4a5fe47ffb0c92efaeb5ab012814d4e8",
+  "schema_signature_sha256": "bfc8245ad7e86c0d04752452602e7f42e161ae3c59562cbbeb83fbd03b5c20a4",
+  "dataset_epoch": "kosa_0813",
+  "correction_version": "corrected-base-v1",
+  "value_normalization_version": "db-value-v1",
+  "change_reference": "V4CM-24",
+  "action_history_rows": 0,
+  "applied_at": "2026-08-18T05:12:59.203733+00:00",
+  "recorded_at": "2026-08-18T05:12:59.209437+00:00"
+}

@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import apply_agent_runtime as agent_runtime
 import apply_reference_extensions as reference_extensions
 import bootstrap_base_schema as base_schema
 import bootstrap_neo4j_graph as neo4j_bootstrap
@@ -63,8 +64,8 @@ EXIT_NOT_REGISTERED = manifest_v3.EXIT_NOT_REGISTERED
 EXIT_UNVERIFIABLE = 7
 
 EXPECTED_STAGES = {
-    "kosa_agent": "corrected_base",
-    "kosa_agent_e2e": "corrected_base",
+    "kosa_agent": "runtime_clean",
+    "kosa_agent_e2e": "runtime_clean",
     "kosa_text2sql": "evaluation_mock",
 }
 STATUS_PASS = "PASS"
@@ -678,6 +679,9 @@ def _expected_column_types(table: str) -> dict[str, str]:
     if table in reference_extensions.EXPECTED_TABLE_COLUMNS:
         columns = reference_extensions.EXPECTED_TABLE_COLUMNS[table]
         return {name: logical_type(data_type) for name, data_type, _nullable in columns}
+    if table in agent_runtime.EXPECTED_TABLE_COLUMNS:
+        columns = agent_runtime.EXPECTED_TABLE_COLUMNS[table]
+        return {column.name: logical_type(column.data_type) for column in columns}
     raise manifest_v3.ManifestSchemaError(f"{table}: logical type registry가 없습니다")
 
 
@@ -986,6 +990,28 @@ def verify_database(
                     # parser crash.  Keep the reason normalized so reports never
                     # expose filesystem paths or underlying exception messages.
                     mismatches.append({"mismatch_kind": "FIXTURE_MARKER"})
+            if stage == "runtime_clean":
+                try:
+                    runtime_sql, _ = agent_runtime.load_and_validate_sql()
+                    migration_sha = agent_runtime.migration_sha256(runtime_sql)
+                    runtime_result = agent_runtime.postcheck_database(
+                        connection,
+                        alarm_rows_before=agent_runtime.alarm_event_count(connection),
+                    )
+                    runtime_marker = agent_runtime.load_marker(
+                        target,
+                        migration_sha=migration_sha,
+                    )
+                    if (
+                        runtime_marker is None
+                        or runtime_marker["schema_signature_sha256"]
+                        != runtime_result.schema_signature_sha256
+                    ):
+                        raise agent_runtime.AgentRuntimeArtifactError(
+                            "runtime marker가 schema와 다릅니다"
+                        )
+                except agent_runtime.AgentRuntimeError:
+                    mismatches.append({"mismatch_kind": "RUNTIME_MARKER"})
             if mismatches:
                 raise AcceptanceMismatchError(
                     "DB acceptance 계약이 다릅니다",
@@ -1251,6 +1277,18 @@ def run_all(
             neo4j_bootstrap.Neo4jBootstrapError,
         ) as exc:
             results.append(_failure_result(target, _target_unverifiable(exc)))
+        except SQLAlchemyError:
+            results.append(
+                _failure_result(
+                    target,
+                    UnverifiableError(
+                        "target read-only 검증을 수행할 수 없습니다",
+                        reason_code="CONNECT_OR_QUERY_FAILED",
+                    ),
+                )
+            )
+        except agent_runtime.AgentRuntimeError as exc:
+            results.append(_failure_result(target, exc))
     return results, aggregate_exit_code(results)
 
 
