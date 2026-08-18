@@ -73,18 +73,24 @@ class PoolConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class PoolInfo:
-    """진단용 마스킹 정보. 비밀번호가 없다."""
+    """진단용 마스킹 정보. 비밀번호가 없다.
+
+    host·port 까지 담는 이유는 DB 이름만으로는 동일성을 판정할 수 없기
+    때문이다. 다른 서버의 같은 이름 DB 가 있을 수 있다.
+    """
 
     logical_db: LogicalDb
     role: PoolRole
     username: str
     host: str
+    port: int | None
     database: str
 
     def describe(self) -> str:
+        port = f":{self.port}" if self.port is not None else ""
         return (
             f"{self.logical_db.value}/{self.role.value}"
-            f" ({self.username}@{self.host}/{self.database})"
+            f" ({self.username}@{self.host}{port}/{self.database})"
         )
 
 
@@ -123,6 +129,7 @@ class AnalyticsPoolFactory:
             role=role,
             username=url.username or "?",
             host=url.host or "?",
+            port=url.port,
             database=url.database or "?",
         )
 

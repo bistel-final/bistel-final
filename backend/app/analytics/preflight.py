@@ -127,9 +127,24 @@ def read_state(logical_db: LogicalDb) -> LogicalDbState:
         if key not in manifest:
             raise PreflightError(f"{profile}.{stage} manifest 에 {key} 가 없다.")
 
-    if not isinstance(manifest["applies_to"], list) or not manifest["applies_to"]:
+    for key in ("source_archive_sha256", "correction_version"):
+        if not isinstance(manifest[key], str) or not manifest[key]:
+            raise PreflightError(
+                f"{profile}.{stage} manifest 의 {key} 가 비어 있거나 문자열이 아니다."
+            )
+
+    applies_to = manifest["applies_to"]
+    if not isinstance(applies_to, list) or not applies_to:
         raise PreflightError(
             f"{profile}.{stage} manifest 의 applies_to 가 비어 있거나 배열이 아니다."
+        )
+
+    # 원소 타입까지 봐야 한다. 숫자나 None 이 섞이면 나중에 DSN 대조가
+    # 조용히 어긋나면서 방어가 무력화된다.
+    if any(not isinstance(name, str) or not name for name in applies_to):
+        raise PreflightError(
+            f"{profile}.{stage} manifest 의 applies_to 원소는 "
+            "비지 않은 문자열이어야 한다."
         )
 
     if not isinstance(manifest["tables"], dict):
@@ -145,6 +160,11 @@ def read_state(logical_db: LogicalDb) -> LogicalDbState:
         )
 
     policy = action["verification_policy"]
+    if not isinstance(policy, str):
+        raise PreflightError(
+            f"{profile}.{stage} manifest 의 verification_policy 가 문자열이 아니다."
+        )
+
     expected_policy = _EXPECTED_POLICY[logical_db]
     if policy != expected_policy:
         raise PreflightError(
@@ -163,13 +183,36 @@ def read_state(logical_db: LogicalDb) -> LogicalDbState:
     )
 
 
-def _resolve_actual_database(
+@dataclass(frozen=True)
+class DatabaseTarget:
+    """DSN 이 실제로 가리키는 지점.
+
+    DB 이름만으로는 동일성을 판정할 수 없다. 다른 서버의 같은 이름 DB 를
+    같다고 보거나, 같은 서버를 localhost 와 도메인으로 나누어 적은 경우를
+    다르다고 보게 된다. (host, port, database) 세 개가 식별자다.
+    """
+
+    host: str
+    port: int | None
+    database: str
+
+    def describe(self) -> str:
+        port = f":{self.port}" if self.port is not None else ""
+        return f"{self.host}{port}/{self.database}"
+
+
+def _resolve_actual_target(
     logical_db: LogicalDb, factory: AnalyticsPoolFactory
-) -> str:
+) -> DatabaseTarget:
     # manifest 의 applies_to 는 선언일 뿐이다. .env 에서 두 DSN 을 같은 DB 로
     # 적어두면 선언만 보는 검사는 통과하고 평가가 Runtime 을 오염한다.
     # 실제 설정값을 대조해야 막을 수 있다.
-    return factory.get_pool_info(logical_db, PoolRole.QUERY).database
+    info = factory.get_pool_info(logical_db, PoolRole.QUERY)
+    return DatabaseTarget(
+        host=info.host.lower(),
+        port=info.port,
+        database=info.database,
+    )
 
 
 def run_preflight(factory: AnalyticsPoolFactory | None = None) -> PreflightResult:
@@ -236,8 +279,8 @@ def run_preflight(factory: AnalyticsPoolFactory | None = None) -> PreflightResul
     # 여기까지는 manifest 선언만 봤다. 실제 DSN 이 그 선언과 같은 DB 를 보는지
     # 대조해야 설정 실수를 잡을 수 있다.
     try:
-        runtime_database = _resolve_actual_database(LogicalDb.RUNTIME, factory)
-        evaluation_database = _resolve_actual_database(LogicalDb.EVALUATION, factory)
+        runtime_target = _resolve_actual_target(LogicalDb.RUNTIME, factory)
+        evaluation_target = _resolve_actual_target(LogicalDb.EVALUATION, factory)
     except PoolConfigurationError as exc:
         return PreflightResult(
             ok=False,
@@ -246,29 +289,32 @@ def run_preflight(factory: AnalyticsPoolFactory | None = None) -> PreflightResul
             reason=f"DSN 설정을 확인할 수 없다: {exc}",
         )
 
-    if runtime_database == evaluation_database:
+    # host·port 까지 같아야 진짜 같은 DB 다. 이름만 비교하면 다른 서버의 같은
+    # 이름 DB 를 같다고 오판한다.
+    if runtime_target == evaluation_target:
         return PreflightResult(
             ok=False,
             runtime=runtime,
             evaluation=evaluation,
             reason=(
-                f"두 DSN 이 같은 물리 DB 에 접속한다: {runtime_database}. "
-                "평가가 Runtime 을 오염한다."
+                f"두 DSN 이 같은 물리 DB 에 접속한다: "
+                f"{runtime_target.describe()}. 평가가 Runtime 을 오염한다."
             ),
         )
 
-    for state, actual in (
-        (runtime, runtime_database),
-        (evaluation, evaluation_database),
+    for state, target in (
+        (runtime, runtime_target),
+        (evaluation, evaluation_target),
     ):
-        if actual not in state.applies_to:
+        if target.database not in state.applies_to:
             return PreflightResult(
                 ok=False,
                 runtime=runtime,
                 evaluation=evaluation,
                 reason=(
                     f"{state.logical_db.value} DSN 이 manifest 선언 밖의 DB 를 "
-                    f"가리킨다: {actual} (허용 {list(state.applies_to)})"
+                    f"가리킨다: {target.describe()} "
+                    f"(허용 {list(state.applies_to)})"
                 ),
             )
 

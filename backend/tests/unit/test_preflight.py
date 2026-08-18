@@ -22,21 +22,33 @@ SOURCE_B = "b" * 64
 
 @dataclass
 class _FakeInfo:
+    host: str
+    port: int | None
     database: str
 
 
 class FakeFactory:
-    """DSN 이 실제로 가리키는 DB 명을 흉내내는 가짜 pool factory."""
+    """DSN 이 실제로 가리키는 지점을 흉내내는 가짜 pool factory."""
 
     def __init__(
         self,
         runtime_database: str = "kosa_agent",
         evaluation_database: str = "kosa_text2sql",
+        runtime_host: str = "db.example.com",
+        evaluation_host: str = "db.example.com",
+        runtime_port: int | None = 53001,
+        evaluation_port: int | None = 53001,
         error: PoolConfigurationError | None = None,
     ) -> None:
-        self._databases = {
-            LogicalDb.RUNTIME: runtime_database,
-            LogicalDb.EVALUATION: evaluation_database,
+        self._infos = {
+            LogicalDb.RUNTIME: _FakeInfo(
+                host=runtime_host, port=runtime_port, database=runtime_database
+            ),
+            LogicalDb.EVALUATION: _FakeInfo(
+                host=evaluation_host,
+                port=evaluation_port,
+                database=evaluation_database,
+            ),
         }
         self._error = error
         self.requested_roles: list[PoolRole] = []
@@ -45,7 +57,7 @@ class FakeFactory:
         if self._error is not None:
             raise self._error
         self.requested_roles.append(role)
-        return _FakeInfo(database=self._databases[logical_db])
+        return self._infos[logical_db]
 
 
 def _manifest(
@@ -54,7 +66,7 @@ def _manifest(
     stage: str,
     source: str = SOURCE_A,
     correction: str = "v1",
-    applies_to: list[str],
+    applies_to: list,
     policy: str,
     row_count: int,
 ) -> dict:
@@ -88,8 +100,8 @@ def _write_pair(
     evaluation_correction: str = "v1",
     runtime_policy: str = "bootstrap_empty",
     evaluation_policy: str = "immutable_content",
-    runtime_applies_to: list[str] | None = None,
-    evaluation_applies_to: list[str] | None = None,
+    runtime_applies_to: list | None = None,
+    evaluation_applies_to: list | None = None,
 ) -> None:
     """조작 가능한 manifest 한 쌍을 임시 디렉터리에 쓴다."""
     runtime = _manifest(
@@ -127,7 +139,7 @@ def manifest_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture()
 def factory() -> FakeFactory:
-    """기본 상태는 정상 설정(서로 다른 DB)이다."""
+    """기본 상태는 정상 설정(같은 서버, 서로 다른 DB)이다."""
     return FakeFactory()
 
 
@@ -264,6 +276,57 @@ def test_applies_to_must_be_non_empty_list(manifest_root: Path) -> None:
         read_state(LogicalDb.RUNTIME)
 
 
+def test_applies_to_elements_must_be_strings(manifest_root: Path) -> None:
+    """숫자가 섞이면 DSN 대조가 조용히 어긋나면서 방어가 무력화된다."""
+    manifest = _manifest(
+        profile="runtime",
+        stage="runtime_clean",
+        applies_to=["kosa_agent", 42],
+        policy="bootstrap_empty",
+        row_count=0,
+    )
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(PreflightError):
+        read_state(LogicalDb.RUNTIME)
+
+
+def test_source_archive_must_be_string(manifest_root: Path) -> None:
+    manifest = _manifest(
+        profile="runtime",
+        stage="runtime_clean",
+        applies_to=["kosa_agent"],
+        policy="bootstrap_empty",
+        row_count=0,
+    )
+    manifest["source_archive_sha256"] = 12345
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(PreflightError):
+        read_state(LogicalDb.RUNTIME)
+
+
+def test_verification_policy_must_be_string(manifest_root: Path) -> None:
+    manifest = _manifest(
+        profile="runtime",
+        stage="runtime_clean",
+        applies_to=["kosa_agent"],
+        policy="bootstrap_empty",
+        row_count=0,
+    )
+    manifest["tables"]["action_history"]["verification_policy"] = 7
+    (manifest_root / "runtime.runtime_clean.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
+    with pytest.raises(PreflightError):
+        read_state(LogicalDb.RUNTIME)
+
+
 def test_tables_must_be_object(manifest_root: Path) -> None:
     manifest = _manifest(
         profile="runtime",
@@ -298,16 +361,48 @@ def test_corrupted_manifest_becomes_reason_in_run_preflight(
 # ---------------------------------------------------------------------------
 # 실제 DSN 검증
 #
-# manifest 선언만 보면 .env 설정 실수를 놓친다. 선언은 정상인데 두 DSN 이
-# 같은 DB 로 가면 평가가 Runtime 을 오염한다.
+# manifest 선언만 보면 .env 설정 실수를 놓친다. 동일성 판정은
+# (host, port, database) 세 개가 기준이다. 이름만 비교하면 다른 서버의
+# 같은 이름 DB 를 같다고 오판한다.
 # ---------------------------------------------------------------------------
 
 
 def test_identical_dsn_targets_are_rejected(manifest_root: Path) -> None:
-    """manifest 선언은 정상이지만 두 DSN 이 같은 DB 를 가리키는 경우."""
+    """manifest 선언은 정상이지만 두 DSN 이 같은 지점을 가리키는 경우."""
     _write_pair(manifest_root)
     factory = FakeFactory(
         runtime_database="kosa_agent", evaluation_database="kosa_agent"
+    )
+
+    result = run_preflight(factory)
+
+    assert result.ok is False
+    assert "같은 물리 DB" in result.reason
+
+
+def test_same_database_name_on_different_port_is_distinct(
+    manifest_root: Path,
+) -> None:
+    """host·이름이 같아도 port 가 다르면 다른 서버다."""
+    _write_pair(manifest_root)
+    factory = FakeFactory(
+        runtime_port=53001,
+        evaluation_port=53002,
+    )
+
+    result = run_preflight(factory)
+
+    assert result.ok is True, result.reason
+
+
+def test_host_case_is_normalized(manifest_root: Path) -> None:
+    """DB.EXAMPLE.COM 과 db.example.com 은 같은 호스트다."""
+    _write_pair(manifest_root)
+    factory = FakeFactory(
+        runtime_database="kosa_agent",
+        evaluation_database="kosa_agent",
+        runtime_host="DB.EXAMPLE.COM",
+        evaluation_host="db.example.com",
     )
 
     result = run_preflight(factory)
