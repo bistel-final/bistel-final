@@ -452,6 +452,23 @@ RED_NOT_ALLOWED_CASES: tuple[SqlCase, ...] = (
         note="목록 밖 테이블 함수도 기본 거부된다. fail-open 금지.",
     ),
     SqlCase(
+        "R39_query_to_xml_dynamic_sql",
+        "RED_NOT_ALLOWED",
+        "SELECT query_to_xml('SELECT * FROM agent_run', true, false, '')",
+        False,
+        ("함수",),
+        note="인자 문자열을 SQL 로 실행하는 함수. denylist 로는 전수 차단이 "
+        "불가능해 함수 allowlist 로 전환. 동적 SQL 우회 차단.",
+    ),
+    SqlCase(
+        "R40_unknown_scalar_function",
+        "RED_NOT_ALLOWED",
+        "SELECT database_to_xml(true, false, '') FROM dim_parameter",
+        False,
+        ("함수",),
+        note="allowlist 밖 스칼라 함수는 기본 거부된다. fail-open 금지.",
+    ),
+    SqlCase(
         "R38_cte_scope_bypass_new_table",
         "RED_NOT_ALLOWED",
         "SELECT * FROM brand_new_table, "

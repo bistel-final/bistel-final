@@ -81,29 +81,118 @@ ALLOWED_OBJECTS: frozenset[str] = frozenset(
     }
 )
 
-#: 실행 지연·파일 접근·외부 연결을 일으키는 함수. 소문자 비교.
-DANGEROUS_FUNCTIONS: frozenset[str] = frozenset(
+#: Text2SQL 이 호출할 수 있는 함수. 분석 질의에 필요한 표준 함수만 연다.
+#: denylist 는 목록 밖 함수(query_to_xml 등 동적 SQL 실행 계열)가 기본
+#: 허용되는 fail-open 구조라 allowlist 로 뒤집었다.
+ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
     {
-        "pg_sleep",
-        "pg_read_file",
-        "pg_read_binary_file",
-        "pg_ls_dir",
-        "pg_stat_file",
-        "lo_import",
-        "lo_export",
-        "dblink",
-        "dblink_connect",
-        "dblink_exec",
-        "copy_from",
-        "pg_terminate_backend",
-        "pg_cancel_backend",
-        "pg_reload_conf",
-        "set_config",
+        # 집계
+        "count",
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "stddev",
+        "stddev_samp",
+        "stddev_pop",
+        "variance",
+        "var_samp",
+        "var_pop",
+        "percentile_cont",
+        "percentile_disc",
+        # 수학
+        "round",
+        "ceil",
+        "ceiling",
+        "floor",
+        "abs",
+        "power",
+        "sqrt",
+        "mod",
+        "trunc",
+        "sign",
+        # 날짜·시간
+        "date_trunc",
+        "extract",
+        "now",
+        "current_date",
+        "current_timestamp",
+        "age",
+        "to_char",
+        "to_date",
+        "to_timestamp",
+        "date_part",
+        # 문자열
+        "lower",
+        "upper",
+        "trim",
+        "ltrim",
+        "rtrim",
+        "length",
+        "char_length",
+        "substring",
+        "substr",
+        "concat",
+        "replace",
+        "split_part",
+        "coalesce",
+        "nullif",
+        "left",
+        "right",
+        "position",
+        "strpos",
+        # 조건
+        "greatest",
+        "least",
+        # 윈도우
+        "row_number",
+        "rank",
+        "dense_rank",
+        "lag",
+        "lead",
     }
 )
 
 #: 시스템 카탈로그 스키마. 무스키마 pg_* 접근도 search_path 로 해석되므로 차단.
 _CATALOG_SCHEMAS: frozenset[str] = frozenset({"pg_catalog", "information_schema"})
+
+#: sqlglot 이 전용 노드로 파싱하는 표준 구문·함수. 이름 대조 대상이 아니다
+#: (CASE·IN 같은 구문 노드이거나, allowlist 에 이미 있는 표준 함수의 전용 노드).
+_NON_CHECKED_FUNC_NODES = (
+    exp.Cast,
+    exp.TryCast,
+    exp.Case,
+    exp.If,
+    exp.In,
+    exp.Between,
+    exp.Distinct,
+    exp.Exists,
+    exp.Interval,
+    exp.Extract,
+    exp.Coalesce,
+    exp.Concat,
+    exp.ConcatWs,
+    exp.Greatest,
+    exp.Least,
+    exp.Nullif,
+    exp.Substring,
+    exp.Trim,
+    exp.Length,
+    exp.Lower,
+    exp.Upper,
+    exp.Left,
+    exp.Right,
+    exp.Round,
+    exp.Abs,
+    exp.Ceil,
+    exp.Floor,
+    exp.Sqrt,
+    exp.Sign,
+    exp.CurrentDate,
+    exp.CurrentTimestamp,
+    exp.DateTrunc,
+    exp.TimestampTrunc,
+)
 
 #: 검증 단계 key. fixture 의 EXPECTED_CHECK_KEYS 와 일치해야 한다.
 CHECK_KEYS: tuple[str, ...] = (
@@ -343,17 +432,21 @@ def validate_sql(sql: str) -> ValidationResult:
             )
     passed.add("no_catalog_access")
 
-    # ── 4. 위험 함수 ────────────────────────────────────────────────────
+    # ── 4. 함수 allowlist ──────────────────────────────────────────────
+    # denylist 는 query_to_xml 처럼 인자 문자열을 SQL 로 실행하는 함수가
+    # 목록에 없으면 기본 허용되는 fail-open 구조다. 허용 함수만 연다.
     for node in statement.walk():
         func_name: str | None = None
         if isinstance(node, exp.Anonymous):
             func_name = str(node.this).lower()
-        elif isinstance(node, exp.Func):
+        elif isinstance(node, exp.Func) and not isinstance(
+            node, _NON_CHECKED_FUNC_NODES
+        ):
             func_name = node.sql_name().lower()
-        if func_name and func_name in DANGEROUS_FUNCTIONS:
+        if func_name and func_name not in ALLOWED_FUNCTIONS:
             return _fail(
                 "no_dangerous_function",
-                f"위험 함수 호출은 차단된다: {func_name}",
+                f"허용되지 않은 함수 호출이다: {func_name}",
                 passed,
             )
     passed.add("no_dangerous_function")
