@@ -1,158 +1,71 @@
 # 01. 프로젝트 강제 규칙
 
-> [!CAUTION]
-> **사용 중지 — 아래 본문은 v1.9/v1.10/v9.6 기준의 구 이력이며 구현 근거로 사용하면 안 됩니다.**
-> v2 요약 문서가 재생성되기 전에는 `docs/specifications/요구사항정의서_v2_0_작업본.md`,
-> `docs/specifications/시스템설계서_v2_0_작업본.md`,
-> `docs/specifications/FDC_프로젝트_역할분담_v10_0_작업본.md`와
-> `docs/planning/Task분해_WBS_v4_작업본.md`의 해당 `V4-*` Task만 사용하십시오.
-> 아래 본문은 참고·복사·프롬프트 입력을 금지합니다.
+> 기준 원천: 멘토 최종 패키지 (2026-08-18) · 요구사항 v2.0 · 시스템설계서 v2.0 · WBS v4
+> 마지막 동기화: 2026-08-18
 
-> 기준 요구사항: v1.9
-> 기준 시스템설계서: v1.10
-> 기준 역할분담: v9.6
-> 마지막 동기화: 2026-08-12
-
-이 문서는 코드·계약·보안 강제 규칙의 **단일 출처**다. 사람과 AI 도구가 같은 규칙을 쓴다.
-각 규칙은 새로 해석하지 않고 원본 절 번호를 근거로 둔다. 원본과 충돌하면 원본이 우선한다.
+어기면 리뷰에서 반려되는 규칙만 적는다. 배경 설명은 원본(README 라우팅)으로 간다.
 
 ---
 
-## 1. 절대 금지 (어기면 되돌리기 비싸다)
+## 1. 데이터·사양 기준
 
-| # | 금지 | 근거 |
-|---|---|---|
-| 1 | 배포 원본 `01_schema.sql`·`02_master_data.sql`·`03_load_data.sql`·`master.cypher`·`02_docs_rag/*.md` 수정 | 설계 0.2·3.1 / 요구사항 12장 |
-| 2 | 스키마 변경을 원본 파일에 직접 반영 — 반드시 `backend/migrations/001_agent_runtime.sql` 사용 | 설계 3.1·3.2 |
-| 3 | 공용 개발 서버의 기준·생산·문서 데이터 재적재·삭제·덮어쓰기 | 설계 13.2.1 / 요구사항 13장 |
-| 4 | 공용 PostgreSQL·Neo4j·n8n 컨테이너 `docker stop` (장애 테스트 포함) | 설계 14.2 / 요구사항 부록 B 4-A·4-B |
-| 5 | 비밀번호·API Key·전체 DSN을 로그·stdout·응답·문서·커밋에 출력 | NFR-02·NFR-14 / 설계 13.2.2 |
-| 6 | `audit_log` UPDATE·DELETE (애플리케이션 메서드·API 모두) | NFR-05 / 설계 11장·14.1 |
-| 7 | 조치 판정·승인 게이트를 LLM에 위임 | NFR-04 / 요구사항 8.2 / 설계 1.2·7.7 |
-| 8 | 테스트를 실행하지 않고 완료로 보고 | 요구사항 13장 |
-| 9 | 담당 영역 밖 파일 변경을 사전 공유 없이 수행 | 역할분담 1.1 |
-| 10 | `.env`·`*.joblib`·`backend/model-cache/` 커밋 | 설계 13.5 / NFR-02 |
+- 데이터 정본은 **멘토 최종 패키지 `sample/data/`** 다. kosa_0813 이하 구본 기준의
+  수치·필터값·기대값은 전부 무효다 (실측 기준은 `02-domain-rules.md` 1장).
+- `area` 값은 `Photo`/`Etch` 다. 소문자 비교가 필요하면 쿼리 쪽에서 정규화한다.
+- `lot_history.fault_code` 는 평가 전용이다. Agent 판단 입력·프롬프트·Tool 결과·
+  Text2SQL 응답 가공에 넣지 않는다.
+- 금지 용어: `sensor`(→ 파라미터) · `judgement`(→ alarm_type) · `SPC`.
+  코드 식별자·API 필드·화면 문구·문서 전부에 적용한다.
 
----
+## 2. 불변 계약
 
-## 2. 계층 구조
+- **Tool 반환 형식은 `{ok, ..., reason}`** 이다. 실패 reason 은
+  `POLICY_REJECTED:` `LLM_NOT_READY:` `DEPENDENCY_ERROR:` 등 접두어 규칙을 따른다
+  (`app/common/tool_contracts.py` 가 정본).
+- **`langgraph==0.2.53` 고정.** 올리지 않는다.
+- **`decide_action` 은 규칙 기반 순수 함수**다. LLM·DB 접근을 넣지 않는다.
+  `anomaly_score` 는 조치 규칙에 직접 반영하지 않는다.
+- 조치 어휘는 **MONITORING / WARNING / EQP_HOLD 3단계**뿐이다.
+  LOT_HOLD·NOTIFY·MONITOR 는 폐어다.
+- EQP_HOLD 만 사람 승인(HITL)이며, 승인 후에만 MES(Kafka `fdc.actions`)로 나간다.
+
+## 3. DB 접근
+
+- LLM 이 생성한 SQL 은 **`kosa_readonly`(SELECT 전용) pool 로만 실행**한다.
+- 질의 로그 기록은 **`kosa_query_logger`(nl_query_log INSERT 전용)** 만 쓴다.
+- 계정·권한의 정본은 `backend/migrations/002_analytics_roles.sql`.
+  pool 은 `app/analytics/db_pool.py` 가 계정을 강제하며, 다른 계정 DSN 은 기동이 거부된다.
+- 공용 DB 쓰기 작업(계정·스키마·적재)은 실행 전 팀 공유가 필수다.
+
+## 4. Git·PR
+
+CI(`.github/workflows/pr-policy.yml`)는 아래 3개만 검사한다. lint·test 는 CI 가
+돌리지 않으므로 **검증 결과를 PR 본문에 수동 기록**한다.
 
 ```
-Router → Service → Repository
+PR 제목    ^(feat|fix|refactor|test|docs|chore): .+$      (대괄호 태그 금지)
+브랜치     ^(feat|fix|refactor|test|docs|chore)/(common|detection|knowledge|agent|analytics|integration)-[a-z0-9-]+$
+PR 본문    "## 변경 내용" 과 "## 변경 이유" 문자열 필수
 ```
 
-| 계층 | 책임 | 금지 |
-|---|---|---|
-| Router | HTTP 입력 검증, Service 호출, 상태코드 변환 | SQL·Cypher 직접 실행, 업무 규칙 구현 |
-| Schema | 요청·응답 Pydantic 모델 | DB 세션 접근 |
-| Service | 업무 흐름, 트랜잭션 경계 | 문자열 SQL 직접 작성 |
-| Repository | PostgreSQL·Neo4j 조회·저장 | HTTP 응답 생성, LLM 호출 |
-| Tool | Service를 Agent 계약으로 감싸기 | DB 규칙 중복 구현 |
-| Model/Rules | IsolationForest, 규칙 판정, `decide_action` | HTTP·DB 상태 변경 |
+- main 직접 커밋 금지. squash merge. 자기 승인 금지.
+- **`ruff format` → `git add`** 순서. 반대로 하면 검증한 코드와 커밋이 어긋난다.
+- `git add -A` 금지. 경로를 명시한다.
+- 커밋 전 검증: `cd backend && ruff format . && ruff check . && pytest`
+- PR 본문 필수 항목: 담당자 · V4 Task ID · Closes #이슈 · 실행 명령과 결과 ·
+  관련 FR · artifact 경로 · 미검증 사항.
 
-근거: 설계 2.2
+## 5. 로컬 환경
 
----
+- `.env` 는 `.env.example` 기준으로 만들고 DSN 5종을 채운다
+  (`postgresql+psycopg://` 접두 필수).
+- bootstrap 테스트가 `NotRegisteredError: active corrected build` 로 실패하면:
+  `MENTOR_PACKAGE_DIR` 설정 후
+  `python3 scripts/build_corrected_dataset.py --archive <zip> --confirm`.
+  (신본 전환 시 이 절차의 대상 아카이브가 교체된다 — Common 공지 확인)
 
-## 3. Tool 반환 계약
+## 6. AI 도구 사용
 
-Tool은 **예외를 바깥으로 던지지 않는다.** 실패·타임아웃도 정상 JSON으로 반환한다.
-
-```python
-{"ok": True,  ...도구별 필드..., "reason": ""}
-{"ok": False, ...데이터 필드는 null 또는 빈 목록..., "reason": "NOT_FOUND: ..."}
-```
-
-실패 시 `reason`은 아래 접두어 중 하나로 시작한다. **임의 접두어를 만들지 않는다.**
-
-```
-NOT_FOUND:  TIMEOUT:  MODEL_NOT_READY:  LLM_NOT_READY:
-DEPENDENCY_ERROR:  POLICY_REJECTED:  IDEMPOTENCY_CONFLICT:
-```
-
-`latency_ms`·호출 상태는 반환값에 넣지 않는다. `agent_tool_call`에 기록한다.
-
-근거: 설계 10.6 / 요구사항 6장 공통 계약 · NFR-09
-
----
-
-## 4. REST 오류 계약
-
-| 상황 | HTTP |
-|---|---|
-| 존재하지 않는 리소스 | 404 |
-| 진행 중 incident 수동 재실행, 승인 중복·EXPIRED | 409 |
-| 요청 본문·쿼리 형식 오류 | 422 |
-| Text2SQL 정책 거부 | 200 + `is_valid=false`, `is_rejected=true`, `reject_reason` |
-| 모델·LLM 산출물 미준비 | 503 |
-| 예기치 못한 서버 오류 | 500 |
-
-공통 오류 본문은 `{code, message, details}`다. 500 응답과 로그에 비밀번호·전체 DSN·API Key·내부 SQL 원문을 노출하지 않는다.
-
-Tool과 REST는 같은 Service를 쓰되 **오류 표현을 분리한다.** Tool 실패를 HTTP 상태코드로 바꾸지 않는다. Text2SQL 정책 거부는 SQL을 실행하지 않은 정상적인 안전 판정 결과이므로 REST에서 200으로 반환하되, 요청 body 누락·타입·길이 오류만 422다. `PolicyRejectedError`와 Tool의 `POLICY_REJECTED:` 접두어는 유지한다.
-
-근거: 설계 2.3 / NFR-10·NFR-11
-
----
-
-## 5. Agent Tool 예산
-
-```
-AGENT_MAX_TOOL_CALLS = 8   그래프 1회 실행의 총 실제 호출 수 (재시도 포함)
-AGENT_MAX_RETRY      = 3   같은 Tool의 최초 실패 후 추가 시도 수 (동일 Tool 최대 4회)
-```
-
-- 조치 생성 가능 경로는 `reserved_send_calls=1`로 시작해 **최초 `send_action` 1회를 예약**한다. 진단·선택 호출이 이를 소비할 수 없다.
-- 호출 수의 영속 단일 기준은 `agent_tool_call`이다. State의 `tool_call_count`는 캐시다.
-- HITL 재개·checkpoint 유실 복구 시 `COUNT(*)`로 복원한다. **0으로 초기화하지 않는다.**
-- 독립 Analytics Tool `generate_analysis_plan`은 이 8회와 `agent_tool_call`에 포함하지 않는다.
-
-근거: 설계 7.4·7.4.1 / 요구사항 8.5 · FR-C-08
-
----
-
-## 6. DB 접근
-
-| 용도 | 연결 | 계정 |
-|---|---|---|
-| 애플리케이션 쓰기 | `APP_DATABASE_URL` → `kosa_agent` | `kosa_app` |
-| 운영 Text2SQL 생성 SQL 실행 | `TEXT2SQL_DATABASE_URL` → `kosa_agent` | `kosa_readonly` |
-| 운영 질의 로그 | `TEXT2SQL_LOG_DATABASE_URL` → `kosa_agent` | `kosa_query_logger` |
-| 평가 골드·방어 실행 | `TEXT2SQL_EVAL_DATABASE_URL` → `kosa_text2sql` | `kosa_readonly` |
-| 평가 로그 | `TEXT2SQL_EVAL_LOG_DATABASE_URL` → `kosa_text2sql` | `kosa_query_logger` |
-
-- LLM이 생성한 SQL은 **readonly pool 이외의 연결에 전달하지 않는다.**
-- `QueryLogRepository`는 SQL 문자열을 실행하는 메서드를 제공하지 않는다. 고정 INSERT만 노출한다.
-- SQL 문자열 조합 금지. 파라미터 바인딩을 쓴다.
-- 필요한 컬럼만 조회한다. `SELECT *`를 피한다.
-- 배포 기본 비밀번호(`kosa_readonly` 포함)를 그대로 쓰지 않는다.
-
-근거: 설계 9.5·14.1 / NFR-01
-
----
-
-## 7. Git
-
-- `main` 직접 commit·push 금지. `<type>/<area>-<description>` 브랜치를 만든다.
-- Type: `feat` `fix` `refactor` `test` `docs` `chore`
-- Area: `common` `detection` `knowledge` `agent` `analytics` `integration`
-- 커밋 메시지: `<type>: <한 줄 요약>` + 본문에 무엇을 왜.
-- PR 제목: `<type>: <한 줄 요약>`. 담당 영역(`Common`·`A`·`B`·`C`·`D`)은 라벨로 표시한다.
-
-상세 흐름은 `docs/development-guide.md`.
-
----
-
-## 8. 완료 보고 규칙
-
-작업을 완료로 보고할 때 다음을 함께 제시한다.
-
-1. 실행한 테스트 명령과 결과
-2. 대상 요구사항 ID별 충족 여부
-3. 결과 artifact 경로와 관련 PR 또는 Notion Task 링크
-4. 미완료·미검증 항목 (숨기지 않는다)
-5. 범위 밖 변경이 있었다면 그 사유
-
-`grep` 결과나 파일 존재만으로는 완료로 보고하지 않는다. 해당 작업의 완료 기준을 실제 단위·계약·통합·E2E·평가 테스트 중 적절한 계층에서 검증하고 명령과 결과를 남긴다.
-
-근거: 요구사항 13장 / 역할분담 1.1
+- 진입점은 `CLAUDE.md`(Claude Code) · `AGENTS.md`(Codex)이며 내용이 동일해야 한다.
+- 작업 요청에는 담당자와 `V4-*` Task ID 를 명시한다.
+- README 상태 표에서 ✅ 가 아닌 요약 문서의 본문을 근거로 쓰지 않는다.

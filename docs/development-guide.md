@@ -1,10 +1,10 @@
 # Development Guide
 
-> [!CAUTION]
-> **신규 `kosa_0813.zip` 기준 v2 전환 중입니다.** 이 문서의 Git·브랜치·PR 절차는 계속
-> 사용하지만 도메인·데이터·API·E2E 기준은 v2 요구사항·시스템설계서·역할분담 v10과 WBS v4가
-> 우선합니다. `docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`의 구 본문과
-> 51건 알람·Fault 정답·ACT-0001~0010·4단계 조치를 구현 근거로 사용하지 않습니다.
+> [!NOTE]
+> **기준: 멘토 최종 패키지 (2026-08-18).** 이전 배포본(kosa_0813 포함) 기준의
+> 수치·필터값·기대값은 무효입니다. 도메인·데이터·API 기준은
+> `docs/ai-context/README.md`(라우팅)와 재생성된 `01`~`07` 문서를 따릅니다.
+> 이 문서의 Git·브랜치·PR·E2E 절차는 계속 유효합니다.
 
 ## 1. 전체 작업 흐름
 
@@ -233,7 +233,7 @@ pytest -m e2e
 
 - 대상은 공용 서버 안의 **전용 논리 DB `kosa_agent_e2e`**뿐입니다. `kosa_agent`·`kosa_text2sql`을 reset하지 않습니다.
 - 공용 PostgreSQL·Neo4j·n8n 컨테이너를 `docker stop`으로 멈추지 않습니다. 장애 주입은 dependency override·Tool mock·테스트 webhook으로 합니다.
-- 제공 `action_history` 48건은 Runtime seed·조치 정답으로 사용하지 않습니다.
+- 시드 `action_history` 10건은 예시이며 조치 정답으로 사용하지 않습니다. 실제 조치는 Agent 가 런타임에 생성합니다.
 - corrected source·reference·corpus·migration schema와 평가 전용 synthetic artifact를 보존합니다.
 
 근거: 요구사항 v2.0 13장 · 시스템설계서 v2.0 14장 · WBS V4-CM-3.4, V4-C-8.2
@@ -487,13 +487,15 @@ git branch -D feat/detection-summary
 
 ## 11. 계약·보안 규칙
 
-v2 전환 중 코드·계약·보안의 기준은 요구사항정의서 v2.0 → 시스템설계서 v2.0 → 역할분담 v10.0
-→ WBS v4의 해당 Task 순서입니다. `docs/ai-context/README.md`는 이 원본으로 보내는 라우팅 인덱스입니다.
-
-`docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 구 이력으로 사용 중지 상태이며
-v2 재생성 전까지 단일 출처나 구현 근거로 사용하지 않습니다.
+코드·계약·보안의 기준 순서는 **멘토 최종 패키지(8/18) → 요구사항 v2.0 → 시스템설계서
+v2.0 → 역할분담 v10.0 → WBS v4** 입니다. `docs/ai-context/README.md`가 라우팅 인덱스이며,
+`01`~`07`·`PROMPT_TEMPLATE`·`tasks/*` 는 최종 패키지 기준으로 재생성 완료(2026-08-18) 상태라
+구현 근거로 사용할 수 있습니다.
 
 ### API 계약을 바꿀 때
+
+> 외부 API 계약(경로·필드명)의 정본은 **멘토 패키지 `02_화면별_API_가이드.md`** 입니다.
+> DTO 역산 명세서는 내부 상세 문서이며, 멘토 확정 6필드와 충돌하면 멘토 스펙이 이깁니다.
 
 API 명세서는 손으로 쓰지 않습니다. Backend Pydantic DTO에서 역산해 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를 지켜야 세 문서가 어긋나지 않습니다.
 
