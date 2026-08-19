@@ -1,114 +1,233 @@
 # 03. 데이터베이스 규칙
 
-> 기준 원천: 멘토 최종 패키지 `sample/schema/03_schema_clean.sql` (2026-08-18)
-> 보조 기준: 시스템설계서 v2.0 2~3·13~14장 · `backend/migrations/`
-> 마지막 동기화: 2026-08-18
+> [!CAUTION]
+> **사용 중지 — 아래 본문은 이전 epoch·부분 동기화 이력이며 구현 근거로 사용하면 안 됩니다.**
+> 현재는 `docs/ai-context/README.md`에서 안내하는 최종 패키지 기준표와 v2.1 요구사항·설계·
+> 역할분담·API v3만 사용합니다. WBS v5와 이 요약문이 함께 재생성되기 전에는 아래 본문의
+> 참고·복사·프롬프트 입력을 금지합니다.
+
+> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
+> 마지막 동기화: 2026-08-12
+
+DB 접근 pool·계정 요약은 `01-project-rules.md` 6절에 있다. 이 문서는 스키마·마이그레이션·권한의 상세를 다룬다.
 
 ---
 
-## 1. 스키마 계층
+## 1. 원본 스키마는 수정하지 않는다
+
+배포 패키지의 다음 파일은 **어떤 경우에도 수정하지 않는다.**
 
 ```
-[정본] 멘토 03_schema_clean.sql        base 9 table (아래 2장)
-  + backend/migrations/001_reference_extensions.sql   reference 6종
-     (r03_alarm_history · v_alarm_event · nl_query_log ·
-      document_corpus · document · document_chunk)
-  + infra 002_agent_runtime_clean                     agent_run 등 runtime 계열
-  + backend/migrations/002_analytics_roles.sql        계정·권한 (4장)
+03_db/01_schema.sql   03_db/02_master_data.sql   03_db/03_load_data.sql
+01_data/**            02_docs_rag/*.md           04_infra/requirements.txt
 ```
 
-> ⚠️ **정합 검증 필요**: 확장 계층(001·002)은 구본 스키마 기준으로 작성됐다.
-> 신본에서 `wafer` 가 `varchar(24)` 로 바뀌는 등 타입 변경이 있어
-> `v_alarm_event`(UNION 뷰) 등은 신본 적재 후 재검증한다. (Common 전환 작업과 연동)
+신규 런타임 구조는 `backend/migrations/001_agent_runtime.sql` 하나로 관리한다.
 
-## 2. base 9 table 요점 (신본 DDL 확정 사항)
+**공용 DB 적용 절차** (설계 3.1)
 
-| 테이블 | PK | 비고 |
+```
+1. 팀에 SQL과 영향 범위 공유
+2. 멘토 확인
+3. 쓰기 권한 계정으로 적용 (kosa_readonly 사용 금지)
+4. verify_migrations.py 로 컬럼·인덱스·제약 검증
+5. 적용 결과와 실행 시각을 팀 문서에 기록
+```
+
+Migration runner는 fail-fast + **단일 `BEGIN ... COMMIT`** 을 쓴다. DDL 전에 legacy 이상치를 조회하고 하나라도 있으면 아무 DDL도 적용하지 않고 중단한다. 부분 적용 상태를 남기지 않는다.
+
+---
+
+## 2. `001_agent_runtime.sql` 이 하는 일
+
+### 2.1 신규 테이블
+
+| 테이블 | 용도 |
+|---|---|
+| `agent_run_alarm` | incident에 포함된 전체 알람을 실행과 연결. 대표 1건은 `is_representative` |
+| `action_delivery` | n8n 모의 전송 멱등 기록. `action_id` PK + `request_hash` |
+
+`agent_run_alarm.alarm_id` 단독 UNIQUE는 두지 않는다. FAILED 수동 재실행이 같은 알람 집합을 새 run에 연결할 수 있어야 한다.
+
+### 2.2 신규 컬럼
+
+```sql
+approval_request.action_id          -- 승인↔조치 직접 연결 (FK + 부분 UNIQUE)
+action_history.created_by_agent_run_id -- 조치를 최초 생성한 실행 (FK, legacy NULL)
+action_history.send_started_at      -- SENDING 진입 시각 (고착 판정용)
+action_history.send_attempt_count   -- 시도 횟수
+agent_run.requested_alarm_id        -- 수동 실행 시 사용자가 준 alarm_id (NOT NULL)
+agent_run.severity                  -- decide_action 결과 (CHECK LOW|MEDIUM|HIGH)
+agent_run.last_active_at            -- heartbeat, stale run 판정용
+```
+
+`created_by_agent_run_id`는 조치 생성 시 한 번만 기록한다. FAILED 수동 재실행이 같은 `action_id`를 재사용해도 갱신하지 않고, 배포 기준 legacy 조치는 `NULL`을 허용한다. 즉 이 컬럼은 최신 실행이 아니라 **생성 provenance**다.
+
+### 2.3 incident key NOT NULL — 순서가 중요하다
+
+원본에서 `agent_run.lot_id`·`chamber_id`, `action_history.chamber_id`가 **nullable**이다.
+PostgreSQL UNIQUE 인덱스는 NULL을 서로 다른 값으로 보므로, 애플리케이션의 "항상 채운다" 규칙만으로는 중복을 막지 못한다.
+
+```
+① 결정론적 backfill
+   agent_run     ← fdc_alarm(alarm_id) 의 lot_id·chamber_id
+   action_history ← lot_history(trigger_alarm_lot_hist_id) 의 chamber_id
+② 6개 guard 검증 (NULL 0건 · 대표 알람/trigger 이력 불일치 0건 · 활성 중복 0건)
+③ SET NOT NULL
+④ 그 다음에야 부분 고유 인덱스 생성
+```
+
+legacy 값이 비어 있으면 임의 값을 만들지 않고 **migration을 중단**해 팀 확인을 받는다.
+
+### 2.4 부분 고유 인덱스
+
+```sql
+ux_agent_run_incident_active   ON agent_run (lot_id, chamber_id)
+                               WHERE status IN ('RUNNING','WAITING_APPROVAL')
+
+ux_action_incident_active      ON action_history (lot_id, chamber_id)
+                               WHERE send_status IS DISTINCT FROM 'CANCELED'
+
+ux_agent_run_one_representative ON agent_run_alarm (agent_run_id) WHERE is_representative
+ux_agent_tool_call_run_seq      ON agent_tool_call (agent_run_id, call_seq)
+ux_approval_request_action      ON approval_request (action_id) WHERE action_id IS NOT NULL
+```
+
+`<> 'CANCELED'`가 아니라 **`IS DISTINCT FROM`** 을 쓴다. `send_status`가 NULL인 과거 행도 유효 조치로 봐야 한다.
+
+동시성 방어는 3중이다. **advisory lock → 트랜잭션 재조회 → 부분 고유 인덱스.**
+
+```sql
+SELECT pg_advisory_xact_lock(hashtextextended(:lot_id || E'\x1f' || :chamber_id, 0))
+```
+
+---
+
+## 3. ID 생성 규칙
+
+원본 varchar 길이를 바꾸지 않는다.
+
+| 대상 | 형식 | 최대 |
 |---|---|---|
-| `dim_parameter` | parameter_id | **한계선 5선의 유일한 출처** (LSL<LCL<TARGET<UCL<USL). `upper_only=true` 는 하한 미판정 (예: ET_REFL) |
-| `lot_history` | lot_hist_id | wafer 1장 × step 1개 기록. `chamber_wafer_cum` = 챔버 누적 순번 — **R03 연속 판정의 정렬 기준 (LOT 경계 넘음)** |
-| `fdc_trace` | (lot_hist_id, parameter_id, seq_no) | raw 시계열. trace_alarm 의 입력 |
-| `summary_data` | (lot_hist_id, parameter, step_no) | 통계만 (mean·std(ddof=1)·min·max·count). **판정 없음** |
-| `evaluation` | (lot_hist_id, parameter, step_no) | 이탈 점 수 + `alarm_type` CHECK ('OOS','OOC','IN') |
-| `trace_alarm_history` | alarm_id | raw 점의 규격 이탈. `limit_type` CHECK ('USL','LSL') |
-| `summary_alarm_history` | alarm_id | 통계의 관리 이탈. UCL/LCL = 정상 wafer 평균 ±3σ. `limit_type` CHECK ('UCL','LCL') |
-| `metrology` | metrology_id | 계측(CD_ADI/CD_AEI). `alarm_result` CHECK ('PASS','FAIL') = 탐지 평가 정답 |
-| `action_history` | action_id | 조치. `action_code` = MONITORING\|WARNING\|EQP_HOLD |
+| `agent_run_id` | `RUN-` + UUID 앞 16 hex | 20 |
+| `action_id` | `ACT-` + UUID 앞 16 hex | 20 |
+| `approval_id` | `APR-` + UUID 앞 16 hex | 20 |
+| `tool_call_id` | `TOOL-` + UUID 앞 24 hex | 29 |
+| `thread_id` | UUID 문자열 | 36 |
 
-**컬럼 의미 확정 (DDL 주석 기준)**
+생성은 `INSERT ... ON CONFLICT DO NOTHING RETURNING <id>`로 하고 반환이 없으면 새 UUID로 재시도한다.
+**unique violation을 그대로 발생시켜 트랜잭션을 aborted 상태로 만들지 않는다.** 예외를 잡고 같은 트랜잭션에서 재INSERT하는 구현은 금지다.
 
-```
-action_history.approval_status   AUTO | PENDING | APPROVED | REJECTED
-action_history.notify_status     담당자 이메일 통지. WARNING·EQP_HOLD → SENT, MONITORING 은 통지 없음
-action_history.mes_status        MES 홀드 집행. EQP_HOLD 만: 승인 대기 WAITING → 승인 시 SENT
-recipe 매핑                       RECIPE01·03 = Photo / RECIPE02·04 = Etch
-wafer (summary·evaluation·alarm) varchar(24) — wafer_id 문자열 (LOT001W001)
-area                             varchar — 'Photo' | 'Etch'
-```
+배포 fixture의 `ACT-0001` 형식과 신규 형식은 문자열 PK로 공존한다.
 
-**구본 대비 주의** — 구본 기준 코드가 조용히 깨지는 지점
+---
 
-```
-wafer 타입        integer → varchar(24)   조인·비교 캐스팅 확인
-area 값           photo/etch → Photo/Etch  필터 상수 전수 교체
-send_status 없음  통지·집행은 notify_status / mes_status 로 분리됐다
-```
+## 4. 시간 처리
 
-## 3. 논리 DB
+원본이 `timestamp without time zone`이므로 **DB에는 Asia/Seoul 현지 시각을 naive로 저장**한다.
 
-```
-Runtime    kosa_agent (+ kosa_agent_e2e)   agent 실행으로 행이 늘어나는 write state
-평가       kosa_text2sql                    immutable snapshot
-```
+- 애플리케이션은 `ZoneInfo("Asia/Seoul")`로 생성·해석한다
+- API는 `+09:00`이 포함된 ISO 8601로 반환한다
+- 정렬은 timestamp + 결정론적 ID 보조 키를 함께 쓴다
+- 경과시간은 시스템 시각이 아니라 `time.perf_counter()`로 잰다
+- 컨테이너·애플리케이션 `TZ`는 모두 `Asia/Seoul`
 
-- 두 논리 DB 는 같은 source 에서 나와야 하며 같은 물리 DB 를 가리키면 안 된다.
-  기동 시 `app/analytics/preflight.py` 가 manifest 와 실제 DSN(host·port·database)을
-  대조해 강제한다.
-- 스키마 조회는 `app/analytics/schema_cache.py` (논리 DB 당 information_schema 1회).
-  migration 진행도 차이는 정상이며 `diff_tables()` 로만 노출한다.
-  **migration 적용 후에는 워커 재시작 또는 `invalidate()` 가 배포 절차에 포함돼야 한다.**
+---
 
-## 4. 계정·권한 (1차 방어선)
+## 5. 계정 권한
 
-정본: `backend/migrations/002_analytics_roles.sql` (멱등 · CHANGE_ME 치환 가드)
+| Role | CONNECT | 허용 | 명시적 금지 |
+|---|---|---|---|
+| `kosa_app` | `kosa_agent` | 기준·생산·문서 SELECT / `agent_run`·`agent_run_alarm`·`agent_tool_call`·`action_history`·`approval_request` SELECT·INSERT·UPDATE / `audit_log` **SELECT·INSERT만** / checkpoint DML / `action_delivery` SELECT | `kosa_text2sql` CONNECT, `nl_query_log` 접근, **`audit_log` UPDATE·DELETE**, DDL·role 관리 |
+| `kosa_readonly` | `kosa_agent`, `kosa_text2sql` | allowlist 16개 table SELECT | allowlist 외 SELECT, 모든 쓰기·DDL |
+| `kosa_query_logger` | `kosa_agent`, `kosa_text2sql` | `nl_query_log` INSERT + sequence USAGE | 임의 SELECT, 생성 SQL 실행 |
+| `kosa_n8n_delivery` | `kosa_agent` | `action_delivery` SELECT·INSERT | 다른 table 접근, UPDATE·DELETE·DDL |
 
-| 계정 | 권한 | 용도 |
-|---|---|---|
-| `kosa` | 관리 | 부트스트랩·적재 전용. 앱 코드에서 사용 금지 |
-| `kosa_app` | 앱 쓰기 | Agent runtime |
-| `kosa_readonly` | **SELECT 만** | LLM 생성 SQL 실행은 이 계정만 |
-| `kosa_query_logger` | **nl_query_log INSERT + 시퀀스만** | 질의 로그 append-only |
+네 계정 모두 SUPERUSER·CREATEDB·CREATEROLE·DDL 권한을 갖지 않는다.
+reset·migration·`PostgresSaver.setup()`은 runtime 계정이 아니라 **별도 bootstrap/admin 세션**으로만 수행한다.
 
-- `app/analytics/db_pool.py` 가 (논리 DB × 용도) pool 별로 계정을 강제한다.
-  QUERY 자리에 다른 계정 DSN 을 넣으면 기동이 거부된다.
-- DSN·비밀번호는 예외·로그·repr 에 남지 않는다 (`hide_parameters` + 마스킹 PoolInfo).
-- 검증된 사실 (실접속 확인): readonly 는 쓰기 거부, logger 는 INSERT 만 성공하고
-  SELECT·타 테이블 거부.
+`audit_log`의 append-only는 애플리케이션 코드뿐 아니라 **DB 권한으로도** 강제한다.
 
-## 5. DSN
+---
 
-`.env` 5종. `postgresql+psycopg://` 접두 필수. 비밀번호는 영숫자만 (URL 파싱).
+## 6. 공용 서버 자격증명 전환
+
+배포 원본의 `kosa_readonly` 기본 비밀번호와 전체 SELECT 권한은 NFR-01을 충족하지 않는다.
+`001_agent_runtime.sql`과 Checkpoint 초기화가 승인·적용된 뒤 **1회 전환**한다.
 
 ```
-APP_DATABASE_URL                kosa_app        → kosa_agent
-TEXT2SQL_DATABASE_URL           kosa_readonly   → kosa_agent
-TEXT2SQL_LOG_DATABASE_URL       kosa_query_logger → kosa_agent
-TEXT2SQL_EVAL_DATABASE_URL      kosa_readonly   → kosa_text2sql
-TEXT2SQL_EVAL_LOG_DATABASE_URL  kosa_query_logger → kosa_text2sql
+1. 변경 시각·중단 구간을 팀·멘토에 공유하고 .env 갱신 시점을 맞춘다
+2. 읽기 전용 preflight — 필수 object·owner·현재 grant·기존 PID 수집. 기대와 다르면 시작하지 않는다
+3. admin DB 트랜잭션에서 role 생성·갱신 후 임시 NOLOGIN 으로 잠근다. 기존 project-role PID만 종료
+4. DB별 트랜잭션으로 권한 적용 (PostgreSQL은 DB 간 grant를 한 트랜잭션에 묶을 수 없다)
+5. 전 DB 검증 통과 후에야 마지막 트랜잭션에서 새 비밀번호 + LOGIN 활성화
+6. verify_public_credentials.py 로 이전 비밀번호 로그인 실패까지 확인
 ```
 
-## 6. bootstrap·manifest
+새 비밀번호를 문서·명령행·stdout·로그에 출력하지 않는다.
+실패 시 `NOLOGIN`을 유지해 기동을 차단하고 원인을 해결한 뒤 전체 절차를 다시 실행한다.
 
-- 적재 산출물은 manifest(`infra/bootstrap/manifests/*.json`, format v3)로 검증한다.
-  Runtime 은 `runtime_clean`(write state), 평가는 `evaluation_mock`(immutable) stage 기준.
-- 로컬은 corrected build 구축이 선행이다 (`01-project-rules.md` 5장).
-- **신본 전환 시**: 대상 아카이브·source hash·manifest 전부 갱신 대상 (Common 주관).
-  전환 전까지 공용 DB 는 구본 상태일 수 있으므로 수치 검증은 `sample/data/` 실측을 기준으로 한다.
+---
 
-## 7. Text2SQL allowlist (D)
+## 7. Checkpoint 초기화
 
-- 객체: base 9 + reference 6 만. `audit_log`·`agent_run` 등 runtime 계열은
-  Text2SQL 에서 조회 불가 (전용 API 소관).
-- 함수: allowlist 방식 (집계·수학·날짜·문자열·조건·윈도우 표준만).
-- 컬럼: bootstrap manifest 의 컬럼 정의로 오프라인 판정.
-- 정본: `app/analytics/sql_validator.py` · fixture `tests/unit/test_sql_validator.py`.
+`PostgresSaver.setup()`을 **애플리케이션 시작 시 호출하지 않는다.**
+`backend/scripts/init_checkpoint.py` 운영 명령으로만 최초 1회 실행한다.
+
+`langgraph-checkpoint-postgres==2.0.9` 기준 setup 대상:
+
+```
+checkpoint_migrations  checkpoints  checkpoint_blobs  checkpoint_writes
++ thread_id 인덱스 3개
+```
+
+thread 인덱스를 `CREATE INDEX CONCURRENTLY`로 만들므로 setup 연결은 `autocommit=True`, `prepare_threshold=0`을 쓴다.
+실행 전 백업을 확보하고, setup 전후 `information_schema.tables`를 비교해 결과를 `docs/troubleshooting/checkpoint-init.md`에 기록한다.
+
+---
+
+## 8. Text2SQL allowlist 16종
+
+```
+dim_process_step  dim_recipe  dim_recipe_step  dim_equipment  dim_chamber
+dim_sensor  dim_metrology_item  fdc_rule  code_fault  code_action
+lot_history  fdc_trace  fdc_summary  fdc_alarm  metrology  action_history
+```
+
+`agent_run`·`approval_request`·`audit_log`·`document*`·`checkpoint*`·`action_delivery`·시스템 카탈로그는 불허.
+
+**운영 `kosa_agent`와 평가 `kosa_text2sql`의 `action_history` 스키마가 다르다.**
+`001_agent_runtime.sql`은 `kosa_agent`에만 적용하므로 `send_started_at`·`send_attempt_count`가 운영에만 있다.
+allowlist 컬럼 캐시와 프롬프트 스키마 컨텍스트를 **pool별로 각각** 만든다. (설계 9.5)
+
+---
+
+## 9. Source data preflight
+
+`infra/bootstrap/source-data-manifest.json` v2는 위 16개 base table의 **원본 컬럼 목록·행 수·canonical content hash**를 단일 `source.tables` 기준값으로 저장한다. runtime과 evaluation 프로파일은 fresh bootstrap에서 같은 원본 01→02→03을 적재하므로 기준값을 공유한다.
+
+```bash
+python backend/scripts/verify_source_data.py --profile runtime
+python backend/scripts/verify_source_data.py --profile evaluation
+```
+
+- 검증은 public table SELECT만 수행하며 read-only transaction과 statement timeout 30초를 적용한다.
+- `nl_query_log`는 누적 평가 이력이므로 대상에서 제외한다.
+- `001_agent_runtime.sql`이 runtime `action_history`에 추가한 컬럼은 source hash에서 제외하고 `verify_migrations.py`가 검증한다.
+- manifest 최초 생성·변경은 migration 적용 전 승인된 원본 DB에서만 `--generate --confirm`으로 수행한다. `--confirm` 없는 generate는 미리보기만 한다.
+- 프로파일 DB명, format version, hash algorithm, 테이블·컬럼·행 수·hash 형식이 다르면 즉시 실패한다.
+- 출력에는 host 별칭·port·DB명만 허용하며 계정·비밀번호·전체 DSN을 남기지 않는다.
+
+---
+
+## 원본 절
+
+```
+설계 3.1  원본 스키마 보존       설계 3.2  신규 테이블·컬럼·인덱스
+설계 3.3  ID 생성 규칙           설계 3.4  시간 처리
+설계 4.2  동시 실행 방지         설계 8장  Checkpoint 초기화
+설계 9.2·9.5  allowlist·pool 분리
+설계 13.2.1  fresh bootstrap     설계 13.2.2  공용 서버 자격증명 전환
+설계 14.1  DB 상태 분리·role 권한
+요구사항 12장 제약사항 · NFR-01·NFR-05
+```

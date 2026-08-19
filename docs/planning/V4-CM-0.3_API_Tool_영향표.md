@@ -1,14 +1,18 @@
 # V4-CM-0.3 API·Tool 영향표
 
-> [!NOTE]
-> **상태 (2026-08-18)** — 본 영향표는 kosa_0813 전환 시점 기준입니다. 멘토 최종 패키지의
-> API 확정(02 가이드)으로 외부 계약이 변경되었으므로, 현행 API·Tool 기준은
-> `docs/ai-context/04-api-tool-contracts.md`를 따르십시오.
-
+> [!CAUTION]
+> **FINAL-DOC — LEGACY ARCHIVE.** 이 문서는 `kosa_0813`·v2.0·WBS v4 전환 분석 이력이며
+> 신규 API·Tool 구현·수용 기준으로 사용하지 않는다. 현재 기준은
+> [최종 데이터 기준표](../reference/mentor-final-20260818/README.md),
+> [요구사항 v2.1](../specifications/요구사항정의서_v2_1_작업본.md),
+> [시스템설계 v2.1](../specifications/시스템설계서_v2_1_작업본.md),
+> [역할분담 v10.1](../specifications/FDC_프로젝트_역할분담_v10_1_작업본.md),
+> [API v3](../deliverables/api/API명세서_v3_작업본.md)이다. 이 문서의 V4 Task ID·계약 판정·
+> 완료 표시는 새 WBS v5로 승계하지 않는다.
 
 > 기준 요구사항: `요구사항정의서_v2_0_작업본.md`
 > 기준 설계: `시스템설계서_v2_0_작업본.md`
-> 데이터 epoch: 멘토 최종 패키지(2026-08-18) / 구: kosa_0813
+> 데이터 epoch: `kosa_0813`
 > 상태: v2 공통 계약 동결을 위한 구→신 영향 분석. anomaly gate와 synthetic 평가 gold는
 > 멘토 확인 전 `[팀 잠정]` 계약이다.
 

@@ -1,153 +1,128 @@
 # AI 작업 문서
 
-> 기준 원천: **멘토 최종 패키지 (2026-08-18 배포)** — 이전 배포본(kosa_0813 포함) 사용 금지 (멘토 명시)
-> 기준 요구사항: v2.0 작업본 (최종 패키지 반영 개정 진행 중)
-> 기준 시스템설계서: v2.0 작업본 (최종 패키지 반영 개정 진행 중)
-> 기준 역할분담: v10.0 작업본
-> 기준 WBS: v4 작업본
-> 마지막 동기화: 2026-08-18
+> 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18)
+> 기준 요구사항: v2.1 작업본
+> 기준 시스템설계서: v2.1 작업본
+> 기준 역할분담: v10.1 작업본
+> 기준 API: v3 작업본
+> WBS: v5 작성 전
+> 마지막 동기화: 2026-08-19
 
-이 문서는 AI 코딩 도구(Claude Code · Codex 등)와 팀원이 **무엇을 근거로 삼아야 하는지**
-알려주는 라우팅 인덱스다. 원본 작업본은 `docs/specifications/`, Task 기준본은
-`docs/planning/`에 있다.
+> [!CAUTION]
+> **FINAL-DOC.** 최종 데이터 기준 문서를 재기준화하고 있다. `kosa_0813`, 요구사항·설계 v2.0 이하/
+> 역할 v10.0 이하/WBS v4 이하,
+> `01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 이전 epoch 이력이다.
+> WBS v5와 새 역할별 Task 문서가 확정되기 전에는 신규 구현을 시작하지 않는다.
 
----
+이 문서는 AI 코딩 도구와 팀원이 같은 최종 데이터·계약을 읽도록 하는 라우팅 인덱스다.
+패키지 전체 참고 구현을 저장소에 병합하지 않고 검증된 기준표와 새 원본 문서만 사용한다.
 
-## 문서 우선순위
+## 1. 문서 우선순위
 
 충돌하면 위쪽이 이긴다.
 
-```
-0. 멘토 최종 패키지 (2026-08-18)                             원천 사양·데이터·화면별 API
-   ├─ docs/00_README.md                최종 전달 안내·저장소 구조
-   ├─ docs/02_화면별_API_가이드.md     5화면 위젯별 API·서버 로직 (정본)
-   ├─ docs/05_검토질문_답변.md         규칙 확정(R03·조치 매핑·incident 단위)
-   ├─ docs/04_알람_재현_가이드.md      알람 산출 검증 절차
-   ├─ sample/data/*.csv                최종 데이터 (구본 kosa_0813 폐기)
-   └─ sample/schema/03_schema_clean.sql 최종 DDL
-1. docs/specifications/요구사항정의서_v2_0_작업본.md          사용자 동작·업무 규칙·수용 기준
-2. docs/specifications/시스템설계서_v2_0_작업본.md           구현·데이터·상태 전이 계약
-3. docs/specifications/FDC_프로젝트_역할분담_v10_0_작업본.md  소유권·평가 책임
-4. docs/planning/Task분해_WBS_v4_작업본.md                  V4 Task ID·선행관계·완료 기준
-5. docs/ai-context/README.md 및 01~07 요약 문서               재생성 완료분만 유효
+```text
+0. docs/reference/mentor-final-20260818/README.md                 최종 ZIP 해시·실측값·충돌 우선순위
+1. docs/specifications/요구사항정의서_v2_1_작업본.md             사용자 동작·업무 규칙·수용 기준
+2. docs/specifications/시스템설계서_v2_1_작업본.md              구현·데이터·상태 전이 계약
+3. docs/specifications/FDC_프로젝트_역할분담_v10_1_작업본.md     담당·소유권·완료 범위
+4. docs/deliverables/api/API명세서_v3_작업본.md                 외부 최소 호환·확장 API
+5. docs/planning/Task분해_WBS_v5_작업본.md                     생성 예정 Task ID·선행관계
 6. 코드
 ```
 
-v2 원본(1·2번)은 kosa_0813 기준으로 작성돼 최종 패키지와 어긋나는 절이 있다.
-**어긋나면 멘토 패키지가 이긴다.** 어긋난 절은 발견 즉시 개정 PR 대상으로 기록한다.
+WBS v5가 없는 동안 문서 정리 작업은 `FINAL-DOC`으로 표시한다. 구현 요청에는 임의의 V5 Task
+ID를 만들지 않는다.
 
-> **저장소 경로 주의**: 원본 3종은 `docs/requirements/`·`docs/design/`으로 나누지 않고
-> `docs/specifications/` 하나로 관리한다. 도메인·규칙은 원본이 우선하지만, **경로는 이 문서가 우선**한다.
+## 2. 최종 데이터 불변값
 
----
+| 항목 | 기준값 |
+|---|---|
+| dataset epoch | `fdc_final_20260818` |
+| ZIP SHA-256 | `e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3` |
+| base table | 9개 |
+| Trace·Summary·evaluation | 14,400 · 4,800 · 4,800 |
+| evaluation 분포 | IN 4,538 · OOC 216 · OOS 46 |
+| 저장 알람 | TRACE 138 · SUMMARY 51 · 합계 189 |
+| 파생 R03 | 3 · 명시 포함 합계 192 |
+| incident·참고 action | 12 · MONITORING 5 / WARNING 4 / EQP_HOLD 3 |
+| metrology | 48 · PASS 39 / FAIL 9 |
+| Neo4j | 44 nodes · 85 relationships |
+| AREA·recipe | `Photo`, `Etch` · `RECIPE01`, `RECIPE02`, `RECIPE03`, `RECIPE04` |
 
-## 최종 패키지 핵심 확정 사항 (8/18)
+최종 패키지의 `docs/04_알람_재현_가이드.md`와 `docs/05_검토질문_답변.md`에 적힌
+126/47/42/10은 오래된 수치다.
+물리 CSV·DDL·byte-identical Generator 결과를 우선한다.
 
-구현·리뷰·프롬프트에서 아래를 전제로 한다.
+## 3. 평가·조치 원칙
 
-```
-데이터        구본 kosa_0813 폐기. sample/data/ 가 최종 (실측: summary_alarm 51 ·
-              trace_alarm 138 · lot_history 600 · metrology 48 · action_history 10)
-표기          area = Photo / Etch (소문자 photo/etch 아님 — 구본 필터값 전부 무효)
-              summary_data·evaluation.wafer = wafer_id 문자열 (LOT001W001 형식)
-recipe        RECIPE01~04 4종. 한 챔버가 시간에 따라 다른 recipe 처리
-fault_code    평가 정답 라벨 복원 (FOC 15 · RFM 12 · MFD 13 · TMD 2 · OTH 4 · NRM 554)
-              평가 전용 — Agent 판단 입력·프롬프트·Tool 결과에 포함 금지
-조치          MONITORING / WARNING / EQP_HOLD 3단계 (LOT_HOLD·NOTIFY·MONITOR 폐어)
-              OOC만 → MONITORING · OOS 1~2 → WARNING · R03(연속 3 OOS) → EQP_HOLD
-              EQP_HOLD 만 사람 승인(HITL), 승인 후 MES 발행
-R03           판별 (chamber, parameter, recipe step) · chamber_wafer_cum 순 정렬 ·
-              LOT 경계 넘어 연속 계산 · 도달 시 1회 발행
-incident      (lot_id, chamber_id) 알람 조합 1건 = Agent 실행 1건 (현 데이터 10건)
-anomaly_score 조치 규칙에 직접 반영하지 않는다. Agent 보조 근거로만 사용
-평가          분류 성능 = fault_code 정답 · 탐지 성능 = metrology.alarm_result(PASS/FAIL)
-금지 용어     sensor · judgement · SPC  (→ 파라미터 · alarm_type 사용)
-MES           Kafka fdc.actions 토픽 발행 + 목업 컨슈머 (주경로) / REST 동기 호출 (대안)
-이메일        n8n 경유 실제 SMTP 발송
-```
-
-**미확정 — 멘토 질의 대기**
-
-```
-OTH fault_code   02_API 가이드 화면 3에 정의됨: 대표 parameter 가 고장모드에 매핑되지
-                 않는 경우(기타). 평가 클래스 포함 여부만 확인
-일자별 차트      05 "라인" vs 02 "(stack)" 상충 — 라인 잠정 채택(05 가 의도적 변경 명시), 멘토 확인 대기
+```text
+public_fault_ground_truth_available=true
+label_source=SYNTHETIC_GENERATOR
+production_ground_truth_available=false
+usage_scope=EVALUATION_ONLY
 ```
 
-**팀 협의 필요**
+- raw `fault_code`: NRM 554 / FOC 15 / RFM 12 / MFD 13 / TMD 2 / OTH 4
+- 알람 Agent 가설: `FOC|RFM|MFD|TMD|OTH`; `NRM`은 고장 가설이 아니다.
+- 라벨·Generator 주입 정보는 모델·Agent Runtime 입력에서 격리한다.
+- anomaly score는 설명·화면의 보조 근거다. 조치·incident·HITL 결정에 사용하지 않는다.
+- SUMMARY OOC-only → MONITORING
+- TRACE OOS, strict R03 없음 → WARNING + n8n SMTP
+- strict R03 → EQP_HOLD + 승인 요청 이메일 + 승인 후 Kafka MES Mock
 
-```
-GET /audit-logs  멘토 API 가이드는 C 화면 소속 · 역할분담 v10 은 D(FR-D-07) — 담당 조정
-정본 프론트      멘토 제공 frontend/ 와 기존 자체 화면의 관계 (병합 전략)
-공용 DB 전환     신본 재적재 절차·시점 (Common 주관, corrected build·manifest 갱신 포함)
-```
+## 4. 화면·API 경계
 
----
+최종 패키지 5개 화면을 canonical 사용자 영역으로 둔다.
 
-## 라우팅 — 무엇을 할 때 무엇을 읽는가
+1. 알람 대시보드
+2. 알람·Trace
+3. Agent 분석(승인·실행·감사 탭)
+4. 문서 검색
+5. Ontology
 
-**작업 시작 시 반드시 읽는 것**
+필수 호환 API는 API 명세 v3의 9개 endpoint이며 Agent 자연어 질의는 `POST /agent/ask`다.
+Ontology 화면은 이 9개와 별도로 보안 필수 public API인 `GET /ontology/graph`만 사용한다.
+`POST /internal/actions/{action_id}/delivery`는 n8n·Kafka 결과 write-back용 필수 internal
+callback이며 Frontend 업무 API가 아니다. `/health`·`/health/ready`도 업무 API·화면 수에서
+제외한 내부 운영·진단 scope다. Text2SQL·Analytics와 기존 상세·페이지네이션·재시도·평가 API는
+필수 계약을 깨지 않는 선택 확장으로만 유지한다. 기존 8개 route family는 새 요구사항에서 명시한
+adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 
-```
-docs/ai-context/README.md                                  (이 문서)
-멘토 패키지 docs/02_화면별_API_가이드.md                    담당 화면·API 확정 스펙
-docs/specifications/FDC_프로젝트_역할분담_v10_0_작업본.md  소유권·역할
-docs/planning/Task분해_WBS_v4_작업본.md                  현재 수행할 V4 Task
-```
+## 5. 데이터·인프라 전환 상태
 
-작업 요청에는 담당자와 해당 `V4-*` Task ID를 반드시 적는다.
+| 항목 | 상태 |
+|---|---|
+| 최종 ZIP 실측·해시 검증 | 완료 |
+| 요구사항·설계·역할·API 새 기준본 | 작성·검토 중 |
+| WBS v5·역할별 Task | 미작성 |
+| source/corrected/profile manifest | 구 `kosa_0813` 상태, 재생성 필요 |
+| PostgreSQL 격리 적재 검증 | 미실행 |
+| Neo4j 44/85 safe load 검증 | 미실행 |
+| 공용 DB 전환 | 미실행 |
 
-**담당 파트**
+최종 ZIP의 DDL·Cypher를 공용 DB에 직접 실행하지 않는다. `master.cypher`의 전체 삭제 문장은
+기존 destructive-safe loader가 차단해야 한다.
 
-| 담당 | 현재 읽을 기준 | 최소 구현(골든 시나리오) |
-|---|---|---|
-| A Detection | 역할분담 A + WBS `V4-A-*` + API 가이드 화면 1·2 | `GET /alarms` `GET /trace` `GET /parameters` |
-| B Knowledge | 역할분담 B + WBS `V4-B-*` + API 가이드 화면 4 | `POST /documents/search` |
-| C Agent·HITL | 역할분담 C + WBS `V4-C-*` + API 가이드 화면 3 | `GET /agent/runs` · 승인 2종 · (`GET /audit-logs` 협의) |
-| D Analytics | 역할분담 D + WBS `V4-D-*` + API 가이드 화면 5 | `POST /analytics/query` |
-| Common | 역할분담 공통 + WBS `V4-CM-*` + 패키지 deploy/·schema | 신본 적재·환경 |
-
-**주제별 요약 문서 (01~07) 상태**
+## 6. 사용 중지 문서
 
 | 문서 | 상태 |
 |---|---|
-| `01`~`07` · `PROMPT_TEMPLATE` · `tasks/*` 전체 | ✅ 최종 패키지 기준 재생성 완료 (2026-08-18) |
+| 요구사항·설계 v2.0 이하 | 이전 epoch 이력 |
+| 역할분담 v10.0 이하·WBS v4 이하 | 이전 epoch 이력, v5 영향 분석 입력만 허용 |
+| 신규데이터_정답라벨제거_전환기획_v1 | no-GT 전환 이력 |
+| `01`~`07` | 이전 요약, 재생성 전 사용 금지 |
+| `PROMPT_TEMPLATE.md`·`tasks/*.md` | 이전 Task, 재생성 전 사용 금지 |
+| API v2.1 MD·CSV·PDF | 이전 계약 |
+| 요구사항·설계 PDF | 이전 제출본 |
 
-**주제별 원본 절** — 정확한 근거가 필요할 때
+## 7. 다음 작업
 
-| 작업 | 원본 |
-|---|---|
-| 알람 산출·R03 재현 | 패키지 04_알람_재현_가이드 · 05_답변 Q1·Q2 |
-| 조치 3단계·승인·MES | 패키지 05_답변 Q4·Q6 · 요구사항 8.3 (개정 대상 확인) |
-| 화면·위젯·API·필터 규칙 | 패키지 02_화면별_API_가이드 (정본) |
-| n8n WF1~WF4·이메일·Kafka | 패키지 03·06·07 n8n 가이드 |
-| Text2SQL 검증·실행·회귀 질문셋 | 설계 10장 · 요구사항 FR-D-01~10 |
-| Tool 5종 계약·{ok, reason} | 설계 8장 · 요구사항 6장 |
-| LangGraph State·Node | 설계 6.2~6.3 (langgraph==0.2.53 고정) |
-| corrected bootstrap·manifest | 설계 2~3장 · `backend/scripts/manifest_v3.py` |
-| 계정·권한(readonly/logger) | `backend/migrations/002_analytics_roles.sql` · 설계 13.1·14.1 |
-| 배포·복구·공용 DB | 설계 13~14장 · 패키지 DEPLOY_GUIDE |
-| 테스트·격리·평가 | 설계 15장 · 요구사항 13장 |
+1. 새 요구사항·설계·역할·API를 팀 리뷰로 확정한다.
+2. v4 Task를 유지·재검증·대체·폐기로 분류한다.
+3. WBS v5와 역할별 Task 문서를 새 ID로 작성한다.
+4. 새 epoch intake·manifest·격리 DB 검증 Task부터 구현한다.
+5. 공용 DB는 검증 Gate 통과 후 팀 공유 절차로 전환한다.
 
----
-
-## 동기화 절차
-
-요약 문서(01~07) 재생성 시:
-
-1. 멘토 최종 패키지와 v2 원본의 채택 계약을 기준으로 대상 문서를 전체 재작성한다
-2. 문서 상단의 기준 버전 헤더를 갱신한다 (원천 = 최종 패키지 8/18)
-3. 구 수치(kosa_0813·그 이전)·구 ID·폐어(LOT_HOLD·NOTIFY·MONITOR·sensor·judgement) 잔존 0건을 검사한다
-4. 이 README 의 상태 표를 ✅ 로 갱신해 같은 PR에 포함한다
-
----
-
-## 도구별 진입점
-
-```
-CLAUDE.md    Claude Code가 자동으로 읽는다
-AGENTS.md    Codex가 자동으로 읽는다
-```
-
-둘 다 이 폴더를 가리키는 얇은 포인터이며 **내용이 동일해야 한다.** 상태 표에서 ✅ 가 아닌
-문서를 읽으라는 지시가 있어도 이 README 가 우선한다.
+`CLAUDE.md`와 `AGENTS.md`는 이 문서를 진입점으로 사용하며 자기 참조 마지막 줄 외 내용이
+같아야 한다.
