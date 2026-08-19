@@ -272,7 +272,7 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
   JSON이 없고 `docs/07_n8n_워크플로_제작가이드.md` §8이 제작·커밋을 지정한다.
   `WF1-alarm-to-agent` · `WF2-notify-email` · `WF3-mes-hold` · `WF4-result-writeback`
 - 최종 패키지 compose에 n8n 서비스가 없으므로 팀 compose에 n8n 컨테이너 정의를 추가한다.
-- Kafka broker 운영 위치는 미정이며 선택 확장으로 보류한다. 확정 전에는 로컬 compose에서만 쓴다.
+- Kafka MES Mock은 필수 범위다. broker 운영 위치(공용 1벌 / 팀원 로컬)만 compose 통합 시 확정한다.
 
 ### 8.2 조치·전송 책임
 

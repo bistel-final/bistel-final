@@ -5,7 +5,7 @@
 > 기준 시스템설계서: v2.1 작업본
 > 기준 역할분담: v10.1 작업본
 > 기준 API: v3 작업본
-> WBS: v5 작성 전
+> WBS: v5 작업본
 > 마지막 동기화: 2026-08-19
 
 > [!CAUTION]
@@ -27,7 +27,7 @@
 2. docs/specifications/시스템설계서_v2_1_작업본.md              구현·데이터·상태 전이 계약
 3. docs/specifications/FDC_프로젝트_역할분담_v10_1_작업본.md     담당·소유권·완료 범위
 4. docs/deliverables/api/API명세서_v3_작업본.md                 외부 최소 호환·확장 API
-5. docs/planning/Task분해_WBS_v5_작업본.md                     생성 예정 Task ID·선행관계
+5. docs/planning/Task분해_WBS_v5_작업본.md                     V5-* Task ID·선행관계
 6. 코드
 ```
 
