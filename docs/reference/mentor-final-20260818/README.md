@@ -191,10 +191,11 @@ canonical content hash와 profile별 기대 상태를 포함해 재생성한다.
 | 영역 | 상태 |
 |---|---|
 | 최종 원본 사실·해시 검증 | 완료 |
-| 요구사항·설계·역할·API 재기준화 | 진행 중 |
-| WBS v5 작성 | 상위 문서 확정 후 수행 |
+| 요구사항·설계·역할·API 재기준화 | 완료 (v2.1·v10.1·API v3) |
+| WBS v5 작성 | 완료 |
 | source/corrected/profile manifest 재생성 | 미착수 |
 | 격리 DB 적재·검증 | 미착수 |
 | 공용 DB 전환 | 미착수 |
 
-상위 문서와 WBS v5가 확정되기 전에는 최종 ZIP을 공용 PostgreSQL·Neo4j에 적용하지 않는다.
+상위 문서와 WBS v5는 확정됐다. 최종 ZIP의 공용 PostgreSQL·Neo4j 적용은 `V5-CM-2.*`의
+preflight → rehearse → apply 절차로만 수행하며, 그 전까지 직접 실행하지 않는다.
