@@ -53,14 +53,14 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 37.5h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 38.5h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 22.0h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
 | C Agent/HITL | 방대혁 | 42.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 15.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **145.5h** | P2 도전 과제 제외 |
+| **합계** | | **146.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 101.5h / P1 44.0h**이며 P2 5.5h는 합계에서 제외한다.
+우선순위별 공수는 **P0 101.5h / P1 45.0h**이며 P2 5.5h는 합계에서 제외한다.
 Task 수는 86건(P2 3건 포함)이다.
 
 ---
@@ -76,7 +76,7 @@ Task 수는 86건(P2 3건 포함)이다.
 | V5-CM-1.3 | P0 | source manifest v4. 완료: 9개 CSV의 컬럼·행 수·typed content hash와 `03_schema_clean.sql`·`master.cypher`·Generator 해시를 한 manifest로 고정한다. 행 수는 기준표 실측값과 일치한다 | FR-I-04, NFR-06 | V5-CM-1.2 | 1.5h |
 | V5-CM-1.4 | P0 | Generator 재현 검증. 완료: `gen_sample_data.py`를 격리 실행해 9개 CSV가 byte-identical로 재생성됨을 확인하고 결과를 manifest provenance에 남긴다 | NFR-06 | V5-CM-1.3 | 1.0h |
 | V5-CM-1.5 | P0 | 구 epoch 정리. 완료: v4의 corrected build 파이프라인(`dim_parameter` overlay·`seq_no`·시각 보정)을 최종 epoch 경로에서 제외하고, 폐기 사유를 문서화한다. 코드 삭제 여부는 별도 정리 Task로 둔다 | FR-I-04 | V5-CM-1.2 | 0.5h |
-| V5-CM-1.6 | P1 | **v4 corrected build 파이프라인 제거**. 완료: `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트 7개를 삭제하고, `manifest_v3`의 `corrected_files` artifact type·`(runtime\|evaluation, corrected_base)` stage 계약과 `verify_bootstrap_state`의 corrected 경로·marker를 함께 걷어낸다. `data/corrected`와 corrected manifest 2·marker 3도 정리한다. 전체 회귀가 통과해야 한다 | FR-I-04, NFR-06 | V5-CM-2.4 | 2.5h |
+| V5-CM-1.6 | P1 | **구 epoch 파이프라인 제거**. 완료: (a) corrected 계열 — `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트를 삭제하고 `manifest_v3`의 `corrected_files` artifact type·`(runtime\|evaluation, corrected_base)` stage 계약, `verify_bootstrap_state`의 corrected 경로·marker를 걷어낸다. (b) **구 bootstrap 계열** — `V5-CM-2.2`가 멘토 `03_schema_clean.sql`로 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 삭제한다. (c) **`V5-CM-1.2`가 skip 처리한 50건 중 해제 Task가 없는 것을 전부 해소한다** — skip 잔존 0건이 완료 조건이다(`test_source_manifest_artifact`는 `V5-CM-1.3` manifest v4로 대체됨을 확인 후 삭제). `data/corrected`와 잔여 구 manifest·marker도 정리한다. 전체 회귀 통과 · **skip 사유에 `V5-CM-1.2` 문자열이 남아 있지 않아야 한다** | FR-I-04, NFR-06 | V5-CM-2.4, V5-CM-1.3 | 3.5h |
 
 ### V5-CM-2. fresh bootstrap
 
