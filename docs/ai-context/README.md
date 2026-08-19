@@ -123,7 +123,8 @@ adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 2. `V5-CM-1.*` 최종 source intake·epoch·manifest부터 구현한다.
 3. `V5-CM-2.*` fresh bootstrap을 `kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql`
    순서로 적용한다.
-4. `V5-CM-4.3` 통합 검증기 전체 PASS가 A·B·C·D 착수 게이트다.
+4. 착수 게이트는 `V5-CM-2.4`(적재 검증) 통과다. 실제 해금은 B가 `V5-CM-1.3` 직후,
+   A가 `V5-CM-2.4` 직후, C·D가 `V5-CM-3.2~3.3` 직후다(WBS v5 §8).
 5. 공용 DB는 각 단계에서 preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야
    다음 DB로 넘어간다.
 
