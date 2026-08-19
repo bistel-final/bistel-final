@@ -1,119 +1,53 @@
-# 요청 양식
+# AI 작업 요청 템플릿
 
-> [!CAUTION]
-> **사용 중지 — 아래 본문은 v1.9/v1.10/v9.6 기준의 구 이력이며 구현 근거로 사용하면 안 됩니다.**
-> v2 요약 문서가 재생성되기 전에는 `docs/specifications/요구사항정의서_v2_0_작업본.md`,
-> `docs/specifications/시스템설계서_v2_0_작업본.md`,
-> `docs/specifications/FDC_프로젝트_역할분담_v10_0_작업본.md`와
-> `docs/planning/Task분해_WBS_v4_작업본.md`의 해당 `V4-*` Task만 사용하십시오.
-> 아래 본문은 참고·복사·프롬프트 입력을 금지합니다.
+> 기준: 멘토 최종 패키지 (2026-08-18) · WBS v4
+> 마지막 동기화: 2026-08-18
 
-> 기준 요구사항: v1.9
-> 기준 시스템설계서: v1.10
-> 기준 역할분담: v9.6
-> 마지막 동기화: 2026-08-12
-
-Claude Code · Codex · 웹 채팅 어디서든 같은 양식을 쓴다.
-도구가 파일을 직접 읽을 수 없는 환경(웹 채팅 등)에서는 아래 문서를 붙여넣는다.
+AI 도구(Claude Code · Codex · 웹 채팅)에 작업을 요청할 때 아래 형식을 쓴다.
+근거 없는 요청은 반려된다.
 
 ---
 
-## 기본 양식
+## 요청 형식
 
 ```
-먼저 다음 문서를 읽어라.
+담당자: <이름> (<A|B|C|D|Common>)
+Task:   V4-<파트>-<번호> <Task 이름>
+근거:   <멘토 패키지 문서·절> / <요구사항·설계 v2.0 절> / <FR 번호>
 
-1. docs/ai-context/README.md
-2. docs/ai-context/01-project-rules.md
-3. docs/ai-context/02-domain-rules.md
-4. docs/ai-context/tasks/{담당}.md
+작업 내용:
+- <구체적으로 무엇을 만들거나 고치는지>
 
-이번 작업:
-- 대상 요구사항: FR-?-??
-- 구현 범위: (한 문장)
-- 완료 기준: (검증 가능한 문장)
+완료 기준:
+- <WBS 완료 기준 문장 그대로 + 검증 방법(테스트)>
 
-구현 전:
-1. 관련 요구사항과 설계 규칙을 요약한다.
-2. 변경할 파일 목록을 제시한다.
-3. 범위 밖 변경은 하지 않는다.
-
-구현 후:
-1. 실행한 테스트 명령과 결과를 제시한다.
-2. 요구사항 ID별 충족 여부를 보고한다.
-3. 결과 artifact 경로와 관련 PR 또는 Notion Task를 제시한다.
-4. 미완료·미검증 사항을 숨기지 않는다.
+제약 (해당 시):
+- Tool 반환 {ok, ..., reason} / langgraph==0.2.53 / decide_action 규칙 기반
+- LLM SQL 은 kosa_readonly 로만 실행 / fault_code 판단 입력 금지
+- 조치 어휘 3단계 (MONITORING·WARNING·EQP_HOLD)
+- 금지 용어: sensor · judgement · SPC
 ```
 
----
-
-## 예시 — C 파트
+## 예시
 
 ```
-먼저 다음 문서를 읽어라.
+담당자: 천승현 (D)
+Task:   V4-D-5.3 Analytics API 노출
+근거:   패키지 02_API 가이드 화면 5 / 설계 10장 / FR-D-01·02·05
 
-1. docs/ai-context/README.md
-2. docs/ai-context/01-project-rules.md
-3. docs/ai-context/02-domain-rules.md
-4. docs/ai-context/tasks/C-agent.md
+작업 내용:
+- POST /analytics/query 를 멘토 확정 6필드 응답으로 구현
+  (generated_sql, columns, rows, is_valid, is_rejected, reject_reason)
+- 내부 확장 필드(outcome·visualization)는 상위 호환으로 추가
 
-원본이 필요하면 docs/specifications/시스템설계서_v1_10_최종.md 의
-7.8 「전송 멱등성과 SENDING 복구」와 3.2.5 를 읽어라.
-
-이번 작업:
-- 대상 요구사항: FR-C-06, FR-C-08
-- 구현 범위: send_action Tool
-- 완료 기준: 같은 action_id 재시도·응답 유실·timeout에서 downstream 효과 최대 1회
-
-구현 전:
-1. 관련 요구사항과 설계 규칙을 요약한다.
-2. 변경할 파일 목록을 제시한다.
-3. 범위 밖 변경은 하지 않는다.
-
-구현 후:
-1. 실행한 테스트 명령과 결과를 제시한다.
-2. 요구사항 ID별 충족 여부를 보고한다.
-3. 결과 artifact 경로와 관련 PR 또는 Notion Task를 제시한다.
-4. 미완료·미검증 사항을 숨기지 않는다.
+완료 기준:
+- 정책 거부가 HTTP 200 + is_rejected=true 로 표현된다
+- malformed 422 · 의존성 실패 503
+- 회귀 질문셋 시드 3종("챔버별 OOS 알람 수" 등)이 성공 경로를 통과한다
 ```
 
----
+## 금지 사항
 
-## 작성 요령
-
-**대상 요구사항**은 ID로 적는다. "승인 기능"이 아니라 `FR-C-04, FR-C-05`.
-ID를 모르면 `docs/specifications/요구사항정의서_v1_9_최종.md` 5장에서 찾는다.
-
-**완료 기준**은 요구사항의 수용 기준을 그대로 옮긴다. 새로 만들지 않는다.
-예: "R01 34 / R02 14 / R03 3, 전체 51건 동일 재현"
-
-**범위**는 한 번에 하나의 기능으로 좁힌다. 여러 FR을 묶으면 검토가 어렵다.
-
----
-
-## 하지 말 것
-
-- 세 원본 문서를 통째로 붙여넣기 — 약 137K 토큰이라 들어가지 않고, 넣어도 세부를 놓친다
-- 수치를 직접 알려주지 않고 추측하게 두기 — `02-domain-rules.md` 1절을 읽히면 된다
-- 완료 기준 없이 "구현해줘"만 요청하기
-- 담당 밖 파일 수정을 허용하기 — 사전 공유가 원칙이다 (`01-project-rules.md` 1절 #9)
-
----
-
-## 검증 요청 양식
-
-구현이 끝난 뒤 다른 세션에서 검토할 때 쓴다.
-
-```
-docs/ai-context/01-project-rules.md 와 02-domain-rules.md 를 읽어라.
-
-다음 변경을 검토하라: (브랜치명 또는 파일 목록)
-
-확인 항목:
-1. 강제 규칙 위반 여부 (01-project-rules 1절)
-2. 불변 수치와 어긋나는 하드코딩 (02-domain-rules 1절)
-3. 계층 위반 — Router에서 SQL, Tool에서 예외 throw
-4. 요구사항 수용 기준 미충족
-
-발견한 것만 보고하고, 없으면 없다고 하라. 추측으로 채우지 마라.
-```
+- README 상태 표에서 ✅ 가 아닌 요약 문서 본문을 프롬프트에 붙여넣지 않는다
+- 구본(kosa_0813 이하) 수치·필터값을 기대값으로 쓰지 않는다
+- Task ID 없이 "알아서 해줘" 식 요청을 하지 않는다
