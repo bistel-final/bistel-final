@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 31.0h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 35.0h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 22.0h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
 | C Agent/HITL | 방대혁 | 42.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 15.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **139.0h** | P2 도전 과제 제외 |
+| **합계** | | **143.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 98.0h / P1 41.0h**이며 P2 5.5h는 합계에서 제외한다.
-Task 수는 82건(P2 3건 포함)이다.
+우선순위별 공수는 **P0 101.5h / P1 41.5h**이며 P2 5.5h는 합계에서 제외한다.
+Task 수는 85건(P2 3건 포함)이다.
 
 ---
 
@@ -105,11 +105,14 @@ Task 수는 82건(P2 3건 포함)이다.
 | V5-CM-4.2 | P0 | 감사 쓰기 계약. 완료: event enum·entity mapping·append-only helper와 트랜잭션 규칙을 제공한다. UPDATE·DELETE 경로를 만들지 않는다 | FR-D-07, NFR-05 | V5-CM-4.1 | 1.0h |
 | V5-CM-4.3 | P0 | profile 통합 검증기. 완료: 3개 DB의 stage·table·행 수·hash·권한·marker를 한 번에 검사하고 target별 결과를 보존한다. 한 target의 실패가 전체 report를 지우지 않는다 | FR-I-04 | V5-CM-3.5 | 2.0h |
 | V5-CM-4.4 | P0 | API contract test. 완료: 호환 필수 9개와 `GET /ontology/graph`의 OpenAPI·응답 구조를 검증하고 배열 응답과 페이지 응답을 같은 path에서 혼용하지 않는다 | FR-I-07 | V5-CM-4.1 | 1.5h |
+| V5-CM-4.4-1 | P0 | **5화면 navigation 전환**. 완료: 현재 7개 메뉴(`/dashboard`·`/alarms`·`/traces`·`/agent-runs`·`/actions`·`/analytics`·`/audit-logs`)를 canonical 5영역(Dashboard·Alarm History·Agent·Documents·Ontology)으로 재구성한다. 기존 상세 route는 하위 흐름·deep link로 유지하고 독립된 제6 화면을 만들지 않는다. Text2SQL route는 선택 확장으로 분리한다 | FR-I-02 | V5-CM-4.4 | 2.0h |
+| V5-CM-4.4-2 | P0 | **호환 projection·wrapper 연결**. 완료: 호환 필수 9개 API projection과 `GET /ontology/graph` 소비를 연결하고 `api.audit()` wrapper를 Agent 감사 subview에서 실제로 호출한다. 참고 React의 축약 field는 canonical field에서 파생하고 `lot_history.fault_code`를 Agent 예측처럼 직렬화하지 않는다 | FR-I-02, FR-I-03 | V5-CM-4.4-1 | 1.5h |
+| V5-CM-4.4-3 | P1 | **alias 제거 조건**. 완료: compatibility projection의 alias 목록과 제거 조건(모든 소비 화면이 canonical field로 전환 완료)을 문서화하고, 조건 충족 시 alias를 삭제하는 후속 Task를 등록한다 | FR-I-03 | V5-CM-4.4-2 | 0.5h |
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·Kafka·n8n·Backend·Frontend를 하나의 compose로 올리고 `/api` proxy·CORS origin allowlist·고정 image tag를 적용한다 | FR-I-04, FR-I-06 | V5-CM-4.3 | 1.5h |
 | V5-CM-4.6 | P1 | readiness·복구. 완료: `/health/ready`가 PostgreSQL·Neo4j·n8n을 병렬 timeout으로 검사하고 Neo4j 44/85 marker와 ACTIVE corpus revision을 확인한다 | FR-I-05 | V5-CM-4.5 | 1.0h |
 | V5-CM-4.7 | P1 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·corpus·checkpoint schema를 보존한다 | 요구사항 §7.3 | V5-CM-3.4 | 1.5h |
 
-**Common 합계: 31.0h**
+**Common 합계: 35.0h**
 
 ---
 
@@ -219,8 +222,9 @@ Task 수는 82건(P2 3건 포함)이다.
 5  V5-CM-4.3        통합 검증기 전체 PASS          ← 여기까지가 구현 착수 게이트
 6  A·B·D 병렬 착수   재계산·graph/RAG·감사
 7  C 착수            Runtime Repository → LangGraph → 조치 → HITL → n8n
-8  V5-CM-4.5~4.7    compose·readiness·E2E reset
-9  통합 E2E·평가 artifact·최종 검증
+8  V5-CM-4.4-1~3    5화면 navigation 전환 · 호환 projection · alias 제거 조건
+9  V5-CM-4.5~4.7    compose·readiness·E2E reset
+10 통합 E2E·평가 artifact·최종 검증
 ```
 
 공용 DB 적용은 `kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql` 순서로만 수행하고, 각 단계에서
@@ -245,3 +249,4 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 | Kafka broker 운영 위치(공용 서버 1벌 / 팀원 로컬) | 구현은 필수로 진행. 배치만 미정 | `V5-CM-4.5` compose 통합 시 |
 | Text2SQL 활성 여부 | 선택 확장. 필수 인수 기준에 미포함 | 일정 여유에 따라 |
 | v4 corrected build 코드 삭제 | `V5-CM-1.5`에서 폐기 표시만. 삭제는 별도 정리 | 통합 검증 후 |
+| compatibility alias 제거 | `V5-CM-4.4-3`이 조건만 등록. 삭제는 후속 Task | 모든 화면 canonical 전환 후 |
