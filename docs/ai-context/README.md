@@ -11,8 +11,8 @@
 > [!CAUTION]
 > **FINAL-DOC.** 최종 데이터 기준 문서를 재기준화하고 있다. `kosa_0813`, 요구사항·설계 v2.0 이하/
 > 역할 v10.0 이하/WBS v4 이하,
-> `01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 이전 epoch 이력이다.
-> WBS v5와 새 역할별 Task 문서가 확정되기 전에는 신규 구현을 시작하지 않는다.
+> `01`~`07`과 `PROMPT_TEMPLATE.md`는 이전 epoch 이력이다.
+> WBS v5와 역할별 Task 문서(`tasks/*.md`)는 최종 기준으로 재작성됐다.
 
 이 문서는 AI 코딩 도구와 팀원이 같은 최종 데이터·계약을 읽도록 하는 라우팅 인덱스다.
 패키지 전체 참고 구현을 저장소에 병합하지 않고 검증된 기준표와 새 원본 문서만 사용한다.
@@ -28,6 +28,7 @@
 3. docs/specifications/FDC_프로젝트_역할분담_v10_1_작업본.md     담당·소유권·완료 범위
 4. docs/deliverables/api/API명세서_v3_작업본.md                 외부 최소 호환·확장 API
 5. docs/planning/Task분해_WBS_v5_작업본.md                     V5-* Task ID·선행관계
+5-1. docs/ai-context/tasks/{A,B,C,D}-*.md                     역할별 Task·완료 기준·주의
 6. 코드
 ```
 
@@ -112,17 +113,19 @@ adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 | 역할분담 v10.0 이하·WBS v4 이하 | 이전 epoch 이력, v5 영향 분석 입력만 허용 |
 | 신규데이터_정답라벨제거_전환기획_v1 | no-GT 전환 이력 |
 | `01`~`07` | 이전 요약, 재생성 전 사용 금지 |
-| `PROMPT_TEMPLATE.md`·`tasks/*.md` | 이전 Task, 재생성 전 사용 금지 |
+| `PROMPT_TEMPLATE.md` | 이전 Task 템플릿, 재생성 전 사용 금지 |
 | API v2.1 MD·CSV·PDF | 이전 계약 |
 | 요구사항·설계 PDF | 이전 제출본 |
 
 ## 7. 다음 작업
 
-1. 새 요구사항·설계·역할·API를 팀 리뷰로 확정한다.
-2. v4 Task를 유지·재검증·대체·폐기로 분류한다.
-3. WBS v5와 역할별 Task 문서를 새 ID로 작성한다.
-4. 새 epoch intake·manifest·격리 DB 검증 Task부터 구현한다.
-5. 공용 DB는 검증 Gate 통과 후 팀 공유 절차로 전환한다.
+1. ~~새 요구사항·설계·역할·API 확정~~ · ~~WBS v5와 역할별 Task 문서 작성~~ 완료
+2. `V5-CM-1.*` 최종 source intake·epoch·manifest부터 구현한다.
+3. `V5-CM-2.*` fresh bootstrap을 `kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql`
+   순서로 적용한다.
+4. `V5-CM-4.3` 통합 검증기 전체 PASS가 A·B·C·D 착수 게이트다.
+5. 공용 DB는 각 단계에서 preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야
+   다음 DB로 넘어간다.
 
 `CLAUDE.md`와 `AGENTS.md`는 이 문서를 진입점으로 사용하며 자기 참조 마지막 줄 외 내용이
 같아야 한다.
