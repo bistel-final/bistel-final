@@ -156,6 +156,9 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - 최종 데이터 epoch를 새로 발급하고 이전 `kosa_0813` epoch와 혼합되지 않게 한다.
 - 원본은 불변 보관하고, 필요한 정정이 있으면 원본과 corrected 산출물을 분리한다.
 - PostgreSQL 3개 논리 DB와 Neo4j의 대상·권한·파괴적 작업 guard를 유지한다.
+- **Runtime schema는 팀 소유다.** 최종 패키지 `03_schema_clean.sql`은 base 9개 table만 만들고
+  참고 Backend는 실행 이력을 메모리로 합성한다. Common이 최종 base DDL 위에 Agent 실행·승인·
+  조치·감사 table migration 계보를 설계·적용한다.
 - 공통 `AlarmRef`, Action/Approval/Delivery Enum, 오류 응답, append-only audit 계약을 관리한다.
 - 호환 필수 API 9개와 Ontology 보안 필수 API 1개의 OpenAPI·React contract test를 통합한다.
 - `kosa_text2sql`을 Text2SQL 화면 활성 여부와 무관한 격리 evaluation/reference DB로 유지하고,
@@ -225,6 +228,9 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - destructive 문장을 제거·격리한 안전 loader로 공용 Neo4j를 갱신한다.
 - 최종 RAG 원문을 graph·데이터·조치 정책과 교차 검토해 corrected corpus를 만든다.
 - 문서 검색 결과에 document/chunk/corpus revision과 실제 근거 내용을 반환한다.
+- 검색은 임베딩 기반 벡터 검색으로 구현한다. 참고 구현의 키워드 스코어는 파일럿이다.
+  **임베딩 provider·model·차원은 이 역할이 구현 단계에서 확정**하고 corpus revision
+  metadata와 `.env`에 함께 기록한다.
 
 ### 7.2 RAG 정정 원칙
 
@@ -262,6 +268,11 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - LLM 출력 `predicted_fault_code`를 공개 합성 정답과 분리한다.
 - 3단계 규칙으로 action을 결정하고 EQP_HOLD만 사람 승인을 요구한다.
 - n8n SMTP 이메일과 Kafka MES Mock을 별도 delivery로 관리한다.
+- n8n workflow 4종을 직접 제작해 `deploy/n8n/`에 커밋한다. 최종 패키지에는 import 가능한
+  JSON이 없고 `docs/07_n8n_워크플로_제작가이드.md` §8이 제작·커밋을 지정한다.
+  `WF1-alarm-to-agent` · `WF2-notify-email` · `WF3-mes-hold` · `WF4-result-writeback`
+- 최종 패키지 compose에 n8n 서비스가 없으므로 팀 compose에 n8n 컨테이너 정의를 추가한다.
+- Kafka MES Mock은 필수 범위다. broker 운영 위치(공용 1벌 / 팀원 로컬)만 compose 통합 시 확정한다.
 
 ### 8.2 조치·전송 책임
 

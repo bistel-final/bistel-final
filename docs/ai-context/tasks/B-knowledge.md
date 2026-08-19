@@ -1,18 +1,11 @@
 # B — Knowledge
 
-> [!CAUTION]
-> **사용 중지 — 아래 본문은 이전 epoch·부분 동기화 이력이며 구현 근거로 사용하면 안 됩니다.**
-> 현재는 `docs/ai-context/README.md`에서 안내하는 최종 패키지 기준표와 v2.1 요구사항·설계·
-> 역할분담·API v3만 사용합니다. WBS v5와 새 `V5-B-*` Task 문서가 확정되기 전에는 아래 본문의
-> 참고·복사·프롬프트 입력을 금지합니다.
-
-> 기준 요구사항: v1.9 / 시스템설계서: v1.10 / 역할분담: v9.6
-> 마지막 동기화: 2026-08-11
+> 기준 원천: 멘토 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`
+> 기준 문서: 요구사항 v2.1 · 시스템설계서 v2.1 · 역할분담 v10.1 · API v3 · WBS v5
+> 마지막 동기화: 2026-08-19
 > 담당: 강연권 · 모듈 `backend/app/knowledge/` · `frontend/src/features/knowledge/`
 
-Neo4j 관계 조회와 pgvector 문서 검색, Tool·API·관계 화면, 검색 품질 평가를 책임진다.
-
-**기반구축(최초 적재)은 완료 상태다.** B의 책임은 적재 결과 **검증**과 서비스 로직 구현이다.
+Neo4j 44/85 안전 검증, RAG 문서 정정과 임베딩 검색, 근거 provenance, 화면 4·5를 책임진다.
 
 ---
 
@@ -20,103 +13,115 @@ Neo4j 관계 조회와 pgvector 문서 검색, Tool·API·관계 화면, 검색 
 
 | ID | 명칭 | 우선순위 |
 |---|---|---|
-| FR-B-01 | Neo4j 적재 확인 | 필수 |
-| FR-B-02 | 문서 청크·임베딩 검증 | 필수 |
-| FR-B-03 | Tool `get_equipment_context` | 필수 |
-| FR-B-04 | Tool `search_documents` | 필수 |
-| FR-B-05 | 임베딩 모델 싱글턴 | 필수 |
-| FR-B-06 | 관계·근거 API·화면 | 필수 |
-| FR-B-07 | 검색 품질 평가 | 필수 |
-| FR-B-08 | 하이브리드 검색 (pg_trgm) | 도전 |
+| FR-B-01 | Neo4j 검증 | 필수 |
+| FR-B-02 | 문서 정합성 | 필수 |
+| FR-B-03 | `get_equipment_context` | 필수 |
+| FR-B-04 | `search_documents` | 필수 |
+| FR-B-05 | 임베딩 재사용 | 필수 |
+| FR-B-06 | Documents·Ontology 화면 | 필수 |
+| FR-B-07 | 검색 평가 | 필수 |
+| FR-B-08 | 하이브리드 검색 | 도전 |
+
+## Task (WBS v5)
+
+| ID | 내용 | 공수 |
+|---|---|---:|
+| V5-B-1.1 | graph 독립 검증 44/85 | 1.5h |
+| V5-B-1.2 | 안전 loader | 2.0h |
+| V5-B-1.3 | stable `relation_id` | 1.0h |
+| V5-B-2.1 | RAG correction overlay | 2.0h |
+| V5-B-2.2 | **임베딩 provider·model·차원 확정** | 1.5h |
+| V5-B-2.3 | corpus STAGING → ACTIVE | 2.0h |
+| V5-B-3.1 | `POST /documents/search` | 1.5h |
+| V5-B-3.2 | `GET /ontology/graph` | 1.5h |
+| V5-B-3.3 | `get_equipment_context` Tool | 1.5h |
+| V5-B-3.4 | `search_documents` Tool | 1.0h |
+| V5-B-4.1 | 화면 4 Documents | 2.0h |
+| V5-B-4.2 | 화면 5 Ontology | 2.5h |
+| V5-B-4.3 | 검색 평가 artifact | 2.0h |
+| V5-B-4.4 | 하이브리드 검색 (P2) | 2.0h |
+
+**합계 22.0h** (P2 2.0h 제외)
 
 ---
 
-## 완료 기준
+## 완료 기준 (최종 실측값)
 
+```text
+Neo4j            44 nodes / 85 relationships · 필수 속성·방향·중복 0
+                 고정 설비 간 UPSTREAM_OF 0건
+문서 ID          DOC-SPEC-PH9000 · DOC-SPEC-ET7500 · DOC-TROUBLE-FDC 승계
+corpus           STAGING 적재 → 문서 수·chunk 수·차원·hash·검색 smoke 검증 → ACTIVE swap
+검색 결과        document / chunk / corpus revision + 실제 근거 내용 반환
+평가             독립 fixture 기준 Recall@K · MRR · 실패 사례 · corpus revision 기록
 ```
-Neo4j        노드 24 · 관계 26, UPSTREAM_OF 조회 성공
-문서         document 3 · document_chunk 39 (ET-7500 13 · PH-9000 12 · TROUBLE 14)
-             embedding IS NULL 0건, 차원 1024
-             청크 길이 120자 미만 0건 · 1,200자 초과 0건
-관계 Tool    PHO-01-C1 조회 시 downstream에 ETC-01 포함
-문서 Tool    고정 시험 질문 3종에서 관련 절 상위 반환
-싱글턴       임베딩 모델 생성 횟수 1회 (로그 또는 단위 테스트로 확인)
-평가         문서 골드 10문항 이상 Recall@4 >= 0.80, MRR >= 0.70
-             관계 골드 6건(챔버 4 + 장비 2) 정확도 100%
-```
-
-**고정 시험 질문 3종** (가이드 03 원문 그대로)
-
-```
-반사파가 올라가면 무슨 문제인가
-포커스가 벗어나면 CD가 어떻게 되나
-장비를 세우려면 승인이 필요한가
-```
-
-**관계 골드셋 경계 필수**: PHO-01-C1 downstream 존재 / ETC-01-C1 downstream 없음·upstream 존재
 
 ---
 
 ## 주의
 
-**Cypher는 parameterized만 쓴다.** 입력 ID를 쿼리 문자열에 삽입하지 않는다.
+**`master.cypher` 첫 문장 `MATCH (n) DETACH DELETE n`을 공용 Neo4j에 직접 실행하지 않는다.**
+empty / fingerprint / backup / confirm guard를 통과한 loader로만 갱신한다.
 
-**배포 `master.cypher`의 노드 속성만으로 DTO를 만들 수 없다.**
-Chamber는 `chamber_id`·`chamber_no`만, Equipment는 장비 속성만 가진다.
-`Chamber-[:PART_OF]->Equipment-[:LOCATED_IN]->Area`, `Equipment-[:PERFORMS]->ProcessStep`
-관계를 map projection으로 따라가 `equipment_id`·`model_code`·`area_id`·`step_id`를 조합한다. (설계 6.1)
+**임베딩 provider·model·차원은 이 역할이 확정한다.** 참고 구현
+(`backend/app/services/rag.py`)의 키워드 스코어는 파일럿이며 주석도 "실서비스는 임베딩+벡터검색으로
+교체"라고 적고 있다. 확정값을 `.env`와 corpus revision metadata
+(`embedding_model_code`·`embedding_dim`)에 함께 기록하고, corpus revision이 바뀌면 두 값도 함께
+versioning한다.
 
-**반환 순서를 고정한다.** upstream/downstream은 `equipment_id ASC`, sibling은 `chamber_id ASC`.
-동일 입력에서 JSON 순서가 흔들리면 계약 테스트가 깨진다.
+**원본 RAG 파일을 수정하지 않는다.** correction overlay와 corpus revision으로 관리하고 원문·정정
+사유·corrected hash·embedding 정보를 provenance로 남긴다.
 
-**`model_code` 지정 시 COMMON을 항상 포함한다.**
-`(document.model_code = :model_code OR document.model_code = 'COMMON')` — TROUBLE 가이드가 COMMON이다.
+**정정 대상은 다음과 같다.**
 
-**`score = 1 - cosine_distance`**, top_k 기본 4·허용 1~10, 동률 정렬은 `score DESC, doc_id ASC, chunk_seq ASC`.
+```text
+SPEC_PH-9000  고정 "EQP01 → EQP04 로 등록" 문구
+              → 상하류는 CT-PHOTO → CT-ETCH step 수준에서만 정의
+              → 특정 wafer의 실제 설비는 lot_history로 조회
+적용 범위      PH-9000 = EQP01~03 · RECIPE01/03   ET-7500 = EQP04~06 · RECIPE02/04
+              (원문은 RECIPE01/02만 언급하지만 실제 데이터는 01·03 / 02·04)
+TROUBLE       metrology FAIL·반복·하류 진행 기반 조치 상향, 원인 설명·후속 정상 기반 하향 제거
+              "한 챔버 OOS 3개 이상" 축약 → 같은 chamber·parameter·recipe step 연속 3
+              R01은 raw 한 점의 USL/LSL 이탈 즉시 TRACE 알람. Fault 후보에 OTH 포함
+              ACT-0001~0010 기준 구 10건 서술 → 최종 ACT-0001~0012 reference
+              EQP_HOLD EMAIL은 승인 요청 알림, Kafka MES Mock은 승인 후에만 실행
+anomaly score  score로 조치를 상향한다는 구 문구 제거
+```
 
-**임베딩 모델은 process-local lazy singleton + lock**이다. 런타임 네트워크 다운로드를 하지 않고
-`EMBEDDING_MODEL_PATH`의 사전 다운로드본을 쓴다. (설계 6.2)
+**Neo4j Browser iframe과 Frontend 비밀번호 노출을 수용하지 않는다.** 참고 React의 `neo4j/password`
+직접 접속 대신 Backend의 read-only `GET /ontology/graph`만 호출한다.
 
-**저장 본문에는 제목 접두어를 넣지 않는다.** 임베딩 입력을 만들 때만 "문서제목 / 절제목"을 앞에 붙인다.
-
-**검색 결과 0건은 오류가 아니다.** HTTP 200 + 빈 hits.
-
-**문서 식별자 이름을 분리한다.** API `document_id`는 DB `document.doc_id`·`document_chunk.doc_id`에 대응한다. `doc_type`은 `SPEC | MANUAL | TROUBLESHOOT | null`만 허용한다.
+**graph는 공정 구조·ID 정합 근거일 뿐이다.** 특정 LOT의 upstream 설비를 결정하지 않는다.
+`relation_id`는 방향·type·business endpoint의 canonical tuple로 만들고 Neo4j elementId를 API
+provenance로 쓰지 않는다.
 
 ---
 
 ## API
 
 ```http
-GET  /relations/chambers/{chamber_id}
-GET  /relations/equipment/{equipment_id}
-POST /documents/search              query, model_code?, top_k=4
-GET  /documents/{document_id}
+POST /documents/search      호환 필수. query · model_code? · top_k
+GET  /ontology/graph        보안 필수. read-only graph adapter
 ```
 
-없는 ID는 404. DTO는 설계 10.3.
+선택 확장: 장비·챔버별 관계 조회, 문서 상세.
 
 ---
 
 ## 화면
 
-| 경로 | 내용 |
+| 화면 | 내용 |
 |---|---|
-| `/knowledge` | 장비·챔버 검색, upstream/downstream/sibling 관계도, 문서 hit·score·본문 |
-
-노드 선택·문서 펼치기, 검색 0건은 Empty 표시. 관계도 라이브러리는 자유 선택하되 **API DTO는 바꾸지 않는다.**
+| 4 Documents | 문서 검색·근거 표시, Agent 화면 deep link |
+| 5 Ontology | graph API 기반 시각화. 비밀정보 노출 0 |
 
 ---
 
 ## 원본 절
 
-```
-설계 6.1  Neo4j 조회
-설계 6.2  임베딩 모델 싱글턴
-설계 6.3  문서 검색
-설계 6.4  품질 평가
-설계 6.5  기반 데이터·임베딩 provenance 검증
-설계 10.3  B Knowledge API DTO
-요구사항 5.2  FR-B-01~08
-요구사항 7.4  RAG 문서셋
+```text
+요구사항 v2.1  5.2 FR-B-01~08
+설계 v2.1      5.1 Neo4j 기준 · 5.2 안전 적재 · 5.3 RAG correction overlay
+역할분담 v10.1  7. B — Knowledge Full-stack
+기준표          7. Neo4j·RAG 주의
 ```
