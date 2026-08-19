@@ -1,17 +1,8 @@
 # LangGraph 기반 반도체 FDC 이상감지 에이전트 — 역할분담 v10.0 작업본
 
-> [!IMPORTANT]
-> **개정 고지 (2026-08-18)** — 멘토 최종 패키지 배포로 본 문서의 일부 절이 대체되었습니다.
-> 본문은 kosa_0813 기준으로 작성되어 아래 항목은 **패키지가 우선**합니다. 전면 개정 전까지
-> 현행 기준은 `docs/ai-context/README.md` 라우팅을 따르십시오.
->
-> 대체된 주요 항목: 데이터 수치·표기(area Photo/Etch·wafer_id 문자열·recipe 4종·알람 51/138) ·
-> 화면별 API(패키지 02 가이드가 정본, 5화면·골든 시나리오) · 조치 어휘 3단계 확정 ·
-> fault_code 라벨 복원(평가 전용, OTH 포함) · 정본 프론트엔드(패키지 frontend/) ·
-> MES=Kafka fdc.actions · 이메일=n8n 실 SMTP
->
-> 전면 개정은 팀 협의 후 별도 Task로 진행합니다.
-
+> [!CAUTION]
+> 이 문서는 `kosa_0813` 기준의 이전 epoch 이력이다. 신규 담당 범위의 근거로 사용하지 않으며,
+> 현재 기준은 `FDC_프로젝트_역할분담_v10_1_작업본.md`다.
 
 > 기준 데이터: `kosa_0813.zip`
 > 기준 기획: `docs/planning/신규데이터_정답라벨제거_전환기획_v1.md`
@@ -342,6 +333,7 @@ EQP_HOLD는 action·approval transaction을 먼저 커밋하고 승인 요청 �
 - `001` 성공 후 corrected base data를 profile별로 정렬한다. `kosa_agent`·`kosa_text2sql`은 기적재 corrected base를 채택하고 `dim_parameter.parameter_name` 3건만 보정하며, `kosa_agent_e2e`는 신규 적재한다. 최종 action 상태는 0/0/48이고 PK/FK·행 수·reference output을 검증한다. fresh bootstrap 결과는 종전과 같으며 기적재 DB의 adoption 경로만 추가한 것이다.
 - corrected base 정렬 후 `kosa_text2sql`의 제공 action 48건이 이미 있으면 제공본과 일치함을 검증하고(중복 적재 0건), 비어 있으면 적재한다. DB 컬럼이 아닌 profile metadata `fixture_type=MOCK`으로 표시해 Text2SQL·화면 계약 회귀에만 사용한다.
 - `002_agent_runtime_clean.sql`은 `001`과 corrected base data 적재 성공 후 runtime 2개 DB에만 Agent·승인·조치·감사·delivery 구조를 생성하며 action 0건 guard를 통과해야 한다.
+- `003_agent_run_severity_pair.sql`은 `002` 적용 뒤 같은 runtime 2개 DB에만 명명 CHECK를 추가해 `agent_run.action`·`severity`의 반쪽 행을 차단한다. `002` 원본은 수정하지 않고 stage는 `runtime_clean → runtime_guarded`로 올라간다. Checkpoint 초기화는 그다음이다.
 - 기존 구 DB의 ALTER·backfill 전용 migration을 재사용하지 않고 evaluation DB에 `002`를 적용하지 않는다.
 - `AlarmRef`, incident 실행 연결, 승인·조치·감사·Tool 호출·channel별 delivery를 지원한다.
 - 부분 고유 제약과 조건부 갱신으로 중복 실행·중복 승인·중복 전송을 차단한다.

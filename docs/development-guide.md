@@ -1,10 +1,11 @@
 # Development Guide
 
-> [!NOTE]
-> **기준: 멘토 최종 패키지 (2026-08-18).** 이전 배포본(kosa_0813 포함) 기준의
-> 수치·필터값·기대값은 무효입니다. 도메인·데이터·API 기준은
-> `docs/ai-context/README.md`(라우팅)와 재생성된 `01`~`07` 문서를 따릅니다.
-> 이 문서의 Git·브랜치·PR·E2E 절차는 계속 유효합니다.
+> [!CAUTION]
+> **멘토님 제공 최종 `project.zip` 기준으로 문서를 재기준화 중입니다.** 이 문서의
+> Git·브랜치·PR 절차는 계속 사용하지만 도메인·데이터·API·E2E 기준은 최종 데이터 기준표와
+> v2.1 요구사항·시스템설계서·역할분담 v10.1·API v3을 따릅니다. `kosa_0813`, WBS v4 이하,
+> `docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 이전 epoch 이력입니다.
+> WBS v5 확정 전에는 신규 구현을 시작하거나 임의의 V5 Task ID를 만들지 않습니다.
 
 ## 1. 전체 작업 흐름
 
@@ -26,7 +27,9 @@
 
 ### 한 작업을 처음부터 끝까지
 
-`V4-A-4.1~4.2` Summary Tool 구현을 예로 든 전체 순서입니다. 각 단계의 상세 규칙은 아래 장에서 다룹니다.
+아래는 WBS v5가 확정된 뒤 `V5-A-*` Summary Tool Task를 수행한다고 가정한 예시입니다.
+실제 Task ID·요구사항·완료 기준은 확정된 WBS에서 복사해야 하며, 이 예시를 작업 근거로
+사용하지 않습니다. 각 단계의 상세 Git 규칙은 아래 장에서 다룹니다.
 
 **① Issue 생성** — 무엇을, 왜, 어디까지 하면 끝인지 먼저 적습니다.
 
@@ -34,11 +37,11 @@
 제목  [A] get_fdc_summary Tool 구현
 본문  담당 영역   A
       목적       Agent 가 WAFER parameter 요약과 nullable anomaly signal을 조회할 수 있게 한다
-      대상 Task  V4-A-4.1, V4-A-4.2
-      대상 요구사항 FR-A-05
+      대상 Task  V5-A-* (확정 WBS의 실제 ID로 교체)
+      대상 요구사항 확정 요구사항 ID로 교체
       완료 기준   잘못된 lot_hist_id 에 ok:false 반환, 예외 미발생
                  모델 미준비 시 규칙 summary 정상 + AnomalySignal=null
-      선행 작업   V4-A-1.4, V4-CM-0.2
+      선행 작업   확정 WBS의 실제 선행 Task로 교체
 ```
 
 **② 작업 시작 전 상태 확인** — 작업 유실을 막습니다.
@@ -217,8 +220,9 @@ Agent E2E는 학원 공용 PostgreSQL 서버의 전용 논리 DB `kosa_agent_e2e
 `action_history`·`agent_run`·`agent_run_alarm`·`agent_tool_call`·`approval_request`·`audit_log`·
 `action_delivery`와 Checkpoint 실행 데이터만 reset하며 corrected source·reference·corpus·schema는 보존합니다.
 
-**V4-CM-3.4·V4-C-8.2의 host·DB·token reset guard가 구현·검증되기 전에는 E2E를 실행하지
-않습니다.** guard는 `kosa_agent`·`kosa_text2sql`을 대상으로 한 reset을 반드시 거부해야 합니다.
+최종 epoch 기준 WBS v5에서 host·DB·token reset guard를 재검증하기 전에는 E2E를 실행하지
+않습니다. 기존 guard가 있어도 최종 schema와 보존 테이블 allowlist를 다시 확인해야 합니다.
+guard는 `kosa_agent`·`kosa_text2sql`을 대상으로 한 reset을 반드시 거부해야 합니다.
 
 ```bash
 # 1. reset guard로 허용된 host + kosa_agent_e2e + 확인 token을 검증한다.
@@ -233,20 +237,21 @@ pytest -m e2e
 
 - 대상은 공용 서버 안의 **전용 논리 DB `kosa_agent_e2e`**뿐입니다. `kosa_agent`·`kosa_text2sql`을 reset하지 않습니다.
 - 공용 PostgreSQL·Neo4j·n8n 컨테이너를 `docker stop`으로 멈추지 않습니다. 장애 주입은 dependency override·Tool mock·테스트 webhook으로 합니다.
-- 시드 `action_history` 10건은 예시이며 조치 정답으로 사용하지 않습니다. 실제 조치는 Agent 가 런타임에 생성합니다.
-- corrected source·reference·corpus·migration schema와 평가 전용 synthetic artifact를 보존합니다.
+- 제공 `action_history` 12건은 Runtime seed로 사용하지 않고 격리 평가·화면 reference fixture로만
+  사용합니다.
+- 최종 source·reference·corpus·migration schema와 평가 전용 합성 라벨 artifact를 보존합니다.
 
-근거: 요구사항 v2.0 13장 · 시스템설계서 v2.0 14장 · WBS V4-CM-3.4, V4-C-8.2
+근거: 요구사항 v2.1 · 시스템설계서 v2.1. 정확한 reset Task는 WBS v5에서 확정합니다.
 
 ### 테스트 계층
 
 | 계층        | 대상                                                              | 마커            |
 | ----------- | ----------------------------------------------------------------- | --------------- |
-| Unit        | 요약, R03, feature, base/gated `decide_action`, sqlglot, chart 규칙 | 없음         |
+| Unit        | 요약, evaluation, R03, 결정론적 `decide_action`, model feature 누수 방지 | 없음      |
 | Contract    | Tool 5종 정상·오류·timeout JSON                                 | `contract`    |
 | Integration | PostgreSQL Repository, Neo4j, pgvector, checkpoint, 승인 트랜잭션 | `integration` |
 | E2E         | FastAPI + React + `kosa_agent_e2e` + n8n 상태·복구 시나리오       | `e2e`         |
-| Evaluation  | 비지도·synthetic agreement, RAG, 관계, Text2SQL, Agent rubric     | `evaluation`  |
+| Evaluation  | 공개 합성 Fault label, metrology, RAG, 관계, 선택 Text2SQL, Agent rubric | `evaluation` |
 
 필요한 경우 FastAPI를 실행해 실제 연동을 확인합니다.
 
@@ -260,10 +265,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```text
 http://localhost:8000/docs          OpenAPI 문서
 http://localhost:8000/health        API 프로세스 생존 (외부 장애와 무관하게 200)
-http://localhost:8000/health/ready  PostgreSQL·Neo4j·n8n 준비 상태 (하나라도 실패 시 503)
+http://localhost:8000/health/ready  PostgreSQL·Neo4j·RAG·n8n·Kafka 준비 상태 (실패 시 503)
 ```
 
-두 health 경로는 배포·운영 및 개발 진단용 내부 엔드포인트다. 사용자 업무 기능과 API 명세서의 22개 엔드포인트에는 포함하지 않는다.
+두 health 경로는 배포·운영 및 개발 진단용 내부 엔드포인트다. 사용자 업무 기능과 API v3의
+source 호환 9개 endpoint에는 포함하지 않는다.
 
 GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않습니다. 실행 결과는 PR의 `확인 방법`과 체크리스트에 기록합니다.
 
@@ -390,8 +396,8 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - **다른 팀원 1명 이상의 승인(Approve)이 있어야 병합할 수 있습니다.** 문서상 권장이 아니라 `main` 브랜치 보호 규칙으로 강제됩니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 v2 요구사항·시스템설계서 8~9장과
-  `docs/planning/V4-CM-0.3_API_Tool_영향표.md`, 해당 V4 Task를 먼저 정렬했는지 확인합니다.
+- API·Tool 계약을 변경한 경우 v2.1 요구사항·시스템설계서·API v3과 확정된 WBS v5의 해당
+  Task를 먼저 정렬했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
 - 병합 방식은 `Squash and merge`로 **고정**합니다. 저장소 설정에서 merge commit과 rebase를 비활성화했으므로 PR 화면에 다른 선택지가 나오지 않습니다.
@@ -487,20 +493,21 @@ git branch -D feat/detection-summary
 
 ## 11. 계약·보안 규칙
 
-코드·계약·보안의 기준 순서는 **멘토 최종 패키지(8/18) → 요구사항 v2.0 → 시스템설계서
-v2.0 → 역할분담 v10.0 → WBS v4** 입니다. `docs/ai-context/README.md`가 라우팅 인덱스이며,
-`01`~`07`·`PROMPT_TEMPLATE`·`tasks/*` 는 최종 패키지 기준으로 재생성 완료(2026-08-18) 상태라
-구현 근거로 사용할 수 있습니다.
+최종 데이터 전환 중 코드·계약·보안의 기준은 최종 데이터 기준표 → 요구사항정의서 v2.1 →
+시스템설계서 v2.1 → 역할분담 v10.1 → API v3 → WBS v5의 해당 Task 순서입니다.
+`docs/ai-context/README.md`는 이 원본으로 보내는 라우팅 인덱스입니다.
+
+`docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 구 이력으로 사용 중지 상태이며
+새 역할별 Task가 재생성되기 전까지 단일 출처나 구현 근거로 사용하지 않습니다.
 
 ### API 계약을 바꿀 때
 
-> 외부 API 계약(경로·필드명)의 정본은 **멘토 패키지 `02_화면별_API_가이드.md`** 입니다.
-> DTO 역산 명세서는 내부 상세 문서이며, 멘토 확정 6필드와 충돌하면 멘토 스펙이 이깁니다.
-
-API 명세서는 손으로 쓰지 않습니다. Backend Pydantic DTO에서 역산해 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를 지켜야 세 문서가 어긋나지 않습니다.
+API v3 작업본은 최종 source 계약을 먼저 고정하기 위한 전환 문서입니다. 리뷰가 끝난 뒤 Backend
+Pydantic DTO와 생성기를 맞추고 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를
+지켜야 코드와 세 문서가 어긋나지 않습니다.
 
 ```bash
-# 1. 원본 스펙을 먼저 고친다 (요구사항 → 시스템설계서 순)
+# 1. 원본 스펙을 먼저 고친다 (요구사항 → 시스템설계서 → API v3 순)
 # 2. Backend DTO 를 고친다
 #    backend/app/{common,detection,knowledge,agent,analytics}/schemas.py
 # 3. 계약 테스트로 확인한다

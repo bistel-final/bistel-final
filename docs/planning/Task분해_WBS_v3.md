@@ -1,5 +1,15 @@
 # 팀 전체 Task 분해 (WBS) v3
 
+> [!CAUTION]
+> **FINAL-DOC — LEGACY ARCHIVE.** 이 문서는 최종 `project.zip` 이전 epoch의 WBS 이력이며
+> 신규 구현·수용 기준·완료 근거로 사용하지 않는다. 현재 기준은
+> [최종 데이터 기준표](../reference/mentor-final-20260818/README.md),
+> [요구사항 v2.1](../specifications/요구사항정의서_v2_1_작업본.md),
+> [시스템설계 v2.1](../specifications/시스템설계서_v2_1_작업본.md),
+> [역할분담 v10.1](../specifications/FDC_프로젝트_역할분담_v10_1_작업본.md),
+> [API v3](../deliverables/api/API명세서_v3_작업본.md)이다. 이 문서의 Task ID·공수·선행관계·
+> 완료 표시는 새 WBS v5로 승계하지 않는다.
+
 > 문서 성격: 요구사항 v1.9, 시스템설계서 v1.10, 역할분담 v9.6 기준 정합본
 > 작성 기준일: 2026-08-12
 > Git 기준본: Task ID·범위·선행관계·완료 기준을 추적한다. 담당자·진행 상태·일정·블로커는 Notion Task DB에서 실시간 관리하며 상태만 바뀌는 경우 이 파일을 수정하지 않는다.

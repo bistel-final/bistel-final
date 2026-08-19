@@ -1,5 +1,15 @@
 # LangGraph 기반 반도체 FDC 이상감지 에이전트 - 역할분담 개정안 (v9.6 최종)
 
+> [!CAUTION]
+> **FINAL-DOC — LEGACY ARCHIVE.** 이 문서는 최종 `project.zip` 이전 epoch의 이력이며 신규
+> 구현·수용 기준·제출 근거로 사용하지 않는다. 현재 기준은
+> [최종 데이터 기준표](../reference/mentor-final-20260818/README.md),
+> [요구사항 v2.1](요구사항정의서_v2_1_작업본.md),
+> [시스템설계 v2.1](시스템설계서_v2_1_작업본.md),
+> [역할분담 v10.1](FDC_프로젝트_역할분담_v10_1_작업본.md),
+> [API v3](../deliverables/api/API명세서_v3_작업본.md)이다. 이 문서의 수치·API·완료 표시는
+> 새 WBS v5로 승계하지 않는다.
+
 > 총 4명이 팀장·팀원 구분 없이 A·B·C·D 역할을 하나씩 맡는다.
 >
 > 각 담당자는 자신의 기능에 대해 Backend(FastAPI), AI/Tool, React 화면 연결, 테스트, 평가까지 책임지는 Full-stack 기능 책임 방식으로 개발한다. React 공통 골격은 대혁님이 AI 코딩 도구로 초안만 잡고, 이후 실제 API 연결과 기능 검증은 각 담당자가 직접 수행한다.

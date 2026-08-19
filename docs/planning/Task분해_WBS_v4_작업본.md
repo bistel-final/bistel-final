@@ -1,21 +1,12 @@
 # 팀 전체 Task 분해 WBS v4 작업본
 
-> [!IMPORTANT]
-> **개정 고지 (2026-08-18)** — 멘토 최종 패키지 배포에 따라 Task 범위에 조정이 필요합니다.
-> Task ID·선행관계 체계는 유지하되, 아래 영향을 반영해 수행하십시오.
->
-> - 데이터·수치 기준: kosa_0813 → 패키지 sample/data (완료 기준 수치는 ai-context 07 참조)
-> - CM: 신본 적재·manifest 재구축·03_schema_clean 대조 Task 추가 필요
-> - A: 알람 재현 검증을 신본(51/138) 기준으로 재수행
-> - B: RAG 재임베딩 (패키지 sample/rag 수정본)
-> - C: Kafka fdc.actions·n8n WF1~WF4 반영, GET /audit-logs 담당 협의(D와)
-> - D: POST /analytics/query 응답을 멘토 6필드 정합으로 조정
-> - 신규 인프라(Kafka·docker-compose) 채택 범위는 팀 결정 사항
-
+> [!CAUTION]
+> 이 문서는 `kosa_0813` 기준의 이전 epoch 이력이다. Task 상태·선행관계를 신규 작업에 승계하지
+> 않으며, v2.1 상위 문서 확정 후 WBS v5를 새로 작성한다.
 
 > 기준 기획: `신규데이터_정답라벨제거_전환기획_v1.md`
 > 기준 역할: `FDC_프로젝트_역할분담_v10_0_작업본.md`
-> 데이터 epoch: 멘토 최종 패키지 sample/data (2026-08-18. manifest epoch 명칭은 Common 확정 예정 / 구: kosa_0813)
+> 데이터 epoch: `kosa_0813.zip`
 > 문서 상태: 공개 Fault 정답이 없는 신규 데이터 전환 작업본
 > 작성 단위: 독립 구현·검증이 가능한 1.0~2.0시간
 > 채택 범위 예상 공수: **212.0h**
@@ -57,15 +48,15 @@
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 C | 31.5h | corrected source·clean bootstrap·profile별 migration·통합 검증 |
+| Common | 4명 공동, 통합 관리 C | 32.5h | corrected source·clean bootstrap·profile별 migration·통합 검증 |
 | A Detection | 신동원 | 42.5h | 결정론적 재계산·규칙 알람·비지도 score·incident model signal·synthetic 평가·Detection 화면 |
 | B Knowledge | 강연권 | 35.5h | corrected RAG·Neo4j·Tool·Knowledge 화면·검색 평가 |
 | C Agent/HITL | 방대혁 | 62.0h | 근거 기반 가설·LangGraph·base 조치·anomaly gate·HITL·email·MES Mock |
 | D Analytics | 천승현 | 40.5h | 신규 스키마 Text2SQL·방어·versioned 회귀 질문·Analytics·감사 화면 |
-| **합계** | | **212.0h** | P2 도전 과제 제외 |
+| **합계** | | **213.0h** | P2 도전 과제 제외 |
 
 C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공수가 아니라 전원 공동 작업으로 산정한다.
-우선순위별 공수는 **P0 96.0h / P1 116.0h**이며 P2는 합계에서 제외한다.
+우선순위별 공수는 **P0 97.0h / P1 116.0h**이며 P2는 합계에서 제외한다.
 
 ## 3. Common — 신규 데이터·Runtime·통합
 
@@ -82,13 +73,13 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 
 | ID | 우선 | 작업·완료 기준 | 근거 | 선행 | 시간 |
 |---|---|---|---|---|---:|
-| V4-CM-1.1 | P0 | manifest profile 분리. 완료: `format_version=3`, `artifact_type`, `dataset_epoch`, `correction_version`, `hash_algorithm`, DB `profile`을 필수 기록한다. source/corrected file manifest에는 제공 `action_history` CSV 10건을 Mock/reference로 보존하고, `kosa_agent`·`kosa_agent_e2e` runtime과 `kosa_text2sql` evaluation bootstrap profile manifest는 별도 expected row/hash를 사용한다. synthetic gold는 DB profile과 분리한 `EVALUATION_ONLY` artifact type으로 정의하며 단일 expected hash 공유 0건, 비밀정보 0건 | FR-I-04 | V4-CM-0.1 | 1.0h |
+| V4-CM-1.1 | P0 | manifest profile 분리. 완료: `format_version=3`, `artifact_type`, `dataset_epoch`, `correction_version`, `hash_algorithm`, DB `profile`을 필수 기록한다. source/corrected file manifest에는 제공 `action_history` CSV 48건을 Mock/reference로 보존하고, `kosa_agent`·`kosa_agent_e2e` runtime과 `kosa_text2sql` evaluation bootstrap profile manifest는 별도 expected row/hash를 사용한다. synthetic gold는 DB profile과 분리한 `EVALUATION_ONLY` artifact type으로 정의하며 단일 expected hash 공유 0건, 비밀정보 0건 | FR-I-04 | V4-CM-0.1 | 1.0h |
 | V4-CM-1.2 | P0 | corrected generator·copy 파이프라인. 완료: 원본 ZIP·Generator write 0회, 별도 corrected generator revision·hash 기록, 임시 디렉터리 생성→검증→원자 교체, 재실행 동일 hash | FR-I-04 | V4-CM-1.1 | 2.0h |
 | V4-CM-1.3 | P0 | Trace 순번 보정. 완료: `[팀 잠정] seq_no=ordv`, Step 1은 0~2·Step 2는 3~5, 기존 PK 유지, 중복 PK 0건 | FR-A-01, FR-I-04 | V4-CM-1.2 | 1.5h |
 | V4-CM-1.4 | P0 | 누락 seed·시간 overlay. 완료: `dim_parameter` 8행, Summary 알람 시각은 대응 track-in, metrology 시각은 NULL 유지, 변환 근거 기록 | FR-A-01, FR-I-04 | V4-CM-1.2 | 1.0h |
 | V4-CM-1.5 | P0 | PostgreSQL base schema bootstrap. 완료: allowlist host·DB guard 후 `kosa_agent`·`kosa_agent_e2e`·`kosa_text2sql`에 base table 9개 schema만 생성하고 세 DB의 `action_history` 0행·transaction rollback·success marker를 검증한다 | FR-I-04 | V4-CM-1.1 | 1.0h |
 | V4-CM-1.6 | P0 | Neo4j destructive-safe loader. 완료: raw `MATCH (n) DETACH DELETE n` 직접 실행과 populated graph 기본 교체를 금지한다. empty/fresh target 또는 fingerprint 확인·팀 공유·백업 후 `--replace --confirm`일 때만 교체하며 38 nodes/81 relationships·복구 절차를 검증한다 | FR-I-04, FR-B-01 | V4-CM-1.1 | 1.5h |
-| V4-CM-1.7 | P0 | source·base schema verifier. 완료: source/corrected file의 Mock action 10건과 세 PostgreSQL base schema의 action 0건을 구분하고 profile 간 hash를 동일값으로 강제하지 않는다. corrected file PK/FK·reference output, Neo4j 38/81, DB write 대상 구분을 확인한다 | FR-I-04 | V4-CM-1.3, V4-CM-1.4, V4-CM-1.5, V4-CM-1.6 | 1.5h |
+| V4-CM-1.7 | P0 | source·base schema verifier. 완료: source/corrected file의 Mock action 48건과 세 PostgreSQL base schema의 action 0건을 구분하고 profile 간 hash를 동일값으로 강제하지 않는다. corrected file PK/FK·reference output, Neo4j 38/81, DB write 대상 구분을 확인한다 | FR-I-04 | V4-CM-1.3, V4-CM-1.4, V4-CM-1.5, V4-CM-1.6 | 1.5h |
 
 ### V4-CM-2. Profile별 reference·Runtime CREATE migration
 
@@ -96,11 +87,12 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 |---|---|---|---|---|---:|
 | V4-CM-2.1 | P0 | `001_reference_extensions.sql`. 완료: `kosa_agent`·`kosa_agent_e2e`·`kosa_text2sql` 모두에 R03·document corpus·`nl_query_log`·`v_alarm_event`를 CREATE하고 재실행 안전, profile별 기존 action 상태 불변, 구 DB backfill 의존 0건 | FR-A-06, FR-B-02, FR-D-05, FR-I-04 | V4-CM-0.2, V4-CM-1.7 | 2.0h |
 | V4-CM-2.2 | P0 | profile별 corrected base data 채택·적재. 완료: `001` 성공 뒤 `kosa_agent`·`kosa_text2sql`은 기적재 corrected base를 채택하고 `dim_parameter.parameter_name` 3건(`ET_ESC`·`PH_DEV`·`PH_PEB`)을 corrected 값으로 보정하며, `kosa_agent_e2e`는 신규 적재한다. 최종 action 0/0/48을 유지하고 PK/FK·reference output, 재실행·rollback을 검증한다. fresh bootstrap 결과 자체는 상위 요구사항·설계서와 동일하며 기적재 DB의 adoption 경로만 추가한다 | FR-I-04 | V4-CM-2.1 | 1.0h |
-| V4-CM-2.3 | P0 | evaluation Mock fixture 채택·등록. 완료: corrected base 채택 뒤 `kosa_text2sql`의 기존 `action_history` 10건이 제공본과 일치함을 검증하고(중복 INSERT 0건) profile metadata에 `fixture_type=MOCK`을 기록한다. 비어 있는 경우에만 10건을 적재한다. 이는 DB 컬럼이 아니며 Text2SQL·화면 계약 회귀에만 사용하고 Agent/Fault 정답·seed로 사용하지 않는다 | FR-D-08, FR-I-04 | V4-CM-2.2 | 1.0h |
+| V4-CM-2.3 | P0 | evaluation Mock fixture 채택·등록. 완료: corrected base 채택 뒤 `kosa_text2sql`의 기존 `action_history` 48건이 제공본과 일치함을 검증하고(중복 INSERT 0건) profile metadata에 `fixture_type=MOCK`을 기록한다. 비어 있는 경우에만 48건을 적재한다. 이는 DB 컬럼이 아니며 Text2SQL·화면 계약 회귀에만 사용하고 Agent/Fault 정답·seed로 사용하지 않는다 | FR-D-08, FR-I-04 | V4-CM-2.2 | 1.0h |
 | V4-CM-2.4 | P0 | `002_agent_runtime_clean.sql`. 완료: corrected base 적재 뒤 `kosa_agent`·`kosa_agent_e2e`에만 agent run/tool/alarm link/action/approval/audit/channel delivery와 active incident·`(action_id,channel)` 제약을 CREATE, action 0건 guard, `kosa_text2sql` 적용 거부·양성/음성 test | FR-C-04~09, FR-I-04 | V4-CM-2.2 | 2.0h |
-| V4-CM-2.5 | P0 | Checkpoint 초기화. 완료: 두 runtime DB에서만 별도 one-shot, 재실행 안전, 앱 시작 자동 setup 0회, thread 재개 smoke | FR-C-04 | V4-CM-2.4 | 1.0h |
+| V4-CM-2.4.1 | P0 | `003_agent_run_severity_pair.sql` hotfix. 완료: `agent_run`의 `action`·`severity` 반쪽 행(`action='WARNING', severity=NULL` 등)을 PostgreSQL 3값 논리 구멍 없이 차단하는 명명 CHECK를 runtime 2개 DB에만 ADD한다. `002` 원본은 수정하지 않고 successor stage `runtime_guarded` manifest·marker를 발급하며, 002 runner의 fresh 적용 경로(제약 19개)를 깨지 않도록 stage별 기대 signature를 분리한다. `kosa_text2sql` 적용 거부·재실행 no-op·rollback을 검증한다 | FR-C-03, FR-C-07, FR-I-04 | V4-CM-2.4 | 1.0h |
+| V4-CM-2.5 | P0 | Checkpoint 초기화. 완료: 두 runtime DB에서만 별도 one-shot, 재실행 안전, 앱 시작 자동 setup 0회, thread 재개 smoke | FR-C-04 | V4-CM-2.4.1 | 1.0h |
 | V4-CM-2.6 | P0 | 최소권한 role·pool 계약. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix, 생성 SQL을 writer로 실행 0회 | NFR-01, FR-D-03 | V4-CM-2.4 | 1.0h |
-| V4-CM-2.7 | P0 | profile migration 검증기. 완료: `001`과 corrected base는 3개 DB, evaluation Mock fixture는 `kosa_text2sql`에만, `002`·checkpoint는 runtime 2개 DB에만 존재함을 검증한다. 최종 action 상태 0/0/48, fixture metadata, 적용 순서·expected table/column/index/check·idempotency·비밀 출력 0건을 확인하고, 누적 `nl_query_log`는 immutable content hash에서 제외해 schema·권한과 별도 artifact로 검증한다 | FR-I-04 | V4-CM-2.3, V4-CM-2.4, V4-CM-2.5, V4-CM-2.6 | 1.5h |
+| V4-CM-2.7 | P0 | profile migration 검증기. 완료: `001`과 corrected base는 3개 DB, evaluation Mock fixture는 `kosa_text2sql`에만, `002`·checkpoint는 runtime 2개 DB에만 존재함을 검증한다. 최종 action 상태 0/0/48, fixture metadata, 적용 순서·expected table/column/index/check·idempotency·비밀 출력 0건을 확인하고, 누적 `nl_query_log`는 immutable content hash에서 제외해 schema·권한과 별도 artifact로 검증한다 | FR-I-04 | V4-CM-2.3, V4-CM-2.4, V4-CM-2.4.1, V4-CM-2.5, V4-CM-2.6 | 1.5h |
 
 ### V4-CM-3. 애플리케이션·배포·최종 검증
 
@@ -112,7 +104,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 | V4-CM-3.4 | P0 | 공용 DB Runtime reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source/reference/corpus/checkpoint schema를 보존한다 | 요구사항 13장 | V4-CM-2.7 | 1.5h |
 | V4-CM-3.5 | P1 | 최종 검증·문서화. 완료: pytest·ruff·npm lint/build·통합 E2E, source hash 불변, synthetic artifact의 Runtime·Agent·Text2SQL·RAG 유입 0건, 결과서·실행가이드와 미확정 정책 목록 | 요구사항 13장 | V4-CM-3.3, V4-CM-3.4, V4-A-7.2, V4-B-8.2, V4-C-10.2, V4-D-9.2 | 1.0h |
 
-**Common 합계: 31.5h**
+**Common 합계: 32.5h**
 
 ## 4. A — Detection
 
@@ -137,8 +129,8 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 | ID | 우선 | 작업·완료 기준 | 근거 | 선행 | 시간 |
 |---|---|---|---|---|---:|
 | V4-A-2.1 | P0 | window evaluation 구현. 완료: 신규 가이드 식으로 4,800건(IN 4,542/OOC 216/OOS 42) reference output 결정론 비교 | FR-A-02 | V4-A-1.3 | 1.5h |
-| V4-A-2.2 | P0 | Trace 알람 구현. 완료: raw point OOS 후보·발행 키·시각·중복 제거와 TRACE 138건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
-| V4-A-2.3 | P0 | Summary 알람 구현. 완료: 비OOS 표본 mean 분포의 CL±3σ와 Summary mean 판정, 보정 시각 포함 SUMMARY 51건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
+| V4-A-2.2 | P0 | Trace 알람 구현. 완료: raw point OOS 후보·발행 키·시각·중복 제거와 TRACE 126건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
+| V4-A-2.3 | P0 | Summary 알람 구현. 완료: 비OOS 표본 mean 분포의 CL±3σ와 Summary mean 판정, 보정 시각 포함 SUMMARY 47건 reference 일치 | FR-A-02 | V4-A-2.1 | 1.5h |
 | V4-A-2.4 | P0 | R03 구현·적재. 완료: `(chamber, parameter, recipe step)`, 비OOS reset, LOT 경계 유지, `run==3` 1회 발행 규칙으로 corrected source를 계산한다. `source`·`lot_hist_id`·`parameter_id`·`recipe_step_no`·`policy_version` canonical JSON의 SHA-256 앞 20 lowercase hex로 `R03-<20hex>`를 만들고 같은 source·policy rebuild에서 ID 불변을 검증한다. 전용 transaction에서 `r03_alarm_history`를 rebuild해 원자 교체하고 3건·`member_refs`·`policy_version`·hash 충돌 0건을 확인하며 실패 시 이전 상태로 rollback한다 | FR-A-02 | V4-A-2.1, V4-CM-2.1 | 1.0h |
 
 ### V4-A-3. 비지도 이상 점수
@@ -166,7 +158,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 
 | ID | 우선 | 작업·완료 기준 | 근거 | 선행 | 시간 |
 |---|---|---|---|---|---:|
-| V4-A-5.1 | P1 | 알람 목록·상세 API. 완료: `date_from`·`date_to`·`area`(허용값 `Photo`, `Etch`, `ALL`)는 필수, equipment·chamber·parameter는 선택 필터다. corrected 전체 기간 `2026-08-01~2026-08-12`와 `area=ALL`에서 기본 TRACE 138+SUMMARY 51=`total=189`, 같은 필터의 `source=R03` 건수와 `include_derived` 합계는 신본 재현 검증(V4-A-2.x)으로 확정한다; 단건은 `GET /alarms/{source}/{alarm_id}`, 안정 정렬·404/422 | FR-A-06 | V4-A-2.4, V4-CM-2.2 | 1.5h |
+| V4-A-5.1 | P1 | 알람 목록·상세 API. 완료: `date_from`·`date_to`·`area`(허용값 `photo`, `etch`, `ALL`)는 필수, equipment·chamber·parameter는 선택 필터다. corrected 전체 기간 `2026-08-01~2026-08-12`와 `area=ALL`에서 기본 TRACE 126+SUMMARY 47=`total=173`, 같은 필터의 `source=R03`은 3건, `include_derived=true`면 `total=176`; 단건은 `GET /alarms/{source}/{alarm_id}`, 안정 정렬·404/422 | FR-A-06 | V4-A-2.4, V4-CM-2.2 | 1.5h |
 | V4-A-5.2 | P1 | parameter·Trace API. 완료: `GET /parameters`, 최소 `GET /trace`, 확장 catalog/search가 corrected seq 0~5·step·한계선에서 같은 결과를 반환 | FR-A-06 | V4-A-1.4 | 1.5h |
 | V4-A-5.3 | P1 | dataset bounds·대시보드 API. 완료: `GET /dataset/bounds`가 dataset epoch/revision, min/max date `2026-08-01~2026-08-12`, area·equipment·chamber·parameter 선택지를 반환한다. Frontend는 min/max를 `date_from`·`date_to`와 `area=ALL`로 명시 전송하며 trend·parameter·chamber 집계가 같은 필터를 사용한다. 필터 결과 0건도 `date_range=[date_from,date_to]`, count 0, 빈 목록으로 응답하고 `date_range=[]`은 거부하며 LLM 호출은 0회다 | FR-A-06 | V4-A-5.1 | 1.5h |
 | V4-A-5.4 | P1 | C 승인 목록 결합. 완료: C ApprovalService 직접 재사용, A SQL/HTTP self-call 0건 | FR-A-06 | V4-A-5.3, V4-C-7.1 | 1.0h |
@@ -470,7 +462,7 @@ C가 가장 무거운 구조는 기존 팀 합의다. Common은 C의 개인 공�
 | V4-D-X1 | D | Analysis Tool MCP wrapping | FR-D-10 | V4-D-9.2 |
 | V4-CM-X1 | 공동 | 전문가 라벨셋 수신 시 supervised 평가 트랙 추가 | FR-C-15 | label source·review 절차 확정 |
 
-P2는 212.0h 합계에 포함하지 않는다.
+P2는 213.0h 합계에 포함하지 않는다.
 
 ## 10. 완료 보고 체크리스트
 

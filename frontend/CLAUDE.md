@@ -1,28 +1,35 @@
 # Frontend 규칙
 
 > [!CAUTION]
-> 신규 `kosa_0813` epoch 전환 중이다. 데이터 수치·필드·알람·조치·Fault 표시는
-> `docs/specifications/`의 v2.0 작업본과 `docs/planning/Task분해_WBS_v4_작업본.md`를 따른다.
-> 구 디자인 export의 51개 알람·Fault 정답·ACT-0001~0010을 Mock이나 화면 기대값으로
-> 사용하지 않는다.
+> 멘토님 제공 최종 `project.zip` 기준 문서 재기준화 중이다. `kosa_0813`, 요구사항·설계 v2.0 이하, WBS v4 이하와
+> 기존 디자인 export의 수치·필드·Mock을 사용하지 않는다. WBS v5 확정 전 신규 화면 구현을
+> 시작하지 않는다.
 
 ## 디자인 기준
 
+- 최종 패키지의 Dashboard·Alarm History·Agent·Documents·Ontology 5개 화면을 canonical
+  사용자 영역으로 사용한다. Text2SQL·Analytics와 기존 8개 route family는 새 요구사항에서
+  확장으로 명시한 경우에만 유지한다.
 - `frontend/_design_export/v2/`는 시각·레이아웃 참고본이다. 데이터·API 계약의 근거가 아니다.
 - `frontend/_design_export/BISTelligence FDC 이상감지 플랫폼/`은 재설계 이전 이력이며
   레이아웃·Mock·계약의 기준으로 사용하지 않는다.
-- 신규 가이드의 5개 기능 영역을 기존 React 8개 화면에 매핑한다. 정확한 route family와
-  화면 책임은 v2.0 요구사항 11.2와 시스템설계서 12장을 따른다.
+- 화면 책임과 경로는 요구사항 v2.1과 API 명세 v3을 따른다. 최종 패키지의 Ontology iframe처럼
+  Neo4j 비밀번호를 Frontend에 노출하지 않고 canonical `GET /ontology/graph` Backend adapter를
+  사용한다.
 
 ## Mock 데이터
 
-- Mock은 `kosa_0813`의 versioned corrected fixture에서만 생성한다. V4-CM-1의 corrected
-  fixture가 준비되기 전에는 구 51건을 복사하거나 빠진 값을 임의 생성하지 않는다.
-- `lot_history.fault_code`, Generator 주입 위치, 제공 `action_history` 48건을 Fault·Agent
-  정답으로 사용하지 않는다. 제공 action 48건은 evaluation 화면 회귀에서만 `MOCK`으로 표시한다.
+- Mock은 최종 source manifest와 API v3 fixture에서만 생성한다. 새 manifest 준비 전에는
+  패키지 참고 화면의 내장 데이터를 복사하거나 빠진 값을 임의 생성하지 않는다.
+- 저장 알람 기준값은 TRACE 138 + SUMMARY 51 = 189이며 R03 3건은 명시적 파생 source다.
+- 제공 `action_history` 12건은 평가·화면 참고 fixture다. Runtime 실행 이력으로 표시하지 않는다.
+- `lot_history.fault_code`는 공개 합성 평가 라벨이지만 화면 Runtime 응답·Agent 입력·Mock 근거에는
+  포함하지 않는다. 검토·평가 화면에서만 `SYNTHETIC_GENERATOR` 출처를 명시해 사용한다.
 - canonical 필드는 `AlarmRef`, `parameter_id`, `alarm_type`,
-  `MONITORING|WARNING|EQP_HOLD`, 채널별 `EMAIL|MES_MOCK` delivery다.
-- 축약 키 adapter를 새로 만들지 않는다. `shared/api/`와 컴포넌트는 Backend DTO 이름을 그대로 쓴다.
+  `MONITORING|WARNING|EQP_HOLD`, 외부 `EMAIL|MES`와 내부 `EMAIL|MES_MOCK` adapter다.
+- 축약 키를 feature 컴포넌트에 새로 확산하지 않는다. API v3의 deprecated 호환 alias는 Backend
+  serializer 한 곳에서만 제공하고 `shared/api/`가 canonical field로 정규화한다. Frontend 전환 뒤
+  alias를 제거한다.
 
 ## 구조
 

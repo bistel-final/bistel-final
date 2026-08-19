@@ -1,5 +1,14 @@
 # Design Handoff: BISTel FDC Anomaly Agent Platform — 화면 7종
 
+> [!CAUTION]
+> **FINAL-DOC — VISUAL HISTORY ONLY.** 이 번들은 이전 epoch의 화면·레이아웃 이력이며,
+> 7화면 구조·수치·Mock·상태명·DTO·API 계약을 현재 구현·테스트·제출 근거로 사용하지 않는다.
+> 현재 규칙은 [frontend/AGENTS.md](../../AGENTS.md), 기능·화면 기준은
+> [요구사항 v2.1](../../../docs/specifications/요구사항정의서_v2_1_작업본.md)과
+> [시스템설계 v2.1](../../../docs/specifications/시스템설계서_v2_1_작업본.md), API 기준은
+> [API v3](../../../docs/deliverables/api/API명세서_v3_작업본.md)를 따른다. 아래 본문은
+> 시각적 변천을 보존하기 위한 archive다.
+
 ## Overview
 반도체 FDC(Fault Detection & Classification) 이상 감지 Agent 플랫폼의 7개 화면 하이파이 디자인 번들이다. 최종 요구사항 v1.9의 8개 화면 중 Knowledge 화면은 이 번들 이후 추가된 범위이므로 현재 React 구현과 `docs/specifications/`를 따른다.
 알람 대시보드 → 알람 목록 → 트레이스 뷰어 → Agent 분석·승인 → 조치 목록 → 자연어 분석 → 감사로그.
