@@ -25,54 +25,27 @@ CREATE TABLE r03_alarm_history (
     UNIQUE (lot_hist_id, parameter_id, recipe_step_no, policy_version)
 );
 
--- FR-B-02 / system design 5.2: immutable corpus revisions and active pointer.
-CREATE TABLE document_corpus (
-    corpus_revision      varchar(40) PRIMARY KEY,
-    status               varchar(10) NOT NULL
-                         CHECK (status IN ('STAGING', 'ACTIVE', 'RETIRED')),
-    embedding_model_code varchar(64) NOT NULL,
-    embedding_dim        integer     NOT NULL CHECK (embedding_dim = 1024),
-    manifest_sha256      char(64)    NOT NULL
-                         CHECK (manifest_sha256 ~ '^[0-9a-f]{64}$'),
-    document_count       integer     NOT NULL CHECK (document_count >= 0),
-    chunk_count          integer     NOT NULL CHECK (chunk_count >= 0),
-    created_at           timestamptz NOT NULL,
-    activated_at         timestamptz,
-    retired_at           timestamptz
-);
-
-CREATE UNIQUE INDEX ux_document_corpus_active
-    ON document_corpus ((true))
-    WHERE status = 'ACTIVE';
-
+-- FR-B-02 / system design 5.2: mentor RAG document schema.
 CREATE TABLE document (
-    corpus_revision varchar(40) NOT NULL
-                    REFERENCES document_corpus(corpus_revision),
-    doc_id           varchar(64) NOT NULL,
-    title            text        NOT NULL,
-    doc_type         varchar(20) NOT NULL
-                    CHECK (doc_type IN ('SPEC', 'MANUAL', 'TROUBLESHOOT')),
-    model_code       varchar(40),
-    source_path      text        NOT NULL,
-    version          varchar(40),
-    content_sha256   char(64)    NOT NULL
-                    CHECK (content_sha256 ~ '^[0-9a-f]{64}$'),
-    PRIMARY KEY (corpus_revision, doc_id)
+    doc_id       varchar(30)  PRIMARY KEY,
+    title        varchar(200) NOT NULL,
+    doc_type     varchar(20)  CHECK (doc_type IN ('SPEC','MANUAL','TROUBLESHOOT')),
+    model_code   varchar(20),
+    source_path  varchar(300),
+    version      varchar(20),
+    created_at   timestamp    DEFAULT now()
 );
 
 CREATE TABLE document_chunk (
-    corpus_revision varchar(40)  NOT NULL,
-    chunk_id        varchar(64)  NOT NULL,
-    doc_id          varchar(64)  NOT NULL,
-    chunk_seq       integer      NOT NULL CHECK (chunk_seq >= 0),
-    section_title   text,
-    content         text         NOT NULL,
-    model_code      varchar(40),
-    embedding       vector(1024) NOT NULL,
-    PRIMARY KEY (corpus_revision, chunk_id),
-    UNIQUE (corpus_revision, doc_id, chunk_seq),
-    FOREIGN KEY (corpus_revision, doc_id)
-        REFERENCES document(corpus_revision, doc_id)
+    chunk_id       varchar(40)  PRIMARY KEY,
+    doc_id         varchar(30)  NOT NULL REFERENCES document(doc_id) ON DELETE CASCADE,
+    chunk_seq      integer      NOT NULL,
+    section_title  varchar(200),
+    content        text         NOT NULL,
+    token_cnt      integer,
+    embedding      vector(1024),
+    metadata_json  jsonb,
+    UNIQUE (doc_id, chunk_seq)
 );
 
 -- FR-D-05 / V4-D-4.2: append-only Text2SQL execution outcomes.

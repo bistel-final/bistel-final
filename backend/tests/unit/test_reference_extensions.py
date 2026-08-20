@@ -80,35 +80,16 @@ def _constraint_rows() -> list[dict[str, Any]]:
                 "CHECK (trigger_wafer_no >= 1)",
             ],
         },
-        "document_corpus": {
-            "p": ["PRIMARY KEY (corpus_revision)"],
-            "c": [
-                "CHECK (status IN ('STAGING','ACTIVE','RETIRED'))",
-                "CHECK (embedding_dim = 1024)",
-                "CHECK (manifest_sha256 ~ 'sha')",
-                "CHECK (document_count >= 0)",
-                "CHECK (chunk_count >= 0)",
-            ],
-        },
         "document": {
-            "p": ["PRIMARY KEY (corpus_revision, doc_id)"],
-            "f": [
-                "FOREIGN KEY (corpus_revision) "
-                "REFERENCES document_corpus(corpus_revision)"
-            ],
+            "p": ["PRIMARY KEY (doc_id)"],
             "c": [
                 "CHECK (doc_type IN ('SPEC','MANUAL','TROUBLESHOOT'))",
-                "CHECK (content_sha256 ~ 'sha')",
             ],
         },
         "document_chunk": {
-            "p": ["PRIMARY KEY (corpus_revision, chunk_id)"],
-            "u": ["UNIQUE (corpus_revision, doc_id, chunk_seq)"],
-            "f": [
-                "FOREIGN KEY (corpus_revision, doc_id) "
-                "REFERENCES document(corpus_revision, doc_id)"
-            ],
-            "c": ["CHECK (chunk_seq >= 0)"],
+            "p": ["PRIMARY KEY (chunk_id)"],
+            "u": ["UNIQUE (doc_id, chunk_seq)"],
+            "f": ["FOREIGN KEY (doc_id) REFERENCES document(doc_id)"],
         },
         "nl_query_log": {
             "p": ["PRIMARY KEY (nl_query_log_id)"],
@@ -310,16 +291,7 @@ class _Connection(AbstractContextManager["_Connection"]):
         if "reference-extensions:constraints" in sql:
             return _Result(_constraint_rows())
         if "reference-extensions:indexes" in sql:
-            return _Result(
-                [
-                    {
-                        "table_name": "document_corpus",
-                        "index_name": "ux_document_corpus_active",
-                        "definition": "CREATE UNIQUE INDEX ux_document_corpus_active",
-                        "predicate": "status = 'ACTIVE'",
-                    }
-                ]
-            )
+            return _Result([])
         if "reference-extensions:view */" in sql:
             return _Result(
                 [
@@ -400,8 +372,8 @@ class TestSqlContract:
     def test_migration_has_exact_object_counts_and_no_data_mutation(self) -> None:
         sql, statements = migration.load_and_validate_sql()
 
-        assert len(statements) == 8
-        assert sum(s.upper().startswith("CREATE TABLE") for s in statements) == 5
+        assert len(statements) == 6
+        assert sum(s.upper().startswith("CREATE TABLE") for s in statements) == 4
         assert sum(s.upper().startswith("CREATE VIEW") for s in statements) == 1
         assert "action_history" not in sql
         assert "fdc_alarm" not in sql
@@ -411,9 +383,9 @@ class TestSqlContract:
         sql, _ = migration.load_and_validate_sql()
         normalized = " ".join(sql.split())
 
-        assert "chunk_seq integer NOT NULL CHECK (chunk_seq >= 0)" in normalized
+        assert "chunk_seq integer NOT NULL" in normalized
         assert migration.EXPECTED_CONSTRAINT_COUNTS["document_chunk"] == Counter(
-            {"p": 1, "u": 1, "f": 1, "c": 1}
+            {"p": 1, "u": 1, "f": 1}
         )
 
     def test_all_sql_constraint_counts_match_catalog_expectations(self) -> None:

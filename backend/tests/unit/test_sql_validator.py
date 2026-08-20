@@ -15,7 +15,7 @@
 
     reference 6종 (001_reference_extensions.sql — PR #48 로 main 병합됨):
         r03_alarm_history, v_alarm_event, nl_query_log,
-        document_corpus, document, document_chunk
+        document, document_chunk
     GREEN_REFERENCE_CASES 가 이 6종의 허용을 검증한다.
 
 케이스 소비 방식
@@ -217,25 +217,16 @@ GREEN_REFERENCE_CASES: tuple[SqlCase, ...] = (
         note="FR-D-05 Text2SQL 실행 결과 집계. 이력 패널이 쓴다.",
     ),
     SqlCase(
-        case_id="G14_document_corpus",
-        category="GREEN_REFERENCE",
-        sql=(
-            "SELECT corpus_revision, document_count, chunk_count "
-            "FROM document_corpus WHERE status = 'ACTIVE'"
-        ),
-        expect_valid=True,
-    ),
-    SqlCase(
         case_id="G15_document_join_chunk",
         category="GREEN_REFERENCE",
         sql=(
             "SELECT d.title, COUNT(*) AS chunk_cnt "
             "FROM document d JOIN document_chunk c "
-            "ON d.corpus_revision = c.corpus_revision AND d.doc_id = c.doc_id "
+            "ON d.doc_id = c.doc_id "
             "GROUP BY d.title"
         ),
         expect_valid=True,
-        note="복합 PK(corpus_revision, doc_id) JOIN.",
+        note="mentor RAG document·chunk JOIN.",
     ),
     SqlCase(
         case_id="G16_reference_join_base",

@@ -58,7 +58,6 @@ REPORT_ROOT = BOOTSTRAP_ROOT / "reports"
 REFERENCE_TABLES = (
     "document",
     "document_chunk",
-    "document_corpus",
     "nl_query_log",
     "r03_alarm_history",
 )
@@ -134,37 +133,24 @@ EXPECTED_TABLE_COLUMNS = {
         ("member_refs", "jsonb", False),
         ("policy_version", "character varying(20)", False),
     ),
-    "document_corpus": (
-        ("corpus_revision", "character varying(40)", False),
-        ("status", "character varying(10)", False),
-        ("embedding_model_code", "character varying(64)", False),
-        ("embedding_dim", "integer", False),
-        ("manifest_sha256", "character(64)", False),
-        ("document_count", "integer", False),
-        ("chunk_count", "integer", False),
-        ("created_at", "timestamp with time zone", False),
-        ("activated_at", "timestamp with time zone", True),
-        ("retired_at", "timestamp with time zone", True),
-    ),
     "document": (
-        ("corpus_revision", "character varying(40)", False),
-        ("doc_id", "character varying(64)", False),
-        ("title", "text", False),
-        ("doc_type", "character varying(20)", False),
-        ("model_code", "character varying(40)", True),
-        ("source_path", "text", False),
-        ("version", "character varying(40)", True),
-        ("content_sha256", "character(64)", False),
+        ("doc_id", "character varying(30)", False),
+        ("title", "character varying(200)", False),
+        ("doc_type", "character varying(20)", True),
+        ("model_code", "character varying(20)", True),
+        ("source_path", "character varying(300)", True),
+        ("version", "character varying(20)", True),
+        ("created_at", "timestamp without time zone", True),
     ),
     "document_chunk": (
-        ("corpus_revision", "character varying(40)", False),
-        ("chunk_id", "character varying(64)", False),
-        ("doc_id", "character varying(64)", False),
+        ("chunk_id", "character varying(40)", False),
+        ("doc_id", "character varying(30)", False),
         ("chunk_seq", "integer", False),
-        ("section_title", "text", True),
+        ("section_title", "character varying(200)", True),
         ("content", "text", False),
-        ("model_code", "character varying(40)", True),
-        ("embedding", "vector(1024)", False),
+        ("token_cnt", "integer", True),
+        ("embedding", "vector(1024)", True),
+        ("metadata_json", "jsonb", True),
     ),
     "nl_query_log": (
         ("nl_query_log_id", "bigint", False),
@@ -182,9 +168,8 @@ EXPECTED_TABLE_COLUMNS = {
 }
 EXPECTED_CONSTRAINT_COUNTS = {
     "r03_alarm_history": Counter({"p": 1, "u": 1, "f": 2, "c": 3}),
-    "document_corpus": Counter({"p": 1, "c": 5}),
-    "document": Counter({"p": 1, "f": 1, "c": 2}),
-    "document_chunk": Counter({"p": 1, "u": 1, "f": 1, "c": 1}),
+    "document": Counter({"p": 1, "c": 1}),
+    "document_chunk": Counter({"p": 1, "u": 1, "f": 1}),
     "nl_query_log": Counter({"p": 1, "c": 4}),
 }
 KNOWN_CONSTRAINT_TYPES = frozenset({"p", "u", "f", "c"})
@@ -192,7 +177,7 @@ KNOWN_CONSTRAINT_TYPES = frozenset({"p", "u", "f", "c"})
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 CHANGE_REFERENCE_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 FORBIDDEN_SQL = re.compile(
-    r"\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|COPY|GRANT|REVOKE|"
+    r"\b(?:DROP|TRUNCATE|DELETE\s+FROM|UPDATE|INSERT|COPY|GRANT|REVOKE|"
     r"CREATE\s+DATABASE|CREATE\s+ROLE|ALTER\s+ROLE|BEGIN|COMMIT)\b",
     re.IGNORECASE,
 )
@@ -490,7 +475,7 @@ def load_and_validate_sql(path: Path = MIGRATION_PATH) -> tuple[str, list[str]]:
             statement.upper().startswith("CREATE VIEW") for statement in statements
         ),
     }
-    if counts != {"extension": 1, "table": 5, "index": 1, "view": 1}:
+    if counts != {"extension": 1, "table": 4, "index": 0, "view": 1}:
         raise ReferenceExtensionError("001 migration 객체 수가 계약과 다릅니다")
     occurrences = list(IF_NOT_EXISTS.finditer(_strip_sql_comments(sql)))
     if len(occurrences) != 1 or "CREATE EXTENSION IF NOT EXISTS" not in sql.upper():
@@ -678,14 +663,10 @@ def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
         "foreign key (lot_hist_id) references lot_history",
         "foreign key (parameter_id) references dim_parameter",
         "unique (lot_hist_id, parameter_id, recipe_step_no, policy_version)",
-        "staging",
-        "active",
-        "retired",
-        "embedding_dim = 1024",
         "spec",
         "manual",
         "troubleshoot",
-        "foreign key (corpus_revision, doc_id) references document",
+        "foreign key (doc_id) references document",
         "success",
         "policy_rejected",
         "validation_failed",
@@ -697,18 +678,6 @@ def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
     indexes = signature.get("indexes")
     if not isinstance(indexes, list):
         raise ReferenceStateError("reference index signature가 잘못됐습니다")
-    active_indexes = [
-        row for row in indexes if row["index_name"] == "ux_document_corpus_active"
-    ]
-    if len(active_indexes) != 1:
-        raise ReferenceStateError("ACTIVE 부분 고유 인덱스가 없습니다")
-    active_index = active_indexes[0]
-    if (
-        "unique index" not in str(active_index["definition"]).lower()
-        or "status" not in str(active_index.get("predicate", "")).lower()
-        or "active" not in str(active_index.get("predicate", "")).lower()
-    ):
-        raise ReferenceStateError("ACTIVE 부분 고유 인덱스 정의가 다릅니다")
     return str(extension["extversion"])
 
 
