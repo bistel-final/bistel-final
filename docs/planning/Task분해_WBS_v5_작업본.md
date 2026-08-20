@@ -113,7 +113,7 @@ Task 수는 86건(P2 3건 포함)이다.
 | V5-CM-4.6 | P1 | readiness·복구. 완료: `/health/ready`가 PostgreSQL·Neo4j·n8n을 병렬 timeout으로 검사하고 Neo4j 44/85 marker와 ACTIVE corpus revision을 확인한다 | FR-I-05 | V5-CM-4.5 | 1.0h |
 | V5-CM-4.7 | P1 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·corpus·checkpoint schema를 보존한다 | 요구사항 §7.3 | V5-CM-3.4 | 1.5h |
 
-**Common 합계: 35.0h**
+**Common 합계: 39.0h**
 
 ---
 
@@ -216,7 +216,7 @@ Task 수는 86건(P2 3건 포함)이다.
 ## 8. 적용 순서와 게이트
 
 ```text
-1  V5-CM-1.*        source intake · epoch · manifest
+1  V5-CM-1.1~1.5    source intake · epoch · manifest
 2  V5-CM-2.*        fresh bootstrap (e2e → agent → text2sql 순서)
 3  V5-CM-3.1~3.3    reference extension · Runtime migration · pair guard
 4  V5-CM-3.4~3.5    checkpoint · 최소권한 role
@@ -226,6 +226,11 @@ Task 수는 86건(P2 3건 포함)이다.
 8  V5-CM-4.4-1~3    5화면 navigation 전환 · 호환 projection · alias 제거 조건
 9  V5-CM-4.5~4.7    compose·readiness·E2E reset
 10 통합 E2E·평가 artifact·최종 검증
+
+   V5-CM-1.6       구 epoch 파이프라인 제거 — 선행이 V5-CM-2.4·V5-CM-1.3이라
+                   2단계 이후 언제든 가능하다. 팀원 착수를 막지 않으므로
+                   6~7과 병행하는 편이 낫다(구 코드가 오래 남을수록
+                   manifest_v3 수정 불가 제약이 지속된다)
 ```
 
 **착수 게이트는 `V5-CM-2.4`(적재 검증) 통과다.** 여기서 데이터가 확정되고 이후 재적재가
@@ -254,5 +259,6 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 | 임베딩 provider·model·차원 | B가 `V5-B-2.2`에서 확정 | 구현 단계 |
 | Kafka broker 운영 위치(공용 서버 1벌 / 팀원 로컬) | 구현은 필수로 진행. 배치만 미정 | `V5-CM-4.5` compose 통합 시 |
 | Text2SQL 활성 여부 | 선택 확장. 필수 인수 기준에 미포함 | 일정 여유에 따라 |
-| ~~v4 corrected build 코드 삭제~~ | **`V5-CM-1.6`으로 등록 완료** | `V5-CM-2.4` 이후 |
+| ~~v4 corrected build 코드 삭제~~ | **`V5-CM-1.6`으로 등록 완료**(구 bootstrap 계열·skip 해소까지 확대) | `V5-CM-2.4`·`V5-CM-1.3` 이후 |
 | compatibility alias 제거 | `V5-CM-4.4-3`이 조건만 등록. 삭제는 후속 Task | 모든 화면 canonical 전환 후 |
+| `V5-CM-1.2` skip 중 B 소관 2건(`test_master_cypher`) | `V5-CM-1.6` 완료 조건의 명시적 예외. 해제는 `V5-B-1.1` | `V5-B-1.1` 수행 시 |
