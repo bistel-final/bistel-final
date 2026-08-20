@@ -103,6 +103,42 @@ def _default_members(
     return members
 
 
+def _synth_reproduction(payloads: dict[str, bytes], selected: dict[str, dict]) -> dict:
+    """대부분의 builder 테스트가 subprocess 비용 없이 provenance wiring을 검증한다.
+
+    실제 격리 실행·inventory·timeout 계약은 test_generator_reproduction.py가 맡는다.
+    """
+    csv_results = []
+    for table in sorted(builder.TABLE_MEMBERS):
+        member = builder.TABLE_MEMBERS[table]
+        digest = hashlib.sha256(payloads[member]).hexdigest()
+        csv_results.append(
+            {
+                "file_id": member,
+                "expected_sha256": digest,
+                "generated_sha256": digest,
+                "match": True,
+            }
+        )
+    cypher = payloads[builder.MASTER_CYPHER_MEMBER].replace(b"\r\n", b"\n")
+    return {
+        "contract_version": 1,
+        "generator_sha256": selected[builder.GENERATOR_MEMBER]["sha256"],
+        "csv_byte_identical": True,
+        "csv_results": csv_results,
+        "newline_normalized": [
+            {
+                "file_id": builder.MASTER_CYPHER_MEMBER,
+                "source_newline": "LF",
+                "generated_newline": "LF",
+                "normalized_sha256": hashlib.sha256(cypher).hexdigest(),
+                "match": True,
+            }
+        ],
+        "mismatched": [],
+    }
+
+
 @dataclass
 class Env:
     zip_path: Path
@@ -206,6 +242,9 @@ def make_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             row_counts
             or {table: FIXTURE_ROWS for table in builder.EXPECTED_ROW_COUNTS},
         )
+        monkeypatch.setattr(
+            builder, "build_generator_reproduction", _synth_reproduction
+        )
         return Env(
             zip_path=zip_path,
             origin_path=origin_root,
@@ -260,6 +299,7 @@ def test_normal_zip_builds_v4_manifest(make_env) -> None:
         "derived_from",
         "tables",
         "artifacts",
+        "generator_reproduction",
         "origin_package",
     ]
     assert manifest["format_version"] == 4
@@ -308,6 +348,12 @@ def test_normal_zip_builds_v4_manifest(make_env) -> None:
     assert len(artifacts["rag_documents"]) == 3
     # 합성 intake의 주장(False)이 그대로 복사됐는지 본다 — 위 fixture 주석 참조.
     assert all(entry["pinned"] is False for entry in artifacts["rag_documents"])
+    reproduction = manifest["generator_reproduction"]
+    assert reproduction["contract_version"] == 1
+    assert reproduction["generator_sha256"] == manifest["generator_sha256"]
+    assert reproduction["csv_byte_identical"] is True
+    assert len(reproduction["csv_results"]) == 9
+    assert reproduction["mismatched"] == []
     assert manifest["derived_from"] == {
         "dataset_epoch_artifact": "infra/bootstrap/dataset-epoch.json",
         "intake_artifact": "infra/bootstrap/final-zip-intake.json",
@@ -317,6 +363,44 @@ def test_normal_zip_builds_v4_manifest(make_env) -> None:
     assert origin["selection_rule"] == "final-package-first"
     assert origin["reference"] == "docs/reference/배포패키지_기준.md"
     assert origin["artifacts"] == builder.ORIGIN_ARTIFACTS
+
+
+def test_main_wires_generator_reproduction_into_manifest(
+    make_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = make_env()
+    called = 0
+
+    def _spy(payloads, selected):
+        nonlocal called
+        called += 1
+        return _synth_reproduction(payloads, selected)
+
+    monkeypatch.setattr(builder, "build_generator_reproduction", _spy)
+    assert _create(env) == builder.EXIT_OK
+    assert called == 1
+    assert _manifest(env)["generator_reproduction"]["contract_version"] == 1
+    assert _run(env, "--verify-only") == builder.EXIT_OK
+    assert called == 2
+
+
+def test_generator_reproduction_failure_never_changes_manifest(
+    make_env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env = make_env()
+    assert _create(env) == builder.EXIT_OK
+    before = env.out_path.read_bytes()
+
+    def _fail(_payloads, _selected):
+        raise builder.ManifestBuildError(
+            "Generator 재현 결과가 원본과 다릅니다 — evaluation.csv",
+            builder.EXIT_MISMATCH,
+        )
+
+    monkeypatch.setattr(builder, "build_generator_reproduction", _fail)
+    assert _run(env, "--confirm") == builder.EXIT_MISMATCH
+    assert env.out_path.read_bytes() == before
+    assert "evaluation.csv" in capsys.readouterr().err
 
 
 def test_value_normalization_version_is_recorded(make_env) -> None:
