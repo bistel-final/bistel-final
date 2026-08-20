@@ -142,6 +142,55 @@ def test_repository_search_uses_current_rag_schema_and_common_filter(
     }
 
 
+def test_repository_search_without_model_code_searches_all_documents(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResult:
+        def mappings(self) -> FakeResult:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return []
+
+    class FakeConnection:
+        connection = SimpleNamespace(driver_connection=object())
+
+        def __enter__(self) -> FakeConnection:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def execute(self, sql: object, params: dict[str, object]) -> FakeResult:
+            captured["sql"] = str(sql)
+            captured["params"] = params
+            return FakeResult()
+
+    class FakeFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            captured["logical_db"] = logical_db
+            captured["role"] = role
+            return SimpleNamespace(connect=lambda: FakeConnection())
+
+    monkeypatch.setattr("app.knowledge.repository.pool_factory", FakeFactory())
+    monkeypatch.setattr("pgvector.psycopg.register_vector", lambda _: None)
+
+    assert DocumentSearchRepository().search([0.1], top_k=4) == []
+
+    normalized_sql = sub(r"\s+", " ", str(captured["sql"]))
+    assert "JOIN document d ON d.doc_id = c.doc_id" in normalized_sql
+    assert "CAST(:query_vector AS vector)" in normalized_sql
+    assert "d.model_code = :model_code OR d.model_code = 'COMMON'" not in normalized_sql
+    assert "corpus_revision" not in normalized_sql
+    assert "document_corpus" not in normalized_sql
+    assert captured["params"] == {
+        "query_vector": "[0.1]",
+        "top_k": 4,
+    }
+
+
 def test_documents_search_api_returns_query_hits_and_count(monkeypatch: Any) -> None:
     class FakeService:
         def __init__(self, repository: object) -> None:
