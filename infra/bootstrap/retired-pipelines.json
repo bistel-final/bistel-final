@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "artifact_type": "retired_pipeline_registry",
+  "dataset_epoch": "fdc_final_20260818",
+  "retired_in_task": "V5-CM-1.5",
+  "entries": [
+    {
+      "entry_id": "build_corrected_dataset",
+      "script": "backend/scripts/build_corrected_dataset.py",
+      "retired_epoch": "kosa_0813",
+      "reason": "최종 project.zip의 canonical CSV 9종은 V5-CM-1.4에서 Generator byte reproduction을 통과했으며 구 overlay·seq_no·시각 correction의 적용 대상이 존재하지 않는다",
+      "correction_stages": [
+        "dim_parameter_seed",
+        "trace_seq_no",
+        "summary_alarm_time"
+      ],
+      "replacement_task": "V5-CM-2.1",
+      "removal_task": "V5-CM-1.6"
+    },
+    {
+      "entry_id": "load_corrected_base",
+      "script": "backend/scripts/load_corrected_base.py",
+      "retired_epoch": "kosa_0813",
+      "reason": "최종 project.zip은 correction 없는 canonical CSV를 직접 profile 적재하므로 corrected base artifact를 더 이상 생성하거나 소비하지 않는다",
+      "correction_stages": [],
+      "replacement_task": "V5-CM-2.3",
+      "removal_task": "V5-CM-1.6"
+    },
+    {
+      "entry_id": "load_evaluation_mock",
+      "script": "backend/scripts/load_evaluation_mock.py",
+      "retired_epoch": "kosa_0813",
+      "reason": "최종 project.zip의 action_history 12건은 canonical evaluation profile에서 직접 적재하므로 구 evaluation Mock artifact를 사용하지 않는다",
+      "correction_stages": [],
+      "replacement_task": "V5-CM-2.3",
+      "removal_task": "V5-CM-1.6"
+    }
+  ]
+}

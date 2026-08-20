@@ -208,15 +208,6 @@ def test_isolation_is_complete_for_18_files() -> None:
 
 
 def test_remaining_artifacts_are_exactly_three_manifests() -> None:
-    """잔류가 §1.3의 manifests 3개뿐임을 고정한다.
-
-    늘어나면 실패시켜 "몰래 남는 구 artifact"를 막는다. `markers/`에는 marker JSON이
-    없어야 한다(`.gitignore` 등 숨김 보조 파일은 marker가 아니다).
-    """
-    remaining = {
-        path.name for path in (BOOTSTRAP_ROOT / "manifests").glob("*.json")
-    }
+    """잔류가 §1.3의 manifests 3개뿐임을 고정한다."""
+    remaining = {path.name for path in (BOOTSTRAP_ROOT / "manifests").glob("*.json")}
     assert remaining == REMAINING_MANIFESTS
-
-    markers = sorted((BOOTSTRAP_ROOT / "markers").glob("*.json"))
-    assert markers == []

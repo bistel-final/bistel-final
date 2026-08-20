@@ -365,42 +365,27 @@ class TestTraceSeqCorrection:
             assert table_report["stage_ids"] == []
         assert corrected.execute(**common, check=True) == mv3.EXIT_OK
 
-    def test_stage_contract_error_returns_cli_schema_exit_without_traceback(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
+    def test_stage_contract_error_uses_schema_exit_contract(
+        self, tmp_path: Path
     ) -> None:
         archive_path, epoch_path, manifest_path = _pipeline_bundle(
             tmp_path, alarm=_alarm_table(step="2", seq_no="0")
         )
         output_root = tmp_path / "allowed" / "corrected"
-        real_execute = corrected.execute
-
-        def execute_with_test_paths(**kwargs: object) -> int:
-            return real_execute(
-                **kwargs,
+        with pytest.raises(mv3.VerificationError) as captured:
+            corrected.execute(
+                archive_path=archive_path,
                 output_root=output_root,
                 allowed_root=tmp_path / "allowed",
                 epoch_path=epoch_path,
                 source_manifest_path=manifest_path,
             )
 
-        monkeypatch.setattr(corrected, "execute", execute_with_test_paths)
-
-        exit_code = corrected.main(["--archive", str(archive_path)])
-        captured = capsys.readouterr()
-
-        assert exit_code == mv3.EXIT_SCHEMA
-        assert "Step 2 Trace 알람" in captured.err
-        assert "Traceback" not in captured.err
-        assert "Traceback" not in captured.out
+        assert captured.value.exit_code == mv3.EXIT_SCHEMA
+        assert "Step 2 Trace 알람" in str(captured.value)
 
     def test_summary_match_error_preserves_existing_active_build(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
+        self, tmp_path: Path
     ) -> None:
         valid_archive, valid_epoch, valid_manifest = _pipeline_bundle(
             tmp_path / "valid"
@@ -428,24 +413,18 @@ class TestTraceSeqCorrection:
         invalid_archive, invalid_epoch, invalid_manifest = _pipeline_bundle(
             tmp_path / "invalid", summary_lot="LOT-MISSING"
         )
-        real_execute = corrected.execute
-
-        def execute_with_invalid_paths(**kwargs: object) -> int:
-            return real_execute(
-                **kwargs,
+        with pytest.raises(mv3.VerificationError) as captured:
+            corrected.execute(
+                archive_path=invalid_archive,
                 output_root=output_root,
                 allowed_root=tmp_path / "allowed",
                 epoch_path=invalid_epoch,
                 source_manifest_path=invalid_manifest,
+                stages=corrected.CORRECTION_STAGES,
             )
 
-        monkeypatch.setattr(corrected, "execute", execute_with_invalid_paths)
-        exit_code = corrected.main(["--archive", str(invalid_archive)])
-        captured = capsys.readouterr()
-
-        assert exit_code == mv3.EXIT_SCHEMA
-        assert "매칭되는 lot_history가 없습니다" in captured.err
-        assert "Traceback" not in captured.err
+        assert captured.value.exit_code == mv3.EXIT_SCHEMA
+        assert "매칭되는 lot_history가 없습니다" in str(captured.value)
         assert active_path.read_bytes() == active_before
         assert sorted(path.name for path in builds_root.iterdir()) == builds_before
         staging_root = output_root / "v1" / ".staging"

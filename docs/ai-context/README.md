@@ -100,7 +100,7 @@ adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 | 최종 ZIP 실측·해시 검증 | 완료 |
 | 요구사항·설계·역할·API 새 기준본 | 교차검토 완료, V5 Task 기준 구현 |
 | WBS v5·역할별 Task | 교차검토 완료, 선행관계·완료 기준 확정 |
-| source intake·epoch·manifest | `V5-CM-1.1` intake, `V5-CM-1.2` epoch 발급·구 epoch 격리, `V5-CM-1.3` source manifest v4 구현·최종검증은 기술 완료. final DB profile marker는 후속 bootstrap Task 전이므로 미생성 |
+| source intake·epoch·manifest | `V5-CM-1.1` intake, `V5-CM-1.2` epoch 발급, `V5-CM-1.3` source manifest v4, `V5-CM-1.4` Generator 재현은 기술 완료. `V5-CM-1.5`가 구 corrected 공개 실행 경로를 명시 차단하며 final DB profile marker는 후속 bootstrap Task 전이므로 미생성 |
 | PostgreSQL 격리 적재 검증 | 미실행 |
 | Neo4j 44/85 safe load 검증 | 미실행 |
 | RAG 문서 3종·chunk·1024차원 vector 적재/검색 검증 | 미실행 |

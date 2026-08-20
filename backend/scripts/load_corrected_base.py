@@ -25,19 +25,14 @@ from build_corrected_dataset import _exclusive_lock
 from db_target import (
     ALLOWED_DATABASES,
     BootstrapTarget,
-    TargetValidationError,
-    load_bootstrap_target,
     validate_url_components,
 )
-from dotenv import load_dotenv
 from master_cypher import canonical_sha256
 from mutation_runtime import prepare_transaction
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
 from value_normalization import (
     VALUE_NORMALIZATION_VERSION,
-    ValueNormalizationError,
     column_type_registry,
     normalize_csv_row,
     normalize_db_row,
@@ -1313,45 +1308,11 @@ def _validate_cli(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    load_dotenv(REPOSITORY_ROOT / ".env", override=False)
-    args = _parser().parse_args(argv)
-    try:
-        _validate_cli(args)
-        context = _load_input_context()
-        if args.register_manifests:
-            result = register_manifests(confirm=args.confirm, context=context)
-        else:
-            target = load_bootstrap_target(args.database)
-            if args.preflight:
-                state = run_preflight(target, context)
-                result = state.name
-            elif args.rehearse:
-                run_rehearsal(target, context)
-                result = "REHEARSED"
-            else:
-                result = run_apply_or_recover(
-                    target,
-                    context,
-                    recover_artifact=args.recover_artifact,
-                    change_reference=args.change_ref,
-                )
-        print(json.dumps({"status": result}, ensure_ascii=False, sort_keys=True))
-        return 0 if result != "PREVIEW" else manifest_v3.EXIT_CONFIRM_REQUIRED
-    except (
-        CorrectedBaseError,
-        manifest_v3.VerificationError,
-        TargetValidationError,
-        SQLAlchemyError,
-        ValueNormalizationError,
-    ) as exc:
-        print(
-            json.dumps(
-                {"status": "FAILED", "reason_code": type(exc).__name__},
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-        return getattr(exc, "exit_code", 2)
+    """V5-CM-1.5에서 폐기된 공개 실행 경로를 차단한다."""
+    del argv
+    import retired_pipelines
+
+    return retired_pipelines.block("load_corrected_base")
 
 
 if __name__ == "__main__":

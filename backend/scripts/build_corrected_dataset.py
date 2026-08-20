@@ -1368,11 +1368,11 @@ def run(argv: Sequence[str] | None = None) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    try:
-        return run(argv)
-    except VerificationError as exc:
-        print(f"ERROR [{exc.code}]: {exc}", file=sys.stderr)
-        return exc.exit_code
+    """V5-CM-1.5에서 폐기된 공개 실행 경로를 차단한다."""
+    del argv
+    import retired_pipelines
+
+    return retired_pipelines.block("build_corrected_dataset")
 
 
 if __name__ == "__main__":
