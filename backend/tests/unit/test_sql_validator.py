@@ -738,13 +738,13 @@ def test_manifest_failure_is_fail_closed(
         "RUNTIME_MANIFEST_PATH",
         tmp_path / "missing.json",
     )
-    validator_module._manifest_columns.cache_clear()
+    validator_module._load_manifest_columns.cache_clear()
     try:
         result = validator_module.validate_sql("SELECT parameter FROM dim_parameter")
         assert result.valid is False
         assert "manifest" in (result.reason or "")
     finally:
-        validator_module._manifest_columns.cache_clear()
+        validator_module._load_manifest_columns.cache_clear()
 
 
 @requires_validator
@@ -761,13 +761,13 @@ def test_structurally_corrupt_manifest_does_not_raise(
     corrupt = tmp_path / "corrupt.json"
     corrupt.write_text('{"tables": "not-a-dict"}', encoding="utf-8")
     monkeypatch.setattr(validator_module, "RUNTIME_MANIFEST_PATH", corrupt)
-    validator_module._manifest_columns.cache_clear()
+    validator_module._load_manifest_columns.cache_clear()
     try:
         result = validator_module.validate_sql("SELECT parameter FROM dim_parameter")
         assert result.valid is False
         assert result.reason
     finally:
-        validator_module._manifest_columns.cache_clear()
+        validator_module._load_manifest_columns.cache_clear()
 
 
 def test_case_ids_are_unique() -> None:
