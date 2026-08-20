@@ -1,6 +1,6 @@
 """최종 패키지 `project.zip`의 source member intake 검증·등록기 (V5-CM-1.1).
 
-ZIP 전체 SHA-256과 기준표 §8 고정 해시 12종을 대조한 뒤, source artifact로 쓸 선별
+ZIP 전체 SHA-256과 기준표 §8 고정 해시 15종을 대조한 뒤, source artifact로 쓸 선별
 member 15개만 `infra/bootstrap/final-zip-intake.json`에 등록한다.
 참고 Backend·Frontend와 `node_modules`는 읽지 않는다.
 
@@ -96,6 +96,15 @@ PINNED_MEMBER_HASHES = {
     ),
     "project/repository/mvp/gen_sample_data.py": (
         "e42e66c84f3c12357f126132f81451ef7e0e8a88e5fc4f080db664331670a24d"
+    ),
+    "project/repository/sample/rag/SPEC_ET-7500_DryEtcher.md": (
+        "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f"
+    ),
+    "project/repository/sample/rag/SPEC_PH-9000_PhotoScanner.md": (
+        "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a"
+    ),
+    "project/repository/sample/rag/TROUBLE_FDC_FaultGuide.md": (
+        "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289"
     ),
 }
 

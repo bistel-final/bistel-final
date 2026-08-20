@@ -1,0 +1,482 @@
+{
+  "format_version": 4,
+  "artifact_type": "source_files",
+  "dataset_epoch": "fdc_final_20260818",
+  "source_archive_sha256": "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3",
+  "selected_entry_manifest_sha256": "0e9a584373bc8ed9c53161f85fc0fd55c780d0682965f710451ab029033c2493",
+  "schema_sha256": "4a437efc6d853d911c5f82613b4756fafa6368fd144d6cedfb4f81908af8ca8c",
+  "generator_sha256": "e42e66c84f3c12357f126132f81451ef7e0e8a88e5fc4f080db664331670a24d",
+  "canonicalization_version": "canonical-json-nfc-codepoint-v1",
+  "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
+  "value_normalization_version": "db-value-v1",
+  "derived_from": {
+    "dataset_epoch_artifact": "infra/bootstrap/dataset-epoch.json",
+    "intake_artifact": "infra/bootstrap/final-zip-intake.json"
+  },
+  "tables": {
+    "action_history": {
+      "file_id": "project/repository/sample/data/action_history.csv",
+      "columns": [
+        "action_id",
+        "lot_id",
+        "recipe_step_name",
+        "equipment_id",
+        "chamber_id",
+        "trigger_alarm_lot_hist_id",
+        "action_code",
+        "reason",
+        "approval_required",
+        "approval_status",
+        "approved_by",
+        "approved_at",
+        "notify_status",
+        "notify_at",
+        "mes_status",
+        "mes_at",
+        "created_at"
+      ],
+      "column_types": {
+        "action_id": "text",
+        "lot_id": "text",
+        "recipe_step_name": "text",
+        "equipment_id": "text",
+        "chamber_id": "text",
+        "trigger_alarm_lot_hist_id": "text",
+        "action_code": "text",
+        "reason": "text",
+        "approval_required": "text",
+        "approval_status": "text",
+        "approved_by": "text",
+        "approved_at": "timestamp",
+        "notify_status": "text",
+        "notify_at": "timestamp",
+        "mes_status": "text",
+        "mes_at": "timestamp",
+        "created_at": "timestamp"
+      },
+      "primary_key": [
+        "action_id"
+      ],
+      "row_count": 12,
+      "content_hash": "9ee840d8db4c7987f63938e8b88f3dcfa01c26257334092875232e9076d1f217",
+      "included_by_profile": [
+        "evaluation"
+      ]
+    },
+    "dim_parameter": {
+      "file_id": "project/repository/sample/data/dim_parameter.csv",
+      "columns": [
+        "parameter_id",
+        "parameter_name",
+        "unit",
+        "area",
+        "target_value",
+        "spec_lower",
+        "ctrl_lower",
+        "ctrl_upper",
+        "spec_upper",
+        "upper_only"
+      ],
+      "column_types": {
+        "parameter_id": "text",
+        "parameter_name": "text",
+        "unit": "text",
+        "area": "text",
+        "target_value": "numeric",
+        "spec_lower": "numeric",
+        "ctrl_lower": "numeric",
+        "ctrl_upper": "numeric",
+        "spec_upper": "numeric",
+        "upper_only": "boolean"
+      },
+      "primary_key": [
+        "parameter_id"
+      ],
+      "row_count": 8,
+      "content_hash": "97ca528b25cb9c8b0819c5de1d84a404df8b446e1ac0f92ef26589501a1ef010",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "evaluation": {
+      "file_id": "project/repository/sample/data/evaluation.csv",
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "point_cnt",
+        "ooc_point_cnt",
+        "oos_point_cnt",
+        "alarm_type"
+      ],
+      "column_types": {
+        "lot_hist_id": "text",
+        "area": "text",
+        "equipment": "text",
+        "chamber": "text",
+        "parameter": "text",
+        "recipe": "text",
+        "lot": "text",
+        "wafer": "text",
+        "step_no": "numeric",
+        "step_seq": "numeric",
+        "point_cnt": "numeric",
+        "ooc_point_cnt": "numeric",
+        "oos_point_cnt": "numeric",
+        "alarm_type": "text"
+      },
+      "primary_key": [
+        "lot_hist_id",
+        "parameter",
+        "step_no"
+      ],
+      "row_count": 4800,
+      "content_hash": "aeca23cf0ba4994783dbb56478812de3cba119cb98a49a79f62e073cfbca6c58",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "fdc_trace": {
+      "file_id": "project/repository/sample/data/fdc_trace.csv",
+      "columns": [
+        "lot_hist_id",
+        "parameter_id",
+        "seq_no",
+        "recipe_step_no",
+        "step_seq",
+        "measured_at",
+        "value"
+      ],
+      "column_types": {
+        "lot_hist_id": "text",
+        "parameter_id": "text",
+        "seq_no": "numeric",
+        "recipe_step_no": "numeric",
+        "step_seq": "numeric",
+        "measured_at": "timestamp",
+        "value": "numeric"
+      },
+      "primary_key": [
+        "lot_hist_id",
+        "parameter_id",
+        "seq_no"
+      ],
+      "row_count": 14400,
+      "content_hash": "615af4ebe12b502b0f45e1da3f821f0fef99afa5d9d72aa361e1b5d91b36c135",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "lot_history": {
+      "file_id": "project/repository/sample/data/lot_history.csv",
+      "columns": [
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "device_id",
+        "step_id",
+        "area_id",
+        "equipment_id",
+        "chamber_id",
+        "recipe_id",
+        "track_in_at",
+        "track_out_at",
+        "duration_sec",
+        "chamber_wafer_cum",
+        "lot_seq",
+        "fault_code"
+      ],
+      "column_types": {
+        "lot_hist_id": "text",
+        "lot_id": "text",
+        "wafer_no": "numeric",
+        "wafer_id": "text",
+        "device_id": "text",
+        "step_id": "text",
+        "area_id": "text",
+        "equipment_id": "text",
+        "chamber_id": "text",
+        "recipe_id": "text",
+        "track_in_at": "timestamp",
+        "track_out_at": "timestamp",
+        "duration_sec": "numeric",
+        "chamber_wafer_cum": "numeric",
+        "lot_seq": "numeric",
+        "fault_code": "text"
+      },
+      "primary_key": [
+        "lot_hist_id"
+      ],
+      "row_count": 600,
+      "content_hash": "d8cb640fbd63434160c53c5cce81e84c43a96c3c4b5aaeafea51e099066cdc12",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "metrology": {
+      "file_id": "project/repository/sample/data/metrology.csv",
+      "columns": [
+        "metrology_id",
+        "lot_hist_id",
+        "lot_id",
+        "wafer_no",
+        "wafer_id",
+        "step_id",
+        "measure_type",
+        "unit",
+        "measured_value",
+        "spec_center",
+        "spec_lower",
+        "spec_upper",
+        "alarm_result",
+        "measured_at"
+      ],
+      "column_types": {
+        "metrology_id": "text",
+        "lot_hist_id": "text",
+        "lot_id": "text",
+        "wafer_no": "numeric",
+        "wafer_id": "text",
+        "step_id": "text",
+        "measure_type": "text",
+        "unit": "text",
+        "measured_value": "numeric",
+        "spec_center": "numeric",
+        "spec_lower": "numeric",
+        "spec_upper": "numeric",
+        "alarm_result": "text",
+        "measured_at": "timestamp"
+      },
+      "primary_key": [
+        "metrology_id"
+      ],
+      "row_count": 48,
+      "content_hash": "e64a1171092fea000dac4a53c6a26e19710494701a9bf8d7b626136c37444e01",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "summary_alarm_history": {
+      "file_id": "project/repository/sample/data/summary_alarm_history.csv",
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "statistic_type",
+        "stat_value",
+        "cl",
+        "ucl",
+        "lcl",
+        "limit_type",
+        "alarm_type"
+      ],
+      "column_types": {
+        "alarm_id": "text",
+        "occurred_at": "timestamp",
+        "area": "text",
+        "equipment": "text",
+        "chamber": "text",
+        "parameter": "text",
+        "recipe": "text",
+        "lot": "text",
+        "wafer": "text",
+        "step_no": "numeric",
+        "step_seq": "numeric",
+        "statistic_type": "text",
+        "stat_value": "numeric",
+        "cl": "numeric",
+        "ucl": "numeric",
+        "lcl": "numeric",
+        "limit_type": "text",
+        "alarm_type": "text"
+      },
+      "primary_key": [
+        "alarm_id"
+      ],
+      "row_count": 51,
+      "content_hash": "47f99558a97cdd9b2ace70614996a6c2fd2ba5fd90780d01dbce6ba5a90de2bf",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "summary_data": {
+      "file_id": "project/repository/sample/data/summary_data.csv",
+      "columns": [
+        "lot_hist_id",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "value_mean",
+        "value_std",
+        "value_min",
+        "value_max",
+        "point_cnt"
+      ],
+      "column_types": {
+        "lot_hist_id": "text",
+        "area": "text",
+        "equipment": "text",
+        "chamber": "text",
+        "parameter": "text",
+        "recipe": "text",
+        "lot": "text",
+        "wafer": "text",
+        "step_no": "numeric",
+        "step_seq": "numeric",
+        "value_mean": "numeric",
+        "value_std": "numeric",
+        "value_min": "numeric",
+        "value_max": "numeric",
+        "point_cnt": "numeric"
+      },
+      "primary_key": [
+        "lot_hist_id",
+        "parameter",
+        "step_no"
+      ],
+      "row_count": 4800,
+      "content_hash": "0f640133c6a29c1e6be49c16fc0125044eae08d3b695f68ebc0eea45e77b1145",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    },
+    "trace_alarm_history": {
+      "file_id": "project/repository/sample/data/trace_alarm_history.csv",
+      "columns": [
+        "alarm_id",
+        "occurred_at",
+        "area",
+        "equipment",
+        "chamber",
+        "parameter",
+        "recipe",
+        "lot",
+        "wafer",
+        "step_no",
+        "step_seq",
+        "seq_no",
+        "value",
+        "limit_type",
+        "limit_value",
+        "alarm_type"
+      ],
+      "column_types": {
+        "alarm_id": "text",
+        "occurred_at": "timestamp",
+        "area": "text",
+        "equipment": "text",
+        "chamber": "text",
+        "parameter": "text",
+        "recipe": "text",
+        "lot": "text",
+        "wafer": "text",
+        "step_no": "numeric",
+        "step_seq": "numeric",
+        "seq_no": "numeric",
+        "value": "numeric",
+        "limit_type": "text",
+        "limit_value": "numeric",
+        "alarm_type": "text"
+      },
+      "primary_key": [
+        "alarm_id"
+      ],
+      "row_count": 138,
+      "content_hash": "091739dff3d70dd759e4d10314a33276e01a0b62359919502bb783af86c8ade7",
+      "included_by_profile": [
+        "runtime",
+        "runtime-e2e",
+        "evaluation"
+      ]
+    }
+  },
+  "artifacts": {
+    "schema_sql": {
+      "file_id": "project/repository/sample/schema/03_schema_clean.sql",
+      "sha256": "4a437efc6d853d911c5f82613b4756fafa6368fd144d6cedfb4f81908af8ca8c"
+    },
+    "master_cypher": {
+      "file_id": "project/repository/sample/ontology/master.cypher",
+      "sha256": "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
+    },
+    "generator": {
+      "file_id": "project/repository/mvp/gen_sample_data.py",
+      "sha256": "e42e66c84f3c12357f126132f81451ef7e0e8a88e5fc4f080db664331670a24d"
+    },
+    "rag_documents": [
+      {
+        "file_id": "project/repository/sample/rag/SPEC_ET-7500_DryEtcher.md",
+        "sha256": "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f",
+        "pinned": true
+      },
+      {
+        "file_id": "project/repository/sample/rag/SPEC_PH-9000_PhotoScanner.md",
+        "sha256": "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a",
+        "pinned": true
+      },
+      {
+        "file_id": "project/repository/sample/rag/TROUBLE_FDC_FaultGuide.md",
+        "sha256": "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289",
+        "pinned": true
+      }
+    ]
+  },
+  "origin_package": {
+    "package": "교육생_배포패키지",
+    "selection_rule": "final-package-first",
+    "reference": "docs/reference/배포패키지_기준.md",
+    "artifacts": {
+      "document_schema_sql": {
+        "file_id": "03_db/01_schema.sql",
+        "sha256": "2b0195ba55e2f49fd3af63afccf395568a6aea5c9d008a871462754d4d9f2cb2",
+        "role": "document·document_chunk 스키마와 vector extension 선언의 출처 — ③에 없다 (V5-CM-2.x·V5-B-1.3 소비)"
+      },
+      "rag_loader": {
+        "file_id": "05_scripts/load_documents.py",
+        "sha256": "73c30492c6266503fbf6b4f56ce2b5d0b86ba9796f81ab62b1116707e37a2ba7",
+        "role": "RAG 적재 loader 원형 — V5-B-1.3이 adapter 계약으로 재사용"
+      },
+      "embedding_requirements": {
+        "file_id": "04_infra/requirements.txt",
+        "sha256": "c531fac10bb950ae05451572dfdbf573638e1702cddf43fe51afdd7d074f0e72",
+        "role": "임베딩 모델(BAAI/bge-m3·1024) 의존성 근거"
+      }
+    }
+  }
+}
