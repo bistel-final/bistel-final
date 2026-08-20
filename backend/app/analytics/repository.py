@@ -46,16 +46,19 @@ class QueryExecution:
 def execute_validated_select(engine: Engine, normalized_sql: str) -> QueryExecution:
     """검증 통과 SQL 한 건을 readonly 세션에서 실행한다.
 
-    - statement_timeout: TOOL_DB_TIMEOUT_SEC 초과 시 DB 가 실행을 끊는다
-    - transaction read only: 계정 권한이 뚫려도 트랜잭션 수준에서 한 번 더
-      쓰기를 거부한다
+    - SET TRANSACTION READ ONLY: 계정 권한이 뚫려도 트랜잭션 수준에서 한 번
+      더 쓰기를 거부한다. read-only 는 트랜잭션 첫 query 전에만 바꿀 수
+      있으므로 반드시 첫 문장으로 실행한다
+    - SET LOCAL statement_timeout: TOOL_DB_TIMEOUT_SEC 초과 시 DB 가 실행을
+      끊는다. LOCAL(트랜잭션 스코프)이므로 pool 반납 된 커넥션에 설정이 남아
+      다음 사용자에게 새지 않는다
     """
     timeout_ms = int(TOOL_DB_TIMEOUT_SEC * 1000)
 
     try:
         with engine.connect() as connection:
-            connection.execute(text(f"SET statement_timeout = {timeout_ms}"))
-            connection.execute(text("SET transaction_read_only = on"))
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            connection.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
 
             result = connection.execute(text(normalized_sql))
             columns = list(result.keys())
