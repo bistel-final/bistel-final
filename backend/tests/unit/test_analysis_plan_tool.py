@@ -80,6 +80,28 @@ class TestGenerateAnalysisPlan:
         assert result.visualization is not None
         assert result.visualization.chart_type == "bar"
 
+    def test_join_with_same_column_name_keeps_both_axes(self, monkeypatch) -> None:
+        # 테이블 수식어를 버리면 a.equipment / b.equipment 가 뭉개져 뒤 alias
+        # 가 앞을 덮는다 — 둘 다 제 키로 남아야 한다 (P2 리뷰 반영).
+        monkeypatch.setattr(
+            llm,
+            "chat",
+            lambda messages: (
+                "SELECT a.equipment AS trace_eqp, b.equipment AS summary_eqp,"
+                " COUNT(*) AS cnt"
+                " FROM trace_alarm_history AS a"
+                " JOIN summary_alarm_history AS b ON a.lot = b.lot"
+                " GROUP BY a.equipment, b.equipment"
+            ),
+        )
+
+        result = tools.generate_analysis_plan(_ask())
+
+        assert result.ok is True
+        assert result.group_by == ["trace_eqp", "summary_eqp"]
+        assert result.visualization is not None
+        assert result.visualization.chart_type == "bar"
+
     def test_group_by_column_missing_from_projection_is_excluded(
         self, monkeypatch
     ) -> None:

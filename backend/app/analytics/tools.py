@@ -107,21 +107,36 @@ def _extract_group_by_columns(sql: str) -> list[str]:
     if group is None:
         return []
 
-    # SELECT projection 역인덱스: 원본 컴럼명 -> 결과 키(alias 우선)
-    projected: dict[str, str] = {}
+    # SELECT projection 역인덱스: (테이블 수식어, 컴럼명) -> 결과 키(alias 우선).
+    # 수식어를 버리면 JOIN 에서 a.eqp_id 와 b.eqp_id 가 같은 키로 뭉개져
+    # 뒤의 alias 가 앞을 덮어쓴다.
+    def _column_key(column: exp.Column) -> tuple[str, str]:
+        return ((column.table or "").lower(), column.name.lower())
+
+    projected: dict[tuple[str, str], str] = {}
     for projection in statement.expressions:
         if isinstance(projection, exp.Alias) and isinstance(
             projection.this, exp.Column
         ):
-            projected[projection.this.name.lower()] = projection.alias.lower()
+            projected[_column_key(projection.this)] = projection.alias.lower()
         elif isinstance(projection, exp.Column):
-            projected[projection.name.lower()] = projection.name.lower()
+            projected[_column_key(projection)] = projection.name.lower()
 
     columns: list[str] = []
     for expression in group.expressions:
         if not isinstance(expression, exp.Column):
             continue
-        result_key = projected.get(expression.name.lower())
+        result_key = projected.get(_column_key(expression))
+        if result_key is None and not expression.table:
+            # GROUP BY 가 무수식 참조일 때 유일하게 대응되는 수식 projection
+            # 이 있으면 그것을 쓴다 (SELECT a.x AS y ... GROUP BY x).
+            matches = [
+                value
+                for (_table, name), value in projected.items()
+                if name == expression.name.lower()
+            ]
+            if len(matches) == 1:
+                result_key = matches[0]
         if result_key is not None:
             columns.append(result_key)
     return columns
