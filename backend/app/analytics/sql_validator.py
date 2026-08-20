@@ -41,6 +41,7 @@ fail-closed 원칙
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -222,8 +223,8 @@ class ValidationResult:
     checks: tuple[CheckResult, ...] = field(default=())
 
 
-@lru_cache(maxsize=1)
-def _manifest_columns() -> dict[str, frozenset[str]] | None:
+@lru_cache(maxsize=4)
+def _load_manifest_columns(path_str: str) -> dict[str, frozenset[str]] | None:
     """bootstrap manifest 에서 table -> 컬럼 집합을 읽는다.
 
     어떤 사유로든 읽지 못하면 None 을 반환하고 validate_sql 이 전체 검증을
@@ -232,7 +233,7 @@ def _manifest_columns() -> dict[str, frozenset[str]] | None:
     여기서는 의도적으로 모든 예외를 실패로 취급한다.
     """
     try:
-        payload = json.loads(RUNTIME_MANIFEST_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(Path(path_str).read_text(encoding="utf-8"))
         tables = payload["tables"]
         columns = {
             str(name).lower(): frozenset(str(col).lower() for col in entry["columns"])
@@ -242,6 +243,19 @@ def _manifest_columns() -> dict[str, frozenset[str]] | None:
     except Exception:
         return None
     return columns or None
+
+
+def _manifest_columns() -> dict[str, frozenset[str]] | None:
+    """현재 기준 manifest 의 table -> column 집합.
+
+    기본은 bootstrap manifest 다. TEXT2SQL_SCHEMA_MANIFEST_PATH 가 설정되면
+    그 파일을 읽는다 — 공용 fresh bootstrap(V5-CM-2.x) 전까지 개발 기준
+    DB(fdc_final) 스키마로 검증하기 위한 경로다. 경로별 lru_cache 로 같은
+    경로는 1회만 읽는다.
+    """
+    override = (os.getenv("TEXT2SQL_SCHEMA_MANIFEST_PATH") or "").strip()
+    path = Path(override) if override else RUNTIME_MANIFEST_PATH
+    return _load_manifest_columns(str(path))
 
 
 def _fail(key: str, reason: str, passed_keys: set[str]) -> ValidationResult:
