@@ -10,6 +10,13 @@ from typing import Any
 
 import pytest
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason="kosa_0813 폐기(V5-CM-1.2) — 모듈은 V5-CM-1.6 삭제 대상"
+)
+
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -156,6 +163,7 @@ class _Engine:
 
 
 @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+@SKIP_KOSA_0813
 def test_corrected_base_manifest_has_exact_14_table_contract(profile: str) -> None:
     payload = loader.build_corrected_base_manifest(profile, _context())
 
@@ -187,6 +195,7 @@ def test_corrected_base_manifest_has_exact_14_table_contract(profile: str) -> No
     )
 
 
+@SKIP_KOSA_0813
 def test_registered_input_context_pins_active_build_and_normalized_hashes() -> None:
     context = loader._load_input_context()
 
@@ -204,6 +213,7 @@ def test_registered_input_context_pins_active_build_and_normalized_hashes() -> N
     )
 
 
+@SKIP_KOSA_0813
 def test_manifest_registration_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

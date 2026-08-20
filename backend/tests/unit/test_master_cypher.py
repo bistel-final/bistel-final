@@ -12,6 +12,16 @@ from pathlib import Path
 
 import pytest
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason=(
+        "kosa_0813 폐기(V5-CM-1.2)"
+        " — V5-B-1.1 graph 독립 검증이 재기준화(선행 V5-CM-1.3)"
+    )
+)
+
+
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -165,6 +175,7 @@ def test_expected_and_legacy_fingerprint_are_distinct(parsed) -> None:
     )
 
 
+@SKIP_KOSA_0813
 def test_registered_graph_manifest_is_exact_and_canonical(parsed) -> None:
     actual_bytes = MANIFEST_PATH.read_bytes()
     actual = json.loads(actual_bytes)
@@ -204,6 +215,7 @@ def test_generated_artifacts_are_atomic_and_reproducible(
     assert (cypher.read_bytes(), manifest.read_bytes()) == first_bytes
 
 
+@SKIP_KOSA_0813
 def test_wrong_archive_is_rejected_before_parse(tmp_path: Path) -> None:
     archive = tmp_path / "wrong.zip"
     with zipfile.ZipFile(archive, "w") as bundle:

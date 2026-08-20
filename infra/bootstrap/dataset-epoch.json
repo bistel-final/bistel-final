@@ -1,0 +1,16 @@
+{
+  "format_version": 2,
+  "artifact_type": "dataset_epoch_registration",
+  "dataset_epoch": "fdc_final_20260818",
+  "received_date": "2026-08-18",
+  "archive": {
+    "filename": "project.zip",
+    "sha256": "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3"
+  },
+  "inventory_scope": "selected_source_members",
+  "intake_artifact": "infra/bootstrap/final-zip-intake.json",
+  "supersedes": {
+    "dataset_epoch": "kosa_0813",
+    "isolated_to": "infra/bootstrap/history/kosa_0813/"
+  }
+}

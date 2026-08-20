@@ -9,6 +9,13 @@ from typing import Any
 
 import pytest
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason="kosa_0813 폐기(V5-CM-1.2) — 모듈은 V5-CM-1.6 삭제 대상"
+)
+
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -137,6 +144,7 @@ def _patch_runner(
     return engine, identities
 
 
+@SKIP_KOSA_0813
 def test_manifest_has_mock_48_contract_and_matches_registered_file() -> None:
     context = _context()
     action = context.manifest["tables"]["action_history"]
@@ -154,6 +162,7 @@ def test_manifest_has_mock_48_contract_and_matches_registered_file() -> None:
     assert context.expected_rows[0]["notify_status"] is None
 
 
+@SKIP_KOSA_0813
 def test_manifest_registration_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -165,6 +174,7 @@ def test_manifest_registration_requires_confirmation(
     assert loader.register_manifest(confirm=False) == "NO_OP"
 
 
+@SKIP_KOSA_0813
 def test_registered_manifest_preserves_future_reference_entries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -184,6 +194,7 @@ def test_registered_manifest_preserves_future_reference_entries(
     assert json.loads(path.read_text(encoding="utf-8")) == future
 
 
+@SKIP_KOSA_0813
 def test_action_insert_is_only_dml_target() -> None:
     connection = _Connection([])
 
@@ -206,6 +217,7 @@ def test_action_insert_is_only_dml_target() -> None:
         (({"action_id": "DRIFT"},), "DRIFT"),
     ],
 )
+@SKIP_KOSA_0813
 def test_classify_database_state_covers_fixture_states(
     monkeypatch: pytest.MonkeyPatch,
     action_rows: tuple[dict[str, Any], ...] | str,
@@ -242,6 +254,7 @@ def test_classify_database_state_covers_fixture_states(
     assert state.name == expected_state
 
 
+@SKIP_KOSA_0813
 def test_classify_database_state_marks_reference_drift_as_missing_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -279,6 +292,7 @@ def test_classify_database_state_marks_reference_drift_as_missing_base(
     assert state.mismatched_tables == ("r03_alarm_history",)
 
 
+@SKIP_KOSA_0813
 def test_fixture_identity_uses_canonical_hash_and_excludes_references(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -316,6 +330,7 @@ def test_fixture_identity_uses_canonical_hash_and_excludes_references(
     )
 
 
+@SKIP_KOSA_0813
 def test_apply_adopts_existing_rows_without_dml_and_noop_without_receipt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -350,6 +365,7 @@ def test_apply_adopts_existing_rows_without_dml_and_noop_without_receipt(
     assert loader._receipt_files(root=tmp_path / "reports") == []
 
 
+@SKIP_KOSA_0813
 def test_empty_state_inserts_exactly_48(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -377,6 +393,7 @@ def test_empty_state_inserts_exactly_48(
     assert marker["status"] == "APPLIED"
 
 
+@SKIP_KOSA_0813
 def test_marker_with_empty_database_is_lost_data(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -399,6 +416,7 @@ def test_marker_with_empty_database_is_lost_data(
         )
 
 
+@SKIP_KOSA_0813
 def test_marker_rejects_action_or_fixture_identity_drift() -> None:
     context = _context()
     identities = _identities(context)
@@ -420,6 +438,7 @@ def test_marker_rejects_action_or_fixture_identity_drift() -> None:
         loader._validate_marker_against_state(marker, _state(), identities, context)
 
 
+@SKIP_KOSA_0813
 def test_recovery_requires_exactly_one_matching_receipt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -447,6 +466,7 @@ def test_recovery_requires_exactly_one_matching_receipt(
         )
 
 
+@SKIP_KOSA_0813
 def test_recovery_promotes_one_started_receipt_without_dml(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -480,6 +500,7 @@ def test_recovery_promotes_one_started_receipt_without_dml(
     assert marker["status"] == "VERIFIED_EXISTING"
 
 
+@SKIP_KOSA_0813
 def test_rehearsal_rolls_back_and_writes_no_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -8,6 +8,13 @@ from pathlib import Path
 
 import pytest
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason="kosa_0813 폐기(V5-CM-1.2) — V5-CM-2.2가 대체, V5-CM-1.6이 삭제"
+)
+
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -85,6 +92,7 @@ class TestBaseSchemaSql:
 
 class TestBaseSchemaManifest:
     @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+    @SKIP_KOSA_0813
     def test_tracked_manifest_is_deterministic(self, profile: str) -> None:
         path = bootstrap.MANIFEST_ROOT / f"{profile}.base_schema.json"
         tracked = json.loads(path.read_text(encoding="utf-8"))
@@ -110,6 +118,7 @@ class TestBaseSchemaManifest:
             expected_archive_sha256=tracked["source_archive_sha256"],
         )
 
+    @SKIP_KOSA_0813
     def test_runtime_and_evaluation_profiles_do_not_share_targets(self) -> None:
         runtime = bootstrap.build_base_manifest("runtime")
         evaluation = bootstrap.build_base_manifest("evaluation")

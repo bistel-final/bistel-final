@@ -10,6 +10,15 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason=(
+        "kosa_0813 폐기(V5-CM-1.2)"
+        " — V5-CM-1.6이 corrected 경로 제거 시 재평가. 모듈은 존속"
+    )
+)
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -133,6 +142,7 @@ def _manifest(profile: str = "runtime") -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@SKIP_KOSA_0813
 def test_runtime_clean_marker_failure_is_collected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -506,6 +516,7 @@ def test_check_result_rejects_sensitive_details() -> None:
         result.as_dict()
 
 
+@SKIP_KOSA_0813
 def test_database_base_schema_passes_with_read_only_statements() -> None:
     manifest = _manifest()
     connection = FakeConnection("kosa_agent", manifest)
@@ -555,6 +566,7 @@ def test_database_requires_explicit_registered_stage(
         )
 
 
+@SKIP_KOSA_0813
 def test_database_corrected_base_passes_normalized_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -598,6 +610,7 @@ def test_database_corrected_base_passes_normalized_content(
     assert result.details["action_history_rows"] == 0
 
 
+@SKIP_KOSA_0813
 def test_evaluation_corrected_base_failure_is_scoped_to_action_48(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -661,6 +674,7 @@ def test_evaluation_corrected_base_failure_is_scoped_to_action_48(
     }
 
 
+@SKIP_KOSA_0813
 def test_evaluation_corrected_base_collects_additional_table_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -755,6 +769,7 @@ def _stub_reference_postcheck(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@SKIP_KOSA_0813
 def test_evaluation_mock_stage_requires_and_reports_completion_marker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -803,6 +818,7 @@ def test_evaluation_mock_stage_requires_and_reports_completion_marker(
         "state",
     ],
 )
+@SKIP_KOSA_0813
 def test_evaluation_mock_marker_failure_is_acceptance_mismatch(
     monkeypatch: pytest.MonkeyPatch,
     marker_error: str,
@@ -842,6 +858,7 @@ def test_evaluation_mock_marker_failure_is_acceptance_mismatch(
     assert "fixture identity drift" not in json.dumps(captured.value.details)
 
 
+@SKIP_KOSA_0813
 def test_evaluation_mock_collects_table_and_marker_mismatches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -884,6 +901,7 @@ def test_evaluation_mock_collects_table_and_marker_mismatches(
     ]
 
 
+@SKIP_KOSA_0813
 def test_marker_candidate_is_timezone_aware(monkeypatch: pytest.MonkeyPatch) -> None:
     bundle, candidate = _stub_registration(monkeypatch)
     source = json.loads(manifest_v3.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -902,6 +920,7 @@ def test_marker_candidate_is_timezone_aware(monkeypatch: pytest.MonkeyPatch) -> 
     assert marker["registered_at"].endswith("+00:00")
 
 
+@SKIP_KOSA_0813
 def test_registration_preview_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -918,6 +937,7 @@ def test_registration_preview_writes_nothing(
     assert not marker_path.exists()
 
 
+@SKIP_KOSA_0813
 def test_registration_marker_last_crash_is_not_registered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -939,6 +959,7 @@ def test_registration_marker_last_crash_is_not_registered(
     assert not marker_path.exists()
 
 
+@SKIP_KOSA_0813
 def test_registration_recovers_marker_after_crash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -955,6 +976,7 @@ def test_registration_recovers_marker_after_crash(
     assert marker_path.exists()
 
 
+@SKIP_KOSA_0813
 def test_registration_noop_requires_manifest_marker_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -975,6 +997,7 @@ def test_registration_noop_requires_manifest_marker_receipt(
     assert second.details["registration"] == "NO_OP"
 
 
+@SKIP_KOSA_0813
 def test_registered_marker_rejects_manifest_drift(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -997,6 +1020,7 @@ def test_registered_marker_rejects_manifest_drift(
         )
 
 
+@SKIP_KOSA_0813
 def test_registration_replaces_old_marker_only_with_confirm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

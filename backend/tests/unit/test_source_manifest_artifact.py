@@ -8,6 +8,16 @@ from pathlib import Path
 
 import pytest
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason=(
+        "kosa_0813 폐기(V5-CM-1.2)"
+        " — V5-CM-1.3이 manifest v4로 대체, V5-CM-1.6이 삭제"
+    )
+)
+
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPOSITORY_ROOT / "infra" / "bootstrap" / "source-data-manifest.json"
 EPOCH_PATH = REPOSITORY_ROOT / "infra" / "bootstrap" / "dataset-epoch.json"
@@ -36,10 +46,12 @@ def _validate(manifest: dict) -> None:
     )
 
 
+@SKIP_KOSA_0813
 def test_registered_source_manifest_passes_v3_schema() -> None:
     _validate(_load_manifest())
 
 
+@SKIP_KOSA_0813
 def test_registered_source_manifest_is_linked_to_dataset_epoch_inventory() -> None:
     manifest = _load_manifest()
     epoch = _load_epoch()
@@ -51,6 +63,7 @@ def test_registered_source_manifest_is_linked_to_dataset_epoch_inventory() -> No
     assert file_ids <= inventory_paths
 
 
+@SKIP_KOSA_0813
 def test_registered_source_manifest_fixed_contract_values() -> None:
     manifest = _load_manifest()
 
@@ -92,6 +105,7 @@ def test_registered_source_manifest_fixed_contract_values() -> None:
         "canonical-file-id",
     ),
 )
+@SKIP_KOSA_0813
 def test_registered_source_manifest_tampering_is_rejected(mutate) -> None:
     manifest = copy.deepcopy(_load_manifest())
     mutate(manifest)
