@@ -1,14 +1,13 @@
 """Text2SQL 수직 슬라이스 orchestration (개발 스파이크).
 
-흐름: question → 계획 생성(LLM mock) → sql_validator → readonly 실행 → 응답.
+흐름: question → 계획 생성(LLM 또는 SQL passthrough) → sql_validator → readonly 실행 → 응답.
 
-LLM mock
-    실제 LLM 은 아직 연결하지 않는다(V5-D-2.3 본구현에서 교체). 스파이크의
-    목적은 "LLM 이 SQL 을 줬다 치고" 이후의 검증·실행 경로를 실제 DB 로
-    증명하는 것이므로, planner 는 두 가지로 대신한다.
-    1. question 첫 토큰이 SQL 키워드면 question 자체를 LLM 출력 SQL 로 간주
-       (쓰기 구문도 그대로 통과시킨다 — 그걸 막는 것이 validator 의 몫이다)
-    2. 등록된 fixture 질문이면 대응 SQL 반환
+계획 생성 경로 2가지
+    1. question 첫 토큰이 SQL 키워드면 question 자체를 SQL 로 간주
+       (개발·데모 편의 경로. 쓰기 구문도 그대로 통과시킨다 — 그걸 막는
+       것이 validator 의 몫이다)
+    2. 그 외는 generate_analysis_plan Tool(LLM) 호출. LLM 미준비·timeout 은
+       정책 거부(200)로 응답하며 기본 경로를 막지 않는다
 
 응답 계약 (schemas.AnalysisQueryResponse 가 강제)
     정책 거부  HTTP 200 · is_rejected=true · SQL 미실행 · 결과 배열 비움
@@ -30,12 +29,13 @@ from app.analytics.repository import (
 )
 from app.analytics.schemas import AnalysisQueryResponse
 from app.analytics.sql_validator import CHECK_KEYS, validate_sql
+from app.analytics.tools import generate_analysis_plan
 from app.common.enums import ChartType
 from app.common.tool_contracts import (
+    AnalysisPlanToolInput,
     AnalysisPlanToolResult,
     MetricPlan,
     VisualizationPlan,
-    fail,
 )
 
 #: V5-D-2.4 전까지의 placeholder. 질의 이력 도입 시 실제 log id 로 교체한다.
@@ -62,43 +62,22 @@ _SQL_LEADING_KEYWORDS: frozenset[str] = frozenset(
     }
 )
 
-#: 자연어 질문 fixture. 최종 snapshot 기준으로만 작성한다(WBS §9).
-_FIXTURE_PLANS: dict[str, str] = {
-    "알람이 가장 많은 설비는?": (
-        "SELECT eqp_id, COUNT(*) AS alarm_cnt"
-        " FROM trace_alarm_history"
-        " GROUP BY eqp_id"
-        " ORDER BY alarm_cnt DESC"
-    ),
-    "trace 알람은 총 몇 건이야?": (
-        "SELECT COUNT(*) AS alarm_cnt FROM trace_alarm_history"
-    ),
-}
 
-
-def _mock_generate_plan(question: str) -> AnalysisPlanToolResult:
-    """LLM 자리의 mock planner. V5-D-2.3 에서 실제 LLM 호출로 교체한다."""
+def _generate_plan(question: str) -> AnalysisPlanToolResult:
+    """계획 생성. SQL 원문은 passthrough, 자연어는 LLM Tool 을 탄다."""
     stripped = question.strip()
     leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
 
     if leading in _SQL_LEADING_KEYWORDS:
-        sql = stripped
-    elif stripped in _FIXTURE_PLANS:
-        sql = _FIXTURE_PLANS[stripped]
-    else:
-        return fail(
-            AnalysisPlanToolResult,
-            "LLM_NOT_READY: 스파이크 planner 는 SQL 원문 또는 등록된 fixture "
-            "질문만 처리한다.",
+        return AnalysisPlanToolResult(
+            ok=True,
+            sql=stripped,
+            metric=MetricPlan(type="count"),
+            group_by=[],
+            visualization=VisualizationPlan(chart_type=ChartType.TABLE),
         )
 
-    return AnalysisPlanToolResult(
-        ok=True,
-        sql=sql,
-        metric=MetricPlan(type="count"),
-        group_by=[],
-        visualization=VisualizationPlan(chart_type=ChartType.TABLE),
-    )
+    return generate_analysis_plan(AnalysisPlanToolInput(question=stripped))
 
 
 def _rejected_response(
@@ -132,7 +111,7 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
         return int((time.perf_counter() - started) * 1000)
 
     # ── 1. 계획 생성 (LLM mock) ────────────────────────────────────────
-    plan = _mock_generate_plan(question)
+    plan = _generate_plan(question)
     if not plan.ok:
         return _rejected_response(question, plan.reason, _elapsed_ms())
 

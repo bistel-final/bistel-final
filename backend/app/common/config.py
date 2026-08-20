@@ -110,3 +110,17 @@ if HITL_REQUIRED_SEVERITY != "HIGH":
 TOOL_DB_TIMEOUT_SEC = get_int_env("TOOL_DB_TIMEOUT_SEC", "5", minimum=1)
 TOOL_EMBEDDING_TIMEOUT_SEC = get_int_env("TOOL_EMBEDDING_TIMEOUT_SEC", "15", minimum=1)
 N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "10", minimum=1)
+
+# ---------------------------------------------------------------------
+# LLM (.env.example 계약과 1:1)
+#   기본은 로컬 Ollama. 외부 API 는 LLM_API_KEY·LLM_BASE_URL 로 전환한다.
+#   API key 는 선택값이므로 get_env(빈 값 거부)를 쓰지 않고 llm.py 가
+#   os.getenv 로 직접 읽는다. 키 미설정은 기동 오류가 아니라 LLM_NOT_READY
+#   거부로 처리한다.
+# ---------------------------------------------------------------------
+LLM_PROVIDER = get_env("LLM_PROVIDER", "ollama")
+LLM_MODEL_MAIN = get_env("LLM_MODEL_MAIN", "qwen2.5:7b-instruct")
+LLM_TEMPERATURE = float(get_env("LLM_TEMPERATURE", "0.1"))
+LLM_MAX_TOKENS = get_int_env("LLM_MAX_TOKENS", "1500", minimum=1)
+LLM_TIMEOUT_SEC = get_int_env("LLM_TIMEOUT_SEC", "60", minimum=1)
+OLLAMA_BASE_URL = get_env("OLLAMA_BASE_URL", "http://localhost:11434")
