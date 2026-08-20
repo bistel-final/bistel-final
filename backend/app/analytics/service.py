@@ -1,6 +1,7 @@
 """Text2SQL 수직 슬라이스 orchestration (개발 스파이크).
 
-흐름: question → 계획 생성(LLM 또는 SQL passthrough) → sql_validator → readonly 실행 → 응답.
+흐름: question → 계획 생성(LLM 또는 SQL passthrough) → sql_validator
+→ readonly 실행 → 응답.
 
 계획 생성 경로 2가지
     1. question 첫 토큰이 SQL 키워드면 question 자체를 SQL 로 간주
