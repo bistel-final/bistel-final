@@ -7,8 +7,9 @@
 > [요구사항 v2.1](../specifications/요구사항정의서_v2_1_작업본.md),
 > [시스템설계 v2.1](../specifications/시스템설계서_v2_1_작업본.md),
 > [역할분담 v10.1](../specifications/FDC_프로젝트_역할분담_v10_1_작업본.md),
-> [API v3](../deliverables/api/API명세서_v3_작업본.md)이다. 이 문서의 Task ID·공수·선행관계·
-> 완료 표시는 새 WBS v5로 승계하지 않는다.
+> [API v3](../deliverables/api/API명세서_v3_작업본.md),
+> [WBS v5 작업본](Task분해_WBS_v5_작업본.md)이다. 이 문서의 Task ID·공수·선행관계·완료
+> 표시는 현행 작업본으로 자동 승계하지 않는다. WBS v4 이하도 동일한 legacy 범위다.
 
 > 문서 성격: 요구사항 v1.9, 시스템설계서 v1.10, 역할분담 v9.6 기준 정합본
 > 작성 기준일: 2026-08-12

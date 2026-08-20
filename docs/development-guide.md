@@ -1,11 +1,12 @@
 # Development Guide
 
 > [!CAUTION]
-> **멘토님 제공 최종 `project.zip` 기준으로 문서를 재기준화 중입니다.** 이 문서의
+> **멘토님 제공 최종 `project.zip` 기준 문서의 교차검토를 완료했습니다.** 이 문서의
 > Git·브랜치·PR 절차는 계속 사용하지만 도메인·데이터·API·E2E 기준은 최종 데이터 기준표와
 > v2.1 요구사항·시스템설계서·역할분담 v10.1·API v3을 따릅니다. `kosa_0813`, WBS v4 이하,
-> `docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 이전 epoch 이력입니다.
-> WBS v5 확정 전에는 신규 구현을 시작하거나 임의의 V5 Task ID를 만들지 않습니다.
+> `docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`는 이전 epoch 이력입니다. 구현은 교차검토를
+> 마친 WBS v5·`docs/ai-context/tasks/*.md`의 `V5-*` Task와 선행 게이트를 따르며 임의의 Task
+> ID를 만들지 않습니다.
 
 ## 1. 전체 작업 흐름
 
@@ -27,8 +28,8 @@
 
 ### 한 작업을 처음부터 끝까지
 
-아래는 WBS v5가 확정된 뒤 `V5-A-*` Summary Tool Task를 수행한다고 가정한 예시입니다.
-실제 Task ID·요구사항·완료 기준은 확정된 WBS에서 복사해야 하며, 이 예시를 작업 근거로
+아래는 리뷰를 통과한 WBS v5의 `V5-A-*` Summary Tool Task를 수행한다고 가정한 예시입니다.
+실제 Task ID·요구사항·완료 기준은 현행 WBS와 A Task 작업본에서 복사해야 하며, 이 예시를 작업 근거로
 사용하지 않습니다. 각 단계의 상세 Git 규칙은 아래 장에서 다룹니다.
 
 **① Issue 생성** — 무엇을, 왜, 어디까지 하면 끝인지 먼저 적습니다.
@@ -218,7 +219,8 @@ pytest
 
 Agent E2E는 학원 공용 PostgreSQL 서버의 전용 논리 DB `kosa_agent_e2e`에서만 수행합니다.
 `action_history`·`agent_run`·`agent_run_alarm`·`agent_tool_call`·`approval_request`·`audit_log`·
-`action_delivery`와 Checkpoint 실행 데이터만 reset하며 corrected source·reference·corpus·schema는 보존합니다.
+`action_delivery`와 Checkpoint 실행 데이터만 reset하며 corrected source·reference·RAG 문서·chunk·
+vector·schema는 보존합니다.
 
 최종 epoch 기준 WBS v5에서 host·DB·token reset guard를 재검증하기 전에는 E2E를 실행하지
 않습니다. 기존 guard가 있어도 최종 schema와 보존 테이블 allowlist를 다시 확인해야 합니다.
@@ -236,12 +238,14 @@ pytest -m e2e
 지켜야 할 조건입니다.
 
 - 대상은 공용 서버 안의 **전용 논리 DB `kosa_agent_e2e`**뿐입니다. `kosa_agent`·`kosa_text2sql`을 reset하지 않습니다.
-- 공용 PostgreSQL·Neo4j·n8n 컨테이너를 `docker stop`으로 멈추지 않습니다. 장애 주입은 dependency override·Tool mock·테스트 webhook으로 합니다.
+- 공용 PostgreSQL·Neo4j·n8n은 외부 canonical 서비스이며 팀 compose 대상이 아닙니다. 이를
+  `docker stop`으로 멈추지 않고 장애 주입은 dependency override·Tool mock·테스트 webhook으로
+  수행합니다. 팀 compose 범위는 Backend·Frontend·Kafka·MES Mock뿐입니다.
 - 제공 `action_history` 12건은 Runtime seed로 사용하지 않고 격리 평가·화면 reference fixture로만
   사용합니다.
-- 최종 source·reference·corpus·migration schema와 평가 전용 합성 라벨 artifact를 보존합니다.
+- 최종 source·reference·RAG 문서·chunk·vector·migration schema와 평가 전용 합성 라벨 artifact를 보존합니다.
 
-근거: 요구사항 v2.1 · 시스템설계서 v2.1. 정확한 reset Task는 WBS v5에서 확정합니다.
+근거: 요구사항 v2.1 · 시스템설계서 v2.1. 정확한 reset 범위는 리뷰된 WBS v5 Task에서 확인합니다.
 
 ### 테스트 계층
 
@@ -265,11 +269,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```text
 http://localhost:8000/docs          OpenAPI 문서
 http://localhost:8000/health        API 프로세스 생존 (외부 장애와 무관하게 200)
-http://localhost:8000/health/ready  PostgreSQL·Neo4j·RAG·n8n·Kafka 준비 상태 (실패 시 503)
+http://localhost:8000/health/ready  PostgreSQL epoch/schema/role·reference marker·Neo4j 44/85 marker·RAG 3문서/vector 1024/search smoke·n8n·Kafka topic 준비 상태 (실패 시 503)
 ```
 
-두 health 경로는 배포·운영 및 개발 진단용 내부 엔드포인트다. 사용자 업무 기능과 API v3의
-source 호환 9개 endpoint에는 포함하지 않는다.
+두 health 경로는 배포·운영 및 개발 진단용 내부 엔드포인트다. API v3의 필수 public 업무 API
+11개(source 호환 9 + 보안 chamber 1 + 실행 `POST /agent/runs` 1)에는 포함하지 않는다.
 
 GitHub Actions에서는 Ruff·pytest·실제 서버 연결을 실행하지 않습니다. 실행 결과는 PR의 `확인 방법`과 체크리스트에 기록합니다.
 
@@ -396,7 +400,7 @@ PR Policy가 실패하면 `Checks`의 오류 메시지를 확인하고 브랜치
 
 - **다른 팀원 1명 이상의 승인(Approve)이 있어야 병합할 수 있습니다.** 문서상 권장이 아니라 `main` 브랜치 보호 규칙으로 강제됩니다.
 - PR Policy가 성공한 뒤 병합합니다.
-- API·Tool 계약을 변경한 경우 v2.1 요구사항·시스템설계서·API v3과 확정된 WBS v5의 해당
+- API·Tool 계약을 변경한 경우 v2.1 요구사항·시스템설계서·API v3과 리뷰된 WBS v5의 해당
   Task를 먼저 정렬했는지 확인합니다.
 - 기능 담당자가 실제 PostgreSQL·Neo4j·n8n·React 연동 결과를 PR에 기록했는지 확인합니다.
 - E2E를 실행한 경우 **격리 DB에서 수행했음**을 PR에 명시했는지 확인합니다.
@@ -497,14 +501,23 @@ git branch -D feat/detection-summary
 시스템설계서 v2.1 → 역할분담 v10.1 → API v3 → WBS v5의 해당 Task 순서입니다.
 `docs/ai-context/README.md`는 이 원본으로 보내는 라우팅 인덱스입니다.
 
-`docs/ai-context/01`~`07`, `PROMPT_TEMPLATE.md`, `tasks/*.md`는 구 이력으로 사용 중지 상태이며
-새 역할별 Task가 재생성되기 전까지 단일 출처나 구현 근거로 사용하지 않습니다.
+`docs/ai-context/01`~`07`과 `PROMPT_TEMPLATE.md`는 구 이력으로 사용 중지 상태입니다.
+`docs/ai-context/tasks/*.md`는 WBS v5와 교차검토를 마친 현행 역할별 작업본이며, 상위 계약과
+충돌하면 단독 구현 근거로 사용하지 않습니다.
+
+고정 경계는 다음과 같습니다. canonical 사용자 화면은 Dashboard·Alarm History·Agent·Documents·
+Ontology 5개이고, Ontology public API는 선택 chamber의 subgraph와 context를 함께 반환하는
+`GET /relations/chambers/{chamber_id}` 하나입니다. RAG는 corpus revision·`ACTIVE` 전환·overlay를
+추가하지 않고 검증된 문서 3종의 corrected artifact와 고정 chunk/vector 계약을 사용합니다.
+필수 public 업무 API는 source 호환 9개 + 보안 chamber 1개 + 실행 `POST /agent/runs` 1개로
+총 11개입니다. internal delivery callback 1개와 health 2개는 각각 별도 scope입니다.
 
 ### API 계약을 바꿀 때
 
-API v3 작업본은 최종 source 계약을 먼저 고정하기 위한 전환 문서입니다. 리뷰가 끝난 뒤 Backend
-Pydantic DTO와 생성기를 맞추고 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를
-지켜야 코드와 세 문서가 어긋나지 않습니다.
+API v3 작업본은 교차검토를 마친 최종 source 계약입니다. 리뷰된 V5 Task에서 Backend Pydantic
+DTO와 생성기를 맞추고 CSV·Markdown·PDF 세 형식을 함께 생성합니다. 따라서 순서를
+지켜야 코드와 세 문서가 어긋나지 않습니다. 현재 `build_api_spec.py`는 구 계약 재현용이므로
+v3 대응 Task가 완료되기 전에는 실행하지 않습니다.
 
 ```bash
 # 1. 원본 스펙을 먼저 고친다 (요구사항 → 시스템설계서 → API v3 순)
@@ -513,17 +526,13 @@ Pydantic DTO와 생성기를 맞추고 CSV·Markdown·PDF 세 형식을 함께 �
 # 3. 계약 테스트로 확인한다
 cd backend && pytest tests/contract -q
 
-# 4. 명세서 세 형식을 다시 만든다
-cd .. && source .venv/bin/activate
-pip install -r docs/deliverables/api/requirements.txt   # 최초 1회 (reportlab)
-python docs/deliverables/api/build_api_spec.py
-
-# 5. CSV·Markdown·PDF 세 개를 한 커밋에 함께 담는다
-git add docs/deliverables/api/API명세서.{csv,md,pdf}
+# 4. 리뷰된 WBS의 API 산출물 동기화 Task에서 v3 생성기를 갱신·실행한다
+# 5. v3 CSV·Markdown·PDF와 생성기·계약 테스트를 한 커밋에 함께 담는다
 ```
 
 - **생성 결과를 직접 편집하지 않습니다.** 고칠 것이 있으면 DTO 또는 생성기를 고치고 다시 만듭니다.
-- 세 형식 중 하나만 커밋하면 나머지 둘이 옛 계약을 가리킵니다. 반드시 함께 담습니다.
+- v3 세 형식 중 하나만 커밋하면 나머지 둘이 옛 계약을 가리킵니다. 반드시 같은 revision으로
+  함께 담습니다.
 - `reportlab`은 문서 도구 전용 의존성이라 `backend/requirements.txt`에 넣지 않습니다.
 
 자세한 절차와 글꼴 설정은 `docs/deliverables/api/README.md`에 있습니다.

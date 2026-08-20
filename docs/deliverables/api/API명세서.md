@@ -3,8 +3,9 @@
 > [!CAUTION]
 > **FINAL-DOC — LEGACY ARCHIVE.** 이 문서는 최종 `project.zip` 이전 API 이력이며 신규 구현·
 > 테스트·제출 근거로 사용하지 않는다. 현재 계약은
-> [API 명세서 v3 작업본](API명세서_v3_작업본.md)을 따른다. 이하 수치·path·DTO는 새 WBS v5로
-> 자동 승계하지 않는다.
+> [API 명세서 v3 작업본](API명세서_v3_작업본.md), 현재 범위는
+> [WBS v5 작업본](../../planning/Task분해_WBS_v5_작업본.md)을 따른다. 이하 수치·path·DTO는
+> 현행 작업본으로 자동 승계하지 않으며 API v2.1 이하 산출물도 동일한 legacy 범위다.
 
 | 항목 | 내용 |
 |---|---|

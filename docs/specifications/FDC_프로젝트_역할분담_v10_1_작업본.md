@@ -13,8 +13,8 @@
 | 기준 자료 | 멘토님 제공 최종 `project.zip` (`SHA-256: e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3`) |
 | dataset epoch | `fdc_final_20260818` |
 | 기준 데이터 | `sample/data` 9개 CSV, `sample/schema/03_schema_clean.sql`, `sample/ontology/master.cypher`, `sample/rag`, `mvp/gen_sample_data.py` |
-| 선행 문서 | 요구사항정의서·시스템설계서 최종 데이터 전환 작업본 |
-| 후속 산출물 | API 명세 v3 리뷰·확정, WBS v5 작업본, 역할별 Task |
+| 상위 문서 | 요구사항정의서 v2.1·시스템설계서 v2.1 |
+| 연계 산출물 | API 명세 v3·WBS v5·역할별 Task(작성 완료) |
 
 ### 1.1 개정 목적
 
@@ -22,9 +22,9 @@
 기존 `kosa_0813.zip`의 126/47건 알람, 10/48건 조치, 38/81 그래프 및 공개 Fault
 정답 없음 전제는 본 역할분담의 구현 근거로 사용하지 않는다.
 
-본 문서는 업무 소유권을 정한다. Task ID, 일정, 선행관계 및 완료 상태는 본 문서를 확정한 뒤
-새로 작성할 WBS v5에서 관리한다. 기존 WBS v4의 완료 표시는 이력으로 보존하되 새 기준의 완료로
-자동 승계하지 않는다.
+본 문서는 업무 소유권을 정한다. Task ID, 일정, 선행관계 및 완료 상태는 작성 완료된
+WBS v5와 역할별 Task에서 관리한다. 기존 WBS v4의 완료 표시는 이력으로 보존하되 새 기준의
+완료로 자동 승계하지 않는다.
 
 ---
 
@@ -109,8 +109,8 @@ contract/integration test 및 평가 artifact까지 책임진다. 공통 파일 
 별도 사용자 화면 수를 늘리는 것은 필수 범위가 아니다.
 
 현재 저장소 React의 7개 메뉴와 기존 route는 아직 이 목표에 맞춰지지 않았으므로 완료로 승계하지
-않는다. WBS v5에서 5개 메뉴·호환 projection·Ontology 보안 API·감사 wrapper 소비를 별도
-Frontend adapter Task로 배정한다.
+않는다. WBS v5에는 5개 메뉴·호환 projection·Ontology 보안 API·감사 wrapper 소비가 별도
+Frontend adapter Task로 배정되어 있다.
 
 ### 3.3 최소 API와 확장 API
 
@@ -120,7 +120,9 @@ Frontend adapter Task로 배정한다.
 `api.audit()`는 참고 페이지에서 아직 소비하지 않으므로 Agent 감사 subview 연결을 별도 완료
 기준으로 둔다. Ontology 화면은
 API 없이 Neo4j Browser와 기본 계정을 직접 노출하므로, 프로젝트는 이를 대체하는 read-only
-`GET /relations/chambers/{chamber_id}`를 보안 필수 API로 추가한다. 따라서 public 필수는 호환 9개 + 보안 1개다.
+`GET /relations/chambers/{chamber_id}`를 보안 필수 API로 추가한다. Alarm 화면에서 source-aware
+분석을 시작하는 `POST /agent/runs`도 프로젝트 실행 필수로 둔다. 따라서 public 필수는 호환
+9개 + 보안 1개 + 실행 1개다.
 Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관리한다. 동일 path가 요청 조건에 따라
 배열과 페이지 객체를 번갈아 반환하지 않는다. 상세 계약은 `API명세서_v3_작업본.md`를 따른다.
 
@@ -133,6 +135,8 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - 제공 `master.cypher`의 `MATCH (n) DETACH DELETE n`은 공용 Neo4j에서 직접 실행하지 않는다.
   staging graph 검증 후 안전한 교체 절차를 사용한다.
 - Runtime DB는 action 0건에서 시작한다. reference action 12건은 격리 평가 fixture에서만 사용한다.
+- PostgreSQL·Neo4j·n8n은 외부 공용 canonical 서비스다. 팀 compose는 Backend·Frontend·Kafka·
+  MES Mock만 기동하고 두 번째 PostgreSQL·Neo4j·n8n을 만들지 않는다.
 
 ---
 
@@ -143,7 +147,7 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 | Common·통합 | 방대혁 주도, 전원 리뷰 | 최종 source intake, epoch·manifest, DB/graph 안전 적재, 공통 Enum·DTO·오류·감사 쓰기 계약 | health는 업무 API 외 | 통합 E2E·배포·복구 |
 | A. Detection | 신동원 | Summary/evaluation/알람/R03 결정론 재현, 모델 score 근거, 합성 라벨 격리 평가 | `GET /alarms`, `GET /trace`, `GET /parameters` | 화면 1·2, 감지·모델 평가 |
 | B. Knowledge | 강연권 | Neo4j 44/85 안전 검증, RAG 문서 정정·검색, 근거 provenance | `POST /documents/search`, 보안 필수 `GET /relations/chambers/{chamber_id}` | 화면 4·5, 관계·검색 평가 |
-| C. Agent·HITL | 방대혁 | LangGraph, 원인 가설, 3단계 조치, 승인, n8n SMTP, Kafka MES Mock | 호환 4개 + 필수 내부 delivery callback | 화면 3, 상태 전이·E2E |
+| C. Agent·HITL | 방대혁 | LangGraph, 원인 가설, 3단계 조치, 승인, n8n SMTP, Kafka MES Mock | 호환 4개 + 실행 필수 `POST /agent/runs` + 필수 내부 delivery callback | 화면 3, 상태 전이·E2E |
 | D. Analytics·Audit | 천승현 | 감사 read model/API, 선택 확장 Text2SQL·통계·차트 | `GET /audit-logs` | 화면 3 감사 탭, 선택 확장 SQL 방어·정확도 |
 
 ---
@@ -159,8 +163,14 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - **Runtime schema는 팀 소유다.** 최종 패키지 `03_schema_clean.sql`은 base 9개 table만 만들고
   참고 Backend는 실행 이력을 메모리로 합성한다. Common이 최종 base DDL 위에 Agent 실행·승인·
   조치·감사 table migration 계보를 설계·적용한다.
+- `V5-CM-3.1`은 빈 `r03_alarm_history`와 저장 알람 189건 기준 `v_alarm_event` 골격까지만
+  생성한다. A가 이후 R03 3건을 파생해 192건으로 완성한다. `nl_query_log`는 D의 선택
+  Text2SQL을 구현할 때 evaluation DB에만 만든다.
+- RAG의 vector/document schema와 corrected 문서 3종은 B 소유 migration·loader로 세 논리 DB에
+  동일하게 적용하며 서비스 readiness는 runtime DB만 본다.
 - 공통 `AlarmRef`, Action/Approval/Delivery Enum, 오류 응답, append-only audit 계약을 관리한다.
-- 호환 필수 API 9개와 Ontology 보안 필수 API 1개의 OpenAPI·React contract test를 통합한다.
+- 호환 필수 API 9개, Ontology 보안 필수 API 1개, Agent 실행 필수 API 1개의 OpenAPI·React
+  contract test를 통합한다.
 - `kosa_text2sql`을 Text2SQL 화면 활성 여부와 무관한 격리 evaluation/reference DB로 유지하고,
   선택 Text2SQL에는 별도 readonly projection만 제공한다.
 
@@ -224,10 +234,16 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 
 ### 7.1 담당 범위
 
-- 최종 `master.cypher`를 독립 파싱해 44 nodes / 85 relationships와 필수 속성·방향·중복을 검증한다.
+- 최종 패키지③의 `master.cypher`를 독립 파싱해 44 nodes / 85 relationships와 필수
+  속성·방향·중복을 검증한다.
 - 공용 Neo4j 갱신이 필요하면 Common의 기존 destructive-safe loader를 재사용한다(신규 구현 없음).
-- 최종 RAG 원문을 graph·데이터·조치 정책과 교차 검토해 정정본을 만든다. 원본은 보존하고
-  정정본을 정본으로 적재한다(overlay·corpus revision 없음).
+- 최종 패키지③의 RAG 원문을 graph·데이터·조치 정책과 교차 검토해 정정본을 만든다. 원본은
+  보존하고 정정본을 버전 교체 layer 없이 정본으로 적재한다.
+- 교육생 배포패키지①에서 `document`·`document_chunk`·vector extension,
+  `load_documents.py`, `BAAI/bge-m3`·1024만 재사용한다. base 9 table·RAG 문서·
+  `master.cypher`는 최종 패키지③을 사용한다.
+- `load_documents.py`는 ③ 정정본 입력 경로, 결정론적 chunk ID, 필수 DSN·target guard,
+  단일 transaction·멱등 적재를 강제하는 adapter를 거쳐 재사용한다.
 - 문서 검색 결과에 document/chunk와 실제 근거 내용을 반환한다.
 - 검색은 임베딩 기반 벡터 검색으로 구현한다. 참고 구현의 키워드 스코어는 파일럿이다.
   임베딩은 배포본 ①의 `BAAI/bge-m3`·1024를 유지하고 재선정하지 않는다. 모델은 process당
@@ -246,13 +262,14 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - R01은 raw 한 점의 USL/LSL 이탈 즉시 TRACE 알람으로 통일하고 Fault 후보에 `OTH`를 포함한다.
 - PH-9000 본문은 EQP01~03·RECIPE01/03, ET-7500 본문은 EQP04~06·RECIPE02/04 범위로 정정한다.
 - EQP_HOLD EMAIL은 승인 요청 알림이고 Kafka MES Mock은 승인 후에만 실행된다고 구분한다.
-- 원문, 정정 사유, corrected hash, embedding model·dimension을 provenance로 남긴다.
+- 원문·corrected SHA-256, 정정 사유, `chunk_schema_version`, embedding model·dimension,
+  문서·chunk 수·NULL embedding 0·검색 smoke 결과를 적재 검증 artifact로 남긴다.
 
 ### 7.3 API·화면·평가 책임
 
 - 호환 필수: `POST /documents/search`
 - 보안 필수: `GET /relations/chambers/{chamber_id}`
-- 선택 확장: 장비·챔버별 관계 조회, 문서 상세
+- 선택 확장: 설비별 관계 조회, 문서 상세
 - 화면 4의 문서 검색과 화면 5의 Ontology를 구현하고 Agent 화면의 근거 deep link를 연결한다.
 - 최종 reference frontend의 Neo4j Browser iframe과 화면에 노출된 `neo4j/password`는 수용하지
   않는다. Browser 직접 접속 대신 Backend의 read-only graph API만 호출한다.
@@ -269,10 +286,11 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - LLM 출력 `predicted_fault_code`를 공개 합성 정답과 분리한다.
 - 3단계 규칙으로 action을 결정하고 EQP_HOLD만 사람 승인을 요구한다.
 - n8n SMTP 이메일과 Kafka MES Mock을 별도 delivery로 관리한다.
-- n8n workflow 4종을 직접 제작해 `deploy/n8n/`에 커밋한다. 최종 패키지에는 import 가능한
+- n8n workflow 3종을 직접 제작해 `deploy/n8n/`에 커밋한다. 최종 패키지에는 import 가능한
   JSON이 없고 `docs/07_n8n_워크플로_제작가이드.md` §8이 제작·커밋을 지정한다.
-  `WF1-alarm-to-agent` · `WF2-notify-email` · `WF3-mes-hold` · `WF4-result-writeback`
-- 최종 패키지 compose에 n8n 서비스가 없으므로 팀 compose에 n8n 컨테이너 정의를 추가한다.
+  `WF2-notify-email` · `WF3-mes-hold` · `WF4-result-writeback`. 단수형 stale
+  `/agent/run` 기반 `WF1-alarm-to-agent`는 필수 workflow에서 제외한다.
+- 학원 제공 외부 공용 n8n을 canonical로 사용하며 팀 compose에 n8n 컨테이너를 추가하지 않는다.
 - Kafka MES Mock은 필수 범위다. broker 운영 위치(공용 1벌 / 팀원 로컬)만 compose 통합 시 확정한다.
 
 ### 8.2 조치·전송 책임
@@ -285,15 +303,19 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
   n8n Kafka Producer가 `fdc.actions`에 발행한다.
 - 이메일 성공과 Kafka 성공은 서로 독립된 channel delivery 상태와 멱등성 키를 갖는다.
 - 외부 API의 `MES`는 내부 `MES_MOCK`으로 매핑한다. 실제 MES 연동으로 표현하지 않는다.
+- webhook 양방향은 `timestamp + "." + raw_body` HMAC-SHA256·300초 replay window를 쓰고
+  `request_hash`를 그대로 왕복한다. Kafka request/result record key는 모두 `action_id`다.
 - anomaly score는 Agent 근거에 표시할 수 있지만 action 함수의 입력으로 사용하지 않는다.
 
 ### 8.3 API·화면·평가 책임
 
-- 필수: `GET /agent/runs`, `POST /agent/ask`, `GET /approvals`,
+- 필수: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`,
   `POST /approvals/{approval_id}/decision`
 - 필수 내부: `POST /internal/actions/{action_id}/delivery` n8n·Kafka worker write-back
 - 승인 public body는 `APPROVED|REJECTED`; 내부 `APPROVE|REJECT` Enum은 boundary adapter에서만 사용한다.
-- 선택 확장: Agent 실행·상세·재시도, action 상세, channel 재전송
+- 선택 확장: Agent 실행 상세·재시도, action 상세, channel 재전송
+- Alarm History 선택 행이 `{alarm:{source,alarm_id}}`로 실행을 시작한다. n8n이나 단수형
+  `/agent/run`을 실행 진입점으로 사용하지 않는다.
 - 화면 3의 실행·승인·action 상태를 연결한다.
 - `action_id`·`approval_id`로 run과 승인을 연결하고 chamber-only 검색을 제거한다. `api.audit()`
   wrapper를 실제 감사 subview에서 소비한다.
@@ -354,10 +376,12 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 
 ## 11. 문서·구현 전환 원칙
 
-- 본 역할분담은 WBS가 아니다. 확정 후 WBS v5와 역할별 Task를 새로 작성한다.
+- 본 역할분담은 WBS가 아니다. Task ID·선행관계·상태는 작성 완료된 WBS v5와 역할별 Task에서
+  관리한다.
 - 기존 구현은 `유지`, `재검증`, `대체`, `폐기`로 분류하고 자동 완료 처리하지 않는다.
-- 공통 안전장치, 트랜잭션, 최소권한, 멱등성, append-only audit는 유지 후보이다.
-- 구 데이터 수치, no-GT 전제, score 조치 상향, 38/81 graph gate는 대체 또는 폐기 후보이다.
+- 공통 안전장치, 트랜잭션, 최소권한, 멱등성, append-only audit는 유지로 확정했다.
+- 구 데이터 수치, no-GT 전제, score 조치 상향, 38/81 graph gate는 폐기·대체 완료이며 신규
+  구현 근거로 사용하지 않는다.
 - 기존 `IncidentModelSignal.action_threshold`와 score 기반 action gate는 조치 입력에서 제거한다.
   score DTO가 필요하면 표시·근거 provenance만 남기고 `decide_action`과 분리한다.
 - 문서와 contract test가 확정되기 전 공용 DB를 최종 데이터로 덮어쓰지 않는다.
