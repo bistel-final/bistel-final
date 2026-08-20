@@ -1,5 +1,11 @@
 # kosa_0813 epoch 격리 이력
 
+> [!CAUTION]
+> 이 디렉터리는 폐기한 epoch의 조사 이력이다. 현재 bootstrap·검증·readiness·복구 입력으로
+> 사용하거나 파일을 원위치에 복원하지 않는다. 현행 기준은
+> [`infra/bootstrap/README.md`](../../README.md)와
+> [최종 패키지 검증 기준표](../../../../docs/reference/mentor-final-20260818/README.md)다.
+
 > 격리 일자: 2026-08-20 · 수행 Task: `V5-CM-1.2` (epoch 발급)
 > 근거: 요구사항 v2.1 FR-I-04 · WBS v5 §9 · 팀 결정(2026-08-19: 이전 데이터 전부 폐기 가능)
 

@@ -11,7 +11,7 @@
 | 버전 | v3 작업본 |
 | 작성일 | 2026.08.19 |
 | 기준 | 멘토님 제공 최종 `project.zip`의 실제 React 5화면, `검토질문_답변.html`, 최종 CSV·Generator |
-| 목적 | 5개 화면의 호환 필수 API 9개, Ontology 보안 필수 API 1개와 선택 확장 경계를 고정 |
+| 목적 | 5개 화면의 호환 필수 API 9개, Ontology 보안 필수 1개, Agent 실행 필수 1개와 선택 확장 경계를 고정 |
 | OpenAPI 상태 | 구현·Pydantic 동기화 전 작업 계약 |
 
 ### 1.1 계약 우선순위
@@ -29,7 +29,9 @@ stale이다. 실제 `frontend/src/lib/api.js`가 노출하는 9개 wrapper를 �
 그중 `api.audit()`는 참고 페이지의 소비가 없으므로 팀 구현의 Agent 감사 subview가 반드시
 연결한다. Ontology는
 API 없이 Neo4j Browser iframe과 기본 계정을 직접 노출하므로 이를 대체하는 read-only API 1개를
-보안 필수로 추가한다. Text2SQL, 상세 조회, 페이지 조회, 재시도, 평가 API는 선택 확장으로 둔다.
+보안 필수로 추가한다. Alarm 화면의 source-aware `POST /agent/runs`는 프로젝트 실행 필수로
+추가한다. 따라서 public 필수는 11개다. Text2SQL, 상세 조회, 페이지 조회, 재시도, 평가 API는
+선택 확장으로 둔다.
 확장 기능이 필수 endpoint의 path·요청·응답 의미를 바꾸면 안 된다.
 
 ---
@@ -53,7 +55,9 @@ API 없이 Neo4j Browser iframe과 기본 계정을 직접 노출하므로 이�
 
 ### 2.2 오류 응답
 
-2xx가 아닌 응답은 다음 구조를 사용한다.
+2xx가 아닌 응답은 원칙적으로 다음 구조를 사용한다. 단, `GET /health/ready`의 503은 실패한
+check를 운영자가 확인할 수 있도록 5.1의 `ReadinessResponse(status=NOT_READY)`를 그대로
+반환하는 명시적 예외다.
 
 ```json
 {
@@ -140,7 +144,8 @@ field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
 | AlarmItem | `mes_status` | `mes` | null이면 빈 문자열, 그 외 같은 상태 문자열 |
 | ParameterItem | `parameter_name`, `spec_lower` 등 | `name`, `LSL`, `LCL`, `TARGET`, `UCL`, `USL` | 같은 기준정보 값 복사 |
 | DocumentHit | `document_id` | `doc_id` | 같은 document ID 복사 |
-| ToolCallItem·AgentAsk tool | `tool_name`, `status`, `result_summary` | `name`, `n`, `s`, `result`, `detail` | `name`·`n`은 tool name, `s`는 status, `result`·`detail`은 canonical summary에서 파생 |
+| `GET /agent/runs` ToolCallItem | `tool_name`, `status`, `result_summary` | `n`, `s` | `n=tool_name`, `s=status`. Auto Analysis 전용 |
+| `POST /agent/ask` tool | `tool_name`, `status`, `result_summary` | `name`, `result` | `name=tool_name`, `result=result_summary`. Chat 전용 |
 | AgentRunItem | `chamber_id` | `chamber` | 같은 chamber ID 복사 |
 | AgentRunItem | `predicted_fault_code` | `fault_code`, `fault_name`, `fault_color` | `fault_code`는 예측값 복사. 등록된 UI metadata가 없으면 name·color는 null이며 임의로 생성하지 않음 |
 | ApprovalItem | `lot_id`, `equipment_id`, `chamber_id` | `lot`, `equipment`, `chamber` | 각 canonical ID를 같은 순서의 alias로 1:1 복사 |
@@ -153,6 +158,21 @@ field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
 금지한다. alias가 없더라도 canonical field만으로 같은 화면을 렌더링하는 Frontend contract test를
 추가한다. 예측 전에는 `predicted_fault_code`와 alias가 모두 null이며 화면은 이를 `분석 전`으로
 표시하거나 예측 분포 집계에서 제외한다. null을 합성 GT로 채우지 않는다.
+
+### 2.8 내부 Tool 경계
+
+```text
+get_fdc_summary(lot_hist_id)
+get_equipment_context(chamber_id)
+search_documents(query, model_code=None, top_k=4)
+send_action(action_id)
+generate_analysis_plan(question)
+```
+
+Tool 결과는 `ok`, `reason`, domain payload만 반환한다. `latency_ms`·호출 status는 공통 wrapper가
+`agent_tool_call`에 호출당 한 번 기록하며 Tool JSON에 넣지 않는다. 실패 reason은
+`NOT_FOUND:|TIMEOUT:|MODEL_NOT_READY:|LLM_NOT_READY:|DEPENDENCY_ERROR:|POLICY_REJECTED:|IDEMPOTENCY_CONFLICT:`
+일곱 prefix만 허용하고 실패 payload는 null 또는 빈 목록이다.
 
 ---
 
@@ -380,17 +400,22 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 
 - 검색 0건은 성공이며 200 `[]`다.
 - `doc_id`는 최소 가이드 호환 alias이며 canonical `document_id`와 같은 값이다.
-- corrected corpus는 원문 YAML의 `DOC-SPEC-PH9000`, `DOC-SPEC-ET7500`,
+- corrected RAG source는 원문 YAML의 `DOC-SPEC-PH9000`, `DOC-SPEC-ET7500`,
   `DOC-TROUBLE-FDC`를 canonical `document_id`로 그대로 승계한다. `chunk_id`는
   `<document_id>:<chunk_schema_version>:<4자리 순번>` 형식으로 결정론적으로 생성하며 최초
   `chunk_schema_version`은 `cs1`이다. 같은 원문·분할 규칙·순번에서는 재적재해도 바뀌지
   않는다.
-- 예시의 `DOC-SPEC-PH9000:cs1:<4-digit-seq>`와 `<active-corpus-revision>`은 현재 패키지에
-  ACTIVE corpus manifest가 없어 사용한 placeholder다. 형식과 생성은 결정론적이지만 예시
-  chunk ID·revision 문자열 자체는 최종값이 아니며, 응답은 검증된 ACTIVE manifest의 실제
-  값을 사용한다.
+- 예시의 `DOC-SPEC-PH9000:cs1:<4-digit-seq>`는 순번을 생략한 문서 표기용 placeholder다.
+  실제 응답은 적재 검증 artifact에 기록된 결정론적 chunk ID를 사용하고 placeholder 문자열을
+  반환하지 않는다.
 - 안정 정렬: `score DESC, document_id ASC, chunk_id ASC`.
-- corrected corpus만 검색하며 구 조치·수치나 고정 설비 상하류 표현을 반환하지 않는다.
+- 검증된 corrected RAG source만 검색하며 구 조치·수치나 고정 설비 상하류 표현을 반환하지 않는다.
+- `document`·`document_chunk`·vector extension과 loader·`BAAI/bge-m3`·1024는 교육생
+  배포패키지①에서, RAG 원문 3종은 최종 패키지③에서 가져온다. loader adapter는 명시적 정정본
+  입력 경로·DSN/target guard·단일 transaction·멱등 적재를 강제한다.
+- 물리 `doc_id`·`section_title`은 Repository에서 `document_id`·`section`으로 한 번만 매핑한다.
+  검색은 pgvector cosine만 사용하며 `pg_trgm`·trigram index는 계약 밖이다. `model_code`를
+  주면 해당 모델과 `COMMON`을 함께 검색한다.
 
 ### 3.5 `GET /agent/runs`
 
@@ -423,10 +448,13 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
         "tool_name": "get_fdc_summary",
         "status": "SUCCESS",
         "result_summary": "Summary context loaded",
-        "name": "get_fdc_summary",
         "n": "get_fdc_summary",
         "s": "SUCCESS"
       }
+    ],
+    "deliveries": [
+      {"channel": "EMAIL", "status": "SENT"},
+      {"channel": "MES", "status": "BLOCKED"}
     ],
     "latency_ms": 920,
     "llm_model": "configured-model"
@@ -444,8 +472,11 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 - `status`는 `PENDING|RUNNING|WAITING_APPROVAL|COMPLETED|FAILED`다. `tools`는 항상 존재하며
   아직 호출이 없으면 빈 배열이다. 예측 전·실패 상태에서는 predicted fault·confidence·recommended
   action·표시 alias가 null일 수 있다.
-- Tool canonical field는 `tool_name`, `status`, `result_summary`다. `name`, `n`, `s`는
-  한 전환 revision 동안만 같은 값을 제공하는 deprecated alias다. Tool status는
+- `deliveries`는 항상 존재하고 없으면 빈 배열이다. item은 public `channel=EMAIL|MES`와
+  `status=BLOCKED|WAITING|SENDING|SENT|FAILED|UNKNOWN|CANCELED`를 required로 가진다. 내부
+  `MES_MOCK`을 `MES`로 projection하며 목록 DTO가 외부 전송을 실행하지 않는다.
+- Tool canonical field는 `tool_name`, `status`, `result_summary`다. `n`, `s`는 Auto Analysis가
+  읽는 한 전환 revision의 deprecated alias이며 `name/result`는 이 endpoint에 넣지 않는다. status는
   `SUCCESS|ERROR|TIMEOUT`이다.
 - source-aware 식별자는 `alarm_source`와 `alarm_id`의 쌍이다.
 - 안정 정렬: `created_at DESC, agent_run_id DESC`.
@@ -592,10 +623,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
       "status": "SUCCESS",
       "result_summary": "topology evidence loaded",
       "name": "get_equipment_context",
-      "n": "get_equipment_context",
-      "s": "SUCCESS",
-      "result": "OK",
-      "detail": "topology evidence"
+      "result": "topology evidence loaded"
     }
   ],
   "predicted_fault_code": "RFM",
@@ -609,7 +637,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
       "excerpt": "RFM 관련 점검 근거 ...",
       "document_id": "DOC-TROUBLE-FDC",
       "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
-      "section": "3.2 RFM — RF Mismatch (RF 정합 불량)",
+      "section": "3.2 RFM — RF Mismatch (RF 정합 불량)"
     }
   ],
   "limitations": ["Pilot scope; production ground truth unavailable"],
@@ -617,7 +645,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
     "doc_id": "DOC-TROUBLE-FDC",
     "document_id": "DOC-TROUBLE-FDC",
     "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
-    "section": "3.2 RFM — RF Mismatch (RF 정합 불량)",
+    "section": "3.2 RFM — RF Mismatch (RF 정합 불량)"
   },
   "limit": "Pilot scope ..."
 }
@@ -630,13 +658,15 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 - `predicted_fault_code`는 `FOC|RFM|MFD|TMD|OTH|null`, `confidence`는 `0..1|null`,
   `recommended_action`은 `MONITORING|WARNING|EQP_HOLD|null`이다. `AgentAskResponse`는 deprecated
   `fault_code` alias를 노출하지 않는다.
-- Tool canonical field는 `tool_name`, `status`, `result_summary`다. `name`, `n`, `s`,
-  `result`, `detail`은 최종 참고 React용 deprecated alias다.
-- `evidence_items`의 공통 필수 field는 `type`, `source_id`, `title`, `excerpt`다. type은
-  `ALARM|TRACE|GRAPH|DOCUMENT|METROLOGY`이고 DOCUMENT는 `document_id`, `chunk_id`,
-  `section` field는 선택(nullable)으로 선언한다.
-  GRAPH는 `relation_id`, `graph_revision`을 추가로 요구한다. 해당 type이 아닌 provenance
-  field는 null이며 unknown field를 임의로 추가하지 않는다.
+- Tool canonical field는 `tool_name`, `status`, `result_summary`다. `name`, `result`만 Chat이
+  읽는 deprecated alias다. Auto Analysis용 `n/s`와 정의되지 않은 `detail`은 이 endpoint에
+  넣지 않는다.
+- `evidence_items`는 `type`을 discriminator로 쓰는 union이다. 공통 필수 field는 `type`,
+  `source_id`, `title`, `excerpt`다. type은
+  `ALARM|TRACE|GRAPH|DOCUMENT|METROLOGY`다. DOCUMENT는 `document_id`·`chunk_id`가
+  필수이고 `section`은 required-nullable이다. GRAPH는 `relation_id`·`graph_revision`이
+  필수다. 해당 type이 아닌 provenance field는 직렬화하지 않으며 unknown field를 임의로
+  추가하지 않는다.
 - METROLOGY 근거에는 조회가 허용된 계측 정보만 담는다. `metrology.alarm_result`는
   PASS/FAIL 격리 평가 라벨이므로 State·Tool·`evidence_items`·호환 `evidence`·응답에
   노출하지 않는다.
@@ -645,14 +675,14 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   `document_id`와 같은 값이다.
 - Tool 결과는 같은 응답의 evidence ID와 실제 조회 결과를 참조한다.
 - 공개 합성 `ground_truth_fault_code`를 State·Tool·prompt·response에 넣지 않는다.
-- 예시의 chunk ID는 3.4에 선언한 결정론적 형식의 비최종
-  placeholder며 실제 응답은 ACTIVE manifest 값을 사용한다.
+- 예시의 chunk ID는 3.4에 선언한 결정론적 형식의 문서 표기용 placeholder며 실제 응답은 적재
+  검증 artifact에 기록된 chunk ID를 사용한다.
 - 승인 대기 질문은 조회 결과만 반환하며 승인 상태를 바꾸지 않는다.
 - 의존성 실패는 503, 요청 형식 오류는 422다.
 
 ---
 
-## 4. 프로젝트 필수 보안 API
+## 4. 프로젝트 필수 보안·실행 API
 
 ### 4.1 `GET /relations/chambers/{chamber_id}`
 
@@ -660,18 +690,41 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 화면에 표시한다. 이는 구조 확인용 reference이지 수용 가능한 서비스 경계가 아니다. 실제 React
 화면은 Neo4j에 직접 접속하지 않고 이 read-only Backend API만 호출한다.
 
+#### Path
+
+| 이름 | 형식 | 필수 | 제약 |
+|---|---|---:|---|
+| `chamber_id` | string | 예 | trim 후 1자 이상, 존재하지 않으면 404 |
+
 #### Query
 
 | 이름 | 형식 | 필수 | 제약 |
 |---|---|---:|---|
-| `label` | string | 아니오 | allowlist: `Area, Recipe, RecipeStep, ProcessStep, EquipmentModel, Equipment, Chamber, Parameter` |
+| `label` | string | 아니오 | chamber component allowlist: `Area, ProcessStep, EquipmentModel, Equipment, Chamber, Parameter` |
 | `limit` | integer | 아니오 | 기본 500, 1..1000 |
 
-#### Response 200 — `OntologyGraphResponse`
+#### Response 200 — `ChamberGraphResponse`
+
+아래는 선택 chamber와 `label=Parameter` 관계를 축약해 보여 주는 계약 예시다.
 
 ```json
 {
-  "graph_revision": "<active-graph-revision>",
+  "graph_revision": "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb",
+  "context": {
+    "chamber_id": "EQP01-PM1",
+    "equipment_id": "EQP01",
+    "area": "Photo",
+    "model_code": "PH-9000",
+    "process_step_id": "CT-PHOTO",
+    "parameter_ids": ["PH_DEV", "PH_DOSE", "PH_FOCUS", "PH_PEB"],
+    "adjacent_process_step_ids": ["CT-ETCH"],
+    "relation_ids": [
+      "REL-47fcae63de255c114f5d",
+      "REL-d2de931b285063c7a8ef",
+      "REL-9687560b5876022b2512",
+      "REL-75e65f542c456ff70886"
+    ]
+  },
   "nodes": [
     {
       "node_id": "Chamber:EQP01-PM1",
@@ -679,31 +732,118 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
       "business_id": "EQP01-PM1",
       "name": "EQP01-PM1",
       "properties": {}
+    },
+    {
+      "node_id": "Parameter:PH_DEV",
+      "label": "Parameter",
+      "business_id": "PH_DEV",
+      "name": "PH_DEV",
+      "properties": {}
+    },
+    {
+      "node_id": "Parameter:PH_DOSE",
+      "label": "Parameter",
+      "business_id": "PH_DOSE",
+      "name": "PH_DOSE",
+      "properties": {}
+    },
+    {
+      "node_id": "Parameter:PH_FOCUS",
+      "label": "Parameter",
+      "business_id": "PH_FOCUS",
+      "name": "PH_FOCUS",
+      "properties": {}
+    },
+    {
+      "node_id": "Parameter:PH_PEB",
+      "label": "Parameter",
+      "business_id": "PH_PEB",
+      "name": "PH_PEB",
+      "properties": {}
     }
   ],
   "relationships": [
     {
-      "relation_id": "MEASURED_ON|Parameter:PH_FOCUS|Chamber:EQP01-PM1",
+      "relation_id": "REL-47fcae63de255c114f5d",
+      "type": "MEASURED_ON",
+      "from_node_id": "Parameter:PH_DEV",
+      "to_node_id": "Chamber:EQP01-PM1"
+    },
+    {
+      "relation_id": "REL-d2de931b285063c7a8ef",
+      "type": "MEASURED_ON",
+      "from_node_id": "Parameter:PH_DOSE",
+      "to_node_id": "Chamber:EQP01-PM1"
+    },
+    {
+      "relation_id": "REL-9687560b5876022b2512",
       "type": "MEASURED_ON",
       "from_node_id": "Parameter:PH_FOCUS",
       "to_node_id": "Chamber:EQP01-PM1"
+    },
+    {
+      "relation_id": "REL-75e65f542c456ff70886",
+      "type": "MEASURED_ON",
+      "from_node_id": "Parameter:PH_PEB",
+      "to_node_id": "Chamber:EQP01-PM1"
     }
   ],
-  "node_count": 44,
-  "relationship_count": 85
+  "node_count": 5,
+  "relationship_count": 4
 }
 ```
 
-- 최종 active graph 전체 조회는 44 nodes / 85 relationships다.
-- `RecipeStep.business_id`는 `recipe_id:recipe_step_no`, 그 밖의 node는 해당 label의 고유 업무
-  ID를 사용한다.
+- 응답은 선택 chamber와 소속·모델·AREA·Parameter·Process Step 인접 관계로
+  제한한 subgraph와 context다. `node_count == len(nodes)`,
+  `relationship_count == len(relationships)`를 보장한다.
+- Recipe·RecipeStep은 final graph에 존재하지만 chamber component와 연결되지 않으므로 이
+  endpoint의 label filter·응답에는 포함하지 않는다.
+- `context`는 label filter와 무관하게 선택 chamber의 canonical context를 반환한다. `label`은
+  `nodes`·`relationships` projection만 좁히며 선택 chamber와 반환 edge의 양 endpoint는
+  항상 보존한다. `limit`도 dangling edge를 만들지 않는다.
+- 전체 graph의 44 nodes / 85 relationships는 적재·readiness gate이며 개별 chamber 응답
+  count의 고정값이 아니다.
+- node는 해당 label의 고유 업무 ID를 사용한다.
 - node 정렬: `label ASC, business_id ASC`.
 - relationship 정렬: `type ASC, from_node_id ASC, to_node_id ASC`.
 - Cypher 문자열, Neo4j URI·계정·비밀번호를 response에 포함하지 않는다.
-- `relation_id`는 같은 business edge에서 graph revision이 바뀌어도 안정적으로 유지한다.
-- `<active-graph-revision>`은 현재 패키지에 ACTIVE graph revision marker가 없어 사용한
-  placeholder다. 실제 응답은 검증된 ACTIVE marker 값을 사용하며 placeholder 문자열을 반환하지
-  않는다.
+- `relation_id` 알고리즘 `REL-SHA20`은
+  `<TYPE>|<FROM_LABEL>:<FROM_BUSINESS_ID>|<TO_LABEL>:<TO_BUSINESS_ID>` UTF-8 SHA-256의 앞
+  20 lowercase hex에 `REL-`을 붙인다. business ID는 `bk-v1`의 key/type-tag 직렬화다. 예를
+  들어 `MEASURED_ON|Parameter:parameter_id=s:PH_FOCUS|Chamber:chamber_id=s:EQP01-PM1`은
+  `REL-9687560b5876022b2512`다.
+- `graph_revision`은 성공 marker의 `actual_graph_fingerprint_sha256`과 정확히 같은 64 lowercase
+  hex다. marker의 epoch·source SHA·44/85가 맞고 expected==actual이며 live graph 재계산값도
+  actual과 같을 때만 응답한다. marker는 commit·live 검증 뒤 마지막으로 기록한다.
+- `get_equipment_context`는 같은 repository 결과를 사용하는 내부 Tool DTO다. 이 public
+  endpoint에 두 번째 응답 DTO를 등록하지 않는다.
+
+### 4.2 `POST /agent/runs` — 프로젝트 필수 실행 API
+
+Alarm History의 선택 행에서 source-aware 분석을 시작한다. 최종 참고의 단수형
+`POST /agent/run`과 이를 호출하는 `WF1-alarm-to-agent`는 stale이며 이 계약의 alias가 아니다.
+
+#### Request
+
+```json
+{
+  "alarm": {"source": "TRACE", "alarm_id": "TAL-0001"}
+}
+```
+
+#### Response 202 — `AgentRunAccepted`
+
+```json
+{
+  "agent_run_id": "RUN-000002",
+  "status": "PENDING",
+  "alarm": {"source": "TRACE", "alarm_id": "TAL-0001"}
+}
+```
+
+같은 incident가 RUNNING·WAITING_APPROVAL이면 409 `INCIDENT_ALREADY_RUNNING`, 이미 완료되어
+재실행 금지 상태면 409 `INCIDENT_ALREADY_PROCESSED`다. AlarmRef 없음은 404, 형식 오류는 422,
+필수 dependency 미준비는 503이다. source 없는 `{alarm_id}` body는 422다.
 
 ---
 
@@ -717,8 +857,8 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 | 담당 | Method | Path | 용도 |
 |---|---|---|---|
 | C | POST | `/internal/actions/{action_id}/delivery` | n8n/Kafka worker 상태 write-back |
-| Common | GET | `/health` | process liveness, 업무 API 수 제외 |
-| Common | GET | `/health/ready` | PostgreSQL·Neo4j·n8n·Kafka readiness, 업무 API 수 제외 |
+| Common | GET | `/health` | process liveness, `HealthResponse`, 업무 API 수 제외 |
+| Common | GET | `/health/ready` | PostgreSQL·migration·Neo4j·RAG·n8n·Kafka readiness, 업무 API 수 제외 |
 
 이 세 endpoint는 선택 확장이 아니며 운영·자동화 수용을 위한 필수 계약이다.
 
@@ -749,53 +889,104 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 같은 `DeliveryResult`를 반환한다. 같은 action/channel의 다른 hash나 터미널 상태 변경은 409,
 서명 실패는 401, 대상 없음은 404, 형식 오류는 422, 저장소 장애는 503이다.
 
+`DeliveryResult`는 다음 required field를 반환한다.
+
+```json
+{
+  "action_id": "ACT-000003",
+  "channel": "MES_MOCK",
+  "status": "SENT",
+  "request_hash": "sha256:...",
+  "provider_message_id": "kafka:fdc.actions.result:0:42",
+  "completed_at": "2026-08-04T07:02:00+09:00",
+  "error_code": null,
+  "duplicate": false
+}
+```
+
+`status`는 `SENT|FAILED`다. `provider_message_id`와 `error_code`의 nullability는 요청
+상태 규칙과 같고 `duplicate`는 같은 hash의 멱등 재수신이면 true다.
+
+Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사용한다.
+`request_hash`는 n8n·Kafka·MES Mock이 변경하지 않고 왕복하며 Kafka request/result record key는
+모두 `action_id`다. Kafka result는 path의 같은 action_id와 내부 `channel=MES_MOCK`으로
+정규화한 뒤 이 callback을 호출한다. public 화면 projection에서만 `MES`로 바꾼다.
+
+`GET /health`는 외부 의존성을 검사하지 않고 200을 반환한다.
+
+```json
+{
+  "status": "UP"
+}
+```
+
 `GET /health/ready`는 다음을 병렬·timeout으로 확인한다.
 
 - PostgreSQL Runtime profile의 dataset epoch·schema·권한
 - reference migration compatibility marker
 - Neo4j 44 nodes / 85 relationships success marker·fingerprint
-- RAG 적재 상태·embedding dimension
+- runtime `kosa_agent`의 RAG `document`·`document_chunk` schema, canonical document ID
+  `DOC-SPEC-PH9000|DOC-SPEC-ET7500|DOC-TROUBLE-FDC`, source·corrected SHA-256,
+  `cs1` contract hash, 고정 model revision·weights hash, COMMITTED marker와 live DB fingerprint,
+  chunk 1건 이상/문서, NULL embedding 0건, vector dimension 1024, 지정 검색 smoke 3건
 - n8n readiness
 - Kafka metadata와 `fdc.actions`·`fdc.actions.result` topic 접근
 
-필수 dependency나 marker가 미준비면 503을 반환한다. anomaly model artifact는 조치 규칙의 필수
-dependency가 아니며, readiness 사유에 host·port·계정·secret·원문 exception을 노출하지 않는다.
+`ReadinessResponse`는 모든 check를 항상 포함한다.
+
+```json
+{
+  "status": "READY",
+  "dataset_epoch": "fdc_final_20260818",
+  "checks": {
+    "postgresql_runtime": {"status": "PASS", "reason_code": null, "latency_ms": 8},
+    "reference_migration": {"status": "PASS", "reason_code": null, "latency_ms": 2},
+    "neo4j": {"status": "PASS", "reason_code": null, "latency_ms": 15},
+    "rag": {"status": "PASS", "reason_code": null, "latency_ms": 21},
+    "n8n": {"status": "PASS", "reason_code": null, "latency_ms": 12},
+    "kafka": {"status": "PASS", "reason_code": null, "latency_ms": 18}
+  }
+}
+```
+
+각 check의 `status`는 `PASS|FAIL`, `reason_code`는 allowlist string 또는 null,
+`latency_ms`는 0 이상 정수다. 전부 PASS면 200과 `READY`, 하나라도 FAIL이면 같은 DTO를
+담은 503과 `NOT_READY`를 반환한다. anomaly model artifact는 조치 규칙의 필수 dependency가
+아니며, readiness 사유에 host·port·계정·secret·원문 exception을 노출하지 않는다.
 
 ### 5.2 선택 확장 API
 
-선택 확장은 호환 필수 9개와 Ontology 보안 필수 1개 완료 후 구현한다.
+선택 확장은 public 필수 11개 완료 후 구현한다. 성공 응답·기타 상태는 CSV와 같은 계약이다.
 
-| 담당 | Method | Path | 용도 |
-|---|---|---|---|
-| A | GET | `/dataset/bounds` | 데이터 epoch·날짜·filter option |
-| A | GET | `/dashboard/summary` | 서버 집계 대시보드 |
-| A | GET | `/alarms/{source}/{alarm_id}` | source-aware 알람 상세 |
-| A | GET | `/alarms/paged` | 페이지 알람 목록 |
-| A | GET | `/traces/catalog` | Trace 선택 목록 |
-| A | POST | `/traces/search` | 복합 Trace 검색 |
-| B | GET | `/relations/chambers/{chamber_id}` | 챔버 관계 |
-| B | GET | `/relations/equipment/{equipment_id}` | 설비 관계 |
-| B | GET | `/documents/{document_id}` | 문서 상세 |
-| C | POST | `/agent/runs` | `{alarm:{source,alarm_id}}`로 분석 시작 |
-| C | GET | `/agent/runs/{run_id}` | 실행 상세 |
-| C | POST | `/agent/runs/{run_id}/retry` | 실패 실행 재시도 |
-| C | GET | `/agent/runs/paged` | 페이지 실행 이력 |
-| C | GET | `/approvals/paged` | 페이지 승인 이력 |
-| C | GET | `/actions` | action 목록 |
-| C | GET | `/actions/{action_id}` | action·channel delivery 상세 |
-| C | POST | `/actions/{action_id}/deliveries/{channel}/retry` | 실패 channel 재전송 |
-| D | POST | `/analytics/query` | 선택 자연어 Text2SQL |
-| D | POST | `/analytics/validate` | SQL 실행 없는 검증 |
-| D | GET | `/analytics/history` | 질의 이력 |
-| D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 |
-| D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 |
+| 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |
+|---|---|---|---|---|---|
+| A | GET | `/dataset/bounds` | 데이터 epoch·날짜·filter option | `DatasetBoundsResponse` | 503 |
+| A | GET | `/dashboard/summary` | 서버 집계 대시보드 | `DashboardSummaryResponse` | 422, 503 |
+| A | GET | `/alarms/{source}/{alarm_id}` | source-aware 알람 상세 | `AlarmDetailResponse` | 404, 422, 503 |
+| A | GET | `/alarms/paged` | 페이지 알람 목록 | `PageEnvelope<AlarmItem>` | 422, 503 |
+| A | GET | `/traces/catalog` | Trace 선택 목록 | `TraceCatalogResponse` | 422, 503 |
+| A | POST | `/traces/search` | 복합 Trace 검색 | `TraceSearchResponse` | 422, 503 |
+| B | GET | `/relations/equipment/{equipment_id}` | 설비 관계 | `EquipmentRelationsResponse` | 404, 422, 503 |
+| B | GET | `/documents/{document_id}` | 문서 상세 | `DocumentDetailResponse` | 404, 422, 503 |
+| C | GET | `/agent/runs/{run_id}` | 실행 상세 | `AgentRunDetailResponse` | 404, 422, 503 |
+| C | POST | `/agent/runs/{run_id}/retry` | 실패 실행 재시도 | 202 `AgentRunAccepted` | 404, 409, 422, 503 |
+| C | GET | `/agent/runs/paged` | 페이지 실행 이력 | `PageEnvelope<AgentRunItem>` | 422, 503 |
+| C | GET | `/approvals/paged` | 페이지 승인 이력 | `PageEnvelope<ApprovalItem>` | 422, 503 |
+| C | GET | `/actions` | action 목록 | `ActionItem[]` | 422, 503 |
+| C | GET | `/actions/{action_id}` | action·channel delivery 상세 | `ActionDetailResponse` | 404, 422, 503 |
+| C | POST | `/actions/{action_id}/deliveries/{channel}/retry` | 실패 channel 재전송 | `PublicDeliveryResult` | 404, 409, 422, 503 |
+| D | POST | `/analytics/query` | 선택 자연어 Text2SQL | `AnalysisQueryResponse` | 422, 503 |
+| D | POST | `/analytics/validate` | SQL 실행 없는 검증 | `SqlValidateResponse` | 422 |
+| D | GET | `/analytics/history` | 질의 이력 | `PageEnvelope<NlQueryLogItem>` | 422 |
+| D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
+| D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
 
 ### 5.3 확장 API 불변 조건
 
-- `POST /agent/runs`는 `{ "alarm": { "source": "TRACE", "alarm_id": "..." } }`만 받는다.
-- source 없는 legacy `{alarm_id}` 요청은 422로 거부하거나 명시적 legacy adapter에서 선택을 요구한다.
 - `/paged`는 `PageEnvelope`만 반환한다.
 - delivery 재시도의 public channel `MES`는 내부 `MES_MOCK`으로 변환한다.
+- public retry의 `PublicDeliveryResult`는 `DeliveryResult`와 같은 field를 사용하되
+  response channel도 `EMAIL|MES`로 projection한다.
 - `/internal`은 public frontend가 호출하지 않으며 별도 인증·secret과 allowlist를 사용한다.
 
 ### 5.4 선택 Text2SQL 계약
@@ -830,7 +1021,7 @@ API key, SQL 원문 및 원본 LLM prompt를 기록하지 않는다.
 
 ## 7. Contract 검증 기준
 
-- 호환 필수 9개와 Ontology 보안 필수 1개의 path·method가 OpenAPI에 존재한다.
+- 호환 필수 9개, Ontology 보안 필수 1개, Agent 실행 필수 1개의 path·method가 OpenAPI에 존재한다.
 - bare array endpoint와 `/paged` 응답이 섞이지 않는다.
 - `APPROVED|REJECTED` boundary mapping을 양·음성 test로 검증한다.
 - `AlarmRef` source 누락·잘못된 조합을 거부한다.
@@ -838,16 +1029,23 @@ API key, SQL 원문 및 원본 LLM prompt를 기록하지 않는다.
 - `MES -> MES_MOCK` 매핑과 화면의 Mock 표시를 검증한다.
 - 감사 event/entity mapping과 append-only 권한을 검증한다.
 - 최소 화면 5개의 실제 API 연결에서 Mock·fixture fallback과 Neo4j Browser 직접 접속이 0건이다.
+- Ontology API는 선택 chamber의 `ChamberGraphResponse` 하나만 OpenAPI에 등록하고,
+  subset count·edge endpoint 보존·없는 chamber 404를 검증한다. 전체 44/85는 별도 graph gate다.
 - 모든 `date-time` 응답은 UTC offset을 포함하고 Asia/Seoul 예시는 `+09:00`이다.
 - `decision_comment`, run→action→approval ID link, AgentAsk required·nullable 계약을 정상·빈 근거·
   승인 조회 fixture로 검증한다.
+- API CSV operation은 헤더 제외 34개를 유지하고 `POST /agent/runs`는 확장이 아니라 실행 필수로
+  정확히 한 번만 존재한다.
 - compatibility alias는 canonical field에서만 파생되며 공개 합성 GT를 읽지 않는다.
 - `GET /alarms`의 빈 문자열→unset 예외은 선택 `equipment`·`chamber`·`parameter` 세
   필터에만 적용하고 다른 빈 ID는 422로 거부한다.
 - R03 상세의 `member_wafer_refs`는 정확히 3개, `member_alarm_refs`는 최종 epoch에서
   정확히 9개 TRACE AlarmRef인지 검증한다.
-- `AgentAskResponse`의 predicted·confidence·recommended field는 required-nullable이고 `fault_code`는
-  없으며, DOCUMENT `section` 선택(nullable) 선언과 METROLOGY `alarm_result` 비노출을
-  contract test한다.
-- readiness는 reference compatibility marker와 RAG 적재 상태·embedding dimension을
-  PostgreSQL·Neo4j·n8n·Kafka 검사와 함께 검증한다.
+- `AgentAskResponse`의 predicted·confidence·recommended field는 required-nullable이고
+  `fault_code`는 없다. DOCUMENT의 `document_id`·`chunk_id` 필수 및 `section`
+  required-nullable, GRAPH의 `relation_id`·`graph_revision` 필수, METROLOGY
+  `alarm_result` 비노출을 contract test한다.
+- `DeliveryResult` 멱등 duplicate와 SENT/FAILED nullability를 검증한다.
+- readiness는 reference compatibility marker와 RAG canonical ID 3종·source/corrected hash·
+  chunk·NULL embedding 0·dimension 1024·검색 smoke를 PostgreSQL·Neo4j·n8n·Kafka 검사와
+  함께 검증하고, 실패 시에도 같은 `ReadinessResponse`와 503을 반환한다.

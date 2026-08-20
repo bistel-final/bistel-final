@@ -4,7 +4,8 @@
 > **FINAL-DOC — 구 PDF·생성기 사용 중지.** `시스템설계서.pdf`와 이 폴더의 `build.py`는
 > v1.10 이전 baseline용 산출물이다. 현재 기준은
 > [`시스템설계서_v2_1_작업본.md`](../../specifications/시스템설계서_v2_1_작업본.md)이며,
-> v2.1 원본·삽입 자산·생성기가 함께 갱신되기 전에는 구 PDF를 제출·구현 근거로 사용하거나
+> v2.1 작업본은 교차검토를 완료했고 V5 Task 기준으로 구현한다. 원본·삽입 자산·생성기가 함께
+> 갱신되기 전에는 구 PDF를 제출·구현 근거로 사용하거나
 > 아래 생성 명령을 실행하지 않는다. 이하 내용은 이전 epoch 재현 이력이다.
 
 `시스템설계서.pdf`는 원본 `docs/specifications/시스템설계서_v1_10_최종.md`을 그대로 렌더링하되,
@@ -27,7 +28,7 @@ python docs/deliverables/system-design/build.py
 ```bash
 cd output/diagrams
 ../../.venv/bin/python 01_시스템아키텍처.py   # 등 필요한 스크립트 실행 → SVG
-# SVG → PNG 는 output/README.md 의 Chrome headless 절차를 따른다
+# SVG → PNG 재현 절차는 v2.1 생성 Task에서 이 문서와 추적 가능한 스크립트로 함께 갱신한다
 ```
 
 `build.py`의 `img()` 목록이 그림 파일명과 삽입 위치(원본 md의 정확한 제목 줄)를 함께 갖는다.

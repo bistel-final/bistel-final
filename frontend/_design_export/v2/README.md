@@ -3,10 +3,14 @@
 > [!CAUTION]
 > **FINAL-DOC — VISUAL HISTORY ONLY.** 이 번들은 이전 epoch의 화면·레이아웃 이력이며,
 > 7화면 구조·수치·Mock·상태명·DTO·API 계약을 현재 구현·테스트·제출 근거로 사용하지 않는다.
+> 아래의 “확정”, “고정”, “금지”, “1:1 대응” 표현은 이 archive를 재현할 때만 유효하며 현재
+> Frontend 작업 지침이 아니다.
 > 현재 규칙은 [frontend/AGENTS.md](../../AGENTS.md), 기능·화면 기준은
 > [요구사항 v2.1](../../../docs/specifications/요구사항정의서_v2_1_작업본.md)과
 > [시스템설계 v2.1](../../../docs/specifications/시스템설계서_v2_1_작업본.md), API 기준은
-> [API v3](../../../docs/deliverables/api/API명세서_v3_작업본.md)를 따른다. 아래 본문은
+> [API v3](../../../docs/deliverables/api/API명세서_v3_작업본.md), 작업 범위는 리뷰된
+> [WBS v5](../../../docs/planning/Task분해_WBS_v5_작업본.md)를 따른다. 현재 canonical 사용자
+> 화면은 Dashboard·Alarm History·Agent·Documents·Ontology 5개다. 아래 본문은
 > 시각적 변천을 보존하기 위한 archive다.
 
 ## Overview

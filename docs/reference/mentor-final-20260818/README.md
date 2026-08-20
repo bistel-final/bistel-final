@@ -148,8 +148,10 @@ POST /documents/search
 `POST /internal/actions/{action_id}/delivery`는 n8n write-back용 내부 계약이다. Ontology 화면의
 참고 구현은 Neo4j Browser를 iframe으로 열지만, 팀 구현에서는 비밀번호를 Frontend에 노출하지
 않고 canonical read-only Backend adapter로 대체한다. adapter의 형태는 팀 설계이며
-`GET /relations/chambers/{chamber_id}`(chamber 기준 관계 조회)로 확정했다 — 참고 Frontend의
-Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이 존재하지 않기 때문이다.
+`GET /relations/chambers/{chamber_id}`(선택 chamber의 subgraph·context 조회) 하나로 확정했다.
+응답 count는 선택된 subset의 실제 길이이며, 44/85는 개별 응답 고정값이 아니라 underlying graph의
+적재 gate다. 참고 Frontend의 Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이
+존재하지 않기 때문이다.
 지켜야 할 제약은 **자격증명 미노출 · read-only adapter 경유**(NFR-02) 하나다.
 
 ## 7. Neo4j·RAG 주의
@@ -157,11 +159,14 @@ Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이 존�
 - 최종 `master.cypher`의 기대값은 44 nodes / 85 relationships다.
 - 첫 문장 `MATCH (n) DETACH DELETE n`을 공용 Neo4j에 직접 실행하지 않는다.
 - 기존 destructive-safe loader의 empty/fingerprint/backup/confirm guard를 유지한다.
+- relationship의 `relation_id`는 방향·type·business endpoint canonical tuple로 안정적으로
+  생성하고 Neo4j `elementId`를 provenance로 쓰지 않는다. API의 `graph_revision`은 현재 safe-load
+  success marker가 검증한 graph fingerprint를 가리키며 환경변수나 임의 문자열로 대신하지 않는다.
 - Graph에는 고정 설비 간 `UPSTREAM_OF`가 없다. Process Step 인접 관계와 PostgreSQL
   `lot_history` 실제 routing을 결합한다.
 - `sample/rag/SPEC_PH-9000_PhotoScanner.md`의 고정 `EQP01 → EQP04` 문장은 위 원칙과
   충돌하므로 정정한 뒤 임베딩한다. 정정본은 별도 경로에 두고 **원본은 `V5-CM-1.1` 등록
-  해시 그대로 보존**한다(overlay 구조는 쓰지 않는다 · `V5-B-1.2`).
+  해시 그대로 보존**한다. 정정본은 버전 교체 layer 없이 정본으로 적재한다(`V5-B-1.2`).
 - TROUBLE 원문의 metrology FAIL·반복·하류 진행 기반 조치 상향과 원인 설명·후속 정상 기반
   하향은 3단계 deterministic rule과 충돌하므로 제거한다. R01은 raw 한 점의 USL/LSL 이탈 즉시
   TRACE 알람으로 통일하고 Fault 후보에 `OTH`를 포함한다.
@@ -169,8 +174,14 @@ Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이 존�
   이 범위로 정정한 뒤 chunking한다.
 - 원문 YAML의 문서 ID는 `DOC-SPEC-PH9000`, `DOC-SPEC-ET7500`,
   `DOC-TROUBLE-FDC`이며 정정본에서도 안정적으로 승계한다.
-- `document`·`document_chunk` 스키마와 `load_documents.py`·임베딩 모델은 최종 패키지에
-  없다. 교육생 배포패키지(①)에서 가져온다 — `docs/reference/배포패키지_기준.md`.
+- `document`·`document_chunk`·vector extension, `load_documents.py`,
+  `BAAI/bge-m3`·1024는 최종 패키지에 없다. 이 다섯 항목만 교육생 배포패키지①에서
+  선별하고, base 9 table·RAG 3종·`master.cypher`는 최종 패키지③을 사용한다.
+  원본 hash와 loader adapter 계약은 `docs/reference/배포패키지_기준.md`를 따른다.
+- RAG 적재 검증 artifact는 적재와 검색 smoke가 모두 성공한 뒤 marker-last로 기록한다. 세
+  canonical document ID, source·corrected SHA-256,
+  `chunk_schema_version`, 문서·chunk 수, NULL embedding 0건, dimension 1024와 검색 smoke
+  결과를 포함하고 corpus revision·`ACTIVE` 전환 marker는 만들지 않는다.
 
 ## 8. 선택 artifact 해시
 
@@ -200,11 +211,12 @@ canonical content hash와 profile별 기대 상태를 포함해 재생성한다.
 | 영역 | 상태 |
 |---|---|
 | 최종 원본 사실·해시 검증 | 완료 |
-| 요구사항·설계·역할·API 재기준화 | 완료 (v2.1·v10.1·API v3) |
-| WBS v5 작성 | 완료 |
-| source/corrected/profile manifest 재생성 | 미착수 |
+| 요구사항·설계·역할·API 재기준화 | 교차검토 완료 (v2.1·v10.1·API v3) |
+| WBS v5·역할별 Task | 교차검토 완료, V5 Task 기준 구현 |
+| source/canonical/profile manifest 재생성 | 미착수 |
 | 격리 DB 적재·검증 | 미착수 |
 | 공용 DB 전환 | 미착수 |
 
-상위 문서와 WBS v5는 확정됐다. 최종 ZIP의 공용 PostgreSQL·Neo4j 적용은 `V5-CM-2.*`의
+상위 문서·WBS v5·역할별 Task의 교차검토를 완료했다. 최종 ZIP의 공용 PostgreSQL·Neo4j 적용은
+`V5-CM-2.*`의
 preflight → rehearse → apply 절차로만 수행하며, 그 전까지 직접 실행하지 않는다.
