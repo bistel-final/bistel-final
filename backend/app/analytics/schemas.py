@@ -23,7 +23,7 @@ class AnalysisQueryResponse(ApiModel):
     """자연어 질의의 성공·정책 거부를 함께 표현하는 HTTP 200 계약."""
 
     question: str
-    sql: str | None = None
+    generated_sql: str | None = None
     columns: list[str]
     rows: list[dict[str, Any]]
     row_count: int = Field(ge=0)
@@ -52,18 +52,23 @@ class AnalysisQueryResponse(ApiModel):
                 raise ValueError(
                     "정책 거부 응답의 결과 배열과 row_count는 비어야 합니다"
                 )
-            if any((self.sql, self.metric, self.visualization)):
+            if any((self.generated_sql, self.metric, self.visualization)):
                 raise ValueError(
-                    "정책 거부 응답의 sql·metric·visualization은 null이어야 합니다"
+                    "정책 거부 응답의 generated_sql·metric·visualization은 "
+                    "null이어야 합니다"
                 )
             return self
 
         if self.reject_reason is not None:
             raise ValueError("거부되지 않은 응답에는 reject_reason을 넣을 수 없습니다")
         if self.is_valid and (
-            self.sql is None or self.metric is None or self.visualization is None
+            self.generated_sql is None
+            or self.metric is None
+            or self.visualization is None
         ):
-            raise ValueError("유효한 응답에는 sql·metric·visualization이 필요합니다")
+            raise ValueError(
+                "유효한 응답에는 generated_sql·metric·visualization이 필요합니다"
+            )
         return self
 
 
