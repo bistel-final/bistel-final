@@ -38,7 +38,8 @@ REFERENCE_DOCUMENT = "docs/reference/mentor-final-20260818/README.md"
 REFERENCE_SECTION = "8"
 
 # epoch "등록"이 아니라 intake 대상 "선언"이다. 실제 등록과 kosa_0813 격리는 V5-CM-1.2가
-# 수행하며 그때까지 dataset-epoch.json의 현행 epoch는 kosa_0813으로 유지된다.
+# 수행했다 — dataset-epoch.json의 현행 epoch는 fdc_final_20260818(v2)이고, 구 epoch
+# artifact는 infra/bootstrap/history/kosa_0813/에 격리돼 있다.
 DECLARED_TARGET_EPOCH = "fdc_final_20260818"
 
 # --- 테스트 주입 seam (모듈 상수) -------------------------------------------------
@@ -362,6 +363,12 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 비-UTF-8 stdout 환경에서 성공 출력이 UnicodeEncodeError로 죽으면 등록은 완료됐는데
+    # exit 1(=EXIT_MISMATCH)로 오독된다 — V5-CM-1.2 계획 §5가 경고한 바로 그 경로다.
+    # issue_final_epoch.py와 동일한 완화를 적용한다(V5-CM-1.2 구현리뷰 1차 필수 1).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     args = _parser().parse_args(argv)
     try:
         if args.verify_only and args.confirm:

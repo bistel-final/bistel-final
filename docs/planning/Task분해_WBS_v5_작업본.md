@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 38.5h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 39.0h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
-| B Knowledge | 강연권 | 22.0h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
+| B Knowledge | 강연권 | 20.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
 | C Agent/HITL | 방대혁 | 42.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 15.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **146.5h** | P2 도전 과제 제외 |
+| **합계** | | **145.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 101.5h / P1 45.0h**이며 P2 5.5h는 합계에서 제외한다.
-Task 수는 86건(P2 3건 포함)이다.
+우선순위별 공수는 **P0 100.5h / P1 45.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 84건(P2 2건 포함)이다.
 
 ---
 
@@ -76,7 +76,7 @@ Task 수는 86건(P2 3건 포함)이다.
 | V5-CM-1.3 | P0 | source manifest v4. 완료: 9개 CSV의 컬럼·행 수·typed content hash와 `03_schema_clean.sql`·`master.cypher`·Generator 해시를 한 manifest로 고정한다. 행 수는 기준표 실측값과 일치한다 | FR-I-04, NFR-06 | V5-CM-1.2 | 1.5h |
 | V5-CM-1.4 | P0 | Generator 재현 검증. 완료: `gen_sample_data.py`를 격리 실행해 9개 CSV가 byte-identical로 재생성됨을 확인하고 결과를 manifest provenance에 남긴다 | NFR-06 | V5-CM-1.3 | 1.0h |
 | V5-CM-1.5 | P0 | 구 epoch 정리. 완료: v4의 corrected build 파이프라인(`dim_parameter` overlay·`seq_no`·시각 보정)을 최종 epoch 경로에서 제외하고, 폐기 사유를 문서화한다. 코드 삭제 여부는 별도 정리 Task로 둔다 | FR-I-04 | V5-CM-1.2 | 0.5h |
-| V5-CM-1.6 | P1 | **구 epoch 파이프라인 제거**. 완료: (a) corrected 계열 — `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트를 삭제하고 `manifest_v3`의 `corrected_files` artifact type·`(runtime\|evaluation, corrected_base)` stage 계약, `verify_bootstrap_state`의 corrected 경로·marker를 걷어낸다. (b) **구 bootstrap 계열** — `V5-CM-2.2`가 멘토 `03_schema_clean.sql`로 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 삭제한다. (c) **`V5-CM-1.2`가 skip 처리한 50건 중 해제 Task가 없는 것을 전부 해소한다** — skip 잔존 0건이 완료 조건이다(`test_source_manifest_artifact`는 `V5-CM-1.3` manifest v4로 대체됨을 확인 후 삭제). `data/corrected`와 잔여 구 manifest·marker도 정리한다. 전체 회귀 통과 · **skip 사유에 `V5-CM-1.2` 문자열이 남아 있지 않아야 한다** | FR-I-04, NFR-06 | V5-CM-2.4, V5-CM-1.3 | 3.5h |
+| V5-CM-1.6 | P1 | **구 epoch 파이프라인 제거**. 완료: (a) corrected 계열 — `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트를 삭제하고 `manifest_v3`의 `corrected_files` artifact type·`(runtime\|evaluation, corrected_base)` stage 계약, `verify_bootstrap_state`의 corrected 경로·marker를 걷어낸다. (b) **구 bootstrap 계열** — `V5-CM-2.2`가 멘토 `03_schema_clean.sql`로 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 삭제한다. (c) **`V5-CM-1.2`가 skip 처리한 50건 중 해제 Task가 없는 것을 전부 해소한다** — **해제 Task가 없는** skip 잔존 0건이 완료 조건이다. B 소관 2건(`test_master_cypher`, 해제는 `V5-B-1.1`)은 명시적 예외다(`test_source_manifest_artifact`는 `V5-CM-1.3` manifest v4로 대체됨을 확인 후 삭제). `data/corrected`와 잔여 구 manifest·marker도 정리한다. 전체 회귀 통과 · **skip 사유에 `V5-CM-1.2` 문자열이 남아 있지 않아야 한다(B 소관 2건 제외)** | FR-I-04, NFR-06 | V5-CM-2.4, V5-CM-1.3 | 3.5h |
 
 ### V5-CM-2. fresh bootstrap
 
@@ -92,7 +92,7 @@ Task 수는 86건(P2 3건 포함)이다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-CM-3.1 | P0 | reference extension 재기준화. 완료: R03·document corpus·chunk·`nl_query_log`·`v_alarm_event`를 3개 DB에 생성한다. View는 `h.wafer_id = a.wafer`로 join하고 `wafer_id`·`wafer_no`를 별도 컬럼으로 반환한다. 저장 알람 189·R03 포함 192·AlarmRef 중복 0을 검증한다 | FR-A-06, FR-B-02, FR-I-04 | V5-CM-2.4 | 2.0h |
+| V5-CM-3.1 | P0 | reference extension 재기준화. 완료: R03·document corpus·chunk·`nl_query_log`·`v_alarm_event`를 3개 DB에 생성한다. **`r03_alarm_history`는 설계 §3.2의 12개 필수 컬럼으로 만든다 — 구 `001_reference_extensions.sql`의 `member_refs` 단일 jsonb를 `member_wafer_refs`(연속 OOS `{lot_hist_id, wafer_id}` 정확히 3개)와 `member_alarm_refs`(그 세 WAFER의 raw OOS TRACE AlarmRef 전체, 최종 epoch에서 R03 한 건당 9개)로 분리하고, 직렬화 순서(WAFER는 계산 순서, AlarmRef는 WAFER 순서 안에서 `seq_no ASC, alarm_id ASC`)를 고정한다.** View는 `h.wafer_id = a.wafer`로 join하고 `wafer_id`·`wafer_no`를 별도 컬럼으로 반환한다. 저장 알람 189·R03 포함 192·AlarmRef 중복 0과 **R03 3건 각각의 member wafer 3·AlarmRef 9**를 검증한다 | FR-A-06, FR-B-02, FR-I-04 | V5-CM-2.4 | 2.5h |
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
@@ -105,15 +105,15 @@ Task 수는 86건(P2 3건 포함)이다.
 | V5-CM-4.1 | P0 | 공통 Enum·DTO. 완료: `AlarmRef`, Action/Approval/Delivery/Run 상태, Fault 5-class, 오류 body를 최종 기준으로 정렬한다. 공개 승인 요청은 `APPROVED\|REJECTED`이고 내부 Enum은 adapter에서만 변환한다 | FR-I-07, NFR-10 | V5-CM-1.2 | 1.5h |
 | V5-CM-4.2 | P0 | 감사 쓰기 계약. 완료: event enum·entity mapping·append-only helper와 트랜잭션 규칙을 제공한다. UPDATE·DELETE 경로를 만들지 않는다 | FR-D-07, NFR-05 | V5-CM-4.1 | 1.0h |
 | V5-CM-4.3 | P0 | profile 통합 검증기. 완료: 3개 DB의 stage·table·행 수·hash·권한·marker를 한 번에 검사하고 target별 결과를 보존한다. 한 target의 실패가 전체 report를 지우지 않는다 | FR-I-04 | V5-CM-3.5 | 2.0h |
-| V5-CM-4.4 | P0 | API contract test. 완료: 호환 필수 9개와 `GET /ontology/graph`의 OpenAPI·응답 구조를 검증하고 배열 응답과 페이지 응답을 같은 path에서 혼용하지 않는다 | FR-I-07 | V5-CM-4.1 | 1.5h |
+| V5-CM-4.4 | P0 | API contract test. 완료: 호환 필수 9개와 `GET /relations/chambers/{chamber_id}`의 OpenAPI·응답 구조를 검증하고 배열 응답과 페이지 응답을 같은 path에서 혼용하지 않는다 | FR-I-07 | V5-CM-4.1 | 1.5h |
 | V5-CM-4.4-1 | P0 | **5화면 navigation 전환**. 완료: 현재 7개 메뉴(`/dashboard`·`/alarms`·`/traces`·`/agent-runs`·`/actions`·`/analytics`·`/audit-logs`)를 canonical 5영역(Dashboard·Alarm History·Agent·Documents·Ontology)으로 재구성한다. 기존 상세 route는 하위 흐름·deep link로 유지하고 독립된 제6 화면을 만들지 않는다. Text2SQL route는 선택 확장으로 분리한다 | FR-I-02 | V5-CM-4.4 | 2.0h |
-| V5-CM-4.4-2 | P0 | **호환 projection·wrapper 연결**. 완료: 호환 필수 9개 API projection과 `GET /ontology/graph` 소비를 연결하고 `api.audit()` wrapper를 Agent 감사 subview에서 실제로 호출한다. 참고 React의 축약 field는 canonical field에서 파생하고 `lot_history.fault_code`를 Agent 예측처럼 직렬화하지 않는다 | FR-I-02, FR-I-03 | V5-CM-4.4-1 | 1.5h |
+| V5-CM-4.4-2 | P0 | **호환 projection·wrapper 연결**. 완료: 호환 필수 9개 API projection과 `GET /relations/chambers/{chamber_id}` 소비를 연결하고 `api.audit()` wrapper를 Agent 감사 subview에서 실제로 호출한다. 참고 React의 축약 field는 canonical field에서 파생하고 `lot_history.fault_code`를 Agent 예측처럼 직렬화하지 않는다 | FR-I-02, FR-I-03 | V5-CM-4.4-1 | 1.5h |
 | V5-CM-4.4-3 | P1 | **alias 제거 조건**. 완료: compatibility projection의 alias 목록과 제거 조건(모든 소비 화면이 canonical field로 전환 완료)을 문서화하고, 조건 충족 시 alias를 삭제하는 후속 Task를 등록한다 | FR-I-03 | V5-CM-4.4-2 | 0.5h |
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·Kafka·n8n·Backend·Frontend를 하나의 compose로 올리고 `/api` proxy·CORS origin allowlist·고정 image tag를 적용한다 | FR-I-04, FR-I-06 | V5-CM-4.3 | 1.5h |
-| V5-CM-4.6 | P1 | readiness·복구. 완료: `/health/ready`가 PostgreSQL·Neo4j·n8n을 병렬 timeout으로 검사하고 Neo4j 44/85 marker와 ACTIVE corpus revision을 확인한다 | FR-I-05 | V5-CM-4.5 | 1.0h |
+| V5-CM-4.6 | P1 | readiness·복구. 완료: `/health/ready`가 PostgreSQL·Neo4j·n8n을 병렬 timeout으로 검사하고 Neo4j 44/85 marker와 RAG 적재 상태를 확인한다 | FR-I-05 | V5-CM-4.5 | 1.0h |
 | V5-CM-4.7 | P1 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·corpus·checkpoint schema를 보존한다 | 요구사항 §7.3 | V5-CM-3.4 | 1.5h |
 
-**Common 합계: 35.0h**
+**Common 합계: 39.0h**
 
 ---
 
@@ -145,22 +145,24 @@ Task 수는 86건(P2 3건 포함)이다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-B-1.1 | P0 | graph 독립 검증. 완료: `master.cypher`를 독립 파싱해 44 nodes / 85 relationships·필수 속성·방향·중복 0을 확인한다 | FR-B-01 | V5-CM-1.3 | 1.5h |
-| V5-B-1.2 | P0 | 안전 loader. 완료: 선두 `MATCH (n) DETACH DELETE n`을 격리하고 empty/fingerprint/backup/confirm guard를 통과한 경우에만 공용 Neo4j를 갱신한다 | FR-B-01, NFR-01 | V5-B-1.1 | 2.0h |
-| V5-B-1.3 | P0 | relation ID. 완료: 방향·type·business endpoint로 stable `relation_id`를 부여하고 elementId를 API provenance로 쓰지 않는다 | FR-B-03 | V5-B-1.2 | 1.0h |
-| V5-B-2.1 | P0 | RAG correction overlay. 완료: 원문을 수정하지 않고 overlay로 고정 `EQP01 → EQP04`·score 상향·metrology 기반 조치 상하향·구 10건 서술을 제거한다. PH-9000은 EQP01~03·RECIPE01/03, ET-7500은 EQP04~06·RECIPE02/04로 정정한다 | FR-B-02 | V5-B-1.3 | 2.0h |
-| V5-B-2.2 | P0 | **임베딩 확정**. 완료: provider·model·차원을 결정해 `.env`와 corpus revision metadata(`embedding_model_code`·`embedding_dim`)에 기록한다. 선택 근거와 재현 절차를 남긴다 | FR-B-05 | V5-B-2.1 | 1.5h |
-| V5-B-2.3 | P0 | corpus 적재. 완료: STAGING으로 document·chunk·embedding을 적재해 문서 수·chunk 수·차원·hash·검색 smoke를 검증한 뒤 ACTIVE로 swap한다. 문서 ID `DOC-SPEC-PH9000`·`DOC-SPEC-ET7500`·`DOC-TROUBLE-FDC`를 승계한다 | FR-B-02, FR-B-05 | V5-B-2.2 | 2.0h |
-| V5-B-3.1 | P0 | `POST /documents/search`. 완료: 임베딩 검색 결과에 document/chunk/corpus revision과 실제 근거 내용을 반환한다 | FR-B-04 | V5-B-2.3 | 1.5h |
-| V5-B-3.2 | P0 | `GET /ontology/graph`. 완료: read-only graph adapter를 제공하고 Neo4j Browser iframe·Frontend 비밀번호 노출을 제거한다 | FR-B-06, NFR-02 | V5-B-1.3 | 1.5h |
-| V5-B-3.3 | P0 | `get_equipment_context` Tool. 완료: chamber·설비·모델·area와 Process Step 인접을 반환하고 고정 설비 upstream을 만들지 않는다 | FR-B-03 | V5-B-3.2 | 1.5h |
-| V5-B-3.4 | P0 | `search_documents` Tool. 완료: Agent가 소비할 chunk·corpus revision·score 계약을 고정한다 | FR-B-04 | V5-B-3.1 | 1.0h |
-| V5-B-4.1 | P1 | 화면 4 Documents. 완료: 검색·근거 표시를 연결하고 Agent 화면 deep link를 지원한다 | FR-B-06, FR-I-02 | V5-B-3.1 | 2.0h |
-| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: graph API 기반 시각화를 제공하고 비밀정보를 노출하지 않는다 | FR-B-06, NFR-02 | V5-B-3.2 | 2.5h |
-| V5-B-4.3 | P1 | 검색 평가. 완료: 독립 graph·문서 fixture로 Recall@K·MRR·실패 사례와 corpus revision을 artifact에 기록한다 | FR-B-07 | V5-B-3.4 | 2.0h |
-| V5-B-4.4 | P2 | 하이브리드 검색. 완료: 키워드+벡터 결합 실험과 비교표 | FR-B-08 | V5-B-4.3 | 2.0h |
+| V5-B-1.1 | P0 | RAG 스키마. 완료: 배포본 ①의 `03_db/01_schema.sql`에서 `document`·`document_chunk`와 `vector` extension만 가져와 3개 DB에 생성한다(`embedding vector(1024)`). `document_corpus`·corpus revision 구조는 만들지 않는다. ①의 나머지 스키마(`fdc_alarm`·`dim_*`·`agent_run` 등)는 채택하지 않는다 | FR-B-02, FR-B-05 | V5-CM-3.1 | 1.0h |
+| V5-B-1.2 | P0 | RAG 문서 정합성 수정. 완료: **배포본 ③의** `sample/rag/*.md` 3종을 원본으로 삼아 고정 `EQP01 → EQP04`·score 상향·metrology 기반 조치 상하향·구 10건 서술을 제거한다. PH-9000은 EQP01~03·RECIPE01/03, ET-7500은 EQP04~06·RECIPE02/04로 정정한다. overlay 없이 수정본을 정본으로 쓰되 **원본은 `V5-CM-1.1` 등록 해시 그대로 두고 수정본을 저장소 별도 경로에 둔다** | FR-B-02 | V5-CM-1.3 | 2.0h |
+| V5-B-1.3 | P0 | RAG 적재. 완료: 배포본 ①의 `load_documents.py`로 청킹·임베딩·적재한다. 입력 경로를 `V5-B-1.2` 수정본으로 바꾼다(원본은 `02_docs_rag`를 읽는다 — `:36`·`:122`). `BAAI/bge-m3`·1024를 유지하고 문서 ID `DOC-SPEC-PH9000`·`DOC-SPEC-ET7500`·`DOC-TROUBLE-FDC`를 승계한다. 문서·chunk 중복 0, embedding NULL 0, vector 차원 1024를 검증한다 | FR-B-02, FR-B-05 | V5-B-1.1, V5-B-1.2 | 2.0h |
+| V5-B-2.1 | P0 | DocumentSearchRepository·Service. 완료: pgvector 검색을 구현하고 `query`·`model_code`·`top_k`를 지원한다. embedding 모델은 process당 1회 생성해 재사용한다(singleton). **API와 Tool이 이 Service를 공유하며 검색 로직을 중복 구현하지 않는다** | FR-B-04 | V5-B-1.3 | 2.0h |
+| V5-B-2.2 | P0 | `search_documents` Tool. 완료: `DocumentSearchService`를 호출하는 Agent adapter다. Agent가 소비할 chunk·score 계약을 고정한다 | FR-B-04 | V5-B-2.1 | 1.0h |
+| V5-B-2.3 | P0 | `POST /documents/search`. 완료: Documents 화면이 쓰는 검색 API로, Tool과 **동일한** `DocumentSearchService`를 재사용한다. 실제 근거 내용(document·chunk)을 반환한다 | FR-B-04 | V5-B-2.1 | 1.0h |
+| V5-B-3.1 | P0 | GraphRepository·GraphService. 완료: chamber ID 기준으로 장비·모델·AREA·Process Step·인접 Step·파라미터·형제 chamber를 조회한다. 배포본 ③ `master.cypher`의 44 nodes / 85 relationships를 검증하고, 방향·type·business endpoint로 stable `relation_id`를 부여한다(elementId를 API provenance로 쓰지 않는다). 설비 간 고정 upstream/downstream과 LOT routing 추정을 만들지 않는다 | FR-B-01, FR-B-03 | V5-CM-1.3 | 2.5h |
+| V5-B-3.2 | P0 | `get_equipment_context` Tool. 완료: `GraphService`를 호출하는 Agent adapter다 | FR-B-03 | V5-B-3.1 | 1.0h |
+| V5-B-3.3 | P0 | `GET /relations/chambers/{chamber_id}`. 완료: Ontology 화면이 쓰는 관계 조회 API로, Tool과 **동일한** `GraphService`를 재사용한다. Neo4j 자격증명을 Frontend에 노출하지 않는 read-only adapter다(NFR-02). **노드 타입 확장 시 `GET /relations/{node_type}/{node_id}`로 흡수할 수 있는 응답 스키마로 만든다**(§10) | FR-B-06, NFR-02 | V5-B-3.1 | 1.5h |
+| V5-B-4.1 | P1 | 화면 4 Documents. 완료: `POST /documents/search`를 실제 연동하고 근거를 표시한다. Agent 화면 deep link를 지원한다 | FR-B-06, FR-I-02 | V5-B-2.3 | 2.0h |
+| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: chamber를 선택해 `GET /relations/chambers/{chamber_id}`를 호출하고 장비·모델·AREA·Process Step·인접 Step·파라미터 관계를 시각화한다. Neo4j Browser iframe과 비밀정보 노출을 만들지 않는다 | FR-B-06, NFR-02 | V5-B-3.3 | 2.5h |
+| V5-B-4.3 | P1 | 최소 검증·평가. 완료: RAG 적재 결과·문서 검색 contract·embedding singleton·Neo4j 44/85·chamber 관계 조회 fixture를 검증하고 Recall@4·MRR과 실패 사례를 artifact에 기록한다 | FR-B-07 | V5-B-2.2, V5-B-3.2 | 2.0h |
 
-**B 합계: 22.0h** (P2 2.0h 제외)
+**B 합계: 20.5h** (P2 없음)
+
+> 출처 규칙은 `docs/reference/배포패키지_기준.md`를 따른다 — **③에 있으면 ③, ③에 없는 것만 ①**.
+> `document`·`document_chunk` 스키마와 `load_documents.py`·`bge-m3` 1024만 ①에서 가져오고,
+> RAG 문서 3종과 `master.cypher`는 ③이다(①과 내용이 다르다 · 기준 문서 §3.1).
 
 ---
 
@@ -216,7 +218,7 @@ Task 수는 86건(P2 3건 포함)이다.
 ## 8. 적용 순서와 게이트
 
 ```text
-1  V5-CM-1.*        source intake · epoch · manifest
+1  V5-CM-1.1~1.5    source intake · epoch · manifest
 2  V5-CM-2.*        fresh bootstrap (e2e → agent → text2sql 순서)
 3  V5-CM-3.1~3.3    reference extension · Runtime migration · pair guard
 4  V5-CM-3.4~3.5    checkpoint · 최소권한 role
@@ -226,6 +228,11 @@ Task 수는 86건(P2 3건 포함)이다.
 8  V5-CM-4.4-1~3    5화면 navigation 전환 · 호환 projection · alias 제거 조건
 9  V5-CM-4.5~4.7    compose·readiness·E2E reset
 10 통합 E2E·평가 artifact·최종 검증
+
+   V5-CM-1.6       구 epoch 파이프라인 제거 — 선행이 V5-CM-2.4·V5-CM-1.3이라
+                   2단계 이후 언제든 가능하다. 팀원 착수를 막지 않으므로
+                   6~7과 병행하는 편이 낫다(구 코드가 오래 남을수록
+                   manifest_v3 수정 불가 제약이 지속된다)
 ```
 
 **착수 게이트는 `V5-CM-2.4`(적재 검증) 통과다.** 여기서 데이터가 확정되고 이후 재적재가
@@ -246,6 +253,10 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 - `fault_code` 600건 전부 `NRM`이라는 전제, 공개 Fault GT 부재 전제
 - anomaly score 기반 조치 상향·incident 생성·승인 게이트
 - 최종 패키지 Markdown의 6화면, AREA당 설비 2대 서술
+- **교육생 배포패키지(①)의 RAG 문서 3종·`master.cypher`** — ③과 내용이 다르다.
+  ①에서 가져오는 것은 `document`·`document_chunk` 스키마와 `load_documents.py`·`bge-m3`
+  1024뿐이다(`docs/reference/배포패키지_기준.md`)
+- ①의 통합 스키마(`fdc_alarm`·`fdc_summary`·`dim_*`·`agent_run` 등)
 
 ## 10. 미결 사항
 
@@ -254,5 +265,7 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 | 임베딩 provider·model·차원 | B가 `V5-B-2.2`에서 확정 | 구현 단계 |
 | Kafka broker 운영 위치(공용 서버 1벌 / 팀원 로컬) | 구현은 필수로 진행. 배치만 미정 | `V5-CM-4.5` compose 통합 시 |
 | Text2SQL 활성 여부 | 선택 확장. 필수 인수 기준에 미포함 | 일정 여유에 따라 |
-| ~~v4 corrected build 코드 삭제~~ | **`V5-CM-1.6`으로 등록 완료** | `V5-CM-2.4` 이후 |
+| ~~v4 corrected build 코드 삭제~~ | **`V5-CM-1.6`으로 등록 완료**(구 bootstrap 계열·skip 해소까지 확대) | `V5-CM-2.4`·`V5-CM-1.3` 이후 |
 | compatibility alias 제거 | `V5-CM-4.4-3`이 조건만 등록. 삭제는 후속 Task | 모든 화면 canonical 전환 후 |
+| `V5-CM-1.2` skip 중 B 소관 2건(`test_master_cypher`) | `V5-CM-1.6` 완료 조건의 명시적 예외. 해제는 `V5-B-3.1` | `V5-B-3.1` 수행 시 |
+| Ontology 화면 조회 범위 | chamber 기준으로 구현(`V5-B-3.3`). 노드 타입 확장은 `GET /relations/{node_type}/{node_id}` 형태로 흡수하며 응답 스키마를 바꾸지 않는다 | 필수 5화면 완료 후 |

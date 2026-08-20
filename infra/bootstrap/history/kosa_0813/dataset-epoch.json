@@ -1,0 +1,125 @@
+{
+  "format_version": 1,
+  "artifact_type": "dataset_epoch_registration",
+  "dataset_epoch": "kosa_0813",
+  "received_date": "2026-08-13",
+  "archive": {
+    "filename": "kosa_0813.zip",
+    "sha256": "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96"
+  },
+  "public_fault_ground_truth_available": false,
+  "inventory_scope": "non_directory_zip_members",
+  "file_count": 22,
+  "file_inventory": [
+    {
+      "path": "kosa_0813/00_README.md",
+      "size_bytes": 5415,
+      "sha256": "5b7275d09da59d3bad78a6c66a51442ffc57cc6888e9fabd747fd73a6c050732"
+    },
+    {
+      "path": "kosa_0813/01_용어집.md",
+      "size_bytes": 4863,
+      "sha256": "41b51d28049fec24a99cd4c0f85cc32c02511010a6acf7c23790eba77d54c608"
+    },
+    {
+      "path": "kosa_0813/02_화면별_API_가이드.md",
+      "size_bytes": 8331,
+      "sha256": "1f4b8104e457b8e11da1ea91b8d83e3164e59701a0596db85f295da79c1ca5ab"
+    },
+    {
+      "path": "kosa_0813/03_n8n_자동화_가이드.md",
+      "size_bytes": 3732,
+      "sha256": "9b48ea8379d81266857fae8a8c59c4f51b1f162f5cfaf5e086efc980e7ab4f74"
+    },
+    {
+      "path": "kosa_0813/04_알람_재현_가이드.md",
+      "size_bytes": 3704,
+      "sha256": "0c910f8537f1f9b38266eac4ec9c19d3126297a0e94e2a909385f7e7a01da400"
+    },
+    {
+      "path": "kosa_0813/대시보드/FDC_알람_MVP.html",
+      "size_bytes": 1196375,
+      "sha256": "0a3fddb050b4e4a4b4aa5c891d7e443c3ec3d9e35f4f13ae8d1844a9616c44c6"
+    },
+    {
+      "path": "kosa_0813/코드/_template_mvp.html",
+      "size_bytes": 23382,
+      "sha256": "5abb4e752714ef4cf1328d1751ff730c09d71fa0d00f9770699be702356becc8"
+    },
+    {
+      "path": "kosa_0813/코드/build_mvp.py",
+      "size_bytes": 9354,
+      "sha256": "1f5b452b2770cc760aea3ddd99b1fa9d3b2af01eecf598e7173e27fee27c552c"
+    },
+    {
+      "path": "kosa_0813/코드/gen_sample_data.py",
+      "size_bytes": 17417,
+      "sha256": "6a925db9e4de8ab8e173a3ea42fca8be6296914ee40d1d257d43af8e4273a59b"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/03_schema_clean.sql",
+      "size_bytes": 10572,
+      "sha256": "bf6cc620065850a0e15e052179a1ba25b9fc3bec30966ca2480d77fb27212d9b"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/docs_rag/SPEC_ET-7500_DryEtcher.md",
+      "size_bytes": 7984,
+      "sha256": "7b34ae269d7bc4b2722734bc9f5ecdcc1345bb9923ac8f826e7d501c06f43047"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/docs_rag/SPEC_PH-9000_PhotoScanner.md",
+      "size_bytes": 6761,
+      "sha256": "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/docs_rag/TROUBLE_FDC_FaultGuide.md",
+      "size_bytes": 11720,
+      "sha256": "6640519dc9ec0269f35ee8bff51f53593cd20fc405de489ec154d291905b42ac"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/neo4j/master.cypher",
+      "size_bytes": 10422,
+      "sha256": "b565035859a808d1a15a74f8df616bb43afd7ae2a2565839f7910ad07a89c35d"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/action_history.csv",
+      "size_bytes": 5565,
+      "sha256": "326a8ec8e4e9ab4c1f346aca150a7c75bec06b8f2b873e452e5a8d3cef624ec2"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/evaluation.csv",
+      "size_bytes": 340062,
+      "sha256": "08419b069fa8db689f6ede01da1059063d0f7be5ecd46ceaff2061bf41e8e47b"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/fdc_trace.csv",
+      "size_bytes": 728427,
+      "sha256": "3385ee47f22513492fe5a334c2a0b0b5c555e03de477cba55607bf4415c69945"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/lot_history.csv",
+      "size_bytes": 80015,
+      "sha256": "c13c6813058af64ea48e2a9779f00f269c104a061164cddd7906fa92a3c8b85a"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/metrology.csv",
+      "size_bytes": 4256,
+      "sha256": "a528067b6c9d27714e73364e3e51bd68b5df4c1523453c0a576fcbbf18de673a"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/summary_alarm_history.csv",
+      "size_bytes": 5189,
+      "sha256": "e98b950b9702b6464bdf0b91bce2c4cc0260252891694c61702bfc864f01242e"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/summary_data.csv",
+      "size_bytes": 443197,
+      "sha256": "353c02fa7f6cbbac4f188fdabc1430ade7d4c5ca0a341f5e176989e8ade804e6"
+    },
+    {
+      "path": "kosa_0813/클린데이터셋/postgres/trace_alarm_history.csv",
+      "size_bytes": 13131,
+      "sha256": "5245f393030ed49926ae8b83799d58a7f480230eddd6ca63afb47bf112811312"
+    }
+  ]
+}

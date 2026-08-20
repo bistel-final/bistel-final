@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import sys
@@ -586,3 +587,23 @@ def test_reference_table_section8_tripwire() -> None:
     assert digest == (
         "b3a8be5b1bb9c433aba68cc66f156baead9ae56ab74641057fdca29aaa8cb2fe"
     ), "기준표 §8 본문(표 외)이 바뀌었다. 표·상수는 이미 일치하므로 이 해시만 갱신하라."
+# --- 6. 비-UTF-8 stdout 환경 ----------------------------------------------------
+
+
+def test_success_output_survives_ascii_stdout(
+    archive: Path, tmp_path: Path, inject, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """비-UTF-8 stdout에서도 정상 등록·검증이 EXIT_OK로 끝난다.
+
+    완화가 없으면 등록을 마친 뒤 성공 출력에서 UnicodeEncodeError로 죽어 exit 1
+    (=EXIT_MISMATCH)로 오독된다 — V5-CM-1.2 계획 §5가 경고한 경로이며
+    issue_final_epoch.py와 같은 완화를 공유한다(V5-CM-1.2 구현리뷰 1차 필수 1).
+    """
+    monkeypatch.setattr(
+        sys, "stdout", io.TextIOWrapper(io.BytesIO(), encoding="ascii")
+    )
+    inject(archive)
+    out = tmp_path / "final-zip-intake.json"
+
+    assert _run(archive, out) == intake.EXIT_OK
+    assert _run(archive, out, "--verify-only") == intake.EXIT_OK

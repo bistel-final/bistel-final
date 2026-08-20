@@ -83,7 +83,7 @@ usage_scope=EVALUATION_ONLY
 5. Ontology
 
 필수 호환 API는 API 명세 v3의 9개 endpoint이며 Agent 자연어 질의는 `POST /agent/ask`다.
-Ontology 화면은 이 9개와 별도로 보안 필수 public API인 `GET /ontology/graph`만 사용한다.
+Ontology 화면은 이 9개와 별도로 보안 필수 public API인 `GET /relations/chambers/{chamber_id}`만 사용한다.
 `POST /internal/actions/{action_id}/delivery`는 n8n·Kafka 결과 write-back용 필수 internal
 callback이며 Frontend 업무 API가 아니다. `/health`·`/health/ready`도 업무 API·화면 수에서
 제외한 내부 운영·진단 scope다. Text2SQL·Analytics와 기존 상세·페이지네이션·재시도·평가 API는

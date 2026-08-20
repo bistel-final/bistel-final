@@ -9,7 +9,7 @@
 
 API v3의 기능 범위와 정책은 요구사항정의서 v2.1과 시스템설계서 v2.1을 따른다. 외부 최소
 호환 9개 endpoint에는 `POST /agent/ask`가 포함되고 Text2SQL·Analytics는 선택 확장으로
-구분한다. Neo4j credential 노출을 대체하는 `GET /ontology/graph`는 별도 보안 필수 public
+구분한다. Neo4j credential 노출을 대체하는 `GET /relations/chambers/{chamber_id}`는 별도 보안 필수 public
 계약이고, `POST /internal/actions/{action_id}/delivery`는 n8n·Kafka 결과 write-back용 필수
 내부 계약이다. `/health`·`/health/ready`는 별도 필수 운영 계약으로 둔다. 필드 타입의 최종 코드
 기준은 새 WBS에 따라 갱신할 Backend Pydantic DTO다.

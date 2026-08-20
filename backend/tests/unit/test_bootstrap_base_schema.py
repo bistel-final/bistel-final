@@ -14,6 +14,12 @@ from typing import Any
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+# V5-CM-1.2 epoch 발급으로 kosa_0813 artifact가 격리돼 깨지는 테스트의 개별 skip.
+# 해제 경로는 사유에 적힌 후속 Task가 소유한다(작업계획 §2.5·§6).
+SKIP_KOSA_0813 = pytest.mark.skip(
+    reason="kosa_0813 폐기(V5-CM-1.2) — V5-CM-2.2가 대체, V5-CM-1.6이 삭제"
+)
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -442,6 +448,7 @@ class TestCliMode:
     def test_explicit_modes(self, overrides: dict[str, Any], expected: str) -> None:
         assert bootstrap.resolve_mode(self._args(**overrides)) == expected
 
+    @SKIP_KOSA_0813
     def test_connection_error_is_redacted(
         self,
         monkeypatch: pytest.MonkeyPatch,
