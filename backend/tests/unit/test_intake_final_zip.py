@@ -52,11 +52,8 @@ NOISE_MEMBERS = {
     f"{PREFIX}docs/07_n8n.md": b"noise\n",
 }
 
-PINNED_PATHS = tuple(
-    path
-    for path in FIXTURE_MEMBERS
-    if not path.startswith(f"{PREFIX}sample/rag/")
-)
+# 기준표 §8이 RAG 3종을 포함해 15개 전부를 고정한다(2026-08-20 확대).
+PINNED_PATHS = tuple(FIXTURE_MEMBERS)
 
 
 def _build_zip(
@@ -124,7 +121,7 @@ def test_normal_zip_creates_artifact(archive: Path, tmp_path: Path, inject) -> N
 
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["selected_count"] == 15
-    assert sum(1 for m in payload["selected_members"] if m["pinned"]) == 12
+    assert sum(1 for m in payload["selected_members"] if m["pinned"]) == 15
     assert payload["member_total"] == len(FIXTURE_MEMBERS) + len(NOISE_MEMBERS)
     assert payload["excluded_summary"]["node_modules"] == 2
     assert payload["excluded_summary"]["reference_app_and_docs"] == 2
@@ -573,7 +570,7 @@ def test_reference_table_section8_tripwire() -> None:
     section = doc.split("## 8.")[1].split("## 9.")[0]
 
     pins = dict(re.findall(r"\| `([^`]+)` \| `([0-9a-f]{64})` \|", section))
-    assert len(pins) == 12
+    assert len(pins) == 15
 
     # (1) 상수와 기준표 표의 동기화 — 실패하면 반드시 상수를 고쳐야 한다.
     expected = {f"project/repository/{rel}": sha for rel, sha in pins.items()}
@@ -585,7 +582,7 @@ def test_reference_table_section8_tripwire() -> None:
     # 실패하는 경우는 표 외 서술이 바뀐 것이다. 해시만 갱신하면 된다.
     digest = hashlib.sha256(section.encode("utf-8")).hexdigest()
     assert digest == (
-        "b3a8be5b1bb9c433aba68cc66f156baead9ae56ab74641057fdca29aaa8cb2fe"
+        "0400260405f16160427c7f70b01f59094e9c72cebd21d61e66eec9f9c439c3b4"
     ), "기준표 §8 본문(표 외)이 바뀌었다. 표·상수는 이미 일치하므로 이 해시만 갱신하라."
 # --- 6. 비-UTF-8 stdout 환경 ----------------------------------------------------
 

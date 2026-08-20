@@ -178,6 +178,9 @@ Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이 존�
 |---|---|
 | `sample/schema/03_schema_clean.sql` | `4a437efc6d853d911c5f82613b4756fafa6368fd144d6cedfb4f81908af8ca8c` |
 | `sample/ontology/master.cypher` | `51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea` |
+| `sample/rag/SPEC_PH-9000_PhotoScanner.md` | `a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a` |
+| `sample/rag/SPEC_ET-7500_DryEtcher.md` | `f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f` |
+| `sample/rag/TROUBLE_FDC_FaultGuide.md` | `5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289` |
 | `sample/data/dim_parameter.csv` | `977f4c95bd63750a025cd44dbb8ea08897eb523225894e92f65d668f593041ea` |
 | `sample/data/lot_history.csv` | `d0e2d84cd2b268278873bb963cd67445b5f80434a5d71fe8c3926e4896c13118` |
 | `sample/data/fdc_trace.csv` | `9840c86f459f4da83aca42cf2f5938d36ef4fc843e40f288097f760cab435545` |

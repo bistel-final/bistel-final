@@ -89,19 +89,19 @@
       "path": "project/repository/sample/rag/SPEC_ET-7500_DryEtcher.md",
       "size_bytes": 8430,
       "sha256": "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f",
-      "pinned": false
+      "pinned": true
     },
     {
       "path": "project/repository/sample/rag/SPEC_PH-9000_PhotoScanner.md",
       "size_bytes": 6761,
       "sha256": "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a",
-      "pinned": false
+      "pinned": true
     },
     {
       "path": "project/repository/sample/rag/TROUBLE_FDC_FaultGuide.md",
       "size_bytes": 11981,
       "sha256": "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289",
-      "pinned": false
+      "pinned": true
     },
     {
       "path": "project/repository/sample/schema/03_schema_clean.sql",
