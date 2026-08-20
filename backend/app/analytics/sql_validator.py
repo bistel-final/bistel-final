@@ -76,7 +76,6 @@ ALLOWED_OBJECTS: frozenset[str] = frozenset(
         "r03_alarm_history",
         "v_alarm_event",
         "nl_query_log",
-        "document_corpus",
         "document",
         "document_chunk",
     }
