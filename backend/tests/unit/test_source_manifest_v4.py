@@ -1,4 +1,4 @@
-"""저장소에 등록된 source-manifest-v4.json artifact 회귀 검증 (V5-CM-1.3 묶음 2).
+"""저장소에 등록된 source-manifest-v4.json artifact 회귀 검증 (V5-CM-1.3·1.4).
 
 합성 fixture 검증은 `test_build_source_manifest_v4.py`(묶음 1)가 맡는다. 이 파일은
 **실 발급물**이 기준표·epoch v2·intake와 정합한지를 저장소 상태로 고정한다.
@@ -58,6 +58,7 @@ def test_registered_manifest_matches_v4_schema() -> None:
         "derived_from",
         "tables",
         "artifacts",
+        "generator_reproduction",
         "origin_package",
     ]
     assert manifest["format_version"] == 4
@@ -84,6 +85,47 @@ def test_registered_manifest_matches_v4_schema() -> None:
     # 기준표 §8 확대(2026-08-20)로 RAG 3종 원본 해시도 고정됐다 — intake 판단 승계.
     # V5-B-1.2 정정본은 별도 경로의 정본이고 이 원본 해시는 보존된다(기준표 §7).
     assert all(entry["pinned"] is True for entry in artifacts["rag_documents"])
+    reproduction = manifest["generator_reproduction"]
+    assert list(reproduction) == [
+        "contract_version",
+        "generator_sha256",
+        "csv_byte_identical",
+        "csv_results",
+        "newline_normalized",
+        "mismatched",
+    ]
+    assert reproduction["contract_version"] == 1
+    assert reproduction["generator_sha256"] == manifest["generator_sha256"]
+    assert reproduction["csv_byte_identical"] is True
+    assert reproduction["mismatched"] == []
+    assert len(reproduction["csv_results"]) == 9
+    assert [entry["file_id"] for entry in reproduction["csv_results"]] == sorted(
+        builder.TABLE_MEMBERS.values()
+    )
+    for entry in reproduction["csv_results"]:
+        assert list(entry) == [
+            "file_id",
+            "expected_sha256",
+            "generated_sha256",
+            "match",
+        ]
+        assert entry["expected_sha256"] == entry["generated_sha256"]
+        assert HEX_SHA256.fullmatch(entry["expected_sha256"])
+        assert entry["match"] is True
+    assert reproduction["newline_normalized"] == [
+        {
+            "file_id": builder.MASTER_CYPHER_MEMBER,
+            "source_newline": "CRLF",
+            "generated_newline": "LF",
+            "normalized_sha256": reproduction["newline_normalized"][0][
+                "normalized_sha256"
+            ],
+            "match": True,
+        }
+    ]
+    assert HEX_SHA256.fullmatch(
+        reproduction["newline_normalized"][0]["normalized_sha256"]
+    )
 
 
 # --- 2. 4자 대조 ---------------------------------------------------------------

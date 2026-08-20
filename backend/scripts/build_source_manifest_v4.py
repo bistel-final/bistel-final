@@ -1,9 +1,11 @@
-"""최종 패키지 source manifest v4 생성기 (V5-CM-1.3).
+"""최종 패키지 source manifest v4 생성기 (V5-CM-1.3·V5-CM-1.4).
 
 `V5-CM-1.1`이 파일을 등록했고(경로·크기·바이트 해시) `V5-CM-1.2`가 epoch를 발급했다.
 이 스크립트는 그 파일의 **내용**을 계약으로 고정한다 — 9개 CSV의 컬럼 목록·행 수·
 typed canonical row hash와 DDL·cypher·Generator·RAG 파일 해시를
-`infra/bootstrap/source-manifest-v4.json` 하나에 담는다.
+`infra/bootstrap/source-manifest-v4.json` 하나에 담는다. `V5-CM-1.4`는 ZIP 안의
+Generator를 격리된 임시 디렉터리에서 매번 실행해 9개 CSV의 바이트 동일성과
+`master.cypher`의 CRLF→LF 정규화 동일성을 함께 증명한다.
 
 typed의 의미: 각 cell을 `03_schema_clean.sql`의 컬럼 타입으로 정규화
 (`value_normalization.normalize_csv_row`, `db-value-v1`)한 뒤 행 순서 무관 canonical
@@ -25,6 +27,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -58,6 +62,9 @@ EXIT_CONFIRM_REQUIRED = 3
 MANIFEST_FORMAT_VERSION = 4
 ARTIFACT_TYPE = "source_files"
 SELECTED_MEMBER_COUNT = 15
+GENERATOR_REPRODUCTION_CONTRACT_VERSION = 1
+GENERATOR_TIMEOUT_SECONDS = 60
+GENERATOR_LOCALE = "C.UTF-8"
 
 MEMBER_PREFIX = "project/repository/sample"
 SCHEMA_SQL_MEMBER = f"{MEMBER_PREFIX}/schema/03_schema_clean.sql"
@@ -825,11 +832,237 @@ def build_artifacts(
     }
 
 
+def _newline_style(payload: bytes) -> str:
+    """재현 증적용 개행 라벨. 혼합·CR-only는 불명확한 계약이므로 거부한다."""
+    crlf = payload.count(b"\r\n")
+    bare_lf = payload.count(b"\n") - crlf
+    bare_cr = payload.count(b"\r") - crlf
+    if crlf and not bare_lf and not bare_cr:
+        return "CRLF"
+    if bare_lf and not crlf and not bare_cr:
+        return "LF"
+    if not crlf and not bare_lf and not bare_cr:
+        return "NONE"
+    return "MIXED"
+
+
+def _generator_failure_detail(stderr: bytes | str | None) -> str:
+    """Generator stderr의 마지막 비어있지 않은 한 줄만 무해화한다."""
+    if isinstance(stderr, bytes):
+        text = stderr.decode("utf-8", errors="replace")
+    else:
+        text = stderr or ""
+    lines = [line for line in text.splitlines() if line.strip()]
+    return _short(lines[-1], 80) if lines else "stderr 없음"
+
+
+def build_generator_reproduction(
+    payloads: dict[str, bytes], selected: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """ZIP Generator를 격리 실행하고 결정론적 재현 증적을 만든다.
+
+    임시 루트는 OS 임시 영역에 만들고 저장소 내부·symlink를 거부한다. Generator는
+    현재 Python의 isolated mode(`-I`)와 locale만 남긴 최소 환경에서 실행한다.
+    결과 inventory가 정확히 9 CSV + master.cypher가 아니거나 내용이 다르면 manifest를
+    만들지 않는다. 성공 결과에는 실행 시각·호스트 등 비결정적 값이 들어가지 않는다.
+    """
+    generator_payload = payloads[GENERATOR_MEMBER]
+    expected_generator_sha = selected[GENERATOR_MEMBER]["sha256"]
+    measured_generator_sha = _sha256_bytes(generator_payload)
+    if measured_generator_sha != expected_generator_sha:
+        raise ManifestBuildError(
+            "Generator payload 해시가 intake 등록값과 다릅니다", EXIT_MISMATCH
+        )
+
+    scratch_root: Path | None = None
+    cleanup_allowed = False
+    try:
+        scratch_root = Path(
+            tempfile.mkdtemp(prefix="fdc-generator-reproduction-")
+        ).resolve()
+        repository_root = REPOSITORY_ROOT.resolve()
+        cleanup_allowed = (
+            scratch_root != repository_root
+            and scratch_root.name.startswith("fdc-generator-reproduction-")
+        )
+        if scratch_root == repository_root or repository_root in scratch_root.parents:
+            raise ManifestBuildError(
+                "Generator 임시 디렉터리가 저장소 내부에 생성됐습니다", EXIT_USAGE
+            )
+        if scratch_root.is_symlink() or not scratch_root.is_dir():
+            raise ManifestBuildError(
+                "Generator 임시 디렉터리가 안전하지 않습니다", EXIT_USAGE
+            )
+
+        run_root = scratch_root / "run"
+        if run_root.exists() or run_root.is_symlink():
+            raise ManifestBuildError(
+                "Generator 실행 디렉터리가 fresh 상태가 아닙니다", EXIT_USAGE
+            )
+        generator_path = run_root / "mvp" / "gen_sample_data.py"
+        generator_path.parent.mkdir(parents=True, mode=0o700)
+        generator_path.write_bytes(generator_payload)
+
+        child_env = {
+            "LANG": GENERATOR_LOCALE,
+            "LC_ALL": GENERATOR_LOCALE,
+            "PYTHONIOENCODING": "utf-8",
+        }
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-I", str(generator_path)],
+                cwd=run_root,
+                env=child_env,
+                capture_output=True,
+                check=False,
+                timeout=GENERATOR_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ManifestBuildError(
+                f"Generator 실행 시간이 {GENERATOR_TIMEOUT_SECONDS}초를 초과했습니다",
+                EXIT_MISMATCH,
+            ) from exc
+        except OSError as exc:
+            raise ManifestBuildError(
+                "Generator를 실행할 수 없습니다", EXIT_USAGE
+            ) from exc
+        if completed.returncode != 0:
+            detail = _generator_failure_detail(completed.stderr)
+            raise ManifestBuildError(
+                "Generator 실행이 실패했습니다"
+                f" (exit {completed.returncode}: {detail})",
+                EXIT_MISMATCH,
+            )
+
+        data_root = run_root / "sample" / "data"
+        ontology_root = run_root / "sample" / "ontology"
+        expected_csv_names = {Path(member).name for member in TABLE_MEMBERS.values()}
+        csv_entries = list(data_root.iterdir()) if data_root.is_dir() else []
+        actual_csv_names = {path.name for path in csv_entries}
+        expected_ontology_names = {Path(MASTER_CYPHER_MEMBER).name}
+        ontology_entries = (
+            list(ontology_root.iterdir()) if ontology_root.is_dir() else []
+        )
+        actual_ontology_names = {path.name for path in ontology_entries}
+        inventory_errors: list[str] = []
+        unsafe_entries = sorted(
+            str(path.relative_to(run_root))
+            for path in csv_entries + ontology_entries
+            if path.is_symlink() or not path.is_file()
+        )
+        if unsafe_entries:
+            inventory_errors.append("비정상 entry=" + ",".join(unsafe_entries))
+        for label, expected, actual in (
+            ("CSV", expected_csv_names, actual_csv_names),
+            ("ontology", expected_ontology_names, actual_ontology_names),
+        ):
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
+            if missing:
+                inventory_errors.append(f"{label} 누락={','.join(missing)}")
+            if unexpected:
+                inventory_errors.append(f"{label} 추가={','.join(unexpected)}")
+        if inventory_errors:
+            raise ManifestBuildError(
+                "Generator 출력 inventory가 계약과 다릅니다 — "
+                + "; ".join(inventory_errors),
+                EXIT_MISMATCH,
+            )
+        expected_output_paths = {
+            Path("sample/data") / Path(member).name for member in TABLE_MEMBERS.values()
+        } | {Path("sample/ontology") / Path(MASTER_CYPHER_MEMBER).name}
+        actual_output_paths = {
+            path.relative_to(run_root)
+            for path in run_root.rglob("*")
+            if path.is_file() and path != generator_path
+        }
+        unexpected_output_paths = sorted(actual_output_paths - expected_output_paths)
+        if unexpected_output_paths:
+            raise ManifestBuildError(
+                "Generator가 계약 밖 파일을 만들었습니다 — "
+                + ", ".join(map(str, unexpected_output_paths)),
+                EXIT_MISMATCH,
+            )
+
+        csv_results: list[dict[str, Any]] = []
+        mismatched: list[str] = []
+        for table in sorted(TABLE_MEMBERS):
+            member = TABLE_MEMBERS[table]
+            generated = (data_root / Path(member).name).read_bytes()
+            expected = payloads[member]
+            match = generated == expected
+            csv_results.append(
+                {
+                    "file_id": member,
+                    "expected_sha256": _sha256_bytes(expected),
+                    "generated_sha256": _sha256_bytes(generated),
+                    "match": match,
+                }
+            )
+            if not match:
+                mismatched.append(member)
+
+        source_cypher = payloads[MASTER_CYPHER_MEMBER]
+        generated_cypher = (
+            ontology_root / Path(MASTER_CYPHER_MEMBER).name
+        ).read_bytes()
+        source_style = _newline_style(source_cypher)
+        generated_style = _newline_style(generated_cypher)
+        normalized_source = source_cypher.replace(b"\r\n", b"\n")
+        normalized_generated = generated_cypher.replace(b"\r\n", b"\n")
+        cypher_match = normalized_source == normalized_generated
+        if source_style not in {"CRLF", "LF"} or generated_style not in {"CRLF", "LF"}:
+            raise ManifestBuildError(
+                "master.cypher 개행 형식이 CRLF/LF 계약과 다릅니다"
+                f" (source {source_style} / generated {generated_style})",
+                EXIT_MISMATCH,
+            )
+        if not cypher_match:
+            mismatched.append(MASTER_CYPHER_MEMBER)
+        if mismatched:
+            raise ManifestBuildError(
+                "Generator 재현 결과가 원본과 다릅니다 — " + ", ".join(mismatched),
+                EXIT_MISMATCH,
+            )
+
+        return {
+            "contract_version": GENERATOR_REPRODUCTION_CONTRACT_VERSION,
+            "generator_sha256": measured_generator_sha,
+            "csv_byte_identical": True,
+            "csv_results": csv_results,
+            "newline_normalized": [
+                {
+                    "file_id": MASTER_CYPHER_MEMBER,
+                    "source_newline": source_style,
+                    "generated_newline": generated_style,
+                    "normalized_sha256": _sha256_bytes(normalized_source),
+                    "match": True,
+                }
+            ],
+            "mismatched": [],
+        }
+    except OSError as exc:
+        raise ManifestBuildError(
+            "Generator 재현 산출물을 안전하게 처리할 수 없습니다", EXIT_USAGE
+        ) from exc
+    finally:
+        if scratch_root is not None and cleanup_allowed:
+            active_exception = sys.exc_info()[0] is not None
+            try:
+                shutil.rmtree(scratch_root)
+            except OSError as exc:
+                if not active_exception:
+                    raise ManifestBuildError(
+                        "Generator 임시 디렉터리를 정리할 수 없습니다", EXIT_USAGE
+                    ) from exc
+
+
 def build_payload(
     epoch: dict[str, str],
     tables: dict[str, dict[str, Any]],
     artifacts: dict[str, Any],
     origin_artifacts: dict[str, dict[str, Any]],
+    generator_reproduction: dict[str, Any],
     *,
     selected_entry_manifest_sha256: str,
 ) -> dict[str, Any]:
@@ -858,6 +1091,7 @@ def build_payload(
         },
         "tables": tables,
         "artifacts": artifacts,
+        "generator_reproduction": generator_reproduction,
         # ① 선별 artifact의 출처 역할 고정(WBS 확대분). ③이 정본이고, ③에 없는 것만
         # ①에서 가져온다 — 판정 규칙과 근거 문서를 함께 기록해 소비자가 재확인한다.
         "origin_package": {
@@ -1001,11 +1235,13 @@ def main(argv: list[str] | None = None) -> int:
         origin_artifacts = read_origin_package(args.origin_package, selected)
         tables = build_tables(payloads)
         artifacts = build_artifacts(payloads, selected)
+        generator_reproduction = build_generator_reproduction(payloads, selected)
         payload = build_payload(
             epoch,
             tables,
             artifacts,
             origin_artifacts,
+            generator_reproduction,
             selected_entry_manifest_sha256=selected_entry_sha,
         )
         outcome = write_artifact(
