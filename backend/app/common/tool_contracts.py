@@ -166,7 +166,6 @@ class GraphRelationRef(ToolModel):
 class DocumentHit(ToolModel):
     chunk_id: NonEmptyId
     document_id: NonEmptyId
-    corpus_revision: NonEmptyId
     title: str = Field(min_length=1)
     section: str | None = None
     score: float = Field(ge=-1.0, le=1.0)
