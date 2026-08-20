@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 35.0h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 38.5h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 22.0h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
 | C Agent/HITL | 방대혁 | 42.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 15.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **143.0h** | P2 도전 과제 제외 |
+| **합계** | | **146.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 101.5h / P1 41.5h**이며 P2 5.5h는 합계에서 제외한다.
-Task 수는 85건(P2 3건 포함)이다.
+우선순위별 공수는 **P0 101.5h / P1 45.0h**이며 P2 5.5h는 합계에서 제외한다.
+Task 수는 86건(P2 3건 포함)이다.
 
 ---
 
@@ -76,6 +76,7 @@ Task 수는 85건(P2 3건 포함)이다.
 | V5-CM-1.3 | P0 | source manifest v4. 완료: 9개 CSV의 컬럼·행 수·typed content hash와 `03_schema_clean.sql`·`master.cypher`·Generator 해시를 한 manifest로 고정한다. 행 수는 기준표 실측값과 일치한다 | FR-I-04, NFR-06 | V5-CM-1.2 | 1.5h |
 | V5-CM-1.4 | P0 | Generator 재현 검증. 완료: `gen_sample_data.py`를 격리 실행해 9개 CSV가 byte-identical로 재생성됨을 확인하고 결과를 manifest provenance에 남긴다 | NFR-06 | V5-CM-1.3 | 1.0h |
 | V5-CM-1.5 | P0 | 구 epoch 정리. 완료: v4의 corrected build 파이프라인(`dim_parameter` overlay·`seq_no`·시각 보정)을 최종 epoch 경로에서 제외하고, 폐기 사유를 문서화한다. 코드 삭제 여부는 별도 정리 Task로 둔다 | FR-I-04 | V5-CM-1.2 | 0.5h |
+| V5-CM-1.6 | P1 | **구 epoch 파이프라인 제거**. 완료: (a) corrected 계열 — `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트를 삭제하고 `manifest_v3`의 `corrected_files` artifact type·`(runtime\|evaluation, corrected_base)` stage 계약, `verify_bootstrap_state`의 corrected 경로·marker를 걷어낸다. (b) **구 bootstrap 계열** — `V5-CM-2.2`가 멘토 `03_schema_clean.sql`로 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 삭제한다. (c) **`V5-CM-1.2`가 skip 처리한 50건 중 해제 Task가 없는 것을 전부 해소한다** — skip 잔존 0건이 완료 조건이다(`test_source_manifest_artifact`는 `V5-CM-1.3` manifest v4로 대체됨을 확인 후 삭제). `data/corrected`와 잔여 구 manifest·marker도 정리한다. 전체 회귀 통과 · **skip 사유에 `V5-CM-1.2` 문자열이 남아 있지 않아야 한다** | FR-I-04, NFR-06 | V5-CM-2.4, V5-CM-1.3 | 3.5h |
 
 ### V5-CM-2. fresh bootstrap
 
@@ -198,7 +199,7 @@ Task 수는 85건(P2 3건 포함)이다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-D-1.1 | P0 | 감사 read model. 완료: `audit_log`를 직접 조회하고 `action_history`에서 사후 합성하지 않는다. `occurred_at DESC, audit_id DESC` 안정 정렬을 적용한다 | FR-D-07, NFR-05 | V5-CM-4.2 | 1.5h |
+| V5-D-1.1 | P0 | 감사 read model. 완료: `audit_log`를 직접 조회하고 `action_history`에서 사후 합성하지 않는다. `occurred_at DESC, audit_id DESC` 안정 정렬을 적용한다 | FR-D-07, NFR-05 | V5-CM-4.2, V5-CM-3.2 | 1.5h |
 | V5-D-1.2 | P0 | `GET /audit-logs`. 완료: event·actor·entity·기간 필터와 동일 필터 전체 집계를 제공하고 UPDATE·DELETE 경로를 만들지 않는다 | FR-D-07 | V5-D-1.1 | 1.5h |
 | V5-D-1.3 | P1 | 화면 3 감사 subview. 완료: 필터·정렬·상세를 연결하고 `api.audit()` wrapper를 실제로 소비한다 | FR-D-07, FR-I-02 | V5-D-1.2 | 2.0h |
 | V5-D-2.1 | P1 | schema allowlist·pool. 완료: 최종 schema 기준 table/column allowlist와 runtime readonly·evaluation readonly pool을 분리한다. DSN fallback 0건 | FR-D-03, NFR-01 | V5-CM-3.5 | 2.0h |
@@ -219,13 +220,18 @@ Task 수는 85건(P2 3건 포함)이다.
 2  V5-CM-2.*        fresh bootstrap (e2e → agent → text2sql 순서)
 3  V5-CM-3.1~3.3    reference extension · Runtime migration · pair guard
 4  V5-CM-3.4~3.5    checkpoint · 최소권한 role
-5  V5-CM-4.3        통합 검증기 전체 PASS          ← 여기까지가 구현 착수 게이트
+5  V5-CM-4.3        통합 검증기 전체 PASS
 6  A·B·D 병렬 착수   재계산·graph/RAG·감사
 7  C 착수            Runtime Repository → LangGraph → 조치 → HITL → n8n
 8  V5-CM-4.4-1~3    5화면 navigation 전환 · 호환 projection · alias 제거 조건
 9  V5-CM-4.5~4.7    compose·readiness·E2E reset
 10 통합 E2E·평가 artifact·최종 검증
 ```
+
+**착수 게이트는 `V5-CM-2.4`(적재 검증) 통과다.** 여기서 데이터가 확정되고 이후 재적재가
+없으므로 그 시점부터 팀원이 붙어도 안전하다. 실제 해금은 B가 `V5-CM-1.3` 직후(누적 4.0h),
+A가 `V5-CM-2.4` 직후(10.5h), C·D가 `V5-CM-3.2~3.3` 직후(15.5h)다. `V5-CM-4.3`은
+`V5-CM-4.5`만 선행하므로 팀원 착수를 막지 않는다.
 
 공용 DB 적용은 `kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql` 순서로만 수행하고, 각 단계에서
 preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 다음 DB로 넘어간다.
@@ -248,5 +254,5 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 | 임베딩 provider·model·차원 | B가 `V5-B-2.2`에서 확정 | 구현 단계 |
 | Kafka broker 운영 위치(공용 서버 1벌 / 팀원 로컬) | 구현은 필수로 진행. 배치만 미정 | `V5-CM-4.5` compose 통합 시 |
 | Text2SQL 활성 여부 | 선택 확장. 필수 인수 기준에 미포함 | 일정 여유에 따라 |
-| v4 corrected build 코드 삭제 | `V5-CM-1.5`에서 폐기 표시만. 삭제는 별도 정리 | 통합 검증 후 |
+| ~~v4 corrected build 코드 삭제~~ | **`V5-CM-1.6`으로 등록 완료** | `V5-CM-2.4` 이후 |
 | compatibility alias 제거 | `V5-CM-4.4-3`이 조건만 등록. 삭제는 후속 Task | 모든 화면 canonical 전환 후 |

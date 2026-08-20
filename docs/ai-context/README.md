@@ -32,8 +32,8 @@
 6. 코드
 ```
 
-WBS v5가 없는 동안 문서 정리 작업은 `FINAL-DOC`으로 표시한다. 구현 요청에는 임의의 V5 Task
-ID를 만들지 않는다.
+WBS v5가 확정됐으므로 구현 요청에는 WBS v5에 실재하는 `V5-*` Task ID를 명시한다. 임의의
+Task ID를 만들지 않는다. `FINAL-DOC` 표시는 WBS v5 확정 이전 문서 정리 이력에만 남는다.
 
 ## 2. 최종 데이터 불변값
 
@@ -95,8 +95,8 @@ adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 | 항목 | 상태 |
 |---|---|
 | 최종 ZIP 실측·해시 검증 | 완료 |
-| 요구사항·설계·역할·API 새 기준본 | 작성·검토 중 |
-| WBS v5·역할별 Task | 미작성 |
+| 요구사항·설계·역할·API 새 기준본 | 완료 (v2.1·v10.1·API v3) |
+| WBS v5·역할별 Task | 완료 |
 | source/corrected/profile manifest | 구 `kosa_0813` 상태, 재생성 필요 |
 | PostgreSQL 격리 적재 검증 | 미실행 |
 | Neo4j 44/85 safe load 검증 | 미실행 |
@@ -123,7 +123,8 @@ adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
 2. `V5-CM-1.*` 최종 source intake·epoch·manifest부터 구현한다.
 3. `V5-CM-2.*` fresh bootstrap을 `kosa_agent_e2e` → `kosa_agent` → `kosa_text2sql`
    순서로 적용한다.
-4. `V5-CM-4.3` 통합 검증기 전체 PASS가 A·B·C·D 착수 게이트다.
+4. 착수 게이트는 `V5-CM-2.4`(적재 검증) 통과다. 실제 해금은 B가 `V5-CM-1.3` 직후,
+   A가 `V5-CM-2.4` 직후, C·D가 `V5-CM-3.2~3.3` 직후다(WBS v5 §8).
 5. 공용 DB는 각 단계에서 preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야
    다음 DB로 넘어간다.
 
