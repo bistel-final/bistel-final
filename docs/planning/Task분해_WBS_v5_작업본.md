@@ -53,14 +53,14 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 51.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 52.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 40.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **155.5h** | P2 도전 과제 제외 |
+| **합계** | | **156.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 109.0h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
+우선순위별 공수는 **P0 109.5h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
 Task 수는 93건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 
 ---
@@ -84,7 +84,7 @@ Task 수는 93건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
 | V5-CM-2.1 | P0 | 재구축 runner 골격. 완료: host·database allowlist, epoch·fingerprint 확인, `--confirm-target`·`--change-ref`, advisory lock, 단일 transaction, `--preflight`/`--rehearse`/apply/`--register-manifests` 모드 배타를 갖춘다. 멘토 `00_load.sh` 호출 경로는 없고 모드 오류는 sanitized reason·exit 2로 끝난다 | FR-I-04, NFR-14 | V5-CM-1.3 | 2.0h |
-| V5-CM-2.2 | P0 | 격리 schema rehearsal. 완료: rehearsal target의 `public` schema를 비우고 ③ `03_schema_clean.sql`을 hash pin 확인 후 **base 9 table DDL로만** 원문 실행한다. 생성 결과는 base 9 table이며 RAG·Runtime 객체는 0건이다 | FR-I-04, NFR-14 | V5-CM-2.1 | 1.5h |
+| V5-CM-2.2 | P0 | 격리 schema rehearsal. 완료: macOS·Windows에서 같은 절차로 일회성 PostgreSQL을 기동하고 ready 대기 후 rehearsal target의 `public` schema를 비운다. ③ `03_schema_clean.sql`을 hash pin 확인 후 **base 9 table DDL로만** 원문 실행하고 종료 시 container·volume을 정리한다. POSIX 전용 lock·명령에 의존하지 않으며 생성 결과는 base 9 table, RAG·Runtime 객체는 0건이다 | FR-I-04, NFR-14 | V5-CM-2.1 | 2.0h |
 | V5-CM-2.3 | P0 | 격리 profile 적재. 완료: runner가 BOM 제거 후 FK 순서로 적재하고 runtime 2 profile은 8개 CSV(action 제외), evaluation은 9개 전부를 넣는다. rehearsal 결과는 action 0 / 0 / 12다 | FR-I-04 | V5-CM-2.2 | 1.5h |
 | V5-CM-2.4 | P0 | 격리 적재 검증. 완료: 9 table 행 수·typed content hash·PK 중복 0·FK 누락 0을 manifest와 대조하고 evaluation 4,538/216/46과 알람 138·51, timestamp `+09:00` 해석을 검증한다 | FR-I-04, NFR-06, NFR-13 | V5-CM-2.3 | 1.5h |
 | V5-CM-2.5 | P0 | 재실행·복구 rehearsal. 완료: 같은 profile 재실행은 no-op이고 부분 실패는 단일 transaction rollback으로 되돌아간다. marker 유실은 `--recover-artifact`로만 복구하며 실패 주입 후 source hash가 보존된다 | FR-I-04, NFR-14, NFR-16 | V5-CM-2.4 | 1.0h |
@@ -124,7 +124,7 @@ Task 수는 93건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다 | NFR-02, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7 | 2.0h |
 
-**Common 합계: 51.5h**
+**Common 합계: 52.0h**
 
 ---
 
