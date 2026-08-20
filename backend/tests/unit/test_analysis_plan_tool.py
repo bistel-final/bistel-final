@@ -102,6 +102,23 @@ class TestGenerateAnalysisPlan:
         assert result.visualization is not None
         assert result.visualization.chart_type == "bar"
 
+    def test_quoted_alias_preserves_case_in_group_by(self, monkeypatch) -> None:
+        # PostgreSQL 은 인용 식별자의 대소문자를 보존한다 — rows 의 키는
+        # "Equipment" 이므로 group_by 도 같은 표기여야 한다 (P2 리뷰 반영).
+        monkeypatch.setattr(
+            llm,
+            "chat",
+            lambda messages: (
+                'SELECT equipment AS "Equipment", COUNT(*) AS cnt'
+                " FROM summary_alarm_history GROUP BY equipment"
+            ),
+        )
+
+        result = tools.generate_analysis_plan(_ask())
+
+        assert result.ok is True
+        assert result.group_by == ["Equipment"]
+
     def test_group_by_column_missing_from_projection_is_excluded(
         self, monkeypatch
     ) -> None:

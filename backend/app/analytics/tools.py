@@ -107,20 +107,41 @@ def _extract_group_by_columns(sql: str) -> list[str]:
     if group is None:
         return []
 
-    # SELECT projection 역인덱스: (테이블 수식어, 컴럼명) -> 결과 키(alias 우선).
-    # 수식어를 버리면 JOIN 에서 a.eqp_id 와 b.eqp_id 가 같은 키로 뭉개져
-    # 뒤의 alias 가 앞을 덮어쓴다.
+    # 비교용 키와 응답용 표기를 분리한다.
+    # - 비교(매핑) 키: lower 정규화 — GROUP BY 참조와 projection 대응용
+    # - 응답 값: PostgreSQL 결과 키 규칙 그대로 — 인용("Equipment")은
+    #   대소문자 보존, 비인용은 lower 폴딩. rows 의 실제 키와 일치해야
+    #   차트가 축을 찾는다.
     def _column_key(column: exp.Column) -> tuple[str, str]:
         return ((column.table or "").lower(), column.name.lower())
+
+    def _result_key_of(identifier: exp.Identifier | None, fallback: str) -> str:
+        if identifier is None:
+            return fallback.lower()
+        if identifier.quoted:
+            return identifier.name
+        return identifier.name.lower()
 
     projected: dict[tuple[str, str], str] = {}
     for projection in statement.expressions:
         if isinstance(projection, exp.Alias) and isinstance(
             projection.this, exp.Column
         ):
-            projected[_column_key(projection.this)] = projection.alias.lower()
+            alias_identifier = projection.args.get("alias")
+            projected[_column_key(projection.this)] = _result_key_of(
+                alias_identifier
+                if isinstance(alias_identifier, exp.Identifier)
+                else None,
+                projection.alias,
+            )
         elif isinstance(projection, exp.Column):
-            projected[_column_key(projection)] = projection.name.lower()
+            column_identifier = projection.this
+            projected[_column_key(projection)] = _result_key_of(
+                column_identifier
+                if isinstance(column_identifier, exp.Identifier)
+                else None,
+                projection.name,
+            )
 
     columns: list[str] = []
     for expression in group.expressions:
