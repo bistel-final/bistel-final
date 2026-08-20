@@ -59,6 +59,47 @@ class TestGenerateAnalysisPlan:
         assert result.visualization is not None
         assert result.visualization.chart_type == "table"
 
+    def test_group_by_returns_projection_alias_not_source_column(
+        self, monkeypatch
+    ) -> None:
+        # rows 의 키는 alias(equipment)다 — group_by 도 같은 키여야 차트가
+        # 범주 축을 찾는다 (P2 리뷰 반영).
+        monkeypatch.setattr(
+            llm,
+            "chat",
+            lambda messages: (
+                "SELECT eqp_id AS equipment, COUNT(*) AS cnt"
+                " FROM trace_alarm_history GROUP BY eqp_id"
+            ),
+        )
+
+        result = tools.generate_analysis_plan(_ask())
+
+        assert result.ok is True
+        assert result.group_by == ["equipment"]
+        assert result.visualization is not None
+        assert result.visualization.chart_type == "bar"
+
+    def test_group_by_column_missing_from_projection_is_excluded(
+        self, monkeypatch
+    ) -> None:
+        # GROUP BY 컴럼이 SELECT 에 안 나오면 rows 에 그 키가 없다 —
+        # 축으로 쓸 수 없으므로 제외하고 TABLE 로 내린다.
+        monkeypatch.setattr(
+            llm,
+            "chat",
+            lambda messages: (
+                "SELECT COUNT(*) AS cnt" " FROM trace_alarm_history GROUP BY eqp_id"
+            ),
+        )
+
+        result = tools.generate_analysis_plan(_ask())
+
+        assert result.ok is True
+        assert result.group_by == []
+        assert result.visualization is not None
+        assert result.visualization.chart_type == "table"
+
     def test_success_accepts_raw_sql_without_fence(self, monkeypatch) -> None:
         monkeypatch.setattr(
             llm,

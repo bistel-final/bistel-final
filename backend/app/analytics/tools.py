@@ -86,11 +86,17 @@ def _extract_sql(raw: str) -> str | None:
 
 
 def _extract_group_by_columns(sql: str) -> list[str]:
-    """GROUP BY 대상 컴럼명을 추출한다. 차트의 범주 축 메타데이터다.
+    """GROUP BY 범주 축을 **결과 행의 키 기준**으로 추출한다.
 
-    해석 실패나 비컴럼 표현식(위치 번호, 함수 등)은 건너뛴다 — 이 함수는
-    표현 메타데이터용이지 검증이 아니므로(검증은 sql_validator 소관)
-    보수적으로 비워도 안전하다.
+    group_by 는 차트 UI 가 rows 에서 범주 축을 찾는 키다. rows 의 키는
+    SELECT projection(alias 적용 후)이므로, GROUP BY 원본 컴럼이 SELECT
+    에서 alias 를 달고 나오면 alias 를 반환한다.
+    예: SELECT eqp_id AS equipment ... GROUP BY eqp_id → ["equipment"]
+
+    projection 에 없는 GROUP BY 컴럼(결과에 안 나오는 범주)은 축으로 쓸
+    수 없으므로 제외한다. 해석 실패나 비컴럼 표현식(위치 번호·함수)도
+    건너뛴다 — 이 함수는 표현 메타데이터용이지 검증이 아니므로(검증은
+    sql_validator 소관) 보수적으로 비워도 안전하다.
     """
     try:
         statement = sqlglot.parse_one(sql, read="postgres")
@@ -101,10 +107,23 @@ def _extract_group_by_columns(sql: str) -> list[str]:
     if group is None:
         return []
 
+    # SELECT projection 역인덱스: 원본 컴럼명 -> 결과 키(alias 우선)
+    projected: dict[str, str] = {}
+    for projection in statement.expressions:
+        if isinstance(projection, exp.Alias) and isinstance(
+            projection.this, exp.Column
+        ):
+            projected[projection.this.name.lower()] = projection.alias.lower()
+        elif isinstance(projection, exp.Column):
+            projected[projection.name.lower()] = projection.name.lower()
+
     columns: list[str] = []
     for expression in group.expressions:
-        if isinstance(expression, exp.Column):
-            columns.append(expression.name.lower())
+        if not isinstance(expression, exp.Column):
+            continue
+        result_key = projected.get(expression.name.lower())
+        if result_key is not None:
+            columns.append(result_key)
     return columns
 
 
