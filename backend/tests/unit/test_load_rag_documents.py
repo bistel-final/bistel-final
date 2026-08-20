@@ -91,12 +91,29 @@ def test_cli_requires_explicit_database_and_source_dir() -> None:
         [
             "--database",
             "kosa_agent",
+            "--confirm-target",
+            "kosa_agent",
             "--source-dir",
             str(loader.DEFAULT_CORRECTED_RAG_DIR),
         ]
     )
     assert args.database == "kosa_agent"
+    assert args.confirm_target == "kosa_agent"
     assert args.source_dir == loader.DEFAULT_CORRECTED_RAG_DIR
+
+
+def test_cli_rejects_mismatched_confirm_target() -> None:
+    with pytest.raises(loader.RagLoadError):
+        loader.parse_args(
+            [
+                "--database",
+                "kosa_agent",
+                "--confirm-target",
+                "kosa_agent_e2e",
+                "--source-dir",
+                str(loader.DEFAULT_CORRECTED_RAG_DIR),
+            ]
+        )
 
 
 def test_load_corpus_replaces_only_canonical_documents() -> None:

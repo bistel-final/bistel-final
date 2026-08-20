@@ -689,12 +689,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="RAG 적재 대상 DB. 기본값과 평가 DB는 허용하지 않는다.",
     )
     parser.add_argument(
+        "--confirm-target",
+        required=True,
+        choices=sorted(ALLOWED_RAG_DATABASES),
+        help="오조작 방지를 위해 --database와 같은 값을 넣는다.",
+    )
+    parser.add_argument(
         "--source-dir",
         required=True,
         type=Path,
         help="검증된 corrected RAG 3종이 들어 있는 명시 경로.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.database != args.confirm_target:
+        raise RagLoadError("--confirm-target과 --database가 다릅니다")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
