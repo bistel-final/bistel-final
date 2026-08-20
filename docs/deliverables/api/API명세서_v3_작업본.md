@@ -369,7 +369,6 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
     "doc_id": "DOC-SPEC-PH9000",
     "document_id": "DOC-SPEC-PH9000",
     "chunk_id": "DOC-SPEC-PH9000:cs1:<4-digit-seq>",
-    "corpus_revision": "<active-corpus-revision>",
     "title": "PH-9000 Photo Scanner 장비 스펙 및 운전 기준",
     "section": "4.2 Focus Offset (`PH_FOCUS`)",
     "score": 0.87,
@@ -385,7 +384,7 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   `DOC-TROUBLE-FDC`를 canonical `document_id`로 그대로 승계한다. `chunk_id`는
   `<document_id>:<chunk_schema_version>:<4자리 순번>` 형식으로 결정론적으로 생성하며 최초
   `chunk_schema_version`은 `cs1`이다. 같은 원문·분할 규칙·순번에서는 재적재해도 바뀌지
-  않고, `corpus_revision`은 별도로 반환한다.
+  않는다.
 - 예시의 `DOC-SPEC-PH9000:cs1:<4-digit-seq>`와 `<active-corpus-revision>`은 현재 패키지에
   ACTIVE corpus manifest가 없어 사용한 placeholder다. 형식과 생성은 결정론적이지만 예시
   chunk ID·revision 문자열 자체는 최종값이 아니며, 응답은 검증된 ACTIVE manifest의 실제
@@ -611,7 +610,6 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
       "document_id": "DOC-TROUBLE-FDC",
       "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
       "section": "3.2 RFM — RF Mismatch (RF 정합 불량)",
-      "corpus_revision": "<active-corpus-revision>"
     }
   ],
   "limitations": ["Pilot scope; production ground truth unavailable"],
@@ -620,7 +618,6 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
     "document_id": "DOC-TROUBLE-FDC",
     "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
     "section": "3.2 RFM — RF Mismatch (RF 정합 불량)",
-    "corpus_revision": "<active-corpus-revision>"
   },
   "limit": "Pilot scope ..."
 }
@@ -637,7 +634,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   `result`, `detail`은 최종 참고 React용 deprecated alias다.
 - `evidence_items`의 공통 필수 field는 `type`, `source_id`, `title`, `excerpt`다. type은
   `ALARM|TRACE|GRAPH|DOCUMENT|METROLOGY`이고 DOCUMENT는 `document_id`, `chunk_id`,
-  `corpus_revision`을 추가로 요구하고 `section` field는 선택(nullable)으로 선언한다.
+  `section` field는 선택(nullable)으로 선언한다.
   GRAPH는 `relation_id`, `graph_revision`을 추가로 요구한다. 해당 type이 아닌 provenance
   field는 null이며 unknown field를 임의로 추가하지 않는다.
 - METROLOGY 근거에는 조회가 허용된 계측 정보만 담는다. `metrology.alarm_result`는
@@ -648,7 +645,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   `document_id`와 같은 값이다.
 - Tool 결과는 같은 응답의 evidence ID와 실제 조회 결과를 참조한다.
 - 공개 합성 `ground_truth_fault_code`를 State·Tool·prompt·response에 넣지 않는다.
-- 예시의 chunk ID·corpus revision은 3.4에 선언한 결정론적 형식의 비최종
+- 예시의 chunk ID는 3.4에 선언한 결정론적 형식의 비최종
   placeholder며 실제 응답은 ACTIVE manifest 값을 사용한다.
 - 승인 대기 질문은 조회 결과만 반환하며 승인 상태를 바꾸지 않는다.
 - 의존성 실패는 503, 요청 형식 오류는 422다.
@@ -657,7 +654,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 
 ## 4. 프로젝트 필수 보안 API
 
-### 4.1 `GET /ontology/graph`
+### 4.1 `GET /relations/chambers/{chamber_id}`
 
 최종 reference frontend의 Ontology 화면은 Neo4j Browser iframe을 직접 열고 기본 계정 정보를
 화면에 표시한다. 이는 구조 확인용 reference이지 수용 가능한 서비스 경계가 아니다. 실제 React
@@ -757,7 +754,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 - PostgreSQL Runtime profile의 dataset epoch·schema·권한
 - reference migration compatibility marker
 - Neo4j 44 nodes / 85 relationships success marker·fingerprint
-- ACTIVE RAG corpus revision·embedding dimension
+- RAG 적재 상태·embedding dimension
 - n8n readiness
 - Kafka metadata와 `fdc.actions`·`fdc.actions.result` topic 접근
 
@@ -852,5 +849,5 @@ API key, SQL 원문 및 원본 LLM prompt를 기록하지 않는다.
 - `AgentAskResponse`의 predicted·confidence·recommended field는 required-nullable이고 `fault_code`는
   없으며, DOCUMENT `section` 선택(nullable) 선언과 METROLOGY `alarm_result` 비노출을
   contract test한다.
-- readiness는 reference compatibility marker와 ACTIVE RAG corpus revision·embedding dimension을
+- readiness는 reference compatibility marker와 RAG 적재 상태·embedding dimension을
   PostgreSQL·Neo4j·n8n·Kafka 검사와 함께 검증한다.

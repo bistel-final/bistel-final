@@ -120,7 +120,7 @@ Frontend adapter Task로 배정한다.
 `api.audit()`는 참고 페이지에서 아직 소비하지 않으므로 Agent 감사 subview 연결을 별도 완료
 기준으로 둔다. Ontology 화면은
 API 없이 Neo4j Browser와 기본 계정을 직접 노출하므로, 프로젝트는 이를 대체하는 read-only
-`GET /ontology/graph`를 보안 필수 API로 추가한다. 따라서 public 필수는 호환 9개 + 보안 1개다.
+`GET /relations/chambers/{chamber_id}`를 보안 필수 API로 추가한다. 따라서 public 필수는 호환 9개 + 보안 1개다.
 Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관리한다. 동일 path가 요청 조건에 따라
 배열과 페이지 객체를 번갈아 반환하지 않는다. 상세 계약은 `API명세서_v3_작업본.md`를 따른다.
 
@@ -142,7 +142,7 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 |---|---|---|---|---|
 | Common·통합 | 방대혁 주도, 전원 리뷰 | 최종 source intake, epoch·manifest, DB/graph 안전 적재, 공통 Enum·DTO·오류·감사 쓰기 계약 | health는 업무 API 외 | 통합 E2E·배포·복구 |
 | A. Detection | 신동원 | Summary/evaluation/알람/R03 결정론 재현, 모델 score 근거, 합성 라벨 격리 평가 | `GET /alarms`, `GET /trace`, `GET /parameters` | 화면 1·2, 감지·모델 평가 |
-| B. Knowledge | 강연권 | Neo4j 44/85 안전 검증, RAG 문서 정정·검색, 근거 provenance | `POST /documents/search`, 보안 필수 `GET /ontology/graph` | 화면 4·5, 관계·검색 평가 |
+| B. Knowledge | 강연권 | Neo4j 44/85 안전 검증, RAG 문서 정정·검색, 근거 provenance | `POST /documents/search`, 보안 필수 `GET /relations/chambers/{chamber_id}` | 화면 4·5, 관계·검색 평가 |
 | C. Agent·HITL | 방대혁 | LangGraph, 원인 가설, 3단계 조치, 승인, n8n SMTP, Kafka MES Mock | 호환 4개 + 필수 내부 delivery callback | 화면 3, 상태 전이·E2E |
 | D. Analytics·Audit | 천승현 | 감사 read model/API, 선택 확장 Text2SQL·통계·차트 | `GET /audit-logs` | 화면 3 감사 탭, 선택 확장 SQL 방어·정확도 |
 
@@ -225,12 +225,13 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 ### 7.1 담당 범위
 
 - 최종 `master.cypher`를 독립 파싱해 44 nodes / 85 relationships와 필수 속성·방향·중복을 검증한다.
-- destructive 문장을 제거·격리한 안전 loader로 공용 Neo4j를 갱신한다.
-- 최종 RAG 원문을 graph·데이터·조치 정책과 교차 검토해 corrected corpus를 만든다.
-- 문서 검색 결과에 document/chunk/corpus revision과 실제 근거 내용을 반환한다.
+- 공용 Neo4j 갱신이 필요하면 Common의 기존 destructive-safe loader를 재사용한다(신규 구현 없음).
+- 최종 RAG 원문을 graph·데이터·조치 정책과 교차 검토해 정정본을 만든다. 원본은 보존하고
+  정정본을 정본으로 적재한다(overlay·corpus revision 없음).
+- 문서 검색 결과에 document/chunk와 실제 근거 내용을 반환한다.
 - 검색은 임베딩 기반 벡터 검색으로 구현한다. 참고 구현의 키워드 스코어는 파일럿이다.
-  **임베딩 provider·model·차원은 이 역할이 구현 단계에서 확정**하고 corpus revision
-  metadata와 `.env`에 함께 기록한다.
+  임베딩은 배포본 ①의 `BAAI/bge-m3`·1024를 유지하고 재선정하지 않는다. 모델은 process당
+  1회 생성해 재사용한다.
 
 ### 7.2 RAG 정정 원칙
 
@@ -250,12 +251,12 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 ### 7.3 API·화면·평가 책임
 
 - 호환 필수: `POST /documents/search`
-- 보안 필수: `GET /ontology/graph`
+- 보안 필수: `GET /relations/chambers/{chamber_id}`
 - 선택 확장: 장비·챔버별 관계 조회, 문서 상세
 - 화면 4의 문서 검색과 화면 5의 Ontology를 구현하고 Agent 화면의 근거 deep link를 연결한다.
 - 최종 reference frontend의 Neo4j Browser iframe과 화면에 노출된 `neo4j/password`는 수용하지
   않는다. Browser 직접 접속 대신 Backend의 read-only graph API만 호출한다.
-- 독립 graph fixture, Recall@K, MRR, 실패 사례와 corpus revision을 평가 artifact에 기록한다.
+- 독립 graph fixture, Recall@4, MRR, 실패 사례를 평가 artifact에 기록한다.
 
 ---
 
@@ -336,7 +337,7 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 |---|---|---|
 | Common | 전원 | source epoch·manifest, 공통 Enum·DTO·오류, audit append helper, 안전 DB profile |
 | A | C·D | `AlarmRef`, 규칙 알람, Summary·Trace, nullable score evidence, 격리 평가 결과 |
-| B | C | graph relation ID, document/chunk/corpus revision, corrected 근거 내용 |
+| B | C | graph relation ID, document/chunk ID |
 | C | A·D | Agent run, approval, action, channel delivery 상태와 감사 이벤트 |
 | D | 전원 | schema allowlist, Text2SQL·audit read model, 평가 snapshot |
 

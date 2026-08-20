@@ -147,7 +147,10 @@ POST /documents/search
 
 `POST /internal/actions/{action_id}/delivery`는 n8n write-back용 내부 계약이다. Ontology 화면의
 참고 구현은 Neo4j Browser를 iframe으로 열지만, 팀 구현에서는 비밀번호를 Frontend에 노출하지
-않고 canonical read-only `GET /ontology/graph` Backend adapter로 대체한다.
+않고 canonical read-only Backend adapter로 대체한다. adapter의 형태는 팀 설계이며
+`GET /relations/chambers/{chamber_id}`(chamber 기준 관계 조회)로 확정했다 — 참고 Frontend의
+Ontology 화면은 Neo4j Browser iframe 14줄이라 화면 참고 구현이 존재하지 않기 때문이다.
+지켜야 할 제약은 **자격증명 미노출 · read-only adapter 경유**(NFR-02) 하나다.
 
 ## 7. Neo4j·RAG 주의
 
@@ -157,14 +160,17 @@ POST /documents/search
 - Graph에는 고정 설비 간 `UPSTREAM_OF`가 없다. Process Step 인접 관계와 PostgreSQL
   `lot_history` 실제 routing을 결합한다.
 - `sample/rag/SPEC_PH-9000_PhotoScanner.md`의 고정 `EQP01 → EQP04` 문장은 위 원칙과
-  충돌하므로 correction overlay 후 임베딩한다.
+  충돌하므로 정정한 뒤 임베딩한다. 정정본은 별도 경로에 두고 **원본은 `V5-CM-1.1` 등록
+  해시 그대로 보존**한다(overlay 구조는 쓰지 않는다 · `V5-B-1.2`).
 - TROUBLE 원문의 metrology FAIL·반복·하류 진행 기반 조치 상향과 원인 설명·후속 정상 기반
   하향은 3단계 deterministic rule과 충돌하므로 제거한다. R01은 raw 한 점의 USL/LSL 이탈 즉시
   TRACE 알람으로 통일하고 Fault 후보에 `OTH`를 포함한다.
 - PH-9000 적용 범위는 EQP01~03·RECIPE01/03, ET-7500은 EQP04~06·RECIPE02/04이며 문서 본문을
   이 범위로 정정한 뒤 chunking한다.
 - 원문 YAML의 문서 ID는 `DOC-SPEC-PH9000`, `DOC-SPEC-ET7500`,
-  `DOC-TROUBLE-FDC`이며 corrected corpus에서도 안정적으로 승계한다.
+  `DOC-TROUBLE-FDC`이며 정정본에서도 안정적으로 승계한다.
+- `document`·`document_chunk` 스키마와 `load_documents.py`·임베딩 모델은 최종 패키지에
+  없다. 교육생 배포패키지(①)에서 가져온다 — `docs/reference/배포패키지_기준.md`.
 
 ## 8. 선택 artifact 해시
 

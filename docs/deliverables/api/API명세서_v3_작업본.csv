@@ -2,8 +2,8 @@
 필수,A,GET,/alarms,저장·파생 알람 조회,"query: date_from,date_to는 선택 pair; area,equipment,chamber,parameter,source,include_derived 선택; 빈 문자열→unset은 equipment,chamber,parameter만",AlarmItem[],"422,503","occurred_at DESC; source ASC; alarm_id DESC","무파라미터 기본 TRACE138+SUMMARY51=189; include_derived=true면 192; source=R03이면 include_derived=false보다 우선해 3; identity=(source,alarm_id); canonical equipment_id,chamber_id,recipe_id,lot_id,wafer_id,parameter_id,recipe_step_no + deprecated 축약 alias"
 필수,A,GET,/trace,wafer parameter Trace,"query: lot,wafer,chamber,parameter 필수",TracePoint[],"422,503","measured_at ASC; recipe_step_no ASC; seq_no ASC","빈 결과=[]; seq_no는 step1 0..2와 step2 3..5"
 필수,A,GET,/parameters,parameter 5선 기준정보,없음,ParameterItem[],503,"area ASC; parameter_id ASC","8행; upper_only은 source metadata 근거; name·LSL·LCL·TARGET·UCL·USL은 deprecated alias"
-필수,B,POST,/documents/search,RAG 문서 검색,"body: query 1..1000; model_code 선택; top_k 1..10 기본4",DocumentHit[],"422,503","score DESC; document_id ASC; chunk_id ASC","ACTIVE corrected corpus만; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; corpus_revision 별도; doc_id는 document_id alias"
-보안필수,B,GET,/ontology/graph,Ontology 전체 관계 조회,"query: label 선택; limit 1..1000 기본500",OntologyGraphResponse,"422,503","node label/business_id; edge type/from/to","최종 44 nodes/85 relationships; GraphRelationship properties 미노출; Neo4j Browser·credentials 직접 노출 금지"
+필수,B,POST,/documents/search,RAG 문서 검색,"body: query 1..1000; model_code 선택; top_k 1..10 기본4",DocumentHit[],"422,503","score DESC; document_id ASC; chunk_id ASC","정정본 적재분만; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; corpus_revision 별도; doc_id는 document_id alias"
+보안필수,B,GET,/relations/chambers/{chamber_id},Ontology chamber 관계 조회,"query: label 선택; limit 1..1000 기본500",OntologyGraphResponse,"422,503","node label/business_id; edge type/from/to","최종 44 nodes/85 relationships; GraphRelationship properties 미노출; Neo4j Browser·credentials 직접 노출 금지"
 필수,C,GET,/agent/runs,Agent 실행 이력,"query: date_from,date_to 선택이며 함께 사용",AgentRunItem[],"422,503","created_at DESC; agent_run_id DESC","alarm_source+alarm_id; canonical chamber_id + deprecated chamber; action_id+approval_id link; fault·Tool 축약 field는 deprecated projection이며 GT 아님; 예측 전 fault null은 분석 전 표시·분포 제외"
 필수,C,POST,/agent/ask,근거 기반 Agent 질의,"body: question 1..1000",AgentAskResponse,"422,503",읽기 전용,"tools·evidence_items·limitations와 predicted_fault_code·confidence·recommended_action은 항상 존재(후 3개 required-nullable); fault_code 없음; DOCUMENT section 선택(nullable) 선언; METROLOGY alarm_result 미노출; evidence·limit·doc_id는 deprecated alias; action·approval write 없음"
 필수,C,GET,/approvals,승인 대기·결정 이력,없음,ApprovalItem[],503,"created_at DESC; approval_id DESC","EQP_HOLD만; PENDING|APPROVED|REJECTED; canonical lot_id,equipment_id,chamber_id + deprecated 축약 alias; run/action ID link와 canonical decided field"
@@ -17,7 +17,7 @@
 확장,A,POST,/traces/search,복합 Trace 검색,body filters,TraceSearchResponse,"422,503",시간순,최소 9개 이후
 확장,B,GET,/relations/chambers/{chamber_id},챔버 관계,path: chamber_id,ChamberRelationsResponse,"404,422,503",stable relation_id,"graph revision 별도"
 확장,B,GET,/relations/equipment/{equipment_id},설비 관계,path: equipment_id,EquipmentRelationsResponse,"404,422,503",stable relation_id,"고정 설비 상하류 추정 금지"
-확장,B,GET,/documents/{document_id},문서 상세,path: document_id,DocumentDetailResponse,"404,422,503",chunk order,"corpus revision 필수"
+확장,B,GET,/documents/{document_id},문서 상세,path: document_id,DocumentDetailResponse,"404,422,503",chunk order,"chunk order 안정"
 확장,C,POST,/agent/runs,Agent 분석 시작,"body: alarm={source,alarm_id}",202 AgentRunAccepted,"404,409,422,503",멱등성,"legacy alarm_id 단독 금지"
 확장,C,GET,/agent/runs/{run_id},Agent 실행 상세,path: run_id,AgentRunDetailResponse,"404,422,503",단건,근거 ID provenance
 확장,C,POST,/agent/runs/{run_id}/retry,실패 실행 재시도,path: run_id,202 AgentRunAccepted,"404,409,422,503",재시도 정책,성공·실행중 재시도 거부
@@ -33,4 +33,4 @@
 확장,D,GET,/analytics/evaluations,Text2SQL 평가 이력,"query: page,size,latest",PageEnvelope<EvaluationResponse>,422,"executed_at DESC; run_id DESC",평가 provenance
 확장,D,GET,/audit-logs/paged,페이지 감사 조회,"query: page,size,filters",AuditLogPageResponse,"422,503","occurred_at DESC; audit_id DESC","event count는 동일 전체 filter 기준"
 운영,Common,GET,/health,process liveness,없음,HealthResponse,500,업무 API 수 제외,외부 의존성 미검사
-운영,Common,GET,/health/ready,통합 readiness,없음,ReadinessResponse,503,업무 API 수 제외,"PostgreSQL Runtime epoch·schema·권한; reference migration compatibility marker; Neo4j 44/85 marker·fingerprint; ACTIVE RAG corpus revision·embedding dimension; n8n; Kafka topics"
+운영,Common,GET,/health/ready,통합 readiness,없음,ReadinessResponse,503,업무 API 수 제외,"PostgreSQL Runtime epoch·schema·권한; reference migration compatibility marker; Neo4j 44/85 marker·fingerprint; AG corpus revision·embedding dimension; n8n; Kafka topics"
