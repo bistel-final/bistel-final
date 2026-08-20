@@ -550,7 +550,7 @@ class TestAnalyticsSchemas:
         def _query(_: AnalysisQueryRequest) -> AnalysisQueryResponse:
             return AnalysisQueryResponse(
                 question="데이터를 삭제해줘",
-                sql=None,
+                generated_sql=None,
                 columns=[],
                 rows=[],
                 row_count=0,
@@ -586,7 +586,7 @@ class TestAnalyticsSchemas:
     def test_policy_rejection_is_structured_success_body(self) -> None:
         response = AnalysisQueryResponse(
             question="데이터를 삭제해줘",
-            sql=None,
+            generated_sql=None,
             columns=[],
             rows=[],
             row_count=0,
@@ -621,7 +621,7 @@ class TestAnalyticsSchemas:
     @pytest.mark.parametrize(
         "field, value",
         [
-            ("sql", "DELETE FROM summary_data"),
+            ("generated_sql", "DELETE FROM summary_data"),
             ("columns", ["alarm_id"]),
             ("rows", [{"alarm_id": "TAL-0001"}]),
             ("group_by", ["chamber_id"]),
@@ -636,7 +636,7 @@ class TestAnalyticsSchemas:
     ) -> None:
         payload = {
             "question": "삭제",
-            "sql": None,
+            "generated_sql": None,
             "columns": [],
             "rows": [],
             "row_count": 0,
@@ -655,7 +655,7 @@ class TestAnalyticsSchemas:
             AnalysisQueryResponse(**payload)
 
     def test_valid_query_requires_plan_and_visualization(self) -> None:
-        with pytest.raises(ValidationError, match="sql·metric·visualization"):
+        with pytest.raises(ValidationError, match="generated_sql·metric·visualization"):
             AnalysisQueryResponse(
                 question="알람 수",
                 columns=[],
@@ -670,7 +670,9 @@ class TestAnalyticsSchemas:
 
         response = AnalysisQueryResponse(
             question="알람 수",
-            sql="SELECT count(*) AS count FROM v_alarm_event WHERE source != 'R03'",
+            generated_sql=(
+                "SELECT count(*) AS count FROM v_alarm_event WHERE source != 'R03'"
+            ),
             columns=["count"],
             rows=[{"count": 173}],
             row_count=1,
