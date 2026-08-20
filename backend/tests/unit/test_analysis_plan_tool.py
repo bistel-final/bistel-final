@@ -34,9 +34,30 @@ class TestGenerateAnalysisPlan:
         assert result.sql is not None
         assert result.sql.lower().startswith("select")
         assert "```" not in result.sql
-        # group by 가 있으면 heuristic 이 bar 를 고른다
+        # group by 컴럼이 추출되면 범주 축 메타데이터와 함께 bar 를 고른다
+        assert result.group_by == ["eqp_id"]
         assert result.visualization is not None
         assert result.visualization.chart_type == "bar"
+
+    def test_group_by_without_extractable_column_falls_back_to_table(
+        self, monkeypatch
+    ) -> None:
+        # 위치 번호 GROUP BY 는 컴럼명을 줄 수 없다 — 차트 지정과 메타데이터가
+        # 모순되지 않도록 TABLE 로 내려야 한다 (P2 리뷰 반영).
+        monkeypatch.setattr(
+            llm,
+            "chat",
+            lambda messages: (
+                "SELECT equipment, COUNT(*) FROM summary_alarm_history GROUP BY 1"
+            ),
+        )
+
+        result = tools.generate_analysis_plan(_ask())
+
+        assert result.ok is True
+        assert result.group_by == []
+        assert result.visualization is not None
+        assert result.visualization.chart_type == "table"
 
     def test_success_accepts_raw_sql_without_fence(self, monkeypatch) -> None:
         monkeypatch.setattr(

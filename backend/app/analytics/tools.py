@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import re
 
+import sqlglot
+from sqlglot import expressions as exp
+
 from app.analytics.sql_validator import ALLOWED_OBJECTS, _manifest_columns
 from app.common import llm
 from app.common.enums import ChartType
@@ -82,20 +85,46 @@ def _extract_sql(raw: str) -> str | None:
     return candidate
 
 
+def _extract_group_by_columns(sql: str) -> list[str]:
+    """GROUP BY 대상 컴럼명을 추출한다. 차트의 범주 축 메타데이터다.
+
+    해석 실패나 비컴럼 표현식(위치 번호, 함수 등)은 건너뛴다 — 이 함수는
+    표현 메타데이터용이지 검증이 아니므로(검증은 sql_validator 소관)
+    보수적으로 비워도 안전하다.
+    """
+    try:
+        statement = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return []
+
+    group = statement.args.get("group")
+    if group is None:
+        return []
+
+    columns: list[str] = []
+    for expression in group.expressions:
+        if isinstance(expression, exp.Column):
+            columns.append(expression.name.lower())
+    return columns
+
+
 def _plan_from_sql(sql: str) -> AnalysisPlanToolResult:
     """[팀 잠정] metric·visualization 은 SQL 형태 기반 최소 heuristic.
 
     metric_result 계산·차트 세분화는 후속(V5-D-2.3 잔여)이다. 계약상
     성공 결과에 세 필드가 필수라 최소값을 채운다.
+
+    표현 일관성: BAR 는 범주 축(group_by)이 있을 때만 지정한다. GROUP BY
+    가 있어도 컴럼을 추출하지 못하면(위치 번호·함수 등) TABLE 로
+    내려 메타데이터와 차트 지정이 모순되지 않게 한다.
     """
-    chart = (
-        ChartType.BAR if re.search(r"\bgroup\s+by\b", sql, re.I) else ChartType.TABLE
-    )
+    group_by = _extract_group_by_columns(sql)
+    chart = ChartType.BAR if group_by else ChartType.TABLE
     return AnalysisPlanToolResult(
         ok=True,
         sql=sql,
         metric=MetricPlan(type="count"),
-        group_by=[],
+        group_by=group_by,
         visualization=VisualizationPlan(chart_type=chart),
     )
 
