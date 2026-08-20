@@ -336,7 +336,6 @@ class TestKnowledgeSchemas:
     ) -> None:
         document = DocumentDetailResponse(
             document_id="DOC-1",
-            corpus_revision="corpus-r1",
             title="문서",
             doc_type=doc_type,
             chunks=[],
@@ -348,7 +347,6 @@ class TestKnowledgeSchemas:
         with pytest.raises(ValidationError):
             DocumentDetailResponse(
                 document_id="DOC-1",
-                corpus_revision="corpus-r1",
                 title="문서",
                 doc_type="guide",
                 chunks=[],

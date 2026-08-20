@@ -66,7 +66,6 @@ class DocumentChunkItem(ApiModel):
 class DocumentDetailResponse(ApiModel):
     # API의 document_id는 DB document.doc_id/document_chunk.doc_id에 대응한다.
     document_id: NonEmptyId
-    corpus_revision: NonEmptyId
     title: str
     doc_type: DocumentType | None = None
     model_code: NonEmptyId | None = None
