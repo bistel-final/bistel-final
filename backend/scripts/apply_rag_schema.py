@@ -168,13 +168,12 @@ def run_apply(*, database: str) -> dict[str, Any]:
     validate_url_components(url, target)
     engine = create_engine(url)
     try:
-        with engine.connect() as connection:
+        with engine.begin() as connection:
+            validate_connected_identity(connection, target)
+            set_and_validate_public_search_path(connection)
             before = inspect_rag_objects(connection)
-            with connection.begin():
-                validate_connected_identity(connection, target)
-                set_and_validate_public_search_path(connection)
-                apply_rag_schema(connection)
-                verify_rag_schema(connection)
+            apply_rag_schema(connection)
+            verify_rag_schema(connection)
             return {
                 "database": target.database,
                 "replaced_tables": list(RAG_TABLES_TO_REPLACE),

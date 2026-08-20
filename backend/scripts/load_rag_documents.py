@@ -545,8 +545,8 @@ def _search_smoke(
                 SELECT d.doc_id, c.chunk_id, 1 - (c.embedding <=> %(embedding)s::vector) AS score
                   FROM document_chunk c
                   JOIN document d ON d.doc_id = c.doc_id
-                 WHERE (%(model_code)s IS NULL
-                        OR d.model_code = %(model_code)s
+                 WHERE (%(model_code)s::varchar IS NULL
+                        OR d.model_code = %(model_code)s::varchar
                         OR d.model_code = 'COMMON')
                  ORDER BY c.embedding <=> %(embedding)s::vector, c.chunk_seq
                  LIMIT 4
