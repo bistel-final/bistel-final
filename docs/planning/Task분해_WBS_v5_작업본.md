@@ -53,14 +53,14 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 38.5h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 39.0h | 최종 intake·epoch·fresh bootstrap·Runtime schema·검증기·5화면 전환·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 22.0h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5 |
 | C Agent/HITL | 방대혁 | 42.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 15.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **146.5h** | P2 도전 과제 제외 |
+| **합계** | | **147.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 101.5h / P1 45.0h**이며 P2 5.5h는 합계에서 제외한다.
+우선순위별 공수는 **P0 102.0h / P1 45.0h**이며 P2 5.5h는 합계에서 제외한다.
 Task 수는 86건(P2 3건 포함)이다.
 
 ---
@@ -92,7 +92,7 @@ Task 수는 86건(P2 3건 포함)이다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-CM-3.1 | P0 | reference extension 재기준화. 완료: R03·document corpus·chunk·`nl_query_log`·`v_alarm_event`를 3개 DB에 생성한다. View는 `h.wafer_id = a.wafer`로 join하고 `wafer_id`·`wafer_no`를 별도 컬럼으로 반환한다. 저장 알람 189·R03 포함 192·AlarmRef 중복 0을 검증한다 | FR-A-06, FR-B-02, FR-I-04 | V5-CM-2.4 | 2.0h |
+| V5-CM-3.1 | P0 | reference extension 재기준화. 완료: R03·document corpus·chunk·`nl_query_log`·`v_alarm_event`를 3개 DB에 생성한다. **`r03_alarm_history`는 설계 §3.2의 12개 필수 컬럼으로 만든다 — 구 `001_reference_extensions.sql`의 `member_refs` 단일 jsonb를 `member_wafer_refs`(연속 OOS `{lot_hist_id, wafer_id}` 정확히 3개)와 `member_alarm_refs`(그 세 WAFER의 raw OOS TRACE AlarmRef 전체, 최종 epoch에서 R03 한 건당 9개)로 분리하고, 직렬화 순서(WAFER는 계산 순서, AlarmRef는 WAFER 순서 안에서 `seq_no ASC, alarm_id ASC`)를 고정한다.** View는 `h.wafer_id = a.wafer`로 join하고 `wafer_id`·`wafer_no`를 별도 컬럼으로 반환한다. 저장 알람 189·R03 포함 192·AlarmRef 중복 0과 **R03 3건 각각의 member wafer 3·AlarmRef 9**를 검증한다 | FR-A-06, FR-B-02, FR-I-04 | V5-CM-2.4 | 2.5h |
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
