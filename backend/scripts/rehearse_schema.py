@@ -17,6 +17,7 @@ from typing import Any, NoReturn
 
 import rebuild_runner
 import rehearsal_profile_loader
+import rehearsal_profile_verifier
 import rehearsal_schema
 from rehearsal_postgres import RehearsalEndpoint, RehearsalError, one_off_postgres
 
@@ -119,10 +120,15 @@ class VerifiedArchiveSnapshot:
 
     nested 값까지 immutable이라 검증 이후 COPY payload나 column 계약을 바꿀 수 없다
     (구현리뷰 1차 필수 2).
+
+    `verified_tables`는 **이번 profile이 실제로 COPY하는** 8 또는 9종이고,
+    `acceptances`는 두 profile 모두 **물리 table 9종 전부**다. runtime에서
+    두 컬렉션의 길이가 다른 것은 의도다(`V5-CM-2.4` 계획 §3.2).
     """
 
     schema_bytes: bytes
     verified_tables: tuple[VerifiedTable, ...]
+    acceptances: tuple[rehearsal_profile_verifier.TableAcceptance, ...]
 
     @property
     def tables(self) -> tuple[str, ...]:
@@ -185,6 +191,9 @@ def _verified_archive_snapshot(
         intake.get("selected_members"), _fail
     )
     tables = rehearsal_profile_loader.select_tables(manifest_tables, profile, _fail)
+    acceptances = rehearsal_profile_verifier.build_acceptances(
+        manifest, sorted(manifest_tables), _fail
+    )
     try:
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             info = archive.getinfo(member_name)
@@ -210,16 +219,29 @@ def _verified_archive_snapshot(
             )
             for table in tables
         ),
+        acceptances=acceptances,
     )
 
 
 def _composite(
-    snapshot: VerifiedArchiveSnapshot, profile: str
+    snapshot: VerifiedArchiveSnapshot,
+    profile: str,
+    *,
+    reference: rehearsal_profile_verifier.AcceptanceReference = (
+        rehearsal_profile_verifier.FINAL_REFERENCE
+    ),
 ) -> tuple[
     rehearsal_profile_loader.Handler,
     rehearsal_profile_loader.PostCheck,
 ]:
-    """schema 1회 → loader 1회. 각 단계 실패 시 이후 단계를 부르지 않는다(계획 §3.5)."""
+    """schema → loader → acceptance. 각 단계 실패 시 이후 단계를 부르지 않는다.
+
+    handler는 schema 1회 → loader 1회, postcheck는 schema → loader 최소 →
+    full acceptance 순서다(`V5-CM-2.3` §3.5 · `V5-CM-2.4` §3.8).
+
+    `reference`는 축소 fixture 전용 keyword-only 주입점이다. `_run()`·CLI는 절대
+    넘기지 않으므로 production 경로는 항상 최종 epoch 상수를 쓴다(계획 §3.8).
+    """
 
     schema_handler, schema_postcheck = rehearsal_schema.make_handlers(
         snapshot.schema_bytes, rebuild_runner.RunnerError
@@ -231,6 +253,13 @@ def _composite(
         profile,
         rebuild_runner.RunnerError,
     )
+    acceptance_postcheck = rehearsal_profile_verifier.make_acceptance_postcheck(
+        snapshot.acceptances,
+        snapshot.tables,
+        profile,
+        rebuild_runner.RunnerError,
+        reference=reference,
+    )
 
     def handler(connection: Any, plan: Any) -> None:
         schema_handler(connection, plan)
@@ -239,6 +268,7 @@ def _composite(
     def postcheck(connection: Any, plan: Any) -> None:
         schema_postcheck(connection, plan)
         load_postcheck(connection, plan)
+        acceptance_postcheck(connection, plan)
 
     return handler, postcheck
 

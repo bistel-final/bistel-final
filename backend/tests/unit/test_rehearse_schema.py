@@ -402,11 +402,16 @@ def test_composite_calls_schema_then_loader_exactly_once(
         "make_load_handlers",
         lambda *_: (make("load"), make("load_post")),
     )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_verifier,
+        "make_acceptance_postcheck",
+        lambda *_, **__: make("acceptance_post"),
+    )
 
     handler, postcheck = wrapper._composite(snapshot, "runtime")
     assert handler(object(), object()) is None
     assert postcheck(object(), object()) is None
-    assert events == ["schema", "load", "schema_post", "load_post"]
+    assert events == ["schema", "load", "schema_post", "load_post", "acceptance_post"]
 
 
 @pytest.mark.parametrize(
@@ -441,6 +446,11 @@ def test_composite_handler_short_circuits_on_failure(
         "make_load_handlers",
         lambda *_: (make("load", failing == "load"), make("load_post")),
     )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_verifier,
+        "make_acceptance_postcheck",
+        lambda *_, **__: make("acceptance_post"),
+    )
 
     handler, postcheck = wrapper._composite(snapshot, "runtime")
     with pytest.raises(RuntimeError, match=failing):
@@ -449,6 +459,7 @@ def test_composite_handler_short_circuits_on_failure(
     # postcheck는 호출조차 되지 않아야 한다. 호출됐다면 이벤트가 늘어난다.
     assert "schema_post" not in events
     assert "load_post" not in events
+    assert "acceptance_post" not in events
 
 
 def test_composite_postcheck_short_circuits_on_failure(
@@ -472,6 +483,11 @@ def test_composite_postcheck_short_circuits_on_failure(
         "make_load_handlers",
         lambda *_: (make("load"), make("load_post")),
     )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_verifier,
+        "make_acceptance_postcheck",
+        lambda *_, **__: make("acceptance_post"),
+    )
 
     handler, postcheck = wrapper._composite(snapshot, "runtime")
     # handler는 정상 종료해야 한다 — 여기서 던지면 postcheck 단계를 검증할 수 없다.
@@ -482,3 +498,82 @@ def test_composite_postcheck_short_circuits_on_failure(
         postcheck(object(), object())
     assert events == ["schema", "load", "schema_post"]
     assert "load_post" not in events
+    assert "acceptance_post" not in events
+
+
+def test_composite_acceptance_postcheck_runs_last(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """loader 최소 postcheck가 실패하면 full acceptance를 부르지 않는다 (2.4 §3.8)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+    events: list[str] = []
+    make = _spy_handlers(events)
+
+    monkeypatch.setattr(
+        wrapper.rehearsal_schema,
+        "make_handlers",
+        lambda *_: (make("schema"), make("schema_post")),
+    )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_loader,
+        "make_load_handlers",
+        lambda *_: (make("load"), make("load_post", True)),
+    )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_verifier,
+        "make_acceptance_postcheck",
+        lambda *_, **__: make("acceptance_post"),
+    )
+
+    _, postcheck = wrapper._composite(snapshot, "runtime")
+    with pytest.raises(RuntimeError, match="load_post"):
+        postcheck(object(), object())
+    assert events == ["schema_post", "load_post"]
+    assert "acceptance_post" not in events
+
+
+@pytest.mark.parametrize(("profile", "loaded"), [("runtime", 8), ("evaluation", 9)])
+def test_snapshot_keeps_nine_acceptances_regardless_of_profile(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    profile: str,
+    loaded: int,
+) -> None:
+    """`acceptances`는 항상 9종, `verified_tables`는 profile 선택분이다 (2.4 §3.2)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, profile)
+    assert len(snapshot.acceptances) == 9
+    assert len(snapshot.verified_tables) == loaded
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        snapshot.acceptances[0].name = "mutated"  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        snapshot.acceptances[0].column_types["id"] = "text"  # type: ignore[index]
+
+
+@pytest.mark.parametrize("bad", [[], {"nested": 1}, 7, None, True])
+def test_bad_logical_type_fails_closed_before_lifecycle(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths], bad: Any
+) -> None:
+    """non-string logical type은 Docker lifecycle 이전 `ARCHIVE_INVALID`다.
+
+    membership을 먼저 하면 raw `TypeError`가 `INTERNAL_ERROR`로 잘못 분류된다
+    (구현리뷰 1차 필수 1).
+    """
+
+    archive, artifacts = fixture_artifacts
+    manifest = json.loads(artifacts.source_manifest.read_text(encoding="utf-8"))
+    entry = manifest["tables"]["metrology"]
+    entry["column_types"][entry["columns"][0]] = bad
+    artifacts.source_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RehearsalError) as raised:
+        wrapper._run(
+            ["--archive", str(archive), "--profile", "runtime"],
+            artifact_paths=artifacts,
+            lifecycle=lambda **_: pytest.fail("lifecycle must not start"),
+        )
+    assert raised.value.reason_code == "ARCHIVE_INVALID"
+    assert raised.value.exit_code == wrapper.EXIT_USAGE
