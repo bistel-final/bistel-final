@@ -76,7 +76,6 @@ RELATION = {
 DOCUMENT = {
     "chunk_id": "CHK-001",
     "document_id": "DOC-001",
-    "corpus_revision": "CORPUS-20260814",
     "title": "Fault Guide",
     "score": 0.82,
     "content": "점검 절차",
@@ -506,16 +505,18 @@ class TestEquipmentContextContract:
 
 
 class TestDocumentContract:
-    def test_hit_requires_corpus_revision(self) -> None:
+    def test_hit_uses_stable_document_and_chunk_ids_without_revision(self) -> None:
         hit = DocumentHit(**DOCUMENT)
 
-        assert hit.corpus_revision == "CORPUS-20260814"
+        assert hit.document_id == "DOC-001"
+        assert hit.chunk_id == "CHK-001"
+        assert "corpus_revision" not in DocumentHit.model_fields
 
-        missing_revision = {
-            key: value for key, value in DOCUMENT.items() if key != "corpus_revision"
+        missing_document_id = {
+            key: value for key, value in DOCUMENT.items() if key != "document_id"
         }
         with pytest.raises(ValidationError):
-            DocumentHit(**missing_revision)
+            DocumentHit(**missing_document_id)
 
     def test_zero_hits_is_success(self) -> None:
         assert DocumentSearchToolResult(ok=True).hits == []

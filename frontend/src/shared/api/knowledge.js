@@ -97,7 +97,11 @@ export function searchDocuments({ query, model_code, top_k = 4 }) {
   }
   return apiClient
     .post('/documents/search', { query, model_code: normalizedModelCode, top_k })
-    .then((response) => response.data)
+    .then((response) => ({
+      query,
+      hits: response.data,
+      count: response.data.length,
+    }))
 }
 
 export function getDocument(documentId) {
