@@ -35,13 +35,15 @@ class TestComputeMetricResult:
         rows = [{"avg_value": Decimal("86.45")}]
         assert service._compute_metric_result(metric, rows) == pytest.approx(86.45)
 
-    def test_group_rows_with_count_metric_returns_row_count(self) -> None:
+    def test_group_rows_return_none_not_group_count(self) -> None:
+        # P1 리뷰 반영: 그룹 결과의 행 수(=그룹 수)를 KPI 로 내보내면
+        # 실제 알람 수(14+9)가 아닌 2가 표시되는 왜곡이 생긴다 → None.
         metric = MetricPlan(type="count")
         rows = [
             {"equipment": "EQP05", "cnt": 14},
             {"equipment": "EQP04", "cnt": 9},
         ]
-        assert service._compute_metric_result(metric, rows) == 2.0
+        assert service._compute_metric_result(metric, rows) is None
 
     def test_ambiguous_single_row_returns_none_for_non_count(self) -> None:
         # 단일 행에 숫자 2개 — 어느 것이 KPI 인지 확신 불가.
@@ -114,6 +116,9 @@ class TestSelfCorrection:
         assert response.is_rejected is True
         assert response.reject_reason is not None
         assert response.reject_reason.startswith("POLICY_REJECTED:")
+        # P2 리뷰 반영: 거부 사유는 첫 시도가 아니라 마지막 시도의 것
+        assert "still_wrong" in response.reject_reason
+        assert "no_such_column" not in response.reject_reason
 
     def test_passthrough_is_rejected_without_retry(self, monkeypatch) -> None:
         # 사용자가 직접 준 SQL 은 재해석하지 않는다 — LLM 호출 0회.

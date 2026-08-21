@@ -91,9 +91,10 @@ def _generate_plan(question: str) -> AnalysisPlanToolResult:
 def _compute_metric_result(metric: MetricPlan | None, rows: list[dict]) -> float | None:
     """[팀 잠정] 대표 KPI 값 heuristic.
 
-    집계 질의의 전형(단일 행 × 단일 숫자 값)이면 그 값을, count metric
-    이면 행 수를 반환한다. 확신할 수 없는 형태는 None — 틀린 숫자보다
-    빈 값이 안전하다. 정식 계산(sum/mean/p 등)은 본설계에서 확장한다.
+    집계 질의의 전형(단일 행 × 단일 숫자 값)일 때만 그 값을 반환한다.
+    다중 행은 항상 None — 그룹 결과의 행 수는 그룹 수일 뿐이고 LIMIT
+    으로 잘린 행 수도 전체 건수가 아니다. 틀린 숫자보다 빈 값이
+    안전하다. 정식 계산(sum/mean/p 등)은 본설계에서 확장한다.
     """
     if metric is None:
         return None
@@ -107,8 +108,6 @@ def _compute_metric_result(metric: MetricPlan | None, rows: list[dict]) -> float
         if len(numeric_values) == 1:
             return float(numeric_values[0])
 
-    if metric.type == "count":
-        return float(len(rows))
     return None
 
 
@@ -163,9 +162,10 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
             ),
         )
         if retry_plan.ok:
-            retry_validation = validate_sql(retry_plan.sql or "")
-            if retry_validation.valid and retry_validation.normalized_sql is not None:
-                plan, validation = retry_plan, retry_validation
+            # 재시도 결과는 성공·실패 상관없이 채택한다 — 최종 거부 사유는
+            # 마지막 시도(사용자·로그에 남는 SQL)의 것이어야 한다.
+            plan = retry_plan
+            validation = validate_sql(retry_plan.sql or "")
 
     if not validation.valid or validation.normalized_sql is None:
         reason = validation.reason or "SQL 검증에 실패했다."
