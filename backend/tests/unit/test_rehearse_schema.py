@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import hashlib
 import json
 import shutil
@@ -35,8 +36,25 @@ def fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
     archive_path = tmp_path / "fixture.zip"
     info = zipfile.ZipInfo(member, date_time=(2026, 8, 20, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
+
+    # profile 적재 경로가 검증하는 9 CSV member. 실제 데이터가 아니라 header 1줄 +
+    # 데이터 1줄짜리 최소 fixture이며, manifest/intake도 이 hash로 다시 쓴다.
+    real_manifest = json.loads(runner.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
+    csv_members: dict[str, bytes] = {}
+    for entry in real_manifest["tables"].values():
+        columns = entry["columns"]
+        header = ",".join(columns)
+        row = ",".join("" for _ in columns)
+        csv_members[entry["file_id"]] = ("\ufeff" + header + "\n" + row + "\n").encode(
+            "utf-8"
+        )
+
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr(info, sql)
+        for name, payload in csv_members.items():
+            csv_info = zipfile.ZipInfo(name, date_time=(2026, 8, 20, 0, 0, 0))
+            csv_info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(csv_info, payload)
     archive_sha = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     sql_sha = hashlib.sha256(sql).hexdigest()
 
@@ -53,6 +71,11 @@ def fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
 
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
     intake["archive"]["sha256"] = archive_sha
+    for entry in intake["selected_members"]:
+        payload = csv_members.get(entry["path"])
+        if payload is not None:
+            entry["size_bytes"] = len(payload)
+            entry["sha256"] = hashlib.sha256(payload).hexdigest()
     intake_path.write_text(json.dumps(intake), encoding="utf-8")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -303,3 +326,126 @@ def test_public_parser_has_no_hash_path_or_target_override() -> None:
     assert destinations == {"help", "archive", "profile"}
     assert runner.MODE_HANDLERS == {}
     assert runner.POSTCHECKS == {}
+
+
+# --- 구현리뷰 1차 필수 회귀 ---------------------------------------------------------
+
+
+def test_archive_is_read_exactly_once(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """단일 snapshot 계약: archive path의 `read_bytes()`는 1회다 (필수 4)."""
+
+    archive, artifacts = fixture_artifacts
+    original = Path.read_bytes
+    reads: list[str] = []
+
+    def counting_read(self: Path) -> bytes:
+        if self == archive:
+            reads.append(str(self))
+        return original(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read)
+    wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+    assert reads == [str(archive)]
+
+
+def test_snapshot_is_deeply_immutable(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+) -> None:
+    """검증 후 COPY payload·column 계약을 바꿀 수 없다 (필수 2)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+
+    with pytest.raises(TypeError):
+        snapshot.csv_bodies["dim_parameter"] = b"mutated"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        snapshot.columns_by_table["dim_parameter"][0] = "changed"  # type: ignore[index]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        snapshot.verified_tables[0].body = b"mutated"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        snapshot.schema_bytes = b"mutated"  # type: ignore[misc]
+
+
+def _spy_handlers(events: list[str]):
+    def make(name: str, fail: bool = False):
+        def fn(_connection: object, _plan: object) -> None:
+            events.append(name)
+            if fail:
+                raise RuntimeError(name)
+
+        return fn
+
+    return make
+
+
+def test_composite_calls_schema_then_loader_exactly_once(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """schema 1회 → loader 1회, postcheck도 같은 순서다 (필수 4)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+    events: list[str] = []
+    make = _spy_handlers(events)
+
+    monkeypatch.setattr(
+        wrapper.rehearsal_schema,
+        "make_handlers",
+        lambda *_: (make("schema"), make("schema_post")),
+    )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_loader,
+        "make_load_handlers",
+        lambda *_: (make("load"), make("load_post")),
+    )
+
+    handler, postcheck = wrapper._composite(snapshot, "runtime")
+    assert handler(object(), object()) is None
+    assert postcheck(object(), object()) is None
+    assert events == ["schema", "load", "schema_post", "load_post"]
+
+
+@pytest.mark.parametrize(
+    ("failing", "expected"),
+    [
+        ("schema", ["schema"]),
+        ("load", ["schema", "load"]),
+        ("schema_post", ["schema", "load", "schema_post"]),
+    ],
+)
+def test_composite_short_circuits_on_failure(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+    failing: str,
+    expected: list[str],
+) -> None:
+    """앞 단계가 실패하면 뒤 단계를 부르지 않는다 (필수 4)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+    events: list[str] = []
+    make = _spy_handlers(events)
+
+    monkeypatch.setattr(
+        wrapper.rehearsal_schema,
+        "make_handlers",
+        lambda *_: (
+            make("schema", failing == "schema"),
+            make("schema_post", failing == "schema_post"),
+        ),
+    )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_loader,
+        "make_load_handlers",
+        lambda *_: (make("load", failing == "load"), make("load_post")),
+    )
+
+    handler, postcheck = wrapper._composite(snapshot, "runtime")
+    with pytest.raises(RuntimeError):
+        handler(object(), object())
+        postcheck(object(), object())
+    assert events == expected
