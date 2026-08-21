@@ -411,19 +411,20 @@ def test_composite_calls_schema_then_loader_exactly_once(
 
 @pytest.mark.parametrize(
     ("failing", "expected"),
-    [
-        ("schema", ["schema"]),
-        ("load", ["schema", "load"]),
-        ("schema_post", ["schema", "load", "schema_post"]),
-    ],
+    [("schema", ["schema"]), ("load", ["schema", "load"])],
 )
-def test_composite_short_circuits_on_failure(
+def test_composite_handler_short_circuits_on_failure(
     fixture_artifacts: tuple[Path, runner.ArtifactPaths],
     monkeypatch: pytest.MonkeyPatch,
     failing: str,
     expected: list[str],
 ) -> None:
-    """앞 단계가 실패하면 뒤 단계를 부르지 않는다 (필수 4)."""
+    """handler 단계가 실패하면 이후 단계와 postcheck를 부르지 않는다 (필수 4).
+
+    `handler`와 `postcheck`를 한 `pytest.raises` 블록에 넣으면 앞 줄이 던질 때
+    뒷줄이 죽은 코드가 되고, 예외가 어느 단계에서 났는지도 구분하지 못한다.
+    단계별로 나눠 호출한다(PR #93 리뷰).
+    """
 
     archive, artifacts = fixture_artifacts
     snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
@@ -433,10 +434,7 @@ def test_composite_short_circuits_on_failure(
     monkeypatch.setattr(
         wrapper.rehearsal_schema,
         "make_handlers",
-        lambda *_: (
-            make("schema", failing == "schema"),
-            make("schema_post", failing == "schema_post"),
-        ),
+        lambda *_: (make("schema", failing == "schema"), make("schema_post")),
     )
     monkeypatch.setattr(
         wrapper.rehearsal_profile_loader,
@@ -445,7 +443,42 @@ def test_composite_short_circuits_on_failure(
     )
 
     handler, postcheck = wrapper._composite(snapshot, "runtime")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match=failing):
         handler(object(), object())
-        postcheck(object(), object())
     assert events == expected
+    # postcheck는 호출조차 되지 않아야 한다. 호출됐다면 이벤트가 늘어난다.
+    assert "schema_post" not in events
+    assert "load_post" not in events
+
+
+def test_composite_postcheck_short_circuits_on_failure(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """schema postcheck가 실패하면 loader postcheck를 부르지 않는다 (필수 4)."""
+
+    archive, artifacts = fixture_artifacts
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, "runtime")
+    events: list[str] = []
+    make = _spy_handlers(events)
+
+    monkeypatch.setattr(
+        wrapper.rehearsal_schema,
+        "make_handlers",
+        lambda *_: (make("schema"), make("schema_post", True)),
+    )
+    monkeypatch.setattr(
+        wrapper.rehearsal_profile_loader,
+        "make_load_handlers",
+        lambda *_: (make("load"), make("load_post")),
+    )
+
+    handler, postcheck = wrapper._composite(snapshot, "runtime")
+    # handler는 정상 종료해야 한다 — 여기서 던지면 postcheck 단계를 검증할 수 없다.
+    assert handler(object(), object()) is None
+    assert events == ["schema", "load"]
+
+    with pytest.raises(RuntimeError, match="schema_post"):
+        postcheck(object(), object())
+    assert events == ["schema", "load", "schema_post"]
+    assert "load_post" not in events
