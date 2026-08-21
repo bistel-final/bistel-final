@@ -19,6 +19,9 @@ POSTGRES_IMAGE = (
 POSTGRES_USER = "postgres"
 LABEL_KEY = "fdc.rehearsal.run"
 COMMAND_TIMEOUT_SECONDS = 20.0
+# `docker run`은 image가 없으면 암묵적으로 pull한다. 411MB image의 최초 내려받기는
+# 20초를 넘기므로 사전 pull을 별도 timeout으로 분리한다(구현리뷰 부록 B).
+PULL_TIMEOUT_SECONDS = 600.0
 READY_TIMEOUT_SECONDS = 60.0
 READY_INTERVAL_SECONDS = 0.5
 PORT_PATTERN = re.compile(r"(?:127\.0\.0\.1|0\.0\.0\.0|::):(?P<port>[0-9]+)$")
@@ -103,6 +106,30 @@ def _command(
         raise RehearsalError("DOCKER_UNAVAILABLE") from exc
     except subprocess.TimeoutExpired as exc:
         raise RehearsalError("DOCKER_TIMEOUT") from exc
+
+
+def _pull_image(*, runner: CommandRunner) -> None:
+    """`docker run` 전에 image를 확보한다. 이미 있으면 즉시 반환한다."""
+
+    try:
+        completed = _command(
+            ("docker", "pull", "--quiet", POSTGRES_IMAGE),
+            runner=runner,
+            timeout=PULL_TIMEOUT_SECONDS,
+        )
+    except RehearsalError as exc:
+        if exc.reason_code == "DOCKER_TIMEOUT":
+            raise RehearsalError("DOCKER_IMAGE_UNAVAILABLE") from exc
+        raise
+    if completed.returncode != 0:
+        raise RehearsalError(_pull_failure_reason(completed))
+
+
+def _pull_failure_reason(completed: subprocess.CompletedProcess[str]) -> str:
+    detail = f"{completed.stdout}\n{completed.stderr}".lower()
+    if "cannot connect" in detail or "daemon" in detail:
+        return "DOCKER_DAEMON_DOWN"
+    return "DOCKER_IMAGE_UNAVAILABLE"
 
 
 def _run_failure_reason(completed: subprocess.CompletedProcess[str]) -> str:
@@ -269,6 +296,7 @@ def one_off_postgres(
     primary: BaseException | None = None
     cleanup_required = False
     try:
+        _pull_image(runner=command_runner)
         try:
             completed = _command(
                 (

@@ -29,6 +29,8 @@ class DockerFake:
         assert kwargs["capture_output"] is True
         assert kwargs["timeout"] > 0
         operation = argv[1:]
+        if operation[0] == "pull":
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if operation[0] == "run":
             self.alive = True
             return subprocess.CompletedProcess(argv, 0, "container-id\n", "")
@@ -209,3 +211,71 @@ def test_module_has_no_third_party_top_level_import_or_wrapper_cycle() -> None:
     )
     source = (SCRIPTS_ROOT / "rehearsal_postgres.py").read_text(encoding="utf-8")
     assert all(command not in source for command in ("flock", "pkill", "trap"))
+
+
+def test_image_is_pulled_before_run_with_its_own_timeout() -> None:
+    """`docker run`의 암묵적 pull에 기대지 않는다 (구현리뷰 부록 B)."""
+
+    docker = DockerFake()
+    with postgres.one_off_postgres(
+        database="fdc_rehearsal_runtime",
+        command_runner=docker,
+        host_probe=lambda *_: True,
+    ):
+        pass
+
+    operations = [argv[1] for argv, _ in docker.calls]
+    assert operations[0] == "pull", operations
+    assert operations.index("pull") < operations.index("run")
+
+    pull_call = next(call for call in docker.calls if call[0][1] == "pull")
+    run_call = next(call for call in docker.calls if call[0][1] == "run")
+    assert pull_call[1]["timeout"] == postgres.PULL_TIMEOUT_SECONDS
+    assert run_call[1]["timeout"] == postgres.COMMAND_TIMEOUT_SECONDS
+    assert pull_call[1]["timeout"] > run_call[1]["timeout"]
+    assert postgres.POSTGRES_IMAGE in pull_call[0]
+
+
+def test_pull_timeout_reports_image_unavailable_not_docker_timeout() -> None:
+    """느린 최초 내려받기를 '명령이 느리다'로 뭉개지 않는다."""
+
+    class SlowPull(DockerFake):
+        def __call__(self, argv: list[str], **kwargs: Any):
+            if argv[1] == "pull":
+                raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+            return super().__call__(argv, **kwargs)
+
+    docker = SlowPull()
+    with pytest.raises(postgres.RehearsalError) as raised:
+        with postgres.one_off_postgres(
+            database="fdc_rehearsal_runtime",
+            command_runner=docker,
+            host_probe=lambda *_: True,
+        ):
+            pass
+
+    assert raised.value.reason_code == "DOCKER_IMAGE_UNAVAILABLE"
+    assert "run" not in [argv[1] for argv, _ in docker.calls]
+
+
+def test_pull_failure_does_not_start_container() -> None:
+    class FailingPull(DockerFake):
+        def __call__(self, argv: list[str], **kwargs: Any):
+            if argv[1] == "pull":
+                return subprocess.CompletedProcess(
+                    argv, 1, "", "manifest unknown: manifest unknown"
+                )
+            return super().__call__(argv, **kwargs)
+
+    docker = FailingPull()
+    with pytest.raises(postgres.RehearsalError) as raised:
+        with postgres.one_off_postgres(
+            database="fdc_rehearsal_runtime",
+            command_runner=docker,
+            host_probe=lambda *_: True,
+        ):
+            pass
+
+    assert raised.value.reason_code == "DOCKER_IMAGE_UNAVAILABLE"
+    assert docker.alive is False
+    assert "run" not in [argv[1] for argv, _ in docker.calls]
