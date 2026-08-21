@@ -23,6 +23,9 @@ from __future__ import annotations
 import time
 from decimal import Decimal
 
+import sqlglot
+from sqlglot import expressions as exp
+
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.repository import (
     QueryExecution,
@@ -88,26 +91,56 @@ def _generate_plan(question: str) -> AnalysisPlanToolResult:
     return generate_analysis_plan(AnalysisPlanToolInput(question=stripped))
 
 
-def _compute_metric_result(metric: MetricPlan | None, rows: list[dict]) -> float | None:
-    """[팀 잠정] 대표 KPI 값 heuristic.
+def _single_count_value(sql: str, rows: list[dict]) -> float | None:
+    """결과가 'COUNT 집계 단일 값'임이 SQL 로 확인될 때만 그 값을 준다.
 
-    집계 질의의 전형(단일 행 × 단일 숫자 값)일 때만 그 값을 반환한다.
-    다중 행은 항상 None — 그룹 결과의 행 수는 그룹 수일 뿐이고 LIMIT
-    으로 잘린 행 수도 전체 건수가 아니다. 틀린 숫자보다 빈 값이
-    안전하다. 정식 계산(sum/mean/p 등)은 본설계에서 확장한다.
+    projection 이 COUNT(...) 하나뿐인 단일 행 결과만 인정한다.
+    SELECT temperature ... LIMIT 1 같은 일반 값 조회가 count KPI 로
+    둘갑되는 것을 막는다 — metric 계획과 SQL 의 의미가 일치할 때만
+    값을 채운다(P2 리뷰).
+    """
+    if len(rows) != 1:
+        return None
+
+    try:
+        statement = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return None
+
+    projections = list(statement.expressions)
+    if len(projections) != 1:
+        return None
+    projection = projections[0]
+    if isinstance(projection, exp.Alias):
+        projection = projection.this
+    if not isinstance(projection, exp.Count):
+        return None
+
+    values = [
+        value
+        for value in rows[0].values()
+        if isinstance(value, int | float | Decimal) and not isinstance(value, bool)
+    ]
+    if len(values) != 1:
+        return None
+    return float(values[0])
+
+
+def _compute_metric_result(
+    metric: MetricPlan | None, sql: str, rows: list[dict]
+) -> float | None:
+    """[팀 잠정] 대표 KPI 값. metric 계획과 SQL 의미가 일치할 때만 계산한다.
+
+    현재 planner 는 metric 을 항상 count 로 잡으므로, SQL projection 이
+    실제 COUNT 집계 단일 값일 때만 값을 채운다. 그 외(일반 값 조회·
+    그룹 결과·LIMIT 잘림)은 전부 None — 틀린 라벨로 값을 보여주느니
+    비워둔다. 정식 metric 설계(sum/mean/p, planner 의미 추론)는
+    본설계에서 확장한다.
     """
     if metric is None:
         return None
-
-    if len(rows) == 1:
-        numeric_values = [
-            value
-            for value in rows[0].values()
-            if isinstance(value, int | float | Decimal) and not isinstance(value, bool)
-        ]
-        if len(numeric_values) == 1:
-            return float(numeric_values[0])
-
+    if metric.type == "count":
+        return _single_count_value(sql, rows)
     return None
 
 
@@ -204,7 +237,9 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
         rows=execution.rows,
         row_count=execution.row_count,
         metric=plan.metric,
-        metric_result=_compute_metric_result(plan.metric, execution.rows),
+        metric_result=_compute_metric_result(
+            plan.metric, validation.normalized_sql, execution.rows
+        ),
         group_by=list(plan.group_by),
         visualization=plan.visualization,
         is_valid=True,

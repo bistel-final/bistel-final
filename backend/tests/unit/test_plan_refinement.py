@@ -25,34 +25,45 @@ class _StubPoolFactory:
 
 
 class TestComputeMetricResult:
-    def test_single_row_single_numeric_returns_value(self) -> None:
+    _COUNT_SQL = "SELECT count(*) AS cnt FROM trace_alarm_history"
+
+    def test_count_projection_single_row_returns_value(self) -> None:
         metric = MetricPlan(type="count")
         rows = [{"cnt": 138}]
-        assert service._compute_metric_result(metric, rows) == 138.0
+        assert service._compute_metric_result(metric, self._COUNT_SQL, rows) == 138.0
 
     def test_decimal_value_is_converted(self) -> None:
         metric = MetricPlan(type="count")
-        rows = [{"avg_value": Decimal("86.45")}]
-        assert service._compute_metric_result(metric, rows) == pytest.approx(86.45)
+        rows = [{"cnt": Decimal("138")}]
+        assert service._compute_metric_result(
+            metric, self._COUNT_SQL, rows
+        ) == pytest.approx(138.0)
+
+    def test_non_count_projection_returns_none(self) -> None:
+        # P2 리뷰 반영: metric 계획이 count 여도 SQL 이 일반 값 조회면
+        # 값을 count KPI 로 둘갑시키지 않는다.
+        metric = MetricPlan(type="count")
+        sql = "SELECT value FROM trace_alarm_history LIMIT 1"
+        rows = [{"value": Decimal("86.45")}]
+        assert service._compute_metric_result(metric, sql, rows) is None
 
     def test_group_rows_return_none_not_group_count(self) -> None:
-        # P1 리뷰 반영: 그룹 결과의 행 수(=그룹 수)를 KPI 로 내보내면
-        # 실제 알람 수(14+9)가 아닌 2가 표시되는 왜곡이 생긴다 → None.
+        # 그룹 결과의 행 수(=그룹 수)는 KPI 가 아니다 → None (P1 리뷰).
         metric = MetricPlan(type="count")
+        sql = (
+            "SELECT equipment, COUNT(*) AS cnt FROM summary_alarm_history"
+            " GROUP BY equipment"
+        )
         rows = [
             {"equipment": "EQP05", "cnt": 14},
             {"equipment": "EQP04", "cnt": 9},
         ]
-        assert service._compute_metric_result(metric, rows) is None
-
-    def test_ambiguous_single_row_returns_none_for_non_count(self) -> None:
-        # 단일 행에 숫자 2개 — 어느 것이 KPI 인지 확신 불가.
-        metric = MetricPlan(type="sum")
-        rows = [{"a": 1, "b": 2}]
-        assert service._compute_metric_result(metric, rows) is None
+        assert service._compute_metric_result(metric, sql, rows) is None
 
     def test_none_metric_returns_none(self) -> None:
-        assert service._compute_metric_result(None, [{"cnt": 1}]) is None
+        assert (
+            service._compute_metric_result(None, self._COUNT_SQL, [{"cnt": 1}]) is None
+        )
 
 
 class TestSelfCorrection:
