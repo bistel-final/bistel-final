@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import shutil
 import subprocess
 import sys
 import zipfile
+from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 
 import psycopg
 import pytest
@@ -15,28 +19,153 @@ SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
+import manifest_v3  # noqa: E402
 import rebuild_runner as runner  # noqa: E402
 import rehearsal_postgres as postgres  # noqa: E402
+import rehearsal_profile_verifier as verifier  # noqa: E402
 import rehearsal_schema as schema  # noqa: E402
 import rehearse_schema as wrapper  # noqa: E402
+import value_normalization  # noqa: E402
 
 pytestmark = pytest.mark.container
 
 
+# 축소 acceptance fixture (계획 §6.3). 실제 최종 ZIP 24,845행 대신 같은 계약을
+# 만족하는 최소 행으로 DB type·행 수·typed hash·PK·FK·reference·timestamp를 모두
+# 실제 PostgreSQL transaction 안에서 통과시킨다.
+_FixtureTable = tuple[str, tuple[tuple[str, str], ...], tuple[str, ...], tuple]
+
+_TS = datetime(2026, 8, 18, 9, 30, 0)
+
+FIXTURE_TABLES: tuple[_FixtureTable, ...] = (
+    (
+        "dim_parameter",
+        (("parameter_id", "integer"), ("param_name", "text")),
+        ("parameter_id",),
+        ((1, "p1"), (2, "p2")),
+    ),
+    (
+        "lot_history",
+        (("lot_hist_id", "integer"), ("event_dtts", "timestamp")),
+        ("lot_hist_id",),
+        ((10, _TS), (11, _TS.replace(hour=10))),
+    ),
+    (
+        "fdc_trace",
+        (
+            ("trace_id", "integer"),
+            ("lot_hist_id", "integer"),
+            ("parameter_id", "integer"),
+            ("seq_no", "text"),
+        ),
+        ("trace_id",),
+        ((1, 10, 1, "0"), (2, 10, 2, "1"), (3, 11, 1, "0"), (4, 11, 2, "1")),
+    ),
+    (
+        "summary_data",
+        (("summary_id", "integer"), ("lot_hist_id", "integer")),
+        ("summary_id",),
+        ((1, 10), (2, 11)),
+    ),
+    (
+        "evaluation",
+        (
+            ("evaluation_id", "integer"),
+            ("lot_hist_id", "integer"),
+            ("alarm_type", "text"),
+        ),
+        ("evaluation_id",),
+        ((1, 10, "IN"), (2, 10, "IN"), (3, 11, "OOC"), (4, 11, "OOS")),
+    ),
+    (
+        "trace_alarm_history",
+        (("trace_alarm_id", "integer"),),
+        ("trace_alarm_id",),
+        ((1,), (2,), (3,)),
+    ),
+    (
+        "summary_alarm_history",
+        (("summary_alarm_id", "integer"),),
+        ("summary_alarm_id",),
+        ((1,), (2,)),
+    ),
+    (
+        "metrology",
+        (("metrology_id", "integer"), ("lot_hist_id", "integer")),
+        ("metrology_id",),
+        ((1, 10), (2, 11)),
+    ),
+    (
+        # loader 최소 postcheck가 evaluation profile action 수를 12로 못박는다.
+        "action_history",
+        (("action_id", "integer"),),
+        ("action_id",),
+        tuple((value,) for value in range(1, 13)),
+    ),
+)
+
+# 위 행 분포를 그대로 옮긴 축소 reference. 최종 상수(4538/216/46·138·51·0~5)를
+# 쓰지 않고 fixture 자신의 분포를 주입해 gate 자체가 동작함을 보인다.
+FIXTURE_REFERENCE = verifier.AcceptanceReference(
+    evaluation_alarm_types=MappingProxyType({"IN": 2, "OOC": 1, "OOS": 1}),
+    trace_alarm_rows=3,
+    summary_alarm_rows=2,
+    trace_seq_values=("0", "1"),
+)
+
+_PG_LOGICAL = {"integer": "numeric", "text": "text", "timestamp": "timestamp"}
+
+
 def _fixture_sql() -> bytes:
-    statements = [
-        f"CREATE TABLE {table} (id integer PRIMARY KEY);"
-        for table in sorted(schema.EXPECTED_TABLES)
-    ]
+    statements = []
+    for name, columns, primary_key, _rows in FIXTURE_TABLES:
+        body = ", ".join(f"{column} {pg_type}" for column, pg_type in columns)
+        keys = ", ".join(primary_key)
+        statements.append(f"CREATE TABLE {name} ({body}, PRIMARY KEY ({keys}));")
     statements.extend(
         [
-            "CREATE INDEX ix_evaluation_type ON evaluation (id);",
-            "CREATE INDEX ix_lot_history_cum ON lot_history (id);",
-            "CREATE INDEX ix_summary_data_key ON summary_data (id);",
-            "CREATE INDEX ix_trace_alarm_time ON trace_alarm_history (id);",
+            "CREATE INDEX ix_evaluation_type ON evaluation (alarm_type);",
+            "CREATE INDEX ix_lot_history_cum ON lot_history (lot_hist_id);",
+            "CREATE INDEX ix_summary_data_key ON summary_data (summary_id);",
+            "CREATE INDEX ix_trace_alarm_time ON trace_alarm_history "
+            "(trace_alarm_id);",
         ]
     )
     return ("\n".join(statements) + "\n").encode()
+
+
+def _fixture_csv(columns: tuple[tuple[str, str], ...], rows: tuple) -> bytes:
+    buffer = io.StringIO(newline="")
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow([column for column, _ in columns])
+    for row in rows:
+        writer.writerow(
+            [
+                value.isoformat(sep=" ") if isinstance(value, datetime) else value
+                for value in row
+            ]
+        )
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+def _fixture_entry(
+    columns: tuple[tuple[str, str], ...], primary_key: tuple[str, ...], rows: tuple
+) -> dict:
+    column_types = {column: _PG_LOGICAL[pg_type] for column, pg_type in columns}
+    names = [column for column, _ in columns]
+    normalized = [
+        value_normalization.normalize_db_row(
+            dict(zip(names, row, strict=True)), column_types
+        )
+        for row in rows
+    ]
+    return {
+        "columns": names,
+        "column_types": column_types,
+        "primary_key": list(primary_key),
+        "row_count": len(rows),
+        "content_hash": manifest_v3.hash_canonical_rows(normalized),
+    }
 
 
 def _fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
@@ -45,20 +174,15 @@ def _fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
     archive_path = tmp_path / "fixture.zip"
     info = zipfile.ZipInfo(member, date_time=(2026, 8, 20, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
-    # fixture DDL은 각 table을 (id integer PRIMARY KEY)로 만든다. CSV도 그 계약에 맞춘
-    # header 1줄 + 데이터 1줄이며, manifest columns·intake hash를 함께 다시 쓴다.
     real_manifest = json.loads(runner.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    def _fixture_csv(table: str, index: int) -> bytes:
-        # action_history만 12행이다. WBS가 evaluation 결과를 action 12로 못박았고
-        # postcheck가 그 값을 검사하므로 fixture도 같은 cardinality를 갖는다.
-        rows = range(1, 13) if table == "action_history" else (index + 1,)
-        body = "".join(f"{value}\n" for value in rows)
-        return ("\ufeffid\n" + body).encode()
-
+    entries = {
+        name: _fixture_entry(columns, primary_key, rows)
+        for name, columns, primary_key, rows in FIXTURE_TABLES
+    }
     csv_members = {
-        entry["file_id"]: _fixture_csv(table, index)
-        for index, (table, entry) in enumerate(real_manifest["tables"].items())
+        real_manifest["tables"][name]["file_id"]: _fixture_csv(columns, rows)
+        for name, columns, _primary_key, rows in FIXTURE_TABLES
     }
 
     with zipfile.ZipFile(archive_path, "w") as archive:
@@ -94,8 +218,9 @@ def _fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
     manifest["source_archive_sha256"] = archive_sha
     manifest["schema_sha256"] = sql_sha
     manifest["artifacts"]["schema_sql"]["sha256"] = sql_sha
-    for entry in manifest["tables"].values():
-        entry["columns"] = ["id"]
+    for name, entry in manifest["tables"].items():
+        # file_id·included_by_profile은 실제 manifest 값을 그대로 둔다.
+        entry.update(entries[name])
     manifest["selected_entry_manifest_sha256"] = hashlib.sha256(
         intake_path.read_bytes()
     ).hexdigest()
@@ -110,7 +235,10 @@ def test_schema_rehearsal_postcheck_rollback_and_cleanup(
     archive, artifacts = _fixture_artifacts(tmp_path)
     snapshot = wrapper._verified_archive_snapshot(archive, artifacts, profile)
     assert len(snapshot.tables) == (8 if profile == "runtime" else 9)
-    handler, postcheck = wrapper._composite(snapshot, profile)
+    assert len(snapshot.acceptances) == 9
+    handler, postcheck = wrapper._composite(
+        snapshot, profile, reference=FIXTURE_REFERENCE
+    )
     database = f"fdc_rehearsal_{profile}"
     container_id = ""
     volume_ids: tuple[str, ...] = ()
