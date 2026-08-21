@@ -51,15 +51,27 @@ FIXTURE_TABLES: tuple[_FixtureTable, ...] = (
         ((10, _TS), (11, _TS.replace(hour=10))),
     ),
     (
+        # 실제 데이터에서 seq_no는 recipe_step_no별 전역 순번이다
+        # (step 1 -> 0·1·2, step 2 -> 3·4·5, 각 2,400행). `V5-CM-2.4`는 step 경계를
+        # 검증하지 않지만(A 영역 범위), DISTINCT 집합만은 실제와 같은 6종으로 둔다
+        # (PR #96 코멘트 2).
         "fdc_trace",
         (
             ("trace_id", "integer"),
             ("lot_hist_id", "integer"),
             ("parameter_id", "integer"),
+            ("recipe_step_no", "integer"),
             ("seq_no", "text"),
         ),
         ("trace_id",),
-        ((1, 10, 1, "0"), (2, 10, 2, "1"), (3, 11, 1, "0"), (4, 11, 2, "1")),
+        (
+            (1, 10, 1, 1, "0"),
+            (2, 10, 1, 1, "1"),
+            (3, 10, 2, 1, "2"),
+            (4, 11, 2, 2, "3"),
+            (5, 11, 1, 2, "4"),
+            (6, 11, 2, 2, "5"),
+        ),
     ),
     (
         "summary_data",
@@ -104,13 +116,14 @@ FIXTURE_TABLES: tuple[_FixtureTable, ...] = (
     ),
 )
 
-# 위 행 분포를 그대로 옮긴 축소 reference. 최종 상수(4538/216/46·138·51·0~5)를
-# 쓰지 않고 fixture 자신의 분포를 주입해 gate 자체가 동작함을 보인다.
+# 위 행 분포를 그대로 옮긴 축소 reference. alarm 분포·행 수는 최종 상수
+# (4538/216/46·138·51)와 다른 값을 주입해 gate가 상수 암기가 아님을 보이고,
+# seq 집합만은 실제 계약과 같은 6종으로 맞춘다(PR #96 코멘트 2).
 FIXTURE_REFERENCE = verifier.AcceptanceReference(
     evaluation_alarm_types=MappingProxyType({"IN": 2, "OOC": 1, "OOS": 1}),
     trace_alarm_rows=3,
     summary_alarm_rows=2,
-    trace_seq_values=("0", "1"),
+    trace_seq_values=("0", "1", "2", "3", "4", "5"),
 )
 
 _PG_LOGICAL = {"integer": "numeric", "text": "text", "timestamp": "timestamp"}

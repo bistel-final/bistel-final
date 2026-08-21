@@ -576,6 +576,7 @@ def test_naive_timestamp_projects_to_kst() -> None:
     rows = [
         {"event_dtts": datetime(2026, 8, 18, 9, 30, 0)},
         {"event_dtts": datetime(2026, 1, 1, 0, 0, 0)},
+        {"event_dtts": datetime(1988, 10, 9, 4, 0, 0)},  # DST 종료 직후 +09:00
         {"event_dtts": None},
     ]
     connection = FakeConnection([('FROM "public"."lot_history"', rows)])
@@ -753,3 +754,31 @@ def test_unhashable_numeric_is_content_mismatch_not_internal_error(value: str) -
     assert value not in rendered
     assert "metrology" not in rendered
     assert verifier.AcceptanceCheck.CONTENT_HASH.value not in rendered
+
+
+@pytest.mark.parametrize(
+    ("value", "offset"),
+    [
+        (datetime(1987, 8, 15, 3, 0), "+10:00"),  # 1987 서머타임
+        (datetime(1988, 8, 15, 3, 0), "+10:00"),  # 1988 서머타임
+        (datetime(1955, 3, 1, 12, 0), "+08:30"),  # KST가 +08:30이던 시기
+    ],
+)
+def test_timestamps_outside_kst_plus_nine_window_fail(
+    value: datetime, offset: str
+) -> None:
+    """`+09:00` 검사는 vacuous가 아니다(PR #96 코멘트 1).
+
+    naive·datetime 조건을 모두 만족해도 KST offset이 `+09:00`이 아닌 시각은 실패한다.
+    앞의 `isinstance`·`tzinfo` 검사가 대신 잡아주지 않는 경로다.
+    """
+
+    from zoneinfo import ZoneInfo
+
+    assert value.replace(tzinfo=ZoneInfo("Asia/Seoul")).isoformat().endswith(offset)
+    connection = FakeConnection(
+        [('FROM "public"."lot_history"', [{"event_dtts": value}])]
+    )
+    with pytest.raises(verifier.AcceptanceError) as caught:
+        verifier.check_timestamp_projection(connection, (TS_ENTRY,), ["lot_history"])
+    assert caught.value.check is verifier.AcceptanceCheck.TIMESTAMP

@@ -418,6 +418,9 @@ def check_timestamp_projection(
 
     DB가 offset을 저장한다는 주장이 아니다. source naive 값을 Asia/Seoul wall time으로
     읽는 ingest·API 경계를 증명한다. 값이 이미 aware이거나 문자열이면 실패한다.
+
+    `replace(tzinfo=)` 전후로 wall clock 필드를 비교하는 검사는 정의상 항상 참이라
+    제거했다(PR #96 코멘트 1). 실제 gate는 그 wall time의 KST offset이다.
     """
 
     from datetime import datetime
@@ -447,10 +450,10 @@ def check_timestamp_projection(
                     raise _fail(AcceptanceCheck.TIMESTAMP)
                 if value.tzinfo is not None:
                     raise _fail(AcceptanceCheck.TIMESTAMP)
-                attached = value.replace(tzinfo=seoul)
-                if attached.timetuple()[:6] != value.timetuple()[:6]:
-                    raise _fail(AcceptanceCheck.TIMESTAMP)
-                if not attached.isoformat().endswith("+09:00"):
+                # KST는 1954~1961 `+08:30`, 1987~1988 서머타임 `+10:00`이었다.
+                # `+09:00`은 항상 참이 아니라 최종 epoch 값이 그 구간에 있다는
+                # 실제 판정이다(PR #96 코멘트 1).
+                if not value.replace(tzinfo=seoul).isoformat().endswith("+09:00"):
                     raise _fail(AcceptanceCheck.TIMESTAMP)
 
 
