@@ -50,12 +50,6 @@ class DocumentSearchRequest(ApiModel):
     top_k: int = Field(default=4, ge=1, le=10)
 
 
-class DocumentSearchResponse(ApiModel):
-    query: str
-    hits: list[DocumentHit]
-    count: int = Field(ge=0)
-
-
 class DocumentChunkItem(ApiModel):
     chunk_id: NonEmptyId
     chunk_seq: int = Field(ge=0)

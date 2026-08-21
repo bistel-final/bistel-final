@@ -191,7 +191,9 @@ def test_repository_search_without_model_code_searches_all_documents(
     }
 
 
-def test_documents_search_api_returns_query_hits_and_count(monkeypatch: Any) -> None:
+def test_documents_search_api_returns_bare_document_hit_array(
+    monkeypatch: Any,
+) -> None:
     class FakeService:
         def __init__(self, repository: object) -> None:
             self.repository = repository
@@ -222,21 +224,17 @@ def test_documents_search_api_returns_query_hits_and_count(monkeypatch: Any) -> 
         DocumentSearchRequest(query="check", model_code="ET-7500")
     )
 
-    assert response.model_dump() == {
-        "query": "check",
-        "hits": [
-            {
-                "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
-                "document_id": "DOC-SPEC-ET7500",
-                "title": "ET Guide",
-                "section": "적용 범위",
-                "score": 0.82,
-                "content": "content",
-                "model_code": "ET-7500",
-            }
-        ],
-        "count": 1,
-    }
+    assert [hit.model_dump() for hit in response] == [
+        {
+            "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+            "document_id": "DOC-SPEC-ET7500",
+            "title": "ET Guide",
+            "section": "적용 범위",
+            "score": 0.82,
+            "content": "content",
+            "model_code": "ET-7500",
+        }
+    ]
 
 
 def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) -> None:
