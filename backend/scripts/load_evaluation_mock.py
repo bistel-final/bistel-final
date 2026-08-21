@@ -24,14 +24,11 @@ import load_corrected_base as corrected_loader
 import manifest_v3
 import verify_bootstrap_state as bootstrap_verifier
 from build_corrected_dataset import _exclusive_lock
-from db_target import BootstrapTarget, TargetValidationError, load_bootstrap_target
-from dotenv import load_dotenv
+from db_target import BootstrapTarget
 from master_cypher import canonical_sha256
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
 from value_normalization import (
     VALUE_NORMALIZATION_VERSION,
-    ValueNormalizationError,
     column_type_registry,
     normalize_csv_row,
     normalize_db_row,
@@ -1169,44 +1166,11 @@ def _validate_cli(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    load_dotenv(REPOSITORY_ROOT / ".env", override=False)
-    args = _parser().parse_args(argv)
-    try:
-        _validate_cli(args)
-        if args.register_manifests:
-            result = register_manifest(confirm=args.confirm)
-        else:
-            context = _load_manifest_context(require_registered=True)
-            target = load_bootstrap_target(TARGET_DATABASE)
-            if args.preflight:
-                result = run_preflight(target, context).name
-            elif args.rehearse:
-                run_rehearsal(target, context)
-                result = "REHEARSED"
-            else:
-                result = run_apply_or_recover(
-                    target,
-                    context,
-                    recover_artifact=args.recover_artifact,
-                    change_reference=args.change_ref,
-                )
-        print(json.dumps({"status": result}, ensure_ascii=False, sort_keys=True))
-        return 0 if result != "PREVIEW" else manifest_v3.EXIT_CONFIRM_REQUIRED
-    except (
-        EvaluationMockError,
-        manifest_v3.VerificationError,
-        TargetValidationError,
-        SQLAlchemyError,
-        ValueNormalizationError,
-    ) as exc:
-        print(
-            json.dumps(
-                {"status": "FAILED", "reason_code": type(exc).__name__},
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-        return getattr(exc, "exit_code", manifest_v3.EXIT_USAGE)
+    """V5-CM-1.5에서 폐기된 공개 실행 경로를 차단한다."""
+    del argv
+    import retired_pipelines
+
+    return retired_pipelines.block("load_evaluation_mock")
 
 
 if __name__ == "__main__":

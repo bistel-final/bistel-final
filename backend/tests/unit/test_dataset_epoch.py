@@ -61,6 +61,12 @@ REMAINING_MANIFESTS = {
     "evaluation.evaluation_mock.json",
     "runtime.corrected_base.json",
 }
+# marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
+# 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.
+REMAINING_MARKERS = {
+    "rag_load.kosa_agent.json",
+    "rag_load.kosa_agent_e2e.json",
+}
 
 
 def _load_artifact() -> dict:
@@ -204,19 +210,19 @@ def test_isolation_is_complete_for_18_files() -> None:
     )
 
 
-# --- 7. 잔류 3파일 고정 ---------------------------------------------------------
+# --- 7. 현행 잔류 artifact allowlist --------------------------------------------
 
 
-def test_remaining_artifacts_are_exactly_three_manifests() -> None:
-    """잔류가 §1.3의 manifests 3개뿐임을 고정한다.
+def test_remaining_artifacts_are_allowlisted_and_secret_free() -> None:
+    """현행 manifest·RAG marker만 남고 marker payload에는 비밀값이 없어야 한다.
 
-    늘어나면 실패시켜 "몰래 남는 구 artifact"를 막는다. `markers/`에는 marker JSON이
-    없어야 한다(`.gitignore` 등 숨김 보조 파일은 marker가 아니다).
+    RAG marker 2개는 Knowledge 적재 완료 증적으로 의도적으로 커밋한다. 파일 집합을
+    allowlist로 고정해 다른 실행 marker나 실수로 생성된 JSON이 섞이면 실패시킨다.
     """
-    remaining = {
-        path.name for path in (BOOTSTRAP_ROOT / "manifests").glob("*.json")
-    }
+    remaining = {path.name for path in (BOOTSTRAP_ROOT / "manifests").glob("*.json")}
     assert remaining == REMAINING_MANIFESTS
 
-    markers = sorted((BOOTSTRAP_ROOT / "markers").glob("*.json"))
-    assert markers == []
+    marker_paths = sorted((BOOTSTRAP_ROOT / "markers").glob("*.json"))
+    assert {path.name for path in marker_paths} == REMAINING_MARKERS
+    for path in marker_paths:
+        mv3.scan_for_sensitive_values(json.loads(path.read_text(encoding="utf-8")))
