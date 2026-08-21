@@ -894,17 +894,19 @@ def test_lock_writes_one_byte_before_windows_range_lock(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _fail_second_fsync(monkeypatch: pytest.MonkeyPatch) -> None:
-    real = recovery.os.fsync
-    seen = {"count": 0}
+def _fail_directory_durability(monkeypatch: pytest.MonkeyPatch) -> None:
+    """replace **이후** durability 단계만 실패시킨다.
 
-    def fsync(descriptor: int) -> None:
-        seen["count"] += 1
-        if seen["count"] >= 2:  # 1회는 파일, 2회째가 디렉터리다
-            raise OSError("directory fsync 미지원")
-        real(descriptor)
+    `os.fsync` 호출 횟수를 세면 POSIX 전용 테스트가 된다. Windows는 디렉터리
+    fsync를 아예 하지 않아 두 번째 호출이 없고, 그러면 이 회귀가 "DID NOT RAISE"로
+    깨진다(PR #101 Windows job). 우리가 검증할 것은 플랫폼 동작이 아니라 실패했을
+    때의 처리이므로 helper 자체를 실패시킨다.
+    """
 
-    monkeypatch.setattr(recovery.os, "fsync", fsync)
+    def explode(_path: Path) -> None:
+        raise OSError("directory fsync 실패")
+
+    monkeypatch.setattr(recovery, "fsync_directory", explode)
 
 
 @pytest.mark.windows_contract
@@ -918,11 +920,12 @@ def test_durability_failure_after_replace_leaves_no_marker(
     """
 
     store = recovery.MarkerStore(tmp_path, "runtime")
-    _fail_second_fsync(monkeypatch)
+    _fail_directory_durability(monkeypatch)
     with pytest.raises(OSError):
         store.save({"payload": "value"})
     assert not store.path.exists()
     assert store.markers() == []
+    # `*.tmp`가 없다는 것은 replace가 실제로 일어난 뒤 되돌렸다는 뜻이다.
     assert not list(tmp_path.glob("*.tmp"))
 
 
@@ -934,7 +937,7 @@ def test_write_failure_converges_to_explicit_recovery(
     session, store, connection = _session(tmp_path, rows=[])
     session.handler(connection, object())
     session.postcheck(connection, object())
-    _fail_second_fsync(monkeypatch)
+    _fail_directory_durability(monkeypatch)
     with pytest.raises(_Fail) as caught:
         session.post_commit(connection, object())
     assert caught.value.reason_code == "ARTIFACT_WRITE_FAILED"
@@ -1129,4 +1132,49 @@ def test_windows_contract_subset_needs_only_pytest() -> None:
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert " passed" in completed.stdout
+    assert "failed" not in completed.stdout
+
+
+_NO_DIRECTORY_FSYNC_PROBE = """
+import sys
+
+sys.path.insert(0, sys.argv[2])
+import rehearsal_recovery
+
+# Windows의 실제 기본값이다. 이 축을 재현하지 않아 PR #101의 Windows job이
+# `DID NOT RAISE`로 깨졌다.
+rehearsal_recovery.DIRECTORY_FSYNC_SUPPORTED = False
+
+import pytest
+
+sys.exit(
+    pytest.main(
+        ["-q", sys.argv[1], "-m", "windows_contract", "-p", "no:cacheprovider"]
+    )
+)
+"""
+
+
+def test_windows_contract_subset_passes_without_directory_fsync() -> None:
+    """디렉터리 fsync가 없는 플랫폼에서도 marker 집합이 통과해야 한다.
+
+    Windows는 `DIRECTORY_FSYNC_SUPPORTED`가 False라 `os.fsync` 호출이 파일 1회뿐이다.
+    호출 횟수에 기대는 회귀는 그 환경에서 조용히 무력화된다.
+    """
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _NO_DIRECTORY_FSYNC_PROBE,
+            str(Path(__file__)),
+            str(SCRIPTS_ROOT),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "failed" not in completed.stdout
