@@ -577,3 +577,129 @@ def test_bad_logical_type_fails_closed_before_lifecycle(
         )
     assert raised.value.reason_code == "ARCHIVE_INVALID"
     assert raised.value.exit_code == wrapper.EXIT_USAGE
+
+
+# ---------------------------------------------------------------------------
+# V5-CM-2.5 — 공유 reason allowlist와 runner 호출 일반화
+# ---------------------------------------------------------------------------
+
+_V5_CM_24_REASONS = frozenset(
+    {
+        "ARG_INVALID",
+        "ARCHIVE_INVALID",
+        "ARCHIVE_MISMATCH",
+        "DOCKER_UNAVAILABLE",
+        "DOCKER_DAEMON_DOWN",
+        "DOCKER_IMAGE_UNAVAILABLE",
+        "DOCKER_PORT_UNAVAILABLE",
+        "DOCKER_TIMEOUT",
+        "REHEARSAL_NOT_READY",
+        "REHEARSAL_CLEANUP_FAILED",
+        "INTERRUPTED",
+        "INTERNAL_ERROR",
+        "MODE_CONFLICT",
+        "TARGET_NOT_ALLOWED",
+        "TARGET_ENV_INVALID",
+        "PROFILE_MISMATCH",
+        "MODE_NOT_WIRED",
+        "EPOCH_MISMATCH",
+        "ARTIFACT_INVALID",
+        "CONFIRM_REQUIRED",
+        "MODE_CONTRACT_ERROR",
+        "LOCK_BUSY",
+        "TARGET_NOT_FRESH",
+        "SCHEMA_FORBIDDEN_STATEMENT",
+    }
+)
+_V5_CM_25_REASONS = frozenset(
+    {
+        "RECOVERY_REQUIRED",
+        "RECOVERY_NOT_ALLOWED",
+        "ARTIFACT_MISMATCH",
+        "ARTIFACT_WRITE_FAILED",
+    }
+)
+
+
+def test_reason_allowlist_is_exactly_previous_plus_four() -> None:
+    """기존 24종이 하나도 빠지지 않고 새 4종만 더해졌다(계획 §9)."""
+
+    assert len(_V5_CM_24_REASONS) == 24
+    assert _V5_CM_24_REASONS & _V5_CM_25_REASONS == frozenset()
+    assert wrapper.REASON_ALLOWLIST == _V5_CM_24_REASONS | _V5_CM_25_REASONS
+    assert len(wrapper.REASON_ALLOWLIST) == 28
+
+
+@pytest.mark.parametrize("reason", sorted(_V5_CM_25_REASONS))
+def test_new_reasons_survive_both_sanitizers(reason: str) -> None:
+    """두 sanitizer 어느 쪽도 새 reason을 INTERNAL_ERROR로 바꾸지 않는다."""
+
+    assert wrapper._checked(reason) == reason
+    payload = json.dumps({"reason_code": reason, "status": "FAILED"}) + "\n"
+    assert wrapper._parse_runner_output(payload, 1) == wrapper.RunnerOutcome(1, reason)
+
+
+def test_unknown_reason_is_still_collapsed() -> None:
+    assert wrapper._checked("SOMETHING_NEW") == "INTERNAL_ERROR"
+
+
+def test_call_runner_defaults_to_rollback_rehearsal(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기존 CLI 기본 동작은 그대로 `--rehearse`다(계획 §3.3)."""
+
+    _archive, artifacts = fixture_artifacts
+    seen: dict[str, Any] = {}
+
+    def fake_run(argv: list[str], **kwargs: Any) -> int:
+        seen["argv"] = argv
+        seen["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(wrapper.rebuild_runner, "run", fake_run)
+    wrapper._call_runner(
+        _endpoint(),
+        profile="runtime",
+        artifact_paths=artifacts,
+        handler=lambda *_: None,
+        postcheck=lambda *_: None,
+    )
+    assert "--rehearse" in seen["argv"]
+    assert "--apply" not in seen["argv"]
+    assert "--recover-artifact" not in seen["argv"]
+    assert seen["kwargs"]["post_commits"] == {}
+    assert set(seen["kwargs"]["mode_handlers"]) == {runner.RunMode.REHEARSE}
+
+
+def test_call_runner_wires_apply_recover_and_hook(
+    fixture_artifacts: tuple[Path, runner.ArtifactPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _archive, artifacts = fixture_artifacts
+    seen: dict[str, Any] = {}
+
+    def fake_run(argv: list[str], **kwargs: Any) -> int:
+        seen["argv"] = argv
+        seen["kwargs"] = kwargs
+        return 0
+
+    monkeypatch.setattr(wrapper.rebuild_runner, "run", fake_run)
+
+    def hook(_c: Any, _p: Any) -> None:
+        return None
+
+    wrapper._call_runner(
+        _endpoint(),
+        profile="runtime",
+        artifact_paths=artifacts,
+        handler=lambda *_: None,
+        postcheck=lambda *_: None,
+        mode=runner.RunMode.APPLY,
+        post_commit=hook,
+        recover_artifact=True,
+    )
+    assert "--apply" in seen["argv"]
+    assert "--recover-artifact" in seen["argv"]
+    assert seen["kwargs"]["post_commits"] == {runner.RunMode.APPLY: hook}
+    assert set(seen["kwargs"]["postchecks"]) == {runner.RunMode.APPLY}

@@ -51,10 +51,21 @@ REASON_ALLOWLIST = frozenset(
         "LOCK_BUSY",
         "TARGET_NOT_FRESH",
         "SCHEMA_FORBIDDEN_STATEMENT",
+        # V5-CM-2.5 재실행·복구. 이 집합이 recovery wrapper의 유일한 정본이며
+        # 별도 allowlist를 만들지 않는다(계획 §9).
+        "RECOVERY_REQUIRED",
+        "RECOVERY_NOT_ALLOWED",
+        "ARTIFACT_MISMATCH",
+        "ARTIFACT_WRITE_FAILED",
     }
 )
 
 LifecycleFactory = Callable[..., Iterator[RehearsalEndpoint]]
+
+_MODE_FLAG = {
+    rebuild_runner.RunMode.REHEARSE: "--rehearse",
+    rebuild_runner.RunMode.APPLY: "--apply",
+}
 
 
 @dataclass(frozen=True)
@@ -302,7 +313,16 @@ def _call_runner(
     artifact_paths: rebuild_runner.ArtifactPaths,
     handler: Any,
     postcheck: Any,
+    mode: rebuild_runner.RunMode = rebuild_runner.RunMode.REHEARSE,
+    post_commit: Any = None,
+    recover_artifact: bool = False,
 ) -> RunnerOutcome:
+    """runner를 한 번 호출한다.
+
+    기본값은 `V5-CM-2.2` 이후와 같은 rollback rehearsal이다. `V5-CM-2.5`가
+    apply·복구를 실증할 때만 `mode`·`post_commit`·`recover_artifact`를 넘긴다.
+    """
+
     environment = {
         "POSTGRES_REHEARSAL_HOST": endpoint.host,
         "POSTGRES_REHEARSAL_PORT": str(endpoint.port),
@@ -310,22 +330,26 @@ def _call_runner(
         "POSTGRES_REHEARSAL_USER": endpoint.username,
         "POSTGRES_REHEARSAL_PASSWORD": endpoint.password,
     }
+    argv = [
+        "--target",
+        "rehearsal",
+        "--profile",
+        profile,
+        _MODE_FLAG[mode],
+        "--confirm-target",
+        endpoint.database,
+    ]
+    if recover_artifact:
+        argv.append("--recover-artifact")
     stderr = io.StringIO()
     with contextlib.redirect_stderr(stderr):
         exit_code = rebuild_runner.run(
-            [
-                "--target",
-                "rehearsal",
-                "--profile",
-                profile,
-                "--rehearse",
-                "--confirm-target",
-                endpoint.database,
-            ],
+            argv,
             environ=environment,
             artifact_paths=artifact_paths,
-            mode_handlers={rebuild_runner.RunMode.REHEARSE: handler},
-            postchecks={rebuild_runner.RunMode.REHEARSE: postcheck},
+            mode_handlers={mode: handler},
+            postchecks={mode: postcheck},
+            post_commits={} if post_commit is None else {mode: post_commit},
         )
     return _parse_runner_output(stderr.getvalue(), exit_code)
 

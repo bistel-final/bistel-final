@@ -11,6 +11,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from types import MappingProxyType
+from typing import Any
 
 import psycopg
 import pytest
@@ -23,7 +24,9 @@ import manifest_v3  # noqa: E402
 import rebuild_runner as runner  # noqa: E402
 import rehearsal_postgres as postgres  # noqa: E402
 import rehearsal_profile_verifier as verifier  # noqa: E402
+import rehearsal_recovery as recovery  # noqa: E402
 import rehearsal_schema as schema  # noqa: E402
+import rehearse_recovery as recovery_cli  # noqa: E402
 import rehearse_schema as wrapper  # noqa: E402
 import value_normalization  # noqa: E402
 
@@ -329,3 +332,139 @@ def test_real_postgres_rejects_non_fresh_public_schema(tmp_path: Path) -> None:
             postcheck=postcheck,
         )
         assert outcome == wrapper.RunnerOutcome(1, "TARGET_NOT_FRESH")
+
+
+# ---------------------------------------------------------------------------
+# V5-CM-2.5 — 실제 transaction에서의 rollback · no-op · 복구
+# ---------------------------------------------------------------------------
+
+
+def _public_relations(endpoint: postgres.RehearsalEndpoint) -> int:
+    with psycopg.connect(
+        host=endpoint.host,
+        port=endpoint.port,
+        dbname=endpoint.database,
+        user=endpoint.username,
+        password=endpoint.password,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(recovery.RELATIONS_SQL)
+            return len(cursor.fetchall())
+
+
+def _table_rows(endpoint: postgres.RehearsalEndpoint, table: str) -> int:
+    with psycopg.connect(
+        host=endpoint.host,
+        port=endpoint.port,
+        dbname=endpoint.database,
+        user=endpoint.username,
+        password=endpoint.password,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f'SELECT count(*) FROM public."{table}"')
+            row = cursor.fetchone()
+            assert row is not None
+            return int(row[0])
+
+
+@pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+def test_recovery_rehearsal_on_real_postgres(tmp_path: Path, profile: str) -> None:
+    """실패 rollback → apply → no-op → marker 유실 → 복구를 실제 DB로 확인한다."""
+
+    archive, artifacts = _fixture_artifacts(tmp_path)
+    marker_root = tmp_path / "markers"
+    marker_root.mkdir()
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, profile)
+    archive_sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+    store = recovery.MarkerStore(marker_root, profile)
+    database = f"fdc_rehearsal_{profile}"
+
+    identity = recovery_cli._identity(
+        snapshot,
+        profile=profile,
+        database=database,
+        artifact_paths=artifacts,
+        archive_sha=archive_sha,
+    )
+
+    def session(recover: bool = False, poison: object = None) -> object:
+        return recovery_cli._session(
+            snapshot,
+            profile=profile,
+            store=store,
+            identity=identity,
+            recover_artifact=recover,
+            poison=poison,
+            reference=FIXTURE_REFERENCE,
+        )
+
+    def invoke(current: Any, recover: bool = False) -> wrapper.RunnerOutcome:
+        return recovery_cli._invoke(
+            endpoint,
+            current,
+            profile=profile,
+            artifact_paths=artifacts,
+            recover_artifact=recover,
+        )
+
+    with postgres.one_off_postgres(database=database) as endpoint:
+        # 1. 실패 주입 → 전체 rollback
+        assert invoke(session(poison=recovery_cli._poison)) == wrapper.RunnerOutcome(
+            1, "MODE_CONTRACT_ERROR"
+        )
+        assert _public_relations(endpoint) == 0
+        assert store.markers() == []
+
+        # 2. 최초 apply → commit → marker-last
+        applied = session()
+        assert invoke(applied) == wrapper.RunnerOutcome(0, None)
+        assert applied.outcome is recovery.Outcome.APPLIED
+        assert _public_relations(endpoint) > 0
+        assert _table_rows(endpoint, "action_history") == (
+            12 if profile == "evaluation" else 0
+        )
+        assert len(store.markers()) == 1
+        first_marker = store.path.read_bytes()
+        first_mtime = store.path.stat().st_mtime_ns
+
+        # 3. 동일 apply → no-op, marker bytes·mtime 불변
+        noop = session()
+        assert invoke(noop) == wrapper.RunnerOutcome(0, None)
+        assert noop.outcome is recovery.Outcome.NOOP
+        assert store.path.read_bytes() == first_marker
+        assert store.path.stat().st_mtime_ns == first_mtime
+
+        # 4. valid marker에 복구 요청 → 거부
+        assert invoke(session(recover=True), recover=True) == wrapper.RunnerOutcome(
+            1, "RECOVERY_NOT_ALLOWED"
+        )
+        assert store.path.read_bytes() == first_marker
+
+        # 5. marker 유실 → 일반 apply 거부
+        store.path.unlink()
+        assert invoke(session()) == wrapper.RunnerOutcome(1, "RECOVERY_REQUIRED")
+        assert store.markers() == []
+
+        # 6. 명시 복구 → marker만 byte-identical 복원
+        recovered = session(recover=True)
+        assert invoke(recovered, recover=True) == wrapper.RunnerOutcome(0, None)
+        assert recovered.outcome is recovery.Outcome.RECOVER
+        assert store.path.read_bytes() == first_marker
+
+        # 7. DB cell 변조 → no-op도 복구도 거부
+        with psycopg.connect(
+            host=endpoint.host,
+            port=endpoint.port,
+            dbname=endpoint.database,
+            user=endpoint.username,
+            password=endpoint.password,
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("UPDATE public.metrology SET lot_hist_id = 99")
+            connection.commit()
+        assert invoke(session()) == wrapper.RunnerOutcome(1, "MODE_CONTRACT_ERROR")
+        store.path.unlink()
+        assert invoke(session(recover=True), recover=True) == wrapper.RunnerOutcome(
+            1, "MODE_CONTRACT_ERROR"
+        )
+        assert store.markers() == []

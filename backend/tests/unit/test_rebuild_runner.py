@@ -793,3 +793,207 @@ def test_runner_ast_forbids_shell_execution() -> None:
     assert imports.isdisjoint(forbidden_imports)
     assert not any(call.rsplit(".", 1)[-1] in {"system", "popen"} for call in calls)
     assert calls.isdisjoint(forbidden_calls)
+
+
+# ---------------------------------------------------------------------------
+# V5-CM-2.5 — --recover-artifact 옵션 행렬과 post-commit hook 계약
+# ---------------------------------------------------------------------------
+
+
+def _recover_argv(mode_flag: str) -> list[str]:
+    argv = [
+        "--target",
+        "rehearsal",
+        "--profile",
+        "runtime",
+        mode_flag,
+        "--recover-artifact",
+    ]
+    if mode_flag != "--register-manifests":
+        argv += ["--confirm-target", "fdc_rehearsal_runtime"]
+    return argv
+
+
+def test_recover_artifact_is_allowed_only_with_apply() -> None:
+    args = runner._parser().parse_args(_recover_argv("--apply"))
+    assert runner._validate_recover_artifact(args, runner.RunMode.APPLY) is True
+
+    plan = runner.build_execution_plan(args, environ=_rehearsal_env())
+    assert plan.recover_artifact is True
+    assert plan.commit_policy is runner.CommitPolicy.COMMIT
+
+
+def test_execution_plan_defaults_recover_artifact_to_false() -> None:
+    args = runner._parser().parse_args(
+        [
+            "--target",
+            "rehearsal",
+            "--profile",
+            "runtime",
+            "--rehearse",
+            "--confirm-target",
+            "fdc_rehearsal_runtime",
+        ]
+    )
+    plan = runner.build_execution_plan(args, environ=_rehearsal_env())
+    assert plan.recover_artifact is False
+
+
+@pytest.mark.parametrize(
+    "mode_flag", ["--preflight", "--rehearse", "--register-manifests"]
+)
+def test_recover_artifact_with_other_modes_never_builds_engine(
+    mode_flag: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """잘못된 조합은 연결 전에 `ARG_INVALID`다(계획 §7.1-5)."""
+
+    calls: list[str] = []
+
+    def factory(_target: Any) -> Any:  # pragma: no cover - 호출되면 실패다
+        calls.append("engine")
+        raise AssertionError("engine must not be built")
+
+    exit_code = runner.run(
+        _recover_argv(mode_flag),
+        environ=_rehearsal_env(),
+        engine_factory=factory,
+        mode_handlers={},
+        postchecks={},
+    )
+    assert exit_code == runner.EXIT_USAGE
+    assert _json_line(capsys.readouterr().err)["reason_code"] == "ARG_INVALID"
+    assert calls == []
+
+
+def _hook_events() -> tuple[list[Any], Any, Any, Any]:
+    events: list[Any] = []
+
+    def handler(_c: Any, _p: Any) -> None:
+        events.append("handler")
+
+    def postcheck(_c: Any, _p: Any) -> None:
+        events.append("postcheck")
+
+    def hook(_c: Any, _p: Any) -> None:
+        events.append("post_commit")
+
+    return events, handler, postcheck, hook
+
+
+def test_post_commit_hook_runs_once_after_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events, handler, postcheck, hook = _hook_events()
+    monkeypatch.setattr(
+        runner.mutation_runtime, "prepare_transaction", _prepare_spy([])
+    )
+    assert (
+        runner.execute_transactional(
+            _plan(runner.CommitPolicy.COMMIT),
+            _engine_factory(events),
+            handler,
+            postcheck,
+            hook,
+        )
+        == runner.EXIT_OK
+    )
+    assert events.index("commit") < events.index("post_commit")
+    assert events.count("post_commit") == 1
+
+
+@pytest.mark.parametrize(
+    "policy", [runner.CommitPolicy.ROLLBACK_ALWAYS, runner.CommitPolicy.READ_ONLY]
+)
+def test_rollback_modes_never_call_post_commit(
+    policy: runner.CommitPolicy, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events, handler, postcheck, hook = _hook_events()
+    monkeypatch.setattr(
+        runner.mutation_runtime, "prepare_transaction", _prepare_spy([])
+    )
+    runner.execute_transactional(
+        _plan(policy), _engine_factory(events), handler, postcheck, hook
+    )
+    assert "rollback" in events
+    assert "post_commit" not in events
+
+
+@pytest.mark.parametrize("failing", ["handler", "postcheck"])
+def test_failed_stage_never_calls_post_commit(
+    failing: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events, handler, postcheck, hook = _hook_events()
+    monkeypatch.setattr(
+        runner.mutation_runtime, "prepare_transaction", _prepare_spy([])
+    )
+
+    def boom(_c: Any, _p: Any) -> None:
+        events.append(failing)
+        raise runner.RunnerError("MODE_CONTRACT_ERROR", runner.EXIT_MISMATCH)
+
+    with pytest.raises(runner.RunnerError):
+        runner.execute_transactional(
+            _plan(runner.CommitPolicy.COMMIT),
+            _engine_factory(events),
+            boom if failing == "handler" else handler,
+            boom if failing == "postcheck" else postcheck,
+            hook,
+        )
+    assert "rollback" in events
+    assert "commit" not in events
+    assert "post_commit" not in events
+
+
+def test_post_commit_non_none_return_is_contract_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events, handler, postcheck, _hook = _hook_events()
+    monkeypatch.setattr(
+        runner.mutation_runtime, "prepare_transaction", _prepare_spy([])
+    )
+    with pytest.raises(runner.ModeContractError):
+        runner.execute_transactional(
+            _plan(runner.CommitPolicy.COMMIT),
+            _engine_factory(events),
+            handler,
+            postcheck,
+            lambda _c, _p: "unexpected",
+        )
+    # commit은 이미 끝났다. 되돌리지 않는다.
+    assert "commit" in events
+    assert "rollback" not in events
+
+
+def test_post_commit_failure_does_not_roll_back_committed_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """marker 저장 실패를 rollback으로 오판하지 않는다(계획 §7.2 · 계획리뷰 §5-10)."""
+
+    events, handler, postcheck, _hook = _hook_events()
+    monkeypatch.setattr(
+        runner.mutation_runtime, "prepare_transaction", _prepare_spy([])
+    )
+
+    def failing_hook(_c: Any, _p: Any) -> None:
+        events.append("post_commit")
+        raise runner.RunnerError("ARTIFACT_WRITE_FAILED", runner.EXIT_USAGE)
+
+    with pytest.raises(runner.RunnerError) as caught:
+        runner.execute_transactional(
+            _plan(runner.CommitPolicy.COMMIT),
+            _engine_factory(events),
+            handler,
+            postcheck,
+            failing_hook,
+        )
+    assert caught.value.reason_code == "ARTIFACT_WRITE_FAILED"
+    assert "commit" in events
+    assert "rollback" not in events
+    assert "dispose" in events
+
+
+def test_production_post_commit_registry_is_empty() -> None:
+    assert runner.POST_COMMIT_HOOKS == {}
+    assert runner.MODE_HANDLERS == {}
+    assert runner.POSTCHECKS == {}
+    assert runner.MANIFEST_HANDLERS == {}
