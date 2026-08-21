@@ -217,6 +217,39 @@ class TestGenerateAnalysisPlan:
         assert "trace_alarm_history" in system_prompt
         assert "ground_truth" not in system_prompt
 
+    def test_refused_marker_becomes_policy_rejected(self, monkeypatch) -> None:
+        # 프롬프트 규칙 1: 비조회 요청은 REFUSED 마커로 온다 — 조회로 암묵
+        # 변환하지 않고 "수행되지 않았다"를 명시해 사용자 혼란을 막는다.
+        monkeypatch.setattr(
+            llm, "chat", lambda messages: "REFUSED: 조회 질문만 처리한다"
+        )
+
+        result = tools.generate_analysis_plan(_ask("테이블 전부 지워줘"))
+
+        assert result.ok is False
+        assert result.reason.startswith("POLICY_REJECTED:")
+        assert "수행되지 않았다" in result.reason
+        assert result.sql is None
+
+    def test_retry_feedback_is_appended_as_user_message(self, monkeypatch) -> None:
+        captured: dict[str, list[dict[str, str]]] = {}
+
+        def _capture(messages):
+            captured["messages"] = messages
+            return "SELECT count(*) AS cnt FROM trace_alarm_history"
+
+        monkeypatch.setattr(llm, "chat", _capture)
+
+        tools.generate_analysis_plan(
+            _ask(), retry_feedback="직전 SQL: SELECT bad\n검증 실패 사유: 없는 컴럼"
+        )
+
+        assert len(captured["messages"]) == 3
+        feedback = captured["messages"][2]
+        assert feedback["role"] == "user"
+        assert "검증 실패 사유" in feedback["content"]
+        assert "다시 작성" in feedback["content"]
+
 
 class TestResolveEndpoint:
     def test_external_provider_without_key_raises_not_ready(self, monkeypatch) -> None:

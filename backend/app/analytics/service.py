@@ -21,6 +21,10 @@ nl_query_log_id 는 질의 이력(V5-D-2.4) 전까지 placeholder 1 을 쓴다.
 from __future__ import annotations
 
 import time
+from decimal import Decimal
+
+import sqlglot
+from sqlglot import expressions as exp
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.repository import (
@@ -64,12 +68,18 @@ _SQL_LEADING_KEYWORDS: frozenset[str] = frozenset(
 )
 
 
+def _is_sql_passthrough(question: str) -> bool:
+    """question 을 SQL 원문으로 간주할지 판정한다."""
+    stripped = question.strip()
+    leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
+    return leading in _SQL_LEADING_KEYWORDS
+
+
 def _generate_plan(question: str) -> AnalysisPlanToolResult:
     """계획 생성. SQL 원문은 passthrough, 자연어는 LLM Tool 을 탄다."""
     stripped = question.strip()
-    leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
 
-    if leading in _SQL_LEADING_KEYWORDS:
+    if _is_sql_passthrough(stripped):
         return AnalysisPlanToolResult(
             ok=True,
             sql=stripped,
@@ -79,6 +89,59 @@ def _generate_plan(question: str) -> AnalysisPlanToolResult:
         )
 
     return generate_analysis_plan(AnalysisPlanToolInput(question=stripped))
+
+
+def _single_count_value(sql: str, rows: list[dict]) -> float | None:
+    """결과가 'COUNT 집계 단일 값'임이 SQL 로 확인될 때만 그 값을 준다.
+
+    projection 이 COUNT(...) 하나뿐인 단일 행 결과만 인정한다.
+    SELECT temperature ... LIMIT 1 같은 일반 값 조회가 count KPI 로
+    둘갑되는 것을 막는다 — metric 계획과 SQL 의 의미가 일치할 때만
+    값을 채운다(P2 리뷰).
+    """
+    if len(rows) != 1:
+        return None
+
+    try:
+        statement = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return None
+
+    projections = list(statement.expressions)
+    if len(projections) != 1:
+        return None
+    projection = projections[0]
+    if isinstance(projection, exp.Alias):
+        projection = projection.this
+    if not isinstance(projection, exp.Count):
+        return None
+
+    values = [
+        value
+        for value in rows[0].values()
+        if isinstance(value, int | float | Decimal) and not isinstance(value, bool)
+    ]
+    if len(values) != 1:
+        return None
+    return float(values[0])
+
+
+def _compute_metric_result(
+    metric: MetricPlan | None, sql: str, rows: list[dict]
+) -> float | None:
+    """[팀 잠정] 대표 KPI 값. metric 계획과 SQL 의미가 일치할 때만 계산한다.
+
+    현재 planner 는 metric 을 항상 count 로 잡으므로, SQL projection 이
+    실제 COUNT 집계 단일 값일 때만 값을 채운다. 그 외(일반 값 조회·
+    그룹 결과·LIMIT 잘림)은 전부 None — 틀린 라벨로 값을 보여주느니
+    비워둔다. 정식 metric 설계(sum/mean/p, planner 의미 추론)는
+    본설계에서 확장한다.
+    """
+    if metric is None:
+        return None
+    if metric.type == "count":
+        return _single_count_value(sql, rows)
+    return None
 
 
 def _rejected_response(
@@ -118,6 +181,25 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
 
     # ── 2. 검증 — 통과하지 못한 SQL 은 실행되지 않는다 ─────────────────
     validation = validate_sql(plan.sql or "")
+
+    # self-correction: LLM 경로에 한해 실패 사유를 피드백해 1회 재생성.
+    # passthrough(사용자가 직접 준 SQL)는 재해석 없이 그대로 거부한다.
+    if (
+        not validation.valid or validation.normalized_sql is None
+    ) and not _is_sql_passthrough(question):
+        retry_plan = generate_analysis_plan(
+            AnalysisPlanToolInput(question=question.strip()),
+            retry_feedback=(
+                f"직전 SQL: {plan.sql}\n검증 실패 사유: "
+                f"{validation.reason or '알 수 없음'}"
+            ),
+        )
+        if retry_plan.ok:
+            # 재시도 결과는 성공·실패 상관없이 채택한다 — 최종 거부 사유는
+            # 마지막 시도(사용자·로그에 남는 SQL)의 것이어야 한다.
+            plan = retry_plan
+            validation = validate_sql(retry_plan.sql or "")
+
     if not validation.valid or validation.normalized_sql is None:
         reason = validation.reason or "SQL 검증에 실패했다."
         return _rejected_response(question, f"POLICY_REJECTED: {reason}", _elapsed_ms())
@@ -155,7 +237,9 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
         rows=execution.rows,
         row_count=execution.row_count,
         metric=plan.metric,
-        metric_result=None,
+        metric_result=_compute_metric_result(
+            plan.metric, validation.normalized_sql, execution.rows
+        ),
         group_by=list(plan.group_by),
         visualization=plan.visualization,
         is_valid=True,

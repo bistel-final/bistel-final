@@ -21,6 +21,7 @@ C(LangGraph)와 공유를 전제로 app/common 에 둔다. provider 확정(팀 �
 from __future__ import annotations
 
 import os
+import time
 
 import httpx
 
@@ -44,6 +45,20 @@ class LlmTimeoutError(RuntimeError):
 
 class LlmDependencyError(RuntimeError):
     """LLM 서버가 오류를 반환했거나 응답을 해석할 수 없다."""
+
+
+#: 재시도 대상 status — rate limit 과 서버 일시 오류만. 그 외 4xx 는 재시도 무의미.
+_RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+_RETRY_BACKOFF_BASE_SEC = 1.0
+
+
+def _retry_max() -> int:
+    """최대 재시도 회수. env(LLM_RETRY_MAX)로 조정, 기본 2회."""
+    raw = (os.getenv("LLM_RETRY_MAX") or "").strip()
+    try:
+        return max(0, int(raw)) if raw else 2
+    except ValueError:
+        return 2
 
 
 def _resolve_endpoint() -> tuple[str, str]:
@@ -79,27 +94,38 @@ def chat(messages: list[dict[str, str]]) -> str:
     """
     base_url, api_key = _resolve_endpoint()
 
-    try:
-        response = httpx.post(
-            f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": LLM_MODEL_MAIN,
-                "messages": messages,
-                "temperature": LLM_TEMPERATURE,
-                "max_tokens": LLM_MAX_TOKENS,
-            },
-            timeout=LLM_TIMEOUT_SEC,
-        )
-    except httpx.TimeoutException as exc:
-        raise LlmTimeoutError(
-            f"LLM 응답이 {LLM_TIMEOUT_SEC}초 안에 오지 않았다."
-        ) from exc
-    except httpx.HTTPError as exc:
-        # 연결 거부(서버 미기동) 포함. 접속 정보를 메시지에 싣지 않는다.
-        raise LlmNotReadyError(
-            f"LLM 서버에 연결할 수 없다 (provider={LLM_PROVIDER})."
-        ) from exc
+    max_retries = _retry_max()
+    attempt = 0
+    while True:
+        try:
+            response = httpx.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": LLM_MODEL_MAIN,
+                    "messages": messages,
+                    "temperature": LLM_TEMPERATURE,
+                    "max_tokens": LLM_MAX_TOKENS,
+                },
+                timeout=LLM_TIMEOUT_SEC,
+            )
+        except httpx.TimeoutException as exc:
+            raise LlmTimeoutError(
+                f"LLM 응답이 {LLM_TIMEOUT_SEC}초 안에 오지 않았다."
+            ) from exc
+        except httpx.HTTPError as exc:
+            # 연결 거부(서버 미기동) 포함. 접속 정보를 메시지에 싣지 않는다.
+            raise LlmNotReadyError(
+                f"LLM 서버에 연결할 수 없다 (provider={LLM_PROVIDER})."
+            ) from exc
+
+        # rate limit·서버 일시 오류는 지수 backoff 후 재시도한다.
+        # timeout 은 재시도하지 않는다 — 상한 지연이 불어난다.
+        if response.status_code in _RETRYABLE_STATUS and attempt < max_retries:
+            time.sleep(_RETRY_BACKOFF_BASE_SEC * (2**attempt))
+            attempt += 1
+            continue
+        break
 
     if response.status_code != 200:
         raise LlmDependencyError(
