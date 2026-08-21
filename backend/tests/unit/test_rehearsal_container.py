@@ -45,8 +45,28 @@ def _fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
     archive_path = tmp_path / "fixture.zip"
     info = zipfile.ZipInfo(member, date_time=(2026, 8, 20, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
+    # fixture DDL은 각 table을 (id integer PRIMARY KEY)로 만든다. CSV도 그 계약에 맞춘
+    # header 1줄 + 데이터 1줄이며, manifest columns·intake hash를 함께 다시 쓴다.
+    real_manifest = json.loads(runner.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
+
+    def _fixture_csv(table: str, index: int) -> bytes:
+        # action_history만 12행이다. WBS가 evaluation 결과를 action 12로 못박았고
+        # postcheck가 그 값을 검사하므로 fixture도 같은 cardinality를 갖는다.
+        rows = range(1, 13) if table == "action_history" else (index + 1,)
+        body = "".join(f"{value}\n" for value in rows)
+        return ("\ufeffid\n" + body).encode()
+
+    csv_members = {
+        entry["file_id"]: _fixture_csv(table, index)
+        for index, (table, entry) in enumerate(real_manifest["tables"].items())
+    }
+
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr(info, sql)
+        for name, payload in csv_members.items():
+            csv_info = zipfile.ZipInfo(name, date_time=(2026, 8, 20, 0, 0, 0))
+            csv_info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(csv_info, payload)
     archive_sha = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     sql_sha = hashlib.sha256(sql).hexdigest()
 
@@ -63,12 +83,19 @@ def _fixture_artifacts(tmp_path: Path) -> tuple[Path, runner.ArtifactPaths]:
 
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
     intake["archive"]["sha256"] = archive_sha
+    for entry in intake["selected_members"]:
+        payload = csv_members.get(entry["path"])
+        if payload is not None:
+            entry["size_bytes"] = len(payload)
+            entry["sha256"] = hashlib.sha256(payload).hexdigest()
     intake_path.write_text(json.dumps(intake), encoding="utf-8")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["source_archive_sha256"] = archive_sha
     manifest["schema_sha256"] = sql_sha
     manifest["artifacts"]["schema_sql"]["sha256"] = sql_sha
+    for entry in manifest["tables"].values():
+        entry["columns"] = ["id"]
     manifest["selected_entry_manifest_sha256"] = hashlib.sha256(
         intake_path.read_bytes()
     ).hexdigest()
@@ -81,8 +108,9 @@ def test_schema_rehearsal_postcheck_rollback_and_cleanup(
     tmp_path: Path, profile: str
 ) -> None:
     archive, artifacts = _fixture_artifacts(tmp_path)
-    schema_bytes = wrapper._verified_schema_bytes(archive, artifacts)
-    handler, postcheck = schema.make_handlers(schema_bytes, runner.RunnerError)
+    snapshot = wrapper._verified_archive_snapshot(archive, artifacts, profile)
+    assert len(snapshot.tables) == (8 if profile == "runtime" else 9)
+    handler, postcheck = wrapper._composite(snapshot, profile)
     database = f"fdc_rehearsal_{profile}"
     container_id = ""
     volume_ids: tuple[str, ...] = ()

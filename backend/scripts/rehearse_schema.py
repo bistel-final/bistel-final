@@ -12,9 +12,11 @@ import zipfile
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, NoReturn
 
 import rebuild_runner
+import rehearsal_profile_loader
 import rehearsal_schema
 from rehearsal_postgres import RehearsalEndpoint, RehearsalError, one_off_postgres
 
@@ -99,9 +101,55 @@ def _load_json(path: Path) -> Mapping[str, Any]:
     return value
 
 
-def _verified_schema_bytes(
-    archive_path: Path, artifact_paths: rebuild_runner.ArtifactPaths
-) -> bytes:
+@dataclass(frozen=True)
+class VerifiedTable:
+    """검증이 끝난 table 하나. 값이 전부 immutable이다."""
+
+    name: str
+    columns: tuple[str, ...]
+    body: bytes
+
+
+@dataclass(frozen=True)
+class VerifiedArchiveSnapshot:
+    """archive를 **한 번만** 읽어 만든 불변 snapshot.
+
+    schema DDL과 profile CSV를 모두 이 snapshot에서 꺼낸다. 두 번 읽기 사이에 파일이
+    교체돼 서로 다른 조합이 섞이는 것을 구조적으로 막는다(계획 §3.2).
+
+    nested 값까지 immutable이라 검증 이후 COPY payload나 column 계약을 바꿀 수 없다
+    (구현리뷰 1차 필수 2).
+    """
+
+    schema_bytes: bytes
+    verified_tables: tuple[VerifiedTable, ...]
+
+    @property
+    def tables(self) -> tuple[str, ...]:
+        return tuple(entry.name for entry in self.verified_tables)
+
+    @property
+    def csv_bodies(self) -> Mapping[str, bytes]:
+        return MappingProxyType(
+            {entry.name: entry.body for entry in self.verified_tables}
+        )
+
+    @property
+    def columns_by_table(self) -> Mapping[str, tuple[str, ...]]:
+        return MappingProxyType(
+            {entry.name: entry.columns for entry in self.verified_tables}
+        )
+
+
+def _fail(reason_code: str, exit_code: int) -> RehearsalError:
+    return RehearsalError(reason_code, exit_code)
+
+
+def _verified_archive_snapshot(
+    archive_path: Path,
+    artifact_paths: rebuild_runner.ArtifactPaths,
+    profile: str,
+) -> VerifiedArchiveSnapshot:
     try:
         if archive_path.is_symlink() or not archive_path.is_file():
             raise RehearsalError("ARCHIVE_INVALID", EXIT_USAGE)
@@ -113,32 +161,86 @@ def _verified_schema_bytes(
 
     epoch = _load_json(artifact_paths.epoch)
     manifest = _load_json(artifact_paths.source_manifest)
+    intake = _load_json(artifact_paths.intake)
     expected_archive = epoch.get("archive", {}).get("sha256")
     expected_member = manifest.get("schema_sha256")
     schema_artifact = manifest.get("artifacts", {}).get("schema_sql", {})
     member_name = schema_artifact.get("file_id")
+    manifest_tables = manifest.get("tables")
     if (
         not isinstance(expected_archive, str)
         or not isinstance(expected_member, str)
         or not isinstance(member_name, str)
+        or not isinstance(manifest_tables, Mapping)
         or schema_artifact.get("sha256") != expected_member
     ):
         raise RehearsalError("ARCHIVE_INVALID", EXIT_USAGE)
     if hashlib.sha256(archive_bytes).hexdigest() != expected_archive:
         raise RehearsalError("ARCHIVE_MISMATCH", EXIT_MISMATCH)
+
+    manifest_tables = rehearsal_profile_loader.validate_manifest_tables(
+        manifest_tables, _fail
+    )
+    intake_members = rehearsal_profile_loader.validate_intake_members(
+        intake.get("selected_members"), _fail
+    )
+    tables = rehearsal_profile_loader.select_tables(manifest_tables, profile, _fail)
     try:
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             info = archive.getinfo(member_name)
             if info.is_dir() or (info.external_attr >> 16) & 0o170000 == 0o120000:
                 raise RehearsalError("ARCHIVE_INVALID", EXIT_USAGE)
             schema_bytes = archive.read(info)
+            csv_bodies = rehearsal_profile_loader.verified_csv_bodies(
+                archive, manifest_tables, intake_members, tables, _fail
+            )
     except RehearsalError:
         raise
     except (KeyError, OSError, zipfile.BadZipFile) as exc:
         raise RehearsalError("ARCHIVE_INVALID", EXIT_USAGE) from exc
     if hashlib.sha256(schema_bytes).hexdigest() != expected_member:
         raise RehearsalError("ARCHIVE_MISMATCH", EXIT_MISMATCH)
-    return schema_bytes
+    return VerifiedArchiveSnapshot(
+        schema_bytes=schema_bytes,
+        verified_tables=tuple(
+            VerifiedTable(
+                name=table,
+                columns=tuple(manifest_tables[table]["columns"]),
+                body=csv_bodies[table],
+            )
+            for table in tables
+        ),
+    )
+
+
+def _composite(
+    snapshot: VerifiedArchiveSnapshot, profile: str
+) -> tuple[
+    rehearsal_profile_loader.Handler,
+    rehearsal_profile_loader.PostCheck,
+]:
+    """schema 1회 → loader 1회. 각 단계 실패 시 이후 단계를 부르지 않는다(계획 §3.5)."""
+
+    schema_handler, schema_postcheck = rehearsal_schema.make_handlers(
+        snapshot.schema_bytes, rebuild_runner.RunnerError
+    )
+    load_handler, load_postcheck = rehearsal_profile_loader.make_load_handlers(
+        snapshot.csv_bodies,
+        snapshot.columns_by_table,
+        snapshot.tables,
+        profile,
+        rebuild_runner.RunnerError,
+    )
+
+    def handler(connection: Any, plan: Any) -> None:
+        schema_handler(connection, plan)
+        load_handler(connection, plan)
+
+    def postcheck(connection: Any, plan: Any) -> None:
+        schema_postcheck(connection, plan)
+        load_postcheck(connection, plan)
+
+    return handler, postcheck
 
 
 def _parse_runner_output(text: str, exit_code: int) -> RunnerOutcome:
@@ -214,11 +316,11 @@ def _run(
     lifecycle: LifecycleFactory = one_off_postgres,
 ) -> int:
     args = _parser().parse_args(argv)
-    schema_bytes = _verified_schema_bytes(Path(args.archive), artifact_paths)
-    rebuild_runner.validate_artifacts(artifact_paths)
-    handler, postcheck = rehearsal_schema.make_handlers(
-        schema_bytes, rebuild_runner.RunnerError
+    snapshot = _verified_archive_snapshot(
+        Path(args.archive), artifact_paths, args.profile
     )
+    rebuild_runner.validate_artifacts(artifact_paths)
+    handler, postcheck = _composite(snapshot, args.profile)
     outcome: RunnerOutcome | None = None
     try:
         with lifecycle(database=_database_for_profile(args.profile)) as endpoint:
