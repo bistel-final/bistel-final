@@ -73,6 +73,9 @@ jobs:
             fi
           done
 
+  # 이 job은 corrected 전용이 아니다. rehearsal lifecycle과 recovery lock 계약도
+  # 여기서만 Windows에서 실행된다. `V5-CM-1.6`이 corrected 계열을 제거할 때 job을
+  # 통째로 지우면 두 검증이 함께 사라진다(계획리뷰 2차 권장 3).
   corrected-dataset-windows:
     name: Corrected dataset Windows
     runs-on: windows-latest
@@ -99,6 +102,15 @@ jobs:
         run: >-
           python -m pytest -q
           backend/tests/unit/test_rehearsal_postgres.py
+
+      # substring `-k` 대신 등록된 marker로 대상을 고정한다. `-k "store"`는
+      # `test_recover_restores_marker_only`까지 잡아 SQLAlchemy를 요구했다
+      # (구현리뷰 2차 필수 1). `windows_contract`는 pytest만으로 통과해야 한다.
+      - name: Verify recovery marker lock and store on Windows
+        run: >-
+          python -m pytest -q
+          backend/tests/unit/test_rehearsal_recovery.py
+          -m windows_contract
 
   schema-rehearsal-container:
     name: Schema rehearsal container

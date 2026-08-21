@@ -151,6 +151,9 @@ LockHandler = Callable[[Any, str], None]
 ModeHandler = Callable[[Any, "ExecutionPlan"], None]
 PostCheck = Callable[[Any, "ExecutionPlan"], None]
 ManifestHandler = Callable[["ExecutionPlan"], None]
+# commit이 실제로 끝난 뒤에만 불린다. marker-last 계약의 유일한 삽입점이다
+# (`V5-CM-2.5` 계획 §7.1). 성공 반환은 `None`뿐이다.
+PostCommitHook = Callable[[Any, "ExecutionPlan"], None]
 EngineFactory = Callable[[TargetLike], Any]
 
 
@@ -193,6 +196,7 @@ class ExecutionPlan:
     commit_policy: CommitPolicy | None = None
     change_ref: str | None = None
     confirmed: bool = False
+    recover_artifact: bool = False
     acquire_lock: LockHandler | None = field(default=None, repr=False)
 
 
@@ -200,6 +204,7 @@ class ExecutionPlan:
 MODE_HANDLERS: dict[RunMode, ModeHandler] = {}
 POSTCHECKS: dict[RunMode, PostCheck] = {}
 MANIFEST_HANDLERS: dict[str, ManifestHandler] = {}
+POST_COMMIT_HOOKS: dict[RunMode, PostCommitHook] = {}
 
 
 def _emit(payload: Mapping[str, Any], *, exit_code: int) -> int:
@@ -236,6 +241,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--confirm-target")
     parser.add_argument("--change-ref")
     parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--recover-artifact", action="store_true")
     return parser
 
 
@@ -325,6 +331,19 @@ def _commit_policy(mode: RunMode) -> CommitPolicy:
     }[mode]
 
 
+def _validate_recover_artifact(args: argparse.Namespace, mode: RunMode) -> bool:
+    """`--recover-artifact`는 `--apply`와만 조합된다(계획 §7.1).
+
+    engine을 만들기 전에 판정하므로 잘못된 조합은 DB 연결 0회로 끝난다.
+    """
+
+    if not args.recover_artifact:
+        return False
+    if mode is not RunMode.APPLY:
+        raise RunnerError("ARG_INVALID")
+    return True
+
+
 def _validate_db_options(
     args: argparse.Namespace,
     *,
@@ -359,6 +378,7 @@ def build_execution_plan(
     args: argparse.Namespace, *, environ: Mapping[str, str]
 ) -> ExecutionPlan:
     mode = _select_mode(args)
+    recover_artifact = _validate_recover_artifact(args, mode)
     if mode is RunMode.REGISTER_MANIFESTS:
         if args.target or args.confirm_target or args.change_ref:
             raise RunnerError("ARG_INVALID")
@@ -391,6 +411,7 @@ def build_execution_plan(
         logical_targets=REHEARSAL_LOGICAL_TARGETS[profile],
         commit_policy=_commit_policy(mode),
         change_ref=change_ref,
+        recover_artifact=recover_artifact,
         acquire_lock=acquire_advisory_lock,
     )
 
@@ -527,7 +548,15 @@ def execute_transactional(
     engine_factory: EngineFactory,
     mode_handler: ModeHandler | None,
     postcheck: PostCheck | None,
+    post_commit: PostCommitHook | None = None,
 ) -> int:
+    """handler와 postcheck를 한 transaction에서 실행한다.
+
+    `post_commit`은 `CommitPolicy.COMMIT`의 commit이 **실제로 끝난 뒤에만** 불린다.
+    rollback·rehearse·handler 실패·postcheck 실패 경로에서는 호출 0회다
+    (`V5-CM-2.5` 계획 §7.1-7·8).
+    """
+
     if mode_handler is None or postcheck is None:
         return _emit(
             {
@@ -560,6 +589,12 @@ def execute_transactional(
                     raise ModeContractError
                 if plan.commit_policy is CommitPolicy.COMMIT:
                     transaction.commit()
+                    if post_commit is not None:
+                        # commit 뒤 transaction.is_active는 False다. 여기서 예외가
+                        # 나도 아래 except의 rollback은 실행되지 않으므로 DB는
+                        # commit된 상태로 남는다(계획 §7.2).
+                        if post_commit(connection, plan) is not None:
+                            raise ModeContractError
                 else:
                     transaction.rollback()
                 return EXIT_OK
@@ -610,6 +645,7 @@ def run(
     mode_handlers: Mapping[RunMode, ModeHandler] | None = None,
     postchecks: Mapping[RunMode, PostCheck] | None = None,
     manifest_handlers: Mapping[str, ManifestHandler] | None = None,
+    post_commits: Mapping[RunMode, PostCommitHook] | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -624,11 +660,13 @@ def run(
             )
         handlers = MODE_HANDLERS if mode_handlers is None else mode_handlers
         checks = POSTCHECKS if postchecks is None else postchecks
+        hooks = POST_COMMIT_HOOKS if post_commits is None else post_commits
         return execute_transactional(
             plan,
             engine_factory,
             handlers.get(mode),
             checks.get(mode),
+            hooks.get(mode),
         )
     except RunnerError as exc:
         return _emit(
