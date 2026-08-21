@@ -63,10 +63,13 @@ def _schema_context() -> str:
 _SYSTEM_PROMPT = """당신은 반도체 FDC 데이터의 PostgreSQL Text2SQL 변환기다.
 
 규칙:
-1. 단일 SELECT 문 하나만 작성한다. 쓰기·DDL·다중 문장 금지.
-2. 아래 목록의 테이블·컬럼만 사용한다. 목록에 없는 것을 지어내지 않는다.
-3. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
-4. 설명 없이 SQL 만 출력한다. 코드 블록(```sql) 사용 가능.
+1. 데이터 조회 질문만 처리한다. 삭제·수정·생성 등 조회가 아닌 요청이면
+   SQL을 작성하지 말고 정확히 `REFUSED: 조회 질문만 처리한다` 한 줄만 출력한다.
+   요청을 조회로 바꿔 해석하지 않는다.
+2. 단일 SELECT 문 하나만 작성한다. 쓰기·DDL·다중 문장 금지.
+3. 아래 목록의 테이블·컬럼만 사용한다. 목록에 없는 것을 지어내지 않는다.
+4. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
+5. 설명 없이 SQL 만 출력한다. 코드 블록(```sql) 사용 가능.
 
 사용 가능한 테이블:
 {schema}"""
@@ -186,8 +189,13 @@ def _plan_from_sql(sql: str) -> AnalysisPlanToolResult:
 
 def generate_analysis_plan(
     tool_input: AnalysisPlanToolInput,
+    retry_feedback: str | None = None,
 ) -> AnalysisPlanToolResult:
-    """자연어 질문 하나를 SQL 계획으로 변환한다. 예외를 던지지 않는다."""
+    """자연어 질문 하나를 SQL 계획으로 변환한다. 예외를 던지지 않는다.
+
+    retry_feedback: self-correction 용. 직전 시도의 SQL 과 검증 실패 사유를
+    넘기면 추가 user 메시지로 붙여 LLM 이 수정 재생성하게 한다.
+    """
     messages = [
         {
             "role": "system",
@@ -195,6 +203,16 @@ def generate_analysis_plan(
         },
         {"role": "user", "content": tool_input.question},
     ]
+    if retry_feedback:
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "직전 SQL 이 검증에 실패했다. 실패 내용을 반영해 규칙을"
+                    " 지키는 SQL 로 다시 작성하라.\n" + retry_feedback
+                ),
+            }
+        )
 
     try:
         raw = llm.chat(messages)
@@ -204,6 +222,15 @@ def generate_analysis_plan(
         return fail(AnalysisPlanToolResult, f"TIMEOUT: {exc}")
     except llm.LlmDependencyError as exc:
         return fail(AnalysisPlanToolResult, f"DEPENDENCY_ERROR: {exc}")
+
+    # 프롬프트 규칙 1: 비조회 요청은 LLM 이 REFUSED 마커로 거부한다.
+    # 조회로 암묵 변환하지 않고 정직하게 거부하는 것이 계약이다.
+    if raw.strip().upper().startswith("REFUSED"):
+        return fail(
+            AnalysisPlanToolResult,
+            "POLICY_REJECTED: 이 시스템은 데이터 조회 질문만 처리한다. "
+            "삭제·수정 등 요청된 작업은 수행되지 않았다.",
+        )
 
     sql = _extract_sql(raw)
     if sql is None:

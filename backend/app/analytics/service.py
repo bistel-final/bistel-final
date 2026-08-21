@@ -21,6 +21,7 @@ nl_query_log_id 는 질의 이력(V5-D-2.4) 전까지 placeholder 1 을 쓴다.
 from __future__ import annotations
 
 import time
+from decimal import Decimal
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.repository import (
@@ -64,12 +65,18 @@ _SQL_LEADING_KEYWORDS: frozenset[str] = frozenset(
 )
 
 
+def _is_sql_passthrough(question: str) -> bool:
+    """question 을 SQL 원문으로 간주할지 판정한다."""
+    stripped = question.strip()
+    leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
+    return leading in _SQL_LEADING_KEYWORDS
+
+
 def _generate_plan(question: str) -> AnalysisPlanToolResult:
     """계획 생성. SQL 원문은 passthrough, 자연어는 LLM Tool 을 탄다."""
     stripped = question.strip()
-    leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
 
-    if leading in _SQL_LEADING_KEYWORDS:
+    if _is_sql_passthrough(stripped):
         return AnalysisPlanToolResult(
             ok=True,
             sql=stripped,
@@ -79,6 +86,30 @@ def _generate_plan(question: str) -> AnalysisPlanToolResult:
         )
 
     return generate_analysis_plan(AnalysisPlanToolInput(question=stripped))
+
+
+def _compute_metric_result(metric: MetricPlan | None, rows: list[dict]) -> float | None:
+    """[팀 잠정] 대표 KPI 값 heuristic.
+
+    집계 질의의 전형(단일 행 × 단일 숫자 값)이면 그 값을, count metric
+    이면 행 수를 반환한다. 확신할 수 없는 형태는 None — 틀린 숫자보다
+    빈 값이 안전하다. 정식 계산(sum/mean/p 등)은 본설계에서 확장한다.
+    """
+    if metric is None:
+        return None
+
+    if len(rows) == 1:
+        numeric_values = [
+            value
+            for value in rows[0].values()
+            if isinstance(value, int | float | Decimal) and not isinstance(value, bool)
+        ]
+        if len(numeric_values) == 1:
+            return float(numeric_values[0])
+
+    if metric.type == "count":
+        return float(len(rows))
+    return None
 
 
 def _rejected_response(
@@ -118,6 +149,24 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
 
     # ── 2. 검증 — 통과하지 못한 SQL 은 실행되지 않는다 ─────────────────
     validation = validate_sql(plan.sql or "")
+
+    # self-correction: LLM 경로에 한해 실패 사유를 피드백해 1회 재생성.
+    # passthrough(사용자가 직접 준 SQL)는 재해석 없이 그대로 거부한다.
+    if (
+        not validation.valid or validation.normalized_sql is None
+    ) and not _is_sql_passthrough(question):
+        retry_plan = generate_analysis_plan(
+            AnalysisPlanToolInput(question=question.strip()),
+            retry_feedback=(
+                f"직전 SQL: {plan.sql}\n검증 실패 사유: "
+                f"{validation.reason or '알 수 없음'}"
+            ),
+        )
+        if retry_plan.ok:
+            retry_validation = validate_sql(retry_plan.sql or "")
+            if retry_validation.valid and retry_validation.normalized_sql is not None:
+                plan, validation = retry_plan, retry_validation
+
     if not validation.valid or validation.normalized_sql is None:
         reason = validation.reason or "SQL 검증에 실패했다."
         return _rejected_response(question, f"POLICY_REJECTED: {reason}", _elapsed_ms())
@@ -155,7 +204,7 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
         rows=execution.rows,
         row_count=execution.row_count,
         metric=plan.metric,
-        metric_result=None,
+        metric_result=_compute_metric_result(plan.metric, execution.rows),
         group_by=list(plan.group_by),
         visualization=plan.visualization,
         is_valid=True,
