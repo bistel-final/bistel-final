@@ -1065,3 +1065,7 @@ def main(
         return getattr(exc, "exit_code", EXIT_USAGE)
     print(json.dumps({"status": "OK", "targets": len(transition.ORDERED_TARGETS)}))
     return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

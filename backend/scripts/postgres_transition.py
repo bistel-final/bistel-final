@@ -139,6 +139,16 @@ FINAL_WAFER_MAX_LENGTH = 24
 RAG_TABLES: tuple[str, ...] = ("document", "document_chunk")
 RAG_EXTENSION = "vector"
 
+#: B가 `V5-B-1.3`으로 **실제 적재한** target. `apply_rag_schema.py`와
+#: `load_rag_documents.py`의 `ALLOWED_RAG_DATABASES`와 같아야 하고,
+#: `infra/bootstrap/markers/rag_load.*.json`도 이 둘뿐이다.
+#:
+#: `kosa_text2sql`에도 같은 **이름의** table이 있지만 구 epoch(PR #48) 형상이라 컬럼이
+#: 다르다(`token_cnt`·`metadata_json` 없음). 이름만 보고 B의 fingerprint 산식을 돌리면
+#: `UndefinedColumn`으로 죽는다 — Gate 0 §2.3이 "세 DB의 RAG 형상이 서로 다르다"고
+#: 적어 둔 그대로다. B marker가 있는 target에만 그 산식을 적용한다.
+B_MANAGED_RAG_TARGETS: frozenset[str] = frozenset({"kosa_agent", "kosa_agent_e2e"})
+
 #: Gate 0 실측. 전부 이 저장소의 커밋된 migration이 만든 현행 설계 구조다
 #: (`001_reference_extensions.sql` PR #48 · `002_agent_runtime_clean.sql` PR #58).
 PRESERVED_TABLES_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType(
@@ -172,7 +182,7 @@ PRESERVED_SEQUENCES_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType
 
 #: `V5-B-1.1`이 "채택하지 않는다"고 한 legacy 객체. 2.6은 보존만 하고 B가 정리한다.
 LEGACY_HANDOFF_TABLES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {"kosa_text2sql": ("document_corpus",)}
+    {"kosa_text2sql": ("document", "document_chunk", "document_corpus")}
 )
 LEGACY_HANDOFF_INDEXES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {"kosa_text2sql": ("ux_document_corpus_active",)}
@@ -1061,7 +1071,8 @@ def read_inventory(
     )
 
     rag_live = rag_embedding = None
-    if set(RAG_TABLES) <= set(tables):
+    if database in B_MANAGED_RAG_TARGETS and set(RAG_TABLES) <= set(tables):
+        # B가 적재한 형상에서만 B의 산식을 쓴다. 다른 형상에 돌리면 죽는다.
         rag_live = _rag_live_fingerprint(connection)
         rag_embedding = _rag_embedding_projection(connection)
 
@@ -1159,10 +1170,11 @@ def expected_relations(inventory: TargetInventory) -> tuple[frozenset[str], ...]
     profile = inventory.profile
     tables = (
         set(BASE_TABLES)
-        | set(RAG_TABLES)
         | set(PRESERVED_TABLES_BY_PROFILE.get(profile, ()))
         | set(LEGACY_HANDOFF_TABLES_BY_TARGET.get(inventory.database, ()))
     )
+    if inventory.database in B_MANAGED_RAG_TARGETS:
+        tables |= set(RAG_TABLES)
     sequences = set(PRESERVED_SEQUENCES_BY_PROFILE.get(profile, ()))
     return frozenset(tables), frozenset(sequences)
 
@@ -1186,10 +1198,23 @@ def check_relation_set(inventory: TargetInventory) -> None:
 
 
 def check_rag_presence(inventory: TargetInventory) -> None:
-    """세 DB 모두 RAG가 **전체 존재**해야 한다. 부분 상태는 drift다(계획 §4.2)."""
+    """RAG 형상을 본다. **B가 적재한 target과 아닌 target의 기준이 다르다.**
+
+    `vector` extension은 세 DB 모두에 있어야 한다(Gate 0 §2.3 실측).
+
+    B 관리 target(`B_MANAGED_RAG_TARGETS`)은 RAG 2종이 **전체 존재하고 행이 있어야**
+    한다. 부분 상태는 drift다(계획 §4.2).
+
+    `kosa_text2sql`의 같은 이름 table은 구 epoch 잔재이며 B가 "지워도 된다"고 한
+    대상이다(2026-08-22 확인). 2.6은 **지우지 않고 legacy handoff로 보존만** 하고,
+    전체 존재도 행 수도 요구하지 않는다 — B가 먼저 정리해도 2.6이 drift로 오판하지
+    않게 한다. 실제 정리는 B 소유다.
+    """
 
     if RAG_EXTENSION not in inventory.extensions:
         raise TransitionError("RAG_PRESERVATION_FAILED", EXIT_MISMATCH)
+    if inventory.database not in B_MANAGED_RAG_TARGETS:
+        return
     if not set(RAG_TABLES) <= set(inventory.tables):
         raise TransitionError("RAG_PRESERVATION_FAILED", EXIT_MISMATCH)
     for name in RAG_TABLES:

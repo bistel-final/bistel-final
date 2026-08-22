@@ -26,6 +26,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 import backup_orchestrator as orchestrator  # noqa: E402
 import postgres_backup as backup  # noqa: E402
 import postgres_transition as transition  # noqa: E402
+import transition_public_postgres as cli_module  # noqa: E402
 import transition_sessions as sessions  # noqa: E402
 from test_postgres_transition import _inventory  # noqa: E402
 
@@ -2821,3 +2822,21 @@ def test_windows_acl_needs_an_explicit_operator_confirmation(
         change_ref="GH-104",
         environ={backup.ROOT_ACL_ENV_KEY: "GH-104"},
     ) == (backup.WINDOWS_ACL_REVIEWED, None)
+
+
+@pytest.mark.windows_contract
+def test_cli_modules_run_as_scripts() -> None:
+    """`main()`이 있는데 `__main__` 가드가 없으면 스크립트 실행이 **조용히 exit 0**이다.
+
+    E2E는 `main(argv)`를 in-process로 불러서 이 결함을 보지 못했다. 공용 backup을
+    실제로 돌렸을 때 아무 파일도 안 생기고 exit 0으로 끝나 발견했다(2026-08-22).
+    """
+
+    import inspect
+
+    for module in (orchestrator, cli_module):
+        source = inspect.getsource(module)
+        if "\ndef main(" not in source:
+            continue
+        assert '__name__ == "__main__"' in source, module.__name__
+        assert "sys.exit(main())" in source, module.__name__

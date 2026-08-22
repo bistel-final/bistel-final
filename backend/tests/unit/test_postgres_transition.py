@@ -230,10 +230,17 @@ def test_preserved_projection_counts_match_gate0() -> None:
     assert len(transition.PRESERVED_TABLES_BY_PROFILE["evaluation"]) == 2
     assert len(transition.PRESERVED_SEQUENCES_BY_PROFILE["runtime"]) == 3
     assert len(transition.PRESERVED_SEQUENCES_BY_PROFILE["evaluation"]) == 1
+    # `kosa_text2sql`의 RAG 2종은 구 epoch(PR #48) 형상이라 B 관리 대상이 아니다.
+    # B가 "지워도 된다"고 했지만 2.6은 보존만 하고 넘긴다(2026-08-22 확인).
     assert transition.LEGACY_HANDOFF_TABLES_BY_TARGET["kosa_text2sql"] == (
+        "document",
+        "document_chunk",
         "document_corpus",
     )
     assert "kosa_agent" not in transition.LEGACY_HANDOFF_TABLES_BY_TARGET
+    assert transition.B_MANAGED_RAG_TARGETS == frozenset(
+        {"kosa_agent", "kosa_agent_e2e"}
+    )
 
 
 def test_legacy_and_final_row_expectations() -> None:
@@ -628,7 +635,7 @@ def test_handoff_index_is_named_in_the_projection() -> None:
         transition.LEGACY_HANDOFF_INDEXES_BY_TARGET["kosa_text2sql"]
     )
     assert handoff["indexes"]["ux_document_corpus_active"] is not None
-    assert set(handoff["tables"]) == {"document_corpus"}
+    assert set(handoff["tables"]) == {"document", "document_chunk", "document_corpus"}
 
     # runtime target에는 handoff가 없다.
     runtime = transition.preserved_projection(_inventory("kosa_agent"))
@@ -968,3 +975,73 @@ def test_restore_comparison_ignores_constraints() -> None:
     assert transition.base_column_shape_sha256(
         drifted
     ) != transition.base_column_shape_sha256(source)
+
+
+# ---------------------------------------------------------------------------
+# 공용 preflight 실패 — kosa_text2sql의 구 epoch RAG (2026-08-22)
+# ---------------------------------------------------------------------------
+
+
+def test_b_managed_rag_targets_match_the_b_owned_allowlist() -> None:
+    """2.6의 목록이 B의 목록과 갈리면 한쪽은 반드시 틀린다.
+
+    B는 `apply_rag_schema.py`·`load_rag_documents.py`에서 `kosa_agent`와
+    `kosa_agent_e2e`만 허용한다. 2.6이 세 DB 전부에 B의 fingerprint 산식을 돌려
+    공용 preflight가 `UndefinedColumn`으로 죽었다.
+    """
+
+    import apply_rag_schema
+    import load_rag_documents
+
+    assert transition.B_MANAGED_RAG_TARGETS == apply_rag_schema.ALLOWED_RAG_DATABASES
+    assert transition.B_MANAGED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
+    # 전환 대상 셋 중 하나는 B 관리 밖이다. 그 하나가 이번 사고의 원인이다.
+    assert set(transition.ORDERED_TARGETS) - transition.B_MANAGED_RAG_TARGETS == {
+        "kosa_text2sql"
+    }
+
+
+def test_rag_live_fingerprint_is_not_computed_outside_b_managed_targets() -> None:
+    """B 관리 밖 target에서 B의 산식을 부르면 `UndefinedColumn`으로 죽는다.
+
+    `kosa_text2sql`의 `document_chunk`는 구 epoch(PR #48) 형상이라 `token_cnt`가 없다.
+    이름만 보고 부르면 안 된다.
+    """
+
+    import inspect
+
+    source = inspect.getsource(transition.read_inventory)
+    assert "B_MANAGED_RAG_TARGETS" in source
+    # 이름 존재만으로 부르던 옛 조건이 남아 있으면 안 된다.
+    assert "if set(RAG_TABLES) <= set(tables):" not in source
+
+
+@pytest.mark.parametrize(
+    ("database", "required"),
+    [
+        ("kosa_agent_e2e", True),
+        ("kosa_agent", True),
+        # B 관리 밖이라 RAG 2종의 존재도 행 수도 요구하지 않는다.
+        ("kosa_text2sql", False),
+    ],
+)
+def test_rag_presence_requirement_differs_per_target(
+    database: str, required: bool
+) -> None:
+    """B가 `kosa_text2sql`의 구 epoch RAG를 지워도 2.6이 drift로 오판하면 안 된다."""
+
+    intact = _inventory(database)
+    transition.check_rag_presence(intact)
+
+    stripped = _inventory(database, drop_tables=transition.RAG_TABLES)
+    if required:
+        with pytest.raises(transition.TransitionError) as caught:
+            transition.check_rag_presence(stripped)
+        assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
+    else:
+        transition.check_rag_presence(stripped)
+
+    # `vector` extension은 세 DB 모두 필수다.
+    with pytest.raises(transition.TransitionError) as caught:
+        transition.check_rag_presence(_inventory(database, extensions=("plpgsql",)))
+    assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
