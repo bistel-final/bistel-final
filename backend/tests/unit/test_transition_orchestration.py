@@ -2823,6 +2823,45 @@ def test_windows_acl_needs_an_explicit_operator_confirmation(
     ) == (backup.WINDOWS_ACL_REVIEWED, None)
 
 
+def _credential_free_env(**extra: str) -> dict[str, str]:
+    """자격증명만 뺀 환경. **환경을 통째로 비우지 않는다.**
+
+    처음엔 `PATH`만 넘겼는데 native Windows에서 두 가지로 깨졌다(PR #108 run
+    `32577793035`).
+
+    - `SystemRoot`가 없어 `import _overlapped`(asyncio)가 `WinError 10106`으로 실패했다.
+      SQLAlchemy가 asyncio를 import하므로 모듈 적재 자체가 안 됐다.
+    - `PYTHONIOENCODING`이 없어 stdout이 cp1252가 됐고, `--help`의 `→`가
+      `UnicodeEncodeError`를 냈다.
+
+    둘 다 **테스트 환경 문제**였지 진입점 결함이 아니다. 목표는 "환경 없음"이 아니라
+    "자격증명 없음"이므로 그 키만 덜어낸다 — 연결 0회는 그대로다.
+    """
+
+    env = {k: v for k, v in os.environ.items() if not _is_credential(k)}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Windows 기본 콘솔 인코딩(cp1252)이 도움말의 non-ASCII를 못 찍는다.
+    env["PYTHONIOENCODING"] = "utf-8"
+    env.update(extra)
+    return env
+
+
+def _is_credential(key: str) -> bool:
+    return key.startswith(("POSTGRES_", "NEO4J_", "N8N_")) or "PASSWORD" in key
+
+
+@pytest.mark.windows_contract
+def test_the_cli_smoke_env_carries_no_credential() -> None:
+    """자격증명을 걸러내지 못하면 subprocess가 공용 DB에 붙을 수 있다."""
+
+    env = _credential_free_env()
+    assert not [k for k in env if _is_credential(k)]
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    # 남겨야 하는 것은 남는다.
+    if os.name == "nt":  # pragma: no cover - Windows 전용 분기
+        assert "SystemRoot" in env
+
+
 @pytest.mark.windows_contract
 @pytest.mark.parametrize(
     "script", ["backup_orchestrator.py", "transition_public_postgres.py"]
@@ -2846,8 +2885,7 @@ def test_cli_scripts_actually_run_as_entrypoints(script: str) -> None:
         [_sys.executable, str(SCRIPTS_ROOT / script), "--help"],
         capture_output=True,
         text=True,
-        # 자격증명을 주지 않는다. 진입점이 열려도 연결은 시도조차 하지 않는다.
-        env={"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+        env=_credential_free_env(),
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip(), "진입점이 불리지 않아 출력이 비었다"
@@ -2877,11 +2915,7 @@ def test_a_module_without_a_guard_would_be_caught(tmp_path: Path) -> None:
         [_sys.executable, str(copy), "--help"],
         capture_output=True,
         text=True,
-        env={
-            "PATH": os.environ.get("PATH", ""),
-            "PYTHONPATH": str(SCRIPTS_ROOT),
-            "PYTHONDONTWRITEBYTECODE": "1",
-        },
+        env=_credential_free_env(PYTHONPATH=str(SCRIPTS_ROOT)),
     )
     # 가드가 없으면 조용히 성공한다 — exit 0인데 usage가 없다.
     assert completed.returncode == 0
