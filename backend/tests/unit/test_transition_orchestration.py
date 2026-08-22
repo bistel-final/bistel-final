@@ -2851,11 +2851,33 @@ def _is_credential(key: str) -> bool:
 
 
 @pytest.mark.windows_contract
-def test_the_cli_smoke_env_carries_no_credential() -> None:
-    """자격증명을 걸러내지 못하면 subprocess가 공용 DB에 붙을 수 있다."""
+def test_the_cli_smoke_env_carries_no_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """자격증명을 걸러내지 못하면 subprocess가 공용 DB에 붙을 수 있다.
+
+    **자격증명을 직접 넣고 확인한다.** 주변 환경에 있기를 기대하면 CI에는 없어서
+    assertion이 공허하게 통과한다 — 필터를 통째로 지워도 안 깨졌다(변이 M248).
+    """
+
+    planted = {
+        "POSTGRES_TRANSITION_PASSWORD": "pw",
+        "POSTGRES_TRANSITION_HOST": "db.internal",
+        "NEO4J_BOOTSTRAP_PASSWORD": "pw",
+        "N8N_PASSWORD": "pw",
+        "SOME_OTHER_PASSWORD": "pw",
+        # 자격증명이 아닌 것은 살아남아야 한다.
+        "LANG": "ko_KR.UTF-8",
+    }
+    for key, value in planted.items():
+        monkeypatch.setenv(key, value)
 
     env = _credential_free_env()
+
+    leaked = [k for k in planted if k != "LANG" and k in env]
+    assert leaked == [], f"자격증명이 subprocess로 샜다: {leaked}"
     assert not [k for k in env if _is_credential(k)]
+    assert env["LANG"] == "ko_KR.UTF-8", "자격증명이 아닌 값까지 지웠다"
     assert env["PYTHONIOENCODING"] == "utf-8"
     # 남겨야 하는 것은 남는다. Windows `os.environ`은 키를 대문자로 정규화하므로
     # 대소문자를 구분하지 않고 본다.
