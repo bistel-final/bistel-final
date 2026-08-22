@@ -155,9 +155,6 @@ def _final_source() -> str:
                     "MERGE (p)-[:MEASURED_ON]->(c);"
                 )
 
-    # The delivered final source has 100 seed statements; this no-op locks that
-    # count without changing the validated graph shape.
-    statements.append("MATCH (a:Area {area_id:'Photo'});")
     return "\n".join(statements) + "\n"
 
 
@@ -175,8 +172,8 @@ def test_final_source_contract_constants() -> None:
 
 def test_registered_artifact_counts_and_first_relation_id(parsed) -> None:
     assert parsed.destructive_statement == "MATCH (n) DETACH DELETE n;"
-    assert len(parsed.seed_statements) == 100
-    assert len(parsed.corrected_statements) == 100
+    assert len(parsed.seed_statements) == 99
+    assert len(parsed.corrected_statements) == 99
     assert len(parsed.nodes) == 44
     assert len(parsed.relationships) == 85
     first = parsed.relationships[0]
@@ -291,9 +288,10 @@ def test_forbidden_words_in_string_and_comment_are_not_substring_matches() -> No
 
 def test_unsupported_relationship_statement_is_rejected() -> None:
     source = _final_source().replace(
-        "MATCH (a:Area {area_id:'Photo'});",
-        "MATCH (a:Area {area_id:'Photo'}) "
-        "MATCH (b:Area {area_id:'Etch'}) "
+        "MATCH (p:Parameter {parameter_id:'ETCH-CD'}) "
+        "MATCH (c:Chamber "
+        "{chamber_id:'CH-ET-03-B'}) MERGE (p)-[:MEASURED_ON]->(c);",
+        "MATCH (a:Area {area_id:'Photo'}) MATCH (b:Area {area_id:'Etch'}) "
         "MERGE (a)<-[:UNSUPPORTED]-(b);",
     )
     with pytest.raises(master.CypherGrammarError, match="relationship grammar"):
