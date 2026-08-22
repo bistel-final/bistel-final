@@ -2424,6 +2424,9 @@ def test_a_live_owner_blocks_acquire_recover_and_reports_live(tmp_path: Path) ->
 
     path = tmp_path / orchestrator.lock_name("kosa_agent", "GH-104")
     with orchestrator._own_evidence(tmp_path, "kosa_agent", "GH-104"):
+        # 살아 있는 lock의 **내용은 읽을 수 있어야** 한다. Windows `msvcrt.locking`은
+        # 강제 lock이라 payload 안을 잠그면 여기서 `PermissionError`가 난다 —
+        # 실제 Windows CI가 그렇게 실패했다(구현리뷰 19차 필수 2 검증).
         token = json.loads(path.read_text(encoding="utf-8"))["token"]
         # 살아 있는 소유자는 acquire·recover 양쪽을 막는다.
         assert run_probe("acquire", token) == {"reason": "TARGET_BUSY"}

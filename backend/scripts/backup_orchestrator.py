@@ -441,6 +441,17 @@ RELEASED_STATE = "RELEASED"
 RELEASED_BODY = b'{"state": "RELEASED"}'
 
 
+#: Windows `msvcrt.locking`은 POSIX `flock`과 달리 **강제(mandatory) lock**이다. 잠근
+#: byte는 다른 프로세스가 **읽지도** 못한다. payload 안(offset 0)을 잠그면 살아 있는
+#: lock을 `--inspect-lock`이 읽을 때 `PermissionError`로 죽는다 — 실제 Windows CI에서
+#: 그렇게 실패했다(구현리뷰 19차 필수 2 검증).
+#:
+#: 그래서 **내용 밖의 byte 하나**만 잠근다. lock 파일은 수백 바이트라 이 offset은 항상
+#: EOF 너머이고, Windows는 EOF 너머 잠금을 허용한다. POSIX `flock`은 파일 단위 advisory
+#: 라 offset과 무관하므로 두 OS의 관측 동작이 같아진다.
+_WINDOWS_LOCK_OFFSET = 1 << 20
+
+
 def _advisory_lock(descriptor: int) -> bool:
     """OS advisory lock을 **비차단**으로 시도한다. 잡았으면 True.
 
@@ -458,10 +469,13 @@ def _advisory_lock(descriptor: int) -> bool:
         import msvcrt
 
         try:
-            os.lseek(descriptor, 0, os.SEEK_SET)
+            os.lseek(descriptor, _WINDOWS_LOCK_OFFSET, os.SEEK_SET)
             msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
         except OSError:
             return False
+        finally:
+            # 이후 read/write는 내용 위치에서 한다.
+            os.lseek(descriptor, 0, os.SEEK_SET)
         return True
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -477,8 +491,9 @@ def _advisory_unlock(descriptor: int) -> None:
         import msvcrt
 
         with contextlib.suppress(OSError):
-            os.lseek(descriptor, 0, os.SEEK_SET)
+            os.lseek(descriptor, _WINDOWS_LOCK_OFFSET, os.SEEK_SET)
             msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        os.lseek(descriptor, 0, os.SEEK_SET)
         return
     with contextlib.suppress(OSError):
         fcntl.flock(descriptor, fcntl.LOCK_UN)
@@ -570,6 +585,7 @@ def recover_stale_lock(
             # 아직 살아 있는 소유자가 있다. 승인이 있어도 뺏지 않는다.
             raise OrchestrationError("TARGET_BUSY", EXIT_CONFIRM_REQUIRED)
         try:
+            os.lseek(descriptor, 0, os.SEEK_SET)
             status = _classify(
                 os.read(descriptor, _LOCK_READ_LIMIT), database, change_ref
             )
@@ -653,6 +669,7 @@ def _own_evidence(backup_root: Path, database: str, change_ref: str) -> Iterator
         os.close(descriptor)
         raise
     try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
         status = _classify(os.read(descriptor, _LOCK_READ_LIMIT), database, change_ref)
         if status["state"] not in _FREE_LOCK_STATES:
             # 죽은 실행이 남긴 claim이다. 승인 회수를 거쳐야 한다.
