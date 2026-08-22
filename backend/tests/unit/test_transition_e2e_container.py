@@ -799,6 +799,37 @@ def test_production_entrypoints_transition_three_targets(
                 _read(owners[database], database)
             ) == transition.target_fingerprint(final_state[database]), database
 
+        # --- B 산식 호출 범위: **실제 수집 경로**에서 센다(구현리뷰 21차 필수 1) ---
+        # 소스 문자열 검사로는 "조건문을 남긴 채 아래에서 다시 부르는" 구현을 못 잡는다.
+        # 공용 장애가 정확히 "이름만 보고 B SQL 실행"이었으므로 호출 자체를 센다.
+        calls: dict[str, list[str]] = {d: [] for d in transition.ORDERED_TARGETS}
+        seen: list[str] = []
+        real_live = transition._rag_live_fingerprint
+        real_embed = transition._rag_embedding_projection
+
+        def counting(name: str, real: Any) -> Any:
+            def _fn(connection: Any) -> Any:
+                seen.append(name)
+                return real(connection)
+
+            return _fn
+
+        transition._rag_live_fingerprint = counting("live", real_live)
+        transition._rag_embedding_projection = counting("embedding", real_embed)
+        try:
+            for database in transition.ORDERED_TARGETS:
+                seen.clear()
+                _read(owners[database], database)
+                calls[database] = list(seen)
+        finally:
+            transition._rag_live_fingerprint = real_live
+            transition._rag_embedding_projection = real_embed
+
+        for database in transition.B_MANAGED_RAG_TARGETS:
+            assert calls[database] == ["live", "embedding"], database
+        # B 관리 밖 target에서는 **0회**. 여기서 부르면 공용에서 UndefinedColumn이 난다.
+        assert calls["kosa_text2sql"] == []
+
         # --- closure: production main(), 실제 producer artifact로 사후 증적 ---
         closure_argv = [
             "--closure",

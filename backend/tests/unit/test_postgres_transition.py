@@ -54,6 +54,7 @@ def _inventory(
     *,
     wafer_type: str = transition.LEGACY_WAFER_TYPE,
     action_rows: int | None = None,
+    rag_rows: int | None = None,
     alarms: Mapping[str, int] | None = None,
     drop_tables: tuple[str, ...] = (),
     extra_tables: tuple[str, ...] = (),
@@ -104,7 +105,7 @@ def _inventory(
     if action_rows is not None:
         counts["action_history"] = action_rows
     for name in transition.RAG_TABLES:
-        counts.setdefault(name, 3)
+        counts.setdefault(name, 3 if rag_rows is None else rag_rows)
     for name in transition.PRESERVED_TABLES_BY_PROFILE[profile]:
         counts.setdefault(name, 0)
     for name in transition.LEGACY_HANDOFF_TABLES_BY_TARGET.get(database, ()):
@@ -1001,47 +1002,68 @@ def test_b_managed_rag_targets_match_the_b_owned_allowlist() -> None:
     }
 
 
-def test_rag_live_fingerprint_is_not_computed_outside_b_managed_targets() -> None:
-    """B 관리 밖 target에서 B의 산식을 부르면 `UndefinedColumn`으로 죽는다.
-
-    `kosa_text2sql`의 `document_chunk`는 구 epoch(PR #48) 형상이라 `token_cnt`가 없다.
-    이름만 보고 부르면 안 된다.
-    """
-
-    import inspect
-
-    source = inspect.getsource(transition.read_inventory)
-    assert "B_MANAGED_RAG_TARGETS" in source
-    # 이름 존재만으로 부르던 옛 조건이 남아 있으면 안 된다.
-    assert "if set(RAG_TABLES) <= set(tables):" not in source
+#: 실제 호출 여부는 real PostgreSQL이 있는 격리 E2E에서 본다
+#: (`test_transition_e2e_container.py`의 `..._rag_fingerprint_is_scoped_...`).
+#: 여기서 fake connection을 만들면 `read_inventory()`의 query 20여 개를 흉내 내야 하고,
+#: 그 흉내가 틀리면 회귀가 계약이 아니라 fake를 검증하게 된다.
 
 
 @pytest.mark.parametrize(
-    ("database", "required"),
+    ("database", "b_managed"),
     [
         ("kosa_agent_e2e", True),
         ("kosa_agent", True),
-        # B 관리 밖이라 RAG 2종의 존재도 행 수도 요구하지 않는다.
         ("kosa_text2sql", False),
     ],
 )
-def test_rag_presence_requirement_differs_per_target(
-    database: str, required: bool
+def test_rag_row_requirement_applies_only_to_b_managed_targets(
+    database: str, b_managed: bool
 ) -> None:
-    """B가 `kosa_text2sql`의 구 epoch RAG를 지워도 2.6이 drift로 오판하면 안 된다."""
+    """행 수·전체 존재 요구는 **B가 적재한 target에만** 적용된다.
+
+    `kosa_text2sql`의 같은 이름 table은 구 epoch(PR #48) 형상이고 행이 0이다. 거기에
+    "행 > 0"을 요구하면 전환 자체가 시작되지 않는다.
+
+    **이것은 "없어도 된다"가 아니다.** `expected_relations()`가 그 두 table을 legacy
+    handoff에 포함하므로 full `check_relation_set()`은 여전히 **존재를 요구한다**. B가
+    `V5-B-1.1`로 같은 이름의 새 schema를 교체하기 전까지 legacy 3종은 그대로 있어야 한다
+    (구현리뷰 21차 편집 1).
+    """
 
     intact = _inventory(database)
     transition.check_rag_presence(intact)
 
-    stripped = _inventory(database, drop_tables=transition.RAG_TABLES)
-    if required:
+    empty = _inventory(database, rag_rows=0)
+    if b_managed:
         with pytest.raises(transition.TransitionError) as caught:
-            transition.check_rag_presence(stripped)
+            transition.check_rag_presence(empty)
         assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
     else:
-        transition.check_rag_presence(stripped)
+        transition.check_rag_presence(empty)
 
     # `vector` extension은 세 DB 모두 필수다.
     with pytest.raises(transition.TransitionError) as caught:
         transition.check_rag_presence(_inventory(database, extensions=("plpgsql",)))
     assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
+
+
+def test_relation_set_still_requires_the_legacy_rag_tables_on_text2sql() -> None:
+    """행 요구를 뺐다고 **존재까지** 허용한 것은 아니다.
+
+    두 계약이 갈리면 "없어도 통과"로 오해해 B가 지운 뒤 drift를 못 잡는다.
+    """
+
+    assert set(transition.RAG_TABLES) <= set(
+        transition.LEGACY_HANDOFF_TABLES_BY_TARGET["kosa_text2sql"]
+    )
+    tables, _sequences = transition.expected_relations(_inventory("kosa_text2sql"))
+    assert set(transition.RAG_TABLES) <= tables
+
+    with pytest.raises(transition.TransitionError) as caught:
+        transition.check_relation_set(
+            _inventory("kosa_text2sql", drop_tables=transition.RAG_TABLES)
+        )
+    assert caught.value.reason_code in {
+        "TARGET_STATE_UNSUPPORTED",
+        "RAG_PRESERVATION_FAILED",
+    }

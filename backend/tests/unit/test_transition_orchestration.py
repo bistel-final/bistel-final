@@ -26,7 +26,6 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 import backup_orchestrator as orchestrator  # noqa: E402
 import postgres_backup as backup  # noqa: E402
 import postgres_transition as transition  # noqa: E402
-import transition_public_postgres as cli_module  # noqa: E402
 import transition_sessions as sessions  # noqa: E402
 from test_postgres_transition import _inventory  # noqa: E402
 
@@ -2825,18 +2824,65 @@ def test_windows_acl_needs_an_explicit_operator_confirmation(
 
 
 @pytest.mark.windows_contract
-def test_cli_modules_run_as_scripts() -> None:
-    """`main()`이 있는데 `__main__` 가드가 없으면 스크립트 실행이 **조용히 exit 0**이다.
+@pytest.mark.parametrize(
+    "script", ["backup_orchestrator.py", "transition_public_postgres.py"]
+)
+def test_cli_scripts_actually_run_as_entrypoints(script: str) -> None:
+    """**subprocess로 실제 실행한다.** 문자열 검사로는 이번 결함을 못 잡는다.
 
-    E2E는 `main(argv)`를 in-process로 불러서 이 결함을 보지 못했다. 공용 backup을
-    실제로 돌렸을 때 아무 파일도 안 생기고 exit 0으로 끝나 발견했다(2026-08-22).
+    `backup_orchestrator.py`는 `__main__` 가드가 없어 스크립트로 돌리면 모듈만
+    import되고 **아무 일 없이 exit 0**이었다. 격리 E2E가 `main(argv)`를 in-process로
+    불러서 못 봤다(2026-08-22 공용 실행에서 발견). `inspect.getsource()`로 문자열만
+    보면 주석이나 도달 불가 분기에 있어도 통과하므로 진입점을 직접 밟는다.
+
+    `--help`는 argparse가 usage를 찍고 `SystemExit(0)`으로 끝난다. 진입점이 안 불리면
+    stdout이 비고, 그것이 이번 결함의 정확한 증상이다. **DB에 닿지 않는다.**
     """
 
-    import inspect
+    import subprocess
+    import sys as _sys
 
-    for module in (orchestrator, cli_module):
-        source = inspect.getsource(module)
-        if "\ndef main(" not in source:
-            continue
-        assert '__name__ == "__main__"' in source, module.__name__
-        assert "sys.exit(main())" in source, module.__name__
+    completed = subprocess.run(
+        [_sys.executable, str(SCRIPTS_ROOT / script), "--help"],
+        capture_output=True,
+        text=True,
+        # 자격증명을 주지 않는다. 진입점이 열려도 연결은 시도조차 하지 않는다.
+        env={"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip(), "진입점이 불리지 않아 출력이 비었다"
+    assert "usage:" in completed.stdout
+    for flag in ("--backup-root", "--change-ref"):
+        assert flag in completed.stdout, flag
+
+
+@pytest.mark.windows_contract
+def test_a_module_without_a_guard_would_be_caught(tmp_path: Path) -> None:
+    """위 회귀가 실제로 결함을 잡는지 **결함 있는 사본으로** 확인한다.
+
+    positive만 있으면 회귀가 무엇을 막는지 알 수 없다. 가드를 지운 사본은 출력이
+    비어야 한다 — 그것이 2026-08-22에 공용에서 본 증상이다.
+    """
+
+    import subprocess
+    import sys as _sys
+
+    source = (SCRIPTS_ROOT / "backup_orchestrator.py").read_text(encoding="utf-8")
+    broken = source.replace('if __name__ == "__main__":\n    sys.exit(main())', "")
+    assert broken != source, "가드를 찾지 못했다"
+    copy = tmp_path / "no_guard.py"
+    copy.write_text(broken, encoding="utf-8")
+
+    completed = subprocess.run(
+        [_sys.executable, str(copy), "--help"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONPATH": str(SCRIPTS_ROOT),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+    )
+    # 가드가 없으면 조용히 성공한다 — exit 0인데 usage가 없다.
+    assert completed.returncode == 0
+    assert "usage:" not in completed.stdout
