@@ -121,7 +121,9 @@ class GraphService:
                 for item in row.sibling_chambers
             ],
             adjacent_steps=[
-                item for item in (_step_node(step) for step in row.adjacent_steps) if item
+                item
+                for item in (_step_node(step) for step in row.adjacent_steps)
+                if item
             ],
             parameters=[
                 ParameterNode(

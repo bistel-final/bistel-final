@@ -10,9 +10,12 @@ from app.common.tool_contracts import (
     ParameterNode,
     ProcessStepNode,
 )
-from app.knowledge.graph_query import EquipmentContextRow, GraphQueryRepository
+from app.knowledge.graph_query import (
+    EquipmentContextRow,
+    GraphQueryRepository,
+    load_graph_revision,
+)
 from app.knowledge.service import GraphService
-
 
 REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
 
@@ -120,9 +123,11 @@ def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
 
 
 def test_graph_repository_maps_raw_neo4j_row() -> None:
+    driver = _Driver()
     repository = GraphQueryRepository(
-        driver_factory=lambda: _Driver(),
+        driver_factory=lambda: driver,
         graph_revision_loader=lambda: REVISION,
+        database="neo4j",
     )
 
     result = repository.get_equipment_context("EQP01-PM1")
@@ -141,27 +146,84 @@ def test_graph_repository_maps_raw_neo4j_row() -> None:
             "to_business_id": "equipment_id=s:EQP01",
         }
     ]
+    assert driver.session_options == {
+        "database": "neo4j",
+        "default_access_mode": "READ",
+    }
+
+
+def test_load_graph_revision_validates_marker_and_does_not_cache(tmp_path: Any) -> None:
+    marker_root = tmp_path
+    marker_path = marker_root / "neo4j_graph.neo4j.json"
+    marker_path.write_text(_marker(REVISION), encoding="utf-8")
+
+    assert load_graph_revision(marker_root=marker_root) == REVISION
+
+    changed = "a" * 64
+    marker_path.write_text(_marker(changed), encoding="utf-8")
+    assert load_graph_revision(marker_root=marker_root) == changed
+
+
+def test_load_graph_revision_rejects_invalid_marker(tmp_path: Any) -> None:
+    marker_path = tmp_path / "neo4j_graph.neo4j.json"
+    marker_path.write_text(
+        _marker(REVISION, status="RESTORED"),
+        encoding="utf-8",
+    )
+
+    try:
+        load_graph_revision(marker_root=tmp_path)
+    except RuntimeError as exc:
+        assert "success" in str(exc)
+    else:
+        raise AssertionError("invalid marker must be rejected")
+
+
+def test_relation_id_is_required_for_returned_relationships() -> None:
+    repository = GraphQueryRepository(
+        driver_factory=lambda: _Driver(relation_id=None),
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    try:
+        repository.get_equipment_context("EQP01-PM1")
+    except RuntimeError as exc:
+        assert "relation_id" in str(exc)
+    else:
+        raise AssertionError("missing relation_id must fail fast")
 
 
 class _Driver:
-    def session(self) -> "_Session":
-        return _Session()
+    def __init__(self, relation_id: str | None = "REL-x") -> None:
+        self.relation_id = relation_id
+        self.session_options: dict[str, Any] | None = None
+
+    def session(self, **options: Any) -> _Session:
+        self.session_options = options
+        return _Session(self.relation_id)
 
 
 class _Session:
-    def __enter__(self) -> "_Session":
+    def __init__(self, relation_id: str | None) -> None:
+        self.relation_id = relation_id
+
+    def __enter__(self) -> _Session:
         return self
 
     def __exit__(self, *_: object) -> bool:
         return False
 
-    def run(self, query: str, parameters: dict[str, Any]) -> "_Result":
+    def run(self, query: str, parameters: dict[str, Any]) -> _Result:
         assert query == GraphQueryRepository.CONTEXT_QUERY
         assert parameters == {"chamber_id": "EQP01-PM1"}
-        return _Result()
+        return _Result(self.relation_id)
 
 
 class _Result:
+    def __init__(self, relation_id: str | None) -> None:
+        self.relation_id = relation_id
+
     def single(self) -> dict[str, Any]:
         return {
             "chamber": {"chamber_id": "EQP01-PM1"},
@@ -174,7 +236,7 @@ class _Result:
             "parameters": [],
             "relations": [
                 {
-                    "relation_id": "REL-x",
+                    "relation_id": self.relation_id,
                     "relation_type": "PART_OF",
                     "from_label": "Chamber",
                     "from_properties": {"chamber_id": "EQP01-PM1"},
@@ -183,3 +245,19 @@ class _Result:
                 }
             ],
         }
+
+
+def _marker(revision: str, *, status: str = "APPLIED") -> str:
+    return (
+        "{"
+        f'"dataset_epoch":"fdc_final_20260818",'
+        f'"database":"neo4j",'
+        f'"source_member_sha256":"51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea",'
+        f'"status":"{status}",'
+        f'"node_count":44,'
+        f'"relationship_count":85,'
+        f'"relation_id_duplicates":0,'
+        f'"expected_graph_fingerprint_sha256":"{revision}",'
+        f'"actual_graph_fingerprint_sha256":"{revision}"'
+        "}"
+    )
