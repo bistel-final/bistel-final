@@ -112,6 +112,34 @@ jobs:
           backend/tests/unit/test_rehearsal_recovery.py
           -m windows_contract
 
+      # 아래 설치는 위 세 step **뒤**에 둔다. `V5-CM-2.5`가 세운
+      # "windows_contract는 pytest만으로 통과" 계약을 CI 수준에서도 지키기 위해서다
+      # (계획리뷰 3차 권장 1). 버전은 backend/requirements.txt와 exact 일치한다.
+      - name: Install transition contract dependencies
+        run: >-
+          python -m pip install
+          SQLAlchemy==2.0.36
+          psycopg[binary]==3.2.3
+          python-dotenv==1.0.1
+
+      - name: Verify public transition path and argv contract on Windows
+        run: >-
+          python -m pytest -v
+          backend/tests/unit/test_postgres_backup.py
+          backend/tests/unit/test_postgres_transition.py
+          backend/tests/unit/test_transition_public_postgres.py
+          backend/tests/unit/test_transition_orchestration.py
+          -m windows_contract
+
+      - name: Show which transition contracts Windows actually collected
+        run: >-
+          python -m pytest --collect-only -q
+          backend/tests/unit/test_postgres_backup.py
+          backend/tests/unit/test_postgres_transition.py
+          backend/tests/unit/test_transition_public_postgres.py
+          backend/tests/unit/test_transition_orchestration.py
+          -m windows_contract
+
   schema-rehearsal-container:
     name: Schema rehearsal container
     runs-on: ubuntu-latest
@@ -138,3 +166,38 @@ jobs:
         run: >-
           python -m pytest -q -m container
           tests/unit/test_rehearsal_container.py
+
+      # 격리 PostgreSQL 16에서 legacy 형상을 세우고 전환을 실증한다. 고정 backup
+      # client image의 pg_dump/pg_restore version이 pin과 일치하는지도 여기서 본다.
+      - name: Prove public transition on a real PostgreSQL
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_postgres_transition_container.py
+
+      # 격리 3-target으로 backup/restore·전환·재개·no-op를 한 흐름으로 돈다.
+      # `pgvector/pgvector:pg16`(digest 고정)이 필요하다 — 순정 postgres:16에는
+      # `vector` 확장이 없어 RAG 보존 검증을 할 수 없다.
+      #
+      # **최종 ZIP은 저장소에 없다.** secret으로 받은 경우에만 `MENTOR_FINAL_ARCHIVE`를
+      # 설정하고, 그때는 skip 없이 통과해야 한다. 지정하지 않으면 3-target E2E는
+      # 실행되지 않으며 그 사실이 아래 단계 이름과 요약에 드러난다
+      # (구현리뷰 14차 필수 2).
+      - name: Prove container contracts that need no final archive
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_transition_e2e_container.py
+          -k "not three_targets"
+
+      - name: Prove the three-target transition with the actual final archive
+        if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
+        working-directory: backend
+        env:
+          MENTOR_FINAL_ARCHIVE: ${{ env.MENTOR_FINAL_ARCHIVE }}
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_transition_e2e_container.py
+          -k three_targets
+          -p no:randomly
+          --no-header -rA

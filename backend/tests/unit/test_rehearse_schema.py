@@ -621,16 +621,55 @@ _V5_CM_25_REASONS = frozenset(
 )
 
 
-def test_reason_allowlist_is_exactly_previous_plus_four() -> None:
-    """기존 24종이 하나도 빠지지 않고 새 4종만 더해졌다(계획 §9)."""
+_V5_CM_26_REASONS = frozenset(
+    {
+        "APPROVAL_REQUIRED",
+        "APPROVAL_MISMATCH",
+        "BACKUP_REQUIRED",
+        "BACKUP_INVALID",
+        "BACKUP_CLIENT_UNAVAILABLE",
+        "BACKUP_CLIENT_VERSION_MISMATCH",
+        "RESTORE_REQUIRED",
+        "RESTORE_NOT_VERIFIED",
+        "RAG_PRESERVATION_FAILED",
+        "TARGET_STATE_UNSUPPORTED",
+        "OTHER_TARGET_CHANGED",
+        # 구현리뷰 4차 필수 2 — 수집이 한 snapshot에서 이뤄지지 않았다.
+        "SNAPSHOT_NOT_ISOLATED",
+        # 구현리뷰 7차 필수 1 — target mutex 경쟁·미보유.
+        "TARGET_BUSY",
+        "TARGET_MUTEX_MISSING",
+        # 구현리뷰 8차 필수 2 — mutex 해제 실패로 pool에 lock이 남을 수 있다.
+        "TARGET_MUTEX_LEAKED",
+        # 구현리뷰 16차 필수 1 — 허용 공용 endpoint 고정.
+        "ENDPOINT_NOT_ALLOWED",
+        # 구현리뷰 16차 필수 3 — 사후 closure 증적 불일치.
+        "CLOSURE_BLOCKED",
+        # 구현리뷰 17차 필수 2 — backup root 신뢰 실패.
+        "BACKUP_ROOT_UNTRUSTED",
+    }
+)
+
+
+def test_reason_allowlist_is_exactly_previous_plus_new() -> None:
+    """기존 28종이 하나도 빠지지 않고 2.6의 18종만 더해져 정확히 46종이다.
+
+    `V5-CM-2.5`가 정한 대로 이 집합이 유일한 정본이다. 새 wrapper가 별도 allowlist를
+    만들면 두 집합이 갈라진다(`V5-CM-2.6` 계획 §11).
+    """
 
     assert len(_V5_CM_24_REASONS) == 24
-    assert _V5_CM_24_REASONS & _V5_CM_25_REASONS == frozenset()
-    assert wrapper.REASON_ALLOWLIST == _V5_CM_24_REASONS | _V5_CM_25_REASONS
-    assert len(wrapper.REASON_ALLOWLIST) == 28
+    assert len(_V5_CM_25_REASONS) == 4
+    assert len(_V5_CM_26_REASONS) == 18
+    previous = _V5_CM_24_REASONS | _V5_CM_25_REASONS
+    assert len(previous) == 28
+    assert previous & _V5_CM_26_REASONS == frozenset()
+    assert wrapper.REASON_ALLOWLIST == previous | _V5_CM_26_REASONS
+    assert len(wrapper.REASON_ALLOWLIST) == 46
+    assert previous <= wrapper.REASON_ALLOWLIST
 
 
-@pytest.mark.parametrize("reason", sorted(_V5_CM_25_REASONS))
+@pytest.mark.parametrize("reason", sorted(_V5_CM_25_REASONS | _V5_CM_26_REASONS))
 def test_new_reasons_survive_both_sanitizers(reason: str) -> None:
     """두 sanitizer 어느 쪽도 새 reason을 INTERNAL_ERROR로 바꾸지 않는다."""
 

@@ -57,6 +57,30 @@ REASON_ALLOWLIST = frozenset(
         "RECOVERY_NOT_ALLOWED",
         "ARTIFACT_MISMATCH",
         "ARTIFACT_WRITE_FAILED",
+        # V5-CM-2.6 공용 전환 gate. 이 집합이 전환 wrapper의 유일한 정본이며
+        # 별도 allowlist를 만들지 않는다(계획 §11).
+        "APPROVAL_REQUIRED",
+        "APPROVAL_MISMATCH",
+        "BACKUP_REQUIRED",
+        "BACKUP_INVALID",
+        "BACKUP_CLIENT_UNAVAILABLE",
+        "BACKUP_CLIENT_VERSION_MISMATCH",
+        "RESTORE_REQUIRED",
+        "RESTORE_NOT_VERIFIED",
+        "RAG_PRESERVATION_FAILED",
+        "TARGET_STATE_UNSUPPORTED",
+        "OTHER_TARGET_CHANGED",
+        "SNAPSHOT_NOT_ISOLATED",
+        "TARGET_BUSY",
+        "TARGET_MUTEX_MISSING",
+        "TARGET_MUTEX_LEAKED",
+        # 구현리뷰 16차 필수 1 — 허용 공용 endpoint가 아니거나 지정이 없다.
+        "ENDPOINT_NOT_ALLOWED",
+        # 구현리뷰 16차 필수 3 — 사후 증적이 없거나 실물과 다르다. DB 결과는 보존하고
+        # closure·Git 게시만 막는다.
+        "CLOSURE_BLOCKED",
+        # 구현리뷰 17차 필수 2 — backup root 소유자·mode가 신뢰 조건을 벗어났다.
+        "BACKUP_ROOT_UNTRUSTED",
     }
 )
 

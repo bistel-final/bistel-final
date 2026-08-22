@@ -279,3 +279,63 @@ def test_pull_failure_does_not_start_container() -> None:
     assert raised.value.reason_code == "DOCKER_IMAGE_UNAVAILABLE"
     assert docker.alive is False
     assert "run" not in [argv[1] for argv, _ in docker.calls]
+
+
+# ---------------------------------------------------------------------------
+# V5-CM-2.6 — backup client image seam
+# ---------------------------------------------------------------------------
+
+_BACKUP_IMAGE = "postgres@sha256:" + "b" * 64
+
+
+def _lifecycle_argv(image: str | None = None) -> list[list[str]]:
+    """기존 `DockerFake`로 lifecycle을 한 번 돌리고 docker argv 전부를 돌려준다."""
+
+    docker = DockerFake()
+    kwargs: dict[str, Any] = {
+        "database": "fdc_rehearsal_runtime",
+        "command_runner": docker,
+        "host_probe": lambda *_: True,
+        "sleep": lambda _: None,
+    }
+    if image is not None:
+        kwargs["image"] = image
+    with postgres.one_off_postgres(**kwargs):
+        pass
+    return [argv for argv, _ in docker.calls]
+
+
+@pytest.mark.windows_contract
+def test_default_image_argv_is_unchanged() -> None:
+    """image를 넘기지 않은 기존 호출부의 argv는 그대로다."""
+
+    seen = _lifecycle_argv()
+    pulls = [a for a in seen if a[1] == "pull"]
+    runs = [a for a in seen if a[1] == "run"]
+    assert pulls and runs
+    assert pulls[0][-1] == postgres.POSTGRES_IMAGE
+    assert runs[0][-1] == postgres.POSTGRES_IMAGE
+
+
+@pytest.mark.windows_contract
+def test_explicit_image_applies_to_both_pull_and_run() -> None:
+    """pull과 run이 반드시 같은 image를 쓴다.
+
+    한쪽만 바꾸면 cold cache에서 `docker run`이 암묵적 pull을 시도해
+    `V5-CM-2.2`가 겪은 timeout이 재발한다.
+    """
+
+    seen = _lifecycle_argv(_BACKUP_IMAGE)
+    pulls = [a for a in seen if a[1] == "pull"]
+    runs = [a for a in seen if a[1] == "run"]
+    assert pulls[0][-1] == _BACKUP_IMAGE
+    assert runs[0][-1] == _BACKUP_IMAGE
+    assert postgres.POSTGRES_IMAGE not in {a[-1] for a in pulls + runs}
+
+
+@pytest.mark.windows_contract
+def test_image_seam_keeps_cleanup_owned_by_lifecycle() -> None:
+    """다른 image를 써도 cleanup argv는 같은 lifecycle이 낸다."""
+
+    seen = _lifecycle_argv(_BACKUP_IMAGE)
+    assert "rm" in [a[1] for a in seen]
