@@ -2729,6 +2729,33 @@ def test_only_exact_0700_is_trusted(tmp_path: Path, mode: int) -> None:
     assert (value, rejection) == ("0700", None)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX owner 계약")
+def test_a_root_owned_by_another_account_is_untrusted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mode가 `0700`이어도 **다른 계정 소유**면 그 계정이 증적을 갈아끼울 수 있다.
+
+    `0700`만 보면 남의 `0700` 디렉터리를 backup root로 지정해도 통과한다. 변이 검사에서
+    소유자 조건을 지웠을 때 아무 회귀도 깨지지 않아 이 회귀를 추가했다(M240).
+    """
+
+    root = tmp_path / "outside"
+    root.mkdir(mode=0o700)
+
+    # 실제 chown은 root 권한이 필요하다. 판정 입력인 uid를 바꿔 같은 상황을 만든다.
+    monkeypatch.setattr(backup.os, "getuid", lambda: root.stat().st_uid + 1)
+    value, rejection = backup.backup_root_trust(root, change_ref="GH-104", environ={})
+    assert value == "0700", "mode는 통과하는 상황이어야 소유자 조건만 검증한다"
+    assert rejection == ("BACKUP_ROOT_UNTRUSTED", orchestrator.EXIT_MISMATCH)
+
+    # 같은 계정이면 통과한다.
+    monkeypatch.setattr(backup.os, "getuid", lambda: root.stat().st_uid)
+    assert backup.backup_root_trust(root, change_ref="GH-104", environ={}) == (
+        "0700",
+        None,
+    )
+
+
 @pytest.mark.windows_contract
 @pytest.mark.parametrize(
     ("reviewed", "trusted"),
