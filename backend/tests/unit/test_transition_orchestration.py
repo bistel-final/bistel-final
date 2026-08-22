@@ -2863,11 +2863,26 @@ def test_the_cli_smoke_env_carries_no_credential() -> None:
         assert any(k.upper() == "SYSTEMROOT" for k in env)
 
 
+#: 진입점이 불렸는지 판정하는 입력. **ASCII JSON reason만 보고 판정한다.**
+#:
+#: 처음엔 `--help`를 썼는데 Windows에서 두 번 깨졌다. argparse 도움말이 module
+#: docstring(`→` 포함)을 싣기 때문에 콘솔 인코딩에 흔들린다(PR #108 run
+#: `32577793035`·`32578069325`). 도움말 텍스트는 계약이 아니다 — 계약은 "잘못된 입력에
+#: typed reason을 낸다"이고 그건 ASCII다.
+_ENTRYPOINT_PROBE = {
+    # backup: confirm target이 없으면 CONFIRM_REQUIRED.
+    "backup_orchestrator.py": (
+        ["--backup-root", "{root}", "--change-ref", "GH-1"],
+        "CONFIRM_REQUIRED",
+    ),
+    # transition: mode를 안 고르면 MODE_CONFLICT.
+    "transition_public_postgres.py": ([], "MODE_CONFLICT"),
+}
+
+
 @pytest.mark.windows_contract
-@pytest.mark.parametrize(
-    "script", ["backup_orchestrator.py", "transition_public_postgres.py"]
-)
-def test_cli_scripts_actually_run_as_entrypoints(script: str) -> None:
+@pytest.mark.parametrize("script", sorted(_ENTRYPOINT_PROBE))
+def test_cli_scripts_actually_run_as_entrypoints(script: str, tmp_path: Path) -> None:
     """**subprocess로 실제 실행한다.** 문자열 검사로는 이번 결함을 못 잡는다.
 
     `backup_orchestrator.py`는 `__main__` 가드가 없어 스크립트로 돌리면 모듈만
@@ -2875,28 +2890,32 @@ def test_cli_scripts_actually_run_as_entrypoints(script: str) -> None:
     불러서 못 봤다(2026-08-22 공용 실행에서 발견). `inspect.getsource()`로 문자열만
     보면 주석이나 도달 불가 분기에 있어도 통과하므로 진입점을 직접 밟는다.
 
-    `--help`는 argparse가 usage를 찍고 `SystemExit(0)`으로 끝난다. 진입점이 안 불리면
-    stdout이 비고, 그것이 이번 결함의 정확한 증상이다. **DB에 닿지 않는다.**
+    진입점이 안 불리면 **exit 0에 출력 0** — 그것이 이번 결함의 정확한 증상이다.
+    **DB에 닿지 않는다**: 자격증명 없는 env이고, 인자 검증에서 연결 전에 끝난다.
     """
 
+    import json as _json
     import subprocess
     import sys as _sys
 
+    argv, expected = _ENTRYPOINT_PROBE[script]
+    argv = [a.format(root=str(tmp_path)) for a in argv]
+
     completed = subprocess.run(
-        [_sys.executable, str(SCRIPTS_ROOT / script), "--help"],
+        [_sys.executable, str(SCRIPTS_ROOT / script), *argv],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_credential_free_env(),
     )
-    # `capture_output`이라도 플랫폼에 따라 `None`이 올 수 있어 정규화한다. 실패 시
-    # 원인을 보려면 stderr가 메시지에 있어야 한다.
-    out = completed.stdout or ""
-    err = completed.stderr or ""
-    assert completed.returncode == 0, err
-    assert out.strip(), f"진입점이 불리지 않아 출력이 비었다 · stderr={err[:400]}"
-    assert "usage:" in out, out[:400]
-    for flag in ("--backup-root", "--change-ref"):
-        assert flag in out, flag
+    out = (completed.stdout or "") + (completed.stderr or "")
+
+    assert completed.returncode != 0, f"인자 검증이 통과했다: {out[:400]}"
+    assert out.strip(), "진입점이 불리지 않아 출력이 비었다"
+    payload = _json.loads(out.strip().splitlines()[-1])
+    assert payload["status"] == "FAILED"
+    assert payload["reason_code"] == expected, payload
 
 
 @pytest.mark.windows_contract
@@ -2917,11 +2936,21 @@ def test_a_module_without_a_guard_would_be_caught(tmp_path: Path) -> None:
     copy.write_text(broken, encoding="utf-8")
 
     completed = subprocess.run(
-        [_sys.executable, str(copy), "--help"],
+        [
+            _sys.executable,
+            str(copy),
+            "--backup-root",
+            str(tmp_path),
+            "--change-ref",
+            "GH-1",
+        ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_credential_free_env(PYTHONPATH=str(SCRIPTS_ROOT)),
     )
-    # 가드가 없으면 조용히 성공한다 — exit 0인데 usage가 없다.
+    # 가드가 없으면 **조용히 성공한다** — exit 0에 출력 0. 이것이 공용에서 본 증상이다.
     assert completed.returncode == 0, completed.stderr or ""
-    assert "usage:" not in (completed.stdout or "")
+    assert not (completed.stdout or "").strip()
+    assert not (completed.stderr or "").strip()
