@@ -3,13 +3,30 @@ import { page, toIso } from './format.js'
 import { AUDIT_EVENT_TYPES, AUDIT_LOGS } from '../../features/analytics/mock/auditLogs.js'
 import { NL_INITIAL_HISTORY, NL_QUERIES, NL_REJECTS } from '../../features/analytics/mock/queries.js'
 
-// POST /analytics/query — 응답: question·sql·columns·rows(dict[])·row_count·metric·metric_result·group_by·visualization·latency_ms
-// 기록을 남겨 멱등하지 않으므로 GET 이 아니다. LLM 최대 2회 시도를 감당하도록 요청별 timeout 을 늘린다.
+// POST /analytics/query — 응답은 API v3 canonical(AnalysisQueryResponse):
+//   generated_sql·columns·rows·row_count·metric·metric_result·group_by·visualization
+//   ·is_valid·is_rejected·reject_reason·error_msg·latency_ms·nl_query_log_id
+// mock 데이터는 v2 시절 필드명(sql·rejected·reason)이므로 canonical 로 정규화해
+// 화면은 항상 한 가지 계약만 본다.
+// 기록을 남겨 멱등하지 않으므로 GET 이 아니다. LLM 최대 2회 시도(self-correction)를
+// 감당하도록 요청별 timeout 을 늘린다.
+const toCanonicalQuery = (d) =>
+  d == null
+    ? null
+    : {
+        ...d,
+        generated_sql: d.generated_sql ?? d.sql ?? null,
+        is_rejected: d.is_rejected ?? d.rejected ?? false,
+        reject_reason: d.reject_reason ?? d.reason ?? null,
+        error_msg: d.error_msg ?? null,
+      }
+
 export function postQuery(question) {
-  if (USE_MOCK) return mockResponse(NL_QUERIES[question] ?? NL_REJECTS[question] ?? null)
+  if (USE_MOCK)
+    return mockResponse(NL_QUERIES[question] ?? NL_REJECTS[question] ?? null).then(toCanonicalQuery)
   return apiClient
     .post('/analytics/query', { question }, { timeout: ANALYTICS_QUERY_TIMEOUT_MS })
-    .then((response) => response.data)
+    .then((response) => toCanonicalQuery(response.data))
 }
 
 // POST /analytics/validate — 응답: valid·normalized_sql?·reason·checks[]

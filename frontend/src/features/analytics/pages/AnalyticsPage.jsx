@@ -94,35 +94,58 @@ function AnalyticsPage() {
     setEditing(false)
     setValidation(null)
     setVerifyNotice(null)
-    postQuery(query).then((d) => {
-      // mock에 없는 질문: 이력에 남기지 않고 안내 카드로 예시 칩 사용 유도
-      if (!d) {
-        setPhase('unknown')
-        return
-      }
-      after(400, () => {
-        if (d.rejected) {
-          setRejected(d)
-          setPhase('rejected')
-          pushHistory({ question: query, ok: false, row_count: 0, latency_ms: d.latency_ms, reason: d.reason })
-        } else {
-          setDef(d)
-          setSqlText(d.sql)
-          setPhase('run')
-          verify(d.sql, false)
-          after(800, () => {
-            setPhase('done')
+    postQuery(query)
+      .then((d) => {
+        // mock 모드에서 준비되지 않은 질문: 안내 카드로 예시 칩 사용 유도
+        if (!d) {
+          setPhase('unknown')
+          return
+        }
+        after(400, () => {
+          if (d.is_rejected) {
+            setRejected(d)
+            setPhase('rejected')
             pushHistory({
               question: query,
-              ok: true,
-              row_count: d.row_count ?? (d.rows ?? []).length,
+              ok: false,
+              row_count: 0,
               latency_ms: d.latency_ms,
-              reason: null,
+              reason: d.reject_reason,
             })
-          })
-        }
+          } else if (d.error_msg) {
+            // 검증은 통과했으나 DB 실행에서 실패 — 거부와 구분되는 상태
+            setDef(d)
+            setSqlText(d.generated_sql ?? '')
+            setPhase('exec_error')
+            pushHistory({
+              question: query,
+              ok: false,
+              row_count: 0,
+              latency_ms: d.latency_ms,
+              reason: d.error_msg,
+            })
+          } else {
+            setDef(d)
+            setSqlText(d.generated_sql ?? '')
+            setPhase('run')
+            verify(d.generated_sql, false)
+            after(800, () => {
+              setPhase('done')
+              pushHistory({
+                question: query,
+                ok: true,
+                row_count: d.row_count ?? (d.rows ?? []).length,
+                latency_ms: d.latency_ms,
+                reason: null,
+              })
+            })
+          }
+        })
       })
-    })
+      .catch(() => {
+        // 네트워크·422 등 HTTP 수준 실패 — 로딩에 갇히지 않게 명시 상태로
+        setPhase('failed')
+      })
   }
 
   const reverify = () => {
@@ -132,7 +155,7 @@ function AnalyticsPage() {
 
   const cancelEdit = () => {
     setEditing(false)
-    if (def) setSqlText(def.sql)
+    if (def) setSqlText(def.generated_sql ?? '')
   }
 
   // rows 는 객체 배열이다 — 정렬 키는 컬럼명으로 접근한다
@@ -155,7 +178,7 @@ function AnalyticsPage() {
     return `${missing.join(', ')}는 기간 내 알람 0건이라 결과에 나오지 않는다`
   }, [def])
 
-  const hasSql = (phase === 'run' || phase === 'done') && def && !def.rejected
+  const hasSql = (phase === 'run' || phase === 'done' || phase === 'exec_error') && def && !def.is_rejected
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -237,17 +260,17 @@ function AnalyticsPage() {
                   !
                 </span>
                 <div className="text-base font-extrabold text-red">
-                  실행할 수 없는 요청입니다 — {reasonText(rejected.reason)}
+                  실행할 수 없는 요청입니다 — {reasonText(rejected.reject_reason)}
                 </div>
                 <Badge variant="t-red" className="ml-auto">
-                  {reasonCode(rejected.reason)}
+                  {reasonCode(rejected.reject_reason)}
                 </Badge>
               </div>
-              {/* 서버가 준 reason 을 그대로 인용한다 (문구 창작 금지) */}
+              {/* 서버가 준 reject_reason 을 그대로 인용한다 (문구 창작 금지) */}
               <div className="mt-3 rounded-lg border border-tint-red-line bg-row-red px-3.5 py-3 text-[13px] text-ink">
                 요청 &quot;<span className="font-mono">{rejected.question ?? activeQ}</span>&quot; 은{' '}
-                <span className="font-mono font-bold text-red">{rejected.reason}</span> 사유로 SQL을 생성하지
-                않았습니다.
+                <span className="font-mono font-bold text-red">{rejected.reject_reason}</span> 사유로 SQL을
+                실행하지 않았습니다.
               </div>
               <div className="mt-2.5 flex items-center gap-3 text-xs text-g1">
                 <span>구문 오류는 1회 자동 교정을 시도하지만, 정책 위반은 즉시 거부됩니다</span>
@@ -257,6 +280,27 @@ function AnalyticsPage() {
           )}
 
           {phase === 'run' && <PhaseCard label="쿼리 실행 중…" note="2/2 단계 · kosa_readonly" />}
+
+          {phase === 'exec_error' && def && (
+            <Card className="animate-[om-fadein_.25s] p-5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="text-base font-extrabold text-navy">검증은 통과했으나 실행에 실패했습니다</div>
+                <Badge variant="outline" className="ml-auto">DB_ERROR</Badge>
+              </div>
+              {/* 정책 거부(적색)와 구분되는 중립 스타일 — 서버 error_msg 를 그대로 인용 */}
+              <div className="mt-3 rounded-lg border border-line bg-soft px-3.5 py-3 font-mono text-[13px] text-ink">
+                {def.error_msg}
+              </div>
+              <div className="mt-2.5 text-right font-mono text-xs text-g1">{(def.latency_ms ?? 0).toLocaleString()}ms</div>
+            </Card>
+          )}
+
+          {phase === 'failed' && (
+            <EmptyState
+              title="요청을 보내지 못했습니다"
+              description="백엔드 서버(8010) 상태와 네트워크를 확인한 뒤 다시 시도해 주세요."
+            />
+          )}
 
           {phase === 'done' && (
             <NlqResultTabs
