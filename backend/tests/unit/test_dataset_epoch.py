@@ -63,6 +63,9 @@ REMAINING_MANIFESTS = {
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
 # 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.
+# 예정: V5-CM-2.6 묶음 3(공용 적용)이 postgres_profile.<database>.json 3종을 추가한다.
+#       묶음 1(코드·격리)에서는 marker 파일을 만들지 않으므로 지금 넣으면
+#       아래 실물 대조가 깨진다.
 REMAINING_MARKERS = {
     "rag_load.kosa_agent.json",
     "rag_load.kosa_agent_e2e.json",

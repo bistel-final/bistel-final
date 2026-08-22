@@ -16,6 +16,16 @@ POSTGRES_IMAGE = (
     "postgres@sha256:"
     "cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685"
 )
+#: RAG(`vector` 확장)가 필요한 격리 검증용 image.
+#: 순정 `postgres:16`에는 pgvector가 없다. 교육생 배포패키지①의 compose가
+#: `pgvector/pgvector:pg16`을 쓰므로 같은 계열을 digest로 고정한다.
+#: server는 같은 16.15지만 client version 문자열에 Debian 접미사가 붙어
+#: backup client pin과는 다르다 — backup은 계속 `POSTGRES_BACKUP_CLIENT_IMAGES`를 쓴다.
+POSTGRES_RAG_IMAGE = (
+    "pgvector/pgvector@sha256:"
+    "ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b"
+)
+
 POSTGRES_USER = "postgres"
 LABEL_KEY = "fdc.rehearsal.run"
 COMMAND_TIMEOUT_SECONDS = 20.0
@@ -108,12 +118,16 @@ def _command(
         raise RehearsalError("DOCKER_TIMEOUT") from exc
 
 
-def _pull_image(*, runner: CommandRunner) -> None:
-    """`docker run` 전에 image를 확보한다. 이미 있으면 즉시 반환한다."""
+def _pull_image(*, runner: CommandRunner, image: str = POSTGRES_IMAGE) -> None:
+    """`docker run` 전에 image를 확보한다. 이미 있으면 즉시 반환한다.
+
+    `image`는 `V5-CM-2.6` backup adapter가 server major와 exact 일치하는 client image를
+    쓰기 위한 keyword-only seam이다. 기본값은 기존 상수 그대로다.
+    """
 
     try:
         completed = _command(
-            ("docker", "pull", "--quiet", POSTGRES_IMAGE),
+            ("docker", "pull", "--quiet", image),
             runner=runner,
             timeout=PULL_TIMEOUT_SECONDS,
         )
@@ -279,13 +293,19 @@ def _wait_ready(
 def one_off_postgres(
     *,
     database: str,
+    image: str = POSTGRES_IMAGE,
     command_runner: CommandRunner = subprocess.run,
     host_probe: HostProbe = _default_host_probe,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     ready_timeout: float = READY_TIMEOUT_SECONDS,
 ) -> Iterator[RehearsalEndpoint]:
-    """Start, verify, yield, and fully remove an owned PostgreSQL container."""
+    """Start, verify, yield, and fully remove an owned PostgreSQL container.
+
+    `image`는 keyword-only이고 기본값은 `POSTGRES_IMAGE`다. pull·run이 같은 값을 쓰며
+    timeout·container·anonymous volume cleanup은 이 함수 하나가 계속 소유한다
+    (`V5-CM-2.6` 계획 §5.2 · 6차 계획리뷰).
+    """
 
     token = f"fdc-rehearsal-{secrets.token_hex(6)}"
     password = secrets.token_urlsafe(32)
@@ -296,7 +316,7 @@ def one_off_postgres(
     primary: BaseException | None = None
     cleanup_required = False
     try:
-        _pull_image(runner=command_runner)
+        _pull_image(runner=command_runner, image=image)
         try:
             completed = _command(
                 (
@@ -314,7 +334,7 @@ def one_off_postgres(
                     f"POSTGRES_DB={database}",
                     "-p",
                     "127.0.0.1::5432",
-                    POSTGRES_IMAGE,
+                    image,
                 ),
                 runner=command_runner,
                 child_env=child_env,
