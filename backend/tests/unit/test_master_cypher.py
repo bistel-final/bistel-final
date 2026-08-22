@@ -31,6 +31,16 @@ FINAL_MEMBER_PATH = "project/repository/sample/ontology/master.cypher"
 FINAL_MEMBER_SHA256 = (
     "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
 )
+FINAL_GRAPH_FINGERPRINT = (
+    "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
+)
+FINAL_LEGACY_FINGERPRINT = (
+    "1da0087e7a7c02182e446a220f173d8819071a6353d818926e6ff2acf9e7278f"
+)
+FINAL_CORRECTED_SHA256 = (
+    "0fb10c62b5443efdbc794c55e91df2589261872ff99f9ddb5ab31b30679a84f4"
+)
+FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "master.cypher"
 
 EXPECTED_LABEL_DISTRIBUTION = {
     "Area": 2,
@@ -53,114 +63,13 @@ EXPECTED_RELATIONSHIP_TYPE_DISTRIBUTION = {
 }
 
 
-def _final_source() -> str:
-    statements = ["MATCH (n) DETACH DELETE n;"]
-    statements.extend(
-        [
-            "MERGE (:Area {area_id:'Photo', area_name:'Photolithography'});",
-            "MERGE (:Area {area_id:'Etch', area_name:'Etching'});",
-        ]
-    )
-
-    for recipe_no in range(1, 5):
-        recipe_id = f"RECIPE{recipe_no:02d}"
-        statements.append(
-            f"MERGE (:Recipe {{recipe_id:'{recipe_id}', "
-            f"recipe_name:'{recipe_id}'}});"
-        )
-        for step_no in range(1, 3):
-            statements.append(
-                f"MERGE (rs:RecipeStep {{recipe_id:'{recipe_id}', "
-                f"recipe_step_no:{step_no}}}) "
-                f"SET rs.step_name='{recipe_id}-Step-{step_no}' "
-                f"WITH rs MATCH (r:Recipe {{recipe_id:'{recipe_id}'}}) "
-                "MERGE (rs)-[:STEP_OF]->(r);"
-            )
-
-    process_steps = [
-        ("CT-PHOTO", "Critical Photo", "Photo"),
-        ("CT-ETCH", "Critical Etch", "Etch"),
-    ]
-    for step_id, step_name, area_id in process_steps:
-        statements.append(
-            f"MERGE (ps:ProcessStep {{step_id:'{step_id}'}}) "
-            f"SET ps.step_name='{step_name}' "
-            f"WITH ps MATCH (a:Area {{area_id:'{area_id}'}}) "
-            "MERGE (ps)-[:IN_AREA]->(a);"
-        )
-    statements.append(
-        "MATCH (a:ProcessStep {step_id:'CT-PHOTO'}) "
-        "MATCH (b:ProcessStep {step_id:'CT-ETCH'}) "
-        "MERGE (a)-[:NEXT_STEP]->(b);"
-    )
-
-    models = [
-        ("PH-MODEL", "Photo Model", "Photo", "CT-PHOTO"),
-        ("ET-MODEL", "Etch Model", "Etch", "CT-ETCH"),
-    ]
-    for model_code, model_name, area_id, _step_id in models:
-        statements.append(
-            f"MERGE (m:EquipmentModel {{model_code:'{model_code}'}}) "
-            f"SET m.model_name='{model_name}' "
-            f"WITH m MATCH (a:Area {{area_id:'{area_id}'}}) "
-            "MERGE (m)-[:IN_AREA]->(a);"
-        )
-
-    equipment_by_step: dict[str, list[str]] = {"CT-PHOTO": [], "CT-ETCH": []}
-    chamber_by_area: dict[str, list[str]] = {"Photo": [], "Etch": []}
-    for prefix, model_code, step_id, area_id in [
-        ("PH", "PH-MODEL", "CT-PHOTO", "Photo"),
-        ("ET", "ET-MODEL", "CT-ETCH", "Etch"),
-    ]:
-        for equipment_no in range(1, 4):
-            equipment_id = f"EQP-{prefix}-{equipment_no:02d}"
-            equipment_by_step[step_id].append(equipment_id)
-            statements.append(
-                f"MERGE (e:Equipment {{equipment_id:'{equipment_id}'}}) "
-                f"SET e.equipment_name='{equipment_id}' "
-                f"WITH e MATCH (m:EquipmentModel {{model_code:'{model_code}'}}) "
-                "MERGE (e)-[:OF_MODEL]->(m);"
-            )
-            statements.append(
-                f"MATCH (e:Equipment {{equipment_id:'{equipment_id}'}}) "
-                f"MATCH (ps:ProcessStep {{step_id:'{step_id}'}}) "
-                "MERGE (e)-[:PERFORMS]->(ps);"
-            )
-            for chamber_suffix in ("A", "B"):
-                chamber_id = f"CH-{prefix}-{equipment_no:02d}-{chamber_suffix}"
-                chamber_by_area[area_id].append(chamber_id)
-                statements.append(
-                    f"MERGE (c:Chamber {{chamber_id:'{chamber_id}'}}) "
-                    f"SET c.chamber_name='{chamber_id}' "
-                    f"WITH c MATCH (e:Equipment {{equipment_id:'{equipment_id}'}}) "
-                    "MERGE (c)-[:PART_OF]->(e);"
-                )
-
-    parameters_by_area = {
-        "Photo": ["PHOTO-CD", "PHOTO-OVERLAY", "PHOTO-DOSE", "PHOTO-FOCUS"],
-        "Etch": ["ETCH-RATE", "ETCH-UNIFORMITY", "ETCH-DEPTH", "ETCH-CD"],
-    }
-    for parameter_ids in parameters_by_area.values():
-        for parameter_id in parameter_ids:
-            statements.append(
-                f"MERGE (:Parameter {{parameter_id:'{parameter_id}', "
-                f"parameter_name:'{parameter_id}'}});"
-            )
-    for area_id, parameter_ids in parameters_by_area.items():
-        for parameter_id in parameter_ids:
-            for chamber_id in chamber_by_area[area_id]:
-                statements.append(
-                    f"MATCH (p:Parameter {{parameter_id:'{parameter_id}'}}) "
-                    f"MATCH (c:Chamber {{chamber_id:'{chamber_id}'}}) "
-                    "MERGE (p)-[:MEASURED_ON]->(c);"
-                )
-
-    return "\n".join(statements) + "\n"
+def _actual_source() -> str:
+    return FIXTURE_PATH.read_text(encoding="utf-8-sig")
 
 
 @pytest.fixture(scope="module")
 def parsed():
-    return master.parse_master_cypher(_final_source())
+    return master.parse_master_cypher(_actual_source())
 
 
 def test_final_source_contract_constants() -> None:
@@ -168,6 +77,13 @@ def test_final_source_contract_constants() -> None:
     assert master.SOURCE_ARCHIVE_SHA256 == FINAL_ARCHIVE_SHA256
     assert master.SOURCE_MEMBER_PATH == FINAL_MEMBER_PATH
     assert master.SOURCE_MEMBER_SHA256 == FINAL_MEMBER_SHA256
+
+
+def test_fixture_matches_registered_master_cypher_member_hash() -> None:
+    source = _actual_source()
+    assert master.sha256_bytes(source.replace("\n", "\r\n").encode()) == (
+        FINAL_MEMBER_SHA256
+    )
 
 
 def test_registered_artifact_counts_and_first_relation_id(parsed) -> None:
@@ -201,7 +117,7 @@ def test_corrected_artifact_never_contains_destructive_statement(parsed) -> None
 def test_relationship_ids_are_unique_and_deterministic(parsed) -> None:
     relation_ids = [item.relation_id for item in parsed.relationships]
     assert len(relation_ids) == len(set(relation_ids)) == 85
-    assert master.parse_master_cypher(_final_source()).corrected_text == (
+    assert master.parse_master_cypher(_actual_source()).corrected_text == (
         parsed.corrected_text
     )
 
@@ -269,7 +185,7 @@ def test_unknown_label_and_missing_business_key_are_rejected() -> None:
     ],
 )
 def test_forbidden_seed_statements_are_rejected(bad_statement: str) -> None:
-    source = _final_source().replace(
+    source = _actual_source().replace(
         "MERGE (:Area {area_id:'Photo', area_name:'Photolithography'});",
         bad_statement,
     )
@@ -278,7 +194,7 @@ def test_forbidden_seed_statements_are_rejected(bad_statement: str) -> None:
 
 
 def test_forbidden_words_in_string_and_comment_are_not_substring_matches() -> None:
-    source = _final_source().replace(
+    source = _actual_source().replace(
         "area_name:'Photolithography'});",
         "area_name:'DELETE DROP'}); // CALL db.info()",
     )
@@ -287,10 +203,9 @@ def test_forbidden_words_in_string_and_comment_are_not_substring_matches() -> No
 
 
 def test_unsupported_relationship_statement_is_rejected() -> None:
-    source = _final_source().replace(
-        "MATCH (p:Parameter {parameter_id:'ETCH-CD'}) "
-        "MATCH (c:Chamber "
-        "{chamber_id:'CH-ET-03-B'}) MERGE (p)-[:MEASURED_ON]->(c);",
+    source = _actual_source().replace(
+        "MATCH (s:Parameter {parameter_id:'ET_ESC'}),"
+        "(c:Chamber {chamber_id:'EQP06-PM2'}) MERGE (s)-[:MEASURED_ON]->(c);",
         "MATCH (a:Area {area_id:'Photo'}) MATCH (b:Area {area_id:'Etch'}) "
         "MERGE (a)<-[:UNSUPPORTED]-(b);",
     )
@@ -311,6 +226,8 @@ def test_graph_fingerprint_is_independent_of_input_order(parsed) -> None:
 
 
 def test_expected_and_legacy_fingerprint_are_distinct(parsed) -> None:
+    assert master.graph_fingerprint(parsed) == FINAL_GRAPH_FINGERPRINT
+    assert master.graph_fingerprint(parsed, legacy=True) == FINAL_LEGACY_FINGERPRINT
     assert master.graph_fingerprint(parsed) != master.graph_fingerprint(
         parsed, legacy=True
     )
@@ -322,6 +239,9 @@ def test_graph_manifest_is_exact_and_canonical(parsed) -> None:
     assert expected["dataset_epoch"] == FINAL_EPOCH
     assert expected["source_archive_sha256"] == FINAL_ARCHIVE_SHA256
     assert expected["source_member_sha256"] == FINAL_MEMBER_SHA256
+    assert expected["corrected_cypher_sha256"] == FINAL_CORRECTED_SHA256
+    assert expected["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
+    assert expected["expected_legacy_fingerprint_sha256"] == FINAL_LEGACY_FINGERPRINT
     assert expected["node_count"] == 44
     assert expected["relationship_count"] == 85
     assert expected["label_distribution"] == EXPECTED_LABEL_DISTRIBUTION
@@ -380,7 +300,7 @@ def test_wrong_archive_is_rejected_before_parse(tmp_path: Path) -> None:
     archive = tmp_path / "wrong.zip"
     epoch = tmp_path / "dataset-epoch.json"
     with zipfile.ZipFile(archive, "w") as bundle:
-        bundle.writestr(FINAL_MEMBER_PATH, _final_source())
+        bundle.writestr(FINAL_MEMBER_PATH, _actual_source())
     _write_epoch(
         epoch,
         archive_sha256=FINAL_ARCHIVE_SHA256,
@@ -397,7 +317,7 @@ def test_source_member_hash_mismatch_is_rejected(
     archive = tmp_path / "source.zip"
     epoch = tmp_path / "dataset-epoch.json"
     with zipfile.ZipFile(archive, "w") as bundle:
-        bundle.writestr(FINAL_MEMBER_PATH, _final_source())
+        bundle.writestr(FINAL_MEMBER_PATH, _actual_source())
     archive_sha256 = master.sha256_file(archive)
     monkeypatch.setattr(master, "SOURCE_ARCHIVE_SHA256", archive_sha256)
     _write_epoch(
