@@ -2857,9 +2857,10 @@ def test_the_cli_smoke_env_carries_no_credential() -> None:
     env = _credential_free_env()
     assert not [k for k in env if _is_credential(k)]
     assert env["PYTHONIOENCODING"] == "utf-8"
-    # 남겨야 하는 것은 남는다.
+    # 남겨야 하는 것은 남는다. Windows `os.environ`은 키를 대문자로 정규화하므로
+    # 대소문자를 구분하지 않고 본다.
     if os.name == "nt":  # pragma: no cover - Windows 전용 분기
-        assert "SystemRoot" in env
+        assert any(k.upper() == "SYSTEMROOT" for k in env)
 
 
 @pytest.mark.windows_contract
@@ -2887,11 +2888,15 @@ def test_cli_scripts_actually_run_as_entrypoints(script: str) -> None:
         text=True,
         env=_credential_free_env(),
     )
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip(), "진입점이 불리지 않아 출력이 비었다"
-    assert "usage:" in completed.stdout
+    # `capture_output`이라도 플랫폼에 따라 `None`이 올 수 있어 정규화한다. 실패 시
+    # 원인을 보려면 stderr가 메시지에 있어야 한다.
+    out = completed.stdout or ""
+    err = completed.stderr or ""
+    assert completed.returncode == 0, err
+    assert out.strip(), f"진입점이 불리지 않아 출력이 비었다 · stderr={err[:400]}"
+    assert "usage:" in out, out[:400]
     for flag in ("--backup-root", "--change-ref"):
-        assert flag in completed.stdout, flag
+        assert flag in out, flag
 
 
 @pytest.mark.windows_contract
@@ -2918,5 +2923,5 @@ def test_a_module_without_a_guard_would_be_caught(tmp_path: Path) -> None:
         env=_credential_free_env(PYTHONPATH=str(SCRIPTS_ROOT)),
     )
     # 가드가 없으면 조용히 성공한다 — exit 0인데 usage가 없다.
-    assert completed.returncode == 0
-    assert "usage:" not in completed.stdout
+    assert completed.returncode == 0, completed.stderr or ""
+    assert "usage:" not in (completed.stdout or "")
