@@ -15,7 +15,8 @@ from app.knowledge.graph_query import (
     GraphQueryRepository,
     load_graph_revision,
 )
-from app.knowledge.service import GraphService
+from app.knowledge.service import EquipmentContext, GraphService
+from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
 REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
 
@@ -192,6 +193,109 @@ def test_relation_id_is_required_for_returned_relationships() -> None:
         assert "relation_id" in str(exc)
     else:
         raise AssertionError("missing relation_id must fail fast")
+
+
+def test_get_equipment_context_tool_returns_common_success_contract(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> EquipmentContext:
+            assert chamber_id == "EQP01-PM1"
+            return EquipmentContext(
+                equipment=EquipmentNode(
+                    equipment_id="EQP01",
+                    equipment_name="Photo Scanner 01",
+                    model_code="PH-9000",
+                    area_id="photo",
+                    step_id="CT-PHOTO",
+                ),
+                area=AreaNode(area_id="photo", area_name="Photolithography"),
+                step=ProcessStepNode(step_id="CT-PHOTO", step_name="Photo"),
+                sibling_chambers=[],
+                adjacent_steps=[],
+                parameters=[],
+                relations=[
+                    GraphRelationRef(
+                        relation_id="REL-1",
+                        relation_type="PART_OF",
+                        from_label="Chamber",
+                        from_business_id="chamber_id=s:EQP01-PM1",
+                        to_label="Equipment",
+                        to_business_id="equipment_id=s:EQP01",
+                    )
+                ],
+                graph_revision=REVISION,
+            )
+
+    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
+
+    assert result.ok is True
+    assert result.reason == ""
+    assert result.equipment is not None
+    assert result.equipment.equipment_id == "EQP01"
+    assert result.graph_revision == REVISION
+    assert result.relations[0].relation_id == "REL-1"
+
+
+def test_get_equipment_context_tool_returns_not_found(monkeypatch: Any) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> None:
+            assert chamber_id == "missing"
+            return None
+
+    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "missing"})
+
+    assert result.ok is False
+    assert result.reason == "NOT_FOUND: chamber_id=missing"
+    assert result.equipment is None
+    assert result.graph_revision is None
+    assert result.relations == []
+
+
+def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> None:
+            raise TimeoutError("neo4j read timed out")
+
+    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
+
+    assert result.ok is False
+    assert result.reason == "TIMEOUT: neo4j read timed out"
+    assert result.equipment is None
+
+
+def test_get_equipment_context_tool_returns_dependency_failure(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> None:
+            raise RuntimeError("marker invalid")
+
+    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
+
+    assert result.ok is False
+    assert result.reason == "DEPENDENCY_ERROR: marker invalid"
+    assert result.equipment is None
 
 
 class _Driver:
