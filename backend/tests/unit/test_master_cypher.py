@@ -393,14 +393,19 @@ def test_wrong_archive_is_rejected_before_parse(tmp_path: Path) -> None:
         master.load_registered_source(archive, epoch_path=epoch)
 
 
-def test_source_member_hash_mismatch_is_rejected(tmp_path: Path) -> None:
+def test_source_member_hash_mismatch_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     archive = tmp_path / "source.zip"
     epoch = tmp_path / "dataset-epoch.json"
     with zipfile.ZipFile(archive, "w") as bundle:
         bundle.writestr(FINAL_MEMBER_PATH, _final_source())
+    archive_sha256 = master.sha256_file(archive)
+    monkeypatch.setattr(master, "SOURCE_ARCHIVE_SHA256", archive_sha256)
     _write_epoch(
         epoch,
-        archive_sha256=master.sha256_file(archive),
+        archive_sha256=archive_sha256,
         member_sha256="0" * 64,
     )
     with pytest.raises(master.SourceGuardError, match="master.cypher"):
