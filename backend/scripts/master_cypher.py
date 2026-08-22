@@ -27,13 +27,13 @@ DATASET_EPOCH_PATH = BOOTSTRAP_ROOT / "dataset-epoch.json"
 CORRECTED_CYPHER_PATH = BOOTSTRAP_ROOT / "master_graph.cypher"
 GRAPH_MANIFEST_PATH = BOOTSTRAP_ROOT / "manifests" / "neo4j.graph.json"
 
-DATASET_EPOCH = "kosa_0813"
-SOURCE_MEMBER_PATH = "kosa_0813/클린데이터셋/neo4j/master.cypher"
+DATASET_EPOCH = "fdc_final_20260818"
+SOURCE_MEMBER_PATH = "project/repository/sample/ontology/master.cypher"
 SOURCE_ARCHIVE_SHA256 = (
-    "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96"
+    "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3"
 )
 SOURCE_MEMBER_SHA256 = (
-    "b565035859a808d1a15a74f8df616bb43afd7ae2a2565839f7910ad07a89c35d"
+    "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
 )
 CORRECTION_VERSION = "graph-v1"
 HASH_ALGORITHM = "sha256-canonical-json-nfc-codepoint-v1"
@@ -53,8 +53,9 @@ BUSINESS_KEYS: dict[str, tuple[str, ...]] = {
     "Parameter": ("parameter_id",),
 }
 
-EXPECTED_NODE_COUNT = 38
-EXPECTED_RELATIONSHIP_COUNT = 81
+EXPECTED_SEED_STATEMENT_COUNT = 99
+EXPECTED_NODE_COUNT = 44
+EXPECTED_RELATIONSHIP_COUNT = 85
 EXPECTED_LABEL_DISTRIBUTION = {
     "Area": 2,
     "Chamber": 12,
@@ -62,8 +63,8 @@ EXPECTED_LABEL_DISTRIBUTION = {
     "EquipmentModel": 2,
     "Parameter": 8,
     "ProcessStep": 2,
-    "Recipe": 2,
-    "RecipeStep": 4,
+    "Recipe": 4,
+    "RecipeStep": 8,
 }
 EXPECTED_RELATIONSHIP_TYPE_DISTRIBUTION = {
     "IN_AREA": 4,
@@ -72,7 +73,7 @@ EXPECTED_RELATIONSHIP_TYPE_DISTRIBUTION = {
     "OF_MODEL": 6,
     "PART_OF": 12,
     "PERFORMS": 6,
-    "STEP_OF": 4,
+    "STEP_OF": 8,
 }
 
 GRAPH_MANIFEST_KEYS = frozenset(
@@ -466,8 +467,11 @@ def _strip_line_comment(line: str) -> str:
 
 def parse_master_cypher(source: str) -> ParsedMasterCypher:
     statements = split_statements(source)
-    if len(statements) != 94:
-        raise CypherGrammarError("등록 source 문장 수가 94가 아닙니다")
+    expected_statement_count = EXPECTED_SEED_STATEMENT_COUNT + 1
+    if len(statements) != expected_statement_count:
+        raise CypherGrammarError(
+            f"등록 source 문장 수가 {expected_statement_count}가 아닙니다"
+        )
     destructive = statements[0]
     if destructive != "MATCH (n) DETACH DELETE n;":
         raise CypherGrammarError("선두 destructive 문이 등록 계약과 다릅니다")
@@ -498,7 +502,7 @@ def parse_master_cypher(source: str) -> ParsedMasterCypher:
             nodes.append(node)
 
     if len(nodes) != EXPECTED_NODE_COUNT:
-        raise GraphContractError("source node 수가 38이 아닙니다")
+        raise GraphContractError(f"source node 수가 {EXPECTED_NODE_COUNT}이 아닙니다")
     identities = [_node_identity(node) for node in nodes]
     if len(set(identities)) != len(identities):
         raise GraphContractError("business key가 중복된 node가 있습니다")
@@ -548,7 +552,9 @@ def parse_master_cypher(source: str) -> ParsedMasterCypher:
         corrected.append(_inject_relation_id(statement, relation) + ";")
 
     if len(relationships) != EXPECTED_RELATIONSHIP_COUNT:
-        raise GraphContractError("source relationship 수가 81이 아닙니다")
+        raise GraphContractError(
+            f"source relationship 수가 {EXPECTED_RELATIONSHIP_COUNT}이 아닙니다"
+        )
     relation_ids = [relation.relation_id for relation in relationships]
     tuples = [relation.canonical_tuple for relation in relationships]
     if len(set(relation_ids)) != len(relation_ids) or len(set(tuples)) != len(tuples):
@@ -629,14 +635,14 @@ def load_registered_source(
     if not isinstance(epoch, dict):
         raise SourceGuardError("dataset epoch 등록부 형식이 잘못됐습니다")
     archive = epoch.get("archive")
-    inventory = epoch.get("file_inventory")
     if (
         epoch.get("dataset_epoch") != DATASET_EPOCH
         or not isinstance(archive, dict)
         or archive.get("sha256") != SOURCE_ARCHIVE_SHA256
-        or not isinstance(inventory, list)
     ):
         raise SourceGuardError("dataset epoch가 현재 source 계약과 다릅니다")
+
+    inventory = _load_registered_inventory(epoch, epoch_path)
     registered = [
         item
         for item in inventory
@@ -654,6 +660,43 @@ def load_registered_source(
     if sha256_bytes(member) != SOURCE_MEMBER_SHA256:
         raise SourceGuardError("master.cypher member SHA-256이 등록값과 다릅니다")
     return member, epoch
+
+
+def _load_registered_inventory(
+    epoch: Mapping[str, Any], epoch_path: Path
+) -> Sequence[Mapping[str, Any]]:
+    inventory = epoch.get("file_inventory")
+    if isinstance(inventory, list):
+        return inventory
+
+    intake_artifact = epoch.get("intake_artifact")
+    if not isinstance(intake_artifact, str):
+        raise SourceGuardError("dataset epoch 등록부에 source inventory가 없습니다")
+    raw_intake_path = Path(intake_artifact)
+    if raw_intake_path.is_absolute():
+        intake_path = raw_intake_path
+    else:
+        repo_relative = REPOSITORY_ROOT / raw_intake_path
+        intake_path = (
+            repo_relative
+            if repo_relative.is_file()
+            else epoch_path.parent / raw_intake_path
+        )
+    intake_path = intake_path.resolve()
+    if not intake_path.is_file() or intake_path.is_symlink():
+        raise SourceGuardError("final ZIP intake artifact를 안전하게 읽을 수 없습니다")
+    try:
+        intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SourceGuardError("final ZIP intake artifact를 읽을 수 없습니다") from exc
+    if (
+        not isinstance(intake, dict)
+        or intake.get("declared_target_epoch") != epoch.get("dataset_epoch")
+        or intake.get("archive") != epoch.get("archive")
+        or not isinstance(intake.get("selected_members"), list)
+    ):
+        raise SourceGuardError("final ZIP intake artifact가 epoch와 다릅니다")
+    return intake["selected_members"]
 
 
 def parse_registered_archive(
