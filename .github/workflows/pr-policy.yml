@@ -144,6 +144,11 @@ jobs:
     name: Schema rehearsal container
     runs-on: ubuntu-latest
 
+    env:
+      # 최종 ZIP이 붙어 있는 release tag. **비밀이 아니라 repo variable이다** — 값 자체는
+      # 태그 이름일 뿐이고, private asset 다운로드 권한은 `GITHUB_TOKEN`이 가진다.
+      FINAL_ARCHIVE_RELEASE: ${{ vars.MENTOR_FINAL_ARCHIVE_RELEASE }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -179,10 +184,9 @@ jobs:
       # `pgvector/pgvector:pg16`(digest 고정)이 필요하다 — 순정 postgres:16에는
       # `vector` 확장이 없어 RAG 보존 검증을 할 수 없다.
       #
-      # **최종 ZIP은 저장소에 없다.** secret으로 받은 경우에만 `MENTOR_FINAL_ARCHIVE`를
-      # 설정하고, 그때는 skip 없이 통과해야 한다. 지정하지 않으면 3-target E2E는
-      # 실행되지 않으며 그 사실이 아래 단계 이름과 요약에 드러난다
-      # (구현리뷰 14차 필수 2).
+      # **최종 ZIP(34MB)은 저장소에 담지 않는다.** epoch 정본은 파일이 아니라
+      # `infra/bootstrap/dataset-epoch.json`의 SHA-256 pin이고, 실물은 private release
+      # asset으로 받는다.
       - name: Prove container contracts that need no final archive
         working-directory: backend
         run: >-
@@ -190,14 +194,48 @@ jobs:
           tests/unit/test_transition_e2e_container.py
           -k "not three_targets"
 
+      # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
+      # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
+      # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).
+      #
+      # 태그가 지정되지 않으면 이 단계가 건너뛰어지고 아래 경고 단계가 그 사실을
+      # annotation과 job summary로 남긴다. 회색 skip은 신호가 아니다.
+      - name: Fetch the final archive
+        if: ${{ env.FINAL_ARCHIVE_RELEASE != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          target="${RUNNER_TEMP}/project.zip"
+          gh release download "${FINAL_ARCHIVE_RELEASE}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern 'project.zip' \
+            --output "${target}"
+          # hash 대조는 테스트의 `assert_archive_is_pinned()`가 한다. 다른 ZIP을 붙여도
+          # 여기서 통과하고 거기서 실패한다.
+          echo "MENTOR_FINAL_ARCHIVE=${target}" >> "${GITHUB_ENV}"
+
       - name: Prove the three-target transition with the actual final archive
         if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
         working-directory: backend
-        env:
-          MENTOR_FINAL_ARCHIVE: ${{ env.MENTOR_FINAL_ARCHIVE }}
         run: >-
           python -m pytest -q -m container
           tests/unit/test_transition_e2e_container.py
           -k three_targets
           -p no:randomly
           --no-header -rA
+
+      - name: Warn that the three-target transition is unproven
+        if: ${{ env.MENTOR_FINAL_ARCHIVE == '' }}
+        run: |
+          echo "::warning title=3-target 전환 E2E 미검증::MENTOR_FINAL_ARCHIVE가 없어 production entrypoint 3-target 회귀를 실행하지 못했다. repo variable MENTOR_FINAL_ARCHIVE_RELEASE에 최종 ZIP이 붙은 release tag를 설정하라."
+          {
+            echo "### ⚠️ 3-target 전환 E2E 미검증"
+            echo
+            echo "\`test_production_entrypoints_transition_three_targets\`를 실행하지 못했다."
+            echo "backup CLI·transition CLI를 **둘 다 production \`main()\`으로** 완주시키는"
+            echo "유일한 회귀이며, 재개·no-op·closure가 모두 그 안에 있다."
+            echo
+            echo "활성화: repo variable \`MENTOR_FINAL_ARCHIVE_RELEASE\` = 최종 \`project.zip\`이"
+            echo "asset으로 붙은 release tag."
+          } >> "${GITHUB_STEP_SUMMARY}"
