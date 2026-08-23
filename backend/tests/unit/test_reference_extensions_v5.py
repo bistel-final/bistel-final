@@ -4191,10 +4191,10 @@ class _FakeDatabase:
         if "CREATE TABLE" in sql and v5.R03_TABLE in sql:
             # DDL이 돌면 catalog가 final이 된다. 그 뒤 조회는 final을 돌려준다.
             self.state = "final"
-        if sql == v5.COMMIT_RECORD_READ_SQL:
-            return [{"comment": self.overrides.get("commit_record")}]
         if sql == v5.ADVISORY_UNLOCK_SQL:
             return [{"pg_advisory_unlock": self.overrides.get("unlock", True)}]
+        if sql == v5.ADVISORY_LOCK_SQL:
+            return [{"pg_try_advisory_lock": self.overrides.get("lock", True)}]
         if sql == v5.ISOLATION_SQL:
             return [
                 {
@@ -4623,18 +4623,22 @@ def test_the_content_digest_covers_base_nine_only() -> None:
     assert "if name in BASE_TABLE_NAMES:" in source
 
 
-def test_the_lock_is_released_even_when_commit_fails(
+def test_a_failed_commit_is_an_unknown_outcome(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """session lock이라 pooled connection에 그대로 남는다(필수 6)."""
+    """**commit 실패를 "DB 미변경"으로 단정하지 않는다**(구현리뷰 12차 필수 5).
+
+    COMMIT은 성공했는데 응답이 유실됐을 수 있다. `ABORTED`를 쓰면 DB는 final인데
+    artifact는 재적용 대상으로 표시된다.
+    """
 
     fake = _FakeDatabase()
     _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
 
     def boom() -> None:
-        raise RuntimeError("commit 실패")
+        raise RuntimeError("commit 응답 유실")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(v5.ReferenceV5Error) as caught:
         v5.apply_to_target(
             fake,
             database="kosa_agent",
@@ -4644,11 +4648,12 @@ def test_the_lock_is_released_even_when_commit_fails(
             commit=boom,
             rollback=fake.rollback,
         )
+    assert caught.value.reason_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert caught.value.exit_code == v5.EXIT_CONFIRM_REQUIRED
+    # lock은 놓았고 receipt는 `STARTED` 그대로다 — 사람이 `--verify`로 결정한다.
     assert fake.seen[-1] == v5.ADVISORY_UNLOCK_SQL
-    assert (
-        v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))["status"]
-        == "ABORTED"
-    )
+    receipt = v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))
+    assert receipt["status"] == "STARTED"
 
 
 def test_an_artifact_failure_after_commit_is_recovery_required(
@@ -4921,104 +4926,121 @@ def test_a_success_path_unlock_failure_is_not_hidden(
     assert fake.committed == 1
 
 
-def test_the_commit_record_is_written_inside_the_transaction(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """DB commit과 원자적으로 묶여야 복구 근거가 된다(필수 5)."""
+# ---------------------------------------------------------------------------
+# 12차 필수 보완 회귀
+# ---------------------------------------------------------------------------
 
-    fake = _FakeDatabase()
-    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
-    _apply(fake, tmp_path)
-    record_index = next(
-        i for i, sql in enumerate(fake.seen) if sql.startswith("COMMENT ON SCHEMA")
+
+def test_the_module_never_writes_outside_its_owned_objects() -> None:
+    """`COMMENT ON SCHEMA public`은 CM-3.1 소유 밖이다(구현리뷰 12차 필수 1)."""
+
+    source = (
+        REPOSITORY_ROOT / "backend" / "scripts" / "apply_reference_extensions_v5.py"
+    ).read_text(encoding="utf-8")
+    # 실행 statement에 없어야 한다. 왜 안 쓰는지는 주석에 남아 있다.
+    executable = "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
     )
-    assert record_index < len(fake.seen) - 1  # commit 이전 statement다
-    assert fake.committed == 1
+    assert "COMMENT ON SCHEMA" not in executable
+    assert "COMMIT_RECORD" not in executable
+    assert not hasattr(v5, "recover_receipt")
+    assert "recover-receipt" not in v5.CLI_MODES
 
 
-def test_the_commit_record_carries_the_identity() -> None:
-    payload = {
-        **_committed_receipt(),
-        "route": "successor",
-    }
-    text = v5.commit_record_text(payload)
-    assert text.startswith(v5.COMMIT_RECORD_PREFIX)
-    import json
+def test_the_recovery_guidance_is_documented() -> None:
+    """DB record 대신 수동 Gate로 남겼다는 것이 코드에 있어야 한다."""
 
-    record = json.loads(text[len(v5.COMMIT_RECORD_PREFIX) :])
-    for key in v5.POST_COMMIT_IDENTITY_KEYS:
-        assert record[key] == payload[key]
-    assert record["database"] == "kosa_agent"
+    assert "--verify" in v5.RECOVERY_GUIDANCE
 
 
-def test_a_commit_record_never_carries_a_secret() -> None:
-    payload = {**_committed_receipt(), "change_ref": "postgresql://u:p@h/db"}
+def test_the_advisory_lock_never_waits() -> None:
+    """blocking `pg_advisory_lock()`은 무제한 대기한다(구현리뷰 12차 필수 2)."""
+
+    assert "pg_try_advisory_lock" in v5.ADVISORY_LOCK_SQL
+    assert "pg_advisory_lock(" not in v5.ADVISORY_LOCK_SQL
+
+
+def test_a_busy_target_stops_with_zero_writes(tmp_path: Path) -> None:
+    """다른 실행이 잡고 있으면 쓰기 0으로 끝난다(계획 §10)."""
+
+    fake = _FakeDatabase(lock=False)
     with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.commit_record_text(payload)
-    assert caught.value.reason_code == "CONTRACT_SENSITIVE_VALUE"
+        _apply(fake, tmp_path)
+    assert caught.value.reason_code == "TARGET_BUSY"
+    assert caught.value.exit_code == v5.EXIT_CONFIRM_REQUIRED
+    assert fake.committed == 0
+    assert not [s for s in fake.seen if s.lstrip().upper().startswith("DROP ")]
+    assert not list(tmp_path.iterdir())
 
 
-def test_recover_receipt_needs_a_commit_record(tmp_path: Path) -> None:
-    """record가 없으면 commit이 안 된 것이다 — 복구가 아니라 재적용 대상이다(필수 5)."""
+def test_verify_sets_a_lock_timeout_before_locking() -> None:
+    """timeout 없이 `SHARE`를 잡으면 무한 대기한다(구현리뷰 12차 필수 2)."""
 
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.recover_receipt(
-            _FakeDatabase(state="final"),
-            database="kosa_agent",
-            confirm_target="kosa_agent",
-            change_ref="GH-110",
-            artifact_root=tmp_path,
-        )
-    assert caught.value.reason_code == "COMMIT_RECORD_MISSING"
-
-
-def test_recover_receipt_refuses_a_foreign_record(tmp_path: Path) -> None:
-    record = v5.commit_record_text(
-        {**_committed_receipt(database="kosa_agent_e2e"), "route": "successor"}
+    fake = _FakeDatabase(state="final")
+    v5.verify_target(
+        fake,
+        database="kosa_agent",
+        confirm_target="kosa_agent",
+        require_final_dataset=False,
     )
-    fake = _FakeDatabase(state="final", commit_record=record)
+    timeout_index = next(i for i, sql in enumerate(fake.seen) if "lock_timeout" in sql)
+    first_lock = next(i for i, sql in enumerate(fake.seen) if "IN SHARE MODE" in sql)
+    assert timeout_index < first_lock
+
+
+def test_a_busy_verify_reports_target_busy() -> None:
+    class _Busy(_FakeDatabase):
+        def __call__(self, sql: str, params: Any = None) -> list[dict[str, Any]]:
+            if "IN SHARE MODE" in sql:
+                raise RuntimeError("lock timeout")
+            return super().__call__(sql, params)
+
     with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.recover_receipt(
-            fake,
+        v5.verify_target(
+            _Busy(state="final"),
             database="kosa_agent",
             confirm_target="kosa_agent",
-            change_ref="GH-110",
-            artifact_root=tmp_path,
+            require_final_dataset=False,
         )
-    assert caught.value.reason_code == "COMMIT_RECORD_MISMATCH"
+    assert caught.value.reason_code == "TARGET_BUSY"
 
 
-def test_recover_receipt_refuses_when_already_committed(tmp_path: Path) -> None:
-    path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
-    v5.write_artifact(path, _committed_receipt())
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.recover_receipt(
-            _FakeDatabase(state="final"),
-            database="kosa_agent",
-            confirm_target="kosa_agent",
-            change_ref="GH-110",
-            artifact_root=tmp_path,
-        )
-    assert caught.value.reason_code == "RECEIPT_ALREADY_COMMITTED"
+# ---------------------------------------------------------------------------
+# platform 경계 (구현리뷰 12차 권장 1)
+# ---------------------------------------------------------------------------
 
 
-def test_recover_receipt_is_a_cli_mode() -> None:
-    assert "recover-receipt" in v5.CLI_MODES
-    assert v5.assert_single_mode(["recover-receipt"]) == "recover-receipt"
+@pytest.mark.windows_contract
+def test_an_artifact_write_survives_the_platform(tmp_path: Path) -> None:
+    """`mkstemp → fsync → chmod → os.replace`가 실제로 도는지 본다.
+
+    디렉터리 fsync는 POSIX에서만 하고, 0600도 POSIX 의미다 — Windows ACL은 같지 않다.
+    그래도 **쓰기·덮어쓰기 자체**는 양쪽에서 동작해야 한다(구현리뷰 12차 권장 1).
+    """
+
+    import os
+
+    path = tmp_path / "nested" / v5.marker_name("kosa_agent", "GH-110")
+    first = v5.write_artifact(path, _marker())
+    assert path.is_file()
+    assert v5.read_artifact(path)["status"] == "COMMITTED"
+
+    # 기존 파일 덮어쓰기 — Windows에서 `os.rename`이면 여기서 실패한다.
+    second = v5.write_artifact(path, _marker(view_rows=192, r03_rows=3))
+    assert second != first
+    assert v5.read_artifact(path)["r03_rows"] == 3
+    # 임시 파일이 남지 않는다.
+    assert [p.name for p in path.parent.iterdir()] == [path.name]
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == v5.ARTIFACT_FILE_MODE
 
 
-def test_the_commit_record_statement_escapes_quotes() -> None:
-    """`COMMENT ON SCHEMA`는 파라미터를 받지 않아 리터럴로 만든다."""
+@pytest.mark.windows_contract
+def test_the_artifact_name_contract_holds_on_every_platform() -> None:
+    """경로 조각 검사는 platform과 무관하다."""
 
-    text = v5.COMMIT_RECORD_PREFIX + '{"a":"it' "'" 's"}'
-    statement = v5.commit_record_statement(text)
-    assert statement.startswith("COMMENT ON SCHEMA public IS '")
-    assert "it''s" in statement
-    assert statement.endswith("'")
-
-
-@pytest.mark.parametrize("bad", ["v5_cm_3_1_commit:{}\n", "not-a-record"])
-def test_a_malformed_commit_record_is_refused(bad: str) -> None:
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.commit_record_statement(bad)
-    assert caught.value.reason_code == "COMMIT_RECORD_MALFORMED"
+    assert v5.receipt_name("kosa_agent", "GH-110").endswith(".json")
+    for bad in ("../escape", "a/b", "a\\b"):
+        with pytest.raises(v5.ReferenceV5Error) as caught:
+            v5.receipt_name("kosa_agent", bad)
+        assert caught.value.reason_code == "ARTIFACT_NAME_UNSAFE"

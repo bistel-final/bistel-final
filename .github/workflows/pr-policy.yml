@@ -112,6 +112,14 @@ jobs:
           backend/tests/unit/test_rehearsal_recovery.py
           -m windows_contract
 
+      # V5-CM-3.1 artifact 저장은 platform 경계를 탄다 — 디렉터리 fsync는 POSIX 전용이고
+      # `os.replace`는 Windows에서 기존 파일을 덮기 위한 선택이다(구현리뷰 12차 권장 1).
+      - name: Verify V5 artifact write contract on Windows
+        run: >-
+          python -m pytest -q
+          backend/tests/unit/test_reference_extensions_v5.py
+          -m windows_contract
+
       # 아래 설치는 위 세 step **뒤**에 둔다. `V5-CM-2.5`가 세운
       # "windows_contract는 pytest만으로 통과" 계약을 CI 수준에서도 지키기 위해서다
       # (계획리뷰 3차 권장 1). 버전은 backend/requirements.txt와 exact 일치한다.
@@ -194,6 +202,15 @@ jobs:
           tests/unit/test_transition_e2e_container.py
           -k "not three_targets"
 
+      # V5-CM-3.1 격리 회귀. archive 없이 도는 것들만 여기서 돌린다 — 최종 dataset이
+      # 필요한 것은 아래 fetch 뒤 step이 맡는다(구현리뷰 12차 필수 4).
+      - name: Prove V5 reference extension contracts
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_reference_extensions_v5_container.py
+          -rs --no-header
+
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
       # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
       # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).
@@ -225,16 +242,27 @@ jobs:
           -p no:randomly
           --no-header -rA
 
+      - name: Prove the V5 final-dataset E2E with the actual final archive
+        if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_reference_extensions_v5_container.py
+          -p no:randomly
+          --no-header -rA
+
       - name: Warn that the three-target transition is unproven
         if: ${{ env.MENTOR_FINAL_ARCHIVE == '' }}
         run: |
           echo "::warning title=3-target 전환 E2E 미검증::MENTOR_FINAL_ARCHIVE가 없어 production entrypoint 3-target 회귀를 실행하지 못했다. repo variable MENTOR_FINAL_ARCHIVE_RELEASE에 최종 ZIP이 붙은 release tag를 설정하라."
           {
-            echo "### ⚠️ 3-target 전환 E2E 미검증"
+            echo "### ⚠️ 최종 dataset E2E 미검증 (CM-2.6 3-target · CM-3.1 0/189·3/192)"
             echo
-            echo "\`test_production_entrypoints_transition_three_targets\`를 실행하지 못했다."
-            echo "backup CLI·transition CLI를 **둘 다 production \`main()\`으로** 완주시키는"
-            echo "유일한 회귀이며, 재개·no-op·closure가 모두 그 안에 있다."
+            echo "- CM-2.6 \`test_production_entrypoints_transition_three_targets\`"
+            echo "  backup·transition CLI를 둘 다 production \`main()\`으로 완주시키는 유일한 회귀"
+            echo "- CM-3.1 최종 ZIP 9 CSV 기반 0/189·3/192·TRACE 138·SUMMARY 51 실증"
+            echo
+            echo "archive 없이 도는 회귀는 위 step에서 실행됐다(skip 목록은 \`-rs\` 출력)."
             echo
             echo "활성화: repo variable \`MENTOR_FINAL_ARCHIVE_RELEASE\` = 최종 \`project.zip\`이"
             echo "asset으로 붙은 release tag."

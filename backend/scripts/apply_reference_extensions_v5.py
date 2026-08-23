@@ -1722,7 +1722,10 @@ TARGET_PROFILE: Mapping[str, str] = MappingProxyType(
 ADVISORY_LOCK_NAMESPACE = 0x5643_4D32  # "VCM2"
 #: **CM-2.6과 bind 문법이 다르다.** 그쪽은 SQLAlchemy `:name`, 여기는 이 모듈의
 #: `execute(sql, params)` 계약에 맞춘 psycopg `%(name)s`다. namespace·key 값은 같다.
-ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock(%(namespace)s, %(key)s)"
+#: **기다리지 않는다.** blocking `pg_advisory_lock()`은 다른 session이 잡고 있으면
+#: 무제한 대기한다 — 계획 §10의 "lock 실패 → `TARGET_BUSY`, 쓰기 0"이 성립하지 않는다
+#: (구현리뷰 12차 필수 2).
+ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock(%(namespace)s, %(key)s)"
 ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock(%(namespace)s, %(key)s)"
 
 
@@ -1755,7 +1758,6 @@ CLI_MODES: tuple[str, ...] = (
     "rehearse",
     "apply",
     "verify",
-    "recover-receipt",
     "recover-marker",
 )
 
@@ -2654,7 +2656,9 @@ def apply_to_target(
         status="STARTED",
         when=_now(clock),
     )
-    execute(ADVISORY_LOCK_SQL, lock_params)
+    if not _acquired(execute(ADVISORY_LOCK_SQL, lock_params)):
+        # 다른 실행이 같은 target을 잡고 있다. **쓰기 0으로 끝난다.**
+        raise ReferenceV5Error("TARGET_BUSY", EXIT_CONFIRM_REQUIRED)
     released = False
     try:
         result = _apply_locked(
@@ -2683,6 +2687,15 @@ def apply_to_target(
     if not released:
         raise ReferenceV5Error("ADVISORY_UNLOCK_FAILED", EXIT_MISMATCH)
     return result
+
+
+def _acquired(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """`pg_try_advisory_lock()`의 boolean 결과."""
+
+    if not rows:
+        return False
+    value = next(iter(rows[0].values()))
+    return value is True or value == 1
 
 
 def _release_lock(execute: Any, lock_params: Mapping[str, Any]) -> bool:
@@ -2800,27 +2813,16 @@ def _apply_locked(
     # **commit 직전, 같은 transaction 안에서** commit identity를 DB에 남긴다.
     # 그래야 receipt 쓰기가 실패해도 복구 근거가 남는다(구현리뷰 11차 필수 5).
     try:
-        execute(commit_record_statement(commit_record_text({**started, **identity})))
-    except BaseException:
-        rollback()
-        with contextlib_suppress():
-            write_artifact(
-                receipt_path,
-                {**started, "status": "ABORTED", "recorded_at": _now(clock)},
-            )
-        raise
-
-    try:
         commit()
-    except BaseException:
-        # commit 자체가 실패하면 아직 DB는 바뀌지 않았다.
-        rollback()
-        with contextlib_suppress():
-            write_artifact(
-                receipt_path,
-                {**started, "status": "ABORTED", "recorded_at": _now(clock)},
-            )
-        raise
+    except BaseException as exc:
+        # **commit 실패를 "DB 미변경"으로 단정하지 않는다**(구현리뷰 12차 필수 5).
+        #
+        # COMMIT은 성공했는데 응답이 유실됐을 수 있다. 그 상태에서 `ABORTED`를 쓰면
+        # DB는 final인데 artifact는 재적용 대상으로 표시된다. `STARTED`를 그대로 두고
+        # 사람이 `--verify`로 결정한다.
+        with contextlib_suppress_all():
+            rollback()
+        raise ReferenceV5Error("COMMIT_OUTCOME_UNKNOWN", EXIT_CONFIRM_REQUIRED) from exc
 
     committed = {
         **started,
@@ -2854,113 +2856,19 @@ def _apply_locked(
 #: commit 뒤 receipt 쓰기가 실패하면 디스크에는 `STARTED`만 남고, `recover-marker`는
 #: exact `COMMITTED` receipt만 받으므로 복구 경로가 없었다(구현리뷰 11차 필수 5).
 #: schema comment는 **같은 transaction 안에서** 쓰이므로 DB commit과 원자적으로 묶인다.
-COMMIT_RECORD_PREFIX = "v5_cm_3_1_commit:"
-COMMIT_RECORD_READ_SQL = (
-    "SELECT obj_description(n.oid, 'pg_namespace') AS comment FROM pg_namespace n "
-    "WHERE n.nspname = 'public'"
+#: **commit record를 DB에 남기지 않는다**(구현리뷰 12차 필수 1).
+#:
+#: 11차에서 `COMMENT ON SCHEMA public`에 commit identity를 썼는데, 그건 CM-3.1 소유
+#: 밖의 공용 object에 대한 영구 mutation이었다. 기존 comment를 덮고, 다른 도구와 하나의
+#: slot을 공유하며, excluded fingerprint를 잰 **뒤** 써서 "소유 밖 변경 0건" 검증까지
+#: 우회했다.
+#:
+#: DB 안 record가 필요하면 소유 table·retention·ACL·다중 migration key를 상위 계약에
+#: 먼저 설계해야 한다. 이 Task는 범위를 늘리지 않고 **수동 복구 Gate**로 남긴다.
+RECOVERY_GUIDANCE = (
+    "commit 여부는 새 connection에서 `--verify`로 확인한다. "
+    "final이면 receipt를 사람이 복원하고, 아니면 재적용 대상이다."
 )
-
-
-def commit_record_text(payload: Mapping[str, Any]) -> str:
-    """commit identity를 한 줄로 만든다. 민감 값은 애초에 자리가 없다."""
-
-    import json
-
-    record = {
-        key: payload[key]
-        for key in (
-            "database",
-            "profile",
-            "route",
-            "change_ref",
-            "migration_id",
-            "migration_bundle_sha256",
-            *POST_COMMIT_IDENTITY_KEYS,
-        )
-    }
-    assert_no_sensitive_values(record)
-    return COMMIT_RECORD_PREFIX + json.dumps(
-        record, sort_keys=True, separators=(",", ":")
-    )
-
-
-def commit_record_statement(text: str) -> str:
-    """`COMMENT ON SCHEMA`는 파라미터를 받지 않는다. 리터럴로 만든다.
-
-    내용은 우리가 만든 JSON이고 `assert_no_sensitive_values()`를 이미 거쳤다. 그래도
-    작은따옴표를 겹쳐 escape하고, 줄바꿈이 섞이면 거부한다 — 한 줄 계약이다.
-    """
-
-    if "\n" in text or "\r" in text:
-        raise ReferenceV5Error("COMMIT_RECORD_MALFORMED", EXIT_MISMATCH)
-    if not text.startswith(COMMIT_RECORD_PREFIX):
-        raise ReferenceV5Error("COMMIT_RECORD_MALFORMED", EXIT_MISMATCH)
-    escaped = text.replace("'", "''")
-    return f"COMMENT ON SCHEMA public IS '{escaped}'"
-
-
-def read_commit_record(execute: Any) -> dict[str, Any] | None:
-    """DB에 남은 commit identity를 읽는다. 없으면 `None`."""
-
-    import json
-
-    rows = execute(COMMIT_RECORD_READ_SQL)
-    comment = rows[0]["comment"] if rows else None
-    if not isinstance(comment, str) or not comment.startswith(COMMIT_RECORD_PREFIX):
-        return None
-    try:
-        record = json.loads(comment[len(COMMIT_RECORD_PREFIX) :])
-    except ValueError:
-        return None
-    return record if isinstance(record, dict) else None
-
-
-def recover_receipt(
-    execute: Any,
-    *,
-    database: str,
-    confirm_target: str | None,
-    change_ref: str,
-    artifact_root: Path,
-    clock: Any = None,
-) -> dict[str, Any]:
-    """DB 안의 commit record로 `COMMITTED` receipt를 다시 만든다(구현리뷰 11차 필수 5).
-
-    commit은 성공했는데 receipt 쓰기가 실패한 상태를 복구한다. record가 없으면 commit이
-    되지 않은 것이므로 복구가 아니라 재적용 대상이다.
-    """
-
-    assert_target_allowed(database, confirm_target=confirm_target)
-    path = artifact_root / receipt_name(database, change_ref)
-    existing = read_artifact(path) if path.exists() else None
-    if existing is not None and existing.get("status") == "COMMITTED":
-        raise ReferenceV5Error("RECEIPT_ALREADY_COMMITTED", EXIT_USAGE)
-    record = read_commit_record(execute)
-    if record is None:
-        raise ReferenceV5Error("COMMIT_RECORD_MISSING", EXIT_CONFIRM_REQUIRED)
-    if record.get("database") != database or record.get("change_ref") != change_ref:
-        raise ReferenceV5Error("COMMIT_RECORD_MISMATCH", EXIT_MISMATCH)
-    verified = verify_target(
-        execute,
-        database=database,
-        confirm_target=confirm_target,
-        route=str(record.get("route") or "successor"),
-    )
-    for key in POST_COMMIT_IDENTITY_KEYS:
-        if record.get(key) != verified[key]:
-            raise ReferenceV5Error("COMMIT_RECORD_MISMATCH", EXIT_MISMATCH)
-    receipt = _artifact_base(
-        database=database,
-        profile=str(record["profile"]),
-        route=str(record["route"]),
-        change_ref=change_ref,
-        status="COMMITTED",
-        when=_now(clock),
-    )
-    receipt.update({key: record[key] for key in POST_COMMIT_IDENTITY_KEYS})
-    assert_receipt_contract(receipt)
-    write_artifact(path, receipt)
-    return receipt
 
 
 def read_row_counts(execute: Any) -> dict[str, int]:
@@ -3107,8 +3015,13 @@ def verify_target(
     resolved_route = route or (marker or {}).get("route") or "successor"
     mode = _security_mode_for(str(resolved_route))
     # 검사 중 live가 바뀌지 않도록 읽는 것들을 `SHARE`로 묶는다(구현리뷰 11차 필수 3).
-    for statement in share_lock_statements(profile):
-        execute(statement)
+    # **무한 대기하지 않는다** — timeout을 먼저 건다(구현리뷰 12차 필수 2).
+    execute(LOCK_TIMEOUT_SQL.replace("SET LOCAL", "SET"))
+    try:
+        for statement in share_lock_statements(profile):
+            execute(statement)
+    except Exception as exc:  # noqa: BLE001 - driver 예외 계층을 흡수한다
+        raise ReferenceV5Error("TARGET_BUSY", EXIT_CONFIRM_REQUIRED) from exc
     state = read_target_state(execute, profile=profile)
     if state["state"] != "V5_REFERENCE_FINAL":
         raise ReferenceV5Error("TARGET_STATE_UNSUPPORTED", EXIT_CONFIRM_REQUIRED)
@@ -3337,14 +3250,6 @@ def run_mode(execute: Any, connection: Any, args: Any, mode: str) -> dict[str, A
             marker=marker,
             require_final_dataset=require_final,
         )
-    if mode == "recover-receipt":
-        return recover_receipt(
-            execute,
-            database=args.database,
-            confirm_target=args.confirm_target,
-            change_ref=args.change_ref,
-            artifact_root=root,
-        )
     if mode == "recover-marker":
         return recover_marker(
             execute,
@@ -3379,7 +3284,7 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
         assert_target_allowed(args.database, confirm_target=args.confirm_target)
         if args.allow_non_final_dataset:
             assert_non_final_dataset_allowed(database=args.database, mode=mode)
-        if mode in {"apply", "rehearse", "recover-marker", "recover-receipt"}:
+        if mode in {"apply", "rehearse", "recover-marker"}:
             if not args.change_ref:
                 raise ReferenceV5Error("CHANGE_REF_REQUIRED", EXIT_USAGE)
             _safe_component(args.change_ref)

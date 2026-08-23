@@ -858,7 +858,6 @@ def test_every_contract_sql_runs_on_real_sqlalchemy(tmp_path: Path) -> None:
                         (v5.EXCLUDED_COLUMNS_SQL, {"names": names}),
                         (v5.EXCLUDED_CONSTRAINTS_SQL, {"names": names}),
                         (v5.EXCLUDED_INDEXES_SQL, {"names": names}),
-                        (v5.COMMIT_RECORD_READ_SQL, {}),
                         (v5.VIEW_BRANCH_SQL, {}),
                         (v5.VIEW_DUPLICATE_SQL, {}),
                     ):
@@ -869,60 +868,84 @@ def test_every_contract_sql_runs_on_real_sqlalchemy(tmp_path: Path) -> None:
                 engine.dispose()
 
 
-def test_a_lost_committed_receipt_is_recovered_from_the_db(tmp_path: Path) -> None:
-    """commit은 됐는데 receipt가 없는 상태를 DB record로 복구한다.
+def test_open_session_runs_end_to_end_on_a_container(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """`open_session()` **본체**를 실제 SQLAlchemy로 통과시킨다(구현리뷰 12차 필수 3).
 
-    구현리뷰 11차 필수 5.
+    `db_target`은 로컬 host를 막으므로 loader만 container target으로 바꾼다. URL 생성·
+    connect·identity·search_path·`_SessionOwner`는 그대로 production 경로다. local-host
+    guard 자체는 별도 회귀가 지킨다.
     """
 
-    with postgres.one_off_postgres(database="v5rcpt") as endpoint:
+    import json
+
+    import db_target
+
+    with postgres.one_off_postgres(database="v5open") as endpoint:
         connection, cursor = _target(endpoint, "kosa_agent", route="successor")
         with connection:
-            execute = _execute(cursor)
-            marker = _run(cursor, connection, tmp_path)
-            receipt_path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
-            marker_path = tmp_path / v5.marker_name("kosa_agent", "GH-110")
+            _run(cursor, connection, tmp_path)
 
-            # commit 뒤 receipt 쓰기가 실패한 상태를 만든다.
-            marker_path.unlink()
-            v5.write_artifact(
-                receipt_path,
+        target = db_target.BootstrapTarget(
+            host=endpoint.host,
+            port=endpoint.port,
+            username=endpoint.username,
+            password=endpoint.password,
+            database="kosa_agent",
+            profile="runtime",
+        )
+        monkeypatch.setattr(db_target, "load_bootstrap_target", lambda **kwargs: target)
+
+        import contextlib
+        import io
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = v5.main(
+                [
+                    "--verify",
+                    "--database",
+                    "kosa_agent",
+                    "--confirm-target",
+                    "kosa_agent",
+                ]
+            )
+        assert (code, stderr.getvalue().strip()) == (v5.EXIT_OK, "")
+        payload = json.loads(stdout.getvalue())
+        assert payload["mode"] == "verify"
+        assert payload["state"] == "V5_REFERENCE_FINAL"
+        assert payload["data_phase"] == "REFERENCE_EMPTY"
+
+
+def test_a_busy_target_is_refused_without_writing(tmp_path: Path) -> None:
+    """두 connection이 경쟁하면 뒤엣것이 **쓰기 0**으로 끝난다(구현리뷰 12차 필수 2)."""
+
+    import time
+
+    with postgres.one_off_postgres(database="v5busy") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        holder = _session(endpoint, "kosa_agent")
+        with connection, holder:
+            holder_cursor = holder.cursor()
+            holder_cursor.execute(
+                v5.ADVISORY_LOCK_SQL,
                 {
-                    **v5.read_artifact(receipt_path),
-                    "status": "STARTED",
-                    **dict.fromkeys(v5.POST_COMMIT_IDENTITY_KEYS),
+                    "namespace": v5.ADVISORY_LOCK_NAMESPACE,
+                    "key": v5.advisory_lock_key("kosa_agent"),
                 },
             )
+            assert holder_cursor.fetchone()[0] is True
 
-            # DB에는 commit record가 남아 있다.
-            record = v5.read_commit_record(execute)
-            assert record is not None
-            assert record["database"] == "kosa_agent"
+            started = time.monotonic()
+            with pytest.raises(v5.ReferenceV5Error) as caught:
+                _run(cursor, connection, tmp_path)
+            elapsed = time.monotonic() - started
 
-            restored = v5.recover_receipt(
-                execute,
-                database="kosa_agent",
-                confirm_target="kosa_agent",
-                change_ref="GH-110",
-                artifact_root=tmp_path,
-            )
-            assert restored["status"] == "COMMITTED"
-            for key in v5.POST_COMMIT_IDENTITY_KEYS:
-                assert restored[key] == marker[key]
-
-            # 이어서 marker까지 복구된다.
-            recovered = v5.recover_marker(
-                execute,
-                database="kosa_agent",
-                confirm_target="kosa_agent",
-                change_ref="GH-110",
-                artifact_root=tmp_path,
-            )
-            assert marker_path.is_file()
-            assert (
-                recovered["schema_signature_sha256"]
-                == marker["schema_signature_sha256"]
-            )
+        assert caught.value.reason_code == "TARGET_BUSY"
+        # **기다리지 않는다.** blocking lock이면 여기서 무한 대기했다.
+        assert elapsed < 5.0
+        assert not list(tmp_path.iterdir())
 
 
 def test_the_canonical_route_verifies_and_recovers(tmp_path: Path) -> None:
