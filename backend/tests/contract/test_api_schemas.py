@@ -761,6 +761,54 @@ class TestPublicInternalBoundary:
             with pytest.raises(ValidationError):
                 ApprovalItem(**base, status=internal.value)
 
+    @pytest.mark.parametrize(
+        ("model_path", "field", "public_enum"),
+        [
+            ("ApprovalDecisionRequest", "decision", "PublicApprovalDecision"),
+            ("ApprovalItem", "status", "PublicApprovalStatus"),
+            ("ActionDeliveryItem", "channel", "PublicDeliveryChannel"),
+        ],
+    )
+    def test_public_fields_are_annotated_with_the_public_enum(
+        self, model_path: str, field: str, public_enum: str
+    ) -> None:
+        """**값이 같아도 타입이 내부 Enum이면 경계가 회귀한 것이다.**
+
+        `Literal[ApprovalStatus.PENDING, …]`처럼 같은 3값을 내부 Enum 멤버로 구성하면
+        JSON은 똑같지만 field는 다시 내부 Enum에 묶인다. 동작 테스트로는 구분되지
+        않아 annotation identity로 고정한다(구현리뷰 1차 필수 1).
+        """
+
+        from app.agent import schemas as agent_schemas
+        from app.common import enums
+
+        model = getattr(agent_schemas, model_path)
+        expected = getattr(enums, public_enum)
+        annotation = model.model_fields[field].annotation
+        assert (
+            annotation is expected
+        ), f"{model_path}.{field}는 {public_enum}이어야 한다 (현재 {annotation})"
+        # 내부 Enum이 annotation 어디에도 섞이지 않는다.
+        internal = {enums.Decision, enums.ApprovalStatus, enums.DeliveryChannel}
+        assert not (set(getattr(annotation, "__args__", ())) & internal)
+        assert annotation not in internal
+
+    def test_public_enums_expose_exactly_the_documented_values(self) -> None:
+        """API v3가 정의한 공개 값 집합."""
+
+        from app.common import enums
+
+        assert {v.value for v in enums.PublicApprovalDecision} == {
+            "APPROVED",
+            "REJECTED",
+        }
+        assert {v.value for v in enums.PublicApprovalStatus} == {
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+        }
+        assert {v.value for v in enums.PublicDeliveryChannel} == {"EMAIL", "MES"}
+
     def test_delivery_item_rejects_the_internal_channel(self) -> None:
         """공개 channel은 `EMAIL|MES`다. `MES_MOCK`은 내부 값이다."""
 
