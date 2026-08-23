@@ -32,10 +32,19 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-#: `V5-B-1.1`은 **3개 DB 전부**를 대상으로 한다. 처음에는 runtime 2개만 열려 있어
-#: `kosa_text2sql`의 RAG 3 table이 구 epoch 형상(`document_corpus` + `corpus_revision`)
-#: 으로 남았다. 그 DB의 세 table은 모두 0행이라 교체에 데이터 손실이 없다.
-ALLOWED_RAG_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"})
+#: **schema 적용 대상 3 DB.** RAG 적재 대상 2 DB와 다르다.
+#:
+#: `kosa_text2sql`의 RAG 3 table은 구 epoch(PR #48) 형상이라 `V5-CM-1.8`이 요구하는
+#: evaluation 물리 inventory 13을 만들 수 없다. 그 하나를 열기 위한 **일회성 호환
+#: 보완**이며 `V5-B-1.1` 완료를 뜻하지 않는다. `PUBLIC` revoke·role GRANT·runner
+#: 정비는 B 담당 범위다.
+#:
+#: 적재·marker·fingerprint 대상은 `load_rag_documents.ALLOWED_RAG_DATABASES`와
+#: `postgres_transition.B_MANAGED_RAG_TARGETS`의 **2 DB**다. 여기에 맞추면 안 된다 —
+#: 이름만 같은 구 형상에 B의 fingerprint 산식을 돌리면 `UndefinedColumn`으로 죽는다.
+ALLOWED_RAG_DATABASES = frozenset(
+    {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
+)
 RAG_TABLES_TO_REPLACE = ("document_chunk", "document", "document_corpus")
 RAG_SCHEMA_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
@@ -74,9 +83,8 @@ class RagSchemaError(RuntimeError):
 
 def validate_rag_target(database: str) -> BootstrapTarget:
     if database not in ALLOWED_RAG_DATABASES:
-        raise TargetValidationError(
-            "RAG schema는 kosa_agent, kosa_agent_e2e만 허용합니다"
-        )
+        allowed = ", ".join(sorted(ALLOWED_RAG_DATABASES))
+        raise TargetValidationError(f"RAG schema는 {allowed}만 허용합니다")
     return load_bootstrap_target(database)
 
 
@@ -101,19 +109,15 @@ def inspect_rag_objects(connection: Any) -> dict[str, int]:
         if table not in existing:
             counts[table] = 0
             continue
-        count_row = (
-            connection.exec_driver_sql(f'SELECT count(*) AS row_count FROM "{table}"')
-            .mappings()
-            .one()
-        )
+        count_row = connection.exec_driver_sql(
+            f'SELECT count(*) AS row_count FROM "{table}"'
+        ).mappings().one()
         counts[table] = int(count_row["row_count"])
     return counts
 
 
 def apply_rag_schema(connection: Any) -> None:
-    for statement in [
-        part.strip() for part in RAG_SCHEMA_SQL.split(";") if part.strip()
-    ]:
+    for statement in [part.strip() for part in RAG_SCHEMA_SQL.split(";") if part.strip()]:
         connection.exec_driver_sql(statement)
 
 
@@ -170,26 +174,7 @@ def verify_rag_schema(connection: Any) -> None:
         raise RagSchemaError("document_corpus가 남아 있습니다")
 
 
-def assert_replaceable(counts: dict[str, int], *, allow_data_loss: bool) -> None:
-    """**행이 있는 table을 말없이 drop하지 않는다.**
-
-    이 runner는 세 table을 `DROP` 후 재생성한다. 적재가 끝난 DB에 실수로 겨누면
-    문서와 embedding이 사라진다 — `kosa_agent`에는 지금 `document` 3행 ·
-    `document_chunk` 25행이 있다. allowlist가 3개로 늘면서 오조작 여지도 함께 늘었다.
-
-    빈 table만 있으면 그대로 진행한다. 재적재를 의도했다면 `--allow-data-loss`로
-    명시한다.
-    """
-
-    populated = {name: n for name, n in sorted(counts.items()) if n}
-    if populated and not allow_data_loss:
-        raise RagSchemaError(
-            "행이 있는 RAG table을 교체하려면 --allow-data-loss가 필요합니다: "
-            + ", ".join(f"{name}={n}" for name, n in populated.items())
-        )
-
-
-def run_apply(*, database: str, allow_data_loss: bool = False) -> dict[str, Any]:
+def run_apply(*, database: str) -> dict[str, Any]:
     load_dotenv(REPOSITORY_ROOT / ".env")
     target = validate_rag_target(database)
     url = target.create_url()
@@ -200,7 +185,6 @@ def run_apply(*, database: str, allow_data_loss: bool = False) -> dict[str, Any]
             validate_connected_identity(connection, target)
             set_and_validate_public_search_path(connection)
             before = inspect_rag_objects(connection)
-            assert_replaceable(before, allow_data_loss=allow_data_loss)
             apply_rag_schema(connection)
             verify_rag_schema(connection)
             return {
@@ -226,11 +210,6 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=sorted(ALLOWED_RAG_DATABASES),
         help="오조작 방지를 위해 --database와 같은 값을 넣는다.",
     )
-    parser.add_argument(
-        "--allow-data-loss",
-        action="store_true",
-        help="행이 있는 RAG table을 교체한다. 재적재를 의도할 때만 쓴다.",
-    )
     args = parser.parse_args(argv)
     if args.database != args.confirm_target:
         raise RagSchemaError("--confirm-target과 --database가 다릅니다")
@@ -239,7 +218,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    result = run_apply(database=args.database, allow_data_loss=args.allow_data_loss)
+    result = run_apply(database=args.database)
     print(
         "rag_schema_applied "
         f"database={result['database']} "
