@@ -245,9 +245,7 @@ def test_the_corrected_producer_is_gone() -> None:
 
     parser = runner._parser()
     flags = {
-        action.option_strings[0]
-        for action in parser._actions
-        if action.option_strings
+        action.option_strings[0] for action in parser._actions if action.option_strings
     }
     assert "--register-manifests" not in flags
 

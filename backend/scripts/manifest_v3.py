@@ -977,9 +977,7 @@ def validate_cli_args(args: argparse.Namespace) -> str:
                 args.target,
             )
         ):
-            raise VerificationError(
-                "source-files에 DB 옵션을 사용할 수 없습니다"
-            )
+            raise VerificationError("source-files에 DB 옵션을 사용할 수 없습니다")
     elif artifact_type == "db_bootstrap":
         if any(
             value is None

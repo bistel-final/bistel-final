@@ -26,6 +26,7 @@ import apply_agent_runtime as agent_runtime
 import apply_reference_extensions as reference_extensions
 import bootstrap_base_schema as base_schema
 import bootstrap_neo4j_graph as neo4j_bootstrap
+import build_source_manifest_v4 as source_manifest_v4
 import intake_final_zip as intake
 import manifest_v3
 from db_target import (
@@ -91,6 +92,8 @@ PK_COLUMNS: dict[str, tuple[str, ...]] = {
     "summary_data": ("lot_hist_id", "parameter", "step_no"),
     "trace_alarm_history": ("alarm_id",),
 }
+#: `V5-CM-1.6`이 loader를 삭제한 stage. `V5-CM-1.8`이 `evaluation_reference`로 교체한다.
+EVALUATION_MOCK_STAGE = "evaluation_mock"
 IDENTIFIER_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
 READ_ONLY_PREFIXES = (
     "SELECT ",
@@ -185,7 +188,7 @@ def verify_files(
     1. archive 전체 SHA-256이 최종 pinned 값과 일치
     2. selected member 15개가 exact 집합·hash로 일치
     3. 재구성한 intake payload가 등록 `final-zip-intake.json`과 exact 일치
-    4. `dataset-epoch.json`의 archive SHA가 같은 값
+    4. `dataset-epoch.json`·`source-manifest-v4.json`의 epoch·archive SHA가 같은 값
     5. 쓰기·임시 artifact·DB connector 호출 0건
 
     `intake_final_zip`의 pure helper를 재사용한다. final profile manifest나 source
@@ -194,12 +197,15 @@ def verify_files(
     """
 
     # **`load_dataset_epoch()`을 거치지 않는다.** 그 loader의 v2 전환은 `V5-CM-1.8`
-    # 소관이고, 여기서 필요한 것은 archive SHA 3자 일치뿐이다(계획 §6.2-4).
+    # 소관이고, 여기서 필요한 것은 epoch·archive SHA 3자 일치뿐이다(계획 §6.2-4).
     epoch = _read_json(
         manifest_v3.DATASET_EPOCH_PATH, missing=manifest_v3.NotRegisteredError
     )
     registered = _read_json(
         intake.INTAKE_ARTIFACT_PATH, missing=manifest_v3.NotRegisteredError
+    )
+    source = _read_json(
+        source_manifest_v4.MANIFEST_V4_PATH, missing=manifest_v3.NotRegisteredError
     )
     scan = intake.read_archive(archive_path)
     rebuilt = intake.build_payload(scan)
@@ -208,18 +214,37 @@ def verify_files(
         raise manifest_v3.ArtifactMismatchError(
             "최종 ZIP이 등록 intake artifact와 다릅니다"
         )
-    if registered["archive"]["sha256"] != epoch["archive"]["sha256"]:
-        # epoch과 intake가 서로 다른 ZIP을 가리키면 어느 쪽도 정본이 아니다.
-        raise manifest_v3.ArtifactMismatchError(
-            "intake archive가 등록 epoch archive와 다릅니다"
-        )
+
+    # **3자 대조.** 둘만 맞으면 나머지 하나가 조용히 다른 ZIP을 가리킬 수 있다.
+    archive_sha = registered["archive"]["sha256"]
+    for value, label in (
+        (epoch["archive"]["sha256"], "epoch archive"),
+        (source["source_archive_sha256"], "source manifest archive"),
+    ):
+        if not manifest_v3.HEX_SHA256_PATTERN.fullmatch(str(value)):
+            raise manifest_v3.ManifestSchemaError(f"{label}가 SHA-256 형식이 아닙니다")
+        if value != archive_sha:
+            raise manifest_v3.ArtifactMismatchError(
+                f"intake archive가 {label}와 다릅니다"
+            )
+
+    declared = registered["declared_target_epoch"]
+    for value, label in (
+        (epoch["dataset_epoch"], "epoch dataset_epoch"),
+        (source["dataset_epoch"], "source manifest dataset_epoch"),
+    ):
+        if value != declared:
+            raise manifest_v3.ArtifactMismatchError(
+                f"intake epoch가 {label}와 다릅니다"
+            )
+
     if registered["selected_count"] != intake.SELECTED_MEMBER_COUNT:
         raise manifest_v3.ArtifactMismatchError("selected member 수가 계약과 다릅니다")
 
     details = {
         "artifact_type": registered["artifact_type"],
-        "dataset_epoch": epoch["dataset_epoch"],
-        "archive_sha256": registered["archive"]["sha256"],
+        "dataset_epoch": declared,
+        "archive_sha256": archive_sha,
         "selected_count": registered["selected_count"],
         "member_total": registered["member_total"],
     }
@@ -401,6 +426,30 @@ def verify_database(
 ) -> CheckResult:
     if database not in ALLOWED_DATABASES:
         raise manifest_v3.VerificationError("허용되지 않은 PostgreSQL database입니다")
+    if stage == EVALUATION_MOCK_STAGE and DATABASE_PROFILE[database] == "evaluation":
+        # **engine·target·epoch loader보다 앞이다**(계획 §6.3 · 구현리뷰 필수 1).
+        #
+        # `V5-CM-1.6`이 `load_evaluation_mock`을 삭제했다. 이 stage를 green으로 오인하지
+        # 않으면서 connector를 **0회** 호출한다. 뒤에 두면 CM-1.8이 epoch loader를 v2로
+        # 전환하는 순간 engine을 열게 된다.
+        #
+        # **profile까지 본다**(구현리뷰 권장 1). runtime DB에 evaluation 전용 stage를
+        # 넣은 호출은 폐기 통보가 아니라 원래의 "허용되지 않은 profile/stage 조합"
+        # 오류를 받아야 한다. stage 이름만 보면 그 입력 계약이 조용히 덮인다.
+        #
+        # stage 자체는 남긴다 — `final_manifest_blockers()`의
+        # `EVALUATION_MOCK_PINS_48_ACTION_ROWS`가 실제 공백을 세야 하기 때문이다.
+        # **`V5-CM-1.8`이 `evaluation_reference`를 등록하면 이 분기와 짝 테스트를 함께
+        # 제거한다.**
+        return CheckResult(
+            database,
+            STATUS_FAIL,
+            EXIT_MISMATCH,
+            {
+                "stage": stage,
+                "mismatches": [{"mismatch_kind": "EVALUATION_MOCK_RETIRED"}],
+            },
+        )
     profile = DATABASE_PROFILE[database]
     manifest_path = manifest_v3.resolve_bootstrap_manifest_path(profile, stage)
     registered = _read_json(manifest_path, missing=manifest_v3.NotRegisteredError)
@@ -555,15 +604,6 @@ def verify_database(
                     )
                 except reference_extensions.ReferenceExtensionError:
                     mismatches.append({"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"})
-            if stage == "evaluation_mock":
-                # `V5-CM-1.6`이 `load_evaluation_mock`을 삭제했다. 그 stage를 green으로
-                # 오인하지 않도록 **고정 mismatch**를 낸다(계획 §6.3).
-                #
-                # stage 자체는 남긴다 — `final_manifest_blockers()`의
-                # `EVALUATION_MOCK_PINS_48_ACTION_ROWS`가 실제 공백을
-                # 세야 하기 때문이다. **`V5-CM-1.8`이 `evaluation_reference`를
-                # 등록하면 이 분기와 짝 테스트를 함께 제거한다.**
-                mismatches.append({"mismatch_kind": "EVALUATION_MOCK_RETIRED"})
             if stage == "runtime_clean":
                 try:
                     runtime_sql, _ = agent_runtime.load_and_validate_sql()

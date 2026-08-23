@@ -424,10 +424,61 @@ def test_database_requires_explicit_registered_stage(
         )
 
 
-def test_evaluation_mock_stage_is_fail_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_runtime_database_still_rejects_an_evaluation_only_stage() -> None:
+    """**폐기 통보가 profile/stage 입력 계약을 덮지 않는다**(구현리뷰 권장 1).
+
+    `evaluation_mock`은 evaluation profile 전용이다. runtime DB에 그 stage를 넣은
+    호출은 "이 stage는 폐기됐다"가 아니라 원래의 조합 오류를 받아야 한다. 조기 분기가
+    stage 이름만 봤다면 이 입력이 `EVALUATION_MOCK_RETIRED`로 조용히 흡수된다.
+    """
+
+    with pytest.raises(manifest_v3.ManifestMetadataError):
+        verifier.verify_database(
+            "kosa_agent",
+            verifier.EVALUATION_MOCK_STAGE,
+            environ={},
+            engine_factory=lambda _: pytest.fail("DB connect must not run"),
+        )
+
+
+def _artifact_reader(
+    registered: dict,
+    *,
+    epoch: dict | None = None,
+    source: dict | None = None,
+):
+    """`_read_json`을 epoch·intake·source manifest 3자로 갈라 주는 fake.
+
+    기본값은 **셋이 모두 일치**하는 상태다. 인자로 넘긴 쪽만 어긋나게 만들어
+    "그 한 축이 없으면 통과하는가"를 각각 재현한다(계획 §6.2-4 · 구현리뷰 필수 2).
+    """
+
+    import build_source_manifest_v4 as source_manifest_v4
+
+    sha = registered["archive"]["sha256"]
+    declared = registered["declared_target_epoch"]
+    default_epoch = {"archive": {"sha256": sha}, "dataset_epoch": declared}
+    default_source = {"source_archive_sha256": sha, "dataset_epoch": declared}
+    table = {
+        manifest_v3.DATASET_EPOCH_PATH: epoch if epoch is not None else default_epoch,
+        source_manifest_v4.MANIFEST_V4_PATH: (
+            source if source is not None else default_source
+        ),
+    }
+
+    def _read(path, *, missing):
+        return table.get(path, registered)
+
+    return _read
+
+
+def test_evaluation_mock_stage_is_fail_closed() -> None:
     """`V5-CM-1.6`이 loader를 삭제했다 — 그 stage를 green으로 오인하지 않는다.
+
+    **connector를 한 번도 열지 않는다.** 분기가 epoch loader·target resolution
+    뒤에 있으면 `V5-CM-1.8`이 loader를 v2로 전환하는 순간 폐기 stage가 DB를
+    건드리게 된다(구현리뷰 필수 1). 그래서 실제 `verify_database()`를 호출해
+    mismatch 종류와 `engine_factory` 호출 0회를 함께 단언한다.
 
     stage 자체는 남는다. `final_manifest_blockers()`의
     `EVALUATION_MOCK_PINS_48_ACTION_ROWS`가 실제 공백을 세야 하기 때문이다.
@@ -435,14 +486,23 @@ def test_evaluation_mock_stage_is_fail_closed(
     제거한다**(계획 §6.3).
     """
 
-    source = (
-        Path(verifier.__file__).read_text(encoding="utf-8")
-        if hasattr(verifier, "__file__")
-        else ""
+    calls: list[object] = []
+
+    result = verifier.verify_database(
+        "kosa_text2sql",
+        verifier.EVALUATION_MOCK_STAGE,
+        environ={},
+        engine_factory=lambda target: calls.append(target),
     )
-    assert 'mismatches.append({"mismatch_kind": "EVALUATION_MOCK_RETIRED"})' in source
+
+    assert calls == []
+    assert result.status == verifier.STATUS_FAIL
+    assert result.exit_code == verifier.EXIT_MISMATCH
+    assert result.details["mismatches"] == [
+        {"mismatch_kind": "EVALUATION_MOCK_RETIRED"}
+    ]
     # 삭제된 loader를 import하지 않는다.
-    assert "import load_evaluation_mock" not in source
+    assert not hasattr(verifier, "load_evaluation_mock")
 
 
 def test_the_verifier_no_longer_registers_corrected_artifacts() -> None:
@@ -519,14 +579,74 @@ def test_files_only_rejects_an_archive_that_disagrees_with_the_epoch(
     monkeypatch.setattr(
         verifier,
         "_read_json",
-        lambda path, *, missing: (
-            {"archive": {"sha256": "1" * 64}, "dataset_epoch": "other"}
-            if path == manifest_v3.DATASET_EPOCH_PATH
-            else registered
+        _artifact_reader(
+            registered,
+            epoch={"archive": {"sha256": "1" * 64}, "dataset_epoch": "other"},
         ),
     )
 
     with pytest.raises(manifest_v3.ArtifactMismatchError, match="epoch archive"):
+        verifier.verify_files(archive_path=Path("unused.zip"))
+
+
+def test_files_only_rejects_a_source_manifest_that_drifted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**source manifest 하나만 어긋나도 거부한다.**
+
+    `source-manifest-v4.json`은 canonical CSV 9종의 정본 기록이다. intake와 epoch만
+    맞춰 보면 이 파일이 다른 ZIP을 가리키는 채로 통과한다 — 3자 대조가 필요한
+    이유다(구현리뷰 필수 2). epoch·intake는 일치시켜 이 축만 남긴다.
+    """
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
+    monkeypatch.setattr(
+        verifier,
+        "_read_json",
+        _artifact_reader(
+            registered,
+            source={
+                "source_archive_sha256": "2" * 64,
+                "dataset_epoch": registered["declared_target_epoch"],
+            },
+        ),
+    )
+
+    with pytest.raises(
+        manifest_v3.ArtifactMismatchError, match="source manifest archive"
+    ):
+        verifier.verify_files(archive_path=Path("unused.zip"))
+
+
+def test_files_only_rejects_a_source_manifest_from_another_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """archive SHA가 같아도 epoch 표기가 다르면 거부한다(구현리뷰 필수 2)."""
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
+    monkeypatch.setattr(
+        verifier,
+        "_read_json",
+        _artifact_reader(
+            registered,
+            source={
+                "source_archive_sha256": registered["archive"]["sha256"],
+                "dataset_epoch": "kosa_0813",
+            },
+        ),
+    )
+
+    with pytest.raises(
+        manifest_v3.ArtifactMismatchError, match="source manifest dataset_epoch"
+    ):
         verifier.verify_files(archive_path=Path("unused.zip"))
 
 
@@ -545,18 +665,7 @@ def test_files_only_rejects_a_wrong_selected_member_count(
     drifted["selected_count"] = intake.SELECTED_MEMBER_COUNT - 1
     monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
     monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: drifted)
-    monkeypatch.setattr(
-        verifier,
-        "_read_json",
-        lambda path, *, missing: (
-            {
-                "archive": {"sha256": registered["archive"]["sha256"]},
-                "dataset_epoch": registered["declared_target_epoch"],
-            }
-            if path == manifest_v3.DATASET_EPOCH_PATH
-            else drifted
-        ),
-    )
+    monkeypatch.setattr(verifier, "_read_json", _artifact_reader(drifted))
 
     with pytest.raises(manifest_v3.ArtifactMismatchError, match="selected member"):
         verifier.verify_files(archive_path=Path("unused.zip"))
