@@ -16,12 +16,13 @@
 다시 소비하게 되어 "동시 참조 금지"(WBS v5 `V5-CM-1.2` 완료 기준)가 깨진다. 구 파이프라인은
 `manifest_v3.load_dataset_epoch()`의 키 집합 검사에서 fail-fast하도록 의도적으로 차단된 상태다.
 
-## 격리 18파일
+## 격리 19파일
 
 - 등록 3: `dataset-epoch.json`(v1 구본) · `source-data-manifest.json` ·
   `corrected-data-manifest.json`
-- `manifests/` 4: `evaluation.base_schema` · `runtime.base_schema` ·
-  `evaluation.corrected_base` · `neo4j.graph`
+- `manifests/` 5: `evaluation.base_schema` · `runtime.base_schema` ·
+  `evaluation.corrected_base` · `neo4j.graph` ·
+  **`runtime.corrected_base`**(`V5-CM-1.6`에서 이동)
 - `markers/` 11: `base_schema.kosa_agent_e2e` · `corrected.v1` ·
   `corrected_base.{kosa_agent, kosa_agent_e2e}` · `evaluation_mock.kosa_text2sql` ·
   `neo4j_graph.neo4j` · `runtime_clean.{kosa_agent, kosa_agent_e2e}` ·
@@ -34,9 +35,14 @@
 
 | 파일 | 읽는 코드 | unit 회귀가 보호 | 해제 시점 |
 |---|---|---|---|
-| `manifests/runtime.runtime_clean.json` | `app/analytics/sql_validator.py:54` · `app/analytics/preflight.py:91-99`(`_load_manifest`) · `scripts/apply_agent_runtime.py:769·796·1003` | 예 (51 failed) | `V5-CM-2.4` 재적재 후 새 manifest로 교체 |
-| `manifests/evaluation.evaluation_mock.json` | `app/analytics/preflight.py:91-99` | 예 (5 failed) | `V5-CM-2.4` |
-| `manifests/runtime.corrected_base.json` | `scripts/apply_agent_runtime.py:976` | 예 (3 failed) | `V5-CM-3.2` Runtime migration 재작성 |
+| `manifests/runtime.runtime_clean.json` | `app/analytics/sql_validator.py:54` · `app/analytics/preflight.py:91-99`(`_load_manifest`) · `scripts/apply_agent_runtime.py:769·796·1003` | 예 (51 failed) | `V5-CM-1.8` final profile manifest로 교체 |
+| `manifests/evaluation.evaluation_mock.json` | `app/analytics/preflight.py:91-99` | 예 (5 failed) | `V5-CM-1.8` `evaluation_reference` 발급 |
+
+### `runtime.corrected_base.json` — `V5-CM-1.6`에서 해제
+
+구 corrected 계보를 읽던 유일한 소비자(`scripts/apply_agent_runtime.py`의 corrected producer)를
+`V5-CM-1.6`이 제거했다. 부재가 더 이상 오류가 아니므로 이 파일을 `manifests/`로 옮겼다.
+active 등록본은 위 2개뿐이며, 그 둘은 `V5-CM-1.8`이 최종 epoch manifest로 교체한다.
 
 보호 수치는 구현 시점 실측(2026-08-20, 각 파일을 단독 격리한 뒤 전체 unit 실행)이다.
 계획 §1.3의 +50/+4/+2와의 +1 차이는 `V5-CM-1.2`가 신설한 "잔류 3파일 고정" 테스트

@@ -41,27 +41,6 @@ def _source_manifest() -> dict:
     }
 
 
-def _corrected_manifest() -> dict:
-    tables = {
-        table: {
-            "file_id": f"corrected/postgres/{table}.csv",
-            "columns": ["id"],
-            "row_count": 48 if table == "action_history" else 1,
-            "content_hash": DIGEST,
-        }
-        for table in sorted(mv3.CORRECTED_TABLES)
-    }
-    return {
-        "format_version": 3,
-        "artifact_type": "corrected_files",
-        "dataset_epoch": "kosa_0813",
-        "source_archive_sha256": DIGEST,
-        "correction_version": "v1",
-        "hash_algorithm": mv3.HASH_ALGORITHM,
-        "tables": tables,
-    }
-
-
 def _db_manifest(profile: str, stage: str) -> dict:
     contract = mv3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
     action_entry = {
@@ -285,16 +264,13 @@ class TestArchivePreflight:
 
 
 class TestManifestSchemas:
-    def test_source_and_corrected_contracts_are_separate(self) -> None:
+    def test_source_contract_validates(self) -> None:
         mv3.validate_manifest_schema(
             _source_manifest(), expected_artifact_type="source_files"
         )
-        mv3.validate_manifest_schema(
-            _corrected_manifest(), expected_artifact_type="corrected_files"
-        )
 
     @pytest.mark.parametrize("profile,stage", sorted(mv3.BOOTSTRAP_STAGE_CONTRACTS))
-    def test_all_six_profile_stage_contracts_are_valid(
+    def test_all_registered_profile_stage_contracts_are_valid(
         self, profile: str, stage: str
     ) -> None:
         manifest = _db_manifest(profile, stage)
@@ -350,24 +326,19 @@ class TestManifestSchemas:
             mv3.validate_manifest_schema(
                 manifest,
                 expected_artifact_type="db_bootstrap",
-                expected_stage="corrected_base",
+                expected_stage="evaluation_mock",
             )
 
     def test_action_history_counts_are_independent_between_artifacts(self) -> None:
         source = _source_manifest()
-        corrected = _corrected_manifest()
         runtime = _db_manifest("runtime", "runtime_clean")
         evaluation = _db_manifest("evaluation", "evaluation_mock")
 
         assert source["tables"]["action_history"]["row_count"] == 48
-        assert corrected["tables"]["action_history"]["row_count"] == 48
         assert runtime["tables"]["action_history"]["row_count"] == 0
         assert evaluation["tables"]["action_history"]["row_count"] == 48
 
         mv3.validate_manifest_schema(source, expected_artifact_type="source_files")
-        mv3.validate_manifest_schema(
-            corrected, expected_artifact_type="corrected_files"
-        )
         mv3.validate_manifest_schema(runtime, expected_artifact_type="db_bootstrap")
         mv3.validate_manifest_schema(evaluation, expected_artifact_type="db_bootstrap")
 
@@ -485,12 +456,8 @@ class TestManifestSchemas:
                 expected_archive_sha256="b" * 64,
             )
 
-    @pytest.mark.parametrize(
-        "artifact", [_corrected_manifest(), _db_manifest("runtime", "base_schema")]
-    )
-    def test_corrected_and_db_correction_version_cannot_be_none(
-        self, artifact: dict
-    ) -> None:
+    @pytest.mark.parametrize("artifact", [_db_manifest("runtime", "base_schema")])
+    def test_db_correction_version_cannot_be_none(self, artifact: dict) -> None:
         artifact["correction_version"] = "none"
 
         with pytest.raises(mv3.ManifestMetadataError, match="revision"):
@@ -698,7 +665,7 @@ class TestCliContract:
     def test_source_requires_archive_and_rejects_db_options(self) -> None:
         with pytest.raises(mv3.VerificationError, match="--archive"):
             mv3.validate_cli_args(self._args("--artifact", "source-files"))
-        with pytest.raises(mv3.VerificationError, match="DB/corrected"):
+        with pytest.raises(mv3.VerificationError, match="DB 옵션"):
             mv3.validate_cli_args(
                 self._args(
                     "--artifact",
@@ -766,26 +733,6 @@ class TestCliContract:
 
         assert result == mv3.EXIT_NOT_REGISTERED
 
-    def test_confirm_cannot_enable_unregistered_corrected_artifact(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            mv3, "CORRECTED_MANIFEST_PATH", tmp_path / "not-registered.json"
-        )
-
-        result = mv3.main(
-            [
-                "--artifact",
-                "corrected-files",
-                "--data-dir",
-                "corrected",
-                "--generate",
-                "--confirm",
-            ]
-        )
-
-        assert result == mv3.EXIT_NOT_REGISTERED
-
 
 def test_source_manifest_fixture_is_not_mutated_by_validation() -> None:
     manifest = _source_manifest()
@@ -794,3 +741,47 @@ def test_source_manifest_fixture_is_not_mutated_by_validation() -> None:
     mv3.validate_manifest_schema(manifest, expected_artifact_type="source_files")
 
     assert manifest == before
+
+
+class TestCorrectedSurfaceIsGone:
+    """`V5-CM-1.6`이 구 corrected surface를 제거했다(계획 §5.1 · §9.2).
+
+    **되살리면 여기서 실패한다.** 삭제 Task가 회귀를 남기는 방법이다.
+    """
+
+    def test_corrected_artifact_type_is_not_registered(self) -> None:
+        assert "corrected_files" not in mv3.ARTIFACT_TYPES
+        assert "corrected-files" not in mv3.CLI_ARTIFACT_TYPES
+        assert not hasattr(mv3, "CORRECTED_MANIFEST_PATH")
+        assert not hasattr(mv3, "CORRECTED_TABLES")
+
+    @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+    def test_corrected_base_stage_is_not_registered(self, profile: str) -> None:
+        assert (profile, "corrected_base") not in mv3.BOOTSTRAP_STAGE_CONTRACTS
+        with pytest.raises(mv3.ManifestMetadataError):
+            mv3.resolve_bootstrap_manifest_path(profile, "corrected_base")
+
+    def test_registered_stages_are_exactly_four(self) -> None:
+        assert set(mv3.BOOTSTRAP_STAGE_CONTRACTS) == {
+            ("runtime", "base_schema"),
+            ("evaluation", "base_schema"),
+            ("evaluation", "evaluation_mock"),
+            ("runtime", "runtime_clean"),
+        }
+
+    def test_evaluation_mock_stage_survives_for_the_blocker(self) -> None:
+        """`V5-CM-1.8`이 교체할 때까지 남는다.
+
+        loader 삭제를 이유로 stage까지 지우면 `final_manifest_blockers()`가 실제
+        공백을 세지 못한다(계획 §5.2).
+        """
+
+        assert ("evaluation", "evaluation_mock") in mv3.BOOTSTRAP_STAGE_CONTRACTS
+        manifest = _db_manifest("evaluation", "evaluation_mock")
+        assert manifest["tables"]["action_history"]["row_count"] == 48
+        mv3.validate_manifest_schema(
+            manifest,
+            expected_artifact_type="db_bootstrap",
+            expected_profile="evaluation",
+            expected_stage="evaluation_mock",
+        )

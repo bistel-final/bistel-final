@@ -163,7 +163,7 @@ def test_cli_rejects_evaluation_before_loading_credentials(
     [
         ["--preflight", "--rehearse"],
         ["--preflight", "--recover-artifact"],
-        ["--register-manifests", "--rehearse"],
+        ["--rehearse", "--recover-artifact"],
     ],
 )
 def test_modes_are_mutually_exclusive(argv: list[str]) -> None:
@@ -207,123 +207,57 @@ def test_execute_schema_uses_compiled_text_for_postgres_percent_marker() -> None
     assert executed == ["RAISE EXCEPTION 'wrong database: %%', current_database()"]
 
 
-def test_apply_orders_lock_count_ddl_and_postcheck(
+def test_apply_is_fail_closed_before_any_connector(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """`V5-CM-1.6` fail-closed — **engine factory를 부르기 전에** 멈춘다.
+
+    이 runner는 구 corrected 계보 위에서만 성립했다. active corrected marker가
+    history로 격리돼 현행 apply는 실제 final 환경에서 성공할 수 없으므로, 그 우연한
+    실패를 명시적 reason으로 바꿨다. V5 재기준화는 `V5-CM-3.2` 소관이다(계획 §7.2).
+    """
+
     calls: list[str] = []
-    engine = _Engine()
-    target = _target()
-    result = runner.RuntimePostcheck({}, "a" * 64, 0, 173)
 
-    monkeypatch.setattr(runner, "_artifact_identity", lambda _target: {"id": "x"})
-    monkeypatch.setattr(
-        runner, "_prepare_transaction", lambda *args, **kwargs: calls.append("prepare")
-    )
-    monkeypatch.setattr(
-        runner, "lock_action_history", lambda connection: calls.append("lock")
-    )
+    def engine_factory(_target: Any) -> Any:
+        calls.append("engine")
+        raise AssertionError("engine factory가 호출되면 안 된다")
 
-    def prerequisites(connection: Any, target: Any) -> tuple[int, int]:
-        calls.append("count")
-        return 0, 173
-
-    monkeypatch.setattr(runner, "validate_prerequisites", prerequisites)
-    monkeypatch.setattr(
-        runner,
-        "inspect_database",
-        lambda connection: runner.RuntimeInspection("ABSENT", (), None, None),
-    )
-    monkeypatch.setattr(runner, "load_marker", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        runner,
-        "_start_receipt",
-        lambda *args, **kwargs: {
-            "status": "STARTED",
-            "operation_id": "00000000-0000-0000-0000-000000000001",
-            "change_reference": "GH-1",
-        },
-    )
-    monkeypatch.setattr(
-        runner, "execute_schema", lambda *args, **kwargs: calls.append("ddl")
-    )
-
-    def postcheck(*args: Any, **kwargs: Any) -> runner.RuntimePostcheck:
-        calls.append("postcheck")
-        return result
-
-    monkeypatch.setattr(runner, "postcheck_database", postcheck)
-    monkeypatch.setattr(
-        runner,
-        "_finish_receipt",
-        lambda receipt, *args, **kwargs: {
-            **receipt,
-            "status": "COMMITTED",
-            "committed_at": "2026-08-18T00:00:00+00:00",
-        },
-    )
-    monkeypatch.setattr(
-        runner,
-        "_marker_candidate",
-        lambda *args, **kwargs: {
-            "schema_signature_sha256": "a" * 64,
-        },
-    )
-    monkeypatch.setattr(runner, "save_marker", lambda *args, **kwargs: None)
-
-    status, actual = runner.run_apply(
-        target,
-        change_reference="GH-1",
-        engine_factory=lambda _: engine,
-        marker_root=tmp_path / "markers",
-        report_root=tmp_path / "reports",
-    )
-
-    assert status == "APPLIED"
-    assert actual == result
-    assert calls == ["prepare", "lock", "count", "ddl", "postcheck"]
-    assert engine.disposed is True
-
-
-def test_present_schema_requires_exact_marker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    engine = _Engine()
-    monkeypatch.setattr(runner, "_artifact_identity", lambda _target: {})
-    monkeypatch.setattr(runner, "_prepare_transaction", lambda *args, **kwargs: None)
-    monkeypatch.setattr(runner, "lock_action_history", lambda *args: None)
-    monkeypatch.setattr(runner, "validate_prerequisites", lambda *args: (0, 173))
-    monkeypatch.setattr(
-        runner,
-        "inspect_database",
-        lambda connection: runner.RuntimeInspection("PRESENT", (), {}, "a" * 64),
-    )
-    monkeypatch.setattr(runner, "load_marker", lambda *args, **kwargs: None)
-    with pytest.raises(runner.AgentRuntimeArtifactError, match="자동 채택"):
+    with pytest.raises(runner.AgentRuntimeStateError) as caught:
         runner.run_apply(
             _target(),
             change_reference="GH-1",
-            engine_factory=lambda _: engine,
+            engine_factory=engine_factory,
             marker_root=tmp_path,
             report_root=tmp_path,
         )
 
+    assert caught.value.reason_code == "FINAL_RUNTIME_MIGRATION_NOT_WIRED"
+    assert calls == [], "connector 호출 0회여야 한다"
+    assert not list(tmp_path.iterdir()), "marker·report를 남기지 않는다"
 
-def test_register_manifest_is_deterministic(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = tmp_path / "runtime.runtime_clean.json"
-    original = runner.resolve_bootstrap_manifest_path
-    monkeypatch.setattr(
-        runner,
-        "resolve_bootstrap_manifest_path",
-        lambda profile, stage: target
-        if (profile, stage) == ("runtime", "runtime_clean")
-        else original(profile, stage),
-    )
-    assert runner.register_manifest() == "REGISTERED"
-    before = target.read_bytes()
-    assert runner.register_manifest() == "NO_OP"
-    assert target.read_bytes() == before
+
+def test_the_corrected_producer_is_gone() -> None:
+    """구 manifest producer와 CLI mode가 제거됐다(계획 §7.1)."""
+
+    for name in ("build_runtime_manifest", "register_manifest"):
+        assert not hasattr(runner, name), f"producer 잔재: {name}"
+
+    parser = runner._parser()
+    flags = {
+        action.option_strings[0]
+        for action in parser._actions
+        if action.option_strings
+    }
+    assert "--register-manifests" not in flags
+
+
+def test_artifact_identity_no_longer_reads_the_corrected_marker() -> None:
+    """adoption identity에서 구 corrected marker 경로가 사라졌다(계획 §7.2)."""
+
+    source = Path(runner.__file__).read_text(encoding="utf-8")
+    assert "corrected_base." not in source
+    assert "corrected_marker_sha256" not in source
 
 
 def test_signature_contract_accepts_canonical_catalog() -> None:
