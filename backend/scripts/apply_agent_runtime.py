@@ -51,10 +51,8 @@ from dotenv import load_dotenv
 from manifest_v3 import (
     VerificationError,
     atomic_save_json,
-    hash_canonical_rows,
     resolve_bootstrap_manifest_path,
     scan_for_sensitive_values,
-    validate_manifest_schema,
 )
 from mutation_runtime import (
     MutationRuntimeError,
@@ -767,7 +765,6 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _artifact_identity(target: BootstrapTarget) -> dict[str, Any]:
     manifest = _read_json(resolve_bootstrap_manifest_path("runtime", "runtime_clean"))
-    corrected = _read_json(MARKER_ROOT / f"corrected_base.{target.database}.json")
     reference_sql = (
         REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
     ).read_text(encoding="utf-8")
@@ -779,7 +776,6 @@ def _artifact_identity(target: BootstrapTarget) -> dict[str, Any]:
         raise AgentRuntimeArtifactError("001 marker가 없습니다")
     return {
         "manifest_sha256": _canonical_hash(manifest),
-        "corrected_marker_sha256": _canonical_hash(corrected),
         "reference_marker_sha256": _canonical_hash(reference),
     }
 
@@ -972,42 +968,6 @@ def _finish_receipt(
     return payload
 
 
-def build_runtime_manifest() -> dict[str, Any]:
-    corrected = _read_json(resolve_bootstrap_manifest_path("runtime", "corrected_base"))
-    candidate = json.loads(json.dumps(corrected))
-    candidate["bootstrap_stage"] = "runtime_clean"
-    candidate["schema_stage"] = "runtime_clean"
-    candidate["applied_migrations"] = [
-        "001_reference_extensions",
-        "002_agent_runtime_clean",
-    ]
-    empty_hash = hash_canonical_rows([])
-    for table, columns in EXPECTED_TABLE_COLUMNS.items():
-        candidate["tables"][table] = {
-            "columns": [column.name for column in columns],
-            "verification_policy": "bootstrap_empty",
-            "row_count": 0,
-            "content_hash": empty_hash,
-        }
-    validate_manifest_schema(
-        candidate,
-        expected_artifact_type="db_bootstrap",
-        expected_profile="runtime",
-        expected_stage="runtime_clean",
-        expected_archive_sha256=candidate["source_archive_sha256"],
-    )
-    return candidate
-
-
-def register_manifest() -> str:
-    path = resolve_bootstrap_manifest_path("runtime", "runtime_clean")
-    candidate = build_runtime_manifest()
-    if path.exists() and _read_json(path) == candidate:
-        return "NO_OP"
-    atomic_save_json(path, candidate)
-    return "REGISTERED"
-
-
 def run_preflight(
     target: BootstrapTarget,
     *,
@@ -1110,6 +1070,15 @@ def run_apply(
     report_root: Path = REPORT_ROOT,
 ) -> tuple[str, RuntimePostcheck]:
     _require_runtime_target(target)
+    # **`V5-CM-1.6` fail-closed.** 이 runner는 구 corrected 계보 위에서만 성립했다.
+    #
+    # active corrected marker가 이미 history로 격리돼 현행 apply는 실제 final 환경에서
+    # 성공할 수 없다. 그 우연한 실패를 **engine 생성 전** 명시적 reason으로 바꾼다.
+    # V5 재기준화(mutation·receipt·marker)는 `V5-CM-3.2` 소관이다(계획 §7.2).
+    raise AgentRuntimeStateError(
+        "Runtime migration은 V5-CM-3.2에서 재기준화된다",
+        reason_code="FINAL_RUNTIME_MIGRATION_NOT_WIRED",
+    )
     change_reference = validate_change_reference(change_reference)
     sql, statements = load_and_validate_sql()
     migration_sha = migration_sha256(sql)
@@ -1200,7 +1169,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--rehearse", action="store_true")
     parser.add_argument("--recover-artifact", action="store_true")
-    parser.add_argument("--register-manifests", action="store_true")
     return parser
 
 
@@ -1210,7 +1178,6 @@ def resolve_mode(args: argparse.Namespace) -> str:
             "preflight": args.preflight,
             "rehearse": args.rehearse,
             "recover": args.recover_artifact,
-            "register": args.register_manifests,
         },
         default_mode="apply",
         mutually_exclusive_message="runtime apply mode는 하나만 선택해야 합니다",
@@ -1222,13 +1189,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_dotenv(REPOSITORY_ROOT / ".env", override=False)
     try:
         mode = resolve_mode(args)
-        if mode == "register":
-            if args.database or args.confirm_target or args.change_ref:
-                raise AgentRuntimeError(
-                    "manifest 등록에는 DB 옵션을 사용할 수 없습니다"
-                )
-            print(f"RUNTIME_MANIFEST {register_manifest()}")
-            return 0
         if args.database is None:
             raise AgentRuntimeError("--database가 필요합니다")
         if args.database not in RUNTIME_DATABASES:

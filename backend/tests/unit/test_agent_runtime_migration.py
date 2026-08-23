@@ -263,22 +263,31 @@ def test_nullable_nonblank_contract_is_not_inverted() -> None:
     assert "DEFAULT" not in body.split("autonomy_level", 1)[1].split(",", 1)[0]
 
 
-def test_runtime_manifest_is_registered_from_column_contract() -> None:
+def test_runtime_manifest_matches_the_column_contract() -> None:
+    """등록본이 코드의 9 table 계약과 일치한다.
+
+    `V5-CM-1.6`이 `build_runtime_manifest()` producer를 제거했다 — 구 corrected_base에서
+    복사하는 방식이라 final 22-table manifest를 만들 수 없었고, producer 소유권은
+    `V5-CM-1.8`의 final manifest issuer로 옮겼다(계획 §7.1).
+
+    등록본 자체의 계약은 그대로 본다. producer가 없다고 검증까지 없애지 않는다.
+    """
+
     path = manifest_v3.resolve_bootstrap_manifest_path("runtime", "runtime_clean")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    expected = migration.build_runtime_manifest()
-    assert payload == expected
     assert payload["bootstrap_stage"] == "runtime_clean"
     assert payload["applied_migrations"] == [
         "001_reference_extensions",
         "002_agent_runtime_clean",
     ]
     assert len(payload["tables"]) == 23
+    empty_hash = manifest_v3.hash_canonical_rows([])
     for table, columns in migration.EXPECTED_TABLE_COLUMNS.items():
         entry = payload["tables"][table]
         assert entry["columns"] == [column.name for column in columns]
         assert entry["verification_policy"] == "bootstrap_empty"
         assert entry["row_count"] == 0
+        assert entry["content_hash"] == empty_hash
 
 
 def test_evaluation_runtime_clean_manifest_combination_is_forbidden() -> None:

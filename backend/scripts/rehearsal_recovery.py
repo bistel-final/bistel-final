@@ -11,8 +11,8 @@ connection과 이미 검증된 acceptance만 받는다. lifecycle과 CLI는
    같은 검사를 handler와 postcheck에서 두 번 돌리지 않는다(계획 §5.1).
 2. **marker 계약** — exact key set·타입·hex·provenance·fingerprint를 검증하고,
    같은 디렉터리 임시 파일을 fsync한 뒤 `os.replace()`하는 marker-last 저장을 한다.
-3. **cross-platform lock** — `fcntl`/`msvcrt` 조건부 adapter. 삭제 예정 모듈
-   (`build_corrected_dataset.py`, `V5-CM-1.6` 제거 대상)을 import하지 않는다.
+3. **cross-platform lock** — `fcntl`/`msvcrt` 조건부 adapter. `V5-CM-1.6`이 삭제한
+   `build_corrected_dataset.py`와 독립이며 그것을 import하지 않는다.
 """
 
 from __future__ import annotations

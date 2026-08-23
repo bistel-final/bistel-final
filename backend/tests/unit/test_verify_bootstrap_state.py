@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -197,95 +196,6 @@ def test_runtime_clean_marker_failure_is_collected(
     assert "RUNTIME_MARKER" in mismatch_kinds
 
 
-class CorrectedConnection(FakeConnection):
-    def __init__(
-        self,
-        database: str,
-        manifest: dict[str, Any],
-        rows: dict[str, list[dict[str, Any]]],
-    ) -> None:
-        super().__init__(database, manifest)
-        self.rows = rows
-
-    def exec_driver_sql(self, statement: str, parameters: Any = None) -> FakeResult:
-        normalized = " ".join(statement.split())
-        if normalized.startswith("SELECT count(*) FROM"):
-            table = normalized.split('"')[1]
-            return FakeResult(scalar=len(self.rows.get(table, [])))
-        if normalized.startswith("SELECT ") and ' FROM "' in normalized:
-            table = normalized.split(' FROM "', 1)[1].split('"', 1)[0]
-            return FakeResult(self.rows.get(table, []))
-        return super().exec_driver_sql(statement, parameters)
-
-
-def _stub_registration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[verifier.ActiveBundle, dict[str, Any]]:
-    candidate = json.loads(
-        manifest_v3.CORRECTED_MANIFEST_PATH.read_text(encoding="utf-8")
-    )
-    tables = {
-        table: verifier.corrected_builder.TableData(("id",), ())
-        for table in candidate["tables"]
-    }
-    bundle = verifier.ActiveBundle(
-        receipt={
-            "build_id": "1" * 64,
-            "generator_sha256": "2" * 64,
-        },
-        receipt_sha256="3" * 64,
-        report={},
-        tables=tables,
-    )
-    monkeypatch.setattr(verifier, "_load_active_bundle", lambda **_k: bundle)
-    monkeypatch.setattr(
-        verifier,
-        "_corrected_candidate",
-        lambda *_a, **_k: candidate,
-    )
-    monkeypatch.setattr(
-        verifier,
-        "_file_contract_details",
-        lambda *_a, **_k: {
-            "table_count": 9,
-            "pk_duplicate_count": 0,
-            "fk_violation_count": 0,
-        },
-    )
-    return bundle, candidate
-
-
-def _file_role_fixture() -> tuple[dict[str, Any], verifier.ActiveBundle]:
-    source_tables: dict[str, Any] = {}
-    corrected_tables: dict[str, verifier.corrected_builder.TableData] = {}
-    classified = (
-        verifier.UNCHANGED_TABLES | verifier.CHANGED_TABLES | verifier.NEW_TABLES
-    )
-    for table in sorted(classified):
-        source_rows = ({"id": f"{table}-source"},)
-        if table not in verifier.NEW_TABLES:
-            source_tables[table] = {
-                "columns": ["id"],
-                "row_count": 1,
-                "content_hash": manifest_v3.hash_canonical_rows(source_rows),
-            }
-        corrected_rows = (
-            ({"id": f"{table}-corrected"},)
-            if table in verifier.CHANGED_TABLES | verifier.NEW_TABLES
-            else source_rows
-        )
-        corrected_tables[table] = verifier.corrected_builder.TableData(
-            ("id",), corrected_rows
-        )
-    bundle = verifier.ActiveBundle(
-        receipt={},
-        receipt_sha256="0" * 64,
-        report={},
-        tables=corrected_tables,
-    )
-    return {"tables": source_tables}, bundle
-
-
 @pytest.mark.parametrize(
     "statement",
     [
@@ -332,58 +242,6 @@ def test_inventory_state(
     actual: set[str], expected: set[str], counts: dict[str, int], state: str
 ) -> None:
     assert verifier._inventory_state(actual, expected, counts) == state
-
-
-def test_key_duplicate_count_counts_extra_rows() -> None:
-    rows = [{"id": "A"}, {"id": "A"}, {"id": "A"}, {"id": "B"}]
-    assert verifier._key_duplicate_count(rows, ("id",)) == 2
-
-
-def test_file_roles_accept_exact_partition_and_expected_differences() -> None:
-    source, bundle = _file_role_fixture()
-    verifier._validate_file_roles(source, bundle)
-
-
-@pytest.mark.parametrize("table", sorted(verifier.CHANGED_TABLES))
-def test_file_roles_reject_unchanged_correction_target(table: str) -> None:
-    source, bundle = _file_role_fixture()
-    tables = dict(bundle.tables)
-    tables[table] = verifier.corrected_builder.TableData(
-        ("id",), ({"id": f"{table}-source"},)
-    )
-    drifted = verifier.ActiveBundle(
-        bundle.receipt,
-        bundle.receipt_sha256,
-        bundle.report,
-        tables,
-    )
-    with pytest.raises(manifest_v3.ArtifactMismatchError, match="source와 동일"):
-        verifier._validate_file_roles(source, drifted)
-
-
-def test_file_roles_reject_new_table_already_in_source() -> None:
-    source, bundle = _file_role_fixture()
-    source["tables"]["dim_parameter"] = {
-        "columns": ["id"],
-        "row_count": 1,
-        "content_hash": "0" * 64,
-    }
-    with pytest.raises(manifest_v3.ArtifactMismatchError, match="신규 table"):
-        verifier._validate_file_roles(source, bundle)
-
-
-def test_file_roles_reject_incomplete_corrected_partition() -> None:
-    source, bundle = _file_role_fixture()
-    tables = dict(bundle.tables)
-    tables.pop("metrology")
-    incomplete = verifier.ActiveBundle(
-        bundle.receipt,
-        bundle.receipt_sha256,
-        bundle.report,
-        tables,
-    )
-    with pytest.raises(manifest_v3.ManifestSchemaError, match="분류가 완전하지"):
-        verifier._validate_file_roles(source, incomplete)
 
 
 def test_aggregate_priority() -> None:
@@ -566,495 +424,251 @@ def test_database_requires_explicit_registered_stage(
         )
 
 
-@SKIP_KOSA_0813
-def test_database_corrected_base_passes_normalized_content(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import load_corrected_base as loader
+def test_runtime_database_still_rejects_an_evaluation_only_stage() -> None:
+    """**폐기 통보가 profile/stage 입력 계약을 덮지 않는다**(구현리뷰 권장 1).
 
-    context = loader._load_input_context()
-    manifest = json.loads(
-        manifest_v3.resolve_bootstrap_manifest_path(
-            "runtime", "corrected_base"
-        ).read_text(encoding="utf-8")
-    )
-    rows = {
-        table: [dict(row) for row in context.expected_rows.get(table, ())]
-        for table in manifest["tables"]
-    }
-    connection = CorrectedConnection("kosa_agent", manifest, rows)
-    engine = FakeEngine(connection)
-    monkeypatch.setattr(
-        verifier.reference_extensions,
-        "postcheck_database",
-        lambda *_a, **_k: SimpleNamespace(),
-    )
+    `evaluation_mock`은 evaluation profile 전용이다. runtime DB에 그 stage를 넣은
+    호출은 "이 stage는 폐기됐다"가 아니라 원래의 조합 오류를 받아야 한다. 조기 분기가
+    stage 이름만 봤다면 이 입력이 `EVALUATION_MOCK_RETIRED`로 조용히 흡수된다.
+    """
 
-    result = verifier.verify_database(
-        "kosa_agent",
-        "corrected_base",
-        environ={
-            "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-            "POSTGRES_BOOTSTRAP_PORT": "5432",
-            "POSTGRES_BOOTSTRAP_USER": "reader",
-            "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-            "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                "shared.example", 5432
-            ),
-        },
-        engine_factory=lambda _: engine,
-    )
-
-    assert result.status == verifier.STATUS_PASS
-    assert result.details["expected_stage"] == "corrected_base"
-    assert result.details["action_history_rows"] == 0
-
-
-@SKIP_KOSA_0813
-def test_evaluation_corrected_base_failure_is_scoped_to_action_48(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import load_corrected_base as loader
-
-    context = loader._load_input_context()
-    manifest = json.loads(
-        manifest_v3.resolve_bootstrap_manifest_path(
-            "evaluation", "corrected_base"
-        ).read_text(encoding="utf-8")
-    )
-    rows = {
-        table: [dict(row) for row in context.expected_rows.get(table, ())]
-        for table in manifest["tables"]
-    }
-    rows["action_history"] = [
-        {
-            column.name: (f"ACT-{index:04d}" if column.name == "action_id" else None)
-            for column in verifier.base_schema.BASE_COLUMNS["action_history"]
-        }
-        for index in range(48)
-    ]
-    connection = CorrectedConnection("kosa_text2sql", manifest, rows)
-    monkeypatch.setattr(
-        verifier.reference_extensions,
-        "postcheck_database",
-        lambda *_a, **_k: SimpleNamespace(),
-    )
-
-    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
+    with pytest.raises(manifest_v3.ManifestMetadataError):
         verifier.verify_database(
-            "kosa_text2sql",
-            "corrected_base",
-            environ={
-                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-                "POSTGRES_BOOTSTRAP_PORT": "5432",
-                "POSTGRES_BOOTSTRAP_USER": "reader",
-                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                    "shared.example", 5432
-                ),
-            },
-            engine_factory=lambda _: FakeEngine(connection),
+            "kosa_agent",
+            verifier.EVALUATION_MOCK_STAGE,
+            environ={},
+            engine_factory=lambda _: pytest.fail("DB connect must not run"),
         )
 
-    assert captured.value.details == {
-        "profile": "evaluation",
-        "expected_stage": "corrected_base",
-        "inventory": "EARLY_DATA",
-        "table_count": 14,
-        "action_history_rows": 48,
-        "mismatches": [
-            {
-                "table": "action_history",
-                "mismatch_kind": "ROW_COUNT",
-                "expected_row_count": 0,
-                "actual_row_count": 48,
-                "expected_policy": "bootstrap_empty",
-            }
-        ],
-    }
 
+def _artifact_reader(
+    registered: dict,
+    *,
+    epoch: dict | None = None,
+    source: dict | None = None,
+):
+    """`_read_json`을 epoch·intake·source manifest 3자로 갈라 주는 fake.
 
-@SKIP_KOSA_0813
-def test_evaluation_corrected_base_collects_additional_table_drift(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import load_corrected_base as loader
+    기본값은 **셋이 모두 일치**하는 상태다. 인자로 넘긴 쪽만 어긋나게 만들어
+    "그 한 축이 없으면 통과하는가"를 각각 재현한다(계획 §6.2-4 · 구현리뷰 필수 2).
+    """
 
-    context = loader._load_input_context()
-    manifest = json.loads(
-        manifest_v3.resolve_bootstrap_manifest_path(
-            "evaluation", "corrected_base"
-        ).read_text(encoding="utf-8")
-    )
-    rows = {
-        table: [dict(row) for row in context.expected_rows.get(table, ())]
-        for table in manifest["tables"]
-    }
-    rows["action_history"] = [
-        {
-            column.name: (f"ACT-{index:04d}" if column.name == "action_id" else None)
-            for column in verifier.base_schema.BASE_COLUMNS["action_history"]
-        }
-        for index in range(48)
-    ]
-    rows["dim_parameter"][0]["parameter_name"] = "DRIFTED"
-    connection = CorrectedConnection("kosa_text2sql", manifest, rows)
-    monkeypatch.setattr(
-        verifier.reference_extensions,
-        "postcheck_database",
-        lambda *_a, **_k: SimpleNamespace(),
-    )
+    import build_source_manifest_v4 as source_manifest_v4
 
-    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
-        verifier.verify_database(
-            "kosa_text2sql",
-            "corrected_base",
-            environ={
-                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-                "POSTGRES_BOOTSTRAP_PORT": "5432",
-                "POSTGRES_BOOTSTRAP_USER": "reader",
-                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                    "shared.example", 5432
-                ),
-            },
-            engine_factory=lambda _: FakeEngine(connection),
-        )
-
-    assert captured.value.details["mismatches"] == [
-        {
-            "table": "action_history",
-            "mismatch_kind": "ROW_COUNT",
-            "expected_row_count": 0,
-            "actual_row_count": 48,
-            "expected_policy": "bootstrap_empty",
-        },
-        {
-            "table": "dim_parameter",
-            "mismatch_kind": "CONTENT_HASH",
-            "expected_row_count": 8,
-            "actual_row_count": 8,
-            "expected_policy": "immutable_content",
-        },
-    ]
-
-
-def _evaluation_mock_connection() -> tuple[Any, dict[str, Any], CorrectedConnection]:
-    import load_corrected_base as corrected_loader
-    import load_evaluation_mock as evaluation_loader
-
-    context = corrected_loader._load_input_context()
-    mock_context = evaluation_loader._load_manifest_context(require_registered=True)
-    manifest = mock_context.manifest
-    rows = {
-        table: (
-            [dict(row) for row in mock_context.expected_rows]
-            if table == "action_history"
-            else [dict(row) for row in context.expected_rows.get(table, ())]
-        )
-        for table in manifest["tables"]
-    }
-    return (
-        evaluation_loader,
-        manifest,
-        CorrectedConnection("kosa_text2sql", manifest, rows),
-    )
-
-
-def _stub_reference_postcheck(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        verifier.reference_extensions,
-        "postcheck_database",
-        lambda *_a, **_k: SimpleNamespace(),
-    )
-
-
-@SKIP_KOSA_0813
-def test_evaluation_mock_stage_requires_and_reports_completion_marker(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
-    marker = {
-        "fixture_type": "MOCK",
-        "status": "VERIFIED_EXISTING",
-    }
-    marker_calls: list[tuple[str, str]] = []
-    _stub_reference_postcheck(monkeypatch)
-    monkeypatch.setattr(
-        evaluation_loader,
-        "verify_completion_marker",
-        lambda _connection, target, registered: (
-            marker_calls.append((target.database, registered["bootstrap_stage"]))
-            or marker
+    sha = registered["archive"]["sha256"]
+    declared = registered["declared_target_epoch"]
+    default_epoch = {"archive": {"sha256": sha}, "dataset_epoch": declared}
+    default_source = {"source_archive_sha256": sha, "dataset_epoch": declared}
+    table = {
+        manifest_v3.DATASET_EPOCH_PATH: epoch if epoch is not None else default_epoch,
+        source_manifest_v4.MANIFEST_V4_PATH: (
+            source if source is not None else default_source
         ),
-    )
+    }
+
+    def _read(path, *, missing):
+        return table.get(path, registered)
+
+    return _read
+
+
+def test_evaluation_mock_stage_is_fail_closed() -> None:
+    """`V5-CM-1.6`이 loader를 삭제했다 — 그 stage를 green으로 오인하지 않는다.
+
+    **connector를 한 번도 열지 않는다.** 분기가 epoch loader·target resolution
+    뒤에 있으면 `V5-CM-1.8`이 loader를 v2로 전환하는 순간 폐기 stage가 DB를
+    건드리게 된다(구현리뷰 필수 1). 그래서 실제 `verify_database()`를 호출해
+    mismatch 종류와 `engine_factory` 호출 0회를 함께 단언한다.
+
+    stage 자체는 남는다. `final_manifest_blockers()`의
+    `EVALUATION_MOCK_PINS_48_ACTION_ROWS`가 실제 공백을 세야 하기 때문이다.
+    **`V5-CM-1.8`이 `evaluation_reference`를 등록하면 이 분기와 이 테스트를 함께
+    제거한다**(계획 §6.3).
+    """
+
+    calls: list[object] = []
 
     result = verifier.verify_database(
         "kosa_text2sql",
-        "evaluation_mock",
-        environ={
-            "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-            "POSTGRES_BOOTSTRAP_PORT": "5432",
-            "POSTGRES_BOOTSTRAP_USER": "reader",
-            "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-            "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                "shared.example", 5432
-            ),
-        },
-        engine_factory=lambda _: FakeEngine(connection),
+        verifier.EVALUATION_MOCK_STAGE,
+        environ={},
+        engine_factory=lambda target: calls.append(target),
     )
+
+    assert calls == []
+    assert result.status == verifier.STATUS_FAIL
+    assert result.exit_code == verifier.EXIT_MISMATCH
+    assert result.details["mismatches"] == [
+        {"mismatch_kind": "EVALUATION_MOCK_RETIRED"}
+    ]
+    # 삭제된 loader를 import하지 않는다.
+    assert not hasattr(verifier, "load_evaluation_mock")
+
+
+def test_the_verifier_no_longer_registers_corrected_artifacts() -> None:
+    """corrected 등록 경로 전체가 사라졌다(계획 §6.1)."""
+
+    for name in (
+        "register_corrected",
+        "_load_active_bundle",
+        "_corrected_candidate",
+        "_validate_file_roles",
+        "_validate_registered_marker",
+        "ActiveBundle",
+        "CORRECTED_MARKER_PATH",
+        "CORRECTED_LOCK_PATH",
+    ):
+        assert not hasattr(verifier, name), f"corrected 잔재: {name}"
+
+    parser = verifier._parser()
+    flags = {
+        action.option_strings[0] for action in parser._actions if action.option_strings
+    }
+    assert "--register-corrected" not in flags
+    assert "--confirm" not in flags
+
+
+def test_files_only_verifies_the_final_intake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """파일 gate를 비우지 않았다 — corrected build 대신 최종 ZIP intake를 본다.
+
+    삭제 Task가 커버리지를 조용히 줄이는 것을 막는 계약이다(계획 §0-2 · §6.2).
+    """
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(intake, "read_archive", lambda _p: {"scan": True})
+    monkeypatch.setattr(intake, "build_payload", lambda _s: registered)
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {"scan": True})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
+
+    result = verifier.verify_files(archive_path=Path("unused.zip"))
 
     assert result.status == verifier.STATUS_PASS
-    assert result.details["action_history_rows"] == 48
-    assert result.details["fixture_type"] == "MOCK"
-    assert result.details["fixture_marker_status"] == "VERIFIED_EXISTING"
-    assert marker_calls == [("kosa_text2sql", "evaluation_mock")]
+    assert result.details["selected_count"] == intake.SELECTED_MEMBER_COUNT
+    assert result.details["dataset_epoch"] == registered["declared_target_epoch"]
 
 
-@pytest.mark.parametrize(
-    "marker_error",
-    [
-        "artifact",
-        "state",
-    ],
-)
-@SKIP_KOSA_0813
-def test_evaluation_mock_marker_failure_is_acceptance_mismatch(
-    monkeypatch: pytest.MonkeyPatch,
-    marker_error: str,
-) -> None:
-    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
-    _stub_reference_postcheck(monkeypatch)
-    error = (
-        evaluation_loader.EvaluationMockArtifactError("missing marker path")
-        if marker_error == "artifact"
-        else evaluation_loader.EvaluationMockStateError("fixture identity drift")
-    )
-    monkeypatch.setattr(
-        evaluation_loader,
-        "verify_completion_marker",
-        lambda *_a, **_k: (_ for _ in ()).throw(error),
-    )
-
-    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
-        verifier.verify_database(
-            "kosa_text2sql",
-            "evaluation_mock",
-            environ={
-                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-                "POSTGRES_BOOTSTRAP_PORT": "5432",
-                "POSTGRES_BOOTSTRAP_USER": "reader",
-                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                    "shared.example", 5432
-                ),
-            },
-            engine_factory=lambda _: FakeEngine(connection),
-        )
-
-    assert captured.value.exit_code == verifier.EXIT_MISMATCH
-    assert captured.value.details["mismatches"] == [{"mismatch_kind": "FIXTURE_MARKER"}]
-    assert "missing marker path" not in json.dumps(captured.value.details)
-    assert "fixture identity drift" not in json.dumps(captured.value.details)
-
-
-@SKIP_KOSA_0813
-def test_evaluation_mock_collects_table_and_marker_mismatches(
+def test_files_only_rejects_a_mismatched_archive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    evaluation_loader, _manifest_payload, connection = _evaluation_mock_connection()
-    connection.rows["dim_parameter"][0]["parameter_name"] = "DRIFTED"
-    _stub_reference_postcheck(monkeypatch)
+    """등록 intake와 다른 ZIP은 거부한다."""
+
+    drifted = {"archive": {"sha256": "0" * 64}, "selected_count": 1}
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: drifted)
+
+    with pytest.raises(manifest_v3.ArtifactMismatchError):
+        verifier.verify_files(archive_path=Path("unused.zip"))
+
+
+def test_files_only_rejects_an_archive_that_disagrees_with_the_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**intake와 epoch이 서로 다른 ZIP을 가리키면 어느 쪽도 정본이 아니다.**
+
+    payload 자체는 등록본과 같게 만들어, archive 3자 대조가 없으면 통과하는
+    상황을 재현한다(계획 §6.2-4 · §9.3).
+    """
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
     monkeypatch.setattr(
-        evaluation_loader,
-        "verify_completion_marker",
-        lambda *_a, **_k: (_ for _ in ()).throw(
-            evaluation_loader.EvaluationMockArtifactError("missing marker")
+        verifier,
+        "_read_json",
+        _artifact_reader(
+            registered,
+            epoch={"archive": {"sha256": "1" * 64}, "dataset_epoch": "other"},
         ),
     )
 
-    with pytest.raises(verifier.AcceptanceMismatchError) as captured:
-        verifier.verify_database(
-            "kosa_text2sql",
-            "evaluation_mock",
-            environ={
-                "POSTGRES_BOOTSTRAP_HOST": "shared.example",
-                "POSTGRES_BOOTSTRAP_PORT": "5432",
-                "POSTGRES_BOOTSTRAP_USER": "reader",
-                "POSTGRES_BOOTSTRAP_PASSWORD": "hidden",
-                "POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256": host_fingerprint(
-                    "shared.example", 5432
-                ),
+    with pytest.raises(manifest_v3.ArtifactMismatchError, match="epoch archive"):
+        verifier.verify_files(archive_path=Path("unused.zip"))
+
+
+def test_files_only_rejects_a_source_manifest_that_drifted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**source manifest 하나만 어긋나도 거부한다.**
+
+    `source-manifest-v4.json`은 canonical CSV 9종의 정본 기록이다. intake와 epoch만
+    맞춰 보면 이 파일이 다른 ZIP을 가리키는 채로 통과한다 — 3자 대조가 필요한
+    이유다(구현리뷰 필수 2). epoch·intake는 일치시켜 이 축만 남긴다.
+    """
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
+    monkeypatch.setattr(
+        verifier,
+        "_read_json",
+        _artifact_reader(
+            registered,
+            source={
+                "source_archive_sha256": "2" * 64,
+                "dataset_epoch": registered["declared_target_epoch"],
             },
-            engine_factory=lambda _: FakeEngine(connection),
-        )
-
-    assert captured.value.details["mismatches"] == [
-        {
-            "table": "dim_parameter",
-            "mismatch_kind": "CONTENT_HASH",
-            "expected_row_count": 8,
-            "actual_row_count": 8,
-            "expected_policy": "immutable_content",
-        },
-        {"mismatch_kind": "FIXTURE_MARKER"},
-    ]
-
-
-@SKIP_KOSA_0813
-def test_marker_candidate_is_timezone_aware(monkeypatch: pytest.MonkeyPatch) -> None:
-    bundle, candidate = _stub_registration(monkeypatch)
-    source = json.loads(manifest_v3.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
-    marker = verifier._marker_candidate(
-        candidate,
-        bundle,
-        verifier.canonical_sha256(source),
-        registered_at=datetime(2026, 8, 16, tzinfo=UTC),
+        ),
     )
-    assert marker["status"] == "REGISTERED"
-    assert marker["verification"] == {
-        "action_history_rows": 48,
-        "pk_duplicate_count": 0,
-        "fk_violation_count": 0,
-    }
-    assert marker["registered_at"].endswith("+00:00")
+
+    with pytest.raises(
+        manifest_v3.ArtifactMismatchError, match="source manifest archive"
+    ):
+        verifier.verify_files(archive_path=Path("unused.zip"))
 
 
-@SKIP_KOSA_0813
-def test_registration_preview_writes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_files_only_rejects_a_source_manifest_from_another_epoch(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
-    result = verifier.register_corrected(
-        confirm=False,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
+    """archive SHA가 같아도 epoch 표기가 다르면 거부한다(구현리뷰 필수 2)."""
+
+    import intake_final_zip as intake
+
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: registered)
+    monkeypatch.setattr(
+        verifier,
+        "_read_json",
+        _artifact_reader(
+            registered,
+            source={
+                "source_archive_sha256": registered["archive"]["sha256"],
+                "dataset_epoch": "kosa_0813",
+            },
+        ),
     )
-    assert result.exit_code == verifier.EXIT_CONFIRM_REQUIRED
-    assert not manifest_path.exists()
-    assert not marker_path.exists()
+
+    with pytest.raises(
+        manifest_v3.ArtifactMismatchError, match="source manifest dataset_epoch"
+    ):
+        verifier.verify_files(archive_path=Path("unused.zip"))
 
 
-@SKIP_KOSA_0813
-def test_registration_marker_last_crash_is_not_registered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_files_only_rejects_a_wrong_selected_member_count(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
+    """selected member 15개 계약이 깨지면 거부한다(계획 §6.2-2 · §9.3).
 
-    def crash() -> None:
-        raise RuntimeError("injected crash")
+    payload와 archive SHA는 모두 맞춰, member 수 검사가 없으면 통과하는 상황이다.
+    """
 
-    with pytest.raises(RuntimeError, match="injected"):
-        verifier.register_corrected(
-            confirm=True,
-            manifest_path=manifest_path,
-            marker_path=marker_path,
-            after_manifest_replace=crash,
-        )
-    assert manifest_path.exists()
-    assert not marker_path.exists()
+    import intake_final_zip as intake
 
+    registered = json.loads(intake.INTAKE_ARTIFACT_PATH.read_text(encoding="utf-8"))
+    drifted = dict(registered)
+    drifted["selected_count"] = intake.SELECTED_MEMBER_COUNT - 1
+    monkeypatch.setattr(verifier.intake, "read_archive", lambda _p: {})
+    monkeypatch.setattr(verifier.intake, "build_payload", lambda _s: drifted)
+    monkeypatch.setattr(verifier, "_read_json", _artifact_reader(drifted))
 
-@SKIP_KOSA_0813
-def test_registration_recovers_marker_after_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _, candidate = _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
-    manifest_v3.atomic_save_json(manifest_path, candidate)
-    result = verifier.register_corrected(
-        confirm=True,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    assert result.status == verifier.STATUS_PASS
-    assert marker_path.exists()
-
-
-@SKIP_KOSA_0813
-def test_registration_noop_requires_manifest_marker_receipt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
-    first = verifier.register_corrected(
-        confirm=True,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    second = verifier.register_corrected(
-        confirm=False,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    assert first.details["registration"] == "REGISTERED"
-    assert second.details["registration"] == "NO_OP"
-
-
-@SKIP_KOSA_0813
-def test_registered_marker_rejects_manifest_drift(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
-    verifier.register_corrected(
-        confirm=True,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    payload["tables"]["action_history"]["content_hash"] = "0" * 64
-    manifest_v3.atomic_save_json(manifest_path, payload)
-    with pytest.raises(manifest_v3.ManifestMetadataError, match="marker"):
-        verifier.register_corrected(
-            confirm=True,
-            manifest_path=manifest_path,
-            marker_path=marker_path,
-        )
-
-
-@SKIP_KOSA_0813
-def test_registration_replaces_old_marker_only_with_confirm(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _stub_registration(monkeypatch)
-    manifest_path = tmp_path / "corrected.json"
-    marker_path = tmp_path / "marker.json"
-    verifier.register_corrected(
-        confirm=True,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    marker["receipt_sha256"] = "0" * 64
-    manifest_v3.atomic_save_json(marker_path, marker)
-
-    preview = verifier.register_corrected(
-        confirm=False,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    assert preview.exit_code == verifier.EXIT_CONFIRM_REQUIRED
-    assert json.loads(marker_path.read_text(encoding="utf-8"))["receipt_sha256"] == (
-        "0" * 64
-    )
-
-    recovered = verifier.register_corrected(
-        confirm=True,
-        manifest_path=manifest_path,
-        marker_path=marker_path,
-    )
-    assert recovered.details["registration"] == "REGISTERED"
-    assert json.loads(marker_path.read_text(encoding="utf-8"))["receipt_sha256"] != (
-        "0" * 64
-    )
+    with pytest.raises(manifest_v3.ArtifactMismatchError, match="selected member"):
+        verifier.verify_files(archive_path=Path("unused.zip"))
 
 
 @pytest.mark.parametrize(
@@ -1062,8 +676,6 @@ def test_registration_replaces_old_marker_only_with_confirm(
     [
         ["--database", "kosa_agent"],
         ["--files-only", "--stage", "base_schema"],
-        ["--files-only", "--confirm"],
-        ["--register-corrected", "--report", "report.json"],
     ],
 )
 def test_cli_rejects_invalid_option_combinations(argv: list[str]) -> None:

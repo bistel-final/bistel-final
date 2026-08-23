@@ -53,15 +53,17 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 54.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 55.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 40.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **158.0h** | P2 도전 과제 제외 |
+| **합계** | | **159.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 111.5h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
+우선순위별 공수는 **P0 114.5h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h이며, `V5-CM-1.6`만 legacy
+cleanup 예외로 3.0h다 — 구 corrected 구현 3,875줄 삭제와 verifier·Agent Runtime
+대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
 
 ---
 
@@ -76,9 +78,9 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-1.3 | P0 | source manifest v4. 완료: 9개 CSV의 컬럼·행 수·typed content hash, ③ base DDL·graph·Generator·RAG 3종, ① selected schema·loader·requirements의 source/archive hash와 출처 역할을 한 manifest에 고정한다. ③에 있는 artifact를 ①에서 대체하지 못하게 하고 행 수는 기준표 실측값과 일치시킨다 | FR-I-04, NFR-06 | V5-CM-1.2 | 2.0h |
 | V5-CM-1.4 | P0 | Generator 재현 검증. 완료: `gen_sample_data.py`를 격리 실행해 9개 CSV가 byte-identical로 재생성됨을 확인하고 결과를 manifest provenance에 남긴다 | NFR-06 | V5-CM-1.3 | 1.0h |
 | V5-CM-1.5 | P0 | 구 epoch 격리. 완료: v4 corrected build(`dim_parameter` overlay·`seq_no`·시각 보정)를 최종 epoch 실행 경로에서 차단하고 폐기 사유·대체 Task를 기록한다 | FR-I-04 | V5-CM-1.2 | 1.0h |
-| V5-CM-1.6 | P1 | 구 corrected 계열 제거. 완료: `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트, `manifest_v3`의 `corrected_files`·`(runtime\|evaluation, corrected_base)` stage, corrected marker·`data/corrected`를 제거하고 전체 회귀를 통과한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 2.0h |
-| V5-CM-1.7 | P1 | 구 bootstrap·skip 제거. 완료: `V5-CM-2.2`가 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 제거한다. `V5-CM-1.2` 사유 skip 중 해제 Task 없는 잔존은 0건이어야 하며, `test_master_cypher` 2건만 `V5-CM-2.7` 해제 대상으로 허용한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 1.5h |
-| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 `V5-B-1.1`이 legacy `document_corpus`를 정리한 뒤의 **runtime 22 · evaluation 13** 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 구 등록 manifest의 23 · 14는 폐기 epoch `kosa_0813` 값이며 `V5-CM-3.1` artifact가 `superseded_profile_inventory_counts`로만 봉인한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1, V5-B-1.1 | 2.0h |
+| V5-CM-1.6 | P0 | 구 corrected 계열 제거. 완료: `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트, `manifest_v3`의 `corrected_files`·`(runtime\|evaluation, corrected_base)` stage, corrected marker·`data/corrected`를 제거하고 전체 회귀를 통과한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 3.0h |
+| V5-CM-1.7 | P1 | 구 bootstrap·skip 제거. 완료: `V5-CM-2.2`가 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 제거한다. `V5-CM-1.2` 사유 skip 중 해제 Task 없는 잔존은 0건이어야 하며, `test_master_cypher` 2건만 `V5-CM-2.7` 해제 대상으로 허용한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3, V5-CM-1.8 | 1.5h |
+| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 `V5-B-1.1`이 legacy `document_corpus`를 정리한 뒤의 **runtime 22 · evaluation 13** 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 구 등록 manifest의 23 · 14는 폐기 epoch `kosa_0813` 값이며 `V5-CM-3.1` artifact가 `superseded_profile_inventory_counts`로만 봉인한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1, V5-B-1.1, V5-CM-1.6 | 2.0h |
 
 ### V5-CM-2. fresh bootstrap
 
@@ -125,7 +127,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다 | NFR-02, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7 | 2.0h |
 
-**Common 합계: 52.0h**
+**Common 합계: 55.0h**
 
 ---
 
@@ -242,20 +244,25 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
                     → 물리 inventory를 runtime 22 · evaluation 13으로 확정한다.
                     **9번보다 먼저 실행하는 유일한 도메인 Task다** — CM-1.8이 이 결과를
                     선행으로 요구한다(구현리뷰 18차 필수 1 · 19차 필수 1).
-6  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
+6  V5-CM-1.6        구 corrected 계열 제거 — 구현·전용 테스트·`manifest_v3` corrected surface·
+                    local artifact를 걷어내고 retirement tombstone만 남긴다.
+                    **CM-1.8보다 먼저 한다** — 최종 epoch 전환을 먼저 하면 어차피 삭제할
+                    corrected 테스트를 고치는 낭비가 생긴다(CM-1.8 구현 중 실측).
+7  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
                     (B-1.1 확정 뒤 runtime 22 · evaluation 13 live inventory로 발급한다)
-7  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
+8  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
                     (CM-3.5가 B-1.1이 만든 document·document_chunk의 explicit GRANT도 적용)
-8  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
-9  나머지 A·B·C·D   실제 dependency가 열린 Task부터 병렬 구현
+9  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
+10 나머지 A·B·C·D   실제 dependency가 열린 Task부터 병렬 구현
                     (B-1.1은 5번에서 끝났고, B-1.3 적재는 CM-3.5 뒤다)
-10 V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
-11 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
-12 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
-13 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
+11 V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
+12 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
+13 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
+14 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
 
-   V5-CM-1.6~1.7   새 public profile 검증 뒤 구 corrected/bootstrap 코드를 제거한다.
-                   기능 구현과 병행할 수 있지만 최종 gate 전에는 완료한다.
+   V5-CM-1.7       구 bootstrap·skip 제거. **CM-1.8 뒤에 한다** — CM-1.8이
+                   `bootstrap_base_schema.BASE_COLUMNS`를 base final type source로 쓰므로
+                   먼저 지우면 참조를 잃는다.
 ```
 
 단일한 “전원 착수 gate”는 두지 않는다. 역할별 착수·완료 시점은 아래 요약 숫자가 아니라 각 Task의

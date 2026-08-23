@@ -26,7 +26,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap"
 DATASET_EPOCH_PATH = BOOTSTRAP_ROOT / "dataset-epoch.json"
 SOURCE_MANIFEST_PATH = BOOTSTRAP_ROOT / "source-data-manifest.json"
-CORRECTED_MANIFEST_PATH = BOOTSTRAP_ROOT / "corrected-data-manifest.json"
 SYNTHETIC_MANIFEST_PATH = BOOTSTRAP_ROOT / "synthetic-evaluation-manifest.json"
 MANIFEST_REGISTRY_ROOT = BOOTSTRAP_ROOT / "manifests"
 
@@ -60,13 +59,11 @@ FORBIDDEN_KEYS = {
 
 ARTIFACT_TYPES = {
     "source_files",
-    "corrected_files",
     "db_bootstrap",
     "synthetic_evaluation",
 }
 CLI_ARTIFACT_TYPES = {
     "source-files": "source_files",
-    "corrected-files": "corrected_files",
     "db-bootstrap": "db_bootstrap",
     "synthetic-evaluation": "synthetic_evaluation",
 }
@@ -228,7 +225,6 @@ SOURCE_EXPECTED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-CORRECTED_TABLES = frozenset({*SOURCE_TABLE_FILES, "dim_parameter"})
 SCHEMA_ONLY_TABLES = frozenset({"nl_query_log"})
 PROFILE_APPLIES_TO: dict[str, tuple[str, ...]] = {
     "runtime": ("kosa_agent", "kosa_agent_e2e"),
@@ -245,12 +241,6 @@ class BootstrapStageContract:
 BOOTSTRAP_STAGE_CONTRACTS: dict[tuple[str, str], BootstrapStageContract] = {
     ("runtime", "base_schema"): BootstrapStageContract("base", ()),
     ("evaluation", "base_schema"): BootstrapStageContract("base", ()),
-    ("runtime", "corrected_base"): BootstrapStageContract(
-        "reference_extensions", ("001_reference_extensions",)
-    ),
-    ("evaluation", "corrected_base"): BootstrapStageContract(
-        "reference_extensions", ("001_reference_extensions",)
-    ),
     ("evaluation", "evaluation_mock"): BootstrapStageContract(
         "reference_extensions", ("001_reference_extensions",)
     ),
@@ -633,9 +623,7 @@ def _validate_common_envelope(
         raise ManifestMetadataError(
             "source_files correction_version은 none이어야 합니다"
         )
-    if artifact_type in {"corrected_files", "db_bootstrap"} and (
-        correction_version == "none"
-    ):
+    if artifact_type == "db_bootstrap" and correction_version == "none":
         raise ManifestMetadataError(
             f"{artifact_type} correction_version은 보정 revision이어야 합니다"
         )
@@ -811,7 +799,6 @@ def validate_manifest_schema(
     _scan_for_sensitive_values(manifest)
     artifact_keys = {
         "source_files": COMMON_ENVELOPE_KEYS | {"tables"},
-        "corrected_files": COMMON_ENVELOPE_KEYS | {"tables"},
         "db_bootstrap": COMMON_ENVELOPE_KEYS
         | {
             "value_normalization_version",
@@ -847,10 +834,6 @@ def validate_manifest_schema(
             manifest["tables"],
             expected_tables=set(SOURCE_TABLE_FILES),
             source=True,
-        )
-    elif expected_artifact_type == "corrected_files":
-        _validate_file_tables(
-            manifest["tables"], expected_tables=CORRECTED_TABLES, source=False
         )
     elif expected_artifact_type == "db_bootstrap":
         _validate_db_envelope(
@@ -994,25 +977,7 @@ def validate_cli_args(args: argparse.Namespace) -> str:
                 args.target,
             )
         ):
-            raise VerificationError(
-                "source-files에 DB/corrected 옵션을 사용할 수 없습니다"
-            )
-    elif artifact_type == "corrected_files":
-        if args.data_dir is None:
-            raise VerificationError("corrected-files에는 --data-dir이 필요합니다")
-        if any(
-            value is not None
-            for value in (
-                args.archive,
-                args.profile,
-                args.stage,
-                args.mode,
-                args.target,
-            )
-        ):
-            raise VerificationError(
-                "corrected-files에 source/DB 옵션을 사용할 수 없습니다"
-            )
+            raise VerificationError("source-files에 DB 옵션을 사용할 수 없습니다")
     elif artifact_type == "db_bootstrap":
         if any(
             value is None
@@ -1068,19 +1033,6 @@ def run(argv: Sequence[str] | None = None) -> int:
             return EXIT_MISMATCH
         print("source ZIP 8개 PostgreSQL CSV가 v3 manifest와 일치합니다")
         return EXIT_OK
-
-    # 후속 Task의 producer/success marker가 없으면 --confirm도 우회하지 못한다.
-    if artifact_type == "corrected_files":
-        if not CORRECTED_MANIFEST_PATH.exists():
-            raise NotRegisteredError("corrected artifact는 V4-CM-1.7에서 등록됩니다")
-        manifest = _load_json(CORRECTED_MANIFEST_PATH)
-        epoch = load_dataset_epoch()
-        validate_manifest_schema(
-            manifest,
-            expected_artifact_type="corrected_files",
-            expected_archive_sha256=epoch["archive"]["sha256"],
-        )
-        raise NotRegisteredError("corrected verifier 활성화는 V4-CM-1.7 소유입니다")
 
     if artifact_type == "db_bootstrap":
         manifest_path = resolve_bootstrap_manifest_path(args.profile, args.stage)

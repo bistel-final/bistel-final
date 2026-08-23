@@ -29,7 +29,8 @@ REFERENCE_README = (
 TARGET_EPOCH = "fdc_final_20260818"
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
 
-# 격리 18파일(작업계획 §2.3). history/ 대비 원위치 부재를 함께 고정한다.
+# 격리 19파일. history/ 대비 원위치 부재를 함께 고정한다.
+# `V5-CM-1.6`이 `runtime.corrected_base.json`을 추가로 격리했다.
 ISOLATED_REGISTRATION = (
     "dataset-epoch.json",
     "source-data-manifest.json",
@@ -40,6 +41,8 @@ ISOLATED_MANIFESTS = (
     "runtime.base_schema.json",
     "evaluation.corrected_base.json",
     "neo4j.graph.json",
+    # `V5-CM-1.6`이 구 corrected 소비자를 제거하면서 함께 격리했다.
+    "runtime.corrected_base.json",
 )
 ISOLATED_MARKERS = (
     "base_schema.kosa_agent_e2e.json",
@@ -55,11 +58,14 @@ ISOLATED_MARKERS = (
     "runtime_clean.kosa_agent_e2e.json",
 )
 
-# 잔류 3파일(작업계획 §1.3) — 부재가 오류이고 읽는 코드가 현행 앱인 것만 남는다.
+# 잔류 2파일 — 부재가 오류이고 읽는 코드가 현행 앱인 것만 남는다.
+#
+# `runtime.corrected_base.json`은 `V5-CM-1.6`이 마지막 소비자
+# (`apply_agent_runtime`의 corrected producer)를 제거하면서 history로 옮겼다.
+# 남은 둘은 `V5-CM-1.8`이 최종 epoch manifest로 교체한다.
 REMAINING_MANIFESTS = {
     "runtime.runtime_clean.json",
     "evaluation.evaluation_mock.json",
-    "runtime.corrected_base.json",
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
 # 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.
@@ -188,8 +194,8 @@ def test_old_loader_epoch_guard_rejects_new_epoch(tmp_path: Path) -> None:
 # --- 6. 격리 완결성 -------------------------------------------------------------
 
 
-def test_isolation_is_complete_for_18_files() -> None:
-    """격리 18파일이 history에만 있고 원위치에 없다."""
+def test_isolation_is_complete() -> None:
+    """격리 19파일이 history에만 있고 원위치에 없다."""
     for name in ISOLATED_REGISTRATION:
         assert (HISTORY_ROOT / name).is_file(), f"history에 없음: {name}"
     # 등록 3파일 중 dataset-epoch.json 원위치는 v2로 교체됐고(§2.2 계약이 위에서
@@ -209,7 +215,7 @@ def test_isolation_is_complete_for_18_files() -> None:
 
     assert (
         len(ISOLATED_REGISTRATION) + len(ISOLATED_MANIFESTS) + len(ISOLATED_MARKERS)
-        == 18
+        == 19
     )
 
 
