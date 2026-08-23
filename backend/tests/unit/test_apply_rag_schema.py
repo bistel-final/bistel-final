@@ -104,6 +104,54 @@ def test_cli_requires_confirm_target_to_match_database() -> None:
         )
 
 
-def test_target_allowlist_excludes_text2sql() -> None:
+def test_schema_targets_are_wider_than_load_targets() -> None:
+    """**schema 대상 ⊃ 적재 대상.** 두 집합을 같다고 강제하면 안 된다.
+
+    문서를 넣지 않는 target에도 schema는 맞춰야 한다. 반대로 적재하지 않은 target에
+    B의 fingerprint 산식을 돌리면 `UndefinedColumn`으로 죽는다.
+    """
+
+    import load_rag_documents
+    import postgres_transition
+
+    assert runner.ALLOWED_RAG_DATABASES == postgres_transition.B_SCHEMA_TARGETS
+    assert (
+        load_rag_documents.ALLOWED_RAG_DATABASES
+        == postgres_transition.B_LOADED_RAG_TARGETS
+    )
+    assert load_rag_documents.ALLOWED_RAG_DATABASES < runner.ALLOWED_RAG_DATABASES
+
+
+def test_every_schema_target_parses() -> None:
+    """allowlist에 있는 target은 CLI가 전부 받는다."""
+
+    for database in sorted(runner.ALLOWED_RAG_DATABASES):
+        args = runner.parse_args(
+            ["--database", database, "--confirm-target", database]
+        )
+        assert args.database == database
+
+
+@pytest.mark.parametrize("flag", ["--database", "--confirm-target"])
+def test_an_unknown_database_is_refused_by_each_flag(flag: str) -> None:
+    """**두 flag를 따로 본다.** 한쪽만 allowlist를 잃어도 다른 쪽이 가려버린다."""
+
+    argv = ["--database", "kosa_agent", "--confirm-target", "kosa_agent"]
+    argv[argv.index(flag) + 1] = "kosa"
+    with pytest.raises(SystemExit):
+        runner.parse_args(argv)
+
+
+def test_an_unknown_database_is_refused_at_runtime() -> None:
     with pytest.raises(runner.TargetValidationError):
-        runner.validate_rag_target("kosa_text2sql")
+        runner.validate_rag_target("kosa")
+
+
+def test_the_refusal_message_lists_the_actual_allowlist() -> None:
+    """문구를 손으로 적으면 allowlist와 또 어긋난다."""
+
+    with pytest.raises(runner.TargetValidationError) as caught:
+        runner.validate_rag_target("kosa")
+    message = str(caught.value)
+    for database in runner.ALLOWED_RAG_DATABASES:
+        assert database in message

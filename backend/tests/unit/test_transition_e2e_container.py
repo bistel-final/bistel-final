@@ -825,7 +825,7 @@ def test_production_entrypoints_transition_three_targets(
             transition._rag_live_fingerprint = real_live
             transition._rag_embedding_projection = real_embed
 
-        for database in transition.B_MANAGED_RAG_TARGETS:
+        for database in transition.B_LOADED_RAG_TARGETS:
             assert calls[database] == ["live", "embedding"], database
         # B 관리 밖 target에서는 **0회**. 여기서 부르면 공용에서 UndefinedColumn이 난다.
         assert calls["kosa_text2sql"] == []

@@ -239,7 +239,7 @@ def test_preserved_projection_counts_match_gate0() -> None:
         "document_corpus",
     )
     assert "kosa_agent" not in transition.LEGACY_HANDOFF_TABLES_BY_TARGET
-    assert transition.B_MANAGED_RAG_TARGETS == frozenset(
+    assert transition.B_LOADED_RAG_TARGETS == frozenset(
         {"kosa_agent", "kosa_agent_e2e"}
     )
 
@@ -983,23 +983,46 @@ def test_restore_comparison_ignores_constraints() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_b_managed_rag_targets_match_the_b_owned_allowlist() -> None:
-    """2.6의 목록이 B의 목록과 갈리면 한쪽은 반드시 틀린다.
+def test_b_managed_rag_targets_match_the_rag_load_allowlist() -> None:
+    """2.6의 목록이 **적재** 목록과 갈리면 한쪽은 반드시 틀린다.
 
-    B는 `apply_rag_schema.py`·`load_rag_documents.py`에서 `kosa_agent`와
-    `kosa_agent_e2e`만 허용한다. 2.6이 세 DB 전부에 B의 fingerprint 산식을 돌려
-    공용 preflight가 `UndefinedColumn`으로 죽었다.
+    2.6이 세 DB 전부에 B의 fingerprint 산식을 돌려 공용 preflight가
+    `UndefinedColumn`으로 죽었다. 그 산식은 B가 **실제 적재한** target에만 돈다.
+
+    schema 적용 대상과는 다르다 — `test_schema_targets_are_wider_than_load_targets`
+    참조.
+    """
+
+    import load_rag_documents
+
+    assert transition.B_LOADED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
+    # 전환 대상 셋 중 하나는 B 관리 밖이다. 그 하나가 이번 사고의 원인이다.
+    assert set(transition.ORDERED_TARGETS) - transition.B_LOADED_RAG_TARGETS == {
+        "kosa_text2sql"
+    }
+
+
+def test_schema_targets_are_wider_than_load_targets() -> None:
+    """**schema 3 DB ≠ 적재 2 DB.** 두 집합을 같다고 강제하면 안 된다.
+
+    `kosa_text2sql`의 RAG 3 table은 구 epoch 형상이라 `V5-CM-1.8`이 요구하는
+    evaluation inventory 13을 만들 수 없다. 그래서 schema runner는 그 DB를 받는다.
+    하지만 거기에는 문서를 적재하지 않으므로 marker·fingerprint 대상은 아니다.
     """
 
     import apply_rag_schema
     import load_rag_documents
 
-    assert transition.B_MANAGED_RAG_TARGETS == apply_rag_schema.ALLOWED_RAG_DATABASES
-    assert transition.B_MANAGED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
-    # 전환 대상 셋 중 하나는 B 관리 밖이다. 그 하나가 이번 사고의 원인이다.
-    assert set(transition.ORDERED_TARGETS) - transition.B_MANAGED_RAG_TARGETS == {
-        "kosa_text2sql"
-    }
+    schema_targets = apply_rag_schema.ALLOWED_RAG_DATABASES
+    load_targets = load_rag_documents.ALLOWED_RAG_DATABASES
+
+    assert schema_targets == {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
+    assert load_targets == {"kosa_agent", "kosa_agent_e2e"}
+    # 적재 대상은 schema 대상의 부분집합이다 — 반대는 성립하지 않는다.
+    assert load_targets < schema_targets
+    assert schema_targets - load_targets == {"kosa_text2sql"}
+    # 적재하지 않는 target에 B의 fingerprint 산식을 돌리면 안 된다.
+    assert "kosa_text2sql" not in transition.B_LOADED_RAG_TARGETS
 
 
 #: 실제 호출 여부는 real PostgreSQL이 있는 격리 E2E에서 본다
