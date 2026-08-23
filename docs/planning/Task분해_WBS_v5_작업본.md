@@ -100,7 +100,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1, V5-CM-1.8 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
-| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
+| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `V5-B-1.1`이 만든 `document`·`document_chunk`의 role별 explicit GRANT도 이 Task가 적용한다(구현리뷰 18차 필수 1). `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
 
 ### V5-CM-4. 공통 계약과 통합
 
@@ -158,7 +158,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-B-1.1 | P0 | RAG 스키마 단일 소유. 완료: ① `03_db/01_schema.sql`의 `vector` extension·`document`·`document_chunk`만 3개 DB에 생성한다(`embedding vector(1024)`). `pg_trgm`·`document_corpus`·corpus revision과 ①의 나머지 table은 채택하지 않는다. CM-3.5 role matrix에 맞춘 최소권한 GRANT를 적용하고 PUBLIC 권한·Common migration 중복 객체는 0건이다 | FR-B-02, FR-B-05, NFR-02 | V5-CM-3.1, V5-CM-3.5 | 1.0h |
+| V5-B-1.1 | P0 | RAG 스키마 단일 소유. 완료: ① `03_db/01_schema.sql`의 `vector` extension·`document`·`document_chunk`만 3개 DB에 생성한다(`embedding vector(1024)`). `pg_trgm`·`document_corpus`·corpus revision과 ①의 나머지 table은 채택하지 않는다. `kosa_text2sql`에 남은 legacy `document_corpus`도 이 Task가 제거해 3 DB 물리 inventory를 **runtime 22 · evaluation 13**으로 확정한다. `PUBLIC` 권한과 Common migration 중복 객체는 0건이다. **두 table의 role별 explicit GRANT는 `V5-CM-3.5`가 소유한다** — 이 Task는 schema 생성과 `PUBLIC` revoke까지만 한다(구현리뷰 18차 필수 1: `CM-3.5`를 선행으로 두면 `CM-1.8 → B-1.1 → CM-3.5 → CM-3.2 → CM-1.8` 순환이 생긴다) | FR-B-02, FR-B-05, NFR-02 | V5-CM-3.1 | 1.0h |
 | V5-B-1.2 | P0 | RAG 문서 기능 정합. 완료: 불변 원본은 ③ `project.zip`·CM-1.3 hash로 보존하고 저장소에는 별도 corrected Markdown 3종만 정본으로 둔다. 고정 EQP upstream, score·metrology·반복·하류·후속 정상 기반 조치 상하향, 구 10건 서술을 제거한다. R03·R01·Fault 후보·PH/ET 범위를 최종 계약에 맞추고 Markdown 구조와 금지 문구 검사를 통과한다. 자동 marker·상세 provenance 검증은 B-1.4로 분리한다 | FR-B-02, NFR-06 | V5-CM-1.3 | 1.5h |
 | V5-B-1.3 | P0 | RAG 기능 적재. 완료: ① `load_documents.py`의 청킹·임베딩 로직을 최소 adapter로 재사용해 B-1.2 corrected 경로만 받는다. 명시 DSN과 대상 DB allowlist(`kosa_agent`, `kosa_agent_e2e`)를 강제하고 기본 DSN·원본 fallback·`--reset`을 거부한다. DB별 한 transaction으로 3문서와 canonical `<document_id>:cs1:<4자리>` chunk를 적재하며 `BAAI/bge-m3`·1024, 문서 3건·chunk 1건 이상/문서·embedding NULL 0·대표 검색 smoke를 확인한다. 이 완료 뒤 B-2 기능 구현은 운영 검증을 기다리지 않고 시작할 수 있다 | FR-B-02, FR-B-05, NFR-14 | V5-B-1.1, V5-B-1.2, V5-CM-3.5 | 1.5h |
 | V5-B-1.4 | P1 | RAG 운영 검증 강화. 완료: B-1.3 적재를 `kosa_text2sql`까지 확장해 3 DB를 정렬하고 권한·live fingerprint·중복 0·idempotent no-op을 검증한다. source/corrected SHA-256·정정 사유, cs1 contract hash, 고정 model revision·weights hash·dimension, 3 document ID·chunk 수·검색 smoke를 DB별 COMMITTED marker에 marker-last로 기록하며 readiness가 live DB와 대조할 수 있게 한다 | FR-B-02, FR-B-05, NFR-06, NFR-14 | V5-B-1.3, V5-B-2.1 | 2.0h |

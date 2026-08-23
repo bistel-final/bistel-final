@@ -1226,9 +1226,13 @@ OWNED_BY_OTHER_TASKS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     }
 )
 
-#: 최종 계보가 **채택하지 않는** table. 그러나 지금 공용 DB에 있고 CM-2.6이 legacy
-#: handoff로 보존했다. **채택하지 않는 것과 inventory에서 숨기는 것은 다르다** —
-#: 제거·격리 Task가 정해지기 전까지 manifest는 존재를 그대로 기록한다.
+#: 최종 계보가 **채택하지 않는** table.
+#: 다만 **구 등록 manifest(폐기 epoch)에는 기록돼 있다.**
+#:
+#: 채택하지 않는 것과 등록 inventory에서 지우는 것은 다르다 — 그 manifest는 과거
+#: 형상의 기록이므로 존재를 그대로 남긴다. 제거는 `V5-B-1.1`이 하고, 그 뒤 final
+#: inventory는 `FINAL_PROFILE_TABLE_COUNTS`(22/13)다. 보존 projection에는 어느
+#: 단계에서도 넣지 않는다(`LEGACY_HANDOFF_TABLES`).
 NOT_ADOPTED_TABLES: tuple[str, ...] = ("document_corpus",)
 
 #: **데이터 정본은 최종 `project.zip`뿐이다.** 폐기된 `kosa_0813` epoch과 그 archive를

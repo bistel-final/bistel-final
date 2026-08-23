@@ -694,9 +694,10 @@ def _registered(profile: str) -> dict[str, Any]:
 def test_cm31_owns_only_r03_and_the_view() -> None:
     """**소유권과 물리 inventory는 다른 것이다**(구현리뷰 4차 필수 2).
 
-    CM-3.1이 만들거나 교체하는 것은 둘뿐이지만, profile manifest는
-    `verify_bootstrap_state`가 대조하는 물리 inventory라 CM-2.6이 보존한 table을 전부
-    담아야 한다. 계획 §4.1도 "runtime 23 · evaluation 14를 **유지**한다"고 못 박았다.
+    CM-3.1이 만들거나 교체하는 것은 둘뿐이지만, 구 등록 manifest는 과거 형상의 물리
+    inventory라 CM-2.6이 보존한 table을 전부 담는다. 계획 §4.1의 "runtime 23 ·
+    evaluation 14 유지"는 **그 fixture를 좁히지 말라는 뜻**이지 현재·final 개수가
+    23/14라는 뜻이 아니다(구현리뷰 18차 권장 1).
     """
 
     assert v5.OWNED_BY_CM31 == (v5.R03_TABLE, v5.ALARM_VIEW)
@@ -708,22 +709,29 @@ def test_cm31_owns_only_r03_and_the_view() -> None:
 
 
 def test_not_adopted_is_not_the_same_as_hidden_from_inventory() -> None:
-    """`document_corpus`는 최종 계보가 채택하지 않지만 지금 DB에 **있다.**
+    """`document_corpus`는 채택 대상이 아니지만 **구 등록 manifest에는 기록돼 있다.**
 
-    CM-2.6이 legacy handoff로 보존했다. 채택하지 않는 것과 inventory에서 숨기는 것은
-    다르다 — 제거·격리 Task가 정해지기 전까지 manifest는 존재를 기록한다.
+    채택하지 않는 것과 과거 형상 기록에서 지우는 것은 다르다. 제거는 `V5-B-1.1`이
+    하고 그 뒤 final inventory는 22/13이다. 보존 projection에는 어느 단계에서도
+    넣지 않는다(구현리뷰 18차 권장 1).
     """
 
     assert v5.NOT_ADOPTED_TABLES == ("document_corpus",)
     for tables in v5.OWNED_BY_OTHER_TASKS.values():
         assert "document_corpus" not in tables
-    # 등록 manifest(=현재 물리 inventory)에는 실제로 있다.
+    # 구 등록 manifest에는 기록돼 있다 — 지우지 않는다.
     assert "document_corpus" in _registered("evaluation")["tables"]
+    # 그러나 보존 projection에는 없다.
+    assert "document_corpus" not in v5.PRESERVED_TABLES_BY_PROFILE["evaluation"]
 
 
 @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
-def test_the_registered_inventory_is_preserved_not_narrowed(profile: str) -> None:
-    """계획 §4.1의 "23 · 14 유지"를 실물로 고정한다."""
+def test_the_superseded_registration_fixture_is_not_narrowed(profile: str) -> None:
+    """**구 등록 manifest 23 · 14를 그대로 둔다** — 좁히지 않는다.
+
+    이것은 live도 final도 아닌 **과거 형상 fixture**다. final은 22/13이고
+    `V5-CM-1.8`이 `V5-B-1.1` 뒤에 발급한다(구현리뷰 18차 권장 1).
+    """
 
     tables = set(_registered(profile)["tables"])
     assert len(tables) == v5.SUPERSEDED_PROFILE_TABLE_COUNTS[profile]
