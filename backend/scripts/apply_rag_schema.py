@@ -32,16 +32,17 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-#: **schema 적용 대상 3 DB.** RAG 적재 대상 2 DB와 다르다.
+#: **schema 적용 대상.** `postgres_transition.B_SCHEMA_TARGETS`와 같다.
 #:
-#: `kosa_text2sql`의 RAG 3 table은 구 epoch(PR #48) 형상이라 `V5-CM-1.8`이 요구하는
-#: evaluation 물리 inventory 13을 만들 수 없다. 그 하나를 열기 위한 **일회성 호환
-#: 보완**이며 `V5-B-1.1` 완료를 뜻하지 않는다. `PUBLIC` revoke·role GRANT·runner
-#: 정비는 B 담당 범위다.
+#: 적재 대상(`load_rag_documents.ALLOWED_RAG_DATABASES` ·
+#: `postgres_transition.B_LOADED_RAG_TARGETS`)보다 **넓다.** 문서를 넣지 않는 target에도
+#: schema는 맞춰야 하기 때문이다. 두 집합을 같다고 강제하면 안 된다 — 적재하지 않은
+#: target에 B의 fingerprint 산식이 돌아 `UndefinedColumn`으로 죽는다.
 #:
-#: 적재·marker·fingerprint 대상은 `load_rag_documents.ALLOWED_RAG_DATABASES`와
-#: `postgres_transition.B_MANAGED_RAG_TARGETS`의 **2 DB**다. 여기에 맞추면 안 된다 —
-#: 이름만 같은 구 형상에 B의 fingerprint 산식을 돌리면 `UndefinedColumn`으로 죽는다.
+#: `kosa_text2sql`이 여기 들어간 것은 그 DB의 RAG table이 구 epoch(PR #48) 형상이라
+#: `V5-CM-1.8`이 요구하는 evaluation 물리 inventory를 만들 수 없기 때문이다.
+#: **일회성 호환 보완**이며 `V5-B-1.1` 완료를 뜻하지 않는다. `PUBLIC` revoke·role
+#: GRANT·runner 정비는 B 담당 범위다.
 ALLOWED_RAG_DATABASES = frozenset(
     {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
 )

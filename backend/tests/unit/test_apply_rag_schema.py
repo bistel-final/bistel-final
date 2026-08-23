@@ -104,23 +104,32 @@ def test_cli_requires_confirm_target_to_match_database() -> None:
         )
 
 
-def test_the_allowlist_covers_all_three_databases() -> None:
-    """schema 적용 대상은 **3 DB**다 — 적재 대상 2 DB와 다르다.
+def test_schema_targets_are_wider_than_load_targets() -> None:
+    """**schema 대상 ⊃ 적재 대상.** 두 집합을 같다고 강제하면 안 된다.
 
-    `kosa_text2sql`의 RAG 3 table이 구 epoch 형상이라 `V5-CM-1.8`이 요구하는
-    evaluation inventory 13을 만들 수 없다. 그 하나를 여는 일회성 호환 보완이며
-    `V5-B-1.1` 완료를 뜻하지 않는다.
+    문서를 넣지 않는 target에도 schema는 맞춰야 한다. 반대로 적재하지 않은 target에
+    B의 fingerprint 산식을 돌리면 `UndefinedColumn`으로 죽는다.
     """
 
-    assert runner.ALLOWED_RAG_DATABASES == {
-        "kosa_agent",
-        "kosa_agent_e2e",
-        "kosa_text2sql",
-    }
-    args = runner.parse_args(
-        ["--database", "kosa_text2sql", "--confirm-target", "kosa_text2sql"]
+    import load_rag_documents
+    import postgres_transition
+
+    assert runner.ALLOWED_RAG_DATABASES == postgres_transition.B_SCHEMA_TARGETS
+    assert (
+        load_rag_documents.ALLOWED_RAG_DATABASES
+        == postgres_transition.B_LOADED_RAG_TARGETS
     )
-    assert args.database == "kosa_text2sql"
+    assert load_rag_documents.ALLOWED_RAG_DATABASES < runner.ALLOWED_RAG_DATABASES
+
+
+def test_every_schema_target_parses() -> None:
+    """allowlist에 있는 target은 CLI가 전부 받는다."""
+
+    for database in sorted(runner.ALLOWED_RAG_DATABASES):
+        args = runner.parse_args(
+            ["--database", database, "--confirm-target", database]
+        )
+        assert args.database == database
 
 
 @pytest.mark.parametrize("flag", ["--database", "--confirm-target"])

@@ -239,7 +239,7 @@ def test_preserved_projection_counts_match_gate0() -> None:
         "document_corpus",
     )
     assert "kosa_agent" not in transition.LEGACY_HANDOFF_TABLES_BY_TARGET
-    assert transition.B_MANAGED_RAG_TARGETS == frozenset(
+    assert transition.B_LOADED_RAG_TARGETS == frozenset(
         {"kosa_agent", "kosa_agent_e2e"}
     )
 
@@ -995,9 +995,9 @@ def test_b_managed_rag_targets_match_the_rag_load_allowlist() -> None:
 
     import load_rag_documents
 
-    assert transition.B_MANAGED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
+    assert transition.B_LOADED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
     # 전환 대상 셋 중 하나는 B 관리 밖이다. 그 하나가 이번 사고의 원인이다.
-    assert set(transition.ORDERED_TARGETS) - transition.B_MANAGED_RAG_TARGETS == {
+    assert set(transition.ORDERED_TARGETS) - transition.B_LOADED_RAG_TARGETS == {
         "kosa_text2sql"
     }
 
@@ -1022,7 +1022,7 @@ def test_schema_targets_are_wider_than_load_targets() -> None:
     assert load_targets < schema_targets
     assert schema_targets - load_targets == {"kosa_text2sql"}
     # 적재하지 않는 target에 B의 fingerprint 산식을 돌리면 안 된다.
-    assert "kosa_text2sql" not in transition.B_MANAGED_RAG_TARGETS
+    assert "kosa_text2sql" not in transition.B_LOADED_RAG_TARGETS
 
 
 #: 실제 호출 여부는 real PostgreSQL이 있는 격리 E2E에서 본다
