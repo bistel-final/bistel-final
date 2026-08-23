@@ -1758,6 +1758,7 @@ CLI_MODES: tuple[str, ...] = (
     "rehearse",
     "apply",
     "verify",
+    "promote-receipt",
     "recover-marker",
 )
 
@@ -1840,7 +1841,32 @@ def locked_tables(profile: str) -> tuple[str, ...]:
     return tuple(sorted(names))
 
 
-def share_lock_statements(profile: str) -> tuple[str, ...]:
+#: lock 경쟁에 해당하는 PostgreSQL SQLSTATE.
+#:
+#: `55P03` lock_not_available(=`NOWAIT`·`lock_timeout`), `40P01` deadlock_detected.
+#: **이것만 `TARGET_BUSY`다.** 모든 예외를 잠금 경쟁으로 바꾸면 권한 없음·table 누락·
+#: 연결 종료·SQL 오류가 전부 재시도 대상으로 위장된다(구현리뷰 13차 필수 1).
+LOCK_CONTENTION_SQLSTATES: frozenset[str] = frozenset({"55P03", "40P01"})
+
+
+def _sqlstate(error: BaseException) -> str | None:
+    """driver 예외에서 SQLSTATE를 꺼낸다. SQLAlchemy는 `.orig`로 감싼다."""
+
+    for candidate in (error, getattr(error, "orig", None), error.__cause__):
+        if candidate is None:
+            continue
+        for attribute in ("sqlstate", "pgcode"):
+            value = getattr(candidate, attribute, None)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def is_lock_contention(error: BaseException) -> bool:
+    return _sqlstate(error) in LOCK_CONTENTION_SQLSTATES
+
+
+def share_lock_statements(profile: str, *, nowait: bool = False) -> tuple[str, ...]:
     """읽기만 하는 table을 이름 순으로 `SHARE`한다.
 
     View 정의가 base 9를 읽으므로 transaction 동안 형상이 바뀌면 안 된다. 순서를
@@ -1850,8 +1876,9 @@ def share_lock_statements(profile: str) -> tuple[str, ...]:
     이름은 allowlist에서만 오고, 그래도 quote를 거친다(구현리뷰 9차 필수 2).
     """
 
+    suffix = " NOWAIT" if nowait else ""
     return tuple(
-        f"LOCK TABLE public.{_quote_identifier(name)} IN SHARE MODE"
+        f"LOCK TABLE public.{_quote_identifier(name)} IN SHARE MODE{suffix}"
         for name in locked_tables(profile)
     )
 
@@ -2856,18 +2883,20 @@ def _apply_locked(
 #: commit 뒤 receipt 쓰기가 실패하면 디스크에는 `STARTED`만 남고, `recover-marker`는
 #: exact `COMMITTED` receipt만 받으므로 복구 경로가 없었다(구현리뷰 11차 필수 5).
 #: schema comment는 **같은 transaction 안에서** 쓰이므로 DB commit과 원자적으로 묶인다.
-#: **commit record를 DB에 남기지 않는다**(구현리뷰 12차 필수 1).
+#: **DB에는 아무 record도 남기지 않는다.** 복구 근거는 artifact와 live 실측뿐이다.
 #:
-#: 11차에서 `COMMENT ON SCHEMA public`에 commit identity를 썼는데, 그건 CM-3.1 소유
-#: 밖의 공용 object에 대한 영구 mutation이었다. 기존 comment를 덮고, 다른 도구와 하나의
-#: slot을 공유하며, excluded fingerprint를 잰 **뒤** 써서 "소유 밖 변경 0건" 검증까지
-#: 우회했다.
+#: CM-3.1이 소유한 DB object는 `r03_alarm_history`와 `v_alarm_event` 둘뿐이다. commit
+#: identity를 담을 table·retention·ACL·다중 migration key는 상위 계약에 없으므로 이
+#: Task는 범위를 늘리지 않는다(구현리뷰 12차 필수 1).
 #:
-#: DB 안 record가 필요하면 소유 table·retention·ACL·다중 migration key를 상위 계약에
-#: 먼저 설계해야 한다. 이 Task는 범위를 늘리지 않고 **수동 복구 Gate**로 남긴다.
+#: 대신 `promote-receipt`가 **artifact-only 복구 경로**다. exact `STARTED` receipt와
+#: 새 connection 전체 verify가 일치하고 operator가 명시 확인했을 때만 `COMMITTED`로
+#: 승격한다(구현리뷰 13차 필수 2).
 RECOVERY_GUIDANCE = (
-    "commit 여부는 새 connection에서 `--verify`로 확인한다. "
-    "final이면 receipt를 사람이 복원하고, 아니면 재적용 대상이다."
+    "1) 새 connection에서 `--verify`로 live가 final인지 확인한다. "
+    "2) final이면 `--promote-receipt --confirm-recovery`로 STARTED receipt를 승격한다. "
+    "3) 이어서 `--recover-marker`로 marker를 만든다. "
+    "final이 아니면 승격하지 않는다 — 재적용 대상이다."
 )
 
 
@@ -3015,13 +3044,18 @@ def verify_target(
     resolved_route = route or (marker or {}).get("route") or "successor"
     mode = _security_mode_for(str(resolved_route))
     # 검사 중 live가 바뀌지 않도록 읽는 것들을 `SHARE`로 묶는다(구현리뷰 11차 필수 3).
-    # **무한 대기하지 않는다** — timeout을 먼저 건다(구현리뷰 12차 필수 2).
-    execute(LOCK_TIMEOUT_SQL.replace("SET LOCAL", "SET"))
-    try:
-        for statement in share_lock_statements(profile):
+    #
+    # **`NOWAIT`이라 기다리지 않고 session 설정도 남기지 않는다.** 이전에는 `SET`으로
+    # `lock_timeout`을 걸어 caller connection에 남겼고, 모든 예외를 `TARGET_BUSY`로
+    # 바꿔 권한 없음·table 누락까지 잠금 경쟁으로 위장했다(구현리뷰 13차 필수 1).
+    for statement in share_lock_statements(profile, nowait=True):
+        try:
             execute(statement)
-    except Exception as exc:  # noqa: BLE001 - driver 예외 계층을 흡수한다
-        raise ReferenceV5Error("TARGET_BUSY", EXIT_CONFIRM_REQUIRED) from exc
+        except Exception as exc:  # noqa: BLE001 - driver 예외 계층을 흡수한다
+            if is_lock_contention(exc):
+                raise ReferenceV5Error("TARGET_BUSY", EXIT_CONFIRM_REQUIRED) from exc
+            # 잠금 경쟁이 아니면 원인을 숨기지 않는다.
+            raise
     state = read_target_state(execute, profile=profile)
     if state["state"] != "V5_REFERENCE_FINAL":
         raise ReferenceV5Error("TARGET_STATE_UNSUPPORTED", EXIT_CONFIRM_REQUIRED)
@@ -3064,6 +3098,62 @@ def verify_target(
         )
         result["noop"] = True
     return result
+
+
+def promote_receipt(
+    execute: Any,
+    *,
+    database: str,
+    confirm_target: str | None,
+    change_ref: str,
+    artifact_root: Path,
+    confirm_recovery: bool,
+    require_final_dataset: bool = True,
+    clock: Any = None,
+) -> dict[str, Any]:
+    """`STARTED` receipt를 live 실측으로 검증해 `COMMITTED`로 승격한다.
+
+    commit 응답이 유실됐거나 commit 뒤 receipt 쓰기가 실패한 상태를 복구하는
+    **유일한 경로**다. DB에 record를 남기지 않으므로 근거는 셋뿐이다.
+
+    1. exact `STARTED` receipt — target·change_ref·bundle이 모두 맞아야 한다
+    2. 새 connection 전체 `verify` — live가 정말 final이어야 한다
+    3. operator의 명시 확인 — 자동으로 승격하지 않는다
+
+    이게 없으면 사람이 JSON을 손으로 위조하는 수밖에 없고, 오타 하나로 잘못된 marker가
+    정본이 된다(구현리뷰 13차 필수 2).
+    """
+
+    assert_target_allowed(database, confirm_target=confirm_target)
+    if not confirm_recovery:
+        raise ReferenceV5Error("RECOVERY_CONFIRM_REQUIRED", EXIT_CONFIRM_REQUIRED)
+    path = artifact_root / receipt_name(database, change_ref)
+    if not path.exists():
+        raise ReferenceV5Error("RECEIPT_MISSING", EXIT_CONFIRM_REQUIRED)
+    receipt = read_artifact(path)
+    assert_receipt_contract(receipt)
+    if receipt["status"] != "STARTED":
+        # 이미 결론난 receipt는 승격 대상이 아니다.
+        raise ReferenceV5Error("RECEIPT_STATUS_NOT_ALLOWED", EXIT_USAGE)
+    if receipt["database"] != database or receipt["change_ref"] != change_ref:
+        raise ReferenceV5Error("RECEIPT_TARGET_MISMATCH", EXIT_MISMATCH)
+
+    verified = verify_target(
+        execute,
+        database=database,
+        confirm_target=confirm_target,
+        route=str(receipt["route"]),
+        require_final_dataset=require_final_dataset,
+    )
+    promoted = {
+        **receipt,
+        "status": "COMMITTED",
+        "recorded_at": _now(clock),
+        **{key: verified[key] for key in POST_COMMIT_IDENTITY_KEYS},
+    }
+    assert_receipt_contract(promoted)
+    write_artifact(path, promoted)
+    return promoted
 
 
 def recover_marker(
@@ -3138,6 +3228,11 @@ def build_parser() -> Any:
     parser.add_argument("--confirm-target")
     parser.add_argument("--change-ref")
     parser.add_argument("--artifact-root")
+    parser.add_argument(
+        "--confirm-recovery",
+        action="store_true",
+        help="`promote-receipt` 전용. STARTED receipt를 COMMITTED로 승격한다.",
+    )
     parser.add_argument(
         "--allow-non-final-dataset",
         action="store_true",
@@ -3250,6 +3345,16 @@ def run_mode(execute: Any, connection: Any, args: Any, mode: str) -> dict[str, A
             marker=marker,
             require_final_dataset=require_final,
         )
+    if mode == "promote-receipt":
+        return promote_receipt(
+            execute,
+            database=args.database,
+            confirm_target=args.confirm_target,
+            change_ref=args.change_ref,
+            artifact_root=root,
+            confirm_recovery=args.confirm_recovery,
+            require_final_dataset=require_final,
+        )
     if mode == "recover-marker":
         return recover_marker(
             execute,
@@ -3284,7 +3389,7 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
         assert_target_allowed(args.database, confirm_target=args.confirm_target)
         if args.allow_non_final_dataset:
             assert_non_final_dataset_allowed(database=args.database, mode=mode)
-        if mode in {"apply", "rehearse", "recover-marker"}:
+        if mode in {"apply", "rehearse", "recover-marker", "promote-receipt"}:
             if not args.change_ref:
                 raise ReferenceV5Error("CHANGE_REF_REQUIRED", EXIT_USAGE)
             _safe_component(args.change_ref)
@@ -3302,6 +3407,10 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
         result = run_mode(execute, connection, args, mode)
     except ReferenceV5Error as error:
         print(error.reason_code, file=sys.stderr)
+        if error.reason_code in {"COMMIT_OUTCOME_UNKNOWN", "RECOVERY_REQUIRED"}:
+            # **다음에 무엇을 할지 알려준다.** reason code만 던지면 사용자는 복구 절차를
+            # 알 수 없다(구현리뷰 13차 필수 2).
+            print(RECOVERY_GUIDANCE, file=sys.stderr)
         return error.exit_code
     finally:
         # 어떤 결과에서도 connection·engine을 닫아 session lock을 최종 해제한다.

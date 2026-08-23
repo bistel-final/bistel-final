@@ -4973,8 +4973,8 @@ def test_a_busy_target_stops_with_zero_writes(tmp_path: Path) -> None:
     assert not list(tmp_path.iterdir())
 
 
-def test_verify_sets_a_lock_timeout_before_locking() -> None:
-    """timeout 없이 `SHARE`를 잡으면 무한 대기한다(구현리뷰 12차 필수 2)."""
+def test_verify_locks_with_nowait_and_leaves_no_session_state() -> None:
+    """`SET`으로 timeout을 걸면 caller connection에 남는다(구현리뷰 13차 필수 1)."""
 
     fake = _FakeDatabase(state="final")
     v5.verify_target(
@@ -4983,26 +4983,93 @@ def test_verify_sets_a_lock_timeout_before_locking() -> None:
         confirm_target="kosa_agent",
         require_final_dataset=False,
     )
-    timeout_index = next(i for i, sql in enumerate(fake.seen) if "lock_timeout" in sql)
-    first_lock = next(i for i, sql in enumerate(fake.seen) if "IN SHARE MODE" in sql)
-    assert timeout_index < first_lock
+    locks = [sql for sql in fake.seen if "IN SHARE MODE" in sql]
+    assert locks and all(sql.endswith("NOWAIT") for sql in locks)
+    assert not [sql for sql in fake.seen if sql.startswith("SET ")]
 
 
-def test_a_busy_verify_reports_target_busy() -> None:
+class _LockError(RuntimeError):
+    """driver 예외 흉내. SQLSTATE로 분류된다."""
+
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+def _locking(sqlstate: str) -> Any:
     class _Busy(_FakeDatabase):
         def __call__(self, sql: str, params: Any = None) -> list[dict[str, Any]]:
             if "IN SHARE MODE" in sql:
-                raise RuntimeError("lock timeout")
+                raise _LockError(sqlstate)
             return super().__call__(sql, params)
+
+    return _Busy(state="final")
+
+
+@pytest.mark.parametrize("sqlstate", ["55P03", "40P01"])
+def test_a_lock_contention_reports_target_busy(sqlstate: str) -> None:
+    """`lock_not_available`·`deadlock_detected`만 잠금 경쟁이다."""
 
     with pytest.raises(v5.ReferenceV5Error) as caught:
         v5.verify_target(
-            _Busy(state="final"),
+            _locking(sqlstate),
             database="kosa_agent",
             confirm_target="kosa_agent",
             require_final_dataset=False,
         )
     assert caught.value.reason_code == "TARGET_BUSY"
+
+
+@pytest.mark.parametrize(
+    ("sqlstate", "why"),
+    [
+        ("42501", "권한 없음"),
+        ("42P01", "table 없음"),
+        ("08006", "연결 끊김"),
+        ("42601", "SQL 오류"),
+    ],
+)
+def test_a_non_lock_error_is_not_disguised_as_busy(sqlstate: str, why: str) -> None:
+    """모든 예외를 `TARGET_BUSY`로 바꾸면 원인이 재시도 대상으로 위장된다(필수 1)."""
+
+    with pytest.raises(_LockError) as caught:
+        v5.verify_target(
+            _locking(sqlstate),
+            database="kosa_agent",
+            confirm_target="kosa_agent",
+            require_final_dataset=False,
+        )
+    assert caught.value.sqlstate == sqlstate, why
+
+
+def test_an_exception_without_a_sqlstate_is_not_busy() -> None:
+    """분류할 수 없으면 잠금 경쟁으로 단정하지 않는다."""
+
+    class _Plain(_FakeDatabase):
+        def __call__(self, sql: str, params: Any = None) -> list[dict[str, Any]]:
+            if "IN SHARE MODE" in sql:
+                raise RuntimeError("무엇인지 모른다")
+            return super().__call__(sql, params)
+
+    with pytest.raises(RuntimeError):
+        v5.verify_target(
+            _Plain(state="final"),
+            database="kosa_agent",
+            confirm_target="kosa_agent",
+            require_final_dataset=False,
+        )
+
+
+def test_the_sqlstate_is_read_through_a_wrapper() -> None:
+    """SQLAlchemy는 driver 예외를 `.orig`로 감싼다."""
+
+    class _Wrapped(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__("wrapped")
+            self.orig = _LockError("55P03")
+
+    assert v5.is_lock_contention(_Wrapped()) is True
+    assert v5.is_lock_contention(RuntimeError("plain")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -5044,3 +5111,151 @@ def test_the_artifact_name_contract_holds_on_every_platform() -> None:
         with pytest.raises(v5.ReferenceV5Error) as caught:
             v5.receipt_name("kosa_agent", bad)
         assert caught.value.reason_code == "ARTIFACT_NAME_UNSAFE"
+
+
+# ---------------------------------------------------------------------------
+# artifact-only 복구 경로 (구현리뷰 13차 필수 2)
+# ---------------------------------------------------------------------------
+
+
+def _started_receipt(tmp_path: Path, **overrides: Any) -> Path:
+    path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
+    v5.write_artifact(path, _receipt(**overrides))
+    return path
+
+
+def _promote(tmp_path: Path, database: Any = None, **kwargs: Any) -> Any:
+    return v5.promote_receipt(
+        database if database is not None else _FakeDatabase(state="final"),
+        database=kwargs.pop("target", "kosa_agent"),
+        confirm_target=kwargs.pop("confirm_target", "kosa_agent"),
+        change_ref=kwargs.pop("change_ref", "GH-110"),
+        artifact_root=tmp_path,
+        confirm_recovery=kwargs.pop("confirm_recovery", True),
+        require_final_dataset=kwargs.pop("require_final_dataset", False),
+    )
+
+
+def test_a_started_receipt_is_promoted_after_a_full_verify(tmp_path: Path) -> None:
+    """commit 응답 유실 뒤 유일한 복구 경로다(구현리뷰 13차 필수 2)."""
+
+    _started_receipt(tmp_path)
+    promoted = _promote(tmp_path)
+    assert promoted["status"] == "COMMITTED"
+    for key in v5.POST_COMMIT_IDENTITY_KEYS:
+        assert v5._SHA256.fullmatch(promoted[key])
+    # 파일에도 반영된다 — 이어서 `recover-marker`가 받을 수 있다.
+    stored = v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))
+    assert stored["status"] == "COMMITTED"
+    v5.assert_receipt_contract(stored)
+
+
+def test_promotion_needs_an_explicit_confirmation(tmp_path: Path) -> None:
+    """자동으로 승격하지 않는다."""
+
+    _started_receipt(tmp_path)
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _promote(tmp_path, confirm_recovery=False)
+    assert caught.value.reason_code == "RECOVERY_CONFIRM_REQUIRED"
+    assert (
+        v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))["status"]
+        == "STARTED"
+    )
+
+
+def test_promotion_refuses_when_live_is_not_final(tmp_path: Path) -> None:
+    """live가 final이 아니면 재적용 대상이다."""
+
+    _started_receipt(tmp_path)
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _promote(tmp_path, database=_FakeDatabase(state="V4_REFERENCE_COMPAT"))
+    assert caught.value.reason_code == "TARGET_STATE_UNSUPPORTED"
+
+
+def test_promotion_refuses_a_missing_receipt(tmp_path: Path) -> None:
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _promote(tmp_path)
+    assert caught.value.reason_code == "RECEIPT_MISSING"
+
+
+def test_promotion_refuses_an_already_committed_receipt(tmp_path: Path) -> None:
+    v5.write_artifact(
+        tmp_path / v5.receipt_name("kosa_agent", "GH-110"), _committed_receipt()
+    )
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _promote(tmp_path)
+    assert caught.value.reason_code == "RECEIPT_STATUS_NOT_ALLOWED"
+
+
+def test_promotion_refuses_a_bundle_drift(tmp_path: Path) -> None:
+    """SQL이 바뀐 뒤의 receipt를 승격하면 안 된다."""
+
+    _started_receipt(tmp_path, migration_bundle_sha256="0" * 64)
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _promote(tmp_path)
+    assert caught.value.reason_code == "MIGRATION_BUNDLE_STALE"
+
+
+def test_promotion_refuses_a_target_mismatch(tmp_path: Path) -> None:
+    path = tmp_path / v5.receipt_name("kosa_agent_e2e", "GH-110")
+    v5.write_artifact(path, _receipt(database="kosa_agent_e2e", profile="runtime"))
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.promote_receipt(
+            _FakeDatabase(state="final"),
+            database="kosa_agent",
+            confirm_target="kosa_agent",
+            change_ref="GH-110",
+            artifact_root=tmp_path,
+            confirm_recovery=True,
+            require_final_dataset=False,
+        )
+    assert caught.value.reason_code == "RECEIPT_MISSING"
+
+
+def test_promote_receipt_is_a_cli_mode() -> None:
+    assert "promote-receipt" in v5.CLI_MODES
+    assert v5.assert_single_mode(["promote-receipt"]) == "promote-receipt"
+
+
+def test_the_cli_prints_the_recovery_guidance(tmp_path: Path) -> None:
+    """reason code만 던지면 사용자는 복구 절차를 알 수 없다(구현리뷰 13차 필수 2)."""
+
+    class _CommitBreaks(_FakeDatabase):
+        def commit(self) -> None:
+            raise RuntimeError("commit 응답 유실")
+
+    code, err, _out = _cli(
+        "--apply",
+        "--database",
+        "kosa_agent",
+        "--confirm-target",
+        "kosa_agent",
+        "--change-ref",
+        "GH-110",
+        "--artifact-root",
+        str(tmp_path),
+        database=_CommitBreaks(),
+    )
+    assert code == v5.EXIT_CONFIRM_REQUIRED
+    assert "COMMIT_OUTCOME_UNKNOWN" in err
+    # 다음에 무엇을 할지 알려준다.
+    assert "--verify" in err
+    assert "--promote-receipt" in err
+    assert "--recover-marker" in err
+
+
+def test_the_guidance_names_every_recovery_step() -> None:
+    for fragment in ("--verify", "--promote-receipt", "--confirm-recovery"):
+        assert fragment in v5.RECOVERY_GUIDANCE
+
+
+def test_the_module_still_writes_no_db_record() -> None:
+    """복구 경로가 생겼다고 DB object를 늘리지 않는다(구현리뷰 12차 필수 1)."""
+
+    source = (
+        REPOSITORY_ROOT / "backend" / "scripts" / "apply_reference_extensions_v5.py"
+    ).read_text(encoding="utf-8")
+    executable = "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "COMMENT ON SCHEMA" not in executable

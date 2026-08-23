@@ -979,3 +979,129 @@ def test_the_canonical_route_verifies_and_recovers(tmp_path: Path) -> None:
                 artifact_root=tmp_path,
             )
             assert recovered["route"] == "canonical"
+
+
+def test_the_recovery_runbook_completes_end_to_end(tmp_path: Path) -> None:
+    """`STARTED → 새 connection verify → 승격 → recover-marker`를 완주한다.
+
+    commit 응답 유실과 receipt 첫 쓰기 실패가 남기는 상태가 같다 — 디스크에 `STARTED`만
+    있고 DB는 final이다. DB record 없이 artifact와 live 실측만으로 복구한다
+    (구현리뷰 13차 필수 2).
+    """
+
+    with postgres.one_off_postgres(database="v5runbook") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        with connection:
+            execute = _execute(cursor)
+            marker = _run(cursor, connection, tmp_path)
+            receipt_path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
+            marker_path = tmp_path / v5.marker_name("kosa_agent", "GH-110")
+
+            # commit 뒤 artifact가 유실된 상태를 만든다.
+            marker_path.unlink()
+            v5.write_artifact(
+                receipt_path,
+                {
+                    **v5.read_artifact(receipt_path),
+                    "status": "STARTED",
+                    **dict.fromkeys(v5.POST_COMMIT_IDENTITY_KEYS),
+                },
+            )
+
+            # 이 상태에서는 marker를 만들 수 없다.
+            with pytest.raises(v5.ReferenceV5Error) as caught:
+                v5.recover_marker(
+                    execute,
+                    database="kosa_agent",
+                    confirm_target="kosa_agent",
+                    change_ref="GH-110",
+                    artifact_root=tmp_path,
+                )
+            assert caught.value.reason_code == "RECEIPT_STATUS_NOT_ALLOWED"
+
+            # 1) verify — live가 정말 final인가
+            verified = v5.verify_target(
+                execute, database="kosa_agent", confirm_target="kosa_agent"
+            )
+            assert verified["state"] == "V5_REFERENCE_FINAL"
+
+            # 2) 승격 — operator 확인이 있어야 한다
+            promoted = v5.promote_receipt(
+                execute,
+                database="kosa_agent",
+                confirm_target="kosa_agent",
+                change_ref="GH-110",
+                artifact_root=tmp_path,
+                confirm_recovery=True,
+            )
+            assert promoted["status"] == "COMMITTED"
+            for key in v5.POST_COMMIT_IDENTITY_KEYS:
+                assert promoted[key] == marker[key]
+
+            # 3) marker 복구
+            recovered = v5.recover_marker(
+                execute,
+                database="kosa_agent",
+                confirm_target="kosa_agent",
+                change_ref="GH-110",
+                artifact_root=tmp_path,
+            )
+            assert marker_path.is_file()
+            assert (
+                recovered["schema_signature_sha256"]
+                == marker["schema_signature_sha256"]
+            )
+
+
+def test_a_table_lock_race_reports_target_busy(tmp_path: Path) -> None:
+    """**advisory lock이 아니라 table lock** 경쟁을 본다(구현리뷰 13차 필수 1)."""
+
+    import time
+
+    with postgres.one_off_postgres(database="v5tlock") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        blocker = _session(endpoint, "kosa_agent")
+        with connection, blocker:
+            _run(cursor, connection, tmp_path)
+            blocker_cursor = blocker.cursor()
+            # 다른 session이 base 9 하나를 배타적으로 잡는다.
+            blocker_cursor.execute(
+                "LOCK TABLE public.lot_history IN ACCESS EXCLUSIVE MODE"
+            )
+
+            started = time.monotonic()
+            with pytest.raises(v5.ReferenceV5Error) as caught:
+                v5.verify_target(
+                    _execute(cursor),
+                    database="kosa_agent",
+                    confirm_target="kosa_agent",
+                )
+            elapsed = time.monotonic() - started
+            connection.rollback()
+
+        assert caught.value.reason_code == "TARGET_BUSY"
+        # `NOWAIT`이라 기다리지 않는다.
+        assert elapsed < 5.0
+
+
+def test_a_permission_error_is_not_reported_as_busy(tmp_path: Path) -> None:
+    """권한 없음이 잠금 경쟁으로 위장되면 재시도 대상이 된다(구현리뷰 13차 필수 1)."""
+
+    import psycopg.errors
+
+    with postgres.one_off_postgres(database="v5perm") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        with connection:
+            _run(cursor, connection, tmp_path)
+            cursor.execute("CREATE ROLE kosa_limited NOLOGIN")
+            cursor.execute("GRANT USAGE ON SCHEMA public TO kosa_limited")
+            connection.commit()
+            cursor.execute("SET ROLE kosa_limited")
+
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                v5.verify_target(
+                    _execute(cursor),
+                    database="kosa_agent",
+                    confirm_target="kosa_agent",
+                )
+            connection.rollback()
