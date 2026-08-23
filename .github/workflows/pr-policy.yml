@@ -73,11 +73,12 @@ jobs:
             fi
           done
 
-  # 이 job은 corrected 전용이 아니다. rehearsal lifecycle과 recovery lock 계약도
-  # 여기서만 Windows에서 실행된다. `V5-CM-1.6`이 corrected 계열을 제거할 때 job을
-  # 통째로 지우면 두 검증이 함께 사라진다(계획리뷰 2차 권장 3).
-  corrected-dataset-windows:
-    name: Corrected dataset Windows
+  # `V5-CM-1.6`이 corrected 계열을 삭제하면서 이 job에서 corrected step만 뺐다.
+  # **job 자체는 남긴다** — rehearsal lifecycle·recovery lock·V5 artifact write·공용
+  # 전환 argv 계약이 Windows에서 도는 곳은 여기뿐이라, 통째로 지우면 그 검증들이 함께
+  # 사라진다(계획리뷰 2차 권장 3).
+  windows-contract:
+    name: Windows contract
     runs-on: windows-latest
 
     steps:
@@ -91,12 +92,6 @@ jobs:
 
       - name: Install focused test dependency
         run: python -m pip install pytest==8.3.4
-
-      - name: Verify Windows locking and concurrent activation
-        run: >-
-          python -m pytest -q
-          backend/tests/unit/test_build_corrected_dataset.py
-          -k "windows_lock_backend or parallel_same_build or parallel_different_builds"
 
       - name: Verify cross-platform rehearsal lifecycle contract
         run: >-
