@@ -521,6 +521,11 @@ def _live_fingerprint(connection: Any, document_ids: Sequence[str]) -> str:
     )
 
 
+#: `V5-CM-2.6`이 전환 전후 RAG 보존을 확인할 때 **이 산식을 그대로** 쓴다. 2.6이 별도
+#: 산식을 만들면 B-1.3이 남긴 marker와 대조할 수 없다. 이름만 공개하고 본문은 B 소유다.
+live_fingerprint = _live_fingerprint
+
+
 def _scalar_count(connection: Any, sql: str, parameters: Mapping[str, Any]) -> int:
     row = connection.exec_driver_sql(sql, parameters).mappings().one()
     return int(next(iter(row.values())))
