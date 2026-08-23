@@ -126,8 +126,12 @@ Documents와 Ontology 화면은 각각 Loading·Error·Empty·Success 네 상태
 
 ## 선행조건·협업 주의
 
-- RAG schema·적재는 `V5-CM-3.1`과 role matrix `V5-CM-3.5` 이후, corrected source는
-  `V5-CM-1.3` 이후다.
+- RAG **schema 생성**(`V5-B-1.1`)은 `V5-CM-3.1` **직후**다. `V5-CM-3.5`를 기다리지 않는다 —
+  기다리면 `CM-1.8 → B-1.1 → CM-3.5 → CM-3.2 → CM-1.8` 순환이 된다(구현리뷰 18차 필수 1).
+  이 Task는 schema 생성·`PUBLIC` revoke·legacy `document_corpus` 제거까지만 한다.
+- `document`·`document_chunk`의 **role별 explicit GRANT는 `V5-CM-3.5`가 소유한다.**
+- RAG **적재**(`V5-B-1.3`)만 `V5-B-1.1`·`V5-B-1.2`·`V5-CM-3.5` 이후다.
+- corrected source는 `V5-CM-1.3` 이후다.
 - graph는 `V5-CM-1.3` 이후 `V5-B-3.1`이 offline 검증하고, 그 결과를 선행으로 둔
   `V5-CM-2.7`이 안전 적용한 뒤 `V5-B-3.2`·`V5-B-3.3`이 읽는다.
 - C의 Level 1·2는 `V5-B-2.2`와 `V5-B-3.2`가 모두 끝나야 통합할 수 있다.

@@ -238,14 +238,21 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
    V5-B-3.1         CM-1.3 뒤 final master.cypher offline parser·100 statement·44/85 fixture 검증
 3  V5-CM-2.6~2.7    팀 승인 후 공용 3 profile 전환 · B-3.1 통과 입력의 Neo4j safe apply
 4  V5-CM-3.1        Reference extension 재기준화 · task-scoped migration contract artifact
-5  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
-6  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
-7  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
-8  A·B·C·D          실제 dependency가 열린 Task부터 병렬 구현
-9  V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
-10 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
-11 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
-12 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
+5  V5-B-1.1         RAG schema 생성 · PUBLIC revoke · legacy document_corpus 제거
+                    → 물리 inventory를 runtime 22 · evaluation 13으로 확정한다.
+                    **9번보다 먼저 실행하는 유일한 도메인 Task다** — CM-1.8이 이 결과를
+                    선행으로 요구한다(구현리뷰 18차 필수 1 · 19차 필수 1).
+6  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
+                    (B-1.1 확정 뒤 runtime 22 · evaluation 13 live inventory로 발급한다)
+7  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
+                    (CM-3.5가 B-1.1이 만든 document·document_chunk의 explicit GRANT도 적용)
+8  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
+9  나머지 A·B·C·D   실제 dependency가 열린 Task부터 병렬 구현
+                    (B-1.1은 5번에서 끝났고, B-1.3 적재는 CM-3.5 뒤다)
+10 V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
+11 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
+12 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
+13 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
 
    V5-CM-1.6~1.7   새 public profile 검증 뒤 구 corrected/bootstrap 코드를 제거한다.
                    기능 구현과 병행할 수 있지만 최종 gate 전에는 완료한다.

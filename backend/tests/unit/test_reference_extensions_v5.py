@@ -3817,7 +3817,11 @@ def test_the_expected_plan_matches_itself() -> None:
 
 
 def test_a_plan_from_another_profile_is_refused() -> None:
-    """runtime은 13개, evaluation은 4개를 더 잡는다. 섞이면 안 된다."""
+    """보존 projection은 runtime **12** · evaluation **3**이다. 섞이면 안 된다.
+
+    구 등록 manifest 23/14에서 base 9·R03·legacy handoff를 뺀 값이다
+    (구현리뷰 19차 권장 1 — 전에는 13/4로 적혀 있었다).
+    """
 
     plan = _plan("successor", profile="runtime")
     with pytest.raises(v5.ReferenceV5Error) as caught:

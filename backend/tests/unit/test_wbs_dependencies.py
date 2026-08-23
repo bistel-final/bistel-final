@@ -94,39 +94,82 @@ def test_no_p0_task_waits_on_a_p1_task(rows: dict[str, TaskRow]) -> None:
     assert not inverted
 
 
-def test_the_reference_chain_is_ordered(rows: dict[str, TaskRow]) -> None:
-    """`CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.5 → B-1.3` (구현리뷰 18차 §88).
+#: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.5 → B-1.3` (구현리뷰 18차 §88).
+#:
+#: **direct edge로 고정한다.** 위상 순서만 비교하면 파일의 행 배치가 우연히 그 순서라서
+#: edge를 지워도 통과한다 — 19차가 3건을 그렇게 뚫었다(권장 1).
+REFERENCE_CHAIN: tuple[tuple[str, str], ...] = (
+    ("V5-B-1.1", "V5-CM-3.1"),
+    ("V5-CM-1.8", "V5-B-1.1"),
+    ("V5-CM-3.2", "V5-CM-1.8"),
+    ("V5-CM-3.5", "V5-CM-3.2"),
+    ("V5-B-1.3", "V5-CM-3.5"),
+)
 
-    B가 legacy를 정리한 **뒤** CM-1.8이 final 22/13 manifest를 발급하고, 그 뒤
-    Runtime migration과 role이 온다. B-1.1이 `CM-3.5`를 선행으로 두면 순환이 된다.
+
+@pytest.mark.parametrize(("task", "predecessor"), REFERENCE_CHAIN)
+def test_the_reference_chain_edge_is_direct(
+    rows: dict[str, TaskRow], task: str, predecessor: str
+) -> None:
+    """각 edge가 **직접 선행**이어야 한다. 전이적으로 만족하는 것으로는 부족하다.
+
+    B가 legacy를 정리한 뒤 CM-1.8이 final 22/13 manifest를 발급하고, 그 뒤 Runtime
+    migration과 role이 온다. 중간 한 칸이 빠지면 그 순서 보장이 사라진다.
     """
 
-    order: list[str] = []
-    seen: set[str] = set()
+    assert predecessor in rows[task][1], f"{task} 선행: {rows[task][1]}"
 
-    def visit(task: str) -> None:
-        if task in seen:
-            return
-        seen.add(task)
-        for predecessor in rows.get(task, ("", []))[1]:
-            visit(predecessor)
-        order.append(task)
 
-    for task in rows:
-        visit(task)
+def test_schema_creation_and_grant_ownership_stay_split(
+    rows: dict[str, TaskRow],
+) -> None:
+    """`B-1.1`이 `CM-3.5`를 선행으로 두면 4-node 순환이 된다(구현리뷰 18차 필수 1)."""
 
-    chain = [
-        "V5-CM-3.1",
-        "V5-B-1.1",
-        "V5-CM-1.8",
-        "V5-CM-3.2",
-        "V5-CM-3.5",
-        "V5-B-1.3",
-    ]
-    positions = [order.index(task) for task in chain]
-    assert positions == sorted(positions), dict(zip(chain, positions, strict=True))
-    # schema 생성과 최소권한 적용의 소유가 갈려 있어야 순환이 안 생긴다.
     assert "V5-CM-3.5" not in rows["V5-B-1.1"][1]
+    assert rows["V5-B-1.1"][1] == ["V5-CM-3.1"]
+
+
+def test_the_apply_order_prose_matches_the_dag() -> None:
+    """**표만 고치고 서술을 두면 계약이 둘이 된다**(구현리뷰 19차 필수 1).
+
+    §8 실행 안내가 구 순서를 말하면, 그대로 따라간 사람은 `CM-1.8`을 `B-1.1`보다 먼저
+    시도하거나 B schema를 `CM-3.5`까지 기다린다.
+    """
+
+    text = WBS.read_text(encoding="utf-8")
+    section = text[text.index("## 8. 적용 순서와 게이트") :]
+    section = section[: section.index("```", section.index("```text") + 7)]
+
+    def position(task: str) -> int:
+        assert task in section, f"§8에 {task}가 없다"
+        return section.index(task)
+
+    # §8은 `V5-CM-3.2~3.5`처럼 범위로 묶여 한 단계가 여러 Task를 담는다. 그래서
+    # 서술에서 **단계가 갈리는** 순서만 본다(구현리뷰 19차 §97.1).
+    for predecessor, task in (
+        ("V5-CM-3.1", "V5-B-1.1"),
+        ("V5-B-1.1", "V5-CM-1.8"),
+        ("V5-CM-1.8", "V5-CM-3.2"),
+    ):
+        assert position(predecessor) < position(task), f"{predecessor} → {task}"
+    # B-1.1이 도메인 Task 묶음보다 앞에 있고, 그 예외가 글로 적혀 있다.
+    assert position("V5-B-1.1") < position("나머지 A·B·C·D")
+    assert "먼저 실행하는 유일한 도메인 Task" in section
+    # CM-3.5가 RAG explicit GRANT를 소유한다는 것도 서술에 있다.
+    assert "explicit GRANT" in section
+
+
+def test_the_b_task_prose_splits_schema_from_loading() -> None:
+    """B 선행조건이 schema 생성과 GRANT·적재를 나눠 설명한다(구현리뷰 19차 필수 1)."""
+
+    text = B_TASKS.read_text(encoding="utf-8")
+    section = text[text.index("## 선행조건·협업 주의") :]
+    assert "`V5-CM-3.1` **직후**" in section
+    assert "`V5-CM-3.5`를 기다리지 않는다" in section
+    assert "explicit GRANT는 `V5-CM-3.5`가 소유한다" in section
+    assert "`V5-B-1.3`" in section
+    # 구 문장이 남아 있으면 안 된다.
+    assert "RAG schema·적재는" not in section
 
 
 def test_the_b_task_document_matches_the_wbs() -> None:
