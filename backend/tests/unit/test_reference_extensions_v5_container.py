@@ -10,6 +10,7 @@ legacy 형상은 CM-2.6이 만든 `tests/fixtures/v5_cm_2_6/` vendored fixture�
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -981,76 +982,190 @@ def test_the_canonical_route_verifies_and_recovers(tmp_path: Path) -> None:
             assert recovered["route"] == "canonical"
 
 
-def test_the_recovery_runbook_completes_end_to_end(tmp_path: Path) -> None:
-    """`STARTED → 새 connection verify → 승격 → recover-marker`를 완주한다.
+class _ResponseLoss(RuntimeError):
+    """commit은 서버에서 성공했는데 caller에는 예외가 보이는 상황."""
 
-    commit 응답 유실과 receipt 첫 쓰기 실패가 남기는 상태가 같다 — 디스크에 `STARTED`만
-    있고 DB는 final이다. DB record 없이 artifact와 live 실측만으로 복구한다
-    (구현리뷰 13차 필수 2).
+
+def _raise(error: BaseException) -> Any:
+    def fail() -> None:
+        raise error
+
+    return fail
+
+
+def _apply_with_failure(
+    cursor: Any,
+    connection: Any,
+    root: Path,
+    *,
+    on_commit: Any = None,
+) -> v5.ReferenceV5Error:
+    """**실제 장애를 주입한다.** 성공 artifact를 사후 변조하지 않는다.
+
+    `on_commit`은 진짜 `connection.commit()`이 끝난 **뒤** 실행된다 — 여기서 예외를
+    던지면 응답 유실이 되고, 디렉터리 권한을 죽이면 뒤따르는 artifact 쓰기가 실제
+    `PermissionError`로 깨진다(구현리뷰 14차 필수 2).
     """
 
-    with postgres.one_off_postgres(database="v5runbook") as endpoint:
-        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
-        with connection:
-            execute = _execute(cursor)
-            marker = _run(cursor, connection, tmp_path)
-            receipt_path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
-            marker_path = tmp_path / v5.marker_name("kosa_agent", "GH-110")
+    def commit() -> None:
+        connection.commit()
+        if on_commit is not None:
+            on_commit()
 
-            # commit 뒤 artifact가 유실된 상태를 만든다.
-            marker_path.unlink()
-            v5.write_artifact(
-                receipt_path,
-                {
-                    **v5.read_artifact(receipt_path),
-                    "status": "STARTED",
-                    **dict.fromkeys(v5.POST_COMMIT_IDENTITY_KEYS),
-                },
-            )
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.apply_to_target(
+            _execute(cursor),
+            database="kosa_agent",
+            confirm_target="kosa_agent",
+            change_ref="GH-110",
+            artifact_root=root,
+            commit=commit,
+            rollback=connection.rollback,
+        )
+    return caught.value
 
-            # 이 상태에서는 marker를 만들 수 없다.
-            with pytest.raises(v5.ReferenceV5Error) as caught:
-                v5.recover_marker(
-                    execute,
-                    database="kosa_agent",
-                    confirm_target="kosa_agent",
-                    change_ref="GH-110",
-                    artifact_root=tmp_path,
-                )
-            assert caught.value.reason_code == "RECEIPT_STATUS_NOT_ALLOWED"
 
-            # 1) verify — live가 정말 final인가
-            verified = v5.verify_target(
-                execute, database="kosa_agent", confirm_target="kosa_agent"
-            )
-            assert verified["state"] == "V5_REFERENCE_FINAL"
+def _recover(endpoint: Any, root: Path, *, promote: bool, route: str) -> None:
+    """**새 connection**에서 runbook 순서대로 복구를 완주한다."""
 
-            # 2) 승격 — operator 확인이 있어야 한다
+    status = v5.read_receipt_status(root, database="kosa_agent", change_ref="GH-110")
+    runbook = v5.recovery_runbook(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=root,
+        receipt_status=status,
+    )
+    assert any("--promote-receipt" in line for line in runbook) is promote
+    assert any("--recover-marker" in line for line in runbook)
+
+    with _session(endpoint, "kosa_agent") as recovery, recovery.cursor() as cursor:
+        execute = _execute(cursor)
+        if promote:
             promoted = v5.promote_receipt(
                 execute,
                 database="kosa_agent",
                 confirm_target="kosa_agent",
                 change_ref="GH-110",
-                artifact_root=tmp_path,
+                artifact_root=root,
                 confirm_recovery=True,
             )
             assert promoted["status"] == "COMMITTED"
-            for key in v5.POST_COMMIT_IDENTITY_KEYS:
-                assert promoted[key] == marker[key]
+            assert promoted["route"] == route
+        else:
+            # 안내에 promote가 없는 이유를 고정한다 — 부르면 실제로 막힌다.
+            with pytest.raises(v5.ReferenceV5Error) as caught:
+                v5.promote_receipt(
+                    execute,
+                    database="kosa_agent",
+                    confirm_target="kosa_agent",
+                    change_ref="GH-110",
+                    artifact_root=root,
+                    confirm_recovery=True,
+                )
+            assert caught.value.reason_code == "RECEIPT_STATUS_NOT_ALLOWED"
 
-            # 3) marker 복구
-            recovered = v5.recover_marker(
-                execute,
-                database="kosa_agent",
-                confirm_target="kosa_agent",
-                change_ref="GH-110",
-                artifact_root=tmp_path,
+        recovered = v5.recover_marker(
+            execute,
+            database="kosa_agent",
+            confirm_target="kosa_agent",
+            change_ref="GH-110",
+            artifact_root=root,
+        )
+        assert recovered["route"] == route
+        assert recovered["status"] == "COMMITTED"
+
+    assert (root / v5.marker_name("kosa_agent", "GH-110")).is_file()
+    assert (
+        v5.read_receipt_status(root, database="kosa_agent", change_ref="GH-110")
+        == "COMMITTED"
+    )
+
+
+@pytest.mark.parametrize("route", ["successor", "canonical"])
+def test_a_lost_commit_response_is_recovered_from_a_new_session(
+    tmp_path: Path, route: str
+) -> None:
+    """**진짜 commit 뒤** 응답이 유실된 상태를 새 connection으로 복구한다.
+
+    성공 artifact를 사후에 고치는 것이 아니라, DB는 final인데 디스크에는 `STARTED`만
+    남은 상태를 실제로 만든다. base-only route도 함께 본다 — standalone verify는
+    route를 `successor`로 단정해 실패하지만 `promote-receipt`는 receipt에 적힌
+    route를 쓴다(구현리뷰 14차 필수 2).
+    """
+
+    with postgres.one_off_postgres(database="v5loss") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route=route)
+        with connection:
+            error = _apply_with_failure(
+                cursor,
+                connection,
+                tmp_path,
+                on_commit=_raise(_ResponseLoss("commit 응답 유실")),
             )
-            assert marker_path.is_file()
-            assert (
-                recovered["schema_signature_sha256"]
-                == marker["schema_signature_sha256"]
-            )
+        assert error.reason_code == "COMMIT_OUTCOME_UNKNOWN"
+        assert connection.closed  # 장애가 난 session은 닫혔다.
+        assert (
+            v5.read_receipt_status(tmp_path, database="kosa_agent", change_ref="GH-110")
+            == "STARTED"
+        )
+        assert not (tmp_path / v5.marker_name("kosa_agent", "GH-110")).exists()
+
+        _recover(endpoint, tmp_path, promote=True, route=route)
+
+
+def test_a_read_only_artifact_directory_leaves_a_started_receipt(
+    tmp_path: Path,
+) -> None:
+    """COMMITTED receipt 쓰기만 **실제 `PermissionError`**로 깨뜨린다.
+
+    `write_artifact()`를 patch하지 않는다 — commit 직후 artifact 디렉터리 권한을
+    죽여 진짜 EACCES를 만든다(구현리뷰 14차 필수 2).
+    """
+
+    if os.geteuid() == 0:
+        pytest.skip("root는 파일 권한을 무시한다")
+
+    root = tmp_path / "artifacts"
+    root.mkdir()
+    with postgres.one_off_postgres(database="v5rwf") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        try:
+            with connection:
+                error = _apply_with_failure(
+                    cursor, connection, root, on_commit=lambda: os.chmod(root, 0o500)
+                )
+        finally:
+            os.chmod(root, 0o700)
+        assert error.reason_code == "RECEIPT_WRITE_FAILED"
+        assert (
+            v5.read_receipt_status(root, database="kosa_agent", change_ref="GH-110")
+            == "STARTED"
+        )
+        assert not (root / v5.marker_name("kosa_agent", "GH-110")).exists()
+
+        _recover(endpoint, root, promote=True, route="successor")
+
+
+def test_a_blocked_marker_path_leaves_a_committed_receipt(tmp_path: Path) -> None:
+    """marker 쓰기만 **실제로** 깨진다 — receipt는 `COMMITTED`라 승격하면 막힌다.
+
+    marker 경로에 디렉터리를 미리 만들어 두면 `os.replace()`가 진짜 `OSError`로
+    실패한다. receipt 쓰기는 건드리지 않는다(구현리뷰 14차 필수 1·2).
+    """
+
+    (tmp_path / v5.marker_name("kosa_agent", "GH-110")).mkdir()
+    with postgres.one_off_postgres(database="v5mwf") as endpoint:
+        connection, cursor = _target(endpoint, "kosa_agent", route="successor")
+        with connection:
+            error = _apply_with_failure(cursor, connection, tmp_path)
+        assert error.reason_code == "MARKER_WRITE_FAILED"
+        assert (
+            v5.read_receipt_status(tmp_path, database="kosa_agent", change_ref="GH-110")
+            == "COMMITTED"
+        )
+
+        (tmp_path / v5.marker_name("kosa_agent", "GH-110")).rmdir()
+        _recover(endpoint, tmp_path, promote=False, route="successor")
 
 
 def test_a_table_lock_race_reports_target_busy(tmp_path: Path) -> None:

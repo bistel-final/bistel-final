@@ -2999,6 +2999,44 @@ def test_a_stale_bundle_invalidates_the_receipt() -> None:
     assert caught.value.reason_code == "MIGRATION_BUNDLE_STALE"
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("format_version", "v0", "ARTIFACT_VERSION_MISMATCH"),
+        # **폐기 epoch가 receipt·marker로 들어오면 안 된다.** artifact 쪽만 막고
+        # 있었고 이쪽은 변이가 살아남았다(최종검증 변이 N01–N03).
+        ("dataset_epoch", "kosa_0813", "MANIFEST_EPOCH_NOT_FINAL"),
+        ("migration_id", "000_something_else", "CONTRACT_IDENTITY_MISMATCH"),
+        ("database", "kosa_not_allowed", "TARGET_NOT_ALLOWED"),
+    ],
+)
+def test_a_receipt_identity_drift_is_rejected(
+    field: str, value: str, reason: str
+) -> None:
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.assert_receipt_contract(_receipt(**{field: value}))
+    assert caught.value.reason_code == reason
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("format_version", "v0", "ARTIFACT_VERSION_MISMATCH"),
+        ("dataset_epoch", "kosa_0813", "MANIFEST_EPOCH_NOT_FINAL"),
+        ("migration_id", "000_something_else", "CONTRACT_IDENTITY_MISMATCH"),
+        ("database", "kosa_not_allowed", "TARGET_NOT_ALLOWED"),
+    ],
+)
+def test_a_marker_identity_drift_is_rejected(
+    field: str, value: str, reason: str
+) -> None:
+    """marker도 같은 신원 계약을 탄다 — no-op이 이걸 정본으로 삼는다."""
+
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.assert_marker_contract(_marker(**{field: value}))
+    assert caught.value.reason_code == reason
+
+
 def test_a_secret_cannot_hide_in_an_artifact() -> None:
     """host·DSN·절대경로는 receipt에 자리가 없다(계획 §7.3)."""
 
@@ -4656,29 +4694,375 @@ def test_a_failed_commit_is_an_unknown_outcome(
     assert receipt["status"] == "STARTED"
 
 
-def test_an_artifact_failure_after_commit_is_recovery_required(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """DB는 이미 커밋됐다. 재적용 대상이 아니라 복구 대상이다(필수 6)."""
+def _flaky_write(monkeypatch: Any, fail_on: int) -> None:
+    """`write_artifact()`의 n번째 호출만 실패시킨다.
 
-    fake = _FakeDatabase()
-    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
+    1 = STARTED receipt, 2 = COMMITTED receipt, 3 = marker.
+    """
+
     calls = {"n": 0}
     original = v5.write_artifact
 
     def flaky(path: Path, payload: Any) -> str:
         calls["n"] += 1
-        if calls["n"] >= 2:
+        if calls["n"] == fail_on:
             raise OSError("디스크 가득 참")
         return original(path, payload)
 
     monkeypatch.setattr(v5, "write_artifact", flaky)
+
+
+def test_a_committed_receipt_write_failure_leaves_started(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """receipt가 `STARTED`로 남는다 → 승격 후 marker(구현리뷰 14차 필수 1)."""
+
+    fake = _FakeDatabase()
+    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
+    _flaky_write(monkeypatch, fail_on=2)
     with pytest.raises(v5.ReferenceV5Error) as caught:
         _apply(fake, tmp_path)
-    assert caught.value.reason_code == "RECOVERY_REQUIRED"
-    assert caught.value.exit_code == v5.EXIT_CONFIRM_REQUIRED
+    assert caught.value.reason_code == "RECEIPT_WRITE_FAILED"
     assert fake.committed == 1
     assert fake.seen[-1] == v5.ADVISORY_UNLOCK_SQL
+    stored = v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))
+    assert stored["status"] == "STARTED"
+    assert not (tmp_path / v5.marker_name("kosa_agent", "GH-110")).exists()
+
+
+def test_a_marker_write_failure_leaves_a_committed_receipt(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """receipt는 `COMMITTED`다.
+
+    **승격하면 안 되고** 바로 marker 복구다(구현리뷰 14차 필수 1).
+    """
+
+    fake = _FakeDatabase()
+    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
+    _flaky_write(monkeypatch, fail_on=3)
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        _apply(fake, tmp_path)
+    assert caught.value.reason_code == "MARKER_WRITE_FAILED"
+    stored = v5.read_artifact(tmp_path / v5.receipt_name("kosa_agent", "GH-110"))
+    assert stored["status"] == "COMMITTED"
+    assert not (tmp_path / v5.marker_name("kosa_agent", "GH-110")).exists()
+
+
+def test_the_runbook_matches_the_receipt_state(tmp_path: Path) -> None:
+    """하나의 안내를 항상 내면 상태에 따라 그대로 실행했을 때 실패한다.
+
+    substring이 아니라 **argv의 mode flag**로 고정한다(구현리뷰 15차 필수 1).
+    """
+
+    def modes(receipt_status: str | None) -> list[str]:
+        return [
+            argv[2]
+            for argv in v5.recovery_commands(
+                database="kosa_agent",
+                change_ref="GH-110",
+                artifact_root=tmp_path,
+                receipt_status=receipt_status,
+            )
+        ]
+
+    assert modes("COMMITTED") == ["--recover-marker"]
+    # **standalone verify를 선행 필수로 두지 않는다** — route를 모른 채 실행하면
+    # base-only target에서 실패한다(구현리뷰 14차 필수 1).
+    assert modes("STARTED") == ["--promote-receipt", "--recover-marker"]
+    assert modes(None) == ["--verify"]
+    assert modes(v5.RECEIPT_UNTRUSTED) == ["--verify"]
+
+    started = v5.recovery_commands(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=tmp_path,
+        receipt_status="STARTED",
+    )
+    assert "--confirm-recovery" in started[0]
+    assert "--confirm-recovery" not in started[1]
+    # receipt 없음 안내는 change ref·artifact root를 요구하지 않는 mode다.
+    missing = v5.recovery_commands(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=tmp_path,
+        receipt_status=None,
+    )[0]
+    assert "--artifact-root" not in missing and "--change-ref" not in missing
+
+
+def test_the_runbook_commands_are_executable() -> None:
+    """**실제로 실행되는 명령인지 본다.** substring 검사가 아니다.
+
+    전에는 `apply_reference_extensions_v5 --promote-receipt ...`를 냈다. 그 이름은
+    `PATH`에 없고 이 파일에는 shebang도 실행 권한도 없어 그대로는 안 돌았다
+    (구현리뷰 15차 필수 1). 지금은 argv[0]이 지금 interpreter다.
+    """
+
+    import shlex
+    import subprocess
+
+    commands = v5.recovery_commands(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=Path("/tmp/artifacts"),
+        receipt_status="STARTED",
+    )
+    assert [argv[2] for argv in commands] == ["--promote-receipt", "--recover-marker"]
+
+    lines = v5.recovery_runbook(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=Path("/tmp/artifacts"),
+        receipt_status="STARTED",
+    )
+    assert lines[1:] == tuple(v5.format_command(argv) for argv in commands)
+
+    parser = v5.build_parser()
+    for argv, display in zip(commands, lines[1:], strict=True):
+        assert argv[0] == sys.executable
+        assert Path(argv[1]) == v5.RECOVERY_SCRIPT
+        assert v5.RECOVERY_SCRIPT.is_file()
+        # 표시 문자열이 argv 하나하나로 정확히 되돌아온다.
+        assert shlex.split(display) == list(argv)
+
+        # **진짜 parser가 받는다.**
+        args = parser.parse_args(list(argv[2:]))
+        assert v5.selected_modes(args) == [argv[2].removeprefix("--")]
+        assert args.database == "kosa_agent"
+        assert args.confirm_target == "kosa_agent"
+        assert args.change_ref == "GH-110"
+        assert args.artifact_root == "/tmp/artifacts"
+    assert parser.parse_args(list(commands[0][2:])).confirm_recovery is True
+
+    # **진입점이 실제로 뜨는지 subprocess로 확인한다.**
+    done = subprocess.run(
+        [*v5.recovery_entrypoint(), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    assert "apply_reference_extensions_v5" in done.stdout
+    for flag in ("--promote-receipt", "--recover-marker", "--confirm-recovery"):
+        assert flag in done.stdout, flag
+
+    # **exit 계약까지 본다.** allowlist 밖 target은 session을 열기 전에 거절되므로
+    # DB 없이도 안전하게 진입점→parser→검증→exit code 경로를 통과시킨다.
+    safe = list(commands[0])
+    safe[safe.index("kosa_agent")] = "kosa_not_allowed"
+    safe[safe.index("kosa_agent")] = "kosa_not_allowed"
+    refused = subprocess.run(safe, capture_output=True, text=True, timeout=60)
+    assert refused.returncode == v5.EXIT_USAGE
+    assert refused.stderr.strip() == "TARGET_NOT_ALLOWED"
+
+
+def test_the_runbook_round_trips_spaces_and_shell_metacharacters() -> None:
+    """공백·특수문자가 든 경로와 change ref가 **인자 하나로** 되돌아온다."""
+
+    import shlex
+
+    root = Path("/tmp/artifacts with space/$(whoami);rm -rf")
+    commands = v5.recovery_commands(
+        database="kosa_agent",
+        change_ref="GH-110 review&deploy",
+        artifact_root=root,
+        receipt_status="STARTED",
+    )
+    parser = v5.build_parser()
+    for argv in commands:
+        display = v5.format_command(argv)
+        assert shlex.split(display) == list(argv)
+        args = parser.parse_args(shlex.split(display)[2:])
+        assert args.artifact_root == str(root)
+        assert args.change_ref == "GH-110 review&deploy"
+
+
+@pytest.mark.windows_contract
+def test_the_runbook_uses_windows_quoting_on_windows(monkeypatch: Any) -> None:
+    """Windows에서는 `list2cmdline` 규칙으로 직렬화한다."""
+
+    import os
+    import subprocess
+
+    argv = v5.recovery_commands(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=Path(r"C:\artifacts with space"),
+        receipt_status="COMMITTED",
+    )[0]
+    monkeypatch.setattr(os, "name", "nt")
+    display = v5.format_command(argv)
+    assert display == subprocess.list2cmdline(list(argv))
+    assert '"C:\\artifacts with space"' in display
+
+
+def test_the_displayed_command_survives_a_posix_shell(tmp_path: Path) -> None:
+    """표시된 **한 줄을 그대로 shell에 넣어도** 특수문자가 실행되지 않는다.
+
+    argv 검증만으로는 "복사해서 붙여넣는" 실제 사용을 덮지 못한다. allowlist 밖
+    target이라 DB session을 열기 전에 끝나므로 안전하다(구현리뷰 16차 권장 1).
+    """
+
+    import os
+    import subprocess
+
+    if os.name == "nt":
+        pytest.skip("POSIX shell 전용")
+
+    sentinel = tmp_path / "pwned"
+    argv = v5.recovery_commands(
+        database="kosa_not_allowed",
+        change_ref="GH-110",
+        artifact_root=tmp_path / f"artifacts with space $(touch {sentinel})",
+        receipt_status="STARTED",
+    )[0]
+    done = subprocess.run(
+        ["/bin/sh", "-c", v5.format_command(argv)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == v5.EXIT_USAGE
+    assert done.stderr.strip() == "TARGET_NOT_ALLOWED"
+    assert not sentinel.exists(), "artifact 경로가 shell에서 실행됐다"
+
+    # **이 검사가 힘을 갖는지 같이 고정한다.** 15차 이전의 f-string 보간 방식이면
+    # 같은 경로가 실제로 실행된다 — `;&`처럼 sh 구문 오류를 내는 조각을 쓰면
+    # 아무것도 실행되지 않아 검사가 조용히 무력해진다.
+    sentinel.unlink(missing_ok=True)
+    subprocess.run(["/bin/sh", "-c", " ".join(argv)], capture_output=True, timeout=60)
+    assert sentinel.exists(), "주입 문자열이 보간 방식에서도 실행되지 않는다"
+    sentinel.unlink()
+
+
+@pytest.mark.windows_contract
+def test_the_displayed_command_survives_cmd_exe(tmp_path: Path) -> None:
+    """Windows에서도 표시된 한 줄을 `cmd.exe`에 그대로 넣어 확인한다.
+
+    `list2cmdline()`은 MSVCRT argv 규칙의 역이고 `cmd.exe`는 그 위에서 인용 안의
+    `&`를 literal로 다룬다. PowerShell 5.1은 native 인자 전달 규칙이 달라 여기서
+    다루지 않는다(구현리뷰 16차 권장 1).
+    """
+
+    import os
+    import subprocess
+
+    if os.name != "nt":
+        pytest.skip("실제 Windows shell에서만 의미가 있다")
+
+    sentinel = tmp_path / "pwned.txt"
+    argv = v5.recovery_commands(
+        database="kosa_not_allowed",
+        change_ref="GH-110",
+        artifact_root=tmp_path / f"artifacts with space & echo x> {sentinel}",
+        receipt_status="STARTED",
+    )[0]
+    done = subprocess.run(
+        v5.format_command(argv),
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert done.returncode == v5.EXIT_USAGE
+    assert done.stderr.strip().splitlines()[-1] == "TARGET_NOT_ALLOWED"
+    assert not sentinel.exists(), "artifact 경로가 cmd.exe에서 실행됐다"
+
+    # POSIX 쪽과 같은 이유로 이 검사의 힘도 함께 고정한다. 인용이 없으면 `cmd.exe`가
+    # `&`에서 명령을 끊어 뒤쪽 `echo`가 실제로 돈다.
+    subprocess.run(" ".join(argv), shell=True, capture_output=True, timeout=120)
+    assert sentinel.exists(), "주입 문자열이 보간 방식에서도 실행되지 않는다"
+
+
+def test_a_receipt_that_fails_its_contract_is_not_used_as_state(tmp_path: Path) -> None:
+    """손상된 receipt로 절차를 고르지 않는다(구현리뷰 15차 권장 1)."""
+
+    path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
+    v5.write_artifact(path, _receipt(status="STARTED", route="nonsense"))
+    assert (
+        v5.read_receipt_status(tmp_path, "kosa_agent", "GH-110") == v5.RECEIPT_UNTRUSTED
+    )
+    lines = v5.recovery_runbook(
+        database="kosa_agent",
+        change_ref="GH-110",
+        artifact_root=tmp_path,
+        receipt_status=v5.RECEIPT_UNTRUSTED,
+    )
+    assert not any("--promote-receipt" in line for line in lines)
+    assert any("--verify" in line for line in lines)
+
+
+def test_another_targets_receipt_is_not_used_as_state(tmp_path: Path) -> None:
+    """같은 파일명에 다른 target의 receipt가 놓여도 그 상태를 믿지 않는다."""
+
+    path = tmp_path / v5.receipt_name("kosa_agent", "GH-110")
+    v5.write_artifact(path, _receipt(database="kosa_agent_e2e", profile="runtime"))
+    assert (
+        v5.read_receipt_status(tmp_path, "kosa_agent", "GH-110") == v5.RECEIPT_UNTRUSTED
+    )
+
+
+def test_a_valid_receipt_is_still_read(tmp_path: Path) -> None:
+    """계약·identity를 통과한 receipt는 그대로 상태 근거다."""
+
+    _started_receipt(tmp_path)
+    assert v5.read_receipt_status(tmp_path, "kosa_agent", "GH-110") == "STARTED"
+
+
+@pytest.mark.parametrize(
+    ("fail_on", "reason", "expected"),
+    [
+        (2, "RECEIPT_WRITE_FAILED", "--promote-receipt"),
+        (3, "MARKER_WRITE_FAILED", "--recover-marker"),
+    ],
+)
+def test_the_cli_prints_the_matching_runbook(
+    tmp_path: Path, monkeypatch: Any, fail_on: int, reason: str, expected: str
+) -> None:
+    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
+    _flaky_write(monkeypatch, fail_on=fail_on)
+    code, err, _out = _cli(
+        "--apply",
+        "--database",
+        "kosa_agent",
+        "--confirm-target",
+        "kosa_agent",
+        "--change-ref",
+        "GH-110",
+        "--artifact-root",
+        str(tmp_path),
+    )
+    assert code == v5.EXIT_CONFIRM_REQUIRED
+    assert reason in err
+    assert expected in err
+    if reason == "MARKER_WRITE_FAILED":
+        assert "--promote-receipt" not in err
+
+
+def test_the_cli_prints_a_runbook_on_an_unknown_commit(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    class _CommitBreaks(_FakeDatabase):
+        def commit(self) -> None:
+            raise RuntimeError("commit 응답 유실")
+
+    _fake_excluded(monkeypatch, ["e" * 64, "e" * 64])
+    code, err, _out = _cli(
+        "--apply",
+        "--database",
+        "kosa_agent",
+        "--confirm-target",
+        "kosa_agent",
+        "--change-ref",
+        "GH-110",
+        "--artifact-root",
+        str(tmp_path),
+        database=_CommitBreaks(),
+    )
+    assert code == v5.EXIT_CONFIRM_REQUIRED
+    assert "COMMIT_OUTCOME_UNKNOWN" in err
+    assert "--promote-receipt --confirm-recovery" in err
 
 
 def test_an_unlock_failure_does_not_mask_the_original_error(
@@ -4947,12 +5331,6 @@ def test_the_module_never_writes_outside_its_owned_objects() -> None:
     assert "recover-receipt" not in v5.CLI_MODES
 
 
-def test_the_recovery_guidance_is_documented() -> None:
-    """DB record 대신 수동 Gate로 남겼다는 것이 코드에 있어야 한다."""
-
-    assert "--verify" in v5.RECOVERY_GUIDANCE
-
-
 def test_the_advisory_lock_never_waits() -> None:
     """blocking `pg_advisory_lock()`은 무제한 대기한다(구현리뷰 12차 필수 2)."""
 
@@ -5215,38 +5593,6 @@ def test_promotion_refuses_a_target_mismatch(tmp_path: Path) -> None:
 def test_promote_receipt_is_a_cli_mode() -> None:
     assert "promote-receipt" in v5.CLI_MODES
     assert v5.assert_single_mode(["promote-receipt"]) == "promote-receipt"
-
-
-def test_the_cli_prints_the_recovery_guidance(tmp_path: Path) -> None:
-    """reason code만 던지면 사용자는 복구 절차를 알 수 없다(구현리뷰 13차 필수 2)."""
-
-    class _CommitBreaks(_FakeDatabase):
-        def commit(self) -> None:
-            raise RuntimeError("commit 응답 유실")
-
-    code, err, _out = _cli(
-        "--apply",
-        "--database",
-        "kosa_agent",
-        "--confirm-target",
-        "kosa_agent",
-        "--change-ref",
-        "GH-110",
-        "--artifact-root",
-        str(tmp_path),
-        database=_CommitBreaks(),
-    )
-    assert code == v5.EXIT_CONFIRM_REQUIRED
-    assert "COMMIT_OUTCOME_UNKNOWN" in err
-    # 다음에 무엇을 할지 알려준다.
-    assert "--verify" in err
-    assert "--promote-receipt" in err
-    assert "--recover-marker" in err
-
-
-def test_the_guidance_names_every_recovery_step() -> None:
-    for fragment in ("--verify", "--promote-receipt", "--confirm-recovery"):
-        assert fragment in v5.RECOVERY_GUIDANCE
 
 
 def test_the_module_still_writes_no_db_record() -> None:

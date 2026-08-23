@@ -2866,38 +2866,152 @@ def _apply_locked(
         "action_history_rows": counts["action_rows"],
         "committed_at": _now(clock),
     }
+    # **DB는 이미 커밋됐다.** 어느 쪽이 실패하든 재적용 대상이 아니라 복구 대상이다
+    # (구현리뷰 10차 필수 6). 다만 **남은 상태가 다르므로 다음 명령도 다르다**
+    # (구현리뷰 14차 필수 1).
     try:
         write_artifact(receipt_path, committed)
+    except BaseException as exc:
+        # receipt가 `STARTED`로 남았다 → 승격 후 marker 복구.
+        raise ReferenceV5Error("RECEIPT_WRITE_FAILED", EXIT_CONFIRM_REQUIRED) from exc
+    try:
         assert_marker_contract(marker)
         # **marker-last.** commit·postcheck·receipt 저장이 모두 끝난 뒤에만 쓴다.
         write_artifact(artifact_root / marker_name(database, change_ref), marker)
     except BaseException as exc:
-        # **DB는 이미 커밋됐다.** 재적용 대상이 아니라 복구 대상이다
-        # (구현리뷰 10차 필수 6).
-        raise ReferenceV5Error("RECOVERY_REQUIRED", EXIT_CONFIRM_REQUIRED) from exc
+        # receipt는 `COMMITTED`다 → 승격하면 안 되고 바로 marker 복구다.
+        raise ReferenceV5Error("MARKER_WRITE_FAILED", EXIT_CONFIRM_REQUIRED) from exc
     return marker
 
 
-#: commit identity를 **DB 안에** 남기는 자리.
-#:
-#: commit 뒤 receipt 쓰기가 실패하면 디스크에는 `STARTED`만 남고, `recover-marker`는
-#: exact `COMMITTED` receipt만 받으므로 복구 경로가 없었다(구현리뷰 11차 필수 5).
-#: schema comment는 **같은 transaction 안에서** 쓰이므로 DB commit과 원자적으로 묶인다.
 #: **DB에는 아무 record도 남기지 않는다.** 복구 근거는 artifact와 live 실측뿐이다.
 #:
 #: CM-3.1이 소유한 DB object는 `r03_alarm_history`와 `v_alarm_event` 둘뿐이다. commit
 #: identity를 담을 table·retention·ACL·다중 migration key는 상위 계약에 없으므로 이
 #: Task는 범위를 늘리지 않는다(구현리뷰 12차 필수 1).
 #:
-#: 대신 `promote-receipt`가 **artifact-only 복구 경로**다. exact `STARTED` receipt와
-#: 새 connection 전체 verify가 일치하고 operator가 명시 확인했을 때만 `COMMITTED`로
-#: 승격한다(구현리뷰 13차 필수 2).
-RECOVERY_GUIDANCE = (
-    "1) 새 connection에서 `--verify`로 live가 final인지 확인한다. "
-    "2) final이면 `--promote-receipt --confirm-recovery`로 STARTED receipt를 승격한다. "
-    "3) 이어서 `--recover-marker`로 marker를 만든다. "
-    "final이 아니면 승격하지 않는다 — 재적용 대상이다."
+#: 그래서 복구 절차는 **디스크에 남은 receipt 상태**로 갈린다(구현리뷰 14차 필수 1).
+#: 하나의 안내를 항상 출력하면, COMMITTED가 이미 남은 marker-only 실패에서 사용자가
+#: 승격을 시도했다가 `RECEIPT_STATUS_NOT_ALLOWED`로 막힌다.
+
+
+#: 복구 runbook을 출력할 reason. commit 뒤 상태가 남는 것들이다.
+RECOVERABLE_REASONS: frozenset[str] = frozenset(
+    {"COMMIT_OUTCOME_UNKNOWN", "RECEIPT_WRITE_FAILED", "MARKER_WRITE_FAILED"}
 )
+
+#: 계약이나 identity가 어긋난 receipt. 상태 근거로 쓰지 않는다.
+RECEIPT_UNTRUSTED = "UNTRUSTED"
+
+#: runbook이 가리킬 진입점. console script가 설치돼 있지 않고 이 파일에는 shebang도
+#: 실행 권한(현재 mode `0644`)도 없다 — 이름만 적으면 `PATH`에 없어서 그대로 실행할 수
+#: 없다(구현리뷰 15차 필수 1). 그래서 지금 interpreter와 resolve된 경로를 함께 낸다.
+RECOVERY_SCRIPT: Path = Path(__file__).resolve()
+
+
+def recovery_entrypoint() -> tuple[str, ...]:
+    """`python /abs/path/apply_reference_extensions_v5.py` — 저장소에서 바로 돈다."""
+
+    return (sys.executable, str(RECOVERY_SCRIPT))
+
+
+def format_command(argv: Sequence[str]) -> str:
+    """argv를 **그 platform의 규칙으로** 한 줄로 만든다.
+
+    문자열을 먼저 만들고 나중에 쪼개는 순서가 아니다. argv가 원본이고 표시가 파생이다.
+    전에는 f-string 보간이라 공백이 든 artifact 경로가 `shlex.split()`에서 두 인자로
+    갈라졌다(구현리뷰 15차 필수 1).
+    """
+
+    import os
+
+    if os.name == "nt":
+        import subprocess
+
+        return subprocess.list2cmdline(list(argv))
+    import shlex
+
+    return shlex.join(argv)
+
+
+def recovery_commands(
+    *,
+    database: str,
+    change_ref: str,
+    artifact_root: Path,
+    receipt_status: str | None,
+) -> tuple[tuple[str, ...], ...]:
+    """남은 상태에 맞는 **다음 명령 argv**. 표시는 `format_command()`가 맡는다.
+
+    `--verify`를 무조건 앞에 두지 않는다. standalone verify는 marker/receipt가 없으면
+    route를 `successor`로 단정해 base-only target에서 `SECURITY_ACL_MISSING`으로
+    실패한다. `promote-receipt`는 receipt route로 내부 verify를 하므로 그 단계가 없어도
+    된다.
+    """
+
+    entry = recovery_entrypoint()
+    target = ("--database", database, "--confirm-target", database)
+    full = (*target, "--change-ref", change_ref, "--artifact-root", str(artifact_root))
+    if receipt_status == "COMMITTED":
+        return ((*entry, "--recover-marker", *full),)
+    if receipt_status == "STARTED":
+        return (
+            (*entry, "--promote-receipt", "--confirm-recovery", *full),
+            (*entry, "--recover-marker", *full),
+        )
+    return ((*entry, "--verify", *target),)
+
+
+def recovery_runbook(
+    *,
+    database: str,
+    change_ref: str,
+    artifact_root: Path,
+    receipt_status: str | None,
+) -> tuple[str, ...]:
+    """설명 한 줄 + **실행 가능한 다음 명령**들."""
+
+    if receipt_status == "COMMITTED":
+        note = "COMMITTED receipt가 이미 있다. **승격하지 않는다.**"
+    elif receipt_status == "STARTED":
+        note = "STARTED receipt가 남았다. 승격이 live 실측을 함께 확인한다."
+    elif receipt_status == RECEIPT_UNTRUSTED:
+        note = "receipt 계약·identity가 어긋난다. 상태 근거로 쓰지 않는다."
+    else:
+        note = f"receipt를 찾을 수 없다({artifact_root}). 적용 여부를 먼저 확인한다."
+    commands = recovery_commands(
+        database=database,
+        change_ref=change_ref,
+        artifact_root=artifact_root,
+        receipt_status=receipt_status,
+    )
+    return (note, *(format_command(argv) for argv in commands))
+
+
+def read_receipt_status(
+    artifact_root: Path | None, database: str, change_ref: str | None
+) -> str | None:
+    """복구 안내에 쓸 receipt 상태. 읽을 수 없으면 `None`.
+
+    **`status` 문자열만 보지 않는다**(구현리뷰 15차 권장 1). 손상된 receipt나 다른
+    target의 receipt가 같은 이름으로 놓이면 잘못된 절차를 고른다. 전체 계약과
+    identity를 통과한 것만 상태 근거로 쓰고, 나머지는 `UNTRUSTED`로 표시한다.
+    """
+
+    if artifact_root is None or not change_ref:
+        return None
+    try:
+        payload = read_artifact(artifact_root / receipt_name(database, change_ref))
+    except ReferenceV5Error:
+        return None
+    try:
+        assert_receipt_contract(payload)
+    except ReferenceV5Error:
+        return RECEIPT_UNTRUSTED
+    if payload["database"] != database or payload["change_ref"] != change_ref:
+        return RECEIPT_UNTRUSTED
+    status = payload["status"]
+    return status if isinstance(status, str) else RECEIPT_UNTRUSTED
 
 
 def read_row_counts(execute: Any) -> dict[str, int]:
@@ -3387,6 +3501,7 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
     try:
         mode = assert_single_mode(selected_modes(args))
         assert_target_allowed(args.database, confirm_target=args.confirm_target)
+        root = Path(args.artifact_root).expanduser() if args.artifact_root else None
         if args.allow_non_final_dataset:
             assert_non_final_dataset_allowed(database=args.database, mode=mode)
         if mode in {"apply", "rehearse", "recover-marker", "promote-receipt"}:
@@ -3407,10 +3522,19 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
         result = run_mode(execute, connection, args, mode)
     except ReferenceV5Error as error:
         print(error.reason_code, file=sys.stderr)
-        if error.reason_code in {"COMMIT_OUTCOME_UNKNOWN", "RECOVERY_REQUIRED"}:
-            # **다음에 무엇을 할지 알려준다.** reason code만 던지면 사용자는 복구 절차를
-            # 알 수 없다(구현리뷰 13차 필수 2).
-            print(RECOVERY_GUIDANCE, file=sys.stderr)
+        if error.reason_code in RECOVERABLE_REASONS:
+            # **실행 가능한 다음 명령을 낸다.** reason code만 던지면 절차를 알 수 없고,
+            # 하나의 안내를 항상 내면 상태에 따라 그대로 실행했을 때 실패한다
+            # (구현리뷰 13차 필수 2 · 14차 필수 1).
+            for line in recovery_runbook(
+                database=args.database,
+                change_ref=args.change_ref or "",
+                artifact_root=root if root is not None else Path("."),
+                receipt_status=read_receipt_status(
+                    root, args.database, args.change_ref
+                ),
+            ):
+                print(line, file=sys.stderr)
         return error.exit_code
     finally:
         # 어떤 결과에서도 connection·engine을 닫아 session lock을 최종 해제한다.
