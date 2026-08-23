@@ -17,7 +17,7 @@
 확장,A,POST,/traces/search,복합 Trace 검색,body filters,TraceSearchResponse,"422,503",시간순,최소 9개 이후
 확장,B,GET,/relations/equipment/{equipment_id},설비 관계,path: equipment_id,EquipmentRelationsResponse,"404,422,503",stable relation_id,"고정 설비 상하류 추정 금지"
 확장,B,GET,/documents/{document_id},문서 상세,path: document_id,DocumentDetailResponse,"404,422,503",chunk order,"chunk order 안정"
-실행필수,C,POST,/agent/runs,Agent 분석 시작,"body: alarm={source,alarm_id}",202 AgentRunAccepted,"404,409,422,503",멱등성,"Alarm 화면 source-aware trigger; legacy /agent/run과 alarm_id 단독 금지"
+실행필수,C,POST,/agent/runs,Agent 분석 시작,"body: alarm={source,alarm_id}",202 AgentRunAccepted,"404,409,422,503",멱등성,"Alarm 화면 source-aware trigger; legacy /agent/run과 alarm_id 단독 금지; accepted status는 RUNNING이며 body는 agent_run_id+status+alarm 3개"
 확장,C,GET,/agent/runs/{run_id},Agent 실행 상세,path: run_id,AgentRunDetailResponse,"404,422,503",단건,근거 ID provenance
 확장,C,POST,/agent/runs/{run_id}/retry,실패 실행 재시도,path: run_id,202 AgentRunAccepted,"404,409,422,503",재시도 정책,성공·실행중 재시도 거부
 확장,C,GET,/agent/runs/paged,페이지 실행 이력,"query: page,size,filters",PageEnvelope<AgentRunItem>,"422,503","created_at DESC; agent_run_id DESC","/agent/runs와 shape 혼용 금지"
