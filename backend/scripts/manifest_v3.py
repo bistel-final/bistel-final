@@ -31,7 +31,31 @@ MANIFEST_REGISTRY_ROOT = BOOTSTRAP_ROOT / "manifests"
 
 MANIFEST_FORMAT_VERSION = 3
 HASH_ALGORITHM = "sha256-canonical-json-nfc-codepoint-v1"
-DATASET_EPOCH = "kosa_0813"
+
+#: **최종 epoch.** 폐기된 `kosa_0813`은 `infra/bootstrap/history/kosa_0813/`에만 남는다.
+#:
+#: `V5-CM-1.8`이 `kosa_0813`에서 전환했다. `_validate_common_envelope()`가 모든
+#: manifest의 `dataset_epoch`와 exact 비교하므로, 여기가 구 epoch면 최종 epoch을 담은
+#: manifest가 예외 없이 거부된다.
+DATASET_EPOCH = "fdc_final_20260818"
+
+#: 최종 `project.zip`의 SHA-256. epoch v2·final intake·source manifest v4 **3자가 같아야
+#: 한다**는 것은 회귀가 고정한다. 한 곳만 고치면 나머지 둘과 갈린다.
+FINAL_ARCHIVE_SHA256 = (
+    "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3"
+)
+
+#: 최종 epoch profile manifest의 정정 계보. 구 `corrected-*` 계열과 구분된다.
+FINAL_CORRECTION_VERSION = "final-v1"
+
+#: epoch artifact의 현재 format. v1은 다시 허용하지 않는다 — union parser를 만들면
+#: 구 artifact가 최종 경로로 다시 흘러든다.
+DATASET_EPOCH_FORMAT_VERSION = 2
+DATASET_EPOCH_ARTIFACT_TYPE = "dataset_epoch_registration"
+
+#: 폐기 epoch과 그 격리 경로. epoch v2의 `supersedes`가 이 값이어야 한다.
+SUPERSEDED_DATASET_EPOCH = "kosa_0813"
+SUPERSEDED_ISOLATION_ROOT = "infra/bootstrap/history/kosa_0813/"
 
 EXIT_OK = 0
 EXIT_MISMATCH = 1
@@ -410,7 +434,30 @@ def _is_nonnegative_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def _require_relative_path(value: Any, *, context: str) -> str:
+    """저장소 상대 경로만 받는다. 절대경로·`..`는 거부한다."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or _is_absolute_path(value)
+        or ".." in PurePosixPath(value).parts
+    ):
+        raise ManifestSchemaError(f"{context}는 저장소 상대 경로여야 합니다")
+    return value
+
+
 def load_dataset_epoch(path: Path = DATASET_EPOCH_PATH) -> dict[str, Any]:
+    """최종 epoch registration(v2)을 읽는다.
+
+    **v1을 다시 허용하지 않고 v1/v2 union parser도 만들지 않는다**(계획 §3.1).
+    구 artifact가 최종 경로로 흘러들면 `file_inventory` 없는 v2를 "불완전한 v1"으로
+    오독하거나 그 반대가 된다. 형식이 다르면 그 자리에서 거부한다.
+
+    v1의 `file_count`·`file_inventory`는 **여기서 다루지 않는다.** 최종 intake의 선별
+    member 목록은 `intake_artifact`가 가리키는 별도 artifact가 소유한다.
+    """
+
     epoch = _load_json(path)
     _require_exact_keys(
         epoch,
@@ -420,48 +467,46 @@ def load_dataset_epoch(path: Path = DATASET_EPOCH_PATH) -> dict[str, Any]:
             "dataset_epoch",
             "received_date",
             "archive",
-            "public_fault_ground_truth_available",
             "inventory_scope",
-            "file_count",
-            "file_inventory",
+            "intake_artifact",
+            "supersedes",
         },
         context="dataset epoch",
     )
+    if epoch["format_version"] != DATASET_EPOCH_FORMAT_VERSION:
+        raise ManifestSchemaError("dataset epoch format_version이 v2가 아닙니다")
+    if epoch["artifact_type"] != DATASET_EPOCH_ARTIFACT_TYPE:
+        raise ManifestSchemaError("dataset epoch artifact_type이 잘못됐습니다")
     if epoch["dataset_epoch"] != DATASET_EPOCH:
         raise ManifestMetadataError("지원하지 않는 dataset epoch입니다")
+
     archive = epoch["archive"]
     if not isinstance(archive, dict):
         raise ManifestSchemaError("dataset epoch archive는 object여야 합니다")
     _require_exact_keys(archive, {"filename", "sha256"}, context="archive")
     _require_sha256(archive["sha256"], context="archive.sha256")
-    inventory = epoch["file_inventory"]
-    if not isinstance(inventory, list) or not inventory:
-        raise ManifestSchemaError("dataset epoch file_inventory가 비어 있습니다")
-    if not _is_nonnegative_int(epoch["file_count"]) or epoch["file_count"] != len(
-        inventory
-    ):
-        raise ManifestSchemaError("dataset epoch file_count가 inventory와 다릅니다")
-    seen: set[str] = set()
-    for entry in inventory:
-        if not isinstance(entry, dict):
-            raise ManifestSchemaError("file inventory entry는 object여야 합니다")
-        _require_exact_keys(
-            entry, {"path", "size_bytes", "sha256"}, context="file inventory entry"
-        )
-        member_path = entry["path"]
-        if (
-            not isinstance(member_path, str)
-            or not member_path
-            or _is_absolute_path(member_path)
-            or ".." in PurePosixPath(member_path).parts
-        ):
-            raise ManifestSchemaError("file inventory 상대 경로가 잘못됐습니다")
-        if member_path in seen:
-            raise ManifestSchemaError("file inventory 경로가 중복됐습니다")
-        seen.add(member_path)
-        if not _is_nonnegative_int(entry["size_bytes"]):
-            raise ManifestSchemaError("file inventory size_bytes가 잘못됐습니다")
-        _require_sha256(entry["sha256"], context="file inventory sha256")
+    if archive["sha256"] != FINAL_ARCHIVE_SHA256:
+        # 여기서 막지 않으면 다른 ZIP으로 만든 manifest가 최종으로 등록된다.
+        raise ManifestMetadataError("dataset epoch archive가 최종 ZIP이 아닙니다")
+
+    _require_relative_path(epoch["intake_artifact"], context="intake_artifact")
+    if not isinstance(epoch["inventory_scope"], str) or not epoch["inventory_scope"]:
+        raise ManifestSchemaError("dataset epoch inventory_scope가 비어 있습니다")
+
+    superseded = epoch["supersedes"]
+    if not isinstance(superseded, dict):
+        raise ManifestSchemaError("dataset epoch supersedes는 object여야 합니다")
+    _require_exact_keys(
+        superseded, {"dataset_epoch", "isolated_to"}, context="supersedes"
+    )
+    if superseded["dataset_epoch"] != SUPERSEDED_DATASET_EPOCH:
+        raise ManifestMetadataError("supersedes.dataset_epoch가 폐기 epoch이 아닙니다")
+    if superseded["dataset_epoch"] == epoch["dataset_epoch"]:
+        # 자기 자신을 대체했다고 주장할 수 없다.
+        raise ManifestMetadataError("supersedes가 현재 epoch과 같습니다")
+    _require_relative_path(superseded["isolated_to"], context="supersedes.isolated_to")
+    if superseded["isolated_to"] != SUPERSEDED_ISOLATION_ROOT:
+        raise ManifestMetadataError("폐기 epoch 격리 경로가 잘못됐습니다")
     return epoch
 
 
