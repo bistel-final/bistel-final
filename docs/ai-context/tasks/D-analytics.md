@@ -2,7 +2,7 @@
 
 > 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`
 > 기준 문서: 요구사항 v2.1 · 시스템설계서 v2.1 · 역할분담 v10.1 · API v3 · WBS v5
-> 마지막 동기화: 2026-08-20
+> 마지막 동기화: 2026-08-23
 > 담당: 천승현 · 모듈 `backend/app/analytics/` · `frontend/src/features/analytics/`
 
 공통 append-only 감사로그의 read model·API·화면 3 subview를 책임진다. Text2SQL은 최종 5화면과
@@ -34,7 +34,7 @@
 | V5-D-1.1 | P0 | 감사 read model. 완료: `audit_log`를 직접 조회하고 `action_history`에서 사후 합성하지 않는다. `occurred_at DESC, audit_id DESC` 안정 정렬을 적용한다 | FR-D-07, NFR-05 | V5-CM-4.2, V5-CM-3.2 | 1.5h |
 | V5-D-1.2 | P0 | `GET /audit-logs`. 완료: event·actor·entity·기간 필터와 `occurred_at DESC, audit_id DESC` 정렬의 **bare array**를 반환하고 `total=items.length`로 해석한다. paged response·전체 집계는 별도 선택 확장 path에서만 제공하며 UPDATE·DELETE는 만들지 않는다 | FR-D-07, NFR-05, NFR-11 | V5-D-1.1 | 1.5h |
 | V5-D-1.3 | P1 | 화면 3 감사 subview. 완료: D가 `api.audit()`를 실제 소비해 필터·정렬·상세와 Loading·Error·Empty·Success를 구현하고 C는 이 subview를 조립만 한다 | FR-D-07, FR-I-02, NFR-17 | V5-D-1.2 | 2.0h |
-| V5-D-2.1 | P1 | schema allowlist·pool. 완료: 최종 schema 기준 table/column allowlist와 runtime readonly·evaluation readonly pool을 분리한다. DSN fallback 0건 | FR-D-03, NFR-01 | V5-CM-3.5 | 2.0h |
+| V5-D-2.1 | P1 | schema allowlist·pool. 완료: `V5-CM-1.8`이 재발급한 final manifest-backed R03 12컬럼을 기반으로 table/column allowlist 정책을 소유하고 runtime readonly·evaluation readonly pool을 분리한다. DSN fallback 0건 | FR-D-03, NFR-01 | V5-CM-3.5 | 2.0h |
 | V5-D-2.2 | P1 | SQL 안전 검증(선택 확장). 완료: 생성 SQL과 사용자 수정 SQL 모두 같은 단일 SELECT·AST·allowlist·위험 함수·다중 문장·LIMIT 500 정책으로 재검증하며 거부 fixture는 실행 0건과 사유를 반환한다 | FR-D-02, FR-D-09, NFR-07 | V5-D-2.1 | 2.0h |
 | V5-D-2.3 | P1 | `generate_analysis_plan(question)` Tool·실행(선택 확장). 완료: 단일 `question`으로 SQL·metric·group_by·table/bar/line/histogram 계획을 만들고 검증기를 통과한 경우만 실행한다. 정책 거부·형식 오류·timeout은 공통 `ok`·`reason`·빈 payload 계약과 공통 reason prefix를 따른다 | FR-D-01, FR-D-04, NFR-09 | V5-D-2.2 | 2.0h |
 | V5-D-2.4 | P1 | 질의 이력 **(선택 확장·evaluation-only)**. 완료: `nl_query_log`와 최소권한 writer를 `kosa_text2sql`에만 만들고 성공·정책 거부·실행 오류를 기록한다. runtime·E2E DB에는 table·write가 0건이며 log pool은 SQL 실행 권한을 갖지 않는다 | FR-D-05, NFR-01 | V5-D-2.3 | 1.5h |
