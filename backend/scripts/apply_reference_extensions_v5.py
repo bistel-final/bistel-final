@@ -1798,8 +1798,35 @@ def _quote_identifier(name: str) -> str:
     return f'"{name}"'
 
 
+#: **구 epoch(`kosa_0813`) 잔재다.** 최종 epoch `fdc_final_20260818`에는 없다.
+#:
+#: `V5-B-1.1`이 **"채택하지 않는다"** 고 했고 `V5-CM-2.6`이 보존만 한 뒤 B가 정리한다
+#: (`postgres_transition.LEGACY_HANDOFF_TABLES_BY_TARGET`).
+#:
+#: 등록 manifest에는 남아 있지만 **보존 대상이 아니다.** 근거 셋이다.
+#:
+#: 1. `backend/app/` 전체에 참조가 0건이다.
+#: 2. B의 `apply_rag_schema.py`는 이 table이 남아 있으면 `RagSchemaError`를 던진다 —
+#:    **없는 상태가 정상**이다.
+#: 3. 공용 runtime 2 DB에는 실재하지 않고 `kosa_text2sql`에만 0행 껍데기로 남았다.
+#:
+#: 등록 inventory에서 기계적으로 유도하면 runner가 없는 table을 읽어 `UndefinedTable`로
+#: 죽고, B가 `kosa_text2sql`에서 정리하는 순간 evaluation 쪽도 같이 깨진다
+#: (Gate 0 조사 §3).
+LEGACY_HANDOFF_TABLES: frozenset[str] = frozenset({"document_corpus"})
+
+
 #: profile별 **보존 table exact allowlist.** 등록 manifest의 물리 inventory에서 base 9와
-#: CM-3.1 소유 R03를 뺀 나머지다(runtime 23-10=13 · evaluation 14-10=4).
+#: CM-3.1 소유 R03, 그리고 위 legacy handoff를 뺀 나머지다
+#: (runtime 23-10-1=12 · evaluation 14-10-1=3).
+#:
+#: > **구·신 데이터 경계.** 유도 근거인 등록 manifest 3종은 전부 폐기 epoch
+#: > `kosa_0813`이다(`V5-CM-1.8`이 최종 epoch로 재발급한다). 그래서 여기서는 그것을
+#: > **table 이름의 물리 inventory로만** 쓴다 — epoch·행 수·hash·정정 계보는 어느 것도
+#: > 근거로 쓰지 않는다. 그 경계가 흐려진 결과가 `document_corpus`였다: 구 epoch에만
+#: > 있던 table을 보존 대상으로 잡아 신 epoch 공용 DB에서 `UndefinedTable`로 죽었다
+#: > (Gate 0 조사 §3). 목록은 하드코딩이고 module은 manifest 파일을 읽지 않는다.
+#: > 대조는 테스트가 한다.
 #:
 #: 호출자가 준 이름을 그대로 SQL에 넣으면 `x IN SHARE MODE; DROP TABLE lot_history; --`
 #: 같은 값이 statement가 된다(구현리뷰 9차 필수 2). allowlist 밖은 아예 받지 않는다.
@@ -1817,13 +1844,11 @@ PRESERVED_TABLES_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "audit_log",
             "document",
             "document_chunk",
-            "document_corpus",
             "nl_query_log",
         ),
         "evaluation": (
             "document",
             "document_chunk",
-            "document_corpus",
             "nl_query_log",
         ),
     }

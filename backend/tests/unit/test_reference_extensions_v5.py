@@ -2856,13 +2856,59 @@ def test_share_locks_do_not_include_the_owned_objects(profile: str) -> None:
 
 
 def test_the_preserved_allowlist_matches_the_registered_inventory() -> None:
-    """등록 manifest 물리 inventory에서 base 9와 R03를 뺀 나머지다."""
+    """등록 inventory에서 base 9·R03·**legacy handoff**를 뺀 나머지다.
+
+    legacy handoff를 빼지 않으면 runner가 실재하지 않는 table을 읽는다
+    (Gate 0 조사 §3).
+    """
 
     for profile in REGISTERED_STAGE:
         tables = set(_registered(profile)["tables"])
-        expected = tables - set(v5.BASE_TABLE_NAMES) - {v5.R03_TABLE}
+        expected = (
+            tables
+            - set(v5.BASE_TABLE_NAMES)
+            - {v5.R03_TABLE}
+            - v5.LEGACY_HANDOFF_TABLES
+        )
         assert set(v5.PRESERVED_TABLES_BY_PROFILE[profile]) == expected, profile
         assert len(tables) == v5.PROFILE_TABLE_COUNTS[profile]
+
+
+def test_the_derivation_source_is_a_deprecated_epoch_inventory() -> None:
+    """**구·신 데이터 경계를 고정한다.**
+
+    보존 목록의 유도 근거인 등록 manifest 3종은 전부 폐기 epoch `kosa_0813`이다.
+    여기서는 그것을 **table 이름의 물리 inventory로만** 쓴다 — epoch·행 수·hash는
+    근거로 쓰지 않는다. 그 경계가 흐려져 구 epoch 전용 table을 보존 대상으로 잡은 것이
+    `document_corpus` 결함이었다(Gate 0 조사 §3).
+    """
+
+    for profile in REGISTERED_STAGE:
+        registered = _registered(profile)
+        # 유도 근거는 **구 epoch**다. 이 사실 자체를 고정한다.
+        assert registered["dataset_epoch"] != v5.FINAL_DATASET_EPOCH, profile
+        # 그래서 이 manifest는 CM-3.1의 데이터 계약을 통과하지 못한다.
+        with pytest.raises(v5.ReferenceV5Error) as caught:
+            v5.assert_final_epoch_contract(registered, profile=profile)
+        assert caught.value.reason_code == "MANIFEST_EPOCH_NOT_FINAL", profile
+
+
+def test_the_legacy_handoff_is_not_preserved() -> None:
+    """`V5-B-1.1`이 채택하지 않고 B가 지운다 — 보존 대상으로 잡지 않는다.
+
+    등록 manifest에는 남아 있으므로 **inventory와 보존 목록이 다르다는 것**을
+    명시적으로 고정한다. 잡으면 공용 runtime 2 DB에서 `UndefinedTable`로 죽고,
+    B가 `kosa_text2sql`에서 정리하면 evaluation 쪽도 깨진다(Gate 0 조사 §3).
+    """
+
+    assert v5.LEGACY_HANDOFF_TABLES == {"document_corpus"}
+    for profile in ("runtime", "evaluation"):
+        preserved = set(v5.PRESERVED_TABLES_BY_PROFILE[profile])
+        assert not (preserved & v5.LEGACY_HANDOFF_TABLES), profile
+        # 등록 inventory에는 여전히 있다 — 우리가 의도적으로 뺀 것이다.
+        assert v5.LEGACY_HANDOFF_TABLES <= set(_registered(profile)["tables"]), profile
+    assert len(v5.PRESERVED_TABLES_BY_PROFILE["runtime"]) == 12
+    assert len(v5.PRESERVED_TABLES_BY_PROFILE["evaluation"]) == 3
 
 
 def test_a_caller_supplied_table_name_never_reaches_sql() -> None:
