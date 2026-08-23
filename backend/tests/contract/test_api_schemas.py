@@ -22,7 +22,11 @@ from app.analytics.schemas import (
     EvaluationItem,
 )
 from app.common.audit import AuditEvent
-from app.common.enums import ApprovalStatus
+from app.common.enums import (
+    ApprovalStatus,
+    Decision,
+    DeliveryChannel,
+)
 from app.common.exceptions import PolicyRejectedError
 from app.common.schemas import (
     ReadinessDependencies,
@@ -460,7 +464,7 @@ class TestAgentSchemas:
             action_id="ACT-1",
             approval_status=status,
             agent_run_status="RUNNING",
-            deliveries=[_delivery("MES_MOCK", "WAITING")],
+            deliveries=[_delivery("MES", "WAITING")],
             decided_by="operator",
             decided_at=NOW,
         )
@@ -475,7 +479,7 @@ class TestAgentSchemas:
                 action_id="ACT-1",
                 approval_status=status,
                 agent_run_status="RUNNING",
-                deliveries=[_delivery("MES_MOCK", "WAITING")],
+                deliveries=[_delivery("MES", "WAITING")],
                 decided_by="operator",
                 decided_at=NOW,
             )
@@ -493,7 +497,7 @@ class TestAgentSchemas:
                 "EQP_HOLD",
                 [
                     _delivery("EMAIL", "WAITING"),
-                    _delivery("MES_MOCK", "BLOCKED"),
+                    _delivery("MES", "BLOCKED"),
                 ],
             ),
         ],
@@ -717,3 +721,138 @@ class TestAnalyticsSchemas:
 
     def test_approval_status_enum_remains_full_for_queue_rows(self) -> None:
         assert ApprovalStatus.EXPIRED.value == "EXPIRED"
+
+
+class TestPublicInternalBoundary:
+    """공개 DTO가 내부 Runtime 값을 노출하지 않는다 (`V5-CM-4.1` 묶음 2)."""
+
+    def test_approval_request_rejects_the_internal_command(self) -> None:
+        """public 요청은 `APPROVED|REJECTED`만 받는다(API v3 §2.4)."""
+
+        from app.agent.schemas import ApprovalDecisionRequest
+
+        assert (
+            ApprovalDecisionRequest(
+                decision="APPROVED", decided_by="daehyuk"
+            ).decision.value
+            == "APPROVED"
+        )
+        for internal in Decision:
+            with pytest.raises(ValidationError):
+                ApprovalDecisionRequest(decision=internal.value, decided_by="daehyuk")
+
+    def test_approval_item_rejects_internal_only_statuses(self) -> None:
+        """`AUTO`·`EXPIRED`는 공개 목록에 오르지 않는다."""
+
+        from app.agent.schemas import ApprovalItem
+
+        base = {
+            "approval_id": "APR-1",
+            "agent_run_id": "RUN-1",
+            "action_id": "ACT-1",
+            "trigger_alarm": ALARM_REF,
+            "incident": INCIDENT,
+            "action_code": "EQP_HOLD",
+            "severity": "HIGH",
+            "requested_at": NOW,
+        }
+        assert ApprovalItem(**base, status="PENDING").status.value == "PENDING"
+        for internal in (ApprovalStatus.AUTO, ApprovalStatus.EXPIRED):
+            with pytest.raises(ValidationError):
+                ApprovalItem(**base, status=internal.value)
+
+    @pytest.mark.parametrize(
+        ("model_path", "field", "public_enum"),
+        [
+            ("ApprovalDecisionRequest", "decision", "PublicApprovalDecision"),
+            ("ApprovalItem", "status", "PublicApprovalStatus"),
+            ("ActionDeliveryItem", "channel", "PublicDeliveryChannel"),
+        ],
+    )
+    def test_public_fields_are_annotated_with_the_public_enum(
+        self, model_path: str, field: str, public_enum: str
+    ) -> None:
+        """**값이 같아도 타입이 내부 Enum이면 경계가 회귀한 것이다.**
+
+        `Literal[ApprovalStatus.PENDING, …]`처럼 같은 3값을 내부 Enum 멤버로 구성하면
+        JSON은 똑같지만 field는 다시 내부 Enum에 묶인다. 동작 테스트로는 구분되지
+        않아 annotation identity로 고정한다(구현리뷰 1차 필수 1).
+        """
+
+        from app.agent import schemas as agent_schemas
+        from app.common import enums
+
+        model = getattr(agent_schemas, model_path)
+        expected = getattr(enums, public_enum)
+        annotation = model.model_fields[field].annotation
+        assert (
+            annotation is expected
+        ), f"{model_path}.{field}는 {public_enum}이어야 한다 (현재 {annotation})"
+        # 내부 Enum이 annotation 어디에도 섞이지 않는다.
+        internal = {enums.Decision, enums.ApprovalStatus, enums.DeliveryChannel}
+        assert not (set(getattr(annotation, "__args__", ())) & internal)
+        assert annotation not in internal
+
+    def test_public_enums_expose_exactly_the_documented_values(self) -> None:
+        """API v3가 정의한 공개 값 집합."""
+
+        from app.common import enums
+
+        assert {v.value for v in enums.PublicApprovalDecision} == {
+            "APPROVED",
+            "REJECTED",
+        }
+        assert {v.value for v in enums.PublicApprovalStatus} == {
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+        }
+        assert {v.value for v in enums.PublicDeliveryChannel} == {"EMAIL", "MES"}
+
+    def test_delivery_item_rejects_the_internal_channel(self) -> None:
+        """공개 channel은 `EMAIL|MES`다. `MES_MOCK`은 내부 값이다."""
+
+        assert _delivery("MES", "WAITING").channel.value == "MES"
+        with pytest.raises(ValidationError):
+            _delivery(DeliveryChannel.MES_MOCK.value, "WAITING")
+
+    def test_accepted_run_is_the_minimum_public_body(self) -> None:
+        """accepted 응답이 내부 실행 문맥을 노출하지 않는다."""
+
+        from app.agent.schemas import AgentRunAcceptedResponse
+
+        accepted = AgentRunAcceptedResponse(
+            agent_run_id="RUN-1", status="RUNNING", alarm=ALARM_REF
+        )
+        assert set(AgentRunAcceptedResponse.model_fields) == {
+            "agent_run_id",
+            "status",
+            "alarm",
+        }
+        assert accepted.status.value == "RUNNING"
+        # 내부 실행 문맥은 여기 오지 않는다.
+        for leaked in ("thread_id", "incident", "representative_alarm"):
+            assert leaked not in AgentRunAcceptedResponse.model_fields
+
+    def test_accepted_run_refuses_a_status_the_database_cannot_store(self) -> None:
+        """`PENDING`은 `002_agent_runtime_clean.sql` CHECK가 저장할 수 없다."""
+
+        from app.agent.schemas import AgentRunAcceptedResponse
+
+        for refused in ("PENDING", "WAITING_APPROVAL", "COMPLETED", "FAILED"):
+            with pytest.raises(ValidationError):
+                AgentRunAcceptedResponse(
+                    agent_run_id="RUN-1", status=refused, alarm=ALARM_REF
+                )
+
+    def test_run_status_matches_the_migration_check(self) -> None:
+        """공통 `RunStatus`는 migration CHECK 4종과 exact하다."""
+
+        from app.common.enums import RunStatus
+
+        assert {status.value for status in RunStatus} == {
+            "RUNNING",
+            "WAITING_APPROVAL",
+            "COMPLETED",
+            "FAILED",
+        }

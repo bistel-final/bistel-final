@@ -6,10 +6,11 @@ from pydantic import Field, model_validator
 from app.common.enums import (
     ActionCode,
     ApprovalStatus,
-    Decision,
-    DeliveryChannel,
     DeliveryStatus,
     FaultHypothesis,
+    PublicApprovalDecision,
+    PublicApprovalStatus,
+    PublicDeliveryChannel,
     RunStatus,
     Severity,
     ToolCallStatus,
@@ -29,13 +30,24 @@ class AgentRunCreateRequest(ApiModel):
     alarm: AlarmRef
 
 
+#: `POST /agent/runs` 202의 공개 status. run은 `RUNNING`으로 저장된 뒤 반환된다.
+#:
+#: API v3 예시의 `PENDING`은 채택하지 않는다 — `002_agent_runtime_clean.sql`의
+#: `CHECK (status IN ('RUNNING','WAITING_APPROVAL','COMPLETED','FAILED'))`가 그 값을
+#: 저장할 수 없다. 별도 queue table·상태도 없으므로 DTO만 통과하고 insert가 실패한다.
+AcceptedRunStatus = Literal[RunStatus.RUNNING]
+
+
 class AgentRunAcceptedResponse(ApiModel):
+    """API v3의 공개 최소 body.
+
+    `thread_id`·incident·대표 AlarmRef는 Runtime 내부 결과이거나 상세 조회 DTO의
+    책임이다. accepted 응답이 내부 실행 문맥을 노출하지 않는다.
+    """
+
     agent_run_id: NonEmptyId
-    thread_id: NonEmptyId
-    incident: IncidentRef
-    requested_alarm: AlarmRef
-    representative_alarm: AlarmRef
-    status: RunStatus
+    status: AcceptedRunStatus
+    alarm: AlarmRef
 
 
 class IncidentAlarmEvidence(ApiModel):
@@ -83,8 +95,14 @@ class AgentEvidence(ApiModel):
 
 
 class ActionDeliveryItem(ApiModel):
+    """공개 delivery item. channel은 `EMAIL|MES`다(API v3 §3.4).
+
+    내부 `MES_MOCK`은 `boundary_adapters.to_public_channel()`이 projection한다.
+    Tool의 `ChannelDeliveryResult`는 내부 실행 결과라 `MES_MOCK`을 유지한다.
+    """
+
     action_id: NonEmptyId
-    channel: DeliveryChannel
+    channel: PublicDeliveryChannel
     status: DeliveryStatus
     request_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     attempt_count: int = Field(ge=0)
@@ -107,12 +125,9 @@ class ToolCallItem(ApiModel):
     error_msg: str | None = None
 
 
-ApprovalQueueStatus = Literal[
-    ApprovalStatus.PENDING,
-    ApprovalStatus.APPROVED,
-    ApprovalStatus.REJECTED,
-    ApprovalStatus.EXPIRED,
-]
+#: 공개 승인 목록 상태. 내부 `AUTO`·`EXPIRED`는 노출하지 않는다(API v3 §3.5).
+#: 조회 제외·표시 정책은 `V5-C-5.1` Repository·API가 소유한다.
+ApprovalQueueStatus = PublicApprovalStatus
 
 
 class ApprovalItem(ApiModel):
@@ -145,14 +160,19 @@ class ApprovalPageResponse(PageResponse[ApprovalItem]):
 
 
 class ApprovalDecisionRequest(ApiModel):
-    decision: Decision
+    """public 요청은 `APPROVED|REJECTED`만 받는다(API v3 §2.4).
+
+    내부 `Decision(APPROVE|REJECT)` 변환은 Router boundary adapter가 한다.
+    """
+
+    decision: PublicApprovalDecision
     decided_by: str = Field(min_length=1, max_length=40)
     decision_comment: str | None = Field(default=None, max_length=1000)
 
 
 ApprovalDecisionStatus = Literal[
-    ApprovalStatus.APPROVED,
-    ApprovalStatus.REJECTED,
+    PublicApprovalStatus.APPROVED,
+    PublicApprovalStatus.REJECTED,
 ]
 
 
@@ -248,12 +268,14 @@ class ActionItem(ApiModel):
         channels = [delivery.channel for delivery in self.deliveries]
         if len(channels) != len(set(channels)):
             raise ValueError("deliveries에는 같은 channel을 중복할 수 없습니다")
+        # 공개 DTO이므로 **공개 channel 기준**이다. 내부 Tool의
+        # `ChannelDeliveryResult`는 `MES_MOCK`을 그대로 쓴다.
         expected = {
             ActionCode.MONITORING: set(),
-            ActionCode.WARNING: {DeliveryChannel.EMAIL},
+            ActionCode.WARNING: {PublicDeliveryChannel.EMAIL},
             ActionCode.EQP_HOLD: {
-                DeliveryChannel.EMAIL,
-                DeliveryChannel.MES_MOCK,
+                PublicDeliveryChannel.EMAIL,
+                PublicDeliveryChannel.MES,
             },
         }[self.action_code]
         if set(channels) != expected:

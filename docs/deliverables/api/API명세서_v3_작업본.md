@@ -469,7 +469,7 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   아직 계약으로 정해지지 않았으므로 `fault_name`·`fault_color`를 null로 둔다.
 - `action_id`는 생성된 action이 없으면 null이고, `approval_id`는 EQP_HOLD 승인 요청이 없으면
   null이다. 화면은 chamber 검색이 아니라 이 ID로 action·approval을 연결한다.
-- `status`는 `PENDING|RUNNING|WAITING_APPROVAL|COMPLETED|FAILED`다. `tools`는 항상 존재하며
+- `status`는 `RUNNING|WAITING_APPROVAL|COMPLETED|FAILED`다. `tools`는 항상 존재하며
   아직 호출이 없으면 빈 배열이다. 예측 전·실패 상태에서는 predicted fault·confidence·recommended
   action·표시 alias가 null일 수 있다.
 - `deliveries`는 항상 존재하고 없으면 빈 배열이다. item은 public `channel=EMAIL|MES`와
@@ -836,10 +836,16 @@ Alarm History의 선택 행에서 source-aware 분석을 시작한다. 최종 �
 ```json
 {
   "agent_run_id": "RUN-000002",
-  "status": "PENDING",
+  "status": "RUNNING",
   "alarm": {"source": "TRACE", "alarm_id": "TAL-0001"}
 }
 ```
+
+accepted status는 `RUNNING`이다. run을 `RUNNING`으로 저장한 뒤 202를 반환하며, 별도 queue
+상태를 두지 않는다 — `002_agent_runtime_clean.sql`의
+`CHECK (status IN ('RUNNING','WAITING_APPROVAL','COMPLETED','FAILED'))`가 다른 값을 저장할 수
+없다. body는 `agent_run_id`·`status`·`alarm` 3개이며 `thread_id`·incident·대표 AlarmRef 같은
+내부 실행 문맥은 상세 조회가 반환한다.
 
 같은 incident가 RUNNING·WAITING_APPROVAL이면 409 `INCIDENT_ALREADY_RUNNING`, 이미 완료되어
 재실행 금지 상태면 409 `INCIDENT_ALREADY_PROCESSED`다. AlarmRef 없음은 404, 형식 오류는 422,

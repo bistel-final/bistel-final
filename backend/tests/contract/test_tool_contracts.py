@@ -705,3 +705,87 @@ class TestInputBoundaries:
 
         assert result.group_by == []
         assert AnalysisPlanToolInput(question="알람 수").question == "알람 수"
+
+
+class TestToolEnvelopeExactness:
+    """Tool 5종 signature와 envelope 고정 (`V5-CM-4.1` 묶음 3)."""
+
+    def test_tool_inputs_have_the_exact_signature(self) -> None:
+        """API v3 §2의 5종 signature와 field가 exact하게 같다."""
+
+        from app.common import tool_contracts as contracts
+
+        expected = {
+            "FdcSummaryToolInput": {"lot_hist_id"},
+            "EquipmentContextToolInput": {"chamber_id"},
+            "DocumentSearchToolInput": {"query", "model_code", "top_k"},
+            "SendActionToolInput": {"action_id"},
+            "AnalysisPlanToolInput": {"question"},
+        }
+        for name, fields in expected.items():
+            assert set(getattr(contracts, name).model_fields) == fields, name
+
+    def test_document_search_defaults_match_the_signature(self) -> None:
+        """`search_documents(query, model_code=None, top_k=4)`."""
+
+        from app.common.tool_contracts import DocumentSearchToolInput
+
+        parsed = DocumentSearchToolInput(query="ET_CF4")
+        assert parsed.model_code is None
+        assert parsed.top_k == 4
+
+    def test_no_tool_result_carries_runtime_metadata(self) -> None:
+        """`latency_ms`·`status`·`called_at`은 Tool payload가 아니다.
+
+        실행 wrapper가 `agent_tool_call` metadata로 한 번 기록한다(API v3 §2).
+        wrapper 구현은 `V5-C-0.1` 소유다.
+        """
+
+        from app.common import tool_contracts as contracts
+
+        results = [
+            contracts.FdcSummaryToolResult,
+            contracts.EquipmentContextToolResult,
+            contracts.DocumentSearchToolResult,
+            contracts.SendActionToolResult,
+            contracts.AnalysisPlanToolResult,
+        ]
+        for model in results:
+            leaked = {"latency_ms", "status", "called_at"} & set(model.model_fields)
+            assert not leaked, f"{model.__name__}에 runtime metadata: {leaked}"
+
+    def test_runtime_metadata_lives_on_the_tool_call_item(self) -> None:
+        """분리 계약의 반대편 — 기록 DTO에는 있어야 한다."""
+
+        from app.agent.schemas import ToolCallItem
+
+        assert {"latency_ms", "status", "called_at"} <= set(ToolCallItem.model_fields)
+
+    def test_a_runtime_metadata_field_is_refused_by_the_envelope(self) -> None:
+        """`extra="forbid"`가 Tool 결과에 metadata를 붙이지 못하게 한다."""
+
+        from app.common.tool_contracts import AnalysisPlanToolResult
+
+        with pytest.raises(ValidationError):
+            AnalysisPlanToolResult(ok=False, reason="TIMEOUT: x", latency_ms=12)
+
+    def test_reason_prefixes_match_the_api_contract(self) -> None:
+        """API v3 §2의 7종과 exact하게 같다."""
+
+        from app.common.tool_contracts import REASON_PREFIXES
+
+        assert REASON_PREFIXES == (
+            "NOT_FOUND:",
+            "TIMEOUT:",
+            "MODEL_NOT_READY:",
+            "LLM_NOT_READY:",
+            "DEPENDENCY_ERROR:",
+            "POLICY_REJECTED:",
+            "IDEMPOTENCY_CONFLICT:",
+        )
+
+    def test_an_unlisted_reason_prefix_is_refused(self) -> None:
+        from app.common.tool_contracts import AnalysisPlanToolResult
+
+        with pytest.raises(ValidationError):
+            AnalysisPlanToolResult(ok=False, reason="UNKNOWN: 무언가")

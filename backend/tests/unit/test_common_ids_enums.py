@@ -14,6 +14,7 @@ from app.common.audit import (
 )
 from app.common.enums import (
     ActionCode,
+    ActionLinkRole,
     AlarmSource,
     AlarmType,
     ApprovalStatus,
@@ -121,6 +122,50 @@ class TestEnumValues:
     def test_legacy_action_values_are_not_active(self) -> None:
         assert {"MONITOR", "NOTIFY", "LOT_HOLD"}.isdisjoint(ActionCode)
         assert "MES" not in DeliveryChannel
+
+
+class TestMigrationBackedEnums:
+    """DB CHECK가 값을 강제하는 Enum. **갈리면 insert가 실패한다.**
+
+    DTO·단위 테스트는 통과하고 DB에서만 죽으므로 여기서 exact하게 고정한다
+    (구현리뷰 1차 필수 1).
+    """
+
+    def test_action_link_role_matches_the_migration_check(self) -> None:
+        """`002_agent_runtime_clean.sql:93`
+        `CHECK (link_role IN ('CREATED', 'REUSED'))`."""
+
+        assert {role.value for role in ActionLinkRole} == {"CREATED", "REUSED"}
+        assert ActionLinkRole.CREATED == "CREATED"
+        assert ActionLinkRole.REUSED == "REUSED"
+
+    def test_action_link_role_is_read_from_the_migration_file(self) -> None:
+        """상수를 손으로 적으면 migration과 또 갈린다 — **파일에서 읽어 대조한다.**"""
+
+        import re
+        from pathlib import Path
+
+        migration = (
+            Path(__file__).resolve().parents[2]
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"link_role\s+varchar\(\d+\)\s+NOT NULL\s+CHECK\s*\("
+            r"\s*link_role IN \(([^)]*)\)",
+            migration,
+        )
+        assert match is not None, "migration에서 link_role CHECK를 찾지 못했다"
+        allowed = {value.strip().strip("'") for value in match.group(1).split(",")}
+        assert allowed == {role.value for role in ActionLinkRole}
+
+    def test_run_status_matches_the_migration_check(self) -> None:
+        assert {status.value for status in RunStatus} == {
+            "RUNNING",
+            "WAITING_APPROVAL",
+            "COMPLETED",
+            "FAILED",
+        }
 
 
 class TestActionDerivedValues:
