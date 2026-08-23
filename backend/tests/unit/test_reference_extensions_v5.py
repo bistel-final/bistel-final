@@ -3944,6 +3944,109 @@ def _cli(*argv: str, database: Any = None) -> tuple[int, str, str]:
     return code, stderr.getvalue().strip(), stdout.getvalue().strip()
 
 
+class _DriverError(RuntimeError):
+    """SQLSTATE를 달고 오는 driver 예외 흉내."""
+
+    def __init__(self, message: str, sqlstate: str | None = None) -> None:
+        super().__init__(message)
+        self.sqlstate = sqlstate
+
+
+def _cli_raising(error: BaseException, *, on_open: bool = False) -> tuple[int, str]:
+    """`open_session` 또는 handler에서 계약 밖 예외가 났을 때의 CLI 표면."""
+
+    import contextlib
+    import io
+
+    fake = _FakeDatabase(state="compat")
+    connection = _FakeConnection(fake)
+
+    def opener(name: str) -> tuple[Any, Any]:
+        if on_open:
+            raise error
+        return connection, fake
+
+    def failing(sql: str, params: Any = None) -> Any:
+        raise error
+
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+        code = v5.main(
+            [
+                "--preflight",
+                "--database",
+                "kosa_agent",
+                "--confirm-target",
+                "kosa_agent",
+            ],
+            opener=(lambda name: (connection, failing)) if not on_open else opener,
+        )
+    return code, stderr.getvalue().strip()
+
+
+def test_an_unexpected_driver_error_never_becomes_a_traceback() -> None:
+    """계약 밖 예외가 reason code로 나온다 — Gate 0가 실제 공용 DB에서 잡았다.
+
+    `main()`이 `ReferenceV5Error`만 잡던 동안 `UndefinedTable`이 그대로 나가
+    traceback에 **로컬 절대경로**가 찍혔다(Gate 0 조사 §5).
+    """
+
+    code, err = _cli_raising(
+        _DriverError('relation "public.document_corpus" does not exist', "42P01")
+    )
+    assert code == v5.EXIT_MISMATCH
+    assert err == f"{v5.UNEXPECTED_REASON} 42P01"
+
+
+def test_an_unexpected_error_without_a_sqlstate_reports_its_type() -> None:
+    code, err = _cli_raising(_DriverError("무언가 잘못됐다"))
+    assert code == v5.EXIT_MISMATCH
+    assert err == f"{v5.UNEXPECTED_REASON} _DriverError"
+
+
+def test_a_connection_failure_does_not_leak_the_endpoint() -> None:
+    """연결 실패 메시지에는 host·port가 들어간다. **그대로 새면 안 된다.**"""
+
+    code, err = _cli_raising(
+        _DriverError(
+            'connection to server at "db.example.org" (10.0.0.9), port 55432 failed:'
+            ' password authentication failed for user "kosa"',
+            "08006",
+        ),
+        on_open=True,
+    )
+    assert code == v5.EXIT_MISMATCH
+    assert err == f"{v5.UNEXPECTED_REASON} 08006"
+    for secret in ("db.example.org", "10.0.0.9", "55432", "password", 'kosa"'):
+        assert secret not in err, secret
+
+
+def test_a_contract_error_still_wins_over_the_unexpected_handler() -> None:
+    """`ReferenceV5Error`는 그대로 자기 reason code·exit code를 쓴다."""
+
+    code, err = _cli_raising(
+        v5.ReferenceV5Error("TARGET_BUSY", v5.EXIT_CONFIRM_REQUIRED)
+    )
+    assert code == v5.EXIT_CONFIRM_REQUIRED
+    assert err.splitlines()[0] == "TARGET_BUSY"
+
+
+def test_the_unexpected_handler_reports_only_a_code(tmp_path: Path) -> None:
+    """`report_unexpected()`가 예외 메시지를 절대 찍지 않는다."""
+
+    import contextlib
+    import io
+
+    stderr = io.StringIO()
+    error = _DriverError(f"공백 경로 {tmp_path} 와 비밀 pw=hunter2", "23505")
+    with contextlib.redirect_stderr(stderr):
+        assert v5.report_unexpected(error) == v5.EXIT_MISMATCH
+    out = stderr.getvalue().strip()
+    assert out == f"{v5.UNEXPECTED_REASON} 23505"
+    assert str(tmp_path) not in out
+    assert "hunter2" not in out
+
+
 def test_the_cli_apply_actually_applies(tmp_path: Path) -> None:
     """mode가 실제 handler에 연결돼야 한다(구현리뷰 10차 필수 1).
 

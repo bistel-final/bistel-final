@@ -2895,6 +2895,26 @@ def _apply_locked(
 #: 승격을 시도했다가 `RECEIPT_STATUS_NOT_ALLOWED`로 막힌다.
 
 
+#: 계약 밖 예외의 reason code. 뒤에 SQLSTATE 또는 예외 class 이름이 붙는다.
+UNEXPECTED_REASON = "UNEXPECTED_ERROR"
+
+
+def report_unexpected(error: BaseException) -> int:
+    """예상 못 한 예외를 **reason code로만** 낸다.
+
+    `main()`이 `ReferenceV5Error`만 잡던 동안 driver 예외가 traceback으로 샜다.
+    traceback에는 로컬 **절대경로**가 들어가고, 연결 실패 메시지에는 host·port가
+    들어간다. 둘 다 비노출 대상이다(Gate 0 조사 §5).
+
+    그래서 **예외 메시지를 찍지 않는다.** SQLSTATE는 5자 코드라 안전하고 원인을
+    좁히는 데 그것으로 충분하다. 없으면 예외 class 이름으로 대신한다.
+    """
+
+    detail = _sqlstate(error) or type(error).__name__
+    print(f"{UNEXPECTED_REASON} {detail}", file=sys.stderr)
+    return EXIT_MISMATCH
+
+
 #: 복구 runbook을 출력할 reason. commit 뒤 상태가 남는 것들이다.
 RECOVERABLE_REASONS: frozenset[str] = frozenset(
     {"COMMIT_OUTCOME_UNKNOWN", "RECEIPT_WRITE_FAILED", "MARKER_WRITE_FAILED"}
@@ -3517,6 +3537,9 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
     except ReferenceV5Error as error:
         print(error.reason_code, file=sys.stderr)
         return error.exit_code
+    except Exception as error:
+        # 연결 실패 메시지에는 host·port가 들어간다. 그대로 새면 안 된다.
+        return report_unexpected(error)
 
     try:
         result = run_mode(execute, connection, args, mode)
@@ -3536,6 +3559,9 @@ def main(argv: Sequence[str] | None = None, *, opener: Any = None) -> int:
             ):
                 print(line, file=sys.stderr)
         return error.exit_code
+    except Exception as error:
+        # 계약 밖 driver 예외. reason code만 내고 traceback을 내보내지 않는다.
+        return report_unexpected(error)
     finally:
         # 어떤 결과에서도 connection·engine을 닫아 session lock을 최종 해제한다.
         with contextlib_suppress_all():
