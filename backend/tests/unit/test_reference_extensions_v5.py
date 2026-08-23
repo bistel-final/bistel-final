@@ -694,9 +694,10 @@ def _registered(profile: str) -> dict[str, Any]:
 def test_cm31_owns_only_r03_and_the_view() -> None:
     """**소유권과 물리 inventory는 다른 것이다**(구현리뷰 4차 필수 2).
 
-    CM-3.1이 만들거나 교체하는 것은 둘뿐이지만, profile manifest는
-    `verify_bootstrap_state`가 대조하는 물리 inventory라 CM-2.6이 보존한 table을 전부
-    담아야 한다. 계획 §4.1도 "runtime 23 · evaluation 14를 **유지**한다"고 못 박았다.
+    CM-3.1이 만들거나 교체하는 것은 둘뿐이지만, 구 등록 manifest는 과거 형상의 물리
+    inventory라 CM-2.6이 보존한 table을 전부 담는다. 계획 §4.1의 "runtime 23 ·
+    evaluation 14 유지"는 **그 fixture를 좁히지 말라는 뜻**이지 현재·final 개수가
+    23/14라는 뜻이 아니다(구현리뷰 18차 권장 1).
     """
 
     assert v5.OWNED_BY_CM31 == (v5.R03_TABLE, v5.ALARM_VIEW)
@@ -708,25 +709,32 @@ def test_cm31_owns_only_r03_and_the_view() -> None:
 
 
 def test_not_adopted_is_not_the_same_as_hidden_from_inventory() -> None:
-    """`document_corpus`는 최종 계보가 채택하지 않지만 지금 DB에 **있다.**
+    """`document_corpus`는 채택 대상이 아니지만 **구 등록 manifest에는 기록돼 있다.**
 
-    CM-2.6이 legacy handoff로 보존했다. 채택하지 않는 것과 inventory에서 숨기는 것은
-    다르다 — 제거·격리 Task가 정해지기 전까지 manifest는 존재를 기록한다.
+    채택하지 않는 것과 과거 형상 기록에서 지우는 것은 다르다. 제거는 `V5-B-1.1`이
+    하고 그 뒤 final inventory는 22/13이다. 보존 projection에는 어느 단계에서도
+    넣지 않는다(구현리뷰 18차 권장 1).
     """
 
     assert v5.NOT_ADOPTED_TABLES == ("document_corpus",)
     for tables in v5.OWNED_BY_OTHER_TASKS.values():
         assert "document_corpus" not in tables
-    # 등록 manifest(=현재 물리 inventory)에는 실제로 있다.
+    # 구 등록 manifest에는 기록돼 있다 — 지우지 않는다.
     assert "document_corpus" in _registered("evaluation")["tables"]
+    # 그러나 보존 projection에는 없다.
+    assert "document_corpus" not in v5.PRESERVED_TABLES_BY_PROFILE["evaluation"]
 
 
 @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
-def test_the_registered_inventory_is_preserved_not_narrowed(profile: str) -> None:
-    """계획 §4.1의 "23 · 14 유지"를 실물로 고정한다."""
+def test_the_superseded_registration_fixture_is_not_narrowed(profile: str) -> None:
+    """**구 등록 manifest 23 · 14를 그대로 둔다** — 좁히지 않는다.
+
+    이것은 live도 final도 아닌 **과거 형상 fixture**다. final은 22/13이고
+    `V5-CM-1.8`이 `V5-B-1.1` 뒤에 발급한다(구현리뷰 18차 권장 1).
+    """
 
     tables = set(_registered(profile)["tables"])
-    assert len(tables) == v5.PROFILE_TABLE_COUNTS[profile]
+    assert len(tables) == v5.SUPERSEDED_PROFILE_TABLE_COUNTS[profile]
     assert set(v5.BASE_TABLE_NAMES) <= tables
     assert v5.R03_TABLE in tables
 
@@ -1579,7 +1587,10 @@ def test_artifact_rejects_a_narrowed_inventory() -> None:
     """CM-2.6이 보존한 23/14를 artifact가 줄여 적으면 안 된다(4차 필수 2)."""
 
     artifact = _artifact()
-    artifact["profile_inventory_counts"] = {"runtime": 10, "evaluation": 10}
+    artifact["superseded_profile_inventory_counts"] = {
+        "runtime": 10,
+        "evaluation": 10,
+    }
     with pytest.raises(v5.ReferenceV5Error) as caught:
         v5.assert_migration_contract(artifact)
     assert caught.value.reason_code == "CONTRACT_INVENTORY_MISMATCH"
@@ -2871,7 +2882,7 @@ def test_the_preserved_allowlist_matches_the_registered_inventory() -> None:
             - v5.LEGACY_HANDOFF_TABLES
         )
         assert set(v5.PRESERVED_TABLES_BY_PROFILE[profile]) == expected, profile
-        assert len(tables) == v5.PROFILE_TABLE_COUNTS[profile]
+        assert len(tables) == v5.SUPERSEDED_PROFILE_TABLE_COUNTS[profile]
 
 
 def test_the_derivation_source_is_a_deprecated_epoch_inventory() -> None:
@@ -2891,6 +2902,34 @@ def test_the_derivation_source_is_a_deprecated_epoch_inventory() -> None:
         with pytest.raises(v5.ReferenceV5Error) as caught:
             v5.assert_final_epoch_contract(registered, profile=profile)
         assert caught.value.reason_code == "MANIFEST_EPOCH_NOT_FINAL", profile
+
+
+def test_the_inventory_counts_name_their_stage() -> None:
+    """**23/14는 구 등록 manifest 값이지 현재도 final도 아니다**(구현리뷰 17차 필수 2).
+
+    단계마다 다르다 — 구 manifest 23/14, 현재 공용 22/14, `V5-B-1.1` 이후 22/13.
+    artifact field 이름이 `superseded_…`인 것도 그 뜻이다. final 발급은 `V5-CM-1.8`이
+    하고 그 선행에 B-1.1이 있다.
+    """
+
+    assert v5.SUPERSEDED_PROFILE_TABLE_COUNTS == {"runtime": 23, "evaluation": 14}
+    assert v5.FINAL_PROFILE_TABLE_COUNTS == {"runtime": 22, "evaluation": 13}
+    # 구 값이 곧 final이라는 해석을 막는다.
+    assert v5.SUPERSEDED_PROFILE_TABLE_COUNTS != v5.FINAL_PROFILE_TABLE_COUNTS
+    # final 개수는 legacy handoff를 뺀 구 inventory와 같아야 한다.
+    for profile, count in v5.FINAL_PROFILE_TABLE_COUNTS.items():
+        registered = set(_registered(profile)["tables"])
+        assert count == len(registered - v5.LEGACY_HANDOFF_TABLES), profile
+
+
+def test_the_artifact_field_says_superseded() -> None:
+    """artifact가 구 inventory를 **final이라고 주장하지 않는다**."""
+
+    artifact = _artifact()
+    assert "profile_inventory_counts" not in artifact
+    assert artifact["superseded_profile_inventory_counts"] == dict(
+        v5.SUPERSEDED_PROFILE_TABLE_COUNTS
+    )
 
 
 def test_the_legacy_handoff_is_not_preserved() -> None:
@@ -3778,7 +3817,11 @@ def test_the_expected_plan_matches_itself() -> None:
 
 
 def test_a_plan_from_another_profile_is_refused() -> None:
-    """runtime은 13개, evaluation은 4개를 더 잡는다. 섞이면 안 된다."""
+    """보존 projection은 runtime **12** · evaluation **3**이다. 섞이면 안 된다.
+
+    구 등록 manifest 23/14에서 base 9·R03·legacy handoff를 뺀 값이다
+    (구현리뷰 19차 권장 1 — 전에는 13/4로 적혀 있었다).
+    """
 
     plan = _plan("successor", profile="runtime")
     with pytest.raises(v5.ReferenceV5Error) as caught:
@@ -4065,6 +4108,70 @@ def test_a_connection_failure_does_not_leak_the_endpoint() -> None:
     assert err == f"{v5.UNEXPECTED_REASON} 08006"
     for secret in ("db.example.org", "10.0.0.9", "55432", "password", 'kosa"'):
         assert secret not in err, secret
+
+
+@pytest.mark.parametrize(
+    "polluted",
+    [
+        "08006 host=db.example.org password=hunter2",
+        "08006 user=kosa port=55432",
+        "55p03",
+        "ABCDEF",
+        "1234",
+        " 08006",
+        "08006\npassword=hunter2",
+    ],
+)
+def test_a_malformed_sqlstate_never_reaches_stderr(polluted: str) -> None:
+    """**5자 영숫자만 출력한다**(구현리뷰 17차 필수 1).
+
+    전에는 driver가 준 non-empty 문자열을 그대로 믿었다. wrapper가 오염된 속성을 주면
+    누출을 막으려 만든 코드가 누출 경로가 됐다.
+    """
+
+    code, err = _cli_raising(_DriverError("무언가", polluted))
+    assert code == v5.EXIT_MISMATCH
+    assert err == f"{v5.UNEXPECTED_REASON} _DriverError"
+    for secret in ("db.example.org", "hunter2", "55432", "password", "user=", "host="):
+        assert secret not in err, secret
+
+
+@pytest.mark.parametrize("attribute", ["orig", "__cause__"])
+def test_a_malformed_sqlstate_is_dropped_through_wrappers(attribute: str) -> None:
+    """`.orig`·`__cause__`로 감싸 들어와도 같다."""
+
+    inner = _DriverError("안쪽", "08006 password=hunter2")
+    outer = RuntimeError("바깥")
+    if attribute == "orig":
+        outer.orig = inner  # type: ignore[attr-defined]
+    else:
+        outer.__cause__ = inner
+    assert v5._sqlstate(outer) is None
+    assert v5._safe_detail(outer) == "RuntimeError"
+
+
+def test_a_valid_sqlstate_still_passes_through() -> None:
+    """정상 코드는 그대로 나온다 — 검증이 기능을 죽이지 않는다."""
+
+    code, err = _cli_raising(_DriverError("없는 table", "42P01"))
+    assert err == f"{v5.UNEXPECTED_REASON} 42P01"
+    assert code == v5.EXIT_MISMATCH
+
+
+def test_lock_classification_survives_the_sqlstate_validation() -> None:
+    """`55P03`·`40P01` 분류는 그대로다(구현리뷰 13차 필수 1 회귀 유지)."""
+
+    for state in v5.LOCK_CONTENTION_SQLSTATES:
+        assert v5.is_lock_contention(_DriverError("x", state))
+    assert not v5.is_lock_contention(_DriverError("x", "55P03 evil"))
+    assert not v5.is_lock_contention(_DriverError("x", "42P01"))
+
+
+def test_an_untrustworthy_exception_name_falls_back_to_a_literal() -> None:
+    """동적 class 이름도 그대로 믿지 않는다."""
+
+    hostile = type("Bad name password=hunter2", (RuntimeError,), {})
+    assert v5._safe_detail(hostile("x")) == v5.UNKNOWN_DETAIL
 
 
 def test_a_contract_error_still_wins_over_the_unexpected_handler() -> None:

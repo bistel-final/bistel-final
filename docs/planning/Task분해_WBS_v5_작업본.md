@@ -78,7 +78,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-1.5 | P0 | 구 epoch 격리. 완료: v4 corrected build(`dim_parameter` overlay·`seq_no`·시각 보정)를 최종 epoch 실행 경로에서 차단하고 폐기 사유·대체 Task를 기록한다 | FR-I-04 | V5-CM-1.2 | 1.0h |
 | V5-CM-1.6 | P1 | 구 corrected 계열 제거. 완료: `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트, `manifest_v3`의 `corrected_files`·`(runtime\|evaluation, corrected_base)` stage, corrected marker·`data/corrected`를 제거하고 전체 회귀를 통과한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 2.0h |
 | V5-CM-1.7 | P1 | 구 bootstrap·skip 제거. 완료: `V5-CM-2.2`가 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 제거한다. `V5-CM-1.2` 사유 skip 중 해제 Task 없는 잔존은 0건이어야 하며, `test_master_cypher` 2건만 `V5-CM-2.7` 해제 대상으로 허용한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 1.5h |
-| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 runtime 23 · evaluation 14 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1 | 2.0h |
+| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 `V5-B-1.1`이 legacy `document_corpus`를 정리한 뒤의 **runtime 22 · evaluation 13** 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 구 등록 manifest의 23 · 14는 폐기 epoch `kosa_0813` 값이며 `V5-CM-3.1` artifact가 `superseded_profile_inventory_counts`로만 봉인한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1, V5-B-1.1 | 2.0h |
 
 ### V5-CM-2. fresh bootstrap
 
@@ -100,7 +100,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1, V5-CM-1.8 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
-| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
+| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `V5-B-1.1`이 만든 `document`·`document_chunk`의 role별 explicit GRANT도 이 Task가 적용한다(구현리뷰 18차 필수 1). `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
 
 ### V5-CM-4. 공통 계약과 통합
 
@@ -158,7 +158,7 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-B-1.1 | P0 | RAG 스키마 단일 소유. 완료: ① `03_db/01_schema.sql`의 `vector` extension·`document`·`document_chunk`만 3개 DB에 생성한다(`embedding vector(1024)`). `pg_trgm`·`document_corpus`·corpus revision과 ①의 나머지 table은 채택하지 않는다. CM-3.5 role matrix에 맞춘 최소권한 GRANT를 적용하고 PUBLIC 권한·Common migration 중복 객체는 0건이다 | FR-B-02, FR-B-05, NFR-02 | V5-CM-3.1, V5-CM-3.5 | 1.0h |
+| V5-B-1.1 | P0 | RAG 스키마 단일 소유. 완료: ① `03_db/01_schema.sql`의 `vector` extension·`document`·`document_chunk`만 3개 DB에 생성한다(`embedding vector(1024)`). `pg_trgm`·`document_corpus`·corpus revision과 ①의 나머지 table은 채택하지 않는다. `kosa_text2sql`에 남은 legacy `document_corpus`도 이 Task가 제거해 3 DB 물리 inventory를 **runtime 22 · evaluation 13**으로 확정한다. `PUBLIC` 권한과 Common migration 중복 객체는 0건이다. **두 table의 role별 explicit GRANT는 `V5-CM-3.5`가 소유한다** — 이 Task는 schema 생성과 `PUBLIC` revoke까지만 한다(구현리뷰 18차 필수 1: `CM-3.5`를 선행으로 두면 `CM-1.8 → B-1.1 → CM-3.5 → CM-3.2 → CM-1.8` 순환이 생긴다) | FR-B-02, FR-B-05, NFR-02 | V5-CM-3.1 | 1.0h |
 | V5-B-1.2 | P0 | RAG 문서 기능 정합. 완료: 불변 원본은 ③ `project.zip`·CM-1.3 hash로 보존하고 저장소에는 별도 corrected Markdown 3종만 정본으로 둔다. 고정 EQP upstream, score·metrology·반복·하류·후속 정상 기반 조치 상하향, 구 10건 서술을 제거한다. R03·R01·Fault 후보·PH/ET 범위를 최종 계약에 맞추고 Markdown 구조와 금지 문구 검사를 통과한다. 자동 marker·상세 provenance 검증은 B-1.4로 분리한다 | FR-B-02, NFR-06 | V5-CM-1.3 | 1.5h |
 | V5-B-1.3 | P0 | RAG 기능 적재. 완료: ① `load_documents.py`의 청킹·임베딩 로직을 최소 adapter로 재사용해 B-1.2 corrected 경로만 받는다. 명시 DSN과 대상 DB allowlist(`kosa_agent`, `kosa_agent_e2e`)를 강제하고 기본 DSN·원본 fallback·`--reset`을 거부한다. DB별 한 transaction으로 3문서와 canonical `<document_id>:cs1:<4자리>` chunk를 적재하며 `BAAI/bge-m3`·1024, 문서 3건·chunk 1건 이상/문서·embedding NULL 0·대표 검색 smoke를 확인한다. 이 완료 뒤 B-2 기능 구현은 운영 검증을 기다리지 않고 시작할 수 있다 | FR-B-02, FR-B-05, NFR-14 | V5-B-1.1, V5-B-1.2, V5-CM-3.5 | 1.5h |
 | V5-B-1.4 | P1 | RAG 운영 검증 강화. 완료: B-1.3 적재를 `kosa_text2sql`까지 확장해 3 DB를 정렬하고 권한·live fingerprint·중복 0·idempotent no-op을 검증한다. source/corrected SHA-256·정정 사유, cs1 contract hash, 고정 model revision·weights hash·dimension, 3 document ID·chunk 수·검색 smoke를 DB별 COMMITTED marker에 marker-last로 기록하며 readiness가 live DB와 대조할 수 있게 한다 | FR-B-02, FR-B-05, NFR-06, NFR-14 | V5-B-1.3, V5-B-2.1 | 2.0h |
@@ -238,14 +238,21 @@ Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h다.
    V5-B-3.1         CM-1.3 뒤 final master.cypher offline parser·100 statement·44/85 fixture 검증
 3  V5-CM-2.6~2.7    팀 승인 후 공용 3 profile 전환 · B-3.1 통과 입력의 Neo4j safe apply
 4  V5-CM-3.1        Reference extension 재기준화 · task-scoped migration contract artifact
-5  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
-6  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
-7  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
-8  A·B·C·D          실제 dependency가 열린 Task부터 병렬 구현
-9  V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
-10 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
-11 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
-12 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
+5  V5-B-1.1         RAG schema 생성 · PUBLIC revoke · legacy document_corpus 제거
+                    → 물리 inventory를 runtime 22 · evaluation 13으로 확정한다.
+                    **9번보다 먼저 실행하는 유일한 도메인 Task다** — CM-1.8이 이 결과를
+                    선행으로 요구한다(구현리뷰 18차 필수 1 · 19차 필수 1).
+6  V5-CM-1.8        manifest 최종 재기준화 — epoch·stage·type registry·profile manifest 발급
+                    (B-1.1 확정 뒤 runtime 22 · evaluation 13 live inventory로 발급한다)
+7  V5-CM-3.2~3.5    Runtime migration · pair guard · checkpoint · 최소권한 role
+                    (CM-3.5가 B-1.1이 만든 document·document_chunk의 explicit GRANT도 적용)
+8  V5-CM-4.1~4.4    공통 DTO·감사 helper·profile verifier·API fixture baseline
+9  나머지 A·B·C·D   실제 dependency가 열린 Task부터 병렬 구현
+                    (B-1.1은 5번에서 끝났고, B-1.3 적재는 CM-3.5 뒤다)
+10 V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
+11 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
+12 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
+13 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
 
    V5-CM-1.6~1.7   새 public profile 검증 뒤 구 corrected/bootstrap 코드를 제거한다.
                    기능 구현과 병행할 수 있지만 최종 gate 전에는 완료한다.

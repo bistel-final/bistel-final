@@ -1156,14 +1156,32 @@ PROFILE_MIGRATIONS: Mapping[str, tuple[str, ...]] = {
     "runtime": (MIGRATION_ID, "002_agent_runtime_clean"),
     "evaluation": (MIGRATION_ID,),
 }
-#: **현재 공용 DB의 물리 inventory 개수다.** CM-2.6이 base 9 외 변경 0으로 보존했고
-#: 계획 §4.1도 "runtime 23 · evaluation 14를 유지한다"고 못 박았다. R03는 이미 이 안에
-#: 있으므로 CM-3.1이 개수를 바꾸지 않는다 — 바꾸는 것은 R03의 컬럼뿐이다.
+#: **구 등록 manifest(폐기 epoch `kosa_0813`)의 물리 inventory 개수다.**
+#:
+#: 이것을 "현재" 또는 "final" inventory로 읽으면 안 된다(구현리뷰 17차 필수 2).
+#: 단계마다 값이 다르다.
+#:
+#: | 단계 | runtime | evaluation |
+#: |---|---:|---:|
+#: | 구 등록 manifest — **이 상수** | 23 | 14 |
+#: | 현재 공용 실측 (Gate 0) | 22 | 14 |
+#: | `V5-B-1.1`이 legacy를 정리한 뒤 final | 22 | 13 |
+#:
+#: CM-3.1은 이 값을 **구 계보 identity를 봉인하는 용도로만** 쓴다. artifact field 이름도
+#: `superseded_profile_inventory_counts`다. final manifest 발급은 `V5-CM-1.8`이 하고,
+#: 그 선행에 `V5-B-1.1`을 둬 실제 22/13 위에서 발급하게 했다.
 #:
 #: 3차 보완에서 이 값을 "구 계보의 흔적"으로 보고 inventory를 10개로 줄였는데, 그것이
-#: 소유권과 물리 inventory를 혼동한 오류였다(구현리뷰 4차 필수 2).
-PROFILE_TABLE_COUNTS: Mapping[str, int] = MappingProxyType(
+#: 소유권과 물리 inventory를 혼동한 오류였다(구현리뷰 4차 필수 2). 지금 바로잡는 것은
+#: 개수가 아니라 **그 개수가 무엇을 가리키느냐**다.
+SUPERSEDED_PROFILE_TABLE_COUNTS: Mapping[str, int] = MappingProxyType(
     {"runtime": 23, "evaluation": 14}
+)
+
+#: `V5-B-1.1`이 legacy를 정리한 **뒤**의 물리 inventory. `V5-CM-1.8`이 이 값으로 final
+#: manifest를 발급한다. CM-3.1은 기록만 하고 발급하지 않는다.
+FINAL_PROFILE_TABLE_COUNTS: Mapping[str, int] = MappingProxyType(
+    {"runtime": 22, "evaluation": 13}
 )
 
 #: base 9. profile manifest의 물리 inventory에 언제나 있다.
@@ -1208,9 +1226,13 @@ OWNED_BY_OTHER_TASKS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     }
 )
 
-#: 최종 계보가 **채택하지 않는** table. 그러나 지금 공용 DB에 있고 CM-2.6이 legacy
-#: handoff로 보존했다. **채택하지 않는 것과 inventory에서 숨기는 것은 다르다** —
-#: 제거·격리 Task가 정해지기 전까지 manifest는 존재를 그대로 기록한다.
+#: 최종 계보가 **채택하지 않는** table.
+#: 다만 **구 등록 manifest(폐기 epoch)에는 기록돼 있다.**
+#:
+#: 채택하지 않는 것과 등록 inventory에서 지우는 것은 다르다 — 그 manifest는 과거
+#: 형상의 기록이므로 존재를 그대로 남긴다. 제거는 `V5-B-1.1`이 하고, 그 뒤 final
+#: inventory는 `FINAL_PROFILE_TABLE_COUNTS`(22/13)다. 보존 projection에는 어느
+#: 단계에서도 넣지 않는다(`LEGACY_HANDOFF_TABLES`).
 NOT_ADOPTED_TABLES: tuple[str, ...] = ("document_corpus",)
 
 #: **데이터 정본은 최종 `project.zip`뿐이다.** 폐기된 `kosa_0813` epoch과 그 archive를
@@ -1410,7 +1432,7 @@ MIGRATION_CONTRACT_KEYS: frozenset[str] = frozenset(
         "r03_columns",
         "supersedes_r03_columns",
         "supersedes_manifest",
-        "profile_inventory_counts",
+        "superseded_profile_inventory_counts",
         "registration_blockers",
     }
 )
@@ -1557,7 +1579,7 @@ def build_migration_contract(
         # **등록본의 신원만 적는다.** 내용을 복사하지 않는다 — 복사하면 그 사본이 다시
         # profile manifest 행세를 하게 된다.
         "supersedes_manifest": {"profile": profile, "bootstrap_stage": stage},
-        "profile_inventory_counts": dict(PROFILE_TABLE_COUNTS),
+        "superseded_profile_inventory_counts": dict(SUPERSEDED_PROFILE_TABLE_COUNTS),
         "registration_blockers": list(final_manifest_blockers()),
     }
     # **결과를 여기서 판정한다.** caller가 별도 helper를 불러야만 안전한 구조로 두지
@@ -1610,7 +1632,9 @@ def assert_migration_contract(artifact: Mapping[str, Any]) -> None:
     }:
         raise ReferenceV5Error("CONTRACT_SCHEMA_MISMATCH", EXIT_MISMATCH)
     assert_superseded_pair(superseded)
-    if artifact["profile_inventory_counts"] != dict(PROFILE_TABLE_COUNTS):
+    if artifact["superseded_profile_inventory_counts"] != dict(
+        SUPERSEDED_PROFILE_TABLE_COUNTS
+    ):
         raise ReferenceV5Error("CONTRACT_INVENTORY_MISMATCH", EXIT_MISMATCH)
     if list(artifact["registration_blockers"]) != list(final_manifest_blockers()):
         # blocker가 닫히면 이 artifact도 다시 만들어야 한다.
@@ -1808,7 +1832,9 @@ def _quote_identifier(name: str) -> str:
 #: 1. `backend/app/` 전체에 참조가 0건이다.
 #: 2. B의 `apply_rag_schema.py`는 이 table이 남아 있으면 `RagSchemaError`를 던진다 —
 #:    **없는 상태가 정상**이다.
-#: 3. 공용 runtime 2 DB에는 실재하지 않고 `kosa_text2sql`에만 0행 껍데기로 남았다.
+#: 3. 단계별 실재 여부가 다르다 — 공용 runtime 2 DB에는 **처음부터 없고**,
+#:    `kosa_text2sql`에는 현재 0행 껍데기로 남아 있으며 `V5-B-1.1`이 그것을 지운다.
+#:    그래서 "지금 있다/없다"에 기대지 않는다 — **어느 단계에서도 보존 대상이 아니다.**
 #:
 #: 등록 inventory에서 기계적으로 유도하면 runner가 없는 table을 읽어 `UndefinedTable`로
 #: 죽고, B가 `kosa_text2sql`에서 정리하는 순간 evaluation 쪽도 같이 깨진다
@@ -1874,15 +1900,34 @@ def locked_tables(profile: str) -> tuple[str, ...]:
 LOCK_CONTENTION_SQLSTATES: frozenset[str] = frozenset({"55P03", "40P01"})
 
 
+#: SQLSTATE는 5자 영숫자다. **이 형식을 코드로 강제한다.**
+#:
+#: 전에는 driver가 준 non-empty 문자열을 그대로 믿었다. wrapper나 외부 driver가
+#: `"08006 host=… password=…"` 같은 오염된 속성을 주면 `report_unexpected()`가 그것을
+#: 그대로 stderr에 찍었다 — 누출을 막으려 만든 코드가 누출 경로가 됐다
+#: (구현리뷰 17차 필수 1).
+_SQLSTATE = re.compile(r"[0-9A-Z]{5}")
+
+#: 예외 class 이름도 그대로 믿지 않는다. 동적으로 만든 class는 이름에 무엇이든 담는다.
+_EXCEPTION_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+
+#: 위 둘 다 못 믿을 때 쓰는 고정 문자열.
+UNKNOWN_DETAIL = "UNKNOWN"
+
+
 def _sqlstate(error: BaseException) -> str | None:
-    """driver 예외에서 SQLSTATE를 꺼낸다. SQLAlchemy는 `.orig`로 감싼다."""
+    """driver 예외에서 SQLSTATE를 꺼낸다. SQLAlchemy는 `.orig`로 감싼다.
+
+    형식이 어긋나면 **버린다.** lock 분류(`55P03`·`40P01`)는 exact 비교라 영향이 없고,
+    출력 경로에서는 오염된 값이 애초에 도달하지 못한다.
+    """
 
     for candidate in (error, getattr(error, "orig", None), error.__cause__):
         if candidate is None:
             continue
         for attribute in ("sqlstate", "pgcode"):
             value = getattr(candidate, attribute, None)
-            if isinstance(value, str) and value:
+            if isinstance(value, str) and _SQLSTATE.fullmatch(value):
                 return value
     return None
 
@@ -2935,9 +2980,18 @@ def report_unexpected(error: BaseException) -> int:
     좁히는 데 그것으로 충분하다. 없으면 예외 class 이름으로 대신한다.
     """
 
-    detail = _sqlstate(error) or type(error).__name__
-    print(f"{UNEXPECTED_REASON} {detail}", file=sys.stderr)
+    print(f"{UNEXPECTED_REASON} {_safe_detail(error)}", file=sys.stderr)
     return EXIT_MISMATCH
+
+
+def _safe_detail(error: BaseException) -> str:
+    """출력해도 되는 것만 남긴다 — 5자 SQLSTATE, 아니면 예외 class 이름."""
+
+    state = _sqlstate(error)
+    if state is not None:
+        return state
+    name = type(error).__name__
+    return name if _EXCEPTION_NAME.fullmatch(name) else UNKNOWN_DETAIL
 
 
 #: 복구 runbook을 출력할 reason. commit 뒤 상태가 남는 것들이다.
