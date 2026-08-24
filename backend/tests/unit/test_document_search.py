@@ -46,7 +46,7 @@ def test_service_embeds_query_and_returns_document_hits(monkeypatch: Any) -> Non
     hits = DocumentSearchService(repository).search(
         "etch",
         top_k=4,
-        model_code="ET-7500",
+        model_code=" et-7500 ",
     )
 
     assert repository.arguments == ([0.1, 0.2], 4, "ET-7500")

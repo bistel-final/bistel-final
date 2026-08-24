@@ -35,14 +35,17 @@ class DocumentSearchService:
         top_k: int = 4,
         model_code: str | None = None,
     ) -> list[DocumentHit]:
+        normalized_model_code = (
+            model_code.strip().upper() if model_code and model_code.strip() else None
+        )
+
         query_vector = embed_query(query)
         rows = self._repository.search(
             query_vector,
             top_k=top_k,
-            model_code=model_code,
+            model_code=normalized_model_code,
         )
         return [DocumentHit.model_validate(row) for row in rows]
-
 
 
 # ==================
