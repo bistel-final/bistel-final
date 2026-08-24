@@ -371,6 +371,17 @@ BOOTSTRAP_STAGE_CONTRACTS: dict[tuple[str, str], BootstrapStageContract] = {
         "runtime_clean",
         (FINAL_MIGRATION_ID, "002_agent_runtime_clean"),
     ),
+    # **`V5-CM-3.3` successor.** `runtime_clean`을 지우지 않는다 — CM-3.2 marker가
+    # 그 stage를 증명하고 있고, predecessor를 registry에서 빼면 그 marker가 검증할
+    # 계약을 잃는다. successor는 **더하는** 것이다.
+    ("runtime", "runtime_guarded"): BootstrapStageContract(
+        "runtime_guarded",
+        (
+            FINAL_MIGRATION_ID,
+            "002_agent_runtime_clean",
+            "003_agent_run_severity_pair",
+        ),
+    ),
     # **최종 evaluation stage.** 구 `evaluation_mock`의 48행 MOCK 특례를 재사용하지
     # 않는다. 최종 `action_history`는 실제 12행이며 `fixture_type=REFERENCE`다.
     ("evaluation", "evaluation_reference"): BootstrapStageContract(

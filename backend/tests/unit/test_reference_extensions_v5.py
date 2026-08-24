@@ -1040,13 +1040,22 @@ def test_the_v5_final_stage_is_now_registered() -> None:
 
     import manifest_v3
 
+    # `V5-CM-3.3`이 `runtime_guarded`를 더했다. predecessor도 남는다 — CM-3.2 marker가
+    # 그 stage를 증명하고 있어서 빼면 검증할 계약을 잃는다.
     for profile, stage in (
         ("runtime", "runtime_clean"),
+        ("runtime", "runtime_guarded"),
         ("evaluation", "evaluation_reference"),
     ):
         contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
         assert v5.MIGRATION_ID in contract.applied_migrations, profile
-        assert contract.applied_migrations == v5.PROFILE_MIGRATIONS[profile]
+        if stage == v5.FINAL_STAGE_BY_PROFILE[profile]:
+            # live final stage만 `PROFILE_MIGRATIONS`와 exact다.
+            assert contract.applied_migrations == v5.PROFILE_MIGRATIONS[profile]
+
+    # 현재 live final과 registrar 발급 stage는 다르다(구현리뷰 필수 3).
+    assert v5.FINAL_STAGE_BY_PROFILE["runtime"] == "runtime_guarded"
+    assert v5.REGISTRAR_STAGE_BY_PROFILE["runtime"] == "runtime_clean"
 
     assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" not in v5.final_manifest_blockers()
 
@@ -1059,6 +1068,7 @@ def test_expected_final_migrations_are_documented_not_enforced_here() -> None:
     assert v5.PROFILE_MIGRATIONS["runtime"] == (
         v5.MIGRATION_ID,
         "002_agent_runtime_clean",
+        "003_agent_run_severity_pair",
     )
     assert v5.PROFILE_MIGRATIONS["evaluation"] == (v5.MIGRATION_ID,)
     # artifact builder가 직접 쓰지 않는다. **docstring이 아니라 코드 본문**을 본다 —
@@ -2341,22 +2351,6 @@ def test_the_comment_does_not_move_the_security_signature() -> None:
     assert v5.security_signature_sha256(rows, mode="successor") == baseline
 
 
-def test_the_marker_signature_is_compared_not_assumed() -> None:
-    live = v5.security_signature_sha256(_sec(), mode="successor")
-    v5.assert_security_signature(marker=live, live=live)
-
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.assert_security_signature(marker="0" * 64, live=live)
-    assert caught.value.reason_code == "SECURITY_SIGNATURE_MISMATCH"
-
-
-@pytest.mark.parametrize("marker", [None, "", "not-a-sha", "0" * 63])
-def test_a_malformed_marker_signature_is_refused(marker: Any) -> None:
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.assert_security_signature(marker=marker, live="0" * 64)
-    assert caught.value.reason_code == "SECURITY_SIGNATURE_MALFORMED"
-
-
 def test_three_targets_must_agree() -> None:
     same = {name: _sec() for name in ("kosa_agent_e2e", "kosa_agent", "kosa_text2sql")}
     v5.assert_security_targets_agree(same)
@@ -2601,23 +2595,6 @@ def test_the_file_scope_check_runs_both_guards() -> None:
 # ---------------------------------------------------------------------------
 # marker signature 형식 (구현리뷰 7차 권장 1)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("value", ["g" * 64, "A" * 64, "0" * 63 + "-"])
-def test_a_non_hex_signature_is_malformed(value: str) -> None:
-    """길이만 보면 64자리 non-hex가 통과한다."""
-
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.assert_security_signature(marker=value, live=value)
-    assert caught.value.reason_code == "SECURITY_SIGNATURE_MALFORMED"
-
-
-def test_a_malformed_live_signature_is_refused() -> None:
-    """marker만 보고 live를 안 보면 계산 오류가 통과한다."""
-
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.assert_security_signature(marker="0" * 64, live="oops")
-    assert caught.value.reason_code == "SECURITY_SIGNATURE_MALFORMED"
 
 
 # ---------------------------------------------------------------------------
@@ -3319,6 +3296,61 @@ def test_noop_refuses_a_security_drift() -> None:
             excluded_projection=marker["excluded_projection_sha256"],
         )
     assert caught.value.reason_code == "SECURITY_SIGNATURE_MISMATCH"
+
+
+LIVE_SIGNATURE_KEYS = (
+    "schema_signature",
+    "security_signature",
+    "excluded_projection",
+)
+
+
+@pytest.mark.parametrize("key", LIVE_SIGNATURE_KEYS)
+@pytest.mark.parametrize("value", ["oops", "", "G" * 64, "0" * 63])
+def test_a_malformed_live_signature_stops_the_noop(key: str, value: str) -> None:
+    """**live 쪽** 형식 검증 branch를 고정한다.
+
+    기존 `ARTIFACT_HASH_MALFORMED` 회귀는 receipt·marker **payload**만 봤다.
+    두 비교 함수는 `live[key]`도 같은 loop에서 형식을 보는데 그 branch는
+    회귀가 없었다(구현리뷰 9차 필수 1).
+
+    production live는 `security_signature_sha256()` 반환값이라 정상 경로에서는
+    도달하지 않는다. 그래도 branch가 코드에 있으면 reason 계약을 고정한다 —
+    없으면 다음 사람이 그 branch를 지워도 아무도 모른다.
+    """
+
+    live = {
+        "schema_signature": _signature(),
+        "security_signature": v5.security_signature_sha256(_sec(), mode="successor"),
+        "excluded_projection": "b" * 64,
+    }
+    marker = _marker(
+        schema_signature_sha256=live["schema_signature"],
+        security_signature_sha256=live["security_signature"],
+        excluded_projection_sha256=live["excluded_projection"],
+    )
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.assert_marker_allows_noop(marker, **{**live, key: value})
+    assert caught.value.reason_code == "ARTIFACT_HASH_MALFORMED"
+
+
+@pytest.mark.parametrize("key", LIVE_SIGNATURE_KEYS)
+@pytest.mark.parametrize("value", ["oops", "", "G" * 64, "0" * 63])
+def test_a_malformed_live_signature_stops_the_recovery(key: str, value: str) -> None:
+    """복구 경로도 같은 loop를 쓴다 — 한쪽만 덮으면 다른 쪽이 남는다."""
+
+    live = {
+        "schema_signature": _signature(),
+        "security_signature": v5.security_signature_sha256(_sec(), mode="successor"),
+        "excluded_projection": "b" * 64,
+    }
+    with pytest.raises(v5.ReferenceV5Error) as caught:
+        v5.assert_recovery_is_allowed(
+            _committed_receipt(),
+            **{**live, key: value},
+            view_definition_sha256_value=v5.CANONICAL_VIEW_SHA256,
+        )
+    assert caught.value.reason_code == "ARTIFACT_HASH_MALFORMED"
 
 
 # --- marker 복구 ---

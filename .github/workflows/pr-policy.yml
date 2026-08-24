@@ -219,6 +219,15 @@ jobs:
           tests/unit/test_agent_runtime_v5_container.py
           -rs --no-header
 
+      # V5-CM-3.3 action/severity pair guard. 최종 dataset이 필요 없다 —
+      # base `action_history` + 002 형상만 세우고 16조합 INSERT·rollback을 돌린다.
+      - name: Prove the action/severity pair guard
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_severity_pair_guard_container.py
+          -rs --no-header
+
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
       # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
       # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).

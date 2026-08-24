@@ -276,7 +276,9 @@ def build_profile_candidate(
     통과한 값 없이 live를 복사하는 경로를 열지 않기 위해서다(§3.4-5).
     """
 
-    stage = reference_v5.FINAL_STAGE_BY_PROFILE.get(profile)
+    # **registrar가 발급하는 stage**다. 현재 live final과 다를 수 있다 —
+    # `V5-CM-3.3`의 `runtime_guarded`는 그 Task가 발급한다.
+    stage = reference_v5.REGISTRAR_STAGE_BY_PROFILE.get(profile)
     if stage is None:
         raise CandidateError(f"알 수 없는 profile입니다: {profile}")
     # 주입 입력도 파일 입력과 **같은 gate**를 거친다(구현리뷰 7차 필수 1).
@@ -414,5 +416,5 @@ def build_final_bundle(
         profile: build_profile_candidate(
             profile, source=payload, runtime_rag=runtime_rag
         )
-        for profile in sorted(reference_v5.FINAL_STAGE_BY_PROFILE)
+        for profile in sorted(reference_v5.REGISTRAR_STAGE_BY_PROFILE)
     }

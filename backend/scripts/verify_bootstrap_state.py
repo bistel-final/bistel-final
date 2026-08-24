@@ -20,11 +20,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import apply_agent_runtime as agent_runtime
 import apply_reference_extensions as reference_extensions
 import apply_reference_extensions_v5 as reference_v5
+import apply_severity_pair_guard as severity_guard
 import bootstrap_neo4j_graph as neo4j_bootstrap
 import build_source_manifest_v4 as source_manifest_v4
 import final_profile_manifests as final_manifests
@@ -65,10 +67,36 @@ EXIT_SCHEMA = manifest_v3.EXIT_SCHEMA
 EXIT_NOT_REGISTERED = manifest_v3.EXIT_NOT_REGISTERED
 EXIT_UNVERIFIABLE = 7
 
+#: profile별 **현재 live final stage**. `EXPECTED_STAGES`가 여기서 파생된다.
+#:
+#: 값을 DB 이름마다 손으로 적으면 한쪽만 갱신되는 사고가 난다 — 실제로
+#: `kosa_text2sql`이 `evaluation_mock`으로 남아 있었다. `V5-CM-1.8`이 그 stage를
+#: registry에서 제거하고 `evaluation_reference`를 발급했는데 이 map만 따라오지
+#: 않았다(`V5-CM-3.3` 계획 §8.2).
+#:
+#: Evaluation DB schema 변경이 아니라 **verifier routing 오류 수정**이다.
+LIVE_FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
+    {
+        "runtime": "runtime_guarded",
+        "evaluation": "evaluation_reference",
+    }
+)
+
+#: profile별 **final reference postcheck를 타야 하는 stage 전체**.
+#:
+#: live final stage 하나만으로 routing하면 predecessor `runtime_clean`이 V4 경로로
+#: 잘못 떨어진다. 두 계약을 분리한다(`V5-CM-3.3` 계획 §6.3).
+FINAL_REFERENCE_STAGES: frozenset[str] = frozenset(
+    {"runtime_clean", "runtime_guarded", "evaluation_reference"}
+)
+
 EXPECTED_STAGES = {
-    "kosa_agent": "runtime_clean",
-    "kosa_agent_e2e": "runtime_clean",
-    "kosa_text2sql": "evaluation_mock",
+    database: LIVE_FINAL_STAGE_BY_PROFILE[profile]
+    for database, profile in (
+        ("kosa_agent", "runtime"),
+        ("kosa_agent_e2e", "runtime"),
+        ("kosa_text2sql", "evaluation"),
+    )
 }
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
@@ -289,9 +317,98 @@ def _scalar(result: Any) -> Any:
 
 
 #: 최종 stage 2종. V4 postcheck를 타지 않는다.
-FINAL_STAGES: frozenset[tuple[str, str]] = frozenset(
-    (profile, stage) for profile, stage in reference_v5.FINAL_STAGE_BY_PROFILE.items()
+#: final reference postcheck를 타는 `(profile, stage)` 전부.
+#:
+#: **`FINAL_STAGE_BY_PROFILE` 하나에서 파생하지 않는다.** 그 map은 profile당 stage
+#: 하나만 담으므로 `V5-CM-3.3`이 `runtime_guarded`를 추가한 순간 predecessor
+#: `runtime_clean`이 집합에서 빠져 **V4 경로로 잘못 떨어진다** — R03 11컬럼·V4 View
+#: 계약이라 final DB가 거기서 실패한다(계획 §6.3).
+#:
+#: "현재 live final stage"(`LIVE_FINAL_STAGE_BY_PROFILE`)와 "final reference
+#: stages"(여기)는 다른 질문이다. 전자는 하나, 후자는 계보 전체다.
+#: Runtime 물리 postcheck·marker 검증을 타는 `(profile, stage)`.
+#:
+#: `runtime_clean`은 `agent_runtime_final` marker가, `runtime_guarded`는
+#: `agent_severity_guard_final` marker가 증명한다. 둘 다 검증 대상이다 —
+#: predecessor를 빼면 그 marker가 검증할 계약을 잃는다.
+RUNTIME_POSTCHECK_STAGES: frozenset[tuple[str, str]] = frozenset(
+    {("runtime", "runtime_clean"), ("runtime", "runtime_guarded")}
 )
+
+FINAL_STAGES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("runtime", "runtime_clean"),
+        ("runtime", "runtime_guarded"),
+        ("evaluation", "evaluation_reference"),
+    }
+)
+
+
+def _guarded_mismatches(
+    connection: Any,
+    target: Any,
+    *,
+    require_marker: bool,
+    runtime_result: Any,
+) -> list[dict[str, Any]]:
+    """`runtime_guarded` 전용 계약. **read-only다.**
+
+    판정을 `verify_database()` 본문에 인라인으로 두면 소비 경계를 회귀가 잡지
+    못한다(CM-1.8 `reference_postcheck_mismatches`와 같은 이유).
+    """
+
+    mismatches: list[dict[str, Any]] = []
+    try:
+        inspection = severity_guard.inspect_guard(connection)
+    except Exception:
+        return [{"mismatch_kind": "GUARD_SCHEMA"}]
+
+    if inspection.state != "GUARDED_UNMARKED":
+        # predecessor가 남아 있거나 정의가 다르다.
+        return [{"mismatch_kind": "GUARD_SCHEMA"}]
+    if inspection.guard != severity_guard.GUARD_DEFINITION:
+        return [{"mismatch_kind": "GUARD_DEFINITION"}]
+
+    if not require_marker:
+        return mismatches
+    try:
+        sql, _ = severity_guard.load_and_validate_sql()
+        marker = severity_guard.load_marker(
+            target, migration_sha=severity_guard.migration_sha256(sql)
+        )
+        if marker is None:
+            raise severity_guard.SeverityGuardArtifactError("guard marker가 없습니다")
+        live = (
+            runtime_result.schema_signature_sha256
+            if runtime_result is not None
+            else inspection.schema_signature_sha256
+        )
+        if marker["guarded_schema_signature_sha256"] != live:
+            raise severity_guard.SeverityGuardArtifactError(
+                "guard marker가 schema와 다릅니다"
+            )
+        # **successor가 predecessor와 live를 잇는다.**
+        #
+        # predecessor marker의 signature가 successor의 baseline과 같아야 "무엇 위에
+        # 쌓았는지"가 성립한다. 이 연결이 없으면 두 marker가 서로 다른 형상을
+        # 증명하면서 각자 green일 수 있다(구현리뷰 필수 D).
+        predecessor = agent_runtime.load_marker(
+            target,
+            migration_sha=agent_runtime.migration_sha256(
+                agent_runtime.load_and_validate_sql()[0]
+            ),
+        )
+        if (
+            predecessor is None
+            or predecessor["schema_signature_sha256"]
+            != marker["baseline_schema_signature_sha256"]
+        ):
+            raise severity_guard.SeverityGuardArtifactError(
+                "guard marker baseline이 predecessor와 다릅니다"
+            )
+    except severity_guard.SeverityGuardError:
+        mismatches.append({"mismatch_kind": "GUARD_MARKER"})
+    return mismatches
 
 
 def reference_postcheck_routing(profile: str, stage: str) -> str:
@@ -815,7 +932,13 @@ def verify_database(
                     action_rows_before=row_counts.get("action_history", 0),
                 )
             )
-            if stage == "runtime_clean":
+            # **stage-aware Runtime postcheck**(`V5-CM-3.3` 구현리뷰 필수 1).
+            #
+            # 구현은 `stage == "runtime_clean"`이었다. `EXPECTED_STAGES`를
+            # `runtime_guarded`로 올린 순간 이 분기가 통째로 죽어 Runtime 9 table의
+            # constraint·FK·index·`PUBLIC` privilege와 marker 검증이 **0회**가 됐다.
+            # guard가 없거나 잘못돼도 full verifier가 PASS한다.
+            if (profile, stage) in RUNTIME_POSTCHECK_STAGES:
                 # **물리 postcheck는 항상 한다**(구현리뷰 13차 필수 1).
                 #
                 # `postcheck_database()`는 marker 검사가 아니다 — Runtime 9 table의
@@ -824,11 +947,20 @@ def verify_database(
                 # columns/type/row/hash 검증이 대체하지 못하는 축이다. opt-out이
                 # 이것까지 끄면 순환을 끊은 것이 아니라 적용 증명의 절반을 함께
                 # 끈 것이 된다.
+                # **constraint allowlist만 stage별로 갈린다.** baseline을 그대로 쓰면
+                # 정상 guarded DB가 `-agent_run_check1 +ck_...pair`로 반드시 실패한다
+                # (`V5-CM-3.3` 구현리뷰 필수 A).
+                expected_constraints = (
+                    severity_guard.GUARDED_CONSTRAINTS
+                    if stage == severity_guard.GUARDED_STAGE
+                    else agent_runtime.EXPECTED_CONSTRAINTS
+                )
                 runtime_result = None
                 try:
                     runtime_result = agent_runtime.postcheck_database(
                         connection,
                         alarm_rows_before=agent_runtime.alarm_event_count(connection),
+                        expected_constraints=expected_constraints,
                     )
                 except agent_runtime.AgentRuntimeError:
                     mismatches.append({"mismatch_kind": "RUNTIME_SCHEMA"})
@@ -848,9 +980,22 @@ def verify_database(
                             target,
                             migration_sha=migration_sha,
                         )
-                        if (
-                            runtime_marker is None
-                            or runtime_marker["schema_signature_sha256"]
+                        if runtime_marker is None:
+                            raise agent_runtime.AgentRuntimeArtifactError(
+                                "runtime marker가 없습니다"
+                            )
+                        # **stage마다 비교 대상이 다르다**(`V5-CM-3.3` 구현리뷰 필수 D).
+                        #
+                        # predecessor marker는 `001+002 + agent_run_check1`을 증명한다.
+                        # `runtime_guarded`에서는 live가 `001+002+003 + named
+                        # successor`이므로 **달라야 정상**이다. 같기를 요구하면 003
+                        # 교체가 정상일수록 mismatch가 늘어난다.
+                        #
+                        # guarded에서 두 값을 잇는 것은 successor marker의
+                        # `baseline_schema_signature_sha256`이며
+                        # `_guarded_mismatches()`가 그것을 본다.
+                        if stage != severity_guard.GUARDED_STAGE and (
+                            runtime_marker["schema_signature_sha256"]
                             != runtime_result.schema_signature_sha256
                         ):
                             raise agent_runtime.AgentRuntimeArtifactError(
@@ -858,6 +1003,22 @@ def verify_database(
                             )
                     except agent_runtime.AgentRuntimeError:
                         mismatches.append({"mismatch_kind": "RUNTIME_MARKER"})
+
+                # **successor stage는 guard 계약을 하나 더 본다.**
+                #
+                # `runtime_guarded`에서 `agent_run_check1`이 살아 있거나 named
+                # guard 정의가 다르면 `V5-CM-3.3`이 하지 않은 일을 했다고
+                # 주장하는 것이다. CM-3.2 postcheck는 constraint **집합**을 보지만
+                # 이 stage에서 무엇이 무엇으로 바뀌었는지는 보지 않는다.
+                if stage == severity_guard.GUARDED_STAGE:
+                    mismatches.extend(
+                        _guarded_mismatches(
+                            connection,
+                            target,
+                            require_marker=require_runtime_marker,
+                            runtime_result=runtime_result,
+                        )
+                    )
             if mismatches:
                 raise AcceptanceMismatchError(
                     "DB acceptance 계약이 다릅니다",

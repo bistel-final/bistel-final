@@ -61,8 +61,10 @@ BUNDLE_TARGETS: tuple[tuple[str, str], ...] = (
 ACTIVE_PATHS: Mapping[str, Path] = MappingProxyType(
     {
         profile: manifest_v3.MANIFEST_REGISTRY_ROOT
-        / f"{profile}.{reference_v5.FINAL_STAGE_BY_PROFILE[profile]}.json"
-        for profile in reference_v5.FINAL_STAGE_BY_PROFILE
+        # **이 registrar가 발급하는 stage**다. `FINAL_STAGE_BY_PROFILE`(현재 live
+        # final)과 다를 수 있다 — `V5-CM-3.3`의 `runtime_guarded`는 그 Task가 발급한다.
+        / f"{profile}.{reference_v5.REGISTRAR_STAGE_BY_PROFILE[profile]}.json"
+        for profile in reference_v5.REGISTRAR_STAGE_BY_PROFILE
     }
 )
 
@@ -325,7 +327,7 @@ def _verify_target(
 
     result = verify(
         database,
-        reference_v5.FINAL_STAGE_BY_PROFILE[profile],
+        reference_v5.REGISTRAR_STAGE_BY_PROFILE[profile],
         environ=environ,
         candidate=candidate,
         # **CM-1.8은 manifest 내용만 판정한다.** `agent_runtime` marker는 final
@@ -351,7 +353,7 @@ def verify_bundle(
     그 동일성 계약의 구현이다(계획 §5 묶음 2-3).
     """
 
-    if set(bundle) != set(reference_v5.FINAL_STAGE_BY_PROFILE):
+    if set(bundle) != set(reference_v5.REGISTRAR_STAGE_BY_PROFILE):
         raise RegistrarError("bundle profile 집합이 계약과 다릅니다")
 
     receipts: list[dict[str, Any]] = []
@@ -401,7 +403,7 @@ def preview(bundle: Mapping[str, Mapping[str, Any]]) -> list[str]:
 
     lines: list[str] = []
     for profile, path in sorted(ACTIVE_PATHS.items()):
-        stage = reference_v5.FINAL_STAGE_BY_PROFILE[profile]
+        stage = reference_v5.REGISTRAR_STAGE_BY_PROFILE[profile]
         if not path.exists():
             lines.append(f"{profile}.{stage}: 생성")
         elif _read_json(path) != dict(bundle[profile]):
@@ -457,7 +459,7 @@ def commit_bundle(bundle: Mapping[str, Mapping[str, Any]]) -> list[str]:
             bundle[profile],
             expected_artifact_type="db_bootstrap",
             expected_profile=profile,
-            expected_stage=reference_v5.FINAL_STAGE_BY_PROFILE[profile],
+            expected_stage=reference_v5.REGISTRAR_STAGE_BY_PROFILE[profile],
             expected_archive_sha256=manifest_v3.FINAL_ARCHIVE_SHA256,
         )
 
