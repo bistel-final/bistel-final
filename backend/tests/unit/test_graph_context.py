@@ -13,8 +13,8 @@ from app.common.tool_contracts import (
 from app.knowledge.graph_query import (
     EquipmentContextRow,
     GraphQueryRepository,
-    load_graph_revision,
 )
+from app.knowledge.graph_revision import load_graph_revision
 from app.knowledge.service import EquipmentContext, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
@@ -38,9 +38,7 @@ class FakeGraphRepository:
             sibling_chambers=[
                 {"chamber_id": "EQP01-PM2", "chamber_no": 2},
             ],
-            adjacent_steps=[
-                {"step_id": "CT-ETCH", "step_name": "Etch", "step_seq": 2}
-            ],
+            adjacent_steps=[{"step_id": "CT-ETCH", "step_name": "Etch", "step_seq": 2}],
             parameters=[
                 {
                     "parameter_id": "PH_FOCUS",
