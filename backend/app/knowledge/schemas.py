@@ -21,6 +21,9 @@ class DocumentType(StrEnum):
     TROUBLESHOOT = "TROUBLESHOOT"
 
 
+# ==================
+# Graph
+# ==================
 class ChamberRelationResponse(ApiModel):
     chamber: ChamberNode
     equipment: EquipmentNode
@@ -44,12 +47,26 @@ class EquipmentRelationResponse(ApiModel):
     graph_revision: NonEmptyId
 
 
+# ==================
+# 문서 RAG
+# ==================
 class DocumentSearchRequest(ApiModel):
     query: str = Field(min_length=1, max_length=1000)
     model_code: NonEmptyId | None = None
     top_k: int = Field(default=4, ge=1, le=10)
 
 
+class DocumentSearchResponse(ApiModel):
+    query: str
+    hits: list[DocumentHit]
+    count: int = Field(ge=0)
+
+
+
+# ==================
+# 문서 RAG 상세 조회
+# 현재 구현 범위 밖이며 GET /documents/{document_id} 계약용 DTO다.
+# ==================
 class DocumentChunkItem(ApiModel):
     chunk_id: NonEmptyId
     chunk_seq: int = Field(ge=0)

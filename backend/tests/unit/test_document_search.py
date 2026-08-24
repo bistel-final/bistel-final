@@ -7,7 +7,7 @@ from typing import Any
 
 from app.common.tool_contracts import DocumentHit
 from app.knowledge import embedding
-from app.knowledge.repository import DocumentSearchRepository, DocumentSearchRow
+from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.router import search_documents as search_documents_api
 from app.knowledge.schemas import DocumentSearchRequest
 from app.knowledge.service import DocumentSearchService
@@ -24,18 +24,18 @@ class FakeRepository:
         *,
         top_k: int,
         model_code: str | None,
-    ) -> list[DocumentSearchRow]:
+    ) -> list[dict[str, object]]:
         self.arguments = (query_vector, top_k, model_code)
         return [
-            DocumentSearchRow(
-                chunk_id="DOC-SPEC-ET7500:cs1:0001",
-                document_id="DOC-SPEC-ET7500",
-                title="ET Guide",
-                section="적용 범위",
-                score=0.82,
-                content="content",
-                model_code="ET-7500",
-            )
+            {
+                "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+                "document_id": "DOC-SPEC-ET7500",
+                "title": "ET Guide",
+                "section": "적용 범위",
+                "score": 0.82,
+                "content": "content",
+                "model_code": "ET-7500",
+            }
         ]
 
 
@@ -106,28 +106,22 @@ def test_repository_search_uses_current_rag_schema_and_common_filter(
 
     class FakeConnection:
         connection = SimpleNamespace(driver_connection=object())
+        closed = False
 
-        def __enter__(self) -> FakeConnection:
-            return self
-
-        def __exit__(self, *_: object) -> bool:
-            return False
+        def close(self) -> None:
+            self.closed = True
 
         def execute(self, sql: object, params: dict[str, object]) -> FakeResult:
             captured["sql"] = str(sql)
             captured["params"] = params
             return FakeResult()
 
-    class FakeFactory:
-        def get_engine(self, logical_db: object, role: object) -> object:
-            captured["logical_db"] = logical_db
-            captured["role"] = role
-            return SimpleNamespace(connect=lambda: FakeConnection())
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
 
-    monkeypatch.setattr("app.knowledge.repository.pool_factory", FakeFactory())
-    monkeypatch.setattr("pgvector.psycopg.register_vector", lambda _: None)
+    monkeypatch.setattr("app.knowledge.document_search.register_vector", lambda _: None)
 
-    assert DocumentSearchRepository().search([0.1], model_code="ET-7500") == []
+    assert DocumentSearchRepository(engine).search([0.1], model_code="ET-7500") == []
 
     normalized_sql = sub(r"\s+", " ", str(captured["sql"]))
     assert "JOIN document d ON d.doc_id = c.doc_id" in normalized_sql
@@ -140,6 +134,7 @@ def test_repository_search_uses_current_rag_schema_and_common_filter(
         "top_k": 4,
         "model_code": "ET-7500",
     }
+    assert connection.closed is True
 
 
 def test_repository_search_without_model_code_searches_all_documents(
@@ -156,28 +151,22 @@ def test_repository_search_without_model_code_searches_all_documents(
 
     class FakeConnection:
         connection = SimpleNamespace(driver_connection=object())
+        closed = False
 
-        def __enter__(self) -> FakeConnection:
-            return self
-
-        def __exit__(self, *_: object) -> bool:
-            return False
+        def close(self) -> None:
+            self.closed = True
 
         def execute(self, sql: object, params: dict[str, object]) -> FakeResult:
             captured["sql"] = str(sql)
             captured["params"] = params
             return FakeResult()
 
-    class FakeFactory:
-        def get_engine(self, logical_db: object, role: object) -> object:
-            captured["logical_db"] = logical_db
-            captured["role"] = role
-            return SimpleNamespace(connect=lambda: FakeConnection())
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
 
-    monkeypatch.setattr("app.knowledge.repository.pool_factory", FakeFactory())
-    monkeypatch.setattr("pgvector.psycopg.register_vector", lambda _: None)
+    monkeypatch.setattr("app.knowledge.document_search.register_vector", lambda _: None)
 
-    assert DocumentSearchRepository().search([0.1], top_k=4) == []
+    assert DocumentSearchRepository(engine).search([0.1], top_k=4) == []
 
     normalized_sql = sub(r"\s+", " ", str(captured["sql"]))
     assert "JOIN document d ON d.doc_id = c.doc_id" in normalized_sql
@@ -189,11 +178,16 @@ def test_repository_search_without_model_code_searches_all_documents(
         "query_vector": "[0.1]",
         "top_k": 4,
     }
+    assert connection.closed is True
 
 
-def test_documents_search_api_returns_bare_document_hit_array(
+def test_documents_search_api_returns_document_search_response(
     monkeypatch: Any,
 ) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
     class FakeService:
         def __init__(self, repository: object) -> None:
             self.repository = repository
@@ -218,13 +212,16 @@ def test_documents_search_api_returns_bare_document_hit_array(
                 )
             ]
 
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
     monkeypatch.setattr("app.knowledge.router.DocumentSearchService", FakeService)
 
     response = search_documents_api(
         DocumentSearchRequest(query="check", model_code="ET-7500")
     )
 
-    assert [hit.model_dump() for hit in response] == [
+    assert response.query == "check"
+    assert response.count == 1
+    assert [hit.model_dump() for hit in response.hits] == [
         {
             "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
             "document_id": "DOC-SPEC-ET7500",
@@ -238,6 +235,10 @@ def test_documents_search_api_returns_bare_document_hit_array(
 
 
 def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
     class FakeService:
         def __init__(self, repository: object) -> None:
             self.repository = repository
@@ -261,6 +262,7 @@ def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) ->
                 )
             ]
 
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
     monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", FakeService)
 
     result = search_documents_tool.invoke(
@@ -274,6 +276,10 @@ def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) ->
 
 
 def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
     class FailingService:
         def __init__(self, repository: object) -> None:
             self.repository = repository
@@ -287,6 +293,7 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
         ) -> list[DocumentHit]:
             raise RuntimeError("검색 실패")
 
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
     monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", FailingService)
 
     result = search_documents_tool.invoke({"query": "check"})
