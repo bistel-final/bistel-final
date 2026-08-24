@@ -1152,6 +1152,42 @@ def classify_data_phase(*, r03_rows: int, view_rows: int) -> str:
 #: 실제 강제는 `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS`가 한다. 이 상수는 그 등록부에
 #: 무엇을 넣어야 하는지 적어 둔 **기대값 문서**이며, CM-3.1이 직접 쓰지 않는다
 #: (구현리뷰 4차 필수 1·2).
+#: 각 profile의 **최종** stage. `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS`의 key와 같아야
+#: 하며 회귀가 두 곳을 대조한다. Runtime은 계획 §2.2대로 같은 이름으로 원자 교체된다.
+FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
+    {"runtime": "runtime_clean", "evaluation": "evaluation_reference"}
+)
+FINAL_EVALUATION_STAGE = FINAL_STAGE_BY_PROFILE["evaluation"]
+
+#: profile별 **기대 stage 계약 전체**.
+#:
+#: Evaluation만 schema·action까지 보고 Runtime은 migration만 보던 비대칭이 있었다.
+#: 그래서 Runtime이 같은 이름과 migration만 유지하면 `action_policy`·`action_rows`·
+#: `action_fixture_type`이 깨져도 blocker가 늘지 않았다(구현리뷰 5차 필수 1).
+#: **field를 하나씩 나열하지 않고 dataclass 전체를 비교한다** — 나열하면 새 field가
+#: 생길 때마다 같은 비대칭이 다시 만들어진다.
+FINAL_STAGE_EXPECTATIONS: Mapping[
+    str, tuple[str, tuple[str, ...], str, int, str | None]
+] = MappingProxyType(
+    {
+        # (schema_stage, applied_migrations, action_policy, action_rows, fixture)
+        "runtime": (
+            "runtime_clean",
+            (MIGRATION_ID, "002_agent_runtime_clean"),
+            "bootstrap_empty",
+            0,
+            None,
+        ),
+        "evaluation": (
+            "reference_final",
+            (MIGRATION_ID,),
+            "immutable_content",
+            12,
+            "REFERENCE",
+        ),
+    }
+)
+
 PROFILE_MIGRATIONS: Mapping[str, tuple[str, ...]] = {
     "runtime": (MIGRATION_ID, "002_agent_runtime_clean"),
     "evaluation": (MIGRATION_ID,),
@@ -1292,14 +1328,19 @@ def assert_registered_manifest_contract(
 ) -> None:
     """**기존 `manifest_v3` 검증기를 그대로 쓴다.** 따로 만들지 않는다.
 
-    3차까지 top-level key·secret scan·entry 계약을 직접 구현했는데,
-    `manifest_v3.validate_manifest_schema()`가 이미 extra-forbid·secret scan·
-    column 계약·policy allowlist·`content_hash`·stage 전이를 본다. 재구현이 더 약했다
-    (구현리뷰 4차 필수 1) — Windows drive·UNC·`file://`도 기존 scan만 잡는다.
+    3차까지 top-level key·secret scan·entry 계약을 직접 구현했는데, `manifest_v3`의
+    검증기가 이미 extra-forbid·secret scan·column 계약·policy allowlist·`content_hash`·
+    stage 전이를 본다. 재구현이 더 약했다(구현리뷰 4차 필수 1).
 
-    검증 대상은 **지금 등록부에 있는 manifest**다. 최종 epoch 계약은
+    검증 대상은 **대체된 구 계보 manifest**다. 최종 epoch 계약은
     `assert_final_epoch_contract()`가 따로 본다. 둘을 한 함수에 넣었더니 어떤 입력도
     통과할 수 없는 죽은 gate가 됐다 — 이유는 `final_manifest_blockers()`에 있다.
+
+    **`V5-CM-1.8` 이후 epoch은 history 값이다.** CM-1.8이 active를 최종 epoch으로
+    올렸으므로, migration contract가 "무엇을 대체했는가"로 기록하는 이 manifest는
+    정의상 폐기 epoch을 담는다. active epoch으로 검증하면 어떤 구 manifest도 통과할 수
+    없고, 반대로 최종 manifest를 여기에 넣어 "대체 대상"으로 세탁하는 길이 열린다.
+    그래서 epoch을 **명시적으로 history로 고정**한다(계획 §3.8).
     """
 
     import manifest_v3
@@ -1307,11 +1348,8 @@ def assert_registered_manifest_contract(
     if profile not in PROFILE_MIGRATIONS:
         raise ReferenceV5Error("PROFILE_NOT_ALLOWED", EXIT_USAGE)
     try:
-        manifest_v3.validate_manifest_schema(
-            manifest,
-            expected_artifact_type="db_bootstrap",
-            expected_profile=profile,
-            expected_stage=stage,
+        manifest_v3.validate_historical_bootstrap_manifest(
+            manifest, profile=profile, stage=stage
         )
     except ReferenceV5Error:
         raise
@@ -1353,29 +1391,48 @@ def assert_final_epoch_contract(manifest: Mapping[str, Any], *, profile: str) ->
 #: 구현리뷰 Gate 2가 "predecessor Task가 정해지지 않았다"고 지적했다. 그 Task가 **무엇을
 #: 고쳐야 하는지**를 산문 대신 코드로 남긴다. 아래 함수가 빈 tuple을 돌려주는 순간
 #: 등록이 가능해지고, 그때 회귀 하나가 실패하며 계획·코드·fixture를 함께 고치게 된다.
-GATE2_BLOCKERS: tuple[str, ...] = (
-    "MANIFEST_V3_EPOCH_IS_DEPRECATED",
-    "EVALUATION_MOCK_PINS_48_ACTION_ROWS",
-    "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION",
-    "V4_R03_TYPE_REGISTRY_STILL_ACTIVE",
-    "TEXT2SQL_COLUMN_ALLOWLIST_IS_V4",
-)
+#: **`V5-CM-1.8`이 4종을 해소했다.**
+#:
+#: CM-3.1이 남긴 5종을 CM-1.8이 **전부** 닫았다 — epoch · evaluation stage ·
+#: migration registry · verifier R03 registry · Text2SQL allowlist.
+GATE2_BLOCKERS: tuple[str, ...] = ()
 
 #: 위 5종 중 **런타임에 재지 않고 상수로 두는 것**(계획 §7.5-7).
 #:
-#: 이 둘을 실측하려면 동결 V4 모듈이나 Text2SQL validator를 import해야 하는데, 그러면
-#: `db_target`→SQLAlchemy·sqlglot까지 끌려와 "DB를 열지 않는 순수 계약 모듈"이 깨진다
-#: (구현리뷰 6차 필수 3). 실물 대조는 **테스트에서만** 한다.
+#: 이것을 실측하려면 Text2SQL validator를 import해야 하는데, 그러면 sqlglot까지 끌려와
+#: "DB를 열지 않는 순수 계약 모듈"이 깨진다(구현리뷰 6차 필수 3). 실물 대조는
+#: **테스트에서만** 한다.
 #:
-#: 이 상수 2종의 제거와 짝 회귀 전환은 `V5-CM-1.8` 범위다(WBS `V5-CM-1.8`).
-STATIC_BLOCKERS: tuple[str, ...] = (
-    "V4_R03_TYPE_REGISTRY_STILL_ACTIVE",
-    "TEXT2SQL_COLUMN_ALLOWLIST_IS_V4",
-)
+#: `V5-CM-1.8`이 `V4_R03_TYPE_REGISTRY_STILL_ACTIVE`를 제거했다 — verifier가 R03 logical
+#: type을 V5 12컬럼으로 반환하게 됐기 때문이며, 그 사실은
+#: `test_verify_bootstrap_state`가 실물로 확인한다. 남은 1종의 제거는 묶음 3 소관이다.
+#: **`V5-CM-1.8`이 마지막 정적 blocker도 해소했다.**
+#:
+#: Text2SQL validator는 active `runtime.runtime_clean.json`을 직접 읽는다. 그 manifest가
+#: V5 12컬럼으로 교체되면서 allowlist도 함께 전환됐다 — 별도 코드 변경이 없다.
+#: 실물 대조는 Text2SQL validator 전용 회귀가 한다 — 이 모듈은 그것을 import하지
+#: 않는다(sqlglot이 딸려와 순수 계약 모듈이 깨진다).
+STATIC_BLOCKERS: tuple[str, ...] = ()
 
 #: 정적 blocker가 가리키는 실물. **테스트가 이 값을 실측과 대조한다.**
-V4_R03_TYPE_REGISTRY_COLUMNS = 11
 TEXT2SQL_ALLOWLIST_MANIFEST = "runtime.runtime_clean.json"
+
+
+def _stage_shape(
+    contract: Any,
+) -> tuple[str, tuple[str, ...], str, int, str | None]:
+    """`BootstrapStageContract`를 비교 가능한 tuple로 편다.
+
+    field를 하나씩 나열해 비교하면 새 field가 추가될 때 조용히 빠진다.
+    """
+
+    return (
+        contract.schema_stage,
+        tuple(contract.applied_migrations),
+        contract.action_policy,
+        contract.action_rows,
+        contract.action_fixture_type,
+    )
 
 
 def final_manifest_blockers() -> tuple[str, ...]:
@@ -1388,18 +1445,35 @@ def final_manifest_blockers() -> tuple[str, ...]:
         # `_validate_common_envelope`가 `dataset_epoch`를 상수와 exact 비교한다.
         # 최종 epoch을 담은 manifest는 예외 없이 거부된다.
         blockers.append("MANIFEST_V3_EPOCH_IS_DEPRECATED")
-    contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS.get(
-        ("evaluation", "evaluation_mock")
-    )
-    if contract is not None and FINAL_ACTION_ROWS["evaluation"] != 48:
-        # `_validate_db_tables`가 이 stage의 `action_history`를 MOCK·48행으로 못 박는다.
-        # 최종 evaluation은 실제 12행이라 같은 stage로 표현할 수 없다.
-        blockers.append("EVALUATION_MOCK_PINS_48_ACTION_ROWS")
-    if not any(
-        MIGRATION_ID in stage_contract.applied_migrations
-        for stage_contract in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS.values()
+
+    # **각 profile의 final stage를 직접 실측한다**(구현리뷰 4차 필수 2).
+    #
+    # 예전에는 "구 `evaluation_mock`이 존재하면 blocker"였고 migration은
+    # `any(... for stage in 전체)`였다. 그러면 구 stage와 새 stage가 **둘 다 없어도**
+    # blocker가 닫히고, Runtime 하나에 migration이 남아 있으면 Evaluation이 비어도
+    # 통과한다. 정적 2종을 마저 지우면 잘못된 registry에서 빈 tuple이 된다.
+    registered = {
+        profile: manifest_v3.BOOTSTRAP_STAGE_CONTRACTS.get(
+            (profile, FINAL_STAGE_BY_PROFILE[profile])
+        )
+        for profile in FINAL_STAGE_EXPECTATIONS
+    }
+
+    if (
+        registered["evaluation"] is None
+        or _stage_shape(registered["evaluation"])
+        != FINAL_STAGE_EXPECTATIONS["evaluation"]
+        or ("evaluation", "evaluation_mock") in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS
     ):
-        blockers.append("NO_STAGE_REGISTERS_THE_FINAL_MIGRATION")
+        blockers.append("EVALUATION_MOCK_PINS_48_ACTION_ROWS")
+
+    # **두 profile을 같은 강도로 본다.** Runtime만 migration을 보던 비대칭 때문에
+    # `action_rows=1`·`fixture_type=REFERENCE`로 잘못 등록해도 blocker가 늘지 않았다.
+    for profile, expected in FINAL_STAGE_EXPECTATIONS.items():
+        contract = registered[profile]
+        if contract is None or _stage_shape(contract) != expected:
+            blockers.append("NO_STAGE_REGISTERS_THE_FINAL_MIGRATION")
+            break
     # 정적 2종은 여기서 재지 않는다 — `STATIC_BLOCKERS` 주석 참고.
     blockers.extend(STATIC_BLOCKERS)
     return tuple(blockers)

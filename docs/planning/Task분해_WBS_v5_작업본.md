@@ -53,17 +53,23 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 55.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 57.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 40.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **159.0h** | P2 도전 과제 제외 |
+| **합계** | | **161.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 114.5h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 94건(P2 2건 포함)이다. 모든 Task는 1.0~2.0h이며, `V5-CM-1.6`만 legacy
-cleanup 예외로 3.0h다 — 구 corrected 구현 3,875줄 삭제와 verifier·Agent Runtime
-대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
+우선순위별 공수는 **P0 116.5h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 둘이다.
+
+- `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
+  Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
+- `V5-CM-1.8` **4.0h** — manifest 재기준화. epoch 상수 전환만으로 기존 fixture 92건이
+  깨지고(`test_reference_extensions_v5` 53 · `test_manifest_v3` 37 · `test_dataset_epoch` 2),
+  여기에 profile manifest 발급 script 신규 작성, 공용 3 DB read-only 검증, active manifest
+  bundle 원자 교체가 더해진다. 쪼개면 "epoch은 바뀌었는데 manifest는 구 inventory"인
+  중간 상태가 저장소에 남는다.
 
 ---
 
@@ -80,7 +86,7 @@ cleanup 예외로 3.0h다 — 구 corrected 구현 3,875줄 삭제와 verifier·
 | V5-CM-1.5 | P0 | 구 epoch 격리. 완료: v4 corrected build(`dim_parameter` overlay·`seq_no`·시각 보정)를 최종 epoch 실행 경로에서 차단하고 폐기 사유·대체 Task를 기록한다 | FR-I-04 | V5-CM-1.2 | 1.0h |
 | V5-CM-1.6 | P0 | 구 corrected 계열 제거. 완료: `build_corrected_dataset`·`load_corrected_base`·`load_evaluation_mock`·`corrections/`와 대응 테스트, `manifest_v3`의 `corrected_files`·`(runtime\|evaluation, corrected_base)` stage, corrected marker·`data/corrected`를 제거하고 전체 회귀를 통과한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3 | 3.0h |
 | V5-CM-1.7 | P1 | 구 bootstrap·skip 제거. 완료: `V5-CM-2.2`가 대체한 `bootstrap_base_schema.py`·`infra/bootstrap/001_base_schema.sql`과 대응 테스트를 제거한다. `V5-CM-1.2` 사유 skip 중 해제 Task 없는 잔존은 0건이어야 하며, `test_master_cypher` 2건만 `V5-CM-2.7` 해제 대상으로 허용한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-1.3, V5-CM-1.8 | 1.5h |
-| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 `V5-B-1.1`이 legacy `document_corpus`를 정리한 뒤의 **runtime 22 · evaluation 13** 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 구 등록 manifest의 23 · 14는 폐기 epoch `kosa_0813` 값이며 `V5-CM-3.1` artifact가 `superseded_profile_inventory_counts`로만 봉인한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1, V5-B-1.1, V5-CM-1.6 | 2.0h |
+| V5-CM-1.8 | P0 | manifest 최종 재기준화. 완료: `manifest_v3`의 `DATASET_EPOCH`·archive 기대값을 `infra/bootstrap/dataset-epoch.json`(`fdc_final_20260818` · `e5ce2c55…dabe3`)에 맞추고, evaluation `action_history` 12행을 담을 신규 `bootstrap_stage`와 `v5_001_reference_extensions_final` migration을 `BOOTSTRAP_STAGE_CONTRACTS`에 등록한다. `verify_bootstrap_state`가 R03 logical type을 가져오는 registry를 V5 12컬럼으로 전환하고 `V5-B-1.1`이 legacy `document_corpus`를 정리한 뒤의 **runtime 22 · evaluation 13** 물리 inventory와 최종 content hash를 담은 profile manifest를 발급한다. 구 등록 manifest의 23 · 14는 폐기 epoch `kosa_0813` 값이며 `V5-CM-3.1` artifact가 `superseded_profile_inventory_counts`로만 봉인한다. 이 manifest를 직접 읽는 Text2SQL R03 column allowlist도 V5 12컬럼으로 재기준화하되, 후속 정책 확장은 `V5-D-2.1`이 소유한다. `V5-CM-3.1`이 남긴 정적 blocker 상수 2종과 짝 회귀도 함께 제거해 `apply_reference_extensions_v5.final_manifest_blockers()`의 epoch·evaluation stage·migration stage·V5 type registry·Text2SQL allowlist 5종이 모두 해소되고 빈 tuple을 반환하는 것으로 확인한다 | FR-I-04, NFR-06 | V5-CM-2.6, V5-CM-3.1, V5-B-1.1, V5-CM-1.6 | 4.0h |
 
 ### V5-CM-2. fresh bootstrap
 

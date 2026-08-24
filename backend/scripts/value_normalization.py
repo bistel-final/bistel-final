@@ -111,19 +111,33 @@ def _canonical_timestamp(value: Any) -> str:
 
 
 def _canonical_json(value: Any) -> Any:
+    """DB의 json/jsonb 값을 canonical 구조로 바꾼다.
+
+    **문자열 파싱은 최상위에서 한 번만 한다.** driver가 원문 문자열을 돌려줄 때만
+    필요하기 때문이다. 예전에는 재귀가 중첩 문자열까지 `json.loads`에 넣어서,
+    `{"embedding_model": "BAAI/bge-m3"}` 같은 평범한 object가 전부 거부됐다 —
+    `document_chunk.metadata_json` 25행이 그 형태이고, `r03_alarm_history`의
+    `member_wafer_refs`·`member_alarm_refs`도 채워지면 같은 값을 담는다.
+    """
+
     if isinstance(value, str):
         try:
             value = json.loads(value)
         except json.JSONDecodeError as exc:
             raise ValueNormalizationError("JSON 값 형식이 잘못됐습니다") from exc
-    # JSON 자체 type을 보존하되 key/cell 문자열은 NFC로 고정한다.
+    return _canonical_json_node(value)
+
+
+def _canonical_json_node(value: Any) -> Any:
+    """이미 파싱된 JSON 값. JSON type을 보존하되 key/cell 문자열은 NFC로 고정한다."""
+
     if isinstance(value, Mapping):
         return {
-            unicodedata.normalize("NFC", str(key)): _canonical_json(child)
+            unicodedata.normalize("NFC", str(key)): _canonical_json_node(child)
             for key, child in value.items()
         }
     if isinstance(value, list):
-        return [_canonical_json(child) for child in value]
+        return [_canonical_json_node(child) for child in value]
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
     if isinstance(value, float) and not math.isfinite(value):

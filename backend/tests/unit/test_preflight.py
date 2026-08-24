@@ -115,18 +115,18 @@ def _write_pair(
     )
     evaluation = _manifest(
         profile="evaluation",
-        stage="evaluation_mock",
+        stage="evaluation_reference",
         source=evaluation_source,
         correction=evaluation_correction,
         applies_to=evaluation_applies_to or ["kosa_text2sql"],
         policy=evaluation_policy,
-        row_count=48 if evaluation_policy == "immutable_content" else 0,
+        row_count=12 if evaluation_policy == "immutable_content" else 0,
     )
 
     (root / "runtime.runtime_clean.json").write_text(
         json.dumps(runtime), encoding="utf-8"
     )
-    (root / "evaluation.evaluation_mock.json").write_text(
+    (root / "evaluation.evaluation_reference.json").write_text(
         json.dumps(evaluation), encoding="utf-8"
     )
 

@@ -32,11 +32,15 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "manifests"
 
 #: 논리 DB -> 검사 대상 bootstrap stage.
-#: Runtime 은 agent 가 쓰는 최종 stage, 평가는 Mock action 이 고정된 stage 를 본다.
-#: manifest_v3 계약상 immutable 48행 action_history 는 evaluation_mock 에만 있다.
+#: Runtime 은 agent 가 쓰는 최종 stage, 평가는 action 이 고정된 stage 를 본다.
+#:
+#: `V5-CM-1.8` 이 평가 stage 를 `evaluation_mock` 에서 `evaluation_reference` 로
+#: 교체했다. 구 stage 는 합성 Mock 48행이었고 최종은 실제 12행이라 같은 stage 로
+#: 표현할 수 없다. 이 전환은 manifest 발급과 **원자적으로** 수행했다 — 먼저 바꾸면
+#: 아직 없는 파일을 가리키고, 나중에 바꾸면 없어진 파일을 가리킨다.
 _STAGE_BY_LOGICAL_DB: dict[LogicalDb, str] = {
     LogicalDb.RUNTIME: "runtime_clean",
-    LogicalDb.EVALUATION: "evaluation_mock",
+    LogicalDb.EVALUATION: "evaluation_reference",
 }
 
 #: manifest 의 profile 이름. LogicalDb 값과 같지만 의미가 다르므로 분리해 둔다.

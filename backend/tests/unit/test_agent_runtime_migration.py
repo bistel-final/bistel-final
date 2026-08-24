@@ -281,11 +281,12 @@ def test_runtime_manifest_matches_the_column_contract() -> None:
     path = manifest_v3.resolve_bootstrap_manifest_path("runtime", "runtime_clean")
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["bootstrap_stage"] == "runtime_clean"
+    # `V5-CM-1.8`이 final manifest를 발급했다 — V5 migration과 22 table이다.
     assert payload["applied_migrations"] == [
-        "001_reference_extensions",
+        manifest_v3.FINAL_MIGRATION_ID,
         "002_agent_runtime_clean",
     ]
-    assert len(payload["tables"]) == 23
+    assert len(payload["tables"]) == 22
     empty_hash = manifest_v3.hash_canonical_rows([])
     for table, columns in migration.EXPECTED_TABLE_COLUMNS.items():
         entry = payload["tables"][table]

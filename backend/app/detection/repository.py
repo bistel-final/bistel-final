@@ -1,8 +1,8 @@
-"""Detection Repository (V5-A-1.1·V5-A-1.2).
+"""Detection Repository (V5-A-1.1~V5-A-1.4).
 
 시스템설계서 v2.1 1.3 계층 규칙: Repository는 PostgreSQL 조회만 담당한다.
 HTTP 응답 조립, 업무 판정(OOS/OOC/IN, alarm 발행 등), LLM 호출을 하지 않는다.
-`summarize.py`(Rules 계층)의 입력·비교 대상을 만들어 넘기기만 한다.
+`summarize.py`·`rules.py`(Rules 계층)의 입력·비교 대상을 만들어 넘기기만 한다.
 
 01-project-rules.md 6절: SELECT * 를 쓰지 않고 필요한 컬럼만 조회한다. SQL 문자열
 조합 대신 파라미터 바인딩을 쓴다.
@@ -18,37 +18,54 @@ HTTP 응답 조립, 업무 판정(OOS/OOC/IN, alarm 발행 등), LLM 호출을 �
   삭제 예정이며, 최종 스키마의 유일한 근거는 멘토 `sample/schema/03_schema_clean.sql`
   원본이다. `V5-CM-2.4` 적재 검증 결과 실제 컬럼명이 다르면 이 파일의 SQL을
   맞춰 고친다 — 지금은 설계서 v2.1 값 정의와 일치하는 최선 추정치다.
+- `backend/migrations/v5/001_reference_extensions_final.sql` — `r03_alarm_history`
+  12컬럼·`v_alarm_event`의 근거. `V5-CM-3.1`이 **빈 테이블**로 먼저 만들어두고,
+  이 파일의 V5-A-1.4 절이 실제로 채운다.
 
-이 모듈의 함수는 전부 읽기 전용이다(base 9 table은 bootstrap이 적재하고, A는
-쓰지 않는다). 호출자는 `app.common.db.get_readonly_connection()`으로 얻은
-Connection을 넘긴다.
+V5-A-1.1·V5-A-1.2 함수(위쪽 절)는 전부 읽기 전용이다(base 9 table은 bootstrap이
+적재하고, A는 쓰지 않는다). 호출자는 `app.common.db.get_readonly_connection()`으로
+얻은 Connection을 넘긴다.
+
+**예외: V5-A-1.4 절의 `insert_r03_alarms`만 쓰기 함수다.** `r03_alarm_history`는
+base 9 table이 아니라 `V5-CM-3.1`이 만들어둔 **빈** reference extension이고,
+"R03 파생은 V5-A-1.4가 적재한다"라고 그 migration 자체에 적혀 있다(설계서 3.3).
+그래서 이 함수만 `app.common.db.get_db_connection()`(쓰기 권한) Connection을
+받는다 — 나머지 함수에 readonly Connection을 넘기던 습관대로 이 함수도 readonly로
+부르면 권한 오류가 난다.
 
 [팀원용 요약]
-이 파일이 하는 일은 크게 두 갈래다.
+이 파일이 하는 일은 크게 네 갈래다.
   1) summarize.py에 넣을 "원본" 조회: fetch_trace_points, fetch_parameter_limits
      -> fdc_trace·dim_parameter를 읽어서 summarize.py가 이해하는 모양
         (TracePoint·ParameterLimit)으로 바꿔준다.
   2) 이미 있는 "정답"(reference) 조회: fetch_reference_summary,
-     fetch_reference_evaluation
-     -> summary_data·evaluation 테이블에는 최종 데이터에 이미 계산돼서 들어있는
-        결과가 있다. 우리가 summarize.py로 새로 계산한 값이 이 정답과 같은지
-        비교(대조)하는 데 쓴다. 비교 자체는 이 파일이 아니라 service.py가 한다
-        — 이 파일은 "가져오기"만 하고 "맞다/틀리다" 판단은 하지 않는다.
-모든 함수가 SELECT만 하고 INSERT/UPDATE는 하나도 없다. Repository 계층은 DB를
-읽고 쓰는 창구일 뿐, "이 값이 OOS인지 아닌지" 같은 업무 판단은 하지 않는다
-(그건 Rules 계층인 summarize.py 담당).
+     fetch_reference_evaluation, fetch_trace_alarm_reference_stats,
+     fetch_summary_alarm_reference_stats
+     -> summary_data·evaluation·trace_alarm_history·summary_alarm_history에는
+        최종 데이터에 이미 계산돼서 들어있는 결과가 있다. 우리가 새로 계산한
+        값이 이 정답과 같은지 비교하는 데 쓴다. 비교 자체는 이 파일이 아니라
+        service.py가 한다 — 이 파일은 "가져오기"만 하고 "맞다/틀리다" 판단은
+        하지 않는다.
+  3) R03 계산에 필요한 lot_history 순서·TRACE alarm_id 조회: fetch_lot_history_rows,
+     fetch_lot_history_by_id, fetch_trace_alarm_refs_by_group
+     -> rules.derive_r03_events·rules.build_r03_alarm_record가 쓸 입력을 만든다.
+  4) (유일한 예외) R03 적재: fetch_r03_alarm_count, insert_r03_alarms
+     -> rules.py가 만든 R03AlarmRecord를 실제로 저장한다. 멱등(재실행해도
+        중복 없음)하도록 `ON CONFLICT ... DO NOTHING`을 쓴다.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-
-from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from datetime import datetime
 
 from app.common.enums import AlarmType
+from app.detection.rules import R03AlarmRecord
 from app.detection.summarize import GroupKey, ParameterLimit, TracePoint
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 __all__ = [
     "ReferenceSummaryRow",
@@ -57,6 +74,18 @@ __all__ = [
     "fetch_parameter_limits",
     "fetch_reference_summary",
     "fetch_reference_evaluation",
+    "AlarmReferenceStats",
+    "fetch_trace_alarm_reference_stats",
+    "fetch_summary_alarm_reference_stats",
+    "SummaryStatRow",
+    "fetch_summary_statistics",
+    "LotHistoryRow",
+    "fetch_lot_history_rows",
+    "fetch_lot_history_by_id",
+    "TraceAlarmRefRow",
+    "fetch_trace_alarm_refs_by_group",
+    "fetch_r03_alarm_count",
+    "insert_r03_alarms",
 ]
 
 
@@ -265,3 +294,310 @@ def fetch_reference_evaluation(connection: Connection) -> dict[GroupKey, Referen
             alarm_type=AlarmType(row["alarm_type"]),
         )
     return result
+
+
+# ---------------------------------------------------------------------
+# trace_alarm_history / summary_alarm_history reference — V5-A-1.3 대조용
+#
+# 이 두 테이블은 summary_data·evaluation과 같은 신분이다 — Generator가 만든
+# "이미 저장된 정답"이며 A가 새로 채우는 테이블이 아니다(그건 r03_alarm_history
+# 하나뿐이고, 아래 절에서 별도로 다룬다). 그래서 여기서는 값 하나하나를 읽어오지
+# 않고 "총 몇 건, 그중 occurred_at이 비어있는 게 몇 건" 두 숫자만 집계해서
+# service.py의 재현 대조(recomputed count와 비교)에 쓴다.
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class AlarmReferenceStats:
+    """`trace_alarm_history`·`summary_alarm_history` 한 테이블의 요약 통계."""
+
+    count: int  # 전체 저장 건수(수용값: TRACE 138, SUMMARY 51)
+    occurred_at_null_count: int  # occurred_at이 NULL인 건수(수용값: 둘 다 0)
+
+
+def _fetch_alarm_reference_stats(
+    connection: Connection, table_name: str
+) -> AlarmReferenceStats:
+    # table_name은 함수 인자로 받되 사용자 입력이 아니라 이 파일 안에서만 두
+    # 상수("trace_alarm_history"/"summary_alarm_history") 중 하나로 호출하므로
+    # SQL 인젝션 우려 없이 f-string으로 테이블명을 끼워 넣는다(값이 아니라
+    # 테이블 식별자라서 애초에 바인드 파라미터로 넘길 수도 없다 — PostgreSQL은
+    # 테이블명 자리에 파라미터를 허용하지 않는다).
+    #
+    # COUNT(*) FILTER (WHERE ...): 조건에 맞는 행만 세는 PostgreSQL 집계
+    # 문법이다. "WHERE occurred_at IS NULL인 행 수"를 별도 서브쿼리 없이
+    # 한 번의 스캔으로 같이 구한다.
+    query = f"""
+        SELECT
+            COUNT(*) AS total_count,
+            COUNT(*) FILTER (WHERE occurred_at IS NULL) AS null_count
+        FROM {table_name}
+    """
+    row = connection.execute(text(query)).mappings().one()
+    return AlarmReferenceStats(
+        count=int(row["total_count"]),
+        occurred_at_null_count=int(row["null_count"]),
+    )
+
+
+def fetch_trace_alarm_reference_stats(connection: Connection) -> AlarmReferenceStats:
+    """`trace_alarm_history`의 총 건수·occurred_at NULL 건수를 읽는다."""
+
+    return _fetch_alarm_reference_stats(connection, "trace_alarm_history")
+
+
+def fetch_summary_alarm_reference_stats(connection: Connection) -> AlarmReferenceStats:
+    """`summary_alarm_history`의 총 건수·occurred_at NULL 건수를 읽는다."""
+
+    return _fetch_alarm_reference_stats(connection, "summary_alarm_history")
+
+
+# ---------------------------------------------------------------------
+# summary_data 통계값 — V5-A-1.3 SUMMARY 알람(동적 CL±3σ) 계산 입력
+#
+# fetch_reference_summary와 같은 테이블(summary_data)을 읽지만 목적이 다르다.
+# fetch_reference_summary는 "value_mean 등이 fdc_trace 재계산과 같은가"를 보고,
+# 이 함수는 "이 value_mean이 동적 관리한계를 벗어나는가"를 보려고 chamber_id를
+# 추가로 읽는다(rules.compute_summary_control_limits의 그룹 기준이 chamber_id다).
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class SummaryStatRow:
+    """`summary_data`에서 SUMMARY 알람 판정에 필요한 컬럼만 뽑은 한 행."""
+
+    key: GroupKey  # lot_hist_id, parameter_id, recipe_step_no
+    chamber_id: str
+    value_mean: float
+
+
+def fetch_summary_statistics(connection: Connection) -> list[SummaryStatRow]:
+    """`summary_data` 4,800건을 SUMMARY 알람 계산용 모양(SummaryStatRow)으로 읽는다."""
+
+    query = """
+        SELECT lot_hist_id, parameter AS parameter_id, step_no AS recipe_step_no,
+               chamber AS chamber_id, value_mean
+        FROM summary_data
+    """
+    rows = connection.execute(text(query)).mappings().all()
+    return [
+        SummaryStatRow(
+            key=GroupKey(
+                lot_hist_id=row["lot_hist_id"],
+                parameter_id=row["parameter_id"],
+                recipe_step_no=row["recipe_step_no"],
+            ),
+            chamber_id=row["chamber_id"],
+            value_mean=float(row["value_mean"]),
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------
+# lot_history — V5-A-1.4 R03 연속성 판정 입력
+#
+# lot_history는 "WAFER 1장이 한 번의 설비 방문(=2개 recipe step)을 지난 기록"
+# 600건이다. R03 연속 판정의 1차 정렬 기준인 chamber_wafer_cum과, wafer/lot/
+# 시각 정보가 전부 이 테이블에만 있어서 fdc_trace·summary_data·evaluation
+# 어느 것도 대신할 수 없다.
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class LotHistoryRow:
+    """`lot_history` 한 행. R03 정렬·식별에 필요한 컬럼만 담는다."""
+
+    lot_hist_id: str
+    lot_id: str
+    wafer_no: int
+    wafer_id: str
+    area_id: str | None
+    equipment_id: str | None
+    chamber_id: str | None
+    recipe_id: str | None
+    track_in_at: datetime | None
+    chamber_wafer_cum: int | None
+
+
+def fetch_lot_history_rows(connection: Connection) -> list[LotHistoryRow]:
+    """`lot_history` 600건 전체를 읽는다."""
+
+    query = """
+        SELECT lot_hist_id, lot_id, wafer_no, wafer_id, area_id, equipment_id,
+               chamber_id, recipe_id, track_in_at, chamber_wafer_cum
+        FROM lot_history
+    """
+    rows = connection.execute(text(query)).mappings().all()
+    return [
+        LotHistoryRow(
+            lot_hist_id=row["lot_hist_id"],
+            lot_id=row["lot_id"],
+            wafer_no=int(row["wafer_no"]),
+            wafer_id=row["wafer_id"],
+            area_id=row["area_id"],
+            equipment_id=row["equipment_id"],
+            chamber_id=row["chamber_id"],
+            recipe_id=row["recipe_id"],
+            track_in_at=row["track_in_at"],
+            chamber_wafer_cum=(
+                None
+                if row["chamber_wafer_cum"] is None
+                else int(row["chamber_wafer_cum"])
+            ),
+        )
+        for row in rows
+    ]
+
+
+def fetch_lot_history_by_id(connection: Connection) -> dict[str, LotHistoryRow]:
+    """`fetch_lot_history_rows`와 같은 데이터를 `lot_hist_id -> LotHistoryRow`로 읽는다.
+
+    R03 계산은 evaluation(=fdc_trace 재계산) 결과를 lot_hist_id 단위로 순회하면서
+    "이 wafer는 어느 chamber·언제 들어왔는지"를 매번 찾아봐야 해서, 리스트보다
+    dict(빠른 조회) 모양이 더 자연스럽다.
+    """
+
+    return {row.lot_hist_id: row for row in fetch_lot_history_rows(connection)}
+
+
+# ---------------------------------------------------------------------
+# trace_alarm_history × lot_history — R03 member_alarm_refs용 TRACE alarm_id 조회
+#
+# r03_alarm_history.member_alarm_refs에 넣을 "raw OOS TRACE AlarmRef"는 이미
+# trace_alarm_history에 저장돼 있는 실제 alarm_id다. 다만 trace_alarm_history는
+# lot_hist_id가 아니라 (lot, wafer, chamber) 자연키로 저장돼 있어서, R03 계산이
+# 쓰는 lot_hist_id 기준으로 다시 묶으려면 lot_history와 조인해야 한다 — 이 조인은
+# `v_alarm_event` View가 TRACE를 lot_history와 붙일 때 쓰는 것과 똑같다
+# (`h.lot_id = a.lot AND h.wafer_id = a.wafer AND h.chamber_id = a.chamber`).
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class TraceAlarmRefRow:
+    """R03 member_alarm_refs 직렬화 순서(seq_no ASC, alarm_id ASC) 정렬 입력."""
+
+    alarm_id: str
+    seq_no: int | None
+
+
+def fetch_trace_alarm_refs_by_group(
+    connection: Connection,
+) -> dict[GroupKey, list[TraceAlarmRefRow]]:
+    """`trace_alarm_history`를 `(lot_hist_id, parameter_id, recipe_step_no)`로
+    묶어 읽는다.
+
+    반환값의 각 리스트는 이미 `seq_no ASC, alarm_id ASC`로 정렬돼 있다(설계서
+    3.2: "AlarmRef는 해당 WAFER 순서 안에서 seq_no ASC, alarm_id ASC로
+    직렬화한다") — 호출자(service.py)가 다시 정렬할 필요가 없다.
+    """
+
+    query = """
+        SELECT
+            h.lot_hist_id      AS lot_hist_id,
+            a.parameter        AS parameter_id,
+            a.step_no          AS recipe_step_no,
+            a.alarm_id         AS alarm_id,
+            a.seq_no           AS seq_no
+        FROM trace_alarm_history AS a
+        JOIN lot_history AS h
+          ON h.lot_id = a.lot
+         AND h.wafer_id = a.wafer
+         AND h.chamber_id = a.chamber
+        ORDER BY h.lot_hist_id, a.parameter, a.step_no, a.seq_no, a.alarm_id
+    """
+    rows = connection.execute(text(query)).mappings().all()
+
+    result: dict[GroupKey, list[TraceAlarmRefRow]] = {}
+    for row in rows:
+        key = GroupKey(
+            lot_hist_id=row["lot_hist_id"],
+            parameter_id=row["parameter_id"],
+            recipe_step_no=row["recipe_step_no"],
+        )
+        # SQL의 ORDER BY로 이미 seq_no·alarm_id 순으로 정렬해서 가져오므로,
+        # 여기서는 그 순서를 유지한 채 그룹별 리스트에 append만 하면 된다.
+        result.setdefault(key, []).append(
+            TraceAlarmRefRow(
+                alarm_id=row["alarm_id"],
+                seq_no=(None if row["seq_no"] is None else int(row["seq_no"])),
+            )
+        )
+    return result
+
+
+# ---------------------------------------------------------------------
+# r03_alarm_history — V5-A-1.4 적재 (이 파일의 유일한 쓰기 함수)
+#
+# `V5-CM-3.1`이 이미 빈 테이블·제약(CHECK 7개, UNIQUE (lot_hist_id, parameter_id,
+# recipe_step_no, policy_version))을 만들어뒀다. 여기서는 그 제약을 그대로
+# 믿고 애플리케이션 쪽에서 중복을 미리 걸러내지 않는다 — 대신 DB의 UNIQUE
+# 제약과 정확히 같은 컬럼 조합으로 `ON CONFLICT ... DO NOTHING`을 써서
+# "이미 있으면 조용히 건너뛴다(멱등)"를 DB에 위임한다.
+# ---------------------------------------------------------------------
+def fetch_r03_alarm_count(connection: Connection) -> int:
+    """`r03_alarm_history`에 현재 저장된 행 수를 읽는다(수용값: 3).
+
+    readonly Connection으로도 호출할 수 있다 — 단순 COUNT라서 쓰기 권한이
+    필요 없다. `insert_r03_alarms` 실행 전후로 각각 불러서 "몇 건이 새로
+    생겼는지"를 눈으로 확인하는 용도로 쓸 수 있다.
+    """
+
+    query = "SELECT COUNT(*) AS total_count FROM r03_alarm_history"
+    row = connection.execute(text(query)).mappings().one()
+    return int(row["total_count"])
+
+
+def insert_r03_alarms(connection: Connection, records: Sequence[R03AlarmRecord]) -> int:
+    """`rules.build_r03_alarm_record`가 만든 행을 `r03_alarm_history`에 멱등 적재한다.
+
+    **쓰기 함수다.** 호출자는 `app.common.db.get_db_connection()`으로 얻은
+    Connection을 넘겨야 한다(readonly role은 INSERT 권한이 없다 — 시스템설계서
+    §최소권한 role). 이 함수는 `connection.commit()`을 호출하지 않는다 —
+    트랜잭션 경계는 호출자(service.py 또는 그 위 스크립트/테스트)가 결정한다.
+
+    반환값은 이번 호출로 **실제로 새로 INSERT된** 행 수다. 이미 있던 행은
+    `ON CONFLICT DO NOTHING`으로 조용히 건너뛰므로 카운트에 잡히지 않는다 —
+    즉 같은 records로 두 번 부르면 처음엔 3(또는 N), 두 번째는 0을 반환해야
+    "재실행은 no-op"이라는 완료 기준을 만족한다.
+    """
+
+    query = """
+        INSERT INTO r03_alarm_history (
+            alarm_id, occurred_at, lot_hist_id, lot_id, equipment_id, chamber_id,
+            parameter_id, recipe_step_no, trigger_wafer_no,
+            member_wafer_refs, member_alarm_refs, policy_version
+        ) VALUES (
+            :alarm_id, :occurred_at, :lot_hist_id, :lot_id, :equipment_id, :chamber_id,
+            :parameter_id, :recipe_step_no, :trigger_wafer_no,
+            CAST(:member_wafer_refs AS jsonb),
+            CAST(:member_alarm_refs AS jsonb),
+            :policy_version
+        )
+        ON CONFLICT ON CONSTRAINT r03_alarm_history_incident_key DO NOTHING
+    """
+
+    inserted_count = 0
+    for record in records:
+        # member_wafer_refs·member_alarm_refs는 파이썬 list[dict]다. psycopg는
+        # list[dict]를 jsonb로 자동 변환해주지 않으므로, json.dumps로 텍스트를
+        # 만든 뒤 SQL에서 CAST(... AS jsonb)로 명시 변환한다.
+        # ensure_ascii=False: 한글 등 비ASCII 문자가 들어가도 \uXXXX로 escape하지
+        # 않고 그대로 저장한다(현재는 영문·숫자뿐이라 결과는 같지만, 값 자체를
+        # 바꾸지 않는 안전한 선택이다).
+        params = {
+            "alarm_id": record.alarm_id,
+            "occurred_at": record.occurred_at,
+            "lot_hist_id": record.lot_hist_id,
+            "lot_id": record.lot_id,
+            "equipment_id": record.equipment_id,
+            "chamber_id": record.chamber_id,
+            "parameter_id": record.parameter_id,
+            "recipe_step_no": record.recipe_step_no,
+            "trigger_wafer_no": record.trigger_wafer_no,
+            "member_wafer_refs": json.dumps(
+                record.member_wafer_refs, ensure_ascii=False
+            ),
+            "member_alarm_refs": json.dumps(
+                record.member_alarm_refs, ensure_ascii=False
+            ),
+            "policy_version": record.policy_version,
+        }
+        result = connection.execute(text(query), params)
+        # INSERT ... ON CONFLICT DO NOTHING의 rowcount는, 실제로 새 행이
+        # 생겼으면 1, 충돌로 건너뛰었으면 0이다. 이 합계가 곧 "이번에 새로
+        # 생긴 행 수"다.
+        inserted_count += result.rowcount
+    return inserted_count

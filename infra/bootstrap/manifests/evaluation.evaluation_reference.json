@@ -6,16 +6,14 @@
   "correction_version": "final-v1",
   "hash_algorithm": "sha256-canonical-json-nfc-codepoint-v1",
   "value_normalization_version": "db-value-v1",
-  "profile": "runtime",
+  "profile": "evaluation",
   "applies_to": [
-    "kosa_agent",
-    "kosa_agent_e2e"
+    "kosa_text2sql"
   ],
-  "bootstrap_stage": "runtime_clean",
-  "schema_stage": "runtime_clean",
+  "bootstrap_stage": "evaluation_reference",
+  "schema_stage": "reference_final",
   "applied_migrations": [
-    "v5_001_reference_extensions_final",
-    "002_agent_runtime_clean"
+    "v5_001_reference_extensions_final"
   ],
   "tables": {
     "dim_parameter": {
@@ -204,9 +202,10 @@
         "mes_at",
         "created_at"
       ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      "verification_policy": "immutable_content",
+      "row_count": 12,
+      "content_hash": "9ee840d8db4c7987f63938e8b88f3dcfa01c26257334092875232e9076d1f217",
+      "fixture_type": "REFERENCE"
     },
     "r03_alarm_history": {
       "columns": [
@@ -237,17 +236,9 @@
         "version",
         "created_at"
       ],
-      "verification_policy": "immutable_content",
-      "row_count": 3,
-      "content_hash": "65507c35bc4eda0adcb24619b1248eaa1176af0eb538debd0cc0d134b00a5a40",
-      "content_columns": [
-        "doc_id",
-        "title",
-        "doc_type",
-        "model_code",
-        "source_path",
-        "version"
-      ]
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document_chunk": {
       "columns": [
@@ -260,9 +251,9 @@
         "embedding",
         "metadata_json"
       ],
-      "verification_policy": "immutable_content",
-      "row_count": 25,
-      "content_hash": "93b5d841cbe10177cc8c89d305aec8770f77918a8ccd03665425688993637f1c"
+      "verification_policy": "bootstrap_empty",
+      "row_count": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "nl_query_log": {
       "columns": [
@@ -279,156 +270,6 @@
         "error_msg"
       ],
       "verification_policy": "schema_only"
-    },
-    "action_delivery": {
-      "columns": [
-        "action_id",
-        "channel",
-        "status",
-        "request_hash",
-        "attempt_count",
-        "provider_message_id",
-        "started_at",
-        "completed_at",
-        "last_error",
-        "result"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_prediction": {
-      "columns": [
-        "agent_run_id",
-        "predicted_fault_code",
-        "confidence",
-        "cause_summary",
-        "evidence",
-        "llm_model",
-        "prompt_version",
-        "created_at"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_prediction_review": {
-      "columns": [
-        "review_id",
-        "agent_run_id",
-        "reviewed_fault_code",
-        "disposition",
-        "label_source",
-        "reviewer",
-        "reviewed_at",
-        "comment"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_run": {
-      "columns": [
-        "agent_run_id",
-        "thread_id",
-        "retry_of_run_id",
-        "lot_id",
-        "chamber_id",
-        "requested_alarm_source",
-        "requested_alarm_id",
-        "representative_alarm_source",
-        "representative_alarm_id",
-        "status",
-        "autonomy_level",
-        "action",
-        "severity",
-        "llm_model",
-        "prompt_version",
-        "evidence",
-        "input_tokens",
-        "output_tokens",
-        "latency_ms",
-        "started_at",
-        "ended_at"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_run_action": {
-      "columns": [
-        "agent_run_id",
-        "action_id",
-        "link_role",
-        "lot_id",
-        "chamber_id",
-        "trigger_alarm_source",
-        "trigger_alarm_id",
-        "linked_at"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_run_alarm": {
-      "columns": [
-        "agent_run_id",
-        "alarm_source",
-        "alarm_id",
-        "is_representative"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "agent_tool_call": {
-      "columns": [
-        "tool_call_id",
-        "agent_run_id",
-        "call_seq",
-        "tool_name",
-        "input",
-        "output",
-        "status",
-        "latency_ms",
-        "called_at",
-        "error_msg"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "approval_request": {
-      "columns": [
-        "approval_id",
-        "action_id",
-        "agent_run_id",
-        "status",
-        "requested_at",
-        "decided_by",
-        "decided_at",
-        "decision_comment"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
-    "audit_log": {
-      "columns": [
-        "audit_id",
-        "occurred_at",
-        "actor_type",
-        "actor_id",
-        "event_type",
-        "entity_type",
-        "entity_id",
-        "before_json",
-        "after_json",
-        "detail"
-      ],
-      "verification_policy": "bootstrap_empty",
-      "row_count": 0,
-      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     }
   }
 }
