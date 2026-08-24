@@ -75,8 +75,16 @@ REMAINING_MANIFESTS = {
 #       묶음 1(코드·격리)에서는 marker 파일을 만들지 않으므로 지금 넣으면
 #       아래 실물 대조가 깨진다.
 REMAINING_MARKERS = {
+    # RAG 적재 증적 (`V5-B-1.3`)
     "rag_load.kosa_agent.json",
     "rag_load.kosa_agent_e2e.json",
+    # Runtime 002 적용 증적 (`V5-CM-3.2` 묶음 2)
+    #
+    # 구 계보 `runtime_clean.<db>.json`과 **이름이 다르다.** 같은 이름을 재사용하면
+    # `history/kosa_0813/markers/`의 폐기 marker를 final로 잘못 복원·승격하는 사고가
+    # 구조적으로 가능해진다.
+    "agent_runtime_final.kosa_agent.json",
+    "agent_runtime_final.kosa_agent_e2e.json",
 }
 
 

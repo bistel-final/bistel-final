@@ -1940,8 +1940,15 @@ class TestRuntimeMarkerOwnership:
         signature = inspect.signature(verifier.verify_database)
         assert signature.parameters["require_runtime_marker"].default is True
 
-    def test_the_marker_issuer_is_still_cm32(self) -> None:
-        """CM-1.6이 넘긴 소유권을 되돌리지 않았다."""
+    def test_cm32_took_the_marker_ownership(self) -> None:
+        """CM-1.6이 넘기고 **CM-3.2가 받았다.**
+
+        이 테스트는 원래 `run_apply()`가 `FINAL_RUNTIME_MIGRATION_NOT_WIRED`로 막혀
+        있음을 단언했다. 그 차단 해제가 곧 CM-3.2의 일이므로, 지금은 **소유권이 실제로
+        옮겨졌는지**를 본다 — 인계가 열린 채 잊히지 않게 하는 것이 이 테스트의 목적이다.
+
+        공용 DB에 붙지 않는다. engine factory를 주입해 도달 여부만 본다.
+        """
 
         import apply_agent_runtime as agent_runtime
         from db_target import BootstrapTarget
@@ -1954,18 +1961,34 @@ class TestRuntimeMarkerOwnership:
             database="kosa_agent",
             profile="runtime",
         )
-        with pytest.raises(agent_runtime.AgentRuntimeStateError) as caught:
-            agent_runtime.run_apply(target, change_reference="TEST-1")
 
-        assert caught.value.reason_code == "FINAL_RUNTIME_MIGRATION_NOT_WIRED"
+        class _Reached(Exception):
+            pass
 
-    def test_the_runtime_marker_is_absent_from_active_markers(self) -> None:
-        """지금 active에 없다는 사실이 순환의 근거였다."""
+        def _engine(_target: object) -> object:
+            raise _Reached
+
+        with pytest.raises(_Reached):
+            agent_runtime.run_apply(
+                target, change_reference="TEST-1", engine_factory=_engine
+            )
+
+        assert agent_runtime.TASK_ID == "V5-CM-3.2"
+        assert agent_runtime.FINAL_ARTIFACT_TYPE == "agent_runtime_final"
+
+    def test_the_runtime_marker_path_is_the_final_lineage(self) -> None:
+        """CM-3.2가 발급할 marker는 **구 계보와 파일명이 겹치지 않는다.**
+
+        `V5-CM-1.2`가 격리한 `runtime_clean.<database>.json`을 재사용하면 history의
+        폐기 marker를 final로 잘못 복원·승격하는 사고가 구조적으로 가능해진다.
+        """
 
         import apply_agent_runtime as agent_runtime
 
         for database in registrar.RUNTIME_DATABASES:
-            assert not agent_runtime.marker_path(database).exists(), database
+            path = agent_runtime.marker_path(database)
+            assert path.name == f"agent_runtime_final.{database}.json"
+            assert path.name != f"runtime_clean.{database}.json"
 
 
 class TestPublicAccessGuard:
