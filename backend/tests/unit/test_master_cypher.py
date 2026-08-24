@@ -28,9 +28,7 @@ FINAL_ARCHIVE_SHA256 = (
     "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3"
 )
 FINAL_MEMBER_PATH = "project/repository/sample/ontology/master.cypher"
-FINAL_MEMBER_SHA256 = (
-    "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
-)
+FINAL_MEMBER_SHA256 = "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
 FINAL_GRAPH_FINGERPRINT = (
     "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
 )
@@ -79,10 +77,114 @@ def test_final_source_contract_constants() -> None:
     assert master.SOURCE_MEMBER_SHA256 == FINAL_MEMBER_SHA256
 
 
+#: tracked fixture의 **raw bytes** SHA-256. archive member와 다르다.
+FIXTURE_RAW_SHA256 = "bb1febc0894ec566bb22aff9f28a6258789aa2361e8c804f5ff00c7d633dc1be"
+FIXTURE_RAW_BYTES = 11_021
+MEMBER_RAW_BYTES = 11_121
+
+
 def test_fixture_matches_registered_master_cypher_member_hash() -> None:
     source = _actual_source()
     assert master.sha256_bytes(source.replace("\n", "\r\n").encode()) == (
         FINAL_MEMBER_SHA256
+    )
+
+
+def test_the_fixture_and_the_archive_member_are_not_byte_identical() -> None:
+    """**두 파일의 byte 경계를 고정한다.**
+
+    `.gitattributes`의 `*.cypher text eol=lf` 때문에 tracked fixture는 **구조적으로
+    영원히 LF**다. 원본 ZIP member는 100개 CRLF 줄바꿈으로 정확히 100 bytes 더 크다.
+
+    따라서 provenance의 `SOURCE_MEMBER_SHA256`은 **오직 archive member bytes**로
+    계산한다. fixture bytes로 계산하면 다른 값이 나오는데, 그때 상수를 fixture 값으로
+    "고치면" **실제 아카이브 경로가 거부된다.** 그 사고를 이 회귀가 막는다.
+
+    기존 `test_fixture_matches_registered_master_cypher_member_hash`는 `read_text()`로
+    읽어 newline을 정규화하므로, fixture raw bytes가 CRLF로 바뀌어도 통과한다.
+    여기서는 **raw bytes**를 본다.
+    """
+
+    raw = FIXTURE_PATH.read_bytes()
+    assert len(raw) == FIXTURE_RAW_BYTES
+    assert master.sha256_bytes(raw) == FIXTURE_RAW_SHA256
+
+    # **member hash와 같지 않다.** 같아지면 둘 중 하나가 오염된 것이다.
+    assert master.sha256_bytes(raw) != FINAL_MEMBER_SHA256
+
+    # CRLF로 복원하면 member와 같다 — 내용은 동일하다는 증명이다.
+    restored = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    assert len(restored) == MEMBER_RAW_BYTES
+    assert master.sha256_bytes(restored) == FINAL_MEMBER_SHA256
+
+
+ACTIVE_MANIFEST_SHA256 = (
+    "1fd92a73186d6ae7d7ee8d7a7a2e1bf4a5fa5016491f4b5df29a93cd6ca6f3d3"
+)
+
+
+def test_the_active_artifacts_match_the_final_source_exactly(parsed) -> None:
+    """**저장소에 등록된 실물 두 본**을 최종 source와 exact 대조한다.
+
+    지금까지 회귀는 메모리에서 새 manifest를 만들어 비교했을 뿐
+    `infra/bootstrap/manifests/neo4j.graph.json`을 **읽지 않았다.** 그래서 active
+    manifest를 임의의 다른 내용으로 바꿔도 history와만 다르면 통과했다
+    (구현리뷰 필수 1).
+
+    `validate_generated_artifacts()`는 loader가 실행 시 쓰는 바로 그 판정이다.
+    게시 전 회귀 Gate에서도 같은 것을 돌린다.
+    """
+
+    manifest = master.validate_generated_artifacts(parsed)
+    assert manifest["node_count"] == 44
+    assert manifest["relationship_count"] == 85
+    # canonical JSON 기준이다 — 파일 raw bytes 기준과 다르다.
+    assert master.graph_manifest_sha256(manifest) == ACTIVE_MANIFEST_SHA256
+    assert manifest["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
+    assert manifest["source_member_sha256"] == FINAL_MEMBER_SHA256
+
+
+def test_a_tampered_active_manifest_is_refused(parsed, tmp_path) -> None:
+    """active manifest를 변이하면 위 판정이 실제로 실패한다."""
+
+    import json
+
+    good = json.loads(master.GRAPH_MANIFEST_PATH.read_text(encoding="utf-8"))
+    cypher = tmp_path / "master_graph.cypher"
+    cypher.write_bytes(master.CORRECTED_CYPHER_PATH.read_bytes())
+
+    for key, value in (
+        ("node_count", 43),
+        ("relationship_count", 84),
+        ("expected_graph_fingerprint_sha256", "0" * 64),
+        ("dataset_epoch", "kosa_0813"),
+    ):
+        tampered = tmp_path / f"{key}.json"
+        tampered.write_text(
+            json.dumps({**good, key: value}, ensure_ascii=False), encoding="utf-8"
+        )
+        with pytest.raises(master.GraphManifestError):
+            master.validate_generated_artifacts(
+                parsed, cypher_path=cypher, manifest_path=tampered
+            )
+
+
+def test_the_active_manifest_holds_no_secret() -> None:
+    """active manifest에도 secret scan을 돌린다.
+
+    `test_dataset_epoch.py`의 scan은 이름과 달리 **marker에만** 실행된다
+    (구현리뷰 필수 1).
+    """
+
+    import json
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "scripts"))
+    import manifest_v3
+
+    manifest_v3.scan_for_sensitive_values(
+        json.loads(master.GRAPH_MANIFEST_PATH.read_text(encoding="utf-8"))
     )
 
 

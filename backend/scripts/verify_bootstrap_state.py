@@ -1137,7 +1137,6 @@ def verify_neo4j(
         "label_distribution": manifest["label_distribution"],
         "relationship_type_distribution": manifest["relationship_type_distribution"],
         "graph_fingerprint": manifest["expected_graph_fingerprint_sha256"],
-        "schema_fingerprint": marker.get("schema_fingerprint_sha256"),
     }
     actual = {
         "node_count": snapshot.node_count,
@@ -1147,8 +1146,21 @@ def verify_neo4j(
         "label_distribution": dict(sorted(label_counts.items())),
         "relationship_type_distribution": dict(sorted(type_counts.items())),
         "graph_fingerprint": graph_fingerprint,
-        "schema_fingerprint": schema_fingerprint,
     }
+    # **schema fingerprint는 marker 계약에 있을 때만 대조한다.**
+    #
+    # 이 field는 `REPLACED|RESTORED` marker에만 있다.
+    # `APPLIED|ADOPTED_EXISTING|VERIFIED_EXISTING`에는 없으므로 `marker.get()`이
+    # `None`을 내고, 그것을 live sha256과 비교하면 **graph가 정상이어도 readiness가
+    # 항상 실패한다**(계획 §4.5).
+    #
+    # live schema 자체는 `state_reader(..., require_supported_schema=True)`가 모든
+    # status에서 이미 검증한다. 다만 **이 3개 status의 marker는 적용 시점의 schema를
+    # 고정하지 않으므로, 지원 범위 안에서의 schema 변화는 marker 대조로 잡지
+    # 못한다** — 계획 §4.5가 명시한 A안의 한계다.
+    if "schema_fingerprint_sha256" in marker:
+        expected["schema_fingerprint"] = marker["schema_fingerprint_sha256"]
+        actual["schema_fingerprint"] = schema_fingerprint
     forbidden = {"Sensor", "LOCATED_IN", "UPSTREAM_OF", "USED_IN"}
     if actual != expected or forbidden & (set(label_counts) | set(type_counts)):
         raise manifest_v3.ArtifactMismatchError(

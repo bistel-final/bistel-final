@@ -695,7 +695,12 @@ def test_report_contains_no_connection_values() -> None:
     assert report["overall_status"] == verifier.STATUS_PASS
 
 
-def _neo_fixture(monkeypatch: pytest.MonkeyPatch, *, readiness: bool = True) -> None:
+def _neo_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    readiness: bool = True,
+    status: str | None = None,
+) -> None:
     context = SimpleNamespace(
         target=SimpleNamespace(database="neo4j"),
         manifest={
@@ -707,10 +712,13 @@ def _neo_fixture(monkeypatch: pytest.MonkeyPatch, *, readiness: bool = True) -> 
         },
     )
     marker = {
-        "status": "REPLACED" if readiness else "RESTORED",
+        "status": status or ("REPLACED" if readiness else "RESTORED"),
         "actual_graph_fingerprint_sha256": "a" * 64,
-        "schema_fingerprint_sha256": "b" * 64,
     }
+    # **schema fingerprint는 `REPLACED|RESTORED` marker에만 있다.**
+    # 나머지 success status는 이 key 자체가 없다.
+    if marker["status"] in {"REPLACED", "RESTORED"}:
+        marker["schema_fingerprint_sha256"] = "b" * 64
     monkeypatch.setattr(
         verifier.neo4j_bootstrap, "load_context", lambda *_a, **_k: context
     )
@@ -764,6 +772,71 @@ def test_neo4j_verification_uses_read_state_and_fingerprints(
     assert result.status == verifier.STATUS_PASS
     assert result.details["relation_id_count"] == 1
     assert calls == [True]
+
+
+@pytest.mark.parametrize("status", ["APPLIED", "ADOPTED_EXISTING", "VERIFIED_EXISTING"])
+def test_neo4j_success_without_schema_field_still_passes(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    """**계획 §4.5.** schema field가 없는 success status가 readiness를 통과한다.
+
+    이 3개 marker에는 `schema_fingerprint_sha256`이 없다. 그런데 verifier가
+    `marker.get(...)` → `None`을 live sha256과 비교했기 때문에, **graph가 완벽해도
+    readiness가 항상 실패**했다. 공용 graph가 empty·legacy exact·exact-without-marker인
+    정상 분기가 전부 여기 걸렸다.
+    """
+
+    _neo_fixture(monkeypatch, status=status)
+    snapshot = SimpleNamespace(
+        nodes=(SimpleNamespace(label="Parameter"),),
+        relationships=(
+            SimpleNamespace(relation_type="MEASURED_ON", relation_id="REL-1"),
+        ),
+        node_count=1,
+        relationship_count=1,
+        relation_id_duplicates=0,
+    )
+    calls: list[bool] = []
+
+    def read_state(_target: Any, *, require_supported_schema: bool) -> Any:
+        calls.append(require_supported_schema)
+        return snapshot, "b" * 64
+
+    result = verifier.verify_neo4j(
+        archive_path=Path("unused.zip"),
+        environ={},
+        state_reader=read_state,
+    )
+    assert result.status == verifier.STATUS_PASS
+    # **live schema 검증 자체는 건너뛰지 않는다.** marker 대조만 조건부다.
+    assert calls == [True]
+
+
+def test_neo4j_schema_drift_still_fails_when_marker_pins_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """marker가 schema를 고정하는 status에서는 drift가 계속 잡혀야 한다.
+
+    조건부 비교가 `REPLACED|RESTORED`의 방어까지 걷어내면 안 된다.
+    """
+
+    _neo_fixture(monkeypatch, status="REPLACED")
+    snapshot = SimpleNamespace(
+        nodes=(SimpleNamespace(label="Parameter"),),
+        relationships=(
+            SimpleNamespace(relation_type="MEASURED_ON", relation_id="REL-1"),
+        ),
+        node_count=1,
+        relationship_count=1,
+        relation_id_duplicates=0,
+    )
+    with pytest.raises(manifest_v3.ArtifactMismatchError):
+        verifier.verify_neo4j(
+            archive_path=Path("unused.zip"),
+            environ={},
+            # marker는 "b"*64를 고정하는데 live는 다르다.
+            state_reader=lambda *_a, **_k: (snapshot, "c" * 64),
+        )
 
 
 def test_neo4j_restored_marker_is_not_success(
