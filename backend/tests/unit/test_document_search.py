@@ -5,9 +5,13 @@ from re import sub
 from types import SimpleNamespace
 from typing import Any
 
-from app.common.tool_contracts import DocumentHit
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 from app.knowledge import embedding
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.router import router as knowledge_router
 from app.knowledge.router import search_documents as search_documents_api
 from app.knowledge.schemas import DocumentSearchRequest
 from app.knowledge.service import DocumentSearchService
@@ -51,7 +55,7 @@ def test_service_embeds_query_and_returns_document_hits(monkeypatch: Any) -> Non
 
     assert repository.arguments == ([0.1, 0.2], 4, "ET-7500")
     assert hits == [
-        DocumentHit(
+        ToolDocumentHit(
             chunk_id="DOC-SPEC-ET7500:cs1:0001",
             document_id="DOC-SPEC-ET7500",
             title="ET Guide",
@@ -181,7 +185,7 @@ def test_repository_search_without_model_code_searches_all_documents(
     assert connection.closed is True
 
 
-def test_documents_search_api_returns_document_search_response(
+def test_documents_search_api_returns_bare_array_with_doc_id_alias(
     monkeypatch: Any,
 ) -> None:
     class FakePoolFactory:
@@ -198,10 +202,10 @@ def test_documents_search_api_returns_document_search_response(
             *,
             top_k: int,
             model_code: str | None,
-        ) -> list[DocumentHit]:
+        ) -> list[ToolDocumentHit]:
             assert (query, top_k, model_code) == ("check", 4, "ET-7500")
             return [
-                DocumentHit(
+                ToolDocumentHit(
                     chunk_id="DOC-SPEC-ET7500:cs1:0001",
                     document_id="DOC-SPEC-ET7500",
                     title="ET Guide",
@@ -219,14 +223,81 @@ def test_documents_search_api_returns_document_search_response(
         DocumentSearchRequest(query="check", model_code="ET-7500")
     )
 
-    assert response.query == "check"
-    assert response.count == 1
-    assert [hit.model_dump() for hit in response.hits] == [
+    assert [hit.model_dump() for hit in response] == [
         {
             "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
             "document_id": "DOC-SPEC-ET7500",
+            "doc_id": "DOC-SPEC-ET7500",
             "title": "ET Guide",
             "section": "적용 범위",
+            "score": 0.82,
+            "content": "content",
+            "model_code": "ET-7500",
+        }
+    ]
+
+
+def test_documents_search_openapi_response_is_bare_array() -> None:
+    app = FastAPI()
+    app.include_router(knowledge_router)
+
+    schema = app.openapi()["paths"]["/documents/search"]["post"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+
+    assert schema["type"] == "array"
+    assert schema["items"]["$ref"].endswith("/DocumentHit")
+
+
+def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            assert (query, top_k, model_code) == ("check", 4, "ET-7500")
+            return [
+                ToolDocumentHit(
+                    chunk_id="DOC-SPEC-ET7500:cs1:0001",
+                    document_id="DOC-SPEC-ET7500",
+                    title="ET Guide",
+                    score=0.82,
+                    content="content",
+                    model_code="ET-7500",
+                )
+            ]
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.router.DocumentSearchService", FakeService)
+
+    response = TestClient(app).post(
+        "/documents/search",
+        json={"query": "check", "model_code": "ET-7500"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+            "document_id": "DOC-SPEC-ET7500",
+            "doc_id": "DOC-SPEC-ET7500",
+            "title": "ET Guide",
+            "section": None,
             "score": 0.82,
             "content": "content",
             "model_code": "ET-7500",
@@ -249,10 +320,10 @@ def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) ->
             *,
             top_k: int,
             model_code: str | None,
-        ) -> list[DocumentHit]:
+        ) -> list[ToolDocumentHit]:
             assert (query, top_k, model_code) == ("check", 4, "ET-7500")
             return [
-                DocumentHit(
+                ToolDocumentHit(
                     chunk_id="DOC-SPEC-ET7500:cs1:0001",
                     document_id="DOC-SPEC-ET7500",
                     title="ET Guide",
@@ -290,7 +361,7 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
             *,
             top_k: int,
             model_code: str | None,
-        ) -> list[DocumentHit]:
+        ) -> list[ToolDocumentHit]:
             raise RuntimeError("검색 실패")
 
     monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())

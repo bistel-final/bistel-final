@@ -7,12 +7,12 @@ from app.common.schemas import ApiModel
 from app.common.tool_contracts import (
     AreaNode,
     ChamberNode,
-    DocumentHit,
     EquipmentNode,
     GraphRelationRef,
     ParameterNode,
     ProcessStepNode,
 )
+from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 
 
 class DocumentType(StrEnum):
@@ -56,11 +56,19 @@ class DocumentSearchRequest(ApiModel):
     top_k: int = Field(default=4, ge=1, le=10)
 
 
-class DocumentSearchResponse(ApiModel):
-    query: str
-    hits: list[DocumentHit]
-    count: int = Field(ge=0)
+class DocumentHit(ApiModel):
+    chunk_id: NonEmptyId
+    document_id: NonEmptyId
+    doc_id: NonEmptyId
+    title: str = Field(min_length=1)
+    section: str | None = None
+    score: float = Field(ge=-1.0, le=1.0)
+    content: str = Field(min_length=1)
+    model_code: NonEmptyId | None = None
 
+    @classmethod
+    def from_tool_hit(cls, hit: ToolDocumentHit) -> "DocumentHit":
+        return cls(**hit.model_dump(), doc_id=hit.document_id)
 
 
 # ==================

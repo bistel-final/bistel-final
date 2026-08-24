@@ -22,7 +22,10 @@ def get_embedding_model() -> Any:
     load_dotenv(REPOSITORY_ROOT / ".env")
 
     model_id = os.getenv("EMBEDDING_MODEL", EXPECTED_EMBEDDING_MODEL).strip()
-    revision = os.getenv("EMBEDDING_MODEL_REVISION", EXPECTED_EMBEDDING_REVISION).strip()
+    revision = os.getenv(
+        "EMBEDDING_MODEL_REVISION",
+        EXPECTED_EMBEDDING_REVISION,
+    ).strip()
     dimension = int(os.getenv("EMBEDDING_DIM", str(EXPECTED_EMBEDDING_DIMENSION)))
     model_path = os.getenv("EMBEDDING_MODEL_PATH", "backend/model-cache/bge-m3").strip()
 
@@ -31,7 +34,9 @@ def get_embedding_model() -> Any:
     if revision != EXPECTED_EMBEDDING_REVISION:
         raise RuntimeError("EMBEDDING_MODEL_REVISION이 공식 revision과 다릅니다")
     if dimension != EXPECTED_EMBEDDING_DIMENSION:
-        raise RuntimeError(f"EMBEDDING_DIM은 {EXPECTED_EMBEDDING_DIMENSION}이어야 합니다")
+        raise RuntimeError(
+            f"EMBEDDING_DIM은 {EXPECTED_EMBEDDING_DIMENSION}이어야 합니다"
+        )
 
     cache_path = Path(model_path)
     if not cache_path.is_absolute():

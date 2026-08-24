@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from app.common.tool_contracts import (
     AreaNode,
@@ -16,7 +15,7 @@ from app.common.tool_contracts import (
 )
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.embedding import embed_query
-from app.knowledge.graph_query import EquipmentContextRow, GraphQueryRepository
+from app.knowledge.graph_query import GraphQueryRepository
 
 
 # ==================

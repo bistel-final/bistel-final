@@ -50,8 +50,8 @@ from app.detection.schemas import (
 from app.knowledge.schemas import (
     ChamberRelationResponse,
     DocumentDetailResponse,
+    DocumentHit,
     DocumentSearchRequest,
-    DocumentSearchResponse,
 )
 
 NOW = datetime(2026, 8, 4, tzinfo=UTC)
@@ -362,23 +362,18 @@ class TestKnowledgeSchemas:
         with pytest.raises(ValidationError):
             DocumentSearchRequest(query="정비", top_k=top_k)
 
-    def test_document_search_response_wraps_hits_with_count(self) -> None:
-        response = DocumentSearchResponse(
-            query="정비",
-            hits=[
-                {
-                    "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
-                    "document_id": "DOC-SPEC-ET7500",
-                    "title": "ET Guide",
-                    "score": 0.82,
-                    "content": "content",
-                    "model_code": "ET-7500",
-                }
-            ],
-            count=1,
+    def test_document_search_hit_exposes_doc_id_compat_alias(self) -> None:
+        response = DocumentHit(
+            chunk_id="DOC-SPEC-ET7500:cs1:0001",
+            document_id="DOC-SPEC-ET7500",
+            doc_id="DOC-SPEC-ET7500",
+            title="ET Guide",
+            score=0.82,
+            content="content",
+            model_code="ET-7500",
         )
 
-        assert response.count == len(response.hits)
+        assert response.doc_id == response.document_id
 
 
 class TestAgentSchemas:
