@@ -206,6 +206,19 @@ jobs:
           tests/unit/test_reference_extensions_v5_container.py
           -rs --no-header
 
+      # V5-CM-3.2 격리 회귀. 여기서는 **최종 dataset이 필요 없는 catalog 계약 7건**만
+      # 돈다 — SQL이 만드는 catalog와 drift detector가 대상이라 base data가 없어도 된다.
+      #
+      # 선별은 `-k`가 아니라 `_final_archive()`의 skip에 맡긴다. `-k`는 test 이름을
+      # 매칭하므로 fixture 의존을 가려낼 수 없다. runner 경로 17건은 TRACE 138·
+      # SUMMARY 51을 요구하며 아래 fetch 뒤 step이 맡는다.
+      - name: Prove Runtime 002 catalog contracts
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_runtime_v5_container.py
+          -rs --no-header
+
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
       # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
       # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).
@@ -246,16 +259,27 @@ jobs:
           -p no:randomly
           --no-header -rA
 
+      - name: Prove the Runtime 002 runner with the actual final archive
+        if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_runtime_v5_container.py
+          -p no:randomly
+          --no-header -rA
+
       - name: Warn that the three-target transition is unproven
         if: ${{ env.MENTOR_FINAL_ARCHIVE == '' }}
         run: |
           echo "::warning title=3-target 전환 E2E 미검증::MENTOR_FINAL_ARCHIVE가 없어 production entrypoint 3-target 회귀를 실행하지 못했다. repo variable MENTOR_FINAL_ARCHIVE_RELEASE에 최종 ZIP이 붙은 release tag를 설정하라."
           {
-            echo "### ⚠️ 최종 dataset E2E 미검증 (CM-2.6 3-target · CM-3.1 0/189·3/192)"
+            echo "### ⚠️ 최종 dataset E2E 미검증 (CM-2.6 3-target · CM-3.1 0/189·3/192 · CM-3.2 runner)"
             echo
             echo "- CM-2.6 \`test_production_entrypoints_transition_three_targets\`"
             echo "  backup·transition CLI를 둘 다 production \`main()\`으로 완주시키는 유일한 회귀"
             echo "- CM-3.1 최종 ZIP 9 CSV 기반 0/189·3/192·TRACE 138·SUMMARY 51 실증"
+            echo "- CM-3.2 Runtime 002 runner — rehearsal rollback·fresh apply·adopt·no-op과"
+            echo "  final data gate(TRACE 138·SUMMARY 51·null owner 0·R03 0/3) 음성 회귀"
             echo
             echo "archive 없이 도는 회귀는 위 step에서 실행됐다(skip 목록은 \`-rs\` 출력)."
             echo
