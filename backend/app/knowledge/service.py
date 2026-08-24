@@ -78,15 +78,11 @@ class GraphService:
         model_code = _string(row.model, "model_code", row.equipment.get("model_code"))
         equipment_id = _string(row.equipment, "equipment_id")
 
-        equipment = EquipmentNode(
+        equipment = _equipment_node(
+            row.equipment,
             equipment_id=equipment_id,
-            equipment_name=_string(
-                row.equipment,
-                "equipment_name",
-                row.equipment.get("name") or equipment_id,
-            ),
             model_code=model_code,
-            area_id=area_id or _string(row.equipment, "area_id"),
+            area_id=area_id,
             step_id=step_id,
         )
         return EquipmentContext(
@@ -108,39 +104,43 @@ class GraphService:
                 for item in (_step_node(step) for step in row.adjacent_steps)
                 if item
             ],
-            parameters=[
-                ParameterNode(
-                    parameter_id=_string(item, "parameter_id"),
-                    parameter_name=_string(
-                        item,
-                        "parameter_name",
-                        item.get("name") or item.get("parameter_id"),
-                    ),
-                    unit=_string_or_none(item, "unit"),
-                )
-                for item in row.parameters
-            ],
-            relations=[
-                GraphRelationRef(
-                    relation_id=_string(item, "relation_id"),
-                    relation_type=_string(item, "relation_type"),
-                    from_label=_string(item, "from_label"),
-                    from_business_id=_string(item, "from_business_id"),
-                    to_label=_string(item, "to_label"),
-                    to_business_id=_string(item, "to_business_id"),
-                )
-                for item in row.relations
-            ],
+            parameters=[_parameter_node(item) for item in row.parameters],
+            relations=[GraphRelationRef.model_validate(item) for item in row.relations],
             graph_revision=row.graph_revision,
         )
+
+
+def _equipment_node(
+    value: dict[str, object],
+    *,
+    equipment_id: str,
+    model_code: str,
+    area_id: str | None,
+    step_id: str | None,
+) -> EquipmentNode:
+    return EquipmentNode.model_validate(
+        {
+            "equipment_id": equipment_id,
+            "equipment_name": _string(
+                value,
+                "equipment_name",
+                value.get("name") or equipment_id,
+            ),
+            "model_code": model_code,
+            "area_id": area_id or _string(value, "area_id"),
+            "step_id": step_id,
+        }
+    )
 
 
 def _area_node(value: dict[str, object] | None) -> AreaNode | None:
     if not value:
         return None
-    return AreaNode(
-        area_id=_string(value, "area_id"),
-        area_name=_string_or_none(value, "area_name"),
+    return AreaNode.model_validate(
+        {
+            "area_id": _string(value, "area_id"),
+            "area_name": _string_or_none(value, "area_name"),
+        }
     )
 
 
@@ -148,11 +148,13 @@ def _step_node(value: dict[str, object] | None) -> ProcessStepNode | None:
     if not value:
         return None
     step_id = _string(value, "step_id")
-    return ProcessStepNode(
-        step_id=step_id,
-        step_name=_string(value, "step_name", value.get("name") or step_id),
-        step_seq=_int_or_none(value, "step_seq"),
-        layer=_string_or_none(value, "layer"),
+    return ProcessStepNode.model_validate(
+        {
+            "step_id": step_id,
+            "step_name": _string(value, "step_name", value.get("name") or step_id),
+            "step_seq": _int_or_none(value, "step_seq"),
+            "layer": _string_or_none(value, "layer"),
+        }
     )
 
 
@@ -164,13 +166,30 @@ def _chamber_node(
     area_id: str | None,
     step_id: str | None,
 ) -> ChamberNode:
-    return ChamberNode(
-        chamber_id=_string(value, "chamber_id"),
-        equipment_id=equipment_id,
-        chamber_no=_int_or_none(value, "chamber_no"),
-        model_code=model_code,
-        area_id=area_id,
-        step_id=step_id,
+    return ChamberNode.model_validate(
+        {
+            "chamber_id": _string(value, "chamber_id"),
+            "equipment_id": equipment_id,
+            "chamber_no": _int_or_none(value, "chamber_no"),
+            "model_code": model_code,
+            "area_id": area_id,
+            "step_id": step_id,
+        }
+    )
+
+
+def _parameter_node(value: dict[str, object]) -> ParameterNode:
+    parameter_id = _string(value, "parameter_id")
+    return ParameterNode.model_validate(
+        {
+            "parameter_id": parameter_id,
+            "parameter_name": _string(
+                value,
+                "parameter_name",
+                value.get("name") or parameter_id,
+            ),
+            "unit": _string_or_none(value, "unit"),
+        }
     )
 
 
