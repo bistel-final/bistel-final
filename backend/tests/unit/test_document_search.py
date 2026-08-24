@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from app.common.tool_contracts import DocumentHit
-from app.knowledge import document_search
+from app.knowledge import embedding
 from app.knowledge.repository import DocumentSearchRepository, DocumentSearchRow
 from app.knowledge.router import search_documents as search_documents_api
 from app.knowledge.schemas import DocumentSearchRequest
@@ -70,7 +70,7 @@ def test_embedding_model_is_loaded_once_from_local_cache(monkeypatch: Any) -> No
         def __init__(self, model_name: str, *, local_files_only: bool) -> None:
             created.append(f"{model_name}|local={local_files_only}")
 
-    document_search.get_embedding_model.cache_clear()
+    embedding.get_embedding_model.cache_clear()
     monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
     monkeypatch.setenv(
         "EMBEDDING_MODEL_REVISION",
@@ -84,12 +84,12 @@ def test_embedding_model_is_loaded_once_from_local_cache(monkeypatch: Any) -> No
         SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
     )
 
-    first = document_search.get_embedding_model()
-    second = document_search.get_embedding_model()
+    first = embedding.get_embedding_model()
+    second = embedding.get_embedding_model()
 
     assert first is second
-    assert created == [f"{document_search.REPOSITORY_ROOT}|local=True"]
-    document_search.get_embedding_model.cache_clear()
+    assert created == [f"{embedding.REPOSITORY_ROOT}|local=True"]
+    embedding.get_embedding_model.cache_clear()
 
 
 def test_repository_search_uses_current_rag_schema_and_common_filter(

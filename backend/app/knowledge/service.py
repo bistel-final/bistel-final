@@ -14,7 +14,7 @@ from app.common.tool_contracts import (
     ParameterNode,
     ProcessStepNode,
 )
-from app.knowledge.document_search import embed_query
+from app.knowledge.embedding import embed_query
 from app.knowledge.graph_query import EquipmentContextRow, GraphQueryRepository
 
 
