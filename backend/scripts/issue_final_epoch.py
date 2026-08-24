@@ -9,11 +9,14 @@ intake artifact가, 컬럼·행 수·content hash는 `V5-CM-1.3` manifest v4가 
 epoch도 재발급해야 하는 이중 결합이 생긴다(작업계획 결정 7). 무결성은 계약 테스트의
 3자 대조가 맡는다.
 
-이 발급으로 구 epoch `kosa_0813`을 소비하던 파이프라인은
-`manifest_v3.load_dataset_epoch()`의 **키 집합 검사**(`manifest_v3.py:425-438`)에서
-`ManifestSchemaError`로 fail-fast한다.
-그것이 완료 기준 "동시 참조 금지"의 구현이며 의도된 파괴다(팀 결정 2026-08-19).
-격리한 구 epoch artifact는 `infra/bootstrap/history/kosa_0813/`에 있다.
+발급 당시에는 이 artifact가 구 `manifest_v3.load_dataset_epoch()`의 키 집합 검사에
+걸려 `ManifestSchemaError`로 fail-fast했다. 그것이 완료 기준 "동시 참조 금지"의
+구현이었다(팀 결정 2026-08-19).
+
+**`V5-CM-1.8`이 그 전환을 끝냈다.** 이제 `load_dataset_epoch()`가 이 v2 artifact를
+정본으로 읽고, 구 epoch을 담은 payload를 거부한다. 방향이 뒤집혔을 뿐 "한 시점에
+하나의 epoch만 유효하다"는 계약은 그대로다. 격리한 구 epoch artifact는
+`infra/bootstrap/history/kosa_0813/`에 있다.
 
 exit 규약은 `intake_final_zip.py`와 같다 — 0 정상 · 1 기준 불일치 ·
 2 사용법·입출력 오류 · 3 승인 필요.
@@ -260,8 +263,7 @@ def write_artifact(
         return _write("규약 형태로 재작성")
 
     changed = (
-        ", ".join(_changed_keys(existing, payload))
-        or "(최상위 키 동일, 하위 값 상이)"
+        ", ".join(_changed_keys(existing, payload)) or "(최상위 키 동일, 하위 값 상이)"
     )
     if verify_only:
         raise EpochIssueError(

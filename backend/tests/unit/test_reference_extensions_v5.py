@@ -22,9 +22,17 @@ if str(SCRIPTS_ROOT) not in sys.path:
 import apply_reference_extensions_v5 as v5  # noqa: E402
 
 MANIFEST_DIR = REPOSITORY_ROOT / "infra" / "bootstrap" / "manifests"
+#: **구 계보 manifest는 history에 있다.**
+#:
+#: `V5-CM-1.8`이 active를 final로 교체했다. CM-3.1의 migration contract는 "무엇을
+#: 대체했는가"를 기록하므로 그 입력은 정의상 history 계보다. active에서 읽으면
+#: 파일이 없거나(evaluation) final manifest를 대체 대상으로 오인한다(runtime).
+HISTORY_MANIFEST_DIR = (
+    REPOSITORY_ROOT / "infra" / "bootstrap" / "history" / "kosa_0813" / "manifests"
+)
 PROFILE_MANIFESTS = {
-    "runtime": MANIFEST_DIR / "runtime.runtime_clean.json",
-    "evaluation": MANIFEST_DIR / "evaluation.evaluation_mock.json",
+    "runtime": HISTORY_MANIFEST_DIR / "runtime.runtime_clean.json",
+    "evaluation": HISTORY_MANIFEST_DIR / "evaluation.evaluation_mock.json",
 }
 
 
@@ -745,7 +753,8 @@ def test_the_registered_manifest_passes_the_existing_validator(profile: str) -> 
 
     3차·4차에서는 등록본 검증과 최종 epoch 검증을 한 함수에 넣었다. 그런데
     `manifest_v3.DATASET_EPOCH`가 `kosa_0813`이라 최종 epoch을 담은 입력은 예외 없이
-    거부되고, 등록본은 최종 행 수를 갖지 않는다. 두 조건을 동시에 만족하는 입력이
+    거부되고(CM-1.8 이후에는 그 반대로 history 계보가 active 검증에 걸린다), 등록본은
+    최종 행 수를 갖지 않는다. 두 조건을 동시에 만족하는 입력이
     존재하지 않아 **어떤 검사를 지워도 결과가 같은 죽은 gate**가 됐다(변이 Q1~Q12).
     """
 
@@ -756,7 +765,7 @@ def test_the_registered_manifest_passes_the_existing_validator(profile: str) -> 
 
 @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
 def test_the_validator_rejects_what_only_it_can_see(profile: str) -> None:
-    """`validate_manifest_schema()`만 잡는 입력. 다른 guard는 건드리지 않는다."""
+    """history validator만 잡는 입력. 다른 guard는 건드리지 않는다."""
 
     broken = _registered(profile)
     broken["tables"]["dim_parameter"]["verification_policy"] = "anything"
@@ -768,12 +777,25 @@ def test_the_validator_rejects_what_only_it_can_see(profile: str) -> None:
 
 
 def test_the_validator_is_not_reimplemented() -> None:
-    """3차까지 top-level key·secret scan·entry 계약을 직접 구현했고 더 약했다."""
+    """3차까지 top-level key·secret scan·entry 계약을 직접 구현했고 더 약했다.
 
+    **문자열 검색이 아니라 실제 call node를 본다**(구현리뷰 3차 권장 1). 초판은
+    source에 함수명이 있는지만 봐서, 위임 호출을 지워도 docstring에 이름이 남으면
+    계속 green이었다 — `V5-CM-1.8`이 history validator로 바꿨을 때 실제로 그 상태였다.
+    """
+
+    import ast
     import inspect
+    import textwrap
 
-    source = inspect.getsource(v5.assert_registered_manifest_contract)
-    assert "manifest_v3.validate_manifest_schema(" in source
+    tree = ast.parse(
+        textwrap.dedent(inspect.getsource(v5.assert_registered_manifest_contract))
+    )
+    called = {
+        ast.unparse(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
+    }
+
+    assert "manifest_v3.validate_historical_bootstrap_manifest" in called
     # 재구현 흔적이 남아 있으면 안 된다.
     for gone in (
         "MANIFEST_TOP_LEVEL_KEYS",
@@ -783,6 +805,31 @@ def test_the_validator_is_not_reimplemented() -> None:
         "assert_manifest_contract",
     ):
         assert not hasattr(v5, gone), gone
+
+
+def test_the_history_validator_is_actually_invoked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**spy로 실제 호출을 확인한다.**
+
+    AST가 call node를 보긴 하지만 도달 불가 분기에 있을 수도 있다.
+    """
+
+    import manifest_v3
+
+    seen: list[tuple[str, str]] = []
+    real = manifest_v3.validate_historical_bootstrap_manifest
+
+    def spy(manifest, *, profile: str, stage: str) -> None:
+        seen.append((profile, stage))
+        real(manifest, profile=profile, stage=stage)
+
+    monkeypatch.setattr(manifest_v3, "validate_historical_bootstrap_manifest", spy)
+    v5.assert_registered_manifest_contract(
+        _registered("runtime"), profile="runtime", stage="runtime_clean"
+    )
+
+    assert seen == [("runtime", "runtime_clean")]
 
 
 def test_registered_contract_rejects_an_unknown_profile() -> None:
@@ -908,7 +955,8 @@ def test_the_final_fixture_cannot_be_registered_yet() -> None:
     """**두 계약을 동시에 만족하는 manifest는 아직 존재할 수 없다.**
 
     이것이 Gate 2의 실체다. 최종 fixture는 최종 계약을 통과하지만 등록 검증기에는
-    걸린다 — `manifest_v3.DATASET_EPOCH`가 아직 `kosa_0813`이기 때문이다.
+    걸린다 — 최종 fixture는 등록 stage가 요구하는 행 수·계보를 갖지 않기 때문이다.
+    `V5-CM-1.8`이 epoch을 전환한 뒤에도 stage 등록이 남아 있어 이 Gate는 유지된다.
     """
 
     manifest = _final("runtime")
@@ -929,8 +977,13 @@ def test_gate2_blockers_are_enumerated_in_code() -> None:
     assert v5.final_manifest_blockers() == v5.GATE2_BLOCKERS
 
 
-def test_manifest_v3_epoch_still_contradicts_the_registration_file() -> None:
-    """`dataset-epoch.json`은 이미 최종인데 `manifest_v3` 상수는 폐기 계보다."""
+def test_manifest_v3_epoch_now_agrees_with_the_registration_file() -> None:
+    """**`V5-CM-1.8`이 전환을 끝냈다 — 역방향 회귀다**(계획 §3.8).
+
+    CM-3.1은 "`dataset-epoch.json`은 이미 최종인데 `manifest_v3` 상수는 폐기 계보"라는
+    사실을 계약으로 고정했다. 그 전제를 **삭제하지 않고 뒤집는다.** 삭제하면 전환이
+    실제로 끝났다는 사실을 아무도 지키지 않는다.
+    """
 
     import manifest_v3
 
@@ -941,58 +994,61 @@ def test_manifest_v3_epoch_still_contradicts_the_registration_file() -> None:
     )
     assert registration["dataset_epoch"] == v5.FINAL_DATASET_EPOCH
     assert registration["archive"]["sha256"] == v5.FINAL_SOURCE_ARCHIVE_SHA256
-    assert manifest_v3.DATASET_EPOCH == "kosa_0813"
-    assert "MANIFEST_V3_EPOCH_IS_DEPRECATED" in v5.final_manifest_blockers()
+    assert manifest_v3.DATASET_EPOCH == v5.FINAL_DATASET_EPOCH
+    assert manifest_v3.FINAL_ARCHIVE_SHA256 == v5.FINAL_SOURCE_ARCHIVE_SHA256
+    assert "MANIFEST_V3_EPOCH_IS_DEPRECATED" not in v5.final_manifest_blockers()
+
+    # 폐기 epoch은 history 검증에만 남는다 — active 기준에서는 사라졌다.
+    assert manifest_v3.SUPERSEDED_DATASET_EPOCH == "kosa_0813"
 
 
-def test_evaluation_mock_stage_cannot_carry_the_final_action_rows() -> None:
-    """등록된 evaluation stage는 action_history를 MOCK·48행으로 못 박는다.
+def test_the_final_evaluation_stage_carries_the_real_action_rows() -> None:
+    """**역방향 회귀 — 48행 MOCK 특례가 사라졌다.**
 
-    최종 evaluation은 실제 12행이라 같은 stage로 표현할 수 없다. stage를 새로 등록해야
-    하는 두 번째 이유다.
+    CM-3.1은 "등록된 evaluation stage가 `action_history`를 MOCK·48행으로 못 박아 최종
+    12행을 표현할 수 없다"를 blocker로 셌다. `V5-CM-1.8`이 `evaluation_reference`를
+    등록하면서 그 공백이 닫혔다.
+
+    구 stage는 active 등록부에서 사라지고 history 계보로만 남는다.
     """
 
     import manifest_v3
 
-    assert ("evaluation", "evaluation_mock") in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS
-    assert v5.FINAL_ACTION_ROWS["evaluation"] == 12
-    # epoch은 등록부 그대로 두고 action 행 수만 최종값으로 바꾼다. 그래야 이 검사
-    # **하나만** 걸린다 — epoch을 함께 바꾸면 envelope 검사가 먼저 잡아 가려진다.
-    manifest = _registered("evaluation")
-    manifest["tables"]["action_history"]["row_count"] = v5.FINAL_ACTION_ROWS[
-        "evaluation"
+    assert (
+        "evaluation",
+        "evaluation_mock",
+    ) not in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS
+    assert ("evaluation", "evaluation_mock") in manifest_v3.HISTORICAL_CONTRACTS
+
+    contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[
+        ("evaluation", "evaluation_reference")
     ]
-    manifest_v3.validate_manifest_schema(
-        _registered("evaluation"),
-        expected_artifact_type="db_bootstrap",
-        expected_profile="evaluation",
-        expected_stage="evaluation_mock",
-    )
-    with pytest.raises(manifest_v3.ManifestSchemaError):
-        manifest_v3.validate_manifest_schema(
-            manifest,
-            expected_artifact_type="db_bootstrap",
-            expected_profile="evaluation",
-            expected_stage="evaluation_mock",
-        )
-    assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" in v5.final_manifest_blockers()
+    assert contract.action_rows == v5.FINAL_ACTION_ROWS["evaluation"] == 12
+    assert contract.action_fixture_type == "REFERENCE"
+    assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" not in v5.final_manifest_blockers()
+
+    # 등록본(history 계보)은 여전히 48행이며 그 사실은 바뀌지 않는다.
+    assert _registered("evaluation")["tables"]["action_history"]["row_count"] == 48
 
 
-def test_no_v5_final_stage_is_registered_yet() -> None:
-    """**CM-3.1은 최종 profile manifest를 발급할 수 없다.**
+def test_the_v5_final_stage_is_now_registered() -> None:
+    """**역방향 회귀 — `V5-CM-1.8`이 등록을 끝냈다.**
 
-    `applied_migrations`는 `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]`가
-    고정한다. V5 final stage가 그 등록부에 없다. 등록은 predecessor 보완 Task 소관이다
-    (계획 §2.1 3번 · 구현리뷰 Gate 2).
+    CM-3.1은 "V5 final stage가 등록부에 없다"를 계약으로 고정했다. 등록이 predecessor
+    보완 Task 소관이었고, 그 Task가 CM-1.8이다. 삭제하지 않고 뒤집는다.
     """
 
     import manifest_v3
 
-    registered_stages = set(manifest_v3.BOOTSTRAP_STAGE_CONTRACTS)
-    assert ("runtime", v5.MIGRATION_ID) not in registered_stages
-    for (profile, _stage), contract in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS.items():
-        assert v5.MIGRATION_ID not in contract.applied_migrations, profile
-    assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" in v5.final_manifest_blockers()
+    for profile, stage in (
+        ("runtime", "runtime_clean"),
+        ("evaluation", "evaluation_reference"),
+    ):
+        contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
+        assert v5.MIGRATION_ID in contract.applied_migrations, profile
+        assert contract.applied_migrations == v5.PROFILE_MIGRATIONS[profile]
+
+    assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" not in v5.final_manifest_blockers()
 
 
 def test_expected_final_migrations_are_documented_not_enforced_here() -> None:
@@ -1440,7 +1496,9 @@ def test_the_artifact_carries_the_open_blockers() -> None:
 
     artifact = _artifact()
     assert artifact["registration_blockers"] == list(v5.final_manifest_blockers())
-    assert artifact["registration_blockers"]  # 비어 있지 않다
+    # **`V5-CM-1.8`이 5종을 전부 닫았다.** 역방향 회귀다 — 삭제하면 blocker가 다시
+    # 생겨도 아무도 지키지 않는다(계획 §3.8).
+    assert artifact["registration_blockers"] == []
 
 
 def test_the_v4_type_registry_would_reject_the_v5_table() -> None:
@@ -1452,11 +1510,12 @@ def test_the_v4_type_registry_would_reject_the_v5_table() -> None:
 
     import apply_reference_extensions as v4_reference
 
-    v4_columns = v4_reference.EXPECTED_TABLE_COLUMNS[v5.R03_TABLE]
-    # **정적 상수가 실물과 맞는지 여기서만 확인한다**(계획 §7.5-7).
-    assert len(v4_columns) == v5.V4_R03_TYPE_REGISTRY_COLUMNS == 11
+    # 구 V4 registry 자체는 그대로 남는다 — historical stage가 계속 쓴다.
+    assert len(v4_reference.EXPECTED_TABLE_COLUMNS[v5.R03_TABLE]) == 11
     assert len(v5.R03_COLUMNS) == 12
-    assert "V4_R03_TYPE_REGISTRY_STILL_ACTIVE" in v5.final_manifest_blockers()
+    # **`V5-CM-1.8`이 verifier를 V5 12컬럼으로 전환했다.** 역방향 회귀다.
+    assert "V4_R03_TYPE_REGISTRY_STILL_ACTIVE" not in v5.final_manifest_blockers()
+    assert not hasattr(v5, "V4_R03_TYPE_REGISTRY_COLUMNS")
 
 
 # --- artifact 계약 판정 단독 음성 입력 ---
@@ -1633,36 +1692,61 @@ def test_builder_rejects_what_only_the_registered_contract_sees() -> None:
     assert caught.value.reason_code == "MANIFEST_CONTRACT_MISMATCH"
 
 
-def test_builder_rejects_a_manifest_without_the_r03_entry() -> None:
-    without = _registered("runtime")
-    del without["tables"][v5.R03_TABLE]
-    v5.assert_registered_manifest_contract(
-        without, profile="runtime", stage="runtime_clean"
-    )
+# `V5-CM-1.8`이 history manifest의 canonical payload SHA-256을 정본으로 고정하면서,
+# 아래 세 경우는 **builder 안이 아니라 경계에서** 막힌다. 변조된 history manifest를
+# `supersedes` 입력으로 쓸 수 있으면 계보 재현성(NFR-06)이 무너지기 때문이다
+# (구현리뷰 2차 필수 2). 그래서 "builder가 무엇을 거부하는가"에서
+# "변조본이 애초에 builder에 닿지 못한다"로 계약을 옮긴다.
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    [
+        ("R03 entry 삭제", lambda m: m["tables"].pop(v5.R03_TABLE)),
+        (
+            "알 수 없는 R03 계보",
+            lambda m: m["tables"][v5.R03_TABLE].__setitem__(
+                "columns", ["alarm_id", "something_else"]
+            ),
+        ),
+        (
+            "최종 컬럼 목록 주입",
+            lambda m: m["tables"][v5.R03_TABLE].__setitem__(
+                "columns", [name for name, _t, _l, _n in v5.R03_COLUMNS]
+            ),
+        ),
+    ],
+)
+def test_a_tampered_history_manifest_never_reaches_the_builder(
+    label: str, mutate
+) -> None:
+    """**경계에서 막는다.**
+
+    `assert_registered_manifest_contract()`가 payload identity를 보므로 변조본은
+    builder 본문에 도달하지 못한다. 세 경우 모두 같은 이유로 거부된다.
+    """
+
+    tampered = _registered("runtime")
+    mutate(tampered)
+
     with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.build_migration_contract(without, profile="runtime", stage="runtime_clean")
+        v5.assert_registered_manifest_contract(
+            tampered, profile="runtime", stage="runtime_clean"
+        )
     assert caught.value.reason_code == "MANIFEST_CONTRACT_MISMATCH"
 
-
-def test_builder_rejects_an_unknown_r03_column_lineage() -> None:
-    stranger = _registered("runtime")
-    stranger["tables"][v5.R03_TABLE]["columns"] = ["alarm_id", "something_else"]
-    v5.assert_registered_manifest_contract(
-        stranger, profile="runtime", stage="runtime_clean"
-    )
-    with pytest.raises(v5.ReferenceV5Error) as caught:
-        v5.build_migration_contract(stranger, profile="runtime", stage="runtime_clean")
-    assert caught.value.reason_code == "MANIFEST_CONTRACT_MISMATCH"
+    with pytest.raises(v5.ReferenceV5Error):
+        v5.build_migration_contract(tampered, profile="runtime", stage="runtime_clean")
 
 
-def test_builder_accepts_a_final_column_list_as_a_no_op() -> None:
-    already = _registered("runtime")
-    final_columns = [name for name, _t, _l, _n in v5.R03_COLUMNS]
-    already["tables"][v5.R03_TABLE]["columns"] = final_columns
+def test_the_builder_records_the_v4_lineage_from_the_pinned_manifest() -> None:
+    """정본 manifest 하나만 통과하며, 그 R03 계보는 V4다."""
+
     artifact = v5.build_migration_contract(
-        already, profile="runtime", stage="runtime_clean"
+        _registered("runtime"), profile="runtime", stage="runtime_clean"
     )
-    assert artifact["supersedes_r03_columns"] == final_columns
+
+    assert artifact["supersedes_r03_columns"] == v5.V4_R03_COLUMNS
 
 
 def test_builder_revalidates_its_own_output(monkeypatch: Any) -> None:
@@ -1793,15 +1877,30 @@ def test_the_view_hash_does_not_stand_in_for_the_bundle_hash() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_pair_table_matches_the_registered_stage_contracts() -> None:
-    """자유 문자열을 없앤 근거 — 이 표가 실제 등록 조합과 같아야 한다."""
+def test_the_pair_table_matches_the_preserved_history_lineage() -> None:
+    """자유 문자열을 없앤 근거 — 이 표가 **보존된 구 계보**와 같아야 한다.
+
+    `V5-CM-1.8` 전에는 active `BOOTSTRAP_STAGE_CONTRACTS`와 대조했다. 그런데 이 표가
+    가리키는 것은 "무엇을 대체했는가"이므로 active registry가 최종 stage로 재기준화되면
+    그 대조는 성립하지 않는다. 계획 §3.8이 "final active registry에서
+    `evaluation_mock`이 제거되더라도 과거 lineage는 바뀌지 않는다"고 못박은
+    지점이라, 대조 상대를 `HISTORICAL_CONTRACTS`로 옮긴다.
+    """
 
     import manifest_v3
 
-    registered = set(manifest_v3.BOOTSTRAP_STAGE_CONTRACTS)
+    assert dict(v5.SUPERSEDED_STAGE_BY_PROFILE) == dict(manifest_v3.HISTORICAL_STAGES)
     for profile, stage in v5.SUPERSEDED_STAGE_BY_PROFILE.items():
-        assert (profile, stage) in registered, (profile, stage)
+        assert (profile, stage) in manifest_v3.HISTORICAL_CONTRACTS, (profile, stage)
     assert set(v5.SUPERSEDED_STAGE_BY_PROFILE) == set(v5.PROFILE_MIGRATIONS)
+
+    # 신규 final stage는 대체 대상이 아니다. `runtime_clean`은 계획 §2.2대로 **같은
+    # 이름으로 원자 교체**되므로 이름이 겹치는 것이 정상이다 — 구분은 stage 이름이
+    # 아니라 epoch·migration이 한다.
+    assert "evaluation_reference" not in set(v5.SUPERSEDED_STAGE_BY_PROFILE.values())
+    history = manifest_v3.HISTORICAL_CONTRACTS[("runtime", "runtime_clean")]
+    active = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[("runtime", "runtime_clean")]
+    assert history.applied_migrations != active.applied_migrations
 
 
 def test_cross_profile_lineage_is_refused() -> None:
@@ -1911,10 +2010,22 @@ def test_the_text2sql_allowlist_is_still_the_v4_column_set() -> None:
         (MANIFEST_DIR / v5.TEXT2SQL_ALLOWLIST_MANIFEST).read_text(encoding="utf-8")
     )
     columns = manifest["tables"][v5.R03_TABLE]["columns"]
-    assert columns == v5.V4_R03_COLUMNS
-    assert "member_refs" in columns
-    assert "member_wafer_refs" not in columns
-    assert "TEXT2SQL_COLUMN_ALLOWLIST_IS_V4" in v5.final_manifest_blockers()
+
+    # **`V5-CM-1.8`이 active manifest를 V5 12컬럼으로 교체했다.** Text2SQL validator는
+    # 이 파일을 직접 읽으므로 allowlist도 함께 전환됐다 — 별도 코드 변경이 없다.
+    assert columns == [name for name, _t, _l, _x in v5.R03_COLUMNS]
+    assert "member_wafer_refs" in columns
+    assert "member_alarm_refs" in columns
+    assert "member_refs" not in columns
+    assert "TEXT2SQL_COLUMN_ALLOWLIST_IS_V4" not in v5.final_manifest_blockers()
+
+    # 구 계보는 history에 그대로 남는다.
+    history = json.loads(
+        (HISTORY_MANIFEST_DIR / v5.TEXT2SQL_ALLOWLIST_MANIFEST).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert history["tables"][v5.R03_TABLE]["columns"] == v5.V4_R03_COLUMNS
 
 
 def test_the_allowlist_manifest_is_the_one_text2sql_reads() -> None:
@@ -1936,15 +2047,17 @@ def test_cm31_does_not_touch_the_text2sql_allowlist() -> None:
     assert "sql_validator" not in source
 
 
-def test_the_static_blockers_are_declared_not_measured() -> None:
-    """정적 2종은 런타임에 재지 않는다. 제거는 `V5-CM-1.8` 범위다."""
+def test_no_static_blocker_remains() -> None:
+    """**`V5-CM-1.8`이 정적 blocker를 전부 제거했다.**
 
-    assert v5.STATIC_BLOCKERS == (
-        "V4_R03_TYPE_REGISTRY_STILL_ACTIVE",
-        "TEXT2SQL_COLUMN_ALLOWLIST_IS_V4",
-    )
-    assert set(v5.STATIC_BLOCKERS) <= set(v5.GATE2_BLOCKERS)
-    assert v5.final_manifest_blockers()[-2:] == v5.STATIC_BLOCKERS
+    Text2SQL allowlist는 active Runtime manifest가 V5 12컬럼으로 교체되면서 닫혔다.
+    실측하려면 sqlglot이 끌려와 순수 계약 모듈이 깨지므로 상수는 비우고, 실물 대조는
+    테스트가 한다(계획 §7.5-7).
+    """
+
+    assert v5.STATIC_BLOCKERS == ()
+    assert v5.GATE2_BLOCKERS == ()
+    assert v5.final_manifest_blockers() == ()
 
 
 # ---------------------------------------------------------------------------
@@ -5861,3 +5974,195 @@ def test_the_module_still_writes_no_db_record() -> None:
         line for line in source.splitlines() if not line.lstrip().startswith("#")
     )
     assert "COMMENT ON SCHEMA" not in executable
+
+
+# ---------------------------------------------------------------------------
+# blocker gate — 각 profile의 final 계약을 직접 실측한다
+# ---------------------------------------------------------------------------
+
+
+def _swap_stage(monkeypatch, key, contract) -> None:
+    """`BOOTSTRAP_STAGE_CONTRACTS` 한 항목만 바꾸고 원복은 monkeypatch가 한다."""
+
+    import manifest_v3
+
+    replaced = dict(manifest_v3.BOOTSTRAP_STAGE_CONTRACTS)
+    if contract is None:
+        replaced.pop(key, None)
+    else:
+        replaced[key] = contract
+    monkeypatch.setattr(manifest_v3, "BOOTSTRAP_STAGE_CONTRACTS", replaced)
+
+
+def test_the_final_stage_table_matches_the_registry() -> None:
+    """`FINAL_STAGE_BY_PROFILE`이 실제 등록 key와 같아야 한다."""
+
+    import manifest_v3
+
+    for profile, stage in v5.FINAL_STAGE_BY_PROFILE.items():
+        assert (profile, stage) in manifest_v3.BOOTSTRAP_STAGE_CONTRACTS
+    assert set(v5.FINAL_STAGE_BY_PROFILE) == set(v5.PROFILE_MIGRATIONS)
+
+
+def test_removing_the_final_evaluation_stage_reopens_both_blockers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**stage가 통째로 없어도 blocker가 닫혔다**(구현리뷰 4차 필수 2).
+
+    구 계약은 "구 `evaluation_mock`이 존재하면 blocker"라 둘 다 없으면 통과했다.
+    """
+
+    _swap_stage(monkeypatch, ("evaluation", "evaluation_reference"), None)
+    blockers = v5.final_manifest_blockers()
+
+    assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" in blockers
+    assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" in blockers
+
+
+def test_reregistering_the_retired_mock_stage_reopens_the_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import manifest_v3
+
+    _swap_stage(
+        monkeypatch,
+        ("evaluation", "evaluation_mock"),
+        manifest_v3.BootstrapStageContract(
+            "reference_extensions",
+            ("001_reference_extensions",),
+            action_policy="immutable_content",
+            action_rows=48,
+            action_fixture_type="MOCK",
+        ),
+    )
+
+    assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" in v5.final_manifest_blockers()
+
+
+@pytest.mark.parametrize(
+    ("label", "migrations"),
+    [
+        ("비움", ()),
+        ("final migration 삭제", ("002_agent_runtime_clean",)),
+        ("순서 변경", ("002_agent_runtime_clean", v5.MIGRATION_ID)),
+    ],
+)
+@pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+def test_a_broken_migration_list_reopens_the_blocker(
+    monkeypatch: pytest.MonkeyPatch, profile: str, label: str, migrations: tuple
+) -> None:
+    """**Runtime 하나만 성해도 통과했다.**
+
+    `any(... for stage in 전체)`라서 Evaluation migration이 비어도 닫혔다.
+    """
+
+    import manifest_v3
+
+    stage = v5.FINAL_STAGE_BY_PROFILE[profile]
+    current = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
+    if tuple(migrations) == tuple(current.applied_migrations):
+        pytest.skip(f"{profile}는 이 변이가 no-op이다")
+
+    _swap_stage(
+        monkeypatch,
+        (profile, stage),
+        manifest_v3.BootstrapStageContract(
+            current.schema_stage,
+            tuple(migrations),
+            action_policy=current.action_policy,
+            action_rows=current.action_rows,
+            action_fixture_type=current.action_fixture_type,
+        ),
+    )
+
+    assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" in v5.final_manifest_blockers()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_stage", "wrong_stage"),
+        ("applied_migrations", ()),
+        ("applied_migrations", ("001_reference_extensions",)),
+        ("action_policy", "schema_only"),
+        ("action_rows", 99),
+        ("action_fixture_type", "MOCK"),
+        ("action_fixture_type", None),
+        ("action_fixture_type", "REFERENCE"),
+    ],
+)
+@pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+def test_any_final_contract_drift_reopens_a_blocker(
+    monkeypatch: pytest.MonkeyPatch, profile: str, field: str, value: object
+) -> None:
+    """**두 profile을 같은 강도로 본다**(구현리뷰 5차 필수 1).
+
+    Evaluation만 schema·action까지 보고 Runtime은 migration만 보던 비대칭이 있었다.
+    그래서 Runtime을 `action_rows=1`·`fixture_type=REFERENCE`로 잘못 등록해도 blocker가
+    늘지 않았고, 정적 2종을 마저 지우면 빈 tuple이 될 수 있었다.
+    """
+
+    import manifest_v3
+
+    stage = v5.FINAL_STAGE_BY_PROFILE[profile]
+    current = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
+    kwargs = {
+        "schema_stage": current.schema_stage,
+        "applied_migrations": current.applied_migrations,
+        "action_policy": current.action_policy,
+        "action_rows": current.action_rows,
+        "action_fixture_type": current.action_fixture_type,
+    }
+    if kwargs[field] == value:
+        pytest.skip(f"{profile}.{field}는 이 변이가 no-op이다")
+    kwargs[field] = value
+
+    _swap_stage(
+        monkeypatch,
+        (profile, stage),
+        manifest_v3.BootstrapStageContract(**kwargs),
+    )
+    blockers = v5.final_manifest_blockers()
+
+    # **어느 blocker가 떠야 하는지까지 본다.** "정적 2종 외 아무거나"로 두면 evaluation
+    # 전용 검사를 지워도 migration blocker가 대신 떠서 통과한다.
+    assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" in blockers, (profile, field)
+    if profile == "evaluation":
+        # 최종 evaluation stage가 12행 REFERENCE를 표현하지 못한다는 사실은 migration
+        # blocker와 다른 의미다.
+        assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" in blockers, (field, value)
+    else:
+        assert "EVALUATION_MOCK_PINS_48_ACTION_ROWS" not in blockers, (field, value)
+
+
+def test_the_expectation_table_matches_the_registered_contracts() -> None:
+    """기대 표와 실제 등록 계약이 **전체**로 같아야 한다."""
+
+    import manifest_v3
+
+    for profile, expected in v5.FINAL_STAGE_EXPECTATIONS.items():
+        stage = v5.FINAL_STAGE_BY_PROFILE[profile]
+        contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
+        assert v5._stage_shape(contract) == expected, profile
+
+    assert set(v5.FINAL_STAGE_EXPECTATIONS) == set(v5.FINAL_STAGE_BY_PROFILE)
+    assert set(v5.FINAL_STAGE_EXPECTATIONS) == set(v5.PROFILE_MIGRATIONS)
+
+
+def test_the_expectation_table_covers_every_contract_field() -> None:
+    """**field를 나열하지 않았는지 확인한다.**
+
+    `_stage_shape()`가 dataclass의 모든 field를 펴야 새 field가 생겨도 비교에서
+    빠지지 않는다.
+    """
+
+    import dataclasses
+
+    import manifest_v3
+
+    contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[("runtime", "runtime_clean")]
+    field_count = len(dataclasses.fields(contract))
+
+    assert len(v5._stage_shape(contract)) == field_count
+    for expected in v5.FINAL_STAGE_EXPECTATIONS.values():
+        assert len(expected) == field_count

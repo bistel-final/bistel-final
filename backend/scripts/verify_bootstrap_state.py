@@ -24,9 +24,10 @@ from typing import Any
 
 import apply_agent_runtime as agent_runtime
 import apply_reference_extensions as reference_extensions
-import bootstrap_base_schema as base_schema
+import apply_reference_extensions_v5 as reference_v5
 import bootstrap_neo4j_graph as neo4j_bootstrap
 import build_source_manifest_v4 as source_manifest_v4
+import final_profile_manifests as final_manifests
 import intake_final_zip as intake
 import manifest_v3
 from db_target import (
@@ -46,7 +47,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from value_normalization import (
     VALUE_NORMALIZATION_VERSION,
-    column_type_registry,
     logical_type,
     normalize_db_row,
 )
@@ -95,8 +95,13 @@ PK_COLUMNS: dict[str, tuple[str, ...]] = {
 #: `V5-CM-1.6`이 loader를 삭제한 stage. `V5-CM-1.8`이 `evaluation_reference`로 교체한다.
 EVALUATION_MOCK_STAGE = "evaluation_mock"
 IDENTIFIER_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
+#: **transaction의 첫 문장**. `REPEATABLE READ`가 없으면 22 table을 순회하는 동안
+#: 스냅샷이 흔들려, 서로 다른 시점의 행 수·hash를 한 manifest에 섞어 넣게 된다
+#: (`V5-CM-1.8` 계획 §1.2).
+READ_ONLY_TRANSACTION_SQL = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
 READ_ONLY_PREFIXES = (
     "SELECT ",
+    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
     "SET TRANSACTION READ ONLY",
     "SET LOCAL ",
 )
@@ -196,8 +201,9 @@ def verify_files(
     소유다.
     """
 
-    # **`load_dataset_epoch()`을 거치지 않는다.** 그 loader의 v2 전환은 `V5-CM-1.8`
-    # 소관이고, 여기서 필요한 것은 epoch·archive SHA 3자 일치뿐이다(계획 §6.2-4).
+    # **`load_dataset_epoch()`을 거치지 않는다.** `V5-CM-1.8`이 그 loader를 v2로
+    # 전환했지만, 여기서 필요한 것은 세 artifact의 epoch·archive SHA 일치뿐이다.
+    # loader를 태우면 같은 파일을 두 번 읽으면서 검사 주체가 갈린다(계획 §6.2-4).
     epoch = _read_json(
         manifest_v3.DATASET_EPOCH_PATH, missing=manifest_v3.NotRegisteredError
     )
@@ -282,9 +288,176 @@ def _scalar(result: Any) -> Any:
         ) from exc
 
 
+#: 최종 stage 2종. V4 postcheck를 타지 않는다.
+FINAL_STAGES: frozenset[tuple[str, str]] = frozenset(
+    (profile, stage) for profile, stage in reference_v5.FINAL_STAGE_BY_PROFILE.items()
+)
+
+
+def reference_postcheck_routing(profile: str, stage: str) -> str:
+    """stage가 어느 reference postcheck를 타는지 판정한다.
+
+    분기를 함수로 빼는 이유는 **판정 자체를 테스트할 수 있게** 하기 위해서다. 인라인
+    `if`로 두면 routing이 잘못돼도 회귀가 잡지 못한다(구현리뷰 7차 필수 2 · 변이 M41).
+
+    - `final` — CM-3.1의 순수 판정기를 read-only로 재사용한다. **V4
+      `postcheck_database()`를 호출하지 않는다.** 그 경로는 R03 11컬럼·V4 View 계약이라
+      logical type registry만 V5로 바꿔도 final DB가 여기서 실패한다(계획 §3.5).
+    - `v4` — historical stage만 기존 routing을 유지한다.
+    - `none` — `base_schema`는 reference 객체가 아직 없다.
+    """
+
+    if (profile, stage) in FINAL_STAGES:
+        return "final"
+    if stage == "base_schema":
+        return "none"
+    return "v4"
+
+
+def reference_postcheck_mismatches(
+    connection: Any,
+    *,
+    profile: str,
+    stage: str,
+    action_rows_before: int,
+) -> list[dict[str, Any]]:
+    """routing에 따라 **실제로 어느 postcheck를 소비하는지**를 결정한다.
+
+    `verify_database()` 본문에 인라인으로 두면 소비 경계를 회귀가 잡지 못한다 —
+    routing 반환값과 판정기 내부는 각각 통과하므로 `extend(...)` 한 줄을 지워도
+    green이었다(구현리뷰 8차 필수 2).
+    """
+
+    routing = reference_postcheck_routing(profile, stage)
+    if routing == "final":
+        return _final_reference_mismatches(connection)
+    if routing == "none":
+        return []
+    try:
+        reference_extensions.postcheck_database(
+            connection, action_rows_before=action_rows_before
+        )
+    except reference_extensions.ReferenceExtensionError:
+        return [{"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"}]
+    return []
+
+
+def _final_reference_mismatches(connection: Any) -> list[dict[str, Any]]:
+    """final stage의 R03·View 수용 검증. **read-only다.**
+
+    `V5-CM-3.1`이 만든 순수 판정기에 catalog 행을 넘긴다. 판정 규칙을 여기서 다시
+    구현하면 두 경로가 갈린다.
+    """
+
+    mismatches: list[dict[str, Any]] = []
+    try:
+        reference_v5.assert_r03_columns(
+            _rows(
+                _sql(
+                    connection,
+                    reference_v5.R03_COLUMNS_SQL.replace(
+                        "%(table)s", f"'{reference_v5.R03_TABLE}'"
+                    ),
+                )
+            )
+        )
+    except reference_v5.ReferenceV5Error:
+        mismatches.append({"mismatch_kind": "FINAL_R03_CONTRACT"})
+
+    try:
+        reference_v5.assert_r03_constraints(
+            _rows(_sql(connection, reference_v5.R03_CONSTRAINTS_SQL))
+        )
+    except reference_v5.ReferenceV5Error:
+        mismatches.append({"mismatch_kind": "FINAL_R03_CONSTRAINTS"})
+
+    view = reference_v5.ALARM_VIEW
+    try:
+        reference_v5.assert_view_columns(
+            _rows(
+                _sql(
+                    connection,
+                    reference_v5.VIEW_COLUMNS_SQL.replace("%(view)s", f"'{view}'"),
+                )
+            )
+        )
+        definition = _scalar(
+            _sql(
+                connection,
+                reference_v5.VIEW_DEFINITION_SQL.replace("%(view)s", f"'{view}'"),
+            )
+        )
+        reference_v5.assert_view_identity(str(definition))
+    except reference_v5.ReferenceV5Error:
+        mismatches.append({"mismatch_kind": "FINAL_VIEW_CONTRACT"})
+
+    # **comment도 schema identity의 일부다**(계획 §3.5 · 구현리뷰 8차 필수 1).
+    #
+    # CM-3.1은 `assert_canonical_comments()`를 통과해야 schema identity를 발급한다.
+    # 여기서 빠뜨리면 R03 comment가 지워지거나 View에 금지된 comment가 붙어도 final
+    # `verify_database()`가 통과한다. CM-2.6·CM-3.1과 **같은 query 표현**을 쓴다 —
+    # 같은 값을 다르게 읽으면 대조가 무의미하다.
+    try:
+        comments = {
+            str(row["relname"]): row["comment"]
+            for row in _rows(
+                _sql(
+                    connection,
+                    reference_v5.RELATION_SECURITY_SQL,
+                    {"names": [reference_v5.R03_TABLE, view]},
+                )
+            )
+        }
+        reference_v5.assert_canonical_comments(
+            r03_comment=comments.get(reference_v5.R03_TABLE),
+            view_comment=comments.get(view),
+        )
+    except reference_v5.ReferenceV5Error:
+        mismatches.append({"mismatch_kind": "FINAL_COMMENT_CONTRACT"})
+    return mismatches
+
+
+def _final_source_column_types(table: str) -> dict[str, str] | None:
+    """base 9의 logical type은 **source manifest v4**가 정본이다(계획 §3.5-1).
+
+    구 `bootstrap_base_schema.BASE_COLUMNS`는 `wafer` 4곳을 아직 `smallint`로 본다.
+    최종 DDL은 `varchar(24)`이므로 logical type이 `numeric`이 아니라 `text`다. 구
+    registry를 그대로 두면 final DB가 base에서 먼저 실패한다.
+    """
+
+    tables = final_manifests.load_source_manifest()["tables"]
+    entry = tables.get(table)
+    if entry is None:
+        return None
+    column_types = entry.get("column_types")
+    if not isinstance(column_types, dict) or not column_types:
+        raise manifest_v3.ManifestSchemaError(
+            f"{table}: source manifest v4에 column_types가 없습니다"
+        )
+    return dict(column_types)
+
+
 def _expected_column_types(table: str) -> dict[str, str]:
-    if table in base_schema.BASE_COLUMNS:
-        return column_type_registry(base_schema.BASE_COLUMNS[table])
+    """final stage의 logical type 우선순위(계획 §3.5).
+
+    1. base 9 — source manifest v4
+    2. R03 — `apply_reference_extensions_v5.R03_COLUMNS` **12개**
+    3. RAG·`nl_query_log` — 기존 reference registry (**R03는 여기로 내려오지 않는다**)
+    4. Runtime 9 — `apply_agent_runtime.EXPECTED_TABLE_COLUMNS`
+    """
+
+    from_source = _final_source_column_types(table)
+    if from_source is not None:
+        return from_source
+    if table == reference_v5.R03_TABLE:
+        # **V4 11컬럼 registry로 내려가지 않는다.** 순서가 뒤집히면 R03가 구 계약으로
+        # 판정되고 `member_wafer_refs`·`member_alarm_refs`가 사라진다(계획 §3.5-3).
+        # 길이는 logical type에 영향이 없다(`varchar(24)`·`varchar` 모두 `text`).
+        # 되돌리는 helper도 넣어 봤지만 어떤 변이로도 독립적으로 실패하지 않았다.
+        return {
+            name: logical_type(data_type)
+            for name, data_type, _length, _nullable in reference_v5.R03_COLUMNS
+        }
     if table in reference_extensions.EXPECTED_TABLE_COLUMNS:
         columns = reference_extensions.EXPECTED_TABLE_COLUMNS[table]
         return {name: logical_type(data_type) for name, data_type, _nullable in columns}
@@ -423,7 +596,33 @@ def verify_database(
     *,
     environ: Mapping[str, str] | None = None,
     engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
+    candidate: Mapping[str, Any] | None = None,
+    require_runtime_marker: bool = True,
 ) -> CheckResult:
+    """등록 manifest(또는 `candidate`)를 실제 DB와 대조한다.
+
+    **`require_runtime_marker`는 소유권 경계다.** `runtime_clean`의
+    `agent_runtime` marker는 "final migration이 적용됐다"는 **증명서**이고, 그 적용과
+    발급은 `V5-CM-3.2`가 소유한다(`apply_agent_runtime.run_apply`가
+    `FINAL_RUNTIME_MIGRATION_NOT_WIRED`로 그렇게 선언한다).
+
+    `V5-CM-1.8`은 profile manifest의 **내용**(inventory·행 수·content hash·column type·
+    R03/View/comment)이 DB와 맞는지만 판정한다. 둘을 한 함수에 묶어 두면 CM-1.8이
+    CM-3.2의 marker를 기다리고 CM-3.2는 CM-1.8 완료를 기다리는 **순환**이 된다
+    (구현리뷰 12차 필수 2). 물리 DB에는 두 migration이 이미 적용돼 있고 빠진 것은
+    저장소 marker뿐이다.
+
+    **끄는 것은 marker load·SHA 대조뿐이다.** Runtime 물리 postcheck(constraint·index·
+    `PUBLIC` privilege)는 이 flag와 무관하게 항상 수행한다 — 그것까지 끄면 partial
+    index가 없거나 `PUBLIC` 권한이 남은 DB도 final manifest로 등록된다
+    (구현리뷰 13차 필수 1).
+
+    `candidate`를 넘기면 **저장소 등록본 대신 그것을 기준으로** 검증한다. 발급 전
+    후보를 먼저 DB와 맞춰 보기 위한 경로이며(`V5-CM-1.8` 계획 §5 묶음 2-1), 저장소
+    파일을 읽지도 쓰지도 않는다. 후보는 넘기기 전에 이미
+    `manifest_v3.validate_manifest_schema()`를 통과해야 한다 — 여기서 다시 본다.
+    """
+
     if database not in ALLOWED_DATABASES:
         raise manifest_v3.VerificationError("허용되지 않은 PostgreSQL database입니다")
     if stage == EVALUATION_MOCK_STAGE and DATABASE_PROFILE[database] == "evaluation":
@@ -451,8 +650,13 @@ def verify_database(
             },
         )
     profile = DATABASE_PROFILE[database]
-    manifest_path = manifest_v3.resolve_bootstrap_manifest_path(profile, stage)
-    registered = _read_json(manifest_path, missing=manifest_v3.NotRegisteredError)
+    if candidate is None:
+        manifest_path = manifest_v3.resolve_bootstrap_manifest_path(profile, stage)
+        registered = _read_json(manifest_path, missing=manifest_v3.NotRegisteredError)
+    else:
+        # 후보 경로는 저장소를 읽지 않는다. 등록본이 아직 구 계보여도 후보만으로
+        # DB를 대조할 수 있어야 발급 **전** 검증이 성립한다.
+        registered = dict(candidate)
     epoch = manifest_v3.load_dataset_epoch()
     manifest_v3.validate_manifest_schema(
         registered,
@@ -481,7 +685,7 @@ def verify_database(
     engine = engine_factory(target)
     try:
         with engine.connect() as connection, connection.begin():
-            _sql(connection, "SET TRANSACTION READ ONLY")
+            _sql(connection, READ_ONLY_TRANSACTION_SQL)
             _sql(connection, "SET LOCAL search_path = public")
             _sql(connection, "SET LOCAL statement_timeout = '30s'")
             _validate_read_identity(connection, target)
@@ -567,9 +771,16 @@ def verify_database(
                     continue
                 if expected["verification_policy"] == "schema_only":
                     continue
-                selected = ", ".join(f'"{column}"' for column in columns)
+                # **hash는 `content_columns`가 있으면 그 부분집합으로만 낸다.**
+                #
+                # `document.created_at`처럼 두 DB가 독립 적재해 항상 달라지는 컬럼을
+                # 빼기 위해서다. catalog 대조는 위에서 전체 `columns`로 이미 했다
+                # (구현리뷰 16차 필수 1).
+                hashed = list(expected.get("content_columns") or columns)
+                hashed_types = {name: expected_types[name] for name in hashed}
+                selected = ", ".join(f'"{column}"' for column in hashed)
                 values = [
-                    normalize_db_row(row, expected_types)
+                    normalize_db_row(row, hashed_types)
                     for row in _rows(
                         _sql(connection, f'SELECT {selected} FROM "{table}"')
                     )
@@ -596,36 +807,57 @@ def verify_database(
                             expected_policy=expected["verification_policy"],
                         )
                     )
-            if stage != "base_schema":
-                try:
-                    reference_extensions.postcheck_database(
-                        connection,
-                        action_rows_before=row_counts.get("action_history", 0),
-                    )
-                except reference_extensions.ReferenceExtensionError:
-                    mismatches.append({"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"})
+            mismatches.extend(
+                reference_postcheck_mismatches(
+                    connection,
+                    profile=profile,
+                    stage=stage,
+                    action_rows_before=row_counts.get("action_history", 0),
+                )
+            )
             if stage == "runtime_clean":
+                # **물리 postcheck는 항상 한다**(구현리뷰 13차 필수 1).
+                #
+                # `postcheck_database()`는 marker 검사가 아니다 — Runtime 9 table의
+                # constraint·FK·CHECK, index allowlist와 partial index, action/alarm
+                # 불변식, table allowlist, `PUBLIC` privilege 0건을 본다. manifest의
+                # columns/type/row/hash 검증이 대체하지 못하는 축이다. opt-out이
+                # 이것까지 끄면 순환을 끊은 것이 아니라 적용 증명의 절반을 함께
+                # 끈 것이 된다.
+                runtime_result = None
                 try:
-                    runtime_sql, _ = agent_runtime.load_and_validate_sql()
-                    migration_sha = agent_runtime.migration_sha256(runtime_sql)
                     runtime_result = agent_runtime.postcheck_database(
                         connection,
                         alarm_rows_before=agent_runtime.alarm_event_count(connection),
                     )
-                    runtime_marker = agent_runtime.load_marker(
-                        target,
-                        migration_sha=migration_sha,
-                    )
-                    if (
-                        runtime_marker is None
-                        or runtime_marker["schema_signature_sha256"]
-                        != runtime_result.schema_signature_sha256
-                    ):
-                        raise agent_runtime.AgentRuntimeArtifactError(
-                            "runtime marker가 schema와 다릅니다"
-                        )
                 except agent_runtime.AgentRuntimeError:
-                    mismatches.append({"mismatch_kind": "RUNTIME_MARKER"})
+                    mismatches.append({"mismatch_kind": "RUNTIME_SCHEMA"})
+
+                # **SQL load·SHA·marker를 함께 미룬다**(구현리뷰 14차 필수 1).
+                #
+                # `migration_sha`는 marker를 읽을 때만 쓰인다. loader를 flag 앞에 두면
+                # CM-1.8이 CM-3.2 소유 `002_agent_runtime_clean.sql`을 무조건 읽고
+                # 문법·객체 수·guard까지 검증하게 된다 — marker 발급뿐 아니라 그 SHA
+                # 입력 artifact에도 결합된 상태다. "현재 파일이 우연히 유효하다"와
+                # "의존하지 않는다"는 다른 계약이다.
+                if require_runtime_marker and runtime_result is not None:
+                    try:
+                        runtime_sql, _ = agent_runtime.load_and_validate_sql()
+                        migration_sha = agent_runtime.migration_sha256(runtime_sql)
+                        runtime_marker = agent_runtime.load_marker(
+                            target,
+                            migration_sha=migration_sha,
+                        )
+                        if (
+                            runtime_marker is None
+                            or runtime_marker["schema_signature_sha256"]
+                            != runtime_result.schema_signature_sha256
+                        ):
+                            raise agent_runtime.AgentRuntimeArtifactError(
+                                "runtime marker가 schema와 다릅니다"
+                            )
+                    except agent_runtime.AgentRuntimeError:
+                        mismatches.append({"mismatch_kind": "RUNTIME_MARKER"})
             if mismatches:
                 raise AcceptanceMismatchError(
                     "DB acceptance 계약이 다릅니다",

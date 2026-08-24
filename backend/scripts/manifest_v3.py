@@ -1,4 +1,11 @@
-"""kosa_0813 artifact와 bootstrap profile용 manifest v3 계약·검증기."""
+"""최종 epoch artifact와 bootstrap profile용 manifest v3 계약·검증기.
+
+`V5-CM-1.8`이 active 기준을 `fdc_final_20260818`으로 전환했다. 폐기 epoch `kosa_0813`은
+`infra/bootstrap/history/kosa_0813/`에만 남으며, 그 계보를 검증하는 경로는
+`validate_historical_bootstrap_manifest()` **하나**다. active 검증기는 최종 epoch만
+받는다 — 두 epoch을 함께 받는 union 검증을 만들면 구 artifact가 최종 경로로 다시
+흘러든다.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +25,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
-from typing import Any
+from types import MappingProxyType
+from typing import Any, NamedTuple
 
 from value_normalization import VALUE_NORMALIZATION_VERSION
 
@@ -56,6 +64,87 @@ DATASET_EPOCH_ARTIFACT_TYPE = "dataset_epoch_registration"
 #: 폐기 epoch과 그 격리 경로. epoch v2의 `supersedes`가 이 값이어야 한다.
 SUPERSEDED_DATASET_EPOCH = "kosa_0813"
 SUPERSEDED_ISOLATION_ROOT = "infra/bootstrap/history/kosa_0813/"
+
+#: epoch v2의 정본 field. **형식만 보면 다른 패키지를 최종으로 등록할 수 있다**
+#: (구현리뷰 필수 2). 값까지 고정한다.
+FINAL_ARCHIVE_FILENAME = "project.zip"
+FINAL_RECEIVED_DATE = "2026-08-18"
+FINAL_INVENTORY_SCOPE = "selected_source_members"
+FINAL_INTAKE_ARTIFACT = "infra/bootstrap/final-zip-intake.json"
+
+#: 폐기 계보의 archive SHA-256. **history manifest는 이 ZIP에서만 나올 수 있다.**
+#:
+#: epoch 이름만 맞추면 임의의 유효한 64자리 값을 넣은 manifest가 "대체된 계보"로
+#: 통과했다(구현리뷰 필수 1). 계보 재현성(NFR-06)이 깨지는 지점이라 값으로 고정한다.
+SUPERSEDED_ARCHIVE_SHA256 = (
+    "8bbe0bdd646290e2da300db0c293d6775927f61a35375721d4b042b239803c96"
+)
+SUPERSEDED_CORRECTION_VERSION = "corrected-base-v1"
+
+
+#: 폐기 계보의 **불변 계약**. active registry와 완전히 독립이다.
+#:
+#: `V5-CM-1.8`의 후속 구현이 active `evaluation_mock`을 제거하고 `runtime_clean`의
+#: schema/migration을 final 값으로 갱신한다. history 검증이
+#: `BOOTSTRAP_STAGE_CONTRACTS`를 읽으면 **그 순간 과거 manifest를 검증하지 못하게
+#: 된다**(구현리뷰 2차 필수 1). 계획 §3.8이 "final active registry에서
+#: `evaluation_mock`이 제거되더라도 과거 lineage는 바뀌지 않는다"고 못박은 지점이다.
+#:
+#: `payload_sha256`은 canonical JSON(정렬 key·공백 없는 구분자)의 SHA-256이다.
+#: archive 계보만 고정하면 table 삭제·columns 변조·content_hash 변조가 전부 통과한다
+#: (구현리뷰 2차 필수 2).
+class HistoricalStageContract(NamedTuple):
+    schema_stage: str
+    applied_migrations: tuple[str, ...]
+    applies_to: tuple[str, ...]
+    table_count: int
+    payload_sha256: str
+
+
+HISTORICAL_CONTRACTS: Mapping[tuple[str, str], HistoricalStageContract] = (
+    MappingProxyType(
+        {
+            ("runtime", "runtime_clean"): HistoricalStageContract(
+                schema_stage="runtime_clean",
+                applied_migrations=(
+                    "001_reference_extensions",
+                    "002_agent_runtime_clean",
+                ),
+                applies_to=("kosa_agent", "kosa_agent_e2e"),
+                table_count=23,
+                payload_sha256=(
+                    "2d7f94a1e83b966718fb030eabad8fef"
+                    "48718b7ef3acccf6391fc7802ebae2e2"
+                ),
+            ),
+            ("evaluation", "evaluation_mock"): HistoricalStageContract(
+                schema_stage="reference_extensions",
+                applied_migrations=("001_reference_extensions",),
+                applies_to=("kosa_text2sql",),
+                table_count=14,
+                payload_sha256=(
+                    "816a3bd810bff16960f7926aba668c0f"
+                    "9db10d062f526a499976c5ab5e965405"
+                ),
+            ),
+        }
+    )
+)
+
+#: history 검증이 허용하는 **정확한 (profile, stage) 쌍**.
+HISTORICAL_STAGES: Mapping[str, str] = MappingProxyType(
+    {profile: stage for profile, stage in HISTORICAL_CONTRACTS}
+)
+
+
+def canonical_payload_sha256(payload: Mapping[str, Any]) -> str:
+    """artifact 전체의 canonical JSON SHA-256."""
+
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
 
 EXIT_OK = 0
 EXIT_MISMATCH = 1
@@ -260,17 +349,36 @@ PROFILE_APPLIES_TO: dict[str, tuple[str, ...]] = {
 class BootstrapStageContract:
     schema_stage: str
     applied_migrations: tuple[str, ...]
+    #: `action_history`의 검증 정책·행 수·fixture 표기.
+    #:
+    #: **stage마다 다르므로 계약에 둔다.** 예전에는 `_validate_db_tables()` 본문이
+    #: `("evaluation", "evaluation_mock")`을 이름으로 분기해 48행·MOCK을 못 박았다.
+    #: `V5-CM-1.8`이 `evaluation_reference`(12행·REFERENCE)를 등록하면서 그 하드코딩이
+    #: 새 stage를 표현하지 못하게 됐다.
+    action_policy: str = "bootstrap_empty"
+    action_rows: int = 0
+    action_fixture_type: str | None = None
 
+
+#: `V5-CM-1.8`이 등록하는 최종 migration. `apply_reference_extensions_v5.MIGRATION_ID`와
+#: 같은 값이며 회귀가 두 상수를 대조한다.
+FINAL_MIGRATION_ID = "v5_001_reference_extensions_final"
 
 BOOTSTRAP_STAGE_CONTRACTS: dict[tuple[str, str], BootstrapStageContract] = {
     ("runtime", "base_schema"): BootstrapStageContract("base", ()),
     ("evaluation", "base_schema"): BootstrapStageContract("base", ()),
-    ("evaluation", "evaluation_mock"): BootstrapStageContract(
-        "reference_extensions", ("001_reference_extensions",)
-    ),
     ("runtime", "runtime_clean"): BootstrapStageContract(
         "runtime_clean",
-        ("001_reference_extensions", "002_agent_runtime_clean"),
+        (FINAL_MIGRATION_ID, "002_agent_runtime_clean"),
+    ),
+    # **최종 evaluation stage.** 구 `evaluation_mock`의 48행 MOCK 특례를 재사용하지
+    # 않는다. 최종 `action_history`는 실제 12행이며 `fixture_type=REFERENCE`다.
+    ("evaluation", "evaluation_reference"): BootstrapStageContract(
+        "reference_final",
+        (FINAL_MIGRATION_ID,),
+        action_policy="immutable_content",
+        action_rows=12,
+        action_fixture_type="REFERENCE",
     ),
 }
 BOOTSTRAP_MANIFEST_REGISTRY: dict[tuple[str, str], Path] = {
@@ -297,6 +405,15 @@ class ManifestMetadataError(VerificationError):
 class ManifestSchemaError(VerificationError):
     exit_code = EXIT_SCHEMA
     code = "INVALID_SCHEMA"
+
+
+class RetiredSourcePathError(VerificationError):
+    """구 epoch 전용 경로를 최종 epoch에서 호출했다.
+
+    `V5-CM-1.8`이 active 기준을 최종 epoch v2로 옮기면서 v1 `file_inventory`를 전제한
+    source 경로가 성립하지 않게 됐다. 물리 삭제는 `V5-CM-1.7` 소관이므로 여기서는
+    **fail-closed**로만 막는다(계획 §3.1).
+    """
 
 
 class NotRegisteredError(VerificationError):
@@ -434,13 +551,34 @@ def _is_nonnegative_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def _require_relative_path(value: Any, *, context: str) -> str:
-    """저장소 상대 경로만 받는다. 절대경로·`..`는 거부한다."""
+#: 저장소 상대 경로로 받아들일 수 있는 문자. allowlist로 판정한다.
+#:
+#: **blocklist는 계속 새는 것이 확인됐다**(구현리뷰 필수 2).
+#: `PurePosixPath(...).parts`만 보면 POSIX `../`만 잡혀서
+#: `..\secret.json`·`postgresql://user:pass@host/db`·
+#: `file:///etc/passwd`가 모두 통과했다. 앞의 둘은 Windows 개발자 환경에서 실제
+#: traversal이고, 둘째는 epoch artifact에 credential을 담는 길이다.
+#: 끝의 `/`는 디렉터리 표기라 허용한다 — `supersedes.isolated_to`가 그 형태다.
+_RELATIVE_PATH_PATTERN = re.compile(
+    r"^[A-Za-z0-9._][A-Za-z0-9._-]*(/[A-Za-z0-9._-]+)*/?$"
+)
 
+
+def _require_relative_path(value: Any, *, context: str) -> str:
+    """저장소 상대 경로만 받는다.
+
+    URI scheme·userinfo·drive·UNC·절대경로·`..`를 모두 거부한다.
+
+    판정은 **문자 allowlist**다. 역슬래시가 allowlist에 없으므로 Windows 구분자를 쓴
+    traversal도 별도 정규화 없이 거부된다 — 정규화 코드도 넣어 봤지만 allowlist가
+    이미 전부를 덮어 어떤 변이로도 독립적으로 실패하지 않았다.
+    """
+
+    if not isinstance(value, str) or not value:
+        raise ManifestSchemaError(f"{context}는 저장소 상대 경로여야 합니다")
     if (
-        not isinstance(value, str)
-        or not value
-        or _is_absolute_path(value)
+        _is_absolute_path(value)
+        or not _RELATIVE_PATH_PATTERN.fullmatch(value)
         or ".." in PurePosixPath(value).parts
     ):
         raise ManifestSchemaError(f"{context}는 저장소 상대 경로여야 합니다")
@@ -488,10 +626,22 @@ def load_dataset_epoch(path: Path = DATASET_EPOCH_PATH) -> dict[str, Any]:
     if archive["sha256"] != FINAL_ARCHIVE_SHA256:
         # 여기서 막지 않으면 다른 ZIP으로 만든 manifest가 최종으로 등록된다.
         raise ManifestMetadataError("dataset epoch archive가 최종 ZIP이 아닙니다")
+    if archive["filename"] != FINAL_ARCHIVE_FILENAME:
+        raise ManifestMetadataError("dataset epoch archive filename이 정본이 아닙니다")
 
+    # **정본값까지 고정한다.** 형식만 보면 다른 패키지·다른 수령일을 담은 artifact가
+    # 최종으로 통과한다(구현리뷰 필수 2).
     _require_relative_path(epoch["intake_artifact"], context="intake_artifact")
-    if not isinstance(epoch["inventory_scope"], str) or not epoch["inventory_scope"]:
-        raise ManifestSchemaError("dataset epoch inventory_scope가 비어 있습니다")
+    if epoch["intake_artifact"] != FINAL_INTAKE_ARTIFACT:
+        raise ManifestMetadataError("dataset epoch intake_artifact가 정본이 아닙니다")
+    if epoch["received_date"] != FINAL_RECEIVED_DATE:
+        raise ManifestMetadataError("dataset epoch received_date가 정본이 아닙니다")
+    if epoch["inventory_scope"] != FINAL_INVENTORY_SCOPE:
+        raise ManifestMetadataError("dataset epoch inventory_scope가 정본이 아닙니다")
+
+    # secret scan을 여기 두지 않는다. v2의 8개 key가 모두 정본 상수로 고정돼 있어
+    # 임의 문자열을 담을 자리가 없고, 실제로 어떤 변이로도 scan만 단독으로 실패하지
+    # 않았다. 자리가 생기면(새 key 추가) 그때 함께 넣는다.
 
     superseded = epoch["supersedes"]
     if not isinstance(superseded, dict):
@@ -603,6 +753,27 @@ def parse_csv_bytes(
 def build_source_manifest(
     archive_path: Path, *, epoch_path: Path = DATASET_EPOCH_PATH
 ) -> dict[str, Any]:
+    """**최종 epoch에서는 호출할 수 없다.**
+
+    이 함수는 epoch v1의 `file_inventory`로 ZIP member를 대조하고
+    `source-data-manifest.json`을 만들던 경로다. 최종 epoch v2는 member 목록을
+    `intake_artifact`가 가리키는 별도 artifact에 위임하고, source manifest 정본은
+    `V5-CM-1.3`·`V5-CM-1.4`의 `build_source_manifest_v4`가
+    `infra/bootstrap/source-manifest-v4.json`으로 발급한다.
+
+    조용히 통과시키면 구 경로가 최종 artifact를 v1 source inventory로 **오독**한다.
+    """
+
+    raise RetiredSourcePathError(
+        "source manifest 발급은 build_source_manifest_v4가 소유합니다",
+    )
+
+
+def _build_source_manifest_v1(
+    archive_path: Path, *, epoch_path: Path = DATASET_EPOCH_PATH
+) -> dict[str, Any]:
+    """구 v1 구현. 호출자는 없으며 `V5-CM-1.7`이 물리 삭제한다."""
+
     epoch = load_dataset_epoch(epoch_path)
     contents = verify_archive_inventory(archive_path, epoch)
     tables = {}
@@ -639,15 +810,49 @@ def build_source_manifest(
     return manifest
 
 
+def validate_historical_bootstrap_manifest(
+    manifest: Mapping[str, Any], *, profile: str, stage: str
+) -> None:
+    """**대체된 구 계보 `db_bootstrap` manifest 전용 검증기.**
+
+    `V5-CM-1.8`이 active를 최종 epoch으로 올린 뒤, `V5-CM-3.1`의 migration contract는
+    "무엇을 대체했는가"를 기록하려고 여전히 구 manifest를 입력으로 받는다. 그 입력은
+    정의상 active validator를 통과할 수 없다.
+
+    **`BOOTSTRAP_STAGE_CONTRACTS`를 읽지 않는다.** 이 Task의 후속 구현이 active
+    `evaluation_mock`을 제거하고 `runtime_clean`을 final 값으로 갱신하는데, active
+    registry를 조회하면 그 순간 과거 manifest를 검증하지 못하게 된다
+    (구현리뷰 2차 필수 1). 계약은 `HISTORICAL_CONTRACTS`가 독립적으로 소유한다.
+
+    검사는 **두 개뿐이다.** history manifest는 이미 발급이 끝난 불변 artifact이므로
+    "정본과 같은가"가 곧 전부다. epoch·archive SHA·envelope·table 수를 따로 비교하는
+    코드도 넣어 봤지만, canonical payload SHA-256이 그 전부를 포함해 어떤 변이로도
+    독립적으로 실패하지 않았다 — 검증되지 않는 검사는 조용히 썩는다. 계보의 개별
+    사실은 `HISTORICAL_CONTRACTS` 상수와 그 짝 회귀가 실물 파일과 대조해 지킨다.
+    """
+
+    contract = HISTORICAL_CONTRACTS.get((profile, stage))
+    if contract is None:
+        raise ManifestMetadataError("history 계보에 없는 profile/stage 조합입니다")
+    if canonical_payload_sha256(manifest) != contract.payload_sha256:
+        raise ManifestMetadataError("history manifest payload가 정본과 다릅니다")
+
+
 def _validate_common_envelope(
-    manifest: Mapping[str, Any], *, expected_artifact_type: str
+    manifest: Mapping[str, Any],
+    *,
+    expected_artifact_type: str,
+    expected_dataset_epoch: str = DATASET_EPOCH,
 ) -> None:
     if manifest.get("format_version") != MANIFEST_FORMAT_VERSION:
         raise ManifestMetadataError("manifest format_version이 3이 아닙니다")
     artifact_type = manifest.get("artifact_type")
     if artifact_type not in ARTIFACT_TYPES or artifact_type != expected_artifact_type:
         raise ManifestMetadataError("manifest artifact_type이 요청과 다릅니다")
-    if manifest.get("dataset_epoch") != DATASET_EPOCH:
+    if expected_dataset_epoch not in {DATASET_EPOCH, SUPERSEDED_DATASET_EPOCH}:
+        # 임의 문자열을 기대 epoch으로 받으면 검증이 무의미해진다.
+        raise ManifestMetadataError("검증 가능한 dataset epoch이 아닙니다")
+    if manifest.get("dataset_epoch") != expected_dataset_epoch:
         raise ManifestMetadataError("manifest dataset_epoch가 현재 기준과 다릅니다")
     if manifest.get("hash_algorithm") != HASH_ALGORITHM:
         raise ManifestMetadataError("manifest hash_algorithm이 현재 계약과 다릅니다")
@@ -725,11 +930,47 @@ def _validate_file_tables(
         _require_sha256(entry["content_hash"], context=f"{table}.content_hash")
 
 
+def _validate_content_columns(
+    entry: Mapping[str, Any], *, table: str, policy: str
+) -> None:
+    """`content_columns`는 hash 대상 **부분집합**이다.
+
+    `document.created_at`은 적재 시각(`now()`)이라 두 Runtime DB가 독립 적재하는 한
+    항상 다르다. 그렇다고 그 table을 `schema_only`로 두면 3행이 0행이 돼도, 업무
+    컬럼이 변조돼도 검증이 통과한다 — 검증을 없애는 것이지 해결이 아니다
+    (구현리뷰 16차 필수 1).
+
+    그래서 catalog 전체 `columns`는 그대로 두고, hash는 선언된 부분집합으로만 계산한다.
+    verifier도 같은 목록으로 `SELECT`한다.
+    """
+
+    if "content_columns" not in entry:
+        return
+    if policy != "immutable_content":
+        raise ManifestSchemaError(
+            f"{table}: content_columns는 immutable_content에만 허용됩니다"
+        )
+    content_columns = entry["content_columns"]
+    _validate_columns(content_columns, context=f"{table}.content_columns")
+    columns = list(entry["columns"])
+    if not set(content_columns) <= set(columns):
+        raise ManifestSchemaError(
+            f"{table}: content_columns가 columns의 부분집합이 아닙니다"
+        )
+    if list(content_columns) != [c for c in columns if c in set(content_columns)]:
+        # 순서가 다르면 같은 내용에서 다른 hash가 나온다.
+        raise ManifestSchemaError(f"{table}: content_columns 순서가 columns와 다릅니다")
+    if len(content_columns) == len(columns):
+        # 전체와 같으면 이 field가 있을 이유가 없다.
+        raise ManifestSchemaError(f"{table}: content_columns가 columns와 같습니다")
+
+
 def _validate_db_tables(tables: Any, *, profile: str, stage: str) -> None:
     if not isinstance(tables, dict) or not tables:
         raise ManifestSchemaError(
             "db_bootstrap tables는 비어 있지 않은 object여야 합니다"
         )
+    contract = BOOTSTRAP_STAGE_CONTRACTS.get((profile, stage))
     allowed_policies = {"immutable_content", "bootstrap_empty", "schema_only"}
     for table, entry in tables.items():
         if not isinstance(table, str) or not table or not isinstance(entry, dict):
@@ -742,8 +983,11 @@ def _validate_db_tables(tables: Any, *, profile: str, stage: str) -> None:
             required |= {"row_count", "content_hash"}
         if "fixture_type" in entry:
             required.add("fixture_type")
+        if "content_columns" in entry:
+            required.add("content_columns")
         _require_exact_keys(entry, required, context=f"{table} entry")
         _validate_columns(entry["columns"], context=table)
+        _validate_content_columns(entry, table=table, policy=policy)
         if policy in {"immutable_content", "bootstrap_empty"}:
             if not _is_nonnegative_int(entry["row_count"]):
                 raise ManifestSchemaError(f"{table}: row_count가 잘못됐습니다")
@@ -754,11 +998,11 @@ def _validate_db_tables(tables: Any, *, profile: str, stage: str) -> None:
             _require_sha256(entry["content_hash"], context=f"{table}.content_hash")
         if "fixture_type" in entry and (
             table != "action_history"
-            or (profile, stage) != ("evaluation", "evaluation_mock")
-            or entry["fixture_type"] != "MOCK"
+            or contract is None
+            or entry["fixture_type"] != contract.action_fixture_type
         ):
             raise ManifestSchemaError(
-                "fixture_type=MOCK은 evaluation_mock action_history에만 허용됩니다"
+                "fixture_type은 해당 stage의 action_history에만 허용됩니다"
             )
         if table in SCHEMA_ONLY_TABLES and policy != "schema_only":
             raise ManifestSchemaError(
@@ -768,23 +1012,17 @@ def _validate_db_tables(tables: Any, *, profile: str, stage: str) -> None:
     action = tables.get("action_history")
     if action is None:
         raise ManifestSchemaError("db_bootstrap에는 action_history 기준이 필요합니다")
-    if (profile, stage) == ("evaluation", "evaluation_mock"):
-        if (
-            action.get("verification_policy") != "immutable_content"
-            or action.get("row_count") != 48
-            or action.get("fixture_type") != "MOCK"
-        ):
-            raise ManifestSchemaError(
-                "evaluation_mock action_history는 MOCK immutable 48행이어야 합니다"
-            )
-    elif (
-        action.get("verification_policy") != "bootstrap_empty"
-        or action.get("row_count") != 0
-        or "fixture_type" in action
+    if contract is None:
+        raise ManifestMetadataError("허용되지 않은 profile/bootstrap_stage 조합입니다")
+    # `.get()`으로 비교하면 `fixture_type: null`과 key 부재가 같아진다.
+    has_fixture = "fixture_type" in action
+    if (
+        action.get("verification_policy") != contract.action_policy
+        or action.get("row_count") != contract.action_rows
+        or has_fixture != (contract.action_fixture_type is not None)
+        or (has_fixture and action["fixture_type"] != contract.action_fixture_type)
     ):
-        raise ManifestSchemaError(
-            "evaluation_mock 외 stage의 action_history는 fixture 없는 0행이어야 합니다"
-        )
+        raise ManifestSchemaError("action_history가 해당 stage의 계약과 다릅니다")
 
 
 def _validate_db_envelope(
@@ -840,7 +1078,13 @@ def validate_manifest_schema(
     expected_stage: str | None = None,
     expected_archive_sha256: str | None = None,
 ) -> None:
-    """artifact를 외부 입력/DB 접근 전에 extra-forbid 방식으로 검증한다."""
+    """artifact를 외부 입력/DB 접근 전에 extra-forbid 방식으로 검증한다.
+
+    **active epoch 전용이다.** history 계보 검증은
+    `validate_historical_bootstrap_manifest()`가 별도로 소유한다 — generic validator에
+    epoch 인자를 열어 두면 어떤 artifact type이든 구 epoch으로 통과시킬 수 있다
+    (구현리뷰 필수 1).
+    """
     _scan_for_sensitive_values(manifest)
     artifact_keys = {
         "source_files": COMMON_ENVELOPE_KEYS | {"tables"},
