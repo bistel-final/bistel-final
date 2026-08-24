@@ -50,6 +50,7 @@ from app.detection.schemas import (
 from app.knowledge.schemas import (
     ChamberRelationResponse,
     DocumentDetailResponse,
+    DocumentHit,
     DocumentSearchRequest,
 )
 
@@ -360,6 +361,19 @@ class TestKnowledgeSchemas:
     def test_document_search_top_k_constraint(self, top_k: int) -> None:
         with pytest.raises(ValidationError):
             DocumentSearchRequest(query="정비", top_k=top_k)
+
+    def test_document_search_hit_exposes_doc_id_compat_alias(self) -> None:
+        response = DocumentHit(
+            chunk_id="DOC-SPEC-ET7500:cs1:0001",
+            document_id="DOC-SPEC-ET7500",
+            doc_id="DOC-SPEC-ET7500",
+            title="ET Guide",
+            score=0.82,
+            content="content",
+            model_code="ET-7500",
+        )
+
+        assert response.doc_id == response.document_id
 
 
 class TestAgentSchemas:

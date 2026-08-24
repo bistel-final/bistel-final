@@ -1,51 +1,80 @@
-"""문서 검색용 BGE-M3 query embedding lifecycle을 관리한다."""
+"""Knowledge RAG 문서 검색 Repository."""
 
 from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
-from dotenv import load_dotenv
-
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-EXPECTED_EMBEDDING_MODEL = "BAAI/bge-m3"
-EXPECTED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
-EXPECTED_EMBEDDING_DIMENSION = 1024
+from pgvector.psycopg import register_vector
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 
-@lru_cache(maxsize=1)
-def get_embedding_model() -> Any:
-    """현재 API process에서 BGE-M3 모델을 한 번만 생성한다."""
-
-    load_dotenv(REPOSITORY_ROOT / ".env")
-
-    model_id = os.getenv("EMBEDDING_MODEL", EXPECTED_EMBEDDING_MODEL).strip()
-    revision = os.getenv("EMBEDDING_MODEL_REVISION", EXPECTED_EMBEDDING_REVISION).strip()
-    dimension = int(os.getenv("EMBEDDING_DIM", str(EXPECTED_EMBEDDING_DIMENSION)))
-    model_path = os.getenv("EMBEDDING_MODEL_PATH", "backend/model-cache/bge-m3").strip()
-
-    if model_id != EXPECTED_EMBEDDING_MODEL:
-        raise RuntimeError(f"EMBEDDING_MODEL은 {EXPECTED_EMBEDDING_MODEL}이어야 합니다")
-    if revision != EXPECTED_EMBEDDING_REVISION:
-        raise RuntimeError("EMBEDDING_MODEL_REVISION이 공식 revision과 다릅니다")
-    if dimension != EXPECTED_EMBEDDING_DIMENSION:
-        raise RuntimeError(f"EMBEDDING_DIM은 {EXPECTED_EMBEDDING_DIMENSION}이어야 합니다")
-
-    cache_path = Path(model_path)
-    if not cache_path.is_absolute():
-        cache_path = REPOSITORY_ROOT / cache_path
-    if not cache_path.exists():
-        raise RuntimeError(f"임베딩 모델 캐시 경로가 없습니다: {cache_path}")
-
-    from sentence_transformers import SentenceTransformer
-
-    return SentenceTransformer(str(cache_path), local_files_only=True)
+def _format_vector(values: Sequence[float]) -> str:
+    return "[" + ",".join(str(float(value)) for value in values) + "]"
 
 
-def embed_query(query: str) -> list[float]:
-    """검색 Query를 정규화된 1024차원 BGE-M3 vector로 변환한다."""
+class DocumentSearchRepository:
+    """runtime ``kosa_agent``의 pgvector RAG chunk를 cosine distance로 검색한다."""
 
-    vector = get_embedding_model().encode([query], normalize_embeddings=True)[0]
-    return [float(value) for value in vector]
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        top_k: int = 4,
+        model_code: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT c.chunk_id,
+                   d.doc_id AS document_id,
+                   d.title,
+                   c.section_title AS section,
+                   1 - (c.embedding <=> CAST(:query_vector AS vector)) AS score,
+                   c.content,
+                   d.model_code
+              FROM document_chunk c
+              JOIN document d ON d.doc_id = c.doc_id
+             WHERE c.embedding IS NOT NULL
+        """
+        params: dict[str, object] = {
+            "query_vector": _format_vector(query_vector),
+            "top_k": top_k,
+        }
+
+        if model_code is not None:
+            sql += """
+               AND (d.model_code = :model_code OR d.model_code = 'COMMON')
+            """
+            params["model_code"] = model_code
+
+        sql += """
+             ORDER BY c.embedding <=> CAST(:query_vector AS vector),
+                      d.doc_id ASC,
+                      c.chunk_id ASC
+             LIMIT :top_k
+        """
+
+        connection = self._engine.connect()
+        try:
+            register_vector(connection.connection.driver_connection)
+            rows = connection.execute(text(sql), params).mappings().all()
+        finally:
+            connection.close()
+
+        return [
+            {
+                "chunk_id": str(row["chunk_id"]),
+                "document_id": str(row["document_id"]),
+                "title": str(row["title"]),
+                "section": str(row["section"]) if row["section"] is not None else None,
+                "score": float(row["score"]),
+                "content": str(row["content"]),
+                "model_code": (
+                    str(row["model_code"]) if row["model_code"] is not None else None
+                ),
+            }
+            for row in rows
+        ]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
 
 from app.common.tool_contracts import (
     AreaNode,
@@ -14,25 +13,18 @@ from app.common.tool_contracts import (
     ParameterNode,
     ProcessStepNode,
 )
-from app.knowledge.document_search import embed_query
-from app.knowledge.graph_query import EquipmentContextRow, GraphQueryRepository
+from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.embedding import embed_query
+from app.knowledge.graph_query import GraphQueryRepository
 
 
-class DocumentRepository(Protocol):
-    def search(
-        self,
-        query_vector: list[float],
-        *,
-        top_k: int,
-        model_code: str | None,
-    ) -> list[Any]:
-        ...
-
-
+# ==================
+# 문서 RAG
+# ==================
 class DocumentSearchService:
     """API와 Tool이 공유하는 문서 검색 application service."""
 
-    def __init__(self, repository: DocumentRepository) -> None:
+    def __init__(self, repository: DocumentSearchRepository) -> None:
         self._repository = repository
 
     def search(
@@ -42,31 +34,22 @@ class DocumentSearchService:
         top_k: int = 4,
         model_code: str | None = None,
     ) -> list[DocumentHit]:
+        normalized_model_code = (
+            model_code.strip().upper() if model_code and model_code.strip() else None
+        )
+
         query_vector = embed_query(query)
         rows = self._repository.search(
             query_vector,
             top_k=top_k,
-            model_code=model_code,
+            model_code=normalized_model_code,
         )
-        return [
-            DocumentHit(
-                chunk_id=row.chunk_id,
-                document_id=row.document_id,
-                title=row.title,
-                section=row.section,
-                score=row.score,
-                content=row.content,
-                model_code=row.model_code,
-            )
-            for row in rows
-        ]
+        return [DocumentHit.model_validate(row) for row in rows]
 
 
-class GraphContextRepository(Protocol):
-    def get_equipment_context(self, chamber_id: str) -> EquipmentContextRow | None:
-        ...
-
-
+# ==================
+# Graph
+# ==================
 @dataclass(frozen=True)
 class EquipmentContext:
     equipment: EquipmentNode
@@ -82,7 +65,7 @@ class EquipmentContext:
 class GraphService:
     """Graph context service shared by the API and Agent Tool."""
 
-    def __init__(self, repository: GraphContextRepository | None = None) -> None:
+    def __init__(self, repository: GraphQueryRepository | None = None) -> None:
         self._repository = repository or GraphQueryRepository()
 
     def get_equipment_context(self, chamber_id: str) -> EquipmentContext | None:
