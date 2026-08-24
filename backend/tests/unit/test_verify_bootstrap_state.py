@@ -23,6 +23,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import manifest_v3  # noqa: E402
+import value_normalization  # noqa: E402
 import verify_bootstrap_state as verifier  # noqa: E402
 from db_target import host_fingerprint  # noqa: E402
 
@@ -938,3 +939,485 @@ def test_database_cli_does_not_require_archive(
     )
     assert verifier.main(["--database", "kosa_agent", "--stage", "base_schema"]) == 0
     assert '"status": "PASS"' in capsys.readouterr().out
+
+
+class TestFinalLogicalTypeRegistry:
+    """final stage의 logical type 우선순위(`V5-CM-1.8` 계획 §3.5).
+
+    CM-3.1이 `V4_R03_TYPE_REGISTRY_STILL_ACTIVE`를 정적 blocker로 세어 둔 공백을
+    닫는다. 그 blocker의 제거가 정당한지는 **여기서 실물로** 확인한다.
+    """
+
+    R03 = "r03_alarm_history"
+    WAFER_TABLES = (
+        "evaluation",
+        "summary_alarm_history",
+        "summary_data",
+        "trace_alarm_history",
+    )
+
+    def test_r03_resolves_to_the_v5_twelve_columns(self) -> None:
+        import apply_reference_extensions_v5 as v5
+
+        types = verifier._expected_column_types(self.R03)
+
+        assert list(types) == [name for name, _t, _l, _x in v5.R03_COLUMNS]
+        assert len(types) == 12
+
+    def test_r03_carries_the_final_member_columns(self) -> None:
+        """**V4 registry로 내려가면 이 둘이 사라진다**(계획 §3.5-3)."""
+
+        types = verifier._expected_column_types(self.R03)
+
+        assert types["member_wafer_refs"] == types["member_alarm_refs"] == "json"
+        assert "member_refs" not in types
+
+    def test_r03_does_not_fall_through_to_the_v4_registry(self) -> None:
+        import apply_reference_extensions as v4_reference
+
+        v4_names = [
+            name for name, _t, _x in v4_reference.EXPECTED_TABLE_COLUMNS[self.R03]
+        ]
+        resolved = list(verifier._expected_column_types(self.R03))
+
+        assert len(v4_names) == 11
+        assert resolved != v4_names
+
+    @pytest.mark.parametrize("table", WAFER_TABLES)
+    def test_the_final_wafer_column_is_text_not_numeric(self, table: str) -> None:
+        """**구 `BASE_COLUMNS`는 `smallint`로 본다**(계획 §3.5-1).
+
+        최종 DDL은 `varchar(24)`라 logical type이 `text`다. 구 registry를 그대로 두면
+        final DB가 base에서 먼저 실패한다.
+        """
+
+        import bootstrap_base_schema as base_schema
+
+        assert verifier._expected_column_types(table)["wafer"] == "text"
+
+        legacy = {
+            column.name: column.data_type for column in base_schema.BASE_COLUMNS[table]
+        }
+        assert legacy["wafer"] == "smallint"
+
+    def test_base_types_come_from_the_source_manifest(self) -> None:
+        import final_profile_manifests as builder
+
+        tables = builder.load_source_manifest()["tables"]
+        for table, entry in tables.items():
+            assert (
+                verifier._expected_column_types(table) == entry["column_types"]
+            ), table
+
+    @pytest.mark.parametrize("table", ["document", "document_chunk", "nl_query_log"])
+    def test_reference_tables_keep_the_existing_registry(self, table: str) -> None:
+        import apply_reference_extensions as v4_reference
+
+        expected = {
+            name: value_normalization.logical_type(data_type)
+            for name, data_type, _nullable in v4_reference.EXPECTED_TABLE_COLUMNS[table]
+        }
+
+        assert verifier._expected_column_types(table) == expected
+
+    def test_runtime_tables_keep_the_agent_runtime_registry(self) -> None:
+        import apply_agent_runtime as agent_runtime
+
+        for table, columns in agent_runtime.EXPECTED_TABLE_COLUMNS.items():
+            expected = {
+                column.name: value_normalization.logical_type(column.data_type)
+                for column in columns
+            }
+            assert verifier._expected_column_types(table) == expected, table
+
+    def test_a_source_manifest_without_types_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """**가드를 직접 겨냥한다.**
+
+        실물 artifact는 9종 모두 `column_types`를 갖고 있어 이 분기가 도달 불가다.
+        합성 입력으로만 확인할 수 있다.
+        """
+
+        import final_profile_manifests as builder
+
+        broken = {"tables": {"evaluation": {"columns": ["wafer"]}}}
+        monkeypatch.setattr(builder, "load_source_manifest", lambda *a, **k: broken)
+
+        with pytest.raises(manifest_v3.ManifestSchemaError, match="column_types"):
+            verifier._expected_column_types("evaluation")
+
+    def test_an_unknown_table_has_no_registry(self) -> None:
+        with pytest.raises(manifest_v3.ManifestSchemaError):
+            verifier._expected_column_types("not_a_table")
+
+
+class TestFinalPostcheckRouting:
+    """final stage는 V4 postcheck를 타지 않는다(`V5-CM-1.8` 계획 §3.5).
+
+    V4 경로는 R03 **11컬럼**·V4 View 계약이라, logical type registry만 V5로 바꿔도
+    final DB는 여기서 실패한다(구현리뷰 7차 필수 2).
+    """
+
+    def test_the_final_stages_are_exactly_the_registered_pair(self) -> None:
+        import apply_reference_extensions_v5 as v5
+
+        assert verifier.FINAL_STAGES == {
+            ("runtime", "runtime_clean"),
+            ("evaluation", "evaluation_reference"),
+        }
+        assert verifier.FINAL_STAGES == set(v5.FINAL_STAGE_BY_PROFILE.items())
+
+    @pytest.mark.parametrize(
+        ("profile", "stage", "expected"),
+        [
+            ("runtime", "runtime_clean", "final"),
+            ("evaluation", "evaluation_reference", "final"),
+            ("runtime", "base_schema", "none"),
+            ("evaluation", "base_schema", "none"),
+            ("evaluation", "evaluation_mock", "v4"),
+            ("runtime", "corrected_base", "v4"),
+        ],
+    )
+    def test_the_routing_decision_is_explicit(
+        self, profile: str, stage: str, expected: str
+    ) -> None:
+        """**분기를 함수로 빼서 직접 겨냥한다**(구현리뷰 7차 필수 2 · 변이 M41).
+
+        인라인 `if`로 두면 routing이 잘못돼도 회귀가 잡지 못한다 — 판정기 자체는
+        따로 통과하기 때문이다.
+        """
+
+        assert verifier.reference_postcheck_routing(profile, stage) == expected
+
+    def test_no_final_stage_falls_through_to_the_v4_route(self) -> None:
+        for profile, stage in verifier.FINAL_STAGES:
+            assert verifier.reference_postcheck_routing(profile, stage) != "v4"
+
+    def test_the_v4_postcheck_is_not_called_for_final_stages(self) -> None:
+        """**AST로 분기를 본다.** 문자열 검색은 주석에도 걸린다."""
+
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(
+            textwrap.dedent(inspect.getsource(verifier._final_reference_mismatches))
+        )
+        called = {
+            ast.unparse(node.func)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+        }
+
+        assert not any("postcheck_database" in name for name in called)
+        for judge in (
+            "assert_r03_columns",
+            "assert_r03_constraints",
+            "assert_view_columns",
+            "assert_view_identity",
+            "assert_canonical_comments",
+        ):
+            assert f"reference_v5.{judge}" in called, judge
+
+    def test_the_final_route_consumes_only_the_final_postcheck(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """**소비 경계를 spy로 고정한다**(구현리뷰 8차 필수 2).
+
+        routing 반환값과 판정기 내부를 따로 보면 소비 한 줄을 지워도 green이었다.
+        """
+
+        final_calls: list[object] = []
+        v4_calls: list[object] = []
+        monkeypatch.setattr(
+            verifier,
+            "_final_reference_mismatches",
+            lambda connection: final_calls.append(connection) or [],
+        )
+        monkeypatch.setattr(
+            verifier.reference_extensions,
+            "postcheck_database",
+            lambda *a, **k: v4_calls.append(k),
+        )
+
+        for profile, stage in sorted(verifier.FINAL_STAGES):
+            result = verifier.reference_postcheck_mismatches(
+                _FakeCatalogConnection(),
+                profile=profile,
+                stage=stage,
+                action_rows_before=0,
+            )
+            assert result == []
+
+        assert len(final_calls) == len(verifier.FINAL_STAGES)
+        assert v4_calls == []
+
+    @pytest.mark.parametrize(
+        ("profile", "stage"),
+        [("evaluation", "evaluation_mock"), ("runtime", "corrected_base")],
+    )
+    def test_the_v4_route_consumes_only_the_v4_postcheck(
+        self, monkeypatch: pytest.MonkeyPatch, profile: str, stage: str
+    ) -> None:
+        final_calls: list[object] = []
+        v4_calls: list[object] = []
+        monkeypatch.setattr(
+            verifier,
+            "_final_reference_mismatches",
+            lambda connection: final_calls.append(connection) or [],
+        )
+        monkeypatch.setattr(
+            verifier.reference_extensions,
+            "postcheck_database",
+            lambda *a, **k: v4_calls.append(k),
+        )
+
+        verifier.reference_postcheck_mismatches(
+            _FakeCatalogConnection(),
+            profile=profile,
+            stage=stage,
+            action_rows_before=7,
+        )
+
+        assert final_calls == []
+        assert v4_calls == [{"action_rows_before": 7}]
+
+    @pytest.mark.parametrize("profile", ["runtime", "evaluation"])
+    def test_the_base_schema_route_consumes_neither(
+        self, monkeypatch: pytest.MonkeyPatch, profile: str
+    ) -> None:
+        calls: list[str] = []
+        monkeypatch.setattr(
+            verifier,
+            "_final_reference_mismatches",
+            lambda connection: calls.append("final") or [],
+        )
+        monkeypatch.setattr(
+            verifier.reference_extensions,
+            "postcheck_database",
+            lambda *a, **k: calls.append("v4"),
+        )
+
+        result = verifier.reference_postcheck_mismatches(
+            _FakeCatalogConnection(),
+            profile=profile,
+            stage="base_schema",
+            action_rows_before=0,
+        )
+
+        assert result == []
+        assert calls == []
+
+    def test_the_v4_route_reports_its_own_mismatch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom(*_a: object, **_k: object) -> None:
+            raise verifier.reference_extensions.ReferenceExtensionError("x")
+
+        monkeypatch.setattr(verifier.reference_extensions, "postcheck_database", _boom)
+
+        result = verifier.reference_postcheck_mismatches(
+            _FakeCatalogConnection(),
+            profile="evaluation",
+            stage="evaluation_mock",
+            action_rows_before=0,
+        )
+
+        assert result == [{"mismatch_kind": "REFERENCE_SIGNATURE_OR_VIEW"}]
+
+    def test_verify_database_consumes_the_routing_helper(self) -> None:
+        """`verify_database()`가 이 helper를 실제로 호출한다."""
+
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(verifier.verify_database)))
+        called = {
+            ast.unparse(node.func)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+        }
+
+        assert "reference_postcheck_mismatches" in called
+        # 본문에서 직접 V4 postcheck를 부르지 않는다.
+        assert not any(
+            "reference_extensions.postcheck_database" in name for name in called
+        )
+
+        # **결과를 실제로 쓰는지까지 본다.** 호출만 확인하면 반환값을 버리는 변이가
+        # 그대로 통과한다(변이 M47).
+        consumed = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and ast.unparse(node.func).endswith("mismatches.extend")
+            and any(
+                isinstance(inner, ast.Call)
+                and ast.unparse(inner.func) == "reference_postcheck_mismatches"
+                for inner in ast.walk(node)
+            )
+        ]
+        assert len(consumed) == 1
+
+    def test_the_final_judges_are_reused_not_reimplemented(self) -> None:
+        """CM-3.1의 순수 판정기를 그대로 쓴다 — 규칙을 다시 구현하면 갈린다."""
+
+        import apply_reference_extensions_v5 as v5
+
+        for name in (
+            "assert_r03_columns",
+            "assert_r03_constraints",
+            "assert_view_columns",
+            "assert_view_identity",
+            "assert_canonical_comments",
+        ):
+            assert callable(getattr(v5, name)), name
+
+    def test_the_queries_are_read_only(self) -> None:
+        import apply_reference_extensions_v5 as v5
+
+        for sql in (
+            v5.R03_COLUMNS_SQL,
+            v5.R03_CONSTRAINTS_SQL,
+            v5.VIEW_COLUMNS_SQL,
+            v5.VIEW_DEFINITION_SQL,
+        ):
+            normalized = " ".join(sql.strip().split()).upper()
+            assert normalized.startswith(verifier.READ_ONLY_PREFIXES)
+            assert ";" not in normalized
+
+    @pytest.mark.parametrize(
+        ("failing", "expected_kind"),
+        [
+            ("assert_r03_columns", "FINAL_R03_CONTRACT"),
+            ("assert_r03_constraints", "FINAL_R03_CONSTRAINTS"),
+            ("assert_view_columns", "FINAL_VIEW_CONTRACT"),
+            ("assert_view_identity", "FINAL_VIEW_CONTRACT"),
+            ("assert_canonical_comments", "FINAL_COMMENT_CONTRACT"),
+        ],
+    )
+    def test_each_final_judge_reports_its_own_mismatch(
+        self, monkeypatch: pytest.MonkeyPatch, failing: str, expected_kind: str
+    ) -> None:
+        """판정기 하나가 실패하면 그 종류의 mismatch가 나온다."""
+
+        import apply_reference_extensions_v5 as v5
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise v5.ReferenceV5Error("R03_CONTRACT_MISMATCH", v5.EXIT_MISMATCH)
+
+        monkeypatch.setattr(v5, failing, _boom)
+
+        connection = _FakeCatalogConnection()
+        kinds = [
+            entry["mismatch_kind"]
+            for entry in verifier._final_reference_mismatches(connection)
+        ]
+
+        assert expected_kind in kinds
+
+    def test_a_healthy_catalog_produces_no_mismatch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import apply_reference_extensions_v5 as v5
+
+        for name in (
+            "assert_r03_columns",
+            "assert_r03_constraints",
+            "assert_view_columns",
+            "assert_view_identity",
+            "assert_canonical_comments",
+        ):
+            monkeypatch.setattr(v5, name, lambda *_a, **_k: None)
+
+        assert verifier._final_reference_mismatches(_FakeCatalogConnection()) == []
+
+    def test_the_comment_query_reuses_the_shared_expression(self) -> None:
+        """CM-2.6·CM-3.1과 **같은 query**를 쓴다.
+
+        같은 값을 다르게 읽으면 대조가 무의미하다.
+        """
+
+        import apply_reference_extensions_v5 as v5
+
+        assert "obj_description" in v5.RELATION_SECURITY_SQL
+        normalized = " ".join(v5.RELATION_SECURITY_SQL.strip().split()).upper()
+        assert normalized.startswith(verifier.READ_ONLY_PREFIXES)
+        assert ";" not in normalized
+
+    @pytest.mark.parametrize(
+        ("r03_comment", "view_comment"),
+        [
+            (None, None),
+            ("wrong", None),
+            (None, "금지된 comment"),
+        ],
+    )
+    def test_a_drifted_comment_is_reported(
+        self, r03_comment: str | None, view_comment: str | None
+    ) -> None:
+        """R03 comment 누락·변조와 View comment 추가가 모두 잡힌다."""
+
+        import apply_reference_extensions_v5 as v5
+
+        connection = _FakeCatalogConnection(
+            comments={v5.R03_TABLE: r03_comment, v5.ALARM_VIEW: view_comment}
+        )
+        kinds = [
+            entry["mismatch_kind"]
+            for entry in verifier._final_reference_mismatches(connection)
+        ]
+
+        assert "FINAL_COMMENT_CONTRACT" in kinds
+
+    def test_the_canonical_comments_pass(self) -> None:
+        import apply_reference_extensions_v5 as v5
+
+        connection = _FakeCatalogConnection(
+            comments={
+                v5.R03_TABLE: v5.R03_COMMENT,
+                v5.ALARM_VIEW: v5.VIEW_COMMENT,
+            }
+        )
+        kinds = [
+            entry["mismatch_kind"]
+            for entry in verifier._final_reference_mismatches(connection)
+        ]
+
+        assert "FINAL_COMMENT_CONTRACT" not in kinds
+
+
+class _FakeCatalogConnection:
+    """catalog query에 빈 행(또는 지정한 comment 행)을 돌려주는 최소 fake."""
+
+    def __init__(self, comments: dict[str, object] | None = None) -> None:
+        self._comments = comments
+
+    def exec_driver_sql(self, statement: str, parameters: object = None) -> object:
+        if self._comments is not None and "obj_description" in statement:
+            return _FakeResult(
+                [
+                    {"relname": name, "comment": comment}
+                    for name, comment in self._comments.items()
+                ]
+            )
+        return _FakeResult()
+
+
+class _FakeResult:
+    def __init__(self, rows: list[dict[str, object]] | None = None) -> None:
+        self._rows = rows or []
+
+    def mappings(self) -> _FakeResult:
+        return self
+
+    def all(self) -> list[dict[str, object]]:
+        return self._rows
+
+    def scalar_one(self) -> str:
+        return ""
+
+    def scalar(self) -> str:
+        return ""

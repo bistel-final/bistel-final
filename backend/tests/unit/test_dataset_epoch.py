@@ -63,9 +63,11 @@ ISOLATED_MARKERS = (
 # `runtime.corrected_base.json`은 `V5-CM-1.6`이 마지막 소비자
 # (`apply_agent_runtime`의 corrected producer)를 제거하면서 history로 옮겼다.
 # 남은 둘은 `V5-CM-1.8`이 최종 epoch manifest로 교체한다.
+#: `V5-CM-1.8`이 active를 final로 교체했다 — `evaluation_mock`은 history로 갔고
+#: `evaluation_reference`가 그 자리를 대신한다.
 REMAINING_MANIFESTS = {
     "runtime.runtime_clean.json",
-    "evaluation.evaluation_mock.json",
+    "evaluation.evaluation_reference.json",
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
 # 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.
@@ -152,37 +154,71 @@ def test_intake_reference_is_valid() -> None:
     assert intake["declared_target_epoch"] == artifact["dataset_epoch"]
 
 
-# --- 4·5. 동시 참조 금지 — 구 로더 fail-fast 두 겹 -------------------------------
+# --- 4·5. 전환 완료 — active loader는 최종 epoch을 읽는다 -----------------------
+#
+# `V5-CM-1.2`는 "구 로더가 새 artifact를 거부한다"를 동시 참조 금지로 고정했다.
+# `V5-CM-1.8`이 loader를 v2로 전환하면서 그 전제를 **해제**한다. 삭제하지 않고
+# 역방향으로 뒤집어, 전환이 실제로 끝났다는 사실을 계속 지킨다(계획 §3.1·§3.8).
+#
+# 거부 계약은 두 축으로 **분리**한다. 한 fixture가 두 실패 원인을 동시에 가지면
+# schema-version 때문에 실패했는지 epoch drift 때문인지 구분되지 않는다.
 
 
-def test_old_loader_rejects_current_artifact_by_key_set() -> None:
-    """구 파이프라인의 실제 차단 지점(`manifest_v3.py:425-438` 키 집합 검사)을 고정한다.
+def test_the_active_loader_reads_the_final_artifact() -> None:
+    """전환 완료. active loader가 저장소의 v2 artifact를 그대로 읽는다."""
 
-    v2 payload는 v1과 키 집합이 달라 epoch 문자열 비교에 도달하기 전에
-    `ManifestSchemaError`로 fail-fast한다. 이것이 "동시 참조 금지"의 구현이다(계획 §0).
+    epoch = mv3.load_dataset_epoch(ARTIFACT_PATH)
+
+    assert epoch["format_version"] == mv3.DATASET_EPOCH_FORMAT_VERSION == 2
+    assert epoch["dataset_epoch"] == mv3.DATASET_EPOCH == TARGET_EPOCH
+    assert epoch["archive"]["sha256"] == mv3.FINAL_ARCHIVE_SHA256
+    assert epoch["supersedes"]["dataset_epoch"] == mv3.SUPERSEDED_DATASET_EPOCH
+
+
+def test_v1_shape_is_rejected_even_with_the_final_epoch(tmp_path: Path) -> None:
+    """**축 1 — schema version.**
+
+    epoch 문자열은 최종값이지만 key shape가 v1이다. v1/v2 union parser를 만들면
+    이것이 통과하고, 구 artifact가 최종 경로로 다시 흘러든다.
     """
-    with pytest.raises(mv3.ManifestSchemaError):
-        mv3.load_dataset_epoch(ARTIFACT_PATH)
 
-
-def test_old_loader_epoch_guard_rejects_new_epoch(tmp_path: Path) -> None:
-    """epoch 검증 자체(`manifest_v3.py:440-441`)도 고정한다.
-
-    v1 키 집합을 그대로 두고 `dataset_epoch`만 새 epoch로 바꾼 합성 payload는 키
-    검사를 통과하므로, 여기서 `ManifestMetadataError`가 나야 `:440-441`이 실제로
-    새 epoch를 거부함이 증명된다. 저장소 파일이 아닌 합성 payload를 쓰므로 격리·발급
-    상태와 무관하게 성립한다(Task 완료 기준 3-(b)).
-    """
     synthetic = {
         "format_version": 1,
         "artifact_type": "dataset_epoch_registration",
         "dataset_epoch": TARGET_EPOCH,
         "received_date": "2026-08-18",
-        "archive": {"filename": "project.zip", "sha256": "ab" * 32},
+        "archive": {"filename": "project.zip", "sha256": mv3.FINAL_ARCHIVE_SHA256},
         "public_fault_ground_truth_available": False,
         "inventory_scope": "non_directory_zip_members",
         "file_count": 1,
         "file_inventory": [{"path": "a", "size_bytes": 1, "sha256": "ab" * 32}],
+    }
+    path = tmp_path / "dataset-epoch.json"
+    path.write_text(json.dumps(synthetic, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(mv3.ManifestSchemaError):
+        mv3.load_dataset_epoch(path)
+
+
+def test_the_deprecated_epoch_is_rejected_in_exact_v2_shape(tmp_path: Path) -> None:
+    """**축 2 — epoch drift.**
+
+    key shape는 v2 exact인데 `dataset_epoch`만 폐기 epoch이다. schema 검사를 통과하므로
+    epoch 비교가 실제로 동작해야만 거부된다.
+    """
+
+    synthetic = {
+        "format_version": 2,
+        "artifact_type": "dataset_epoch_registration",
+        "dataset_epoch": mv3.SUPERSEDED_DATASET_EPOCH,
+        "received_date": "2026-08-13",
+        "archive": {"filename": "project.zip", "sha256": mv3.FINAL_ARCHIVE_SHA256},
+        "inventory_scope": "selected_source_members",
+        "intake_artifact": "infra/bootstrap/final-zip-intake.json",
+        "supersedes": {
+            "dataset_epoch": mv3.SUPERSEDED_DATASET_EPOCH,
+            "isolated_to": mv3.SUPERSEDED_ISOLATION_ROOT,
+        },
     }
     path = tmp_path / "dataset-epoch.json"
     path.write_text(json.dumps(synthetic, ensure_ascii=False), encoding="utf-8")
