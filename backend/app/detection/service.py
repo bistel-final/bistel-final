@@ -1,45 +1,53 @@
-"""Detection Service (V5-A-1.1·V5-A-1.2).
+"""Detection Service (V5-A-1.1~V5-A-1.4).
 
 시스템설계서 v2.1 1.3 계층 규칙: Service는 트랜잭션 경계·업무 흐름을 담당하고
 문자열 SQL을 직접 조립하지 않는다. 여기서는 `repository.py`가 읽은 데이터를
-`summarize.py`(Rules, 순수 함수)에 넘기고, 그 결과를 reference 테이블과 대조해
-완료 기준을 판정한다.
+`summarize.py`·`rules.py`(Rules, 순수 함수)에 넘기고, 그 결과를 reference
+테이블과 대조하거나(V5-A-1.3) 실제로 적재해(V5-A-1.4) 완료 기준을 판정한다.
 
-완료 기준 근거 (시스템설계서 v2.1 4.1~4.2, docs/ai-context/tasks/A-detection.md):
+완료 기준 근거 (시스템설계서 v2.1 4.1~4.3·3.2, docs/ai-context/tasks/A-detection.md):
 - V5-A-1.1 Summary 재계산: `summary_data` 4,800건과 key·point_cnt가 완전히 같고
   수치는 0.001 이내.
 - V5-A-1.2 evaluation 재현: IN 4,538 / OOC 216 / OOS 46, TRACE alarm(OOS point 합)
   138건.
+- V5-A-1.3 TRACE·SUMMARY 알람 재현: TRACE 138·SUMMARY 51, 저장 알람 합계 189,
+  occurred_at NULL 0건.
+- V5-A-1.4 R03 파생·적재: 연속 3 OOS로 R03 3건을 만들어 `r03_alarm_history`에
+  멱등 적재한다. 각 R03는 member wafer 3개·TRACE AlarmRef 9개를 가진다.
 
-이 모듈은 DB에 쓰지 않는다(base 9 table은 bootstrap이 적재한 reference라 A가
-덮어쓰지 않는다). 재계산·대조 결과만 반환한다.
+이 파일 아래쪽의 함수는 두 그룹으로 나뉜다.
+  - V5-A-1.1~1.3 절: 전부 읽기 전용이다(base 9 table은 bootstrap이 적재한
+    reference라 A가 덮어쓰지 않는다). 재계산·대조 결과만 반환한다.
+  - V5-A-1.4 절: `persist_r03_alarms`만 쓰기 함수다. `r03_alarm_history`는
+    base 9 table이 아니라 A가 직접 채우는 reference extension이기 때문이다
+    (`repository.insert_r03_alarms` docstring 참고).
 
 [팀원용 요약]
 이 파일은 "채점기"라고 생각하면 된다. 순서는 항상 같다.
-  1) repository.py로 원본(fdc_trace, dim_parameter)을 읽는다.
-  2) summarize.py(순수 함수)에 넣어서 우리가 직접 계산한 값을 만든다.
-  3) repository.py로 "정답"(summary_data, evaluation)을 읽는다.
-  4) 계산값과 정답을 key(=GroupKey, 즉 lot_hist_id+parameter_id+recipe_step_no)
-     별로 짝지어서 하나하나 비교한다.
+  1) repository.py로 원본(fdc_trace, dim_parameter, lot_history, ...)을 읽는다.
+  2) summarize.py·rules.py(순수 함수)에 넣어서 우리가 직접 계산한 값을 만든다.
+  3) repository.py로 "정답"(summary_data, evaluation, trace_alarm_history 등)을 읽는다.
+  4) 계산값과 정답을 key별로 짝지어서 하나하나 비교한다.
   5) 다른 게 있으면 "무엇이 어떻게 다른지"를 리스트(mismatches)에 쌓아서 반환한다.
 verify_*() 함수들은 절대 예외를 던지며 중간에 멈추지 않는다 — 불일치가 있어도
 끝까지 다 비교한 뒤, 결과 객체의 mismatches/ok 필드로 알려준다. 그래야 "몇 개가
-왜 틀렸는지" 한 번에 확인할 수 있다.
+왜 틀렸는지" 한 번에 확인할 수 있다. R03만 예외로, "저장할 값을 만드는" 단계
+(`derive_r03_alarm_records`)에서 데이터 정합성이 깨지면(예: track_in_at 없음)
+즉시 예외를 던진다 — 잘못된 R03을 "일단 저장"하면 되돌리기가 더 어렵다.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy.engine import Connection
-
 from app.common.enums import AlarmType
-from app.detection import repository
+from app.detection import repository, rules
 from app.detection.summarize import (
     GroupKey,
     evaluate_groups,
     summarize_groups,
 )
+from sqlalchemy.engine import Connection
 
 __all__ = [
     "SummaryMismatch",
@@ -48,6 +56,17 @@ __all__ = [
     "EvaluationVerificationResult",
     "verify_summary_recalculation",
     "verify_evaluation_recalculation",
+    "TraceAlarmVerificationResult",
+    "SummaryAlarmVerificationResult",
+    "AlarmReproductionResult",
+    "verify_trace_alarm_reproduction",
+    "verify_summary_alarm_reproduction",
+    "verify_alarm_reproduction",
+    "R03DerivationResult",
+    "R03PersistResult",
+    "derive_r03_events",
+    "derive_r03_alarm_records",
+    "persist_r03_alarms",
 ]
 
 
@@ -360,4 +379,375 @@ def verify_evaluation_recalculation(connection: Connection) -> EvaluationVerific
         mismatches=mismatches,
         recomputed_alarm_type_counts=alarm_type_counts,
         recomputed_trace_alarm_count=trace_alarm_count,
+    )
+
+
+# =====================================================================
+# V5-A-1.3 — TRACE·SUMMARY 알람 재현 대조
+#
+# trace_alarm_history·summary_alarm_history는 summary_data·evaluation과 같은
+# "이미 저장된 정답"이다. 그래서 이 절도 A-1.1·A-1.2와 같은 패턴을 따른다 —
+# fdc_trace에서 다시 계산 -> reference 테이블과 건수 대조. 다른 점은 TRACE는
+# A-1.2가 이미 계산해 둔 값(oos_point_cnt 합)을 재사용하면 되고, SUMMARY는
+# rules.py의 동적 관리한계 계산이 새로 필요하다는 것뿐이다.
+# =====================================================================
+@dataclass(frozen=True, slots=True)
+class TraceAlarmVerificationResult:
+    """TRACE 알람(raw 규격 이탈) 재현 대조 결과."""
+
+    # V5-A-1.2의 EvaluationVerificationResult.recomputed_trace_alarm_count와
+    # 계산식이 완전히 같다(OOS point 총합). 여기서 다시 계산하는 이유는 이
+    # 결과가 "V5-A-1.3의 완료 기준"이라는 걸 이름과 타입으로 분명히 하기
+    # 위해서다 — A-1.2 결과 객체를 그대로 재사용하면 "TRACE 알람 재현"이라는
+    # 별도 완료 기준이 있다는 사실이 코드에 드러나지 않는다.
+    recomputed_count: int
+    reference_count: int  # trace_alarm_history 실제 저장 건수
+    reference_occurred_at_null_count: int
+
+    @property
+    def ok(self) -> bool:
+        """recomputed(=OOS point 합)와 reference 저장 건수가 같고 NULL이 0건인가."""
+
+        return (
+            self.recomputed_count == self.reference_count
+            and self.reference_occurred_at_null_count == 0
+        )
+
+    @property
+    def matches_acceptance_value(self) -> bool:
+        """수용값(TRACE 138)과 일치하는지. `ok`와 분리하는 이유는 evaluation과 같다."""
+
+        return self.reference_count == 138
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryAlarmVerificationResult:
+    """SUMMARY 알람(동적 관리한계 이탈) 재현 대조 결과."""
+
+    recomputed_count: int  # rules.build_summary_alarm_flags 결과 길이
+    reference_count: int  # summary_alarm_history 실제 저장 건수
+    reference_occurred_at_null_count: int
+
+    @property
+    def ok(self) -> bool:
+        return (
+            self.recomputed_count == self.reference_count
+            and self.reference_occurred_at_null_count == 0
+        )
+
+    @property
+    def matches_acceptance_value(self) -> bool:
+        """수용값(SUMMARY 51)과 일치하는지."""
+
+        return self.reference_count == 51
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmReproductionResult:
+    """V5-A-1.3 완료 기준 전체(TRACE+SUMMARY) 판정."""
+
+    trace: TraceAlarmVerificationResult
+    summary: SummaryAlarmVerificationResult
+
+    @property
+    def total_stored_alarms(self) -> int:
+        """설계서 4.1: "TRACE와 SUMMARY의 base alarm은 189건이다." 수용값 189."""
+
+        return self.trace.reference_count + self.summary.reference_count
+
+    @property
+    def ok(self) -> bool:
+        return self.trace.ok and self.summary.ok
+
+    @property
+    def matches_acceptance_values(self) -> bool:
+        return (
+            self.trace.matches_acceptance_value
+            and self.summary.matches_acceptance_value
+            and self.total_stored_alarms == 189
+        )
+
+
+def verify_trace_alarm_reproduction(
+    connection: Connection,
+) -> TraceAlarmVerificationResult:
+    """`fdc_trace`+`dim_parameter`로 TRACE 알람 건수를 재현해 reference와 대조한다.
+
+    설계서 4.2-6: "OOS raw point마다 TRACE alarm 한 건을 만든다." 이미 V5-A-1.2가
+    이 값을 계산해뒀으므로(evaluate_groups의 oos_point_cnt 총합) 여기서는 그
+    계산을 그대로 재사용하고, `trace_alarm_history` 저장 건수·occurred_at NULL
+    건수만 새로 읽어서 대조한다.
+    """
+
+    points = repository.fetch_trace_points(connection)
+    limits = repository.fetch_parameter_limits(connection)
+    evaluations = evaluate_groups(points, limits)
+    recomputed_count = sum(evaluation.oos_point_cnt for evaluation in evaluations)
+
+    reference_stats = repository.fetch_trace_alarm_reference_stats(connection)
+
+    return TraceAlarmVerificationResult(
+        recomputed_count=recomputed_count,
+        reference_count=reference_stats.count,
+        reference_occurred_at_null_count=reference_stats.occurred_at_null_count,
+    )
+
+
+def verify_summary_alarm_reproduction(
+    connection: Connection,
+) -> SummaryAlarmVerificationResult:
+    """`summary_data`+`evaluation`으로 SUMMARY 알람(동적 CL±3σ)을 재현해 대조한다.
+
+    설계서 4.3 규칙(`rules.compute_summary_control_limits`·`judge_summary_alarm`이
+    이미 구현하고 있다)을 그대로 적용한다. 이 함수는 입력을 모아 넘기고 대조만
+    한다.
+    """
+
+    # 1) summary_data 통계값(chamber_id 포함)을 읽는다.
+    stat_rows = repository.fetch_summary_statistics(connection)
+
+    # 2) baseline 후보 여부(evaluation != OOS)를 알아야 하므로, evaluation도
+    #    fdc_trace에서 재계산한다 — reference `evaluation` 테이블을 다시 읽지
+    #    않는 이유는, A-1.2가 이미 "재계산 결과 == reference"를 증명했으므로
+    #    재계산 값을 그대로 믿고 써도 되기 때문이다(중복 조회를 줄인다).
+    points = repository.fetch_trace_points(connection)
+    limits = repository.fetch_parameter_limits(connection)
+    evaluations_by_key = {
+        evaluation.key: evaluation for evaluation in evaluate_groups(points, limits)
+    }
+
+    # 3) SummaryStatRow(순수 DB 조회 결과) + evaluation 등급 -> rules.SummaryStatPoint
+    #    (판정 입력)로 조립한다. 이 조립은 "무슨 규칙을 적용할지"를 결정하지
+    #    않고 입력 모양만 맞추는 일이라 service.py가 한다(rules.py는 DB를 모른다).
+    summary_points: list[rules.SummaryStatPoint] = []
+    for row in stat_rows:
+        evaluation = evaluations_by_key.get(row.key)
+        if evaluation is None:
+            # A-1.1·A-1.2가 이미 summary_data·evaluation·fdc_trace가 같은
+            # 4,800개 그룹을 가리킨다는 걸 증명했으므로 이 경로는 정상 데이터에서
+            # 발생하지 않는다. 그래도 조용히 건너뛰지 않고 바로 알 수 있게 한다.
+            raise ValueError(
+                f"evaluation 재계산 결과에 없는 summary_data 그룹입니다: {row.key}"
+            )
+        summary_points.append(
+            rules.SummaryStatPoint(
+                key=row.key,
+                chamber_id=row.chamber_id,
+                value_mean=row.value_mean,
+                baseline_eligible=evaluation.alarm_type is not AlarmType.OOS,
+            )
+        )
+
+    # 4) 순수 규칙 함수 호출. 알람이 발생한 그룹만 dict로 돌아온다.
+    recomputed_flags = rules.build_summary_alarm_flags(summary_points)
+
+    reference_stats = repository.fetch_summary_alarm_reference_stats(connection)
+
+    return SummaryAlarmVerificationResult(
+        recomputed_count=len(recomputed_flags),
+        reference_count=reference_stats.count,
+        reference_occurred_at_null_count=reference_stats.occurred_at_null_count,
+    )
+
+
+def verify_alarm_reproduction(connection: Connection) -> AlarmReproductionResult:
+    """V5-A-1.3 완료 기준(TRACE 138·SUMMARY 51·합계 189·NULL 0건)을 한 번에 판정한다."""
+
+    return AlarmReproductionResult(
+        trace=verify_trace_alarm_reproduction(connection),
+        summary=verify_summary_alarm_reproduction(connection),
+    )
+
+
+# =====================================================================
+# V5-A-1.4 — R03 파생·적재
+#
+# 이 절만 세 단계로 나뉜다(A-1.1~1.3의 "계산 -> 대조"와 다르다):
+#   1) derive_r03_events        : 순수 계산. 어디서 연속 3 OOS가 나오는지 찾는다.
+#   2) derive_r03_alarm_records : derive_r03_events 결과 + trace_alarm_history
+#                                 조회로, DB에 넣을 완성된 행(alarm_id 포함)을 만든다.
+#   3) persist_r03_alarms       : 2)의 결과를 실제로 저장한다(유일한 쓰기 함수).
+# 1)·2)는 readonly Connection으로 충분하고, 3)만 쓰기 Connection이 필요하다.
+# =====================================================================
+@dataclass(frozen=True, slots=True)
+class R03DerivationResult:
+    """연속 3 OOS 탐색 결과(아직 저장 전, alarm_id 없음)."""
+
+    events: list[rules.R03Event]
+
+    @property
+    def count(self) -> int:
+        return len(self.events)
+
+    @property
+    def matches_acceptance_value(self) -> bool:
+        """수용값(R03 3건)과 일치하는지."""
+
+        return self.count == 3
+
+
+@dataclass(frozen=True, slots=True)
+class R03PersistResult:
+    """`r03_alarm_history` 적재 결과."""
+
+    derived_count: int  # 이번 계산으로 찾아낸 R03 event 수
+    inserted_count: int  # 이번 호출로 실제 새로 INSERT된 행 수(재실행이면 0)
+    total_count_after: int  # INSERT 이후 테이블 전체 행 수
+
+    @property
+    def matches_acceptance_value(self) -> bool:
+        """수용값(R03 3건)이 테이블에 실제로 있는지."""
+
+        return self.total_count_after == 3
+
+
+def derive_r03_events(connection: Connection) -> R03DerivationResult:
+    """`fdc_trace`+`dim_parameter`+`lot_history`로 연속 3 OOS(R03)를 찾는다.
+
+    읽기 전용이다. `evaluate_groups`(V5-A-1.2)가 만드는 그룹별 등급을
+    lot_history의 chamber_id·chamber_wafer_cum과 엮어서, rules.py가 정의한
+    "(chamber_id, parameter_id, recipe_step_no) 그룹 안에서 chamber_wafer_cum
+    오름차순 연속 3"을 찾는 입력으로 변환하는 것까지가 이 함수의 일이다.
+    실제 연속 판정 로직은 `rules.derive_r03_events`(순수 함수)가 담당한다.
+    """
+
+    points = repository.fetch_trace_points(connection)
+    limits = repository.fetch_parameter_limits(connection)
+    evaluations = evaluate_groups(points, limits)
+    lot_history_by_id = repository.fetch_lot_history_by_id(connection)
+
+    # 1) evaluation 결과(lot_hist_id 단위)를 R03 그룹 기준
+    #    (chamber_id, parameter_id, recipe_step_no)으로 다시 묶는다.
+    #    이 재묶음이 필요한 이유: evaluate_groups는 fdc_trace만 보고 계산해서
+    #    chamber_id를 모른다 — chamber_id는 lot_history에만 있다.
+    members_by_group: dict[tuple[str, str, int], list[rules.R03GroupMember]] = {}
+    for evaluation in evaluations:
+        lot_history_row = lot_history_by_id.get(evaluation.key.lot_hist_id)
+        if lot_history_row is None:
+            # fdc_trace.lot_hist_id는 lot_history를 FK로 참조하므로(스키마
+            # 제약) 정상 데이터에서는 발생하지 않는다. 그래도 조용히 건너뛰지
+            # 않고 데이터 정합성 문제로 바로 알린다.
+            raise ValueError(
+                f"lot_history에 없는 lot_hist_id입니다: {evaluation.key.lot_hist_id}"
+            )
+        missing_order_columns = (
+            lot_history_row.chamber_id is None
+            or lot_history_row.chamber_wafer_cum is None
+        )
+        if missing_order_columns:
+            raise ValueError(
+                f"R03 정렬에 필요한 chamber_id·chamber_wafer_cum이 없습니다: "
+                f"lot_hist_id={evaluation.key.lot_hist_id}"
+            )
+
+        group_key = (
+            lot_history_row.chamber_id,
+            evaluation.key.parameter_id,
+            evaluation.key.recipe_step_no,
+        )
+        members_by_group.setdefault(group_key, []).append(
+            rules.R03GroupMember(
+                lot_hist_id=evaluation.key.lot_hist_id,
+                lot_id=lot_history_row.lot_id,
+                wafer_no=lot_history_row.wafer_no,
+                wafer_id=lot_history_row.wafer_id,
+                chamber_wafer_cum=lot_history_row.chamber_wafer_cum,
+                track_in_at=lot_history_row.track_in_at,
+                alarm_type=evaluation.alarm_type,
+            )
+        )
+
+    # 2) 그룹마다 순수 함수(rules.derive_r03_events)를 불러 연속 3 OOS를 찾는다.
+    events: list[rules.R03Event] = []
+    for (chamber_id, parameter_id, recipe_step_no), members in members_by_group.items():
+        equipment_id = lot_history_by_id[members[0].lot_hist_id].equipment_id
+        if equipment_id is None:
+            raise ValueError(
+                f"lot_history에 equipment_id가 없습니다: chamber_id={chamber_id}"
+            )
+        events.extend(
+            rules.derive_r03_events(
+                members,
+                chamber_id=chamber_id,
+                parameter_id=parameter_id,
+                recipe_step_no=recipe_step_no,
+                equipment_id=equipment_id,
+            )
+        )
+
+    # 3) 그룹을 순회한 순서는 dict 삽입 순서에 불과해 재현성이 없다. 결과를
+    #    보는 사람이 항상 같은 순서를 보도록 명시적으로 정렬한다.
+    events.sort(
+        key=lambda event: (event.chamber_id, event.parameter_id, event.recipe_step_no)
+    )
+
+    return R03DerivationResult(events=events)
+
+
+def derive_r03_alarm_records(connection: Connection) -> list[rules.R03AlarmRecord]:
+    """`derive_r03_events` 결과에 TRACE alarm_id를 채워 저장 가능한 행으로 완성한다.
+
+    읽기 전용이다(trace_alarm_history·lot_history 조회만 한다). 실제 INSERT는
+    `persist_r03_alarms`가 한다 — 이렇게 나눠두면 "무엇을 저장할지 미리 보고
+    검토"하는 dry-run 용도로 이 함수만 따로 부를 수 있다.
+    """
+
+    derivation = derive_r03_events(connection)
+    trace_refs_by_group = repository.fetch_trace_alarm_refs_by_group(connection)
+
+    records: list[rules.R03AlarmRecord] = []
+    for event in derivation.events:
+        member_alarm_ids: list[str] = []
+        for member in event.members:
+            key = GroupKey(
+                lot_hist_id=member.lot_hist_id,
+                parameter_id=event.parameter_id,
+                recipe_step_no=event.recipe_step_no,
+            )
+            refs = trace_refs_by_group.get(key, [])
+            if not refs:
+                # 이 member는 evaluation.alarm_type==OOS인 wafer라서 raw OOS
+                # TRACE alarm이 trace_alarm_history에 최소 1건 있어야 한다.
+                # 없다면 두 데이터(evaluation 재계산 vs trace_alarm_history)가
+                # 서로 어긋난다는 뜻이므로 조용히 넘어가지 않는다.
+                raise ValueError(
+                    "R03 member에 대응하는 raw OOS TRACE alarm이 "
+                    f"trace_alarm_history에 없습니다: {key}"
+                )
+            # TraceAlarmRefRow는 이미 seq_no ASC, alarm_id ASC로 정렬돼 있다
+            # (repository.fetch_trace_alarm_refs_by_group 문서 참고).
+            member_alarm_ids.extend(ref.alarm_id for ref in refs)
+
+        records.append(
+            rules.build_r03_alarm_record(event, member_alarm_ids=member_alarm_ids)
+        )
+
+    return records
+
+
+def persist_r03_alarms(
+    readonly_connection: Connection,
+    writer_connection: Connection,
+) -> R03PersistResult:
+    """R03을 계산하고 `r03_alarm_history`에 멱등 적재한다(이 파일의 유일한 쓰기 함수).
+
+    두 Connection을 따로 받는 이유는 실제 최소권한 role 구조를 그대로 반영하기
+    위해서다 — 계산에 필요한 조회(`readonly_connection`, `get_readonly_connection()`
+    으로 얻은 것)와 실제 저장(`writer_connection`, `get_db_connection()`으로 얻은
+    것)은 서로 다른 DB role을 쓴다. 같은 Connection을 두 자리에 넘겨도 동작은
+    하지만(로컬 개발 등 role 구분이 없을 때), 운영 환경에서는 readonly role로
+    이 함수를 통째로 부르면 INSERT 단계에서 권한 오류가 난다.
+
+    커밋은 호출자 책임이다 — 이 함수는 `writer_connection.commit()`을 부르지
+    않는다(트랜잭션을 더 큰 단위로 묶어야 하는 호출자를 위해).
+    """
+
+    records = derive_r03_alarm_records(readonly_connection)
+    inserted_count = repository.insert_r03_alarms(writer_connection, records)
+    total_count_after = repository.fetch_r03_alarm_count(writer_connection)
+
+    return R03PersistResult(
+        derived_count=len(records),
+        inserted_count=inserted_count,
+        total_count_after=total_count_after,
     )
