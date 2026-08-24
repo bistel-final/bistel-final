@@ -1,25 +1,31 @@
-// 이벤트 유형별 집계 — 9종 전부 표시하고 0건도 dim 회색 바로 남긴다 (숨기지 않음). 디자인 v2 07.
-// 집계 기준은 현재 화면 slice가 아니라 "같은 필터의 전체 집합"이다.
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
-import HBar from '../../../shared/components/ui/HBar.jsx'
+import { eventHex } from './auditModel.js'
 
-function AuditEventTypeBars({ eventTypes, counts }) {
+// 유형별 집계 — 라이트 시안 7번 좌측 270px. 전 유형 가로바 (값/최대 비율), 0건은 dim 4%.
+
+function AuditEventTypeBars({ eventTypes, counts, total }) {
   const max = Math.max(1, ...eventTypes.map((t) => counts[t] ?? 0))
   return (
-    <Card>
-      <CardHeader title="이벤트 유형별" note="같은 필터의 전체 집계" />
-      <div className="flex flex-col gap-[13px] px-5 pb-[18px]">
+    <Card className="w-[270px] flex-none">
+      <CardHeader title="유형별 집계" note={`${total}건`} />
+      <div className="flex flex-col gap-3 px-4 pb-4">
         {eventTypes.map((t) => {
           const n = counts[t] ?? 0
-          const zero = n === 0
+          const pct = n === 0 ? 4 : Math.max(6, (n / max) * 100)
           return (
             <div key={t}>
-              <div className="mb-[5px] flex justify-between">
-                <span className={`font-mono text-[10.5px] font-semibold ${zero ? 'text-g2' : 'text-ink'}`}>{t}</span>
-                <span className={`font-mono text-[11px] font-bold ${zero ? 'text-g2' : 'text-ink'}`}>{n}</span>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`truncate font-mono text-[10.5px] font-semibold ${n === 0 ? 'text-faint' : 'text-g1'}`} title={t}>
+                  {t}
+                </span>
+                <span className={`font-mono text-[11px] font-bold ${n === 0 ? 'text-faint' : 'text-ink'}`}>{n}</span>
               </div>
-              {/* 폭은 값/최대 비율 — 0건은 시안 규칙대로 최소 4% 폭의 dim 바 */}
-              <HBar value={zero ? max * 0.04 : n} max={max} height={7} dim={zero} />
+              <div className="mt-1 h-[8px] overflow-hidden rounded-full bg-cell-line">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${pct}%`, background: n === 0 ? 'var(--color-tint-gray-line)' : eventHex(t) }}
+                />
+              </div>
             </div>
           )
         })}

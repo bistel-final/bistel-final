@@ -1,7 +1,10 @@
-import apiClient, { USE_MOCK, mockResponse } from './client.js'
+import apiClient, { mockResponse, useMockFor } from './client.js'
 import { toIso } from './format.js'
 import { RUNS } from '../../features/agent/mock/runs.js'
 import { ACTIONS, APPROVALS } from '../../features/agent/mock/actions.js'
+
+// 백엔드 agent 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
+const USE_MOCK = useMockFor('AGENT')
 
 const isoRun = (r) => ({
   ...r,
