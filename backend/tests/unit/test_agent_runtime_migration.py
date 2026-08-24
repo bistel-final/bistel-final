@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
@@ -15,7 +14,6 @@ if str(SCRIPTS_ROOT) not in sys.path:
 import apply_agent_runtime as migration  # noqa: E402
 import manifest_v3  # noqa: E402
 
-from app.common.audit import EVENT_ENTITY_TYPE, AuditEvent  # noqa: E402
 from app.common.enums import (  # noqa: E402
     ActionCode,
     AlarmSource,
@@ -246,12 +244,19 @@ def test_runtime_enum_sets_match_canonical_contract() -> None:
     }
 
 
-def test_audit_event_rename_is_atomic_and_mapping_is_total() -> None:
-    assert len(AuditEvent) == 9
-    assert set(EVENT_ENTITY_TYPE) == set(AuditEvent)
-    assert AuditEvent.HYPOTHESIS_GENERATED.value == "HYPOTHESIS_GENERATED"
-    with pytest.raises(ValidationError):
-        TypeAdapter(AuditEvent).validate_python("CLASSIFICATION_COMPLETED")
+def test_audit_log_table_and_check_exist() -> None:
+    """이 파일은 migration **inventory**만 본다.
+
+    `(event_type, entity_type)` 쌍을 Python mapping·API 명세와 exact 대조하는 계약은
+    `test_common_audit.py`가 소유한다(`V5-CM-4.2`). 같은 검증을 두 곳에 복제하면
+    한쪽만 고쳐도 green이 유지된다.
+    """
+
+    body = " ".join(_body().split())
+
+    assert "CREATE TABLE audit_log" in body
+    assert "occurred_at timestamptz NOT NULL DEFAULT now()" in body
+    assert "CHECK ( (event_type, entity_type) IN (" in body
 
 
 def test_nullable_nonblank_contract_is_not_inverted() -> None:
