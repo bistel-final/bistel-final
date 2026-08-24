@@ -546,12 +546,9 @@ class _StatementLog:
 
     @property
     def writes(self) -> list[str]:
-        allowed = ("SELECT", "SET ", "LOCK ", "/* AGENT-RUNTIME:")
-        return [
-            item
-            for item in self.statements
-            if not item.strip().upper().startswith(allowed)
-        ]
+        """container 회귀와 **같은 판정**을 쓴다."""
+
+        return runner.mutating_statements(self.statements)
 
 
 class _StubEngine:
@@ -1274,3 +1271,244 @@ def test_the_v4_module_still_exposes_its_public_surface() -> None:
     ):
         assert hasattr(reference_v4, name), f"재수출이 사라졌다: {name}"
         assert getattr(reference_v4, name) is getattr(bootstrap_common, name), name
+
+
+# ---------------------------------------------------------------------------
+# PR #123 팀 리뷰 보완
+# ---------------------------------------------------------------------------
+
+
+class TestMutationJudgment:
+    """**필수 1.** DB 쓰기 0 주장을 세우는 장치 자체에 우회로가 있으면 안 된다."""
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "SELECT 1",
+            "/* agent-runtime:tables */\nSELECT table_name FROM x",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
+            "LOCK TABLE action_history IN SHARE MODE",
+            "BEGIN",
+            "COMMIT",
+            "ROLLBACK",
+        ],
+    )
+    def test_non_mutating_statements(self, statement: str) -> None:
+        assert runner.is_mutating_statement(statement) is False
+
+    @pytest.mark.parametrize(
+        ("label", "statement"),
+        [
+            ("맨 DDL", "CREATE TABLE x (a int)"),
+            # **구 구현이 통과시키던 것.** 선행 블록 주석은 문장의 종류를 바꾸지 않는데
+            # `/* AGENT-RUNTIME:` prefix를 무해 목록에 넣어 뒀었다.
+            (
+                "주석으로 위장한 DDL",
+                "/* agent-runtime: adopt */ CREATE TABLE x (a int)",
+            ),
+            ("줄 주석으로 위장", "-- agent-runtime\nDROP TABLE x"),
+            ("여러 주석", "/* a */ /* b */ ALTER TABLE x ADD COLUMN y int"),
+            ("DML", "INSERT INTO audit_log (audit_id) VALUES (1)"),
+            ("TRUNCATE", "TRUNCATE TABLE agent_run"),
+            ("GRANT", "GRANT SELECT ON agent_run TO PUBLIC"),
+        ],
+    )
+    def test_mutating_statements(self, label: str, statement: str) -> None:
+        assert runner.is_mutating_statement(statement) is True, label
+
+    def test_catalog_queries_are_not_mutations(self) -> None:
+        """runner의 catalog SQL이 전부 무해로 판정돼야 한다.
+
+        주석 prefix 항목만 지우면 이것들이 쓰기로 잡힌다 — 그래서 **제거가 아니라
+        주석 스트립**이 옳은 수정이다.
+        """
+
+        for sql in (
+            runner.TABLES_SQL,
+            runner.COLUMNS_SQL,
+            runner.CONSTRAINTS_SQL,
+            runner.INDEXES_SQL,
+            runner.SEQUENCES_SQL,
+        ):
+            assert runner.is_mutating_statement(sql) is False
+
+    def test_the_002_migration_is_all_mutations(self) -> None:
+        """반대 방향 — 002의 실제 DDL은 전부 쓰기로 잡혀야 한다."""
+
+        _sql, statements = runner.load_and_validate_sql()
+        assert runner.mutating_statements(statements) == statements
+
+    def test_both_suites_share_one_judgment(self) -> None:
+        """판정이 두 벌이면 갈린다 — 실제로 container와 unit이 이미 달랐다."""
+
+        import ast
+
+        for name in (
+            "test_agent_runtime_v5_container.py",
+            "test_apply_agent_runtime.py",
+        ):
+            source = (Path(__file__).parent / name).read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            writes = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef) and node.name == "writes"
+            ]
+            assert len(writes) == 1, name
+            calls = {
+                node.func.attr
+                for node in ast.walk(writes[0])
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            }
+            assert "mutating_statements" in calls, f"{name}이 자체 판정을 갖고 있다"
+
+
+class TestUnknownStateIsNotAMutation:
+    """**필수 2.** 판정을 못 하는 상태에서 기본 동작이 mutation이면 안 된다."""
+
+    def test_refuse_never_returns(self) -> None:
+        import typing
+
+        hints = typing.get_type_hints(runner._refuse)
+        assert hints["return"] is typing.NoReturn
+
+    def test_an_unknown_state_does_not_run_ddl(
+        self, adopt_env: _StatementLog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """`classify_state()`에 상태가 하나 늘어도 DDL로 떨어지지 않는다."""
+
+        monkeypatch.setattr(runner, "classify_state", lambda *a, **k: "SOMETHING_NEW")
+
+        def _fail(*_a: Any, **_k: Any) -> None:
+            raise AssertionError("미지 상태에서 DDL이 실행되면 안 된다")
+
+        monkeypatch.setattr(runner, "execute_schema", _fail)
+        marker_root = tmp_path / "m"
+        report_root = tmp_path / "r"
+        marker_root.mkdir()
+        report_root.mkdir()
+
+        with pytest.raises(runner.AgentRuntimeStateError, match="알 수 없는"):
+            runner.run_apply(
+                _target(),
+                change_reference="GH-121",
+                engine_factory=lambda _t: _StubEngine(adopt_env),
+                marker_root=marker_root,
+                report_root=report_root,
+            )
+
+        assert adopt_env.writes == []
+        assert not list(marker_root.iterdir())
+        assert not list(report_root.iterdir())
+
+    def test_classify_state_only_returns_declared_states(self) -> None:
+        seen = {
+            runner.classify_state(_inspection(s), m, migration_sha="b" * 64)
+            for s in ("ABSENT", "PARTIAL", "DRIFT", "PRESENT")
+            for m in (None, _marker(), _marker(schema_signature_sha256="c" * 64))
+        }
+        assert seen <= runner.RUNTIME_STATES
+
+
+class TestForeignKeyAllowlist:
+    """**권고 1.** denylist면 새 알람 계보 table을 통과시킨다."""
+
+    def _fk(self, referenced: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "constraint_type": "f",
+                "constraint_name": "x_fkey",
+                "table_name": "agent_run_alarm",
+                "referenced_table": referenced,
+            }
+        ]
+
+    @pytest.mark.parametrize("target", ["agent_run", "action_history"])
+    def test_allowed_targets(self, target: str) -> None:
+        runner._validate_legacy_alarm_fk(self._fk(target))
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "trace_alarm_history",
+            "summary_alarm_history",
+            "r03_alarm_history",
+            "fdc_alarm",
+            # denylist였다면 통과했을 것 — 아직 존재하지 않는 계보다.
+            "r04_alarm_history",
+            "some_future_alarm_table",
+        ],
+    )
+    def test_every_other_target_is_refused(self, target: str) -> None:
+        with pytest.raises(runner.AgentRuntimeStateError) as caught:
+            runner._validate_legacy_alarm_fk(self._fk(target))
+        assert caught.value.reason_code == "LEGACY_ALARM_FK"
+
+    def test_the_contract_matches_the_allowlist(self) -> None:
+        referenced = {
+            c.referenced_table
+            for c in runner.EXPECTED_CONSTRAINTS.values()
+            if c.contype == "f"
+        }
+        assert referenced == runner.ALLOWED_FK_TARGETS
+
+
+def test_a_duplicate_index_name_is_rejected() -> None:
+    """**권고 3.** constraint 쪽과 형태를 맞춘다."""
+
+    signature = _valid_signature()
+    signature["indexes"].append(dict(signature["indexes"][0]))
+
+    with pytest.raises(runner.AgentRuntimeStateError, match="중복"):
+        runner._validate_signature_contract(signature)
+
+
+def test_the_adoption_identity_is_read_once(
+    adopt_env: _StatementLog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**권고 2.** 검증한 identity와 receipt에 박히는 identity는 같은 읽기여야 한다."""
+
+    calls: list[str] = []
+    real = runner._artifact_identity
+
+    def _counted(target: Any) -> dict[str, Any]:
+        calls.append("read")
+        return real(target)
+
+    monkeypatch.setattr(runner, "_artifact_identity", _counted)
+    marker_root = tmp_path / "m"
+    report_root = tmp_path / "r"
+    marker_root.mkdir()
+    report_root.mkdir()
+
+    runner.run_apply(
+        _target(),
+        change_reference="GH-121",
+        engine_factory=lambda _t: _StubEngine(adopt_env),
+        marker_root=marker_root,
+        report_root=report_root,
+    )
+
+    # `validate_marker()`는 자기 읽기를 유지한다 — 독립 검증이라 넘겨받으면 대조가
+    # 무의미해진다. `run_apply` 본문과 marker candidate는 `adoption` 하나를 공유한다.
+    assert len(calls) == 2, calls
+
+    import inspect
+
+    body = inspect.getsource(runner.run_apply)
+    assert body.count("_artifact_identity(target)") == 1, "본문에서 1회만 읽는다"
+
+
+def test_the_receipt_opens_before_either_branch(
+    adopt_env: _StatementLog, tmp_path: Path
+) -> None:
+    """**확인 2.** 완료 기준이 "receipt 먼저"다. 두 분기가 같은 순서를 탄다."""
+
+    import inspect
+
+    source = inspect.getsource(runner.run_apply)
+    body = source[source.index("state = classify_state") :]
+    start = body.index("_start_receipt(")
+    for later in ("execute_schema(", "postcheck_database("):
+        assert body.index(later, start) > start, later
+    assert body.count("_start_receipt(") == 1, "분기마다 따로 열지 않는다"

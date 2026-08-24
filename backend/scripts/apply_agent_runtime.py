@@ -59,7 +59,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, NoReturn
 
 import apply_reference_extensions_v5 as reference_v5
 import manifest_v3
@@ -1749,6 +1749,43 @@ def normalize_catalog_text(value: str | None) -> str | None:
     return text_value.replace("( ", "(").replace(" )", ")")
 
 
+#: schema·데이터를 바꾸지 않는 문장의 **첫 키워드**.
+#:
+#: `SET`·`LOCK`은 runner가 쓰기 배제를 거는 수단이고 transaction 제어는 그 경계다.
+#: 셋 다 catalog나 행을 건드리지 않는다.
+NON_MUTATING_KEYWORDS = frozenset(
+    {"SELECT", "WITH", "SHOW", "SET", "LOCK", "BEGIN", "COMMIT", "ROLLBACK"}
+)
+
+_LEADING_COMMENT = re.compile(r"\A\s*(?:/\*.*?\*/|--[^\n]*\n)+", re.S)
+
+
+def is_mutating_statement(statement: str) -> bool:
+    """이 문장이 schema·데이터를 바꾸는가.
+
+    **선행 주석을 먼저 걷어낸다.** SQL에서 블록 주석은 문장의 종류를 바꾸지 않으므로
+    `/* agent-runtime:x */ CREATE TABLE ...`은 DDL 그대로다. 주석 prefix를 무해 목록에
+    넣으면 그 한 줄이 DDL 우회 경로가 된다(PR #123 리뷰 필수 1).
+
+    catalog query가 `/* agent-runtime:tables */`로 시작하므로 주석 제거는 **필요하다** —
+    prefix 항목만 지우면 그 query들이 쓰기로 잡힌다.
+
+    회귀가 "adopt는 DB에 쓰지 않는다"를 이 함수로 증명한다. 판정을 테스트마다 따로
+    두면 정의가 갈린다 — 실제로 container와 unit 두 벌이 이미 달랐다.
+    """
+
+    body = _LEADING_COMMENT.sub("", statement).strip()
+    if not body:
+        return False
+    return body.split(None, 1)[0].upper().rstrip(";") not in NON_MUTATING_KEYWORDS
+
+
+def mutating_statements(statements: Sequence[str]) -> list[str]:
+    """발행된 문장 중 schema·데이터를 바꾸는 것만 남긴다."""
+
+    return [item for item in statements if is_mutating_statement(item)]
+
+
 def _tuple_of(value: Any) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -1825,27 +1862,34 @@ def _validate_constraints_contract(constraints: Any) -> None:
             raise AgentRuntimeStateError(f"{name} constraint 계약이 다릅니다")
 
 
+#: Runtime FK가 가리킬 수 있는 **전부**.
+#:
+#: AlarmRef는 `(source, alarm_id)` **값 계약**으로만 저장한다. TRACE·SUMMARY·R03을
+#: 물리 FK로 묶으면 세 계보가 Runtime schema에 얽힌다.
+ALLOWED_FK_TARGETS = frozenset({"agent_run", "action_history"})
+
+
 def _validate_legacy_alarm_fk(constraints: Sequence[Mapping[str, Any]]) -> None:
     """legacy alarm FK **0건**을 독립 축으로 다시 센다(WBS 완료 기준).
 
-    `_validate_constraints_contract`가 이미 전수 대조를 하므로 중복처럼 보이지만
-    같지 않다. 저쪽은 "계약과 같은가"를, 여기는 "AlarmRef를 물리 FK로 묶지 않았는가"를
-    본다. AlarmRef는 `(source, alarm_id)` **값 계약**으로만 저장한다.
+    `_validate_constraints_contract()`가 이미 전수 대조를 하므로 중복처럼 보이지만
+    같지 않다. 저쪽은 "계약과 같은가"를, 여기는 "AlarmRef를 물리 FK로 묶지
+    않았는가"를 본다.
+
+    **allowlist다.** 구현은 알람 table 이름 4개를 denylist로 나열했는데, 그러면 새
+    알람 계보 table이 생겼을 때 이 검사가 통과시킨다 — 독립 축으로 둔 의미가 없다
+    (PR #123 리뷰 권고 1). 완료 기준 문구도 "참조 대상은 둘뿐"이다.
     """
 
-    forbidden = {
-        "trace_alarm_history",
-        "summary_alarm_history",
-        "r03_alarm_history",
-        "fdc_alarm",
-    }
     for row in constraints:
         if str(row["constraint_type"]) != "f":
             continue
         referenced = row.get("referenced_table")
-        if referenced is not None and str(referenced) in forbidden:
+        if referenced is None:
+            continue
+        if str(referenced) not in ALLOWED_FK_TARGETS:
             raise AgentRuntimeStateError(
-                "legacy alarm FK가 있습니다",
+                "허용되지 않은 FK 대상입니다",
                 reason_code="LEGACY_ALARM_FK",
             )
 
@@ -1856,6 +1900,10 @@ def _validate_indexes_contract(indexes: Any) -> None:
     actual: dict[str, IndexContract] = {}
     for row in indexes:
         name = str(row["index_name"])
+        if name in actual:
+            # constraint 쪽과 형태를 맞춘다. live catalog에서는 index 이름이 유일하지만
+            # 뒤 row가 앞을 덮어쓰는 구조를 남겨 둘 이유가 없다(PR #123 리뷰 권고 3).
+            raise AgentRuntimeStateError("runtime index 이름이 중복됐습니다")
         actual[name] = IndexContract(
             table=str(row["table_name"]),
             unique=bool(row["is_unique"]),
@@ -2060,14 +2108,19 @@ def _marker_candidate(
     change_reference: str,
     status: str,
     applied_at: str | None = None,
+    identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """final marker payload.
 
     `dataset_epoch`·`source_archive_sha256`·`bootstrap_stage`·`manifest_sha256`는
     `_artifact_identity()`가 **schema 검증을 통과한** active manifest에서 낸 값이다.
+
+    `identity`를 넘기면 그것을 쓴다. 호출자가 이미 읽어 둔 값과 marker에 박히는 값이
+    **같은 읽기**여야 한다(PR #123 리뷰 권고 2). `validate_marker()`는 반대로 자기
+    읽기를 유지한다 — 그쪽은 독립 검증이므로 넘겨받으면 대조가 무의미해진다.
     """
 
-    identity = _artifact_identity(target)
+    identity = dict(identity) if identity is not None else _artifact_identity(target)
     now = _timezone_text(datetime.now(UTC))
     return {
         "artifact_type": FINAL_ARTIFACT_TYPE,
@@ -2607,8 +2660,13 @@ def classify_state(
     return "EXACT_MARKED"
 
 
-def _refuse(state: str) -> None:
-    """자동 보정하지 않는 상태를 sanitized reason으로 끝낸다."""
+def _refuse(state: str) -> NoReturn:
+    """자동 보정하지 않는 상태를 sanitized reason으로 끝낸다.
+
+    **`NoReturn`이다.** 타입 체커가 호출 이후를 unreachable로 좁혀 준다 — 반환형이
+    `None`이면 `if state in {...}: _refuse(state)` 뒤가 계속 살아 있는 것으로 보인다
+    (PR #123 리뷰 필수 2).
+    """
 
     messages = {
         "PARTIAL": "부분 runtime schema를 자동 보정하지 않습니다",
@@ -2645,7 +2703,12 @@ def run_apply(
     sql, statements = load_and_validate_sql()
     migration_sha = migration_sha256(sql)
     # manifest 검증을 engine보다 먼저 한다 — 계약이 깨져 있으면 접속할 이유가 없다.
-    _artifact_identity(target)
+    #
+    # **한 번만 읽고 재사용한다.** 이 함수는 매번 manifest 파일을 다시 읽고 hash를
+    # 낸다. lock을 먼저 잡아 판정과 실행 사이를 막은 것과 같은 이유로, 검증한
+    # identity와 receipt에 박히는 identity는 **같은 읽기**여야 한다
+    # (PR #123 리뷰 권고 2).
+    adoption = _artifact_identity(target)
     engine = engine_factory(target)
     receipt: dict[str, Any] | None = None
     result: RuntimePostcheck | None = None
@@ -2666,29 +2729,32 @@ def run_apply(
                 return "NO_OP", postcheck_database(
                     connection, alarm_rows_before=alarm_before
                 )
-            if state == "EXACT_UNMARKED":
-                # DB에 쓰지 않는다. postcheck는 read-only다.
-                status = "VERIFIED_EXISTING"
-                result = postcheck_database(connection, alarm_rows_before=alarm_before)
-                receipt = _start_receipt(
-                    target,
-                    migration_sha=migration_sha,
-                    change_reference=change_reference,
-                    adoption_identity=_artifact_identity(target),
-                    status_result=status,
-                    root=report_root,
+            if state not in {"EXACT_UNMARKED", "ABSENT"}:
+                # **미지 상태에서 기본 동작이 mutation이면 안 된다.**
+                #
+                # 구현은 `else`가 곧 `ABSENT`였다. 정확성이 "집합 밖 요소가 없다"는
+                # 사실에만 걸려 있어, `classify_state()`에 상태가 하나 추가되면 그것이
+                # `else`로 떨어져 공용 DB에 DDL이 돈다. CLI에서 `default_mode="apply"`를
+                # 없앤 것과 같은 이유다(PR #123 리뷰 필수 2).
+                raise AgentRuntimeStateError(
+                    "알 수 없는 runtime 상태입니다", reason_code="DRIFT"
                 )
-            else:
-                receipt = _start_receipt(
-                    target,
-                    migration_sha=migration_sha,
-                    change_reference=change_reference,
-                    adoption_identity=_artifact_identity(target),
-                    status_result=status,
-                    root=report_root,
-                )
+
+            status = "VERIFIED_EXISTING" if state == "EXACT_UNMARKED" else "APPLIED"
+            # **receipt를 분기 앞에서 연다.** 두 분기의 인자가 완전히 같고,
+            # 완료 기준이 "receipt 먼저, marker 마지막"이다(PR #123 리뷰 확인 2).
+            receipt = _start_receipt(
+                target,
+                migration_sha=migration_sha,
+                change_reference=change_reference,
+                adoption_identity=adoption,
+                status_result=status,
+                root=report_root,
+            )
+            if state == "ABSENT":
                 execute_schema(connection, statements)
-                result = postcheck_database(connection, alarm_rows_before=alarm_before)
+            # `EXACT_UNMARKED`는 DB에 쓰지 않는다. postcheck는 양쪽 다 read-only다.
+            result = postcheck_database(connection, alarm_rows_before=alarm_before)
         if result is None or receipt is None:
             raise AgentRuntimeStateError("runtime apply 결과가 없습니다")
         # **receipt 먼저, marker 마지막.** marker는 "commit된 사실"의 증명서이므로
@@ -2702,6 +2768,7 @@ def run_apply(
                 change_reference=change_reference,
                 status=status,
                 applied_at=str(receipt.get("committed_at")),
+                identity=adoption,
             ),
             target,
             migration_sha=migration_sha,
@@ -2777,6 +2844,7 @@ def run_recover_marker(
                 # 바뀌어 실제 적용 방식을 잃는다(구현리뷰 필수 1-2).
                 status=str(receipt["status_result"]),
                 applied_at=str(receipt.get("committed_at")),
+                identity=adoption,
             ),
             target,
             migration_sha=migration_sha,

@@ -186,26 +186,13 @@ class _Connection:
 
     @property
     def writes(self) -> list[str]:
-        """DDL/DML만 남긴다.
+        """DDL/DML만 남긴다. **판정은 runner가 소유한다.**
 
-        `BEGIN`/`COMMIT`은 transaction 제어이고 `SET`·`LOCK`은 runner가 쓰기 배제를
-        거는 수단이다. 셋 다 schema나 데이터를 바꾸지 않는다 — 숨기지 않고 분류한다.
+        allowlist를 테스트에 두면 정의가 갈린다 — 실제로 container와 unit 두 벌이
+        달랐고, container 쪽만 `BEGIN`/`COMMIT`을 무해로 셌다(PR #123 리뷰 필수 1).
         """
 
-        allowed = (
-            "SELECT",
-            "SET ",
-            "LOCK ",
-            "BEGIN",
-            "COMMIT",
-            "ROLLBACK",
-            "/* AGENT-RUNTIME:",
-        )
-        return [
-            item
-            for item in self.statements
-            if not item.strip().upper().startswith(allowed)
-        ]
+        return runner.mutating_statements(self.statements)
 
 
 def _session(full: bool) -> Any:
