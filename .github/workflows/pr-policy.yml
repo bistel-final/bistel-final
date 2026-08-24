@@ -161,6 +161,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `neo4j`는 Bolt에 붙기 위한 것이 **아니다.** `verify_bootstrap_state`가
+      # module 최상단에서 `neo4j.exceptions`를 import하므로, full verifier를 부르는
+      # `V5-CM-3.3` 회귀가 이것 없이는 collection 단계에서 죽는다.
       - name: Install focused rehearsal dependencies
         run: >-
           python -m pip install
@@ -168,6 +171,7 @@ jobs:
           SQLAlchemy==2.0.36
           psycopg[binary]==3.2.3
           python-dotenv==1.0.1
+          neo4j==5.26.0
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
