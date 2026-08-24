@@ -1,0 +1,19 @@
+{
+  "artifact_type": "agent_runtime_final",
+  "format_version": 1,
+  "task_id": "V5-CM-3.2",
+  "database": "kosa_agent_e2e",
+  "profile": "runtime",
+  "status": "VERIFIED_EXISTING",
+  "dataset_epoch": "fdc_final_20260818",
+  "source_archive_sha256": "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3",
+  "bootstrap_stage": "runtime_clean",
+  "migration_id": "002_agent_runtime_clean",
+  "migration_sha256": "b4e7a15bcee70e11400b67eed56eb82e4a5fe47ffb0c92efaeb5ab012814d4e8",
+  "manifest_sha256": "4b48524ddba8af79d9dacef368e9b52b07c6851fcb3211d2a86d69386ddfbc6f",
+  "schema_signature_sha256": "087ecf74c9a57ab11e9f16582555b6f5c9bda75c043faf506eb4fe2f704e8532",
+  "action_history_rows": 0,
+  "change_reference": "GH-121",
+  "applied_at": "2026-08-24T09:07:03.886683+00:00",
+  "recorded_at": "2026-08-24T09:07:03.891191+00:00"
+}

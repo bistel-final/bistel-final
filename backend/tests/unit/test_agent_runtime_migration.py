@@ -132,8 +132,79 @@ def test_sql_has_exact_runtime_object_inventory() -> None:
         sum(item.upper().startswith("CREATE UNIQUE INDEX") for item in statements) == 4
     )
     assert set(migration.EXPECTED_TABLE_COLUMNS) == set(migration.RUNTIME_TABLES)
-    assert len(migration.EXPECTED_INDEX_NAMES) == 15
+    assert len(migration.EXPECTED_INDEXES) == 15
     assert len(migration.EXPECTED_SEQUENCE_NAMES) == 2
+
+    # SQL이 만드는 4개 partial unique index가 계약에도 정확히 4개다.
+    partial = {
+        name
+        for name, contract in migration.EXPECTED_INDEXES.items()
+        if contract.predicate is not None
+    }
+    assert partial == {
+        "ux_agent_run_incident_active",
+        "ux_agent_run_action_created",
+        "ux_agent_run_action_incident",
+        "ux_agent_run_alarm_representative",
+    }
+    assert all(contract.unique for contract in migration.EXPECTED_INDEXES.values())
+
+
+def test_constraint_contract_covers_every_runtime_table() -> None:
+    """exact allowlist가 9 table을 빠짐없이 덮는지 본다.
+
+    이름 key 하나만 지워도 그 table의 constraint가 검증에서 빠진다. 그런데 정상
+    입력에서는 어차피 통과하므로 다른 회귀가 잡지 못한다.
+    """
+
+    covered = {contract.table for contract in migration.EXPECTED_CONSTRAINTS.values()}
+    assert covered == set(migration.RUNTIME_TABLES)
+
+    # 모든 table에 PK가 하나씩 있다.
+    primary = {
+        contract.table
+        for contract in migration.EXPECTED_CONSTRAINTS.values()
+        if contract.contype == "p"
+    }
+    assert primary == set(migration.RUNTIME_TABLES)
+
+
+def test_no_foreign_key_points_at_an_alarm_table() -> None:
+    """legacy alarm FK 0건 — WBS 완료 기준.
+
+    AlarmRef는 `(source, alarm_id)` **값 계약**으로만 저장한다. TRACE·SUMMARY·R03을
+    물리 FK로 묶으면 세 계보가 Runtime schema에 얽힌다.
+    """
+
+    forbidden = {
+        "trace_alarm_history",
+        "summary_alarm_history",
+        "r03_alarm_history",
+        "fdc_alarm",
+    }
+    referenced = {
+        contract.referenced_table
+        for contract in migration.EXPECTED_CONSTRAINTS.values()
+        if contract.contype == "f"
+    }
+    assert referenced & forbidden == set()
+    assert referenced == {"agent_run", "action_history"}
+
+
+def test_migration_lineage_matches_the_active_manifest() -> None:
+    """marker가 주장할 lineage가 발급된 manifest와 같은지 본다.
+
+    `V5-CM-1.8`이 `applied_migrations`를 확정했다. 여기서 갈리면 marker는 DB에 없는
+    계보를 증명하게 된다.
+    """
+
+    manifest = migration.load_final_manifest()
+    assert tuple(manifest["applied_migrations"]) == migration.EXPECTED_MIGRATION_LINEAGE
+    assert manifest["dataset_epoch"] == "fdc_final_20260818"
+    assert (
+        migration.EXPECTED_MIGRATION_LINEAGE[0] == "v5_001_reference_extensions_final"
+    )
+    assert migration.EXPECTED_MIGRATION_LINEAGE[1] == migration.MIGRATION_ID
 
 
 def test_sql_columns_match_python_catalog_contract() -> None:
