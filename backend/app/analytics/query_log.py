@@ -77,8 +77,9 @@ def record_query_log(response: AnalysisQueryResponse) -> int | None:
         # evaluation-only 선택 확장 — logger DSN 미설정 배포에서는 기록을 생략한다
         logger.info("nl_query_log 기록 생략: logger DSN 미설정 (evaluation-only)")
         return None
-    except SQLAlchemyError:
-        logger.warning("nl_query_log 기록 실패 — 질의 응답은 계속한다", exc_info=True)
+    except SQLAlchemyError as exc:
+        # 반복 호출에서 로그가 범람되지 않도록 traceback 없이 한 줄로 남긴다
+        logger.warning("nl_query_log 기록 실패 — 질의 응답은 계속한다: %s", exc)
         return None
 
 

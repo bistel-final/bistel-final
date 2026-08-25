@@ -1,0 +1,103 @@
+{
+  "questionset_id": "analytics_eval_fdc_final_v1",
+  "dataset_epoch": "fdc_final_20260818",
+  "description": "V5-D-2.5 Text2SQL 평가 질문셋. final snapshot 스키마(base 9 + reference) 기준으로 재작성했다. 정답은 상수가 아니라 gold_sql을 동일 검증·readonly 경로로 실행한 결과다.",
+  "grading_criteria": {
+    "row_comparison": "행 다중집합 비교. 컬럼 순서는 채점하지 않는다(행 내 값 다중집합). mode=ordered 질문은 다중집합 일치 + sort_check 정렬축 단조성을 채점한다 (동률 내 순서는 채점하지 않는다).",
+    "numeric_tolerance": "실수는 rel/abs 1e-6 (math.isclose) 이내면 정답. 정수·문자열은 완전 일치.",
+    "chart": "expected_chart가 명시된 질문만 visualization.chart_type 일치를 채점한다. 나머지는 차트 미채점.",
+    "pass_threshold": "12건 이상 중 10건 이상 정답 (FR-D-08)"
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "TRACE 알람은 전부 몇 건이야?",
+      "gold_sql": "SELECT count(*) AS cnt FROM trace_alarm_history LIMIT 500",
+      "mode": "scalar"
+    },
+    {
+      "id": "Q02",
+      "question": "SUMMARY 알람 총 건수를 알려줘",
+      "gold_sql": "SELECT count(*) AS cnt FROM summary_alarm_history LIMIT 500",
+      "mode": "scalar"
+    },
+    {
+      "id": "Q03",
+      "question": "챔버별 TRACE 알람 건수를 많은 순서대로 보여줘",
+      "gold_sql": "SELECT chamber, count(*) AS cnt FROM trace_alarm_history GROUP BY chamber ORDER BY cnt DESC, chamber ASC LIMIT 500",
+      "mode": "ordered",
+      "sort_check": "numeric_desc",
+      "expected_chart": "bar"
+    },
+    {
+      "id": "Q04",
+      "question": "설비별 SUMMARY 알람 건수를 집계해줘",
+      "gold_sql": "SELECT equipment, count(*) AS cnt FROM summary_alarm_history GROUP BY equipment LIMIT 500",
+      "mode": "set",
+      "expected_chart": "bar"
+    },
+    {
+      "id": "Q05",
+      "question": "PH_FOCUS 파라미터에서 발생한 TRACE 알람은 몇 건이야?",
+      "gold_sql": "SELECT count(*) AS cnt FROM trace_alarm_history WHERE parameter = 'PH_FOCUS' LIMIT 500",
+      "mode": "scalar"
+    },
+    {
+      "id": "Q06",
+      "question": "2026년 6월 3일 하루 동안 발생한 TRACE 알람 건수는?",
+      "gold_sql": "SELECT count(*) AS cnt FROM trace_alarm_history WHERE occurred_at >= '2026-06-03 00:00:00+09' AND occurred_at < '2026-06-04 00:00:00+09' LIMIT 500",
+      "mode": "scalar"
+    },
+    {
+      "id": "Q07",
+      "question": "챔버별로 처리한 wafer 수를 알려줘",
+      "gold_sql": "SELECT chamber_id, count(*) AS cnt FROM lot_history GROUP BY chamber_id LIMIT 500",
+      "mode": "set"
+    },
+    {
+      "id": "Q08",
+      "question": "파라미터별 summary 평균값(value_mean)의 평균을 구해줘",
+      "gold_sql": "SELECT parameter, avg(value_mean) AS avg_mean FROM summary_data GROUP BY parameter LIMIT 500",
+      "mode": "set"
+    },
+    {
+      "id": "Q09",
+      "question": "evaluation 테이블에서 alarm_type별 행 수 분포를 보여줘",
+      "gold_sql": "SELECT alarm_type, count(*) AS cnt FROM evaluation GROUP BY alarm_type LIMIT 500",
+      "mode": "set"
+    },
+    {
+      "id": "Q10",
+      "question": "fdc_trace에 저장된 측정 포인트는 총 몇 개야?",
+      "gold_sql": "SELECT count(*) AS cnt FROM fdc_trace LIMIT 500",
+      "mode": "scalar"
+    },
+    {
+      "id": "Q11",
+      "question": "계측(metrology)에서 measure_type별 평균 측정값을 알려줘",
+      "gold_sql": "SELECT measure_type, avg(measured_value) AS avg_value FROM metrology GROUP BY measure_type LIMIT 500",
+      "mode": "set"
+    },
+    {
+      "id": "Q12",
+      "question": "가장 최근에 발생한 TRACE 알람 5건의 alarm_id를 보여줘",
+      "gold_sql": "SELECT alarm_id FROM trace_alarm_history ORDER BY occurred_at DESC, alarm_id DESC LIMIT 5",
+      "mode": "set"
+    },
+    {
+      "id": "Q13",
+      "question": "일자별 TRACE 알람 발생 추이를 보여줘",
+      "gold_sql": "SELECT date_trunc('day', occurred_at) AS day, count(*) AS cnt FROM trace_alarm_history GROUP BY date_trunc('day', occurred_at) ORDER BY day ASC LIMIT 500",
+      "mode": "ordered",
+      "sort_check": "string_asc",
+      "expected_chart": "line"
+    },
+    {
+      "id": "Q14",
+      "question": "TRACE 알람 측정값(value)의 분포를 히스토그램으로 보여줘",
+      "gold_sql": "SELECT value FROM trace_alarm_history LIMIT 500",
+      "mode": "set",
+      "expected_chart": "histogram"
+    }
+  ]
+}
