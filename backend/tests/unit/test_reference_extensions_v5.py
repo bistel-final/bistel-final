@@ -1040,11 +1040,14 @@ def test_the_v5_final_stage_is_now_registered() -> None:
 
     import manifest_v3
 
-    # `V5-CM-3.3`이 `runtime_guarded`를 더했다. predecessor도 남는다 — CM-3.2 marker가
-    # 그 stage를 증명하고 있어서 빼면 검증할 계약을 잃는다.
+    # successor는 **더한다**. predecessor도 남는다 — 각 marker가 그 stage를
+    # 증명하고 있어서 빼면 검증할 계약을 잃는다.
+    #
+    #   runtime_clean(CM-3.2) → runtime_guarded(CM-3.3) → runtime_checkpointed(CM-3.4)
     for profile, stage in (
         ("runtime", "runtime_clean"),
         ("runtime", "runtime_guarded"),
+        ("runtime", "runtime_checkpointed"),
         ("evaluation", "evaluation_reference"),
     ):
         contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
@@ -1053,8 +1056,13 @@ def test_the_v5_final_stage_is_now_registered() -> None:
             # live final stage만 `PROFILE_MIGRATIONS`와 exact다.
             assert contract.applied_migrations == v5.PROFILE_MIGRATIONS[profile]
 
-    # 현재 live final과 registrar 발급 stage는 다르다(구현리뷰 필수 3).
-    assert v5.FINAL_STAGE_BY_PROFILE["runtime"] == "runtime_guarded"
+    # **세 stage가 각각 다른 질문에 답한다**(구현리뷰 필수 3 · `V5-CM-3.4`).
+    #
+    #   FINAL_STAGE_BY_PROFILE      현재 live final    runtime_checkpointed
+    #   GUARDED_RUNTIME_STAGE       CM-3.3이 증명      runtime_guarded
+    #   REGISTRAR_STAGE_BY_PROFILE  CM-1.8이 발급      runtime_clean
+    assert v5.FINAL_STAGE_BY_PROFILE["runtime"] == "runtime_checkpointed"
+    assert v5.GUARDED_RUNTIME_STAGE == "runtime_guarded"
     assert v5.REGISTRAR_STAGE_BY_PROFILE["runtime"] == "runtime_clean"
 
     assert "NO_STAGE_REGISTERS_THE_FINAL_MIGRATION" not in v5.final_manifest_blockers()
@@ -1069,6 +1077,8 @@ def test_expected_final_migrations_are_documented_not_enforced_here() -> None:
         v5.MIGRATION_ID,
         "002_agent_runtime_clean",
         "003_agent_run_severity_pair",
+        # `V5-CM-3.4`. package migration이라 저장소 SQL 파일이 없다.
+        "langgraph_checkpoint_postgres_2_0_9_v8",
     )
     assert v5.PROFILE_MIGRATIONS["evaluation"] == (v5.MIGRATION_ID,)
     # artifact builder가 직접 쓰지 않는다. **docstring이 아니라 코드 본문**을 본다 —

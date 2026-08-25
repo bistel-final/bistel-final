@@ -1146,8 +1146,12 @@ def classify_data_phase(*, r03_rows: int, view_rows: int) -> str:
 #: guarded를, 다른 쪽은 clean을 요구하면서 둘 다 green이 된다(구현리뷰 필수 3).
 #: 회귀가 두 상수를 대조한다.
 FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
-    {"runtime": "runtime_guarded", "evaluation": "evaluation_reference"}
+    {"runtime": "runtime_checkpointed", "evaluation": "evaluation_reference"}
 )
+
+#: `V5-CM-3.3`이 증명한 stage. `V5-CM-3.4`가 그 위에 checkpoint를 쌓았지만
+#: guard marker는 계속 이 stage를 증명한다 — history가 아니라 살아 있는 계보다.
+GUARDED_RUNTIME_STAGE = "runtime_guarded"
 
 #: `V5-CM-3.2`가 증명한 predecessor stage. history가 아니라 **살아 있는 계보**다.
 PREDECESSOR_RUNTIME_STAGE = "runtime_clean"
@@ -1164,6 +1168,18 @@ REGISTRAR_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
     {"runtime": PREDECESSOR_RUNTIME_STAGE, "evaluation": "evaluation_reference"}
 )
 
+PROFILE_MIGRATIONS: Mapping[str, tuple[str, ...]] = {
+    "runtime": (
+        MIGRATION_ID,
+        "002_agent_runtime_clean",
+        "003_agent_run_severity_pair",
+        # `manifest_v3.CHECKPOINT_MIGRATION_ID`와 같아야 한다. 이 모듈은
+        # `manifest_v3`를 import하지 않으므로(순환) 회귀가 두 상수를 대조한다.
+        "langgraph_checkpoint_postgres_2_0_9_v8",
+    ),
+    "evaluation": (MIGRATION_ID,),
+}
+
 #: profile별 **기대 stage 계약 전체**.
 #:
 #: Evaluation만 schema·action까지 보고 Runtime은 migration만 보던 비대칭이 있었다.
@@ -1177,8 +1193,8 @@ FINAL_STAGE_EXPECTATIONS: Mapping[
     {
         # (schema_stage, applied_migrations, action_policy, action_rows, fixture)
         "runtime": (
-            "runtime_guarded",
-            (MIGRATION_ID, "002_agent_runtime_clean", "003_agent_run_severity_pair"),
+            "runtime_checkpointed",
+            PROFILE_MIGRATIONS["runtime"],
             "bootstrap_empty",
             0,
             None,
@@ -1193,10 +1209,6 @@ FINAL_STAGE_EXPECTATIONS: Mapping[
     }
 )
 
-PROFILE_MIGRATIONS: Mapping[str, tuple[str, ...]] = {
-    "runtime": (MIGRATION_ID, "002_agent_runtime_clean", "003_agent_run_severity_pair"),
-    "evaluation": (MIGRATION_ID,),
-}
 #: **구 등록 manifest(폐기 epoch `kosa_0813`)의 물리 inventory 개수다.**
 #:
 #: 이것을 "현재" 또는 "final" inventory로 읽으면 안 된다(구현리뷰 17차 필수 2).

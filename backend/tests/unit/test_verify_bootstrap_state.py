@@ -1147,6 +1147,7 @@ class TestFinalPostcheckRouting:
         assert verifier.FINAL_STAGES == {
             ("runtime", "runtime_clean"),
             ("runtime", "runtime_guarded"),
+            ("runtime", "runtime_checkpointed"),
             ("evaluation", "evaluation_reference"),
         }
         # live final stage는 부분집합이다 — 같지 않다.
@@ -1167,8 +1168,8 @@ class TestFinalPostcheckRouting:
         """
 
         assert verifier.EXPECTED_STAGES == {
-            "kosa_agent": "runtime_guarded",
-            "kosa_agent_e2e": "runtime_guarded",
+            "kosa_agent": "runtime_checkpointed",
+            "kosa_agent_e2e": "runtime_checkpointed",
             "kosa_text2sql": "evaluation_reference",
         }
         assert "evaluation_mock" not in set(verifier.EXPECTED_STAGES.values())
@@ -1530,3 +1531,79 @@ class _FakeResult:
 
     def scalar(self) -> str:
         return ""
+
+
+class TestCheckpointStageWiring:
+    """`runtime_checkpointed`가 **full verifier 안에서** 판정되는지 본다.
+
+    CM-3.4 2차 필수 1이 지적한 것은 "checkpoint 판정 함수가 틀렸다"가 아니라
+    **`verify_database()`가 그것을 부르지 않는다**였다. 판정기만 테스트하면 배선이
+    끊겨도 전부 green이다 — CM-2.7 필수 I-3과 같은 모양이다.
+    """
+
+    def test_verify_database_consumes_the_checkpoint_helper(self) -> None:
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(verifier.verify_database)))
+        consumed = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and ast.unparse(node.func).endswith("mismatches.extend")
+            and any(
+                isinstance(inner, ast.Call)
+                and ast.unparse(inner.func) == "_checkpoint_mismatches"
+                for inner in ast.walk(node)
+            )
+        ]
+        assert len(consumed) == 1
+
+    def test_the_guard_contract_covers_the_checkpoint_stage(self) -> None:
+        """checkpoint stage도 guarded 계약을 **그대로** 지나야 한다.
+
+        `stage == GUARDED_STAGE`로 좁으면 checkpoint를 얹은 DB에서 CM-3.3 guard가
+        사라져도 통과한다(2차 필수 1).
+        """
+
+        import ast
+        import inspect
+        import textwrap
+
+        source = textwrap.dedent(inspect.getsource(verifier.verify_database))
+        tree = ast.parse(source)
+        guards = [
+            ast.unparse(node.test)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.If)
+            and "_guarded_mismatches" in ast.unparse(node)
+            and isinstance(node.test, ast.Compare)
+        ]
+        # 바깥 `(profile, stage) in RUNTIME_POSTCHECK_STAGES`도 부분트리에 잡히므로
+        # 포함으로 본다. 핵심은 **좁은 stage 등식이 남아 있지 않다**는 것이다.
+        assert "stage in GUARDED_CONSTRAINT_STAGES" in guards
+        assert "stage == severity_guard.GUARDED_STAGE" not in guards
+        assert verifier.CHECKPOINT_STAGE in verifier.GUARDED_CONSTRAINT_STAGES
+
+    def test_the_clean_marker_is_not_compared_at_guarded_lineage_stages(self) -> None:
+        """`runtime_clean` marker signature를 guarded 계보에서 직접 비교하지 않는다.
+
+        checkpoint는 `RUNTIME_TABLES` 밖에 4개를 더할 뿐이라 live signature는 여전히
+        guarded의 것이다. 직접 비교하면 **정상 상태가 mismatch로** 보고된다.
+        """
+
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(verifier.verify_database)))
+        tests = [
+            ast.unparse(node.test)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.If)
+            and "runtime_marker['schema_signature_sha256']" in ast.unparse(node.test)
+        ]
+        assert len(tests) == 1
+        assert "stage not in GUARDED_CONSTRAINT_STAGES" in tests[0]
+        assert "severity_guard.GUARDED_STAGE" not in tests[0]

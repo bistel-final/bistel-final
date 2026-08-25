@@ -55,7 +55,7 @@ import sys
 import uuid
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -1746,7 +1746,46 @@ def normalize_catalog_text(value: str | None) -> str | None:
         return None
     text_value = _CAST_PATTERN.sub("", str(value))
     text_value = re.sub(r"\s+", " ", text_value).strip().lower()
-    return text_value.replace("( ", "(").replace(" )", ")")
+    text_value = text_value.replace("( ", "(").replace(" )", ")")
+    return _collapse_redundant_parentheses(text_value)
+
+
+#: **인용 리터럴** 하나를 감싼 괄호. `('running')` → `'running'`
+#:
+#: 식별자는 접지 않는다 — `FOREIGN KEY (action_id)`처럼 **문법상 필요한 괄호**가 있고,
+#: 그것까지 지우면 정상 계약이 깨진다(첫 시도에서 실제로 깨뜨렸다).
+_ATOM_IN_PARENS = re.compile(r"\(\s*('(?:[^']|'')*')\s*\)")
+#: 중첩 없는 그룹을 감싼 이중 괄호. `((array[...]))` → `(array[...])`
+_DOUBLED_PARENS = re.compile(r"\(\(([^()]*)\)\)")
+
+
+def _collapse_redundant_parentheses(value: str) -> str:
+    """의미를 바꾸지 않는 괄호를 접는다. **멱등이다.**
+
+    ## 왜 필요한가
+
+    `pg_restore`는 같은 predicate를 다르게 재출력한다. cast를 배열 **바깥**에 두느냐
+    각 원소에 두느냐가 갈린다.
+
+    ```text
+    원본   ((status)::text = ANY ((ARRAY['RUNNING'::varchar, ...])::text[]))
+    복원본 ((status)::text = ANY (ARRAY[('RUNNING'::varchar)::text, ...]))
+    ```
+
+    cast를 떼고 나면 남는 차이는 **불필요한 괄호뿐**이다. 접지 않으면 dump/restore로
+    복원한 DB가 `EXPECTED_INDEXES` 계약을 통과하지 못한다 — 즉 backup이 복구 수단으로
+    성립하지 않는다(`V5-CM-3.4` 구현리뷰 10차 필수 2에서 실측으로 드러났다).
+
+    **비교 경로에만 쓰인다.** `schema_signature_sha256()`는 정규화 전 원문을 해시하므로
+    기존 marker의 값은 이 변경에 영향받지 않는다.
+    """
+
+    previous = None
+    while previous != value:
+        previous = value
+        value = _ATOM_IN_PARENS.sub(r"\1", value)
+        value = _DOUBLED_PARENS.sub(r"(\1)", value)
+    return value
 
 
 #: schema·데이터를 바꾸지 않는 문장의 **첫 키워드**.
@@ -1919,8 +1958,21 @@ def _validate_indexes_contract(indexes: Any) -> None:
     if set(actual) != set(EXPECTED_INDEXES):
         raise AgentRuntimeStateError("runtime index allowlist가 다릅니다")
     for name, expected in EXPECTED_INDEXES.items():
-        if actual[name] != expected:
+        # **양쪽을 정규화한다.**
+        #
+        # 계약 상수는 사람이 읽는 형태로 적혀 있고 live catalog는 서버가 재출력한
+        # 형태다. 한쪽만 접으면 정규화를 넓힐 때마다 상수를 따라 고쳐야 하고, 그때
+        # "무엇이 계약인가"가 정규화 구현에 끌려간다.
+        if actual[name] != _normalized_index(expected):
             raise AgentRuntimeStateError(f"{name} index 계약이 다릅니다")
+
+
+def _normalized_index(contract: IndexContract) -> IndexContract:
+    return replace(
+        contract,
+        predicate=normalize_catalog_text(contract.predicate),
+        expressions=normalize_catalog_text(contract.expressions),
+    )
 
 
 def schema_signature_sha256(
@@ -2038,6 +2090,7 @@ def postcheck_database(
     *,
     alarm_rows_before: int,
     expected_constraints: Mapping[str, ConstraintContract] | None = None,
+    extra_tables: Sequence[str] | None = None,
 ) -> RuntimePostcheck:
     inspection = inspect_database(connection, expected_constraints=expected_constraints)
     if (
@@ -2050,7 +2103,13 @@ def postcheck_database(
     alarm_rows = alarm_event_count(connection)
     if action_rows != 0 or alarm_rows != alarm_rows_before:
         raise AgentRuntimeStateError("002가 base/action/View 불변식을 위반했습니다")
-    if _actual_table_set(connection) != EXPECTED_ALL_TABLES:
+    # **successor table은 명시적으로만 허용한다.**
+    #
+    # 전역 `EXPECTED_ALL_TABLES`를 26개로 바꾸면 checkpoint 이전 stage가 거꾸로
+    # checkpoint table을 요구해 역사 검증이 깨진다. 인자로 받은 것만 더한다
+    # (`V5-CM-3.4` 계획 §4.2).
+    allowed = EXPECTED_ALL_TABLES | frozenset(extra_tables or ())
+    if _actual_table_set(connection) != allowed:
         raise AgentRuntimeStateError("runtime table 전체 allowlist가 다릅니다")
     if violations := _privilege_violations(connection):
         raise AgentRuntimeStateError(

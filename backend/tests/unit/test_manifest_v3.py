@@ -782,12 +782,21 @@ class TestCorrectedSurfaceIsGone:
         with pytest.raises(mv3.ManifestMetadataError):
             mv3.resolve_bootstrap_manifest_path(profile, "corrected_base")
 
-    def test_registered_stages_are_exactly_five(self) -> None:
-        """`V5-CM-1.8`이 `evaluation_mock`을 `evaluation_reference`로 교체했고,
-        `V5-CM-3.3`이 `runtime_guarded` successor를 **더했다**.
+    def test_registered_stages_are_exactly_six(self) -> None:
+        """**successor는 더하고 predecessor는 남긴다.**
 
-        `runtime_clean`은 남는다 — CM-3.2 marker가 그 stage를 증명하고 있어서
-        registry에서 빼면 그 marker가 검증할 계약을 잃는다.
+        `V5-CM-1.8`이 `evaluation_mock`을 `evaluation_reference`로 교체했고,
+        `V5-CM-3.3`이 `runtime_guarded`를, `V5-CM-3.4`가 `runtime_checkpointed`를
+        각각 **더했다**.
+
+        `runtime_clean`·`runtime_guarded`는 남는다 — CM-3.2·CM-3.3 marker가 각
+        stage를 증명하고 있어서 registry에서 빼면 그 marker가 검증할 계약을 잃는다.
+
+        Runtime 계보가 셋으로 늘었다.
+
+        ```text
+        runtime_clean → runtime_guarded → runtime_checkpointed
+        ```
         """
 
         assert set(mv3.BOOTSTRAP_STAGE_CONTRACTS) == {
@@ -796,6 +805,7 @@ class TestCorrectedSurfaceIsGone:
             ("evaluation", "evaluation_reference"),
             ("runtime", "runtime_clean"),
             ("runtime", "runtime_guarded"),
+            ("runtime", "runtime_checkpointed"),
         }
         # 구 stage는 active 등록부에서 사라지고 history 계보로만 남는다.
         assert ("evaluation", "evaluation_mock") not in mv3.BOOTSTRAP_STAGE_CONTRACTS

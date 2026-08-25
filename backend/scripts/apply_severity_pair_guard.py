@@ -64,6 +64,7 @@ from bootstrap_common import (
     ReferenceExtensionError,
     _canonical_hash,
     _engine_for,
+    _exclusive_artifact_lock,
     _result_rows,
     _single_row,
     _timezone_text,
@@ -1746,6 +1747,441 @@ def run_recover_marker(
 
 
 # ---------------------------------------------------------------------------
+# restore 후 marker 재발급 — `V5-CM-3.4` 복구가 남기는 표현 차이를 닫는다
+# ---------------------------------------------------------------------------
+
+#: 재발급 감사 증적. **apply receipt와 이름으로 갈라 둔다** — `_receipt_files()`의
+#: glob(`agent_severity_guard_final.*`)에 걸리지 않아야 `--recover-marker` 후보에
+#: 섞이지 않는다. 두 작업은 다른 질문이다.
+REISSUE_ARTIFACT_TYPE = "agent_severity_guard_marker_reissue"
+
+REISSUE_STATUSES = frozenset({"STARTED", "COMMITTED", "ABORTED"})
+
+REISSUE_KEYS = frozenset(
+    {
+        "artifact_type",
+        "format_version",
+        "task_id",
+        "operation_id",
+        "database",
+        "profile",
+        "status",
+        "migration_id",
+        "migration_sha256",
+        "guarded_identity",
+        "change_reference",
+        "recovery_archive_sha256",
+        "recovery_completed_at",
+        "recovery_runtime_contract_sha256",
+        "previous_guarded_schema_signature_sha256",
+        "guarded_schema_signature_sha256",
+        "agent_run_rows",
+        "started_at",
+        "recorded_at",
+    }
+)
+
+
+def reissue_receipt_path(
+    database: str, operation_id: str, *, root: Path = REPORT_ROOT
+) -> Path:
+    try:
+        uuid.UUID(operation_id)
+    except ValueError as exc:
+        raise SeverityGuardArtifactError(
+            "marker 재발급 operation id가 잘못됐습니다"
+        ) from exc
+    if database not in RUNTIME_DATABASES:
+        raise SeverityGuardArtifactError("marker 재발급 database가 허용되지 않았습니다")
+    return root / f"{REISSUE_ARTIFACT_TYPE}.{database}.{operation_id}.json"
+
+
+def validate_reissue_receipt(payload: Mapping[str, Any], *, database: str) -> None:
+    """재발급 감사 증적 strict schema. **marker를 바꾸는 작업의 증적이다.**"""
+
+    if set(payload) != REISSUE_KEYS:
+        raise SeverityGuardArtifactError("marker 재발급 receipt key 계약이 다릅니다")
+    if (
+        payload.get("artifact_type") != REISSUE_ARTIFACT_TYPE
+        or not _is_exact_int(payload.get("format_version"), 1)
+        or payload.get("task_id") != TASK_ID
+        or payload.get("migration_id") != MIGRATION_ID
+        or payload.get("database") != database
+        or payload.get("profile") != RUNTIME_PROFILE
+    ):
+        raise SeverityGuardArtifactError("marker 재발급 receipt 계보가 다릅니다")
+    if payload.get("status") not in REISSUE_STATUSES:
+        raise SeverityGuardArtifactError("marker 재발급 status가 잘못됐습니다")
+    identity = payload.get("guarded_identity")
+    if not isinstance(identity, Mapping) or set(identity) != _IDENTITY_KEYS:
+        raise SeverityGuardArtifactError("marker 재발급 계보 key가 다릅니다")
+    for key in (
+        "migration_sha256",
+        "recovery_archive_sha256",
+        "recovery_runtime_contract_sha256",
+        "previous_guarded_schema_signature_sha256",
+        "guarded_schema_signature_sha256",
+    ):
+        if not _is_sha256(payload.get(key)):
+            raise SeverityGuardArtifactError(f"marker 재발급 {key}가 잘못됐습니다")
+    # **바꾸지 않았다면 재발급이 아니다.** 같은 값을 적은 증적은 무엇도 설명하지 못한다.
+    if (
+        payload["previous_guarded_schema_signature_sha256"]
+        == payload["guarded_schema_signature_sha256"]
+    ):
+        raise SeverityGuardArtifactError("marker 재발급이 아무것도 바꾸지 않습니다")
+    for key in ("started_at", "recorded_at", "recovery_completed_at"):
+        if not _is_timestamp(payload.get(key)):
+            raise SeverityGuardArtifactError(f"marker 재발급 {key}가 잘못됐습니다")
+    rows = payload.get("agent_run_rows")
+    if not isinstance(rows, int) or isinstance(rows, bool) or rows < 0:
+        raise SeverityGuardArtifactError("marker 재발급 행 수가 잘못됐습니다")
+    try:
+        parsed = uuid.UUID(str(payload.get("operation_id")))
+    except ValueError as exc:
+        raise SeverityGuardArtifactError(
+            "marker 재발급 operation id가 잘못됐습니다"
+        ) from exc
+    if str(parsed) != str(payload["operation_id"]):
+        raise SeverityGuardArtifactError("marker 재발급 operation id가 잘못됐습니다")
+    validate_change_reference(str(payload.get("change_reference")))
+    scan_for_sensitive_values(dict(payload))
+
+
+def _save_reissue_receipt(
+    payload: Mapping[str, Any], target: BootstrapTarget, *, root: Path
+) -> dict[str, Any]:
+    validate_reissue_receipt(payload, database=target.database)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        atomic_save_json(
+            reissue_receipt_path(
+                target.database, str(payload["operation_id"]), root=root
+            ),
+            dict(payload),
+        )
+    except OSError as exc:
+        raise SeverityGuardArtifactError(
+            "marker 재발급 receipt 저장에 실패했습니다"
+        ) from exc
+    return dict(payload)
+
+
+def load_reissue_receipts(
+    target: BootstrapTarget, *, root: Path
+) -> list[dict[str, Any]]:
+    """재발급 감사 증적을 **전부 읽고 전부 검증한다.**
+
+    변조·형식 위반은 여기서 걸린다 — 미완결 건을 이어받는 경로가 읽을 값이므로
+    "읽었다"와 "믿을 수 있다"를 나누지 않는다.
+    """
+
+    if not root.exists():
+        return []
+    receipts: list[dict[str, Any]] = []
+    for path in sorted(root.glob(f"{REISSUE_ARTIFACT_TYPE}.{target.database}.*.json")):
+        payload = _read_json(path)
+        validate_reissue_receipt(payload, database=target.database)
+        # **파일 이름과 payload가 같은 operation을 가리켜야 한다.** 다르면 한 파일이
+        # 다른 operation을 사칭하거나, 같은 operation이 두 이름으로 존재한다.
+        if (
+            path.name
+            != reissue_receipt_path(
+                target.database, str(payload["operation_id"]), root=root
+            ).name
+        ):
+            raise SeverityGuardArtifactError(
+                "marker 재발급 receipt 이름이 operation id와 다릅니다",
+                reason_code="AMBIGUOUS_REISSUE",
+            )
+        receipts.append(payload)
+    return receipts
+
+
+#: 이어받기가 요구하는 **operation identity 전체.** 하나라도 다르면 다른 일이다.
+REISSUE_OPERATION_KEYS: tuple[str, ...] = (
+    "change_reference",
+    "guarded_identity",
+    "migration_sha256",
+    "recovery_archive_sha256",
+    "recovery_completed_at",
+    "recovery_runtime_contract_sha256",
+)
+
+
+def _resume_candidate(
+    target: BootstrapTarget,
+    *,
+    root: Path,
+    expected: Mapping[str, Any],
+    current: str,
+    live: str,
+) -> dict[str, Any] | None:
+    """이 target의 **미완결 건 전체를 상태로 본다**(구현리뷰 18차 필수 1).
+
+    이전 판은 현재 요청과 일치하는 `STARTED`만 골랐다. 그래서 다른 change ref나 다른
+    복구 archive의 미완결 건은 목록에서 사라졌고, 새 UUID로 재발급이 진행돼 그 건이
+    **새 operation 뒤에 영구히 숨었다.** "미완결을 새 operation으로 숨기지 않는다"는
+    코드·정본의 선언과 반대였다.
+
+    지금은 `STARTED`가 하나라도 있으면 **먼저 그것과 맞는지 묻는다.** 맞지 않으면
+    새 operation을 만들지 않고 `AMBIGUOUS_REISSUE`로 멈춘다 — 사람이 그 건을 닫아야
+    한다.
+    """
+
+    started = [
+        item
+        for item in load_reissue_receipts(target, root=root)
+        if item["status"] == "STARTED"
+    ]
+    if not started:
+        return None
+    if len(started) > 1:
+        raise SeverityGuardArtifactError(
+            "미완결 재발급 증적이 여러 건입니다", reason_code="AMBIGUOUS_REISSUE"
+        )
+    pending = started[0]
+    if any(pending[key] != expected[key] for key in REISSUE_OPERATION_KEYS):
+        raise SeverityGuardArtifactError(
+            "미완결 재발급 증적이 이 요청과 다른 operation입니다",
+            reason_code="AMBIGUOUS_REISSUE",
+        )
+    if pending["guarded_schema_signature_sha256"] != live:
+        raise SeverityGuardArtifactError(
+            "미완결 재발급 증적이 현재 marker와 맞지 않습니다",
+            reason_code="AMBIGUOUS_REISSUE",
+        )
+    if live == current:
+        # marker는 이미 결과 값이다 — 그 증적이 **실제 변경**을 서술해야 한다.
+        if pending["previous_guarded_schema_signature_sha256"] == live:
+            raise SeverityGuardArtifactError(
+                "미완결 재발급 증적이 현재 marker와 맞지 않습니다",
+                reason_code="AMBIGUOUS_REISSUE",
+            )
+    elif pending["previous_guarded_schema_signature_sha256"] != current:
+        raise SeverityGuardArtifactError(
+            "미완결 재발급 증적이 현재 marker와 맞지 않습니다",
+            reason_code="AMBIGUOUS_REISSUE",
+        )
+    return pending
+
+
+def run_reissue_marker_after_restore(
+    target: BootstrapTarget,
+    *,
+    change_reference: str,
+    backup_root: Path,
+    engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
+    marker_root: Path = MARKER_ROOT,
+    report_root: Path = REPORT_ROOT,
+) -> str:
+    """`V5-CM-3.4` 승인 복구 **뒤에만** guarded marker의 raw signature를 재발급한다.
+
+    ## 왜 필요한가
+
+    `pg_restore`는 같은 predicate를 다르게 재출력한다. 그래서 승인된 복구가 끝나면
+    정규화 계약과 5축은 **전부 같은데** raw `schema_signature_sha256`만 달라진다.
+    이 marker는 그 raw 값을 담고 있고 checkpoint 재적용의 선행 확인이 그것을 대조하므로,
+    복구를 정상 수행한 target이 `PREDECESSOR_DRIFT`에서 멈춘다. 계획이 정한 유일한 복구
+    수단의 **뒷단이 막혀 있었다**(구현리뷰 16차 필수 1).
+
+    ## 느슨하게 만들지 않는다
+
+    raw 대조를 없애거나 정규화로 갈아 끼우면 2·3·4차가 좁혀 온 Gate가 넓어진다. 대신
+    **표현 차이임을 증명한 경우에만** 값을 다시 쓴다. 증명은 전부 기존 판정을 소비한다.
+
+    1. `V5-CM-3.4` 복구 증적이 `COMMITTED`이고 target·host·epoch·change ref가 맞으며,
+       현재 5축이 그 증적의 `recovered_projection`과 exact 일치한다
+       (`checkpoint_backup.run_verify_recovery()` — 규칙을 다시 구현하지 않는다).
+    2. 그 시점 상태가 복구 직후 `ABSENT`다. 재적용 뒤에는 이 경로를 쓰지 않는다.
+    3. live가 guarded 물리 계약 전체를 통과한다(`assert_guarded_postcondition()`).
+    4. 기존 marker가 있고 계보가 그대로이며, **raw signature 하나만** 다르다.
+
+    ## marker를 다시 만들지 않는다
+
+    기존 marker를 그대로 두고 `guarded_schema_signature_sha256`·`agent_run_rows`·
+    `recorded_at`만 바꾼다. 새로 합성하면 이 경로가 증명하지 않은 값이 marker에
+    들어간다. `applied_at`은 유지한다 — guard가 적용된 시각은 그때다.
+    """
+
+    change_reference = validate_change_reference(change_reference)
+    sql, _ = load_and_validate_sql()
+    migration_sha = migration_sha256(sql)
+    identity = guarded_identity(target)
+
+    # **관측과 전이를 같은 배타 구간에 둔다**(구현리뷰 19차 필수 1).
+    #
+    # 18차는 lock을 pending 조회부터 걸었다. 그런데 그 판단의 **입력**인 marker와 live는
+    # lock 밖에서 먼저 읽었다. 두 실행이 함께 `marker=old`를 보관한 뒤 순서대로 lock에
+    # 들어가면, 뒤에 든 쪽은 앞선 실행이 쓴 marker를 다시 읽지 않아 stale `current`로
+    # **두 번째 신규 operation**을 만든다. 배타 구간을 marker 읽기 앞으로 넓힌다.
+    report_root.mkdir(parents=True, exist_ok=True)
+    lock = report_root / f".{REISSUE_ARTIFACT_TYPE}.{target.database}.lock"
+    with _exclusive_artifact_lock(lock):
+        return _reissue_under_lock(
+            target,
+            change_reference=change_reference,
+            backup_root=backup_root,
+            migration_sha=migration_sha,
+            identity=identity,
+            engine_factory=engine_factory,
+            marker_root=marker_root,
+            report_root=report_root,
+        )
+
+
+def _reissue_under_lock(
+    target: BootstrapTarget,
+    *,
+    change_reference: str,
+    backup_root: Path,
+    migration_sha: str,
+    identity: Mapping[str, Any],
+    engine_factory: Callable[[BootstrapTarget], Engine],
+    marker_root: Path,
+    report_root: Path,
+) -> str:
+    """**target artifact lock을 쥔 채** 관측하고 전이한다.
+
+    marker·recovery 증적·live inspection·pending scan·marker/receipt 완결이 전부 이
+    안이다. 하나라도 밖으로 나가면 그 값이 stale이 될 수 있는 창이 생긴다.
+    """
+
+    import checkpoint_backup as checkpoint_backup_module
+
+    marker = load_marker(target, migration_sha=migration_sha, root=marker_root)
+    if marker is None:
+        raise SeverityGuardArtifactError(
+            "재발급할 marker가 없습니다", reason_code="MISSING_MARKER"
+        )
+    if {key: marker[key] for key in _IDENTITY_KEYS} != dict(identity):
+        raise SeverityGuardArtifactError(
+            "marker 계보가 현재 identity와 다릅니다", reason_code="DRIFT"
+        )
+
+    # **CM-3.4의 복구 Gate를 그대로 소비한다.** 같은 규칙을 두 번 구현하지 않는다.
+    record = checkpoint_backup_module.run_verify_recovery(
+        target, change_reference=change_reference, backup_root=backup_root
+    )
+    if record["_observed_state"] != "ABSENT":
+        raise SeverityGuardStateError(
+            "재발급은 복구 직후에만 수행합니다", reason_code="DRIFT"
+        )
+
+    engine = engine_factory(target)
+    try:
+        with engine.connect() as connection, connection.begin():
+            _prepare(connection, target, readonly=True)
+            inspection = inspect_guard(connection)
+            state = classify_state(inspection, marker)
+            if state != "GUARDED_MARKED":
+                _refuse(state)
+            live = assert_guarded_postcondition(connection)
+            if live != inspection.schema_signature_sha256:
+                raise SeverityGuardStateError(
+                    "guarded signature가 확인 중 바뀌었습니다", reason_code="DRIFT"
+                )
+            rows = row_count(connection)
+    finally:
+        engine.dispose()
+
+    # **미완결 건이 있으면 그것을 이어받는다**(구현리뷰 17차 필수 1).
+    #
+    # 이전 판은 marker 저장 뒤 `COMMITTED` 저장만 실패하면 marker는 새 값, 증적은
+    # `STARTED`로 갈렸다. 재실행하면 live와 marker가 이미 같아 `NO_OP`으로 빠졌고,
+    # 그 `STARTED`를 읽는 소비자가 없어 감사 증적이 영구 미완결로 남았다.
+    current = str(marker["guarded_schema_signature_sha256"])
+    expected = {
+        "change_reference": change_reference,
+        "guarded_identity": dict(identity),
+        "migration_sha256": migration_sha,
+        "recovery_archive_sha256": str(record["archive_sha256"]),
+        "recovery_completed_at": str(record["completed_at"]),
+        "recovery_runtime_contract_sha256": str(
+            record["recovered_projection"]["runtime_contract_sha256"]
+        ),
+    }
+
+    pending = _resume_candidate(
+        target,
+        root=report_root,
+        expected=expected,
+        current=current,
+        live=live,
+    )
+
+    if live == current:
+        # 표현이 그대로면 marker를 바꿀 것이 없다. **덮어쓰지 않는다.**
+        if pending is None:
+            # 단순 no-op은 **미완결 건이 없음을 확인한 뒤에만** 허용한다.
+            return "NO_OP"
+        # marker mutation은 이미 끝났다 — **같은 operation을 완결한다.**
+        _commit_reissue(pending, target, root=report_root)
+        return "RESUMED"
+
+    started = _timezone_text(datetime.now(UTC))
+    receipt = _save_reissue_receipt(
+        {
+            "artifact_type": REISSUE_ARTIFACT_TYPE,
+            "format_version": 1,
+            "task_id": TASK_ID,
+            # **재시도는 같은 operation이다.** 새 id를 주면 미완결 건이 숨는다.
+            "operation_id": (
+                str(pending["operation_id"]) if pending else str(uuid.uuid4())
+            ),
+            "database": target.database,
+            "profile": target.profile,
+            "status": "STARTED",
+            "migration_id": MIGRATION_ID,
+            **expected,
+            "previous_guarded_schema_signature_sha256": current,
+            "guarded_schema_signature_sha256": live,
+            "agent_run_rows": rows,
+            "started_at": str(pending["started_at"]) if pending else started,
+            "recorded_at": started,
+        },
+        target,
+        root=report_root,
+    )
+    try:
+        save_marker(
+            {
+                **marker,
+                "guarded_schema_signature_sha256": live,
+                "agent_run_rows": rows,
+                "recorded_at": _timezone_text(datetime.now(UTC)),
+            },
+            target,
+            migration_sha=migration_sha,
+            root=marker_root,
+        )
+    except BaseException:
+        # marker는 아직 옛 값이다 — 이 시도는 중단으로 닫는다.
+        _save_reissue_receipt(
+            {**receipt, "status": "ABORTED"}, target, root=report_root
+        )
+        raise
+    # **여기서 실패하면 `STARTED`가 남고 marker는 새 값이다.** 그 상태가 위
+    # 이어받기 분기의 입력이다 — 다음 실행이 `RESUMED`로 완결한다.
+    _commit_reissue(receipt, target, root=report_root)
+    return "REISSUED"
+
+
+def _commit_reissue(
+    receipt: Mapping[str, Any], target: BootstrapTarget, *, root: Path
+) -> dict[str, Any]:
+    return _save_reissue_receipt(
+        {
+            **receipt,
+            "status": "COMMITTED",
+            "recorded_at": _timezone_text(datetime.now(UTC)),
+        },
+        target,
+        root=root,
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1761,6 +2197,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify-matrix", action="store_true")
     parser.add_argument("--rehearse", action="store_true")
     parser.add_argument("--recover-marker", action="store_true")
+    parser.add_argument(
+        "--reissue-marker-after-restore",
+        action="store_true",
+        help="V5-CM-3.4 승인 복구 뒤 guarded raw signature만 재발급한다",
+    )
+    parser.add_argument(
+        "--backup-root",
+        type=Path,
+        default=None,
+        help="--reissue-marker-after-restore가 읽을 CM-3.4 복구 증적 root",
+    )
     return parser
 
 
@@ -1775,6 +2222,7 @@ def resolve_mode(args: argparse.Namespace) -> str:
             "verify_matrix": args.verify_matrix,
             "rehearse": args.rehearse,
             "recover": args.recover_marker,
+            "reissue": args.reissue_marker_after_restore,
         },
         default_mode="",
         mutually_exclusive_message="guard mode는 하나만 선택해야 합니다",
@@ -1783,7 +2231,7 @@ def resolve_mode(args: argparse.Namespace) -> str:
         raise SeverityGuardError(
             "guard mode를 하나 명시해야 합니다 "
             "(--preflight/--rehearse/--apply/--verify/--verify-matrix"
-            "/--recover-marker)"
+            "/--recover-marker/--reissue-marker-after-restore)"
         )
     return mode
 
@@ -1835,6 +2283,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_OK
         if mode == "recover":
             status = run_recover_marker(target, change_reference=args.change_ref)
+            print(f"GUARD_{status} database={target.database}")
+            return EXIT_OK
+        if mode == "reissue":
+            if args.backup_root is None:
+                raise SeverityGuardError(
+                    "--reissue-marker-after-restore에는 --backup-root가 필요합니다"
+                )
+            status = run_reissue_marker_after_restore(
+                target,
+                change_reference=args.change_ref,
+                backup_root=args.backup_root,
+            )
             print(f"GUARD_{status} database={target.database}")
             return EXIT_OK
         if mode == "verify_matrix":

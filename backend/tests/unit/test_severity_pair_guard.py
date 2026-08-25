@@ -7,19 +7,23 @@ WBS 완료 기준은 "명명 CHECK로 반쪽 NULL 행을 차단한다"이다. �
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import apply_agent_runtime as agent_runtime  # noqa: E402
 import apply_severity_pair_guard as guard  # noqa: E402
+import manifest_v3  # noqa: E402
 import manifest_v3 as mv3  # noqa: E402
 
 
@@ -377,6 +381,9 @@ class TestStageAwarePostcheck:
         assert verifier.RUNTIME_POSTCHECK_STAGES == {
             ("runtime", "runtime_clean"),
             ("runtime", "runtime_guarded"),
+            # `V5-CM-3.4` successor. predecessor 둘은 각자의 marker가 증명하므로
+            # 집합에서 빼지 않는다.
+            ("runtime", "runtime_checkpointed"),
         }
 
     def test_the_live_stage_is_covered(self) -> None:
@@ -420,8 +427,12 @@ class TestSingleSourceOfTruth:
     def test_the_runtime_live_stage_is_guarded(self) -> None:
         import apply_reference_extensions_v5 as v5
 
-        assert v5.FINAL_STAGE_BY_PROFILE["runtime"] == guard.GUARDED_STAGE
-        assert v5.PROFILE_MIGRATIONS["runtime"] == guard.EXPECTED_LINEAGE
+        # `V5-CM-3.4`가 live final을 `runtime_checkpointed`로 올렸다. guard가
+        # 증명하는 stage는 그 predecessor다 — 둘은 다른 질문이다.
+        assert v5.GUARDED_RUNTIME_STAGE == guard.GUARDED_STAGE
+        assert v5.PROFILE_MIGRATIONS["runtime"][: len(guard.EXPECTED_LINEAGE)] == (
+            guard.EXPECTED_LINEAGE
+        )
 
     def test_the_registrar_stage_is_separate(self) -> None:
         """CM-1.8 registrar는 자기가 발급한 stage를 본다.
@@ -644,12 +655,20 @@ class TestStageAwareMarkerComparison:
     """**필수 D.** guarded에서 predecessor signature는 live와 **달라야** 정상이다."""
 
     def test_the_shared_branch_skips_guarded(self) -> None:
+        """**문자열이 아니라 판정을 고정한다.**
+
+        `V5-CM-3.4`가 `runtime_checkpointed`를 같은 계보에 얹으면서 조건이
+        `stage not in GUARDED_CONSTRAINT_STAGES`로 넓어졌다. 필수 D의 계약은
+        "guarded에서 직접 비교하지 않는다"이지 특정 문구가 아니다.
+        """
+
         import inspect
 
         import verify_bootstrap_state as verifier
 
         source = inspect.getsource(verifier.verify_database)
-        assert "stage != severity_guard.GUARDED_STAGE" in source
+        assert "stage not in GUARDED_CONSTRAINT_STAGES" in source
+        assert guard.GUARDED_STAGE in verifier.GUARDED_CONSTRAINT_STAGES
 
     def test_the_guarded_branch_links_predecessor_to_successor(self) -> None:
         import inspect
@@ -840,6 +859,13 @@ class TestGuardedPostcondition:
             "run_verify_matrix": {"run_verify"},
             # 복구는 marker를 **만드는** 중이라 대조할 marker가 없다.
             "run_recover_marker": {"assert_guarded_postcondition"},
+            # restore 후 재발급은 marker의 raw signature **하나만** 바꾼다. 그래서
+            # `assert_guarded_marker_agrees()`를 부를 수 없다 — 그 함수가 대조하는
+            # 값이 바로 지금 바꾸려는 값이다. 대신 물리 계약 전체를 다시 통과시키고
+            # CM-3.4 복구 증적으로 표현 차이를 설명한다.
+            # 배타 구간 helper에 위임한다 — `run_verify_matrix`와 같은 모양이다.
+            # 물리 계약 소비는 아래 `_reissue_under_lock` 검사가 고정한다.
+            "run_reissue_marker_after_restore": {"_reissue_under_lock"},
         }
 
         # 자기 transaction을 여는 진입점이 아니라, 이미 열린 transaction 안에서
@@ -948,3 +974,641 @@ def test_a_non_integer_after_row_is_refused(value: Any) -> None:
     }
     with pytest.raises(guard.SeverityGuardArtifactError):
         guard.validate_receipt(payload, database="kosa_agent")
+
+
+# ---------------------------------------------------------------------------
+# 16차 필수 1 — restore 후 marker 재발급
+# ---------------------------------------------------------------------------
+
+
+def _reissue_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "artifact_type": guard.REISSUE_ARTIFACT_TYPE,
+        "format_version": 1,
+        "task_id": guard.TASK_ID,
+        "operation_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+        "database": "kosa_agent_e2e",
+        "profile": "runtime",
+        "status": "COMMITTED",
+        "migration_id": guard.MIGRATION_ID,
+        "migration_sha256": "1" * 64,
+        "guarded_identity": {
+            "dataset_epoch": "fdc_final_20260818",
+            "source_archive_sha256": "2" * 64,
+            "bootstrap_stage": "runtime_guarded",
+            "manifest_sha256": "3" * 64,
+            "predecessor_marker_sha256": "4" * 64,
+            "predecessor_schema_signature_sha256": "5" * 64,
+        },
+        "change_reference": "GH-130",
+        "recovery_archive_sha256": "6" * 64,
+        "recovery_completed_at": "2026-08-25T00:05:00Z",
+        "recovery_runtime_contract_sha256": "7" * 64,
+        "previous_guarded_schema_signature_sha256": "8" * 64,
+        "guarded_schema_signature_sha256": "9" * 64,
+        "agent_run_rows": 0,
+        "started_at": "2026-08-25T00:00:00Z",
+        "recorded_at": "2026-08-25T00:06:00Z",
+    }
+    payload.update(overrides)
+    return payload
+
+
+class TestReissueReceiptIsStrict:
+    """marker를 **바꾸는** 작업의 증적이므로 값까지 닫는다(구현리뷰 16차 필수 1)."""
+
+    def test_a_consistent_record_passes(self) -> None:
+        guard.validate_reissue_receipt(_reissue_payload(), database="kosa_agent_e2e")
+
+    @pytest.mark.parametrize(
+        "override",
+        [
+            {"artifact_type": "other"},
+            {"format_version": 2},
+            {"task_id": "V5-CM-9.9"},
+            {"migration_id": "999_other"},
+            {"profile": "evaluation"},
+            {"status": "DONE"},
+            {"change_reference": "gh-130"},
+            {"recovery_archive_sha256": "nope"},
+            {"recovery_runtime_contract_sha256": ""},
+            {"guarded_schema_signature_sha256": "short"},
+            {"operation_id": "not-a-uuid"},
+            {"started_at": "2026-08-25T00:00:00"},
+            {"recovery_completed_at": "어제"},
+            {"agent_run_rows": -1},
+            {"agent_run_rows": True},
+            {"guarded_identity": {"dataset_epoch": "fdc_final_20260818"}},
+            # **바꾸지 않았다면 재발급이 아니다.**
+            {"guarded_schema_signature_sha256": "8" * 64},
+        ],
+    )
+    def test_an_inconsistent_record_is_refused(self, override: dict[str, Any]) -> None:
+        # change reference 형식은 `validate_change_reference()`가 본다. 같은 파일의
+        # `validate_marker()`·`validate_receipt()`도 그 예외를 그대로 흘리고
+        # `main()`이 함께 잡는다 — 여기만 감싸면 파일 안에서 처리가 갈린다.
+        with pytest.raises(
+            (guard.SeverityGuardArtifactError, guard.ReferenceExtensionError)
+        ):
+            guard.validate_reissue_receipt(
+                _reissue_payload(**override), database="kosa_agent_e2e"
+            )
+
+    @pytest.mark.parametrize("key", sorted(guard.REISSUE_KEYS))
+    def test_a_missing_key_is_refused(self, key: str) -> None:
+        payload = _reissue_payload()
+        payload.pop(key)
+        with pytest.raises(guard.SeverityGuardArtifactError):
+            guard.validate_reissue_receipt(payload, database="kosa_agent_e2e")
+
+    def test_an_extra_key_is_refused(self) -> None:
+        with pytest.raises(guard.SeverityGuardArtifactError):
+            guard.validate_reissue_receipt(
+                _reissue_payload(extra="x"), database="kosa_agent_e2e"
+            )
+
+    def test_the_wrong_database_is_refused(self) -> None:
+        with pytest.raises(guard.SeverityGuardArtifactError):
+            guard.validate_reissue_receipt(_reissue_payload(), database="kosa_agent")
+
+    def test_the_audit_file_does_not_collide_with_apply_receipts(self) -> None:
+        """`--recover-marker` 후보 glob에 섞이면 두 작업이 뒤엉킨다."""
+
+        import fnmatch
+
+        name = guard.reissue_receipt_path(
+            "kosa_agent_e2e", "1b4e28ba-2fa1-11d2-883f-0016d3cca427", root=Path("/x")
+        ).name
+        assert not fnmatch.fnmatch(
+            name, f"{guard.FINAL_ARTIFACT_TYPE}.kosa_agent_e2e.*.json"
+        )
+        assert name.startswith(guard.REISSUE_ARTIFACT_TYPE)
+
+
+class TestReissueRefusesWithoutEvidence:
+    """증거 없이 marker를 덮어쓰지 않는다."""
+
+    @staticmethod
+    def _target() -> Any:
+        from db_target import BootstrapTarget
+
+        return BootstrapTarget(
+            host="db.invalid",
+            port=5432,
+            username="cm33",
+            password="unused",
+            database="kosa_agent_e2e",
+            profile="runtime",
+        )
+
+    def test_a_missing_marker_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """marker가 없으면 이것은 `--recover-marker`의 질문이다."""
+
+        monkeypatch.setattr(guard, "guarded_identity", lambda target: {"x": 1})
+        monkeypatch.setattr(guard, "load_marker", lambda *a, **k: None)
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            guard.run_reissue_marker_after_restore(
+                self._target(),
+                change_reference="GH-130",
+                backup_root=tmp_path,
+                marker_root=tmp_path,
+                report_root=tmp_path,
+            )
+        assert exc.value.reason_code == "MISSING_MARKER"
+
+    def test_a_lineage_mismatch_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """계보가 다르면 같은 guard의 marker가 아니다."""
+
+        identity = dict.fromkeys(guard._IDENTITY_KEYS, "a" * 64)
+        monkeypatch.setattr(guard, "guarded_identity", lambda target: dict(identity))
+        monkeypatch.setattr(
+            guard,
+            "load_marker",
+            lambda *a, **k: {**identity, "dataset_epoch": "kosa_0813"},
+        )
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            guard.run_reissue_marker_after_restore(
+                self._target(),
+                change_reference="GH-130",
+                backup_root=tmp_path,
+                marker_root=tmp_path,
+                report_root=tmp_path,
+            )
+        assert exc.value.reason_code == "DRIFT"
+
+    def test_it_refuses_outside_the_absent_window(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """재적용까지 끝난 뒤에는 이 경로를 쓰지 않는다."""
+
+        import checkpoint_backup as cbackup
+
+        identity = dict.fromkeys(guard._IDENTITY_KEYS, "a" * 64)
+        monkeypatch.setattr(guard, "guarded_identity", lambda target: dict(identity))
+        monkeypatch.setattr(guard, "load_marker", lambda *a, **k: dict(identity))
+        monkeypatch.setattr(
+            cbackup,
+            "run_verify_recovery",
+            lambda *a, **k: {"_observed_state": "READY_MARKED"},
+        )
+        with pytest.raises(guard.SeverityGuardStateError) as exc:
+            guard.run_reissue_marker_after_restore(
+                self._target(),
+                change_reference="GH-130",
+                backup_root=tmp_path,
+                marker_root=tmp_path,
+                report_root=tmp_path,
+            )
+        assert exc.value.reason_code == "DRIFT"
+
+    def test_the_recovery_gate_is_consumed_not_reimplemented(self) -> None:
+        """복구 증적 판정을 여기서 다시 구현하지 않는다 — 두 벌이 되면 갈린다."""
+
+        import ast
+        import inspect
+
+        body = ast.unparse(
+            ast.parse(
+                inspect.getsource(guard.run_reissue_marker_after_restore).lstrip()
+            )
+        )
+        assert "run_verify_recovery" in body
+        # 증적을 직접 열어 읽지 않는다.
+        assert "load_recovery_evidence" not in body
+        # marker를 새로 합성하지 않는다 — 기존 payload를 펼쳐 세 값만 바꾼다.
+        assert "_marker_payload" not in body
+
+
+class TestReissueIsResumable:
+    """marker는 바뀌었는데 증적만 미완결인 창을 닫는다(구현리뷰 17차 필수 1).
+
+    이전 판은 marker 저장 뒤 `COMMITTED` 저장만 실패하면 재실행이 `NO_OP`으로 빠졌고,
+    그 `STARTED`를 읽는 소비자가 없어 감사 증적이 영구 미완결로 남았다. 운영자는 첫
+    실행의 실패와 두 번째 실행의 `NO_OP` 중 무엇을 완료로 봐야 하는지 알 수 없었다.
+    """
+
+    OLD = "a" * 64
+    NEW = "b" * 64
+
+    @staticmethod
+    def _target() -> Any:
+        from db_target import BootstrapTarget
+
+        return BootstrapTarget(
+            host="db.invalid",
+            port=5432,
+            username="cm33",
+            password="unused",
+            database="kosa_agent_e2e",
+            profile="runtime",
+        )
+
+    @classmethod
+    def _wire(
+        cls, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> tuple[Path, Path, dict[str, Any]]:
+        """**실제 marker 계약을 쓴다.**
+
+        저장소 marker를 tmp로 옮기고 signature만 바꾼다.
+        """
+
+        import contextlib
+
+        import checkpoint_backup as cbackup
+
+        markers = tmp_path / "markers"
+        reports = tmp_path / "reports"
+        markers.mkdir()
+        reports.mkdir()
+        source = (
+            REPOSITORY_ROOT
+            / "infra"
+            / "bootstrap"
+            / "markers"
+            / f"{guard.FINAL_ARTIFACT_TYPE}.kosa_agent_e2e.json"
+        )
+        payload = {
+            **manifest_v3._load_json(source),
+            "guarded_schema_signature_sha256": cls.OLD,
+        }
+        (markers / f"{guard.FINAL_ARTIFACT_TYPE}.kosa_agent_e2e.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
+
+        # 계보는 marker 자체에서 뽑는다. 실제 `guarded_identity()`는 저장소 manifest와
+        # CM-3.2 marker를 읽는데, 그건 이 회귀의 주제(두 단계 증적)가 아니라 다른
+        # 계약이다 — 여기서 읽으면 그 계약의 상태에 회귀가 흔들린다.
+        identity = {key: payload[key] for key in guard._IDENTITY_KEYS}
+        monkeypatch.setattr(guard, "guarded_identity", lambda target: dict(identity))
+
+        monkeypatch.setattr(
+            cbackup,
+            "run_verify_recovery",
+            lambda *a, **k: {
+                "_observed_state": "ABSENT",
+                "archive_sha256": "c" * 64,
+                "completed_at": "2026-08-25T00:05:00Z",
+                "recovered_projection": {"runtime_contract_sha256": "d" * 64},
+            },
+        )
+
+        class _Connection:
+            def begin(self) -> Any:
+                return contextlib.nullcontext()
+
+        class _Engine:
+            def connect(self) -> Any:
+                return contextlib.nullcontext(_Connection())
+
+            def dispose(self) -> None:
+                return None
+
+        monkeypatch.setattr(guard, "_engine_for", lambda target: _Engine())
+        monkeypatch.setattr(guard, "_prepare", lambda *a, **k: None)
+        monkeypatch.setattr(
+            guard,
+            "inspect_guard",
+            lambda connection: SimpleNamespace(
+                state="GUARDED", schema_signature_sha256=cls.NEW
+            ),
+        )
+        monkeypatch.setattr(guard, "classify_state", lambda *a, **k: "GUARDED_MARKED")
+        monkeypatch.setattr(
+            guard, "assert_guarded_postcondition", lambda connection: cls.NEW
+        )
+        monkeypatch.setattr(guard, "row_count", lambda connection: 0)
+        return markers, reports, identity
+
+    @classmethod
+    def _run(cls, markers: Path, reports: Path) -> str:
+        return guard.run_reissue_marker_after_restore(
+            cls._target(),
+            change_reference="GH-130",
+            backup_root=Path("/unused"),
+            engine_factory=guard._engine_for,
+            marker_root=markers,
+            report_root=reports,
+        )
+
+    @staticmethod
+    def _statuses(reports: Path) -> list[str]:
+        return sorted(
+            json.loads(path.read_text())["status"]
+            for path in reports.glob(f"{guard.REISSUE_ARTIFACT_TYPE}.*.json")
+        )
+
+    def _marker_signature(self, markers: Path) -> str:
+        payload = manifest_v3._load_json(
+            markers / f"{guard.FINAL_ARTIFACT_TYPE}.kosa_agent_e2e.json"
+        )
+        return str(payload["guarded_schema_signature_sha256"])
+
+    def test_a_commit_failure_is_completed_on_rerun(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """**증적 commit만 실패한 실행**이 재실행에서 완결된다."""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+
+        original = guard._commit_reissue
+        monkeypatch.setattr(
+            guard,
+            "_commit_reissue",
+            lambda *a, **k: (_ for _ in ()).throw(OSError("증적 저장 실패")),
+        )
+        with pytest.raises(OSError):
+            self._run(markers, reports)
+
+        # marker mutation은 끝났는데 증적은 미완결이다 — 정확히 그 창이다.
+        assert self._marker_signature(markers) == self.NEW
+        assert self._statuses(reports) == ["STARTED"]
+
+        monkeypatch.setattr(guard, "_commit_reissue", original)
+        assert self._run(markers, reports) == "RESUMED"
+        # **`STARTED`가 남지 않는다.** 새 operation으로 숨기지도 않는다.
+        assert self._statuses(reports) == ["COMMITTED"]
+
+    def test_a_marker_failure_retries_under_the_same_operation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """marker가 옛 값이면 **같은 operation으로** 안전하게 재시도한다."""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+        original = guard.save_marker
+        monkeypatch.setattr(
+            guard,
+            "save_marker",
+            lambda *a, **k: (_ for _ in ()).throw(OSError("marker 저장 실패")),
+        )
+        with pytest.raises(OSError):
+            self._run(markers, reports)
+        assert self._marker_signature(markers) == self.OLD
+        assert self._statuses(reports) == ["ABORTED"]
+
+        monkeypatch.setattr(guard, "save_marker", original)
+        assert self._run(markers, reports) == "REISSUED"
+        assert self._marker_signature(markers) == self.NEW
+        # **`ABORTED`는 닫힌 기록이라 남긴다** — 감사 이력이다. 남으면 안 되는 것은
+        # 미완결(`STARTED`)뿐이다.
+        assert self._statuses(reports) == ["ABORTED", "COMMITTED"]
+        assert "STARTED" not in self._statuses(reports)
+
+    def test_a_clean_rerun_is_a_no_op(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """미완결 건이 없을 때만 단순 `NO_OP`이다."""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+        assert self._run(markers, reports) == "REISSUED"
+        assert self._run(markers, reports) == "NO_OP"
+        assert self._statuses(reports) == ["COMMITTED"]
+
+    def test_two_pending_records_are_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """어느 것을 이어받을지 모르면 **조용히 하나를 고르지 않는다.**"""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+        base = _reissue_payload(
+            status="STARTED",
+            previous_guarded_schema_signature_sha256=self.OLD,
+            guarded_schema_signature_sha256=self.NEW,
+            recovery_archive_sha256="c" * 64,
+            recovery_runtime_contract_sha256="d" * 64,
+            migration_sha256=guard.migration_sha256(guard.load_and_validate_sql()[0]),
+            guarded_identity=dict(identity),
+        )
+        for operation_id in (
+            "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+            "2c5f39cb-3fb2-11d2-883f-0016d3cca427",
+        ):
+            path = guard.reissue_receipt_path(
+                "kosa_agent_e2e", operation_id, root=reports
+            )
+            path.write_text(
+                json.dumps({**base, "operation_id": operation_id}), encoding="utf-8"
+            )
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            self._run(markers, reports)
+        assert exc.value.reason_code == "AMBIGUOUS_REISSUE"
+
+    def test_a_pending_record_for_another_result_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """미완결 건이 지금 marker와 맞지 않으면 fail-closed 한다."""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+        payload = _reissue_payload(
+            status="STARTED",
+            previous_guarded_schema_signature_sha256=self.OLD,
+            # 이 증적이 말하는 결과가 지금 live와 다르다.
+            guarded_schema_signature_sha256="e" * 64,
+            recovery_archive_sha256="c" * 64,
+            recovery_runtime_contract_sha256="d" * 64,
+            migration_sha256=guard.migration_sha256(guard.load_and_validate_sql()[0]),
+            guarded_identity=dict(identity),
+        )
+        guard.reissue_receipt_path(
+            "kosa_agent_e2e", str(payload["operation_id"]), root=reports
+        ).write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            self._run(markers, reports)
+        assert exc.value.reason_code == "AMBIGUOUS_REISSUE"
+
+    def test_a_tampered_pending_record_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """읽는 순간 strict validator를 다시 태운다."""
+
+        markers, reports, identity = self._wire(monkeypatch, tmp_path)
+        guard.reissue_receipt_path(
+            "kosa_agent_e2e", "1b4e28ba-2fa1-11d2-883f-0016d3cca427", root=reports
+        ).write_text(
+            json.dumps(_reissue_payload(status="STARTED", agent_run_rows=-1)),
+            encoding="utf-8",
+        )
+        with pytest.raises(guard.SeverityGuardArtifactError):
+            self._run(markers, reports)
+
+
+def _code_without_docstring(function: Any) -> str:
+    """함수 **본문 코드만** 문자열로 낸다.
+
+    docstring을 함께 unparse하면 설명에 적힌 이름이 호출로 오인된다.
+    """
+
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(function).lstrip())
+    body = tree.body[0].body  # type: ignore[attr-defined]
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    return "\n".join(ast.unparse(node) for node in body)
+
+
+class TestReissueDoesNotHidePendingWork:
+    """**현재 요청과 다른 미완결 건도 상태다**(구현리뷰 18차 필수 1).
+
+    이전 판은 change ref·복구 archive가 다르면 미완결 건을 목록에서 빼고 새 UUID로
+    진행했다. 그러면 그 건은 `ABORTED`·`COMMITTED` 어느 쪽으로도 닫히지 않은 채 새
+    operation 뒤에 영구히 숨는다 — 코드·정본이 선언한 계약과 반대였다.
+    """
+
+    # 상속하면 부모 테스트가 여기서 한 번 더 돈다. helper만 이름으로 빌려 쓴다.
+    OLD = TestReissueIsResumable.OLD
+    NEW = TestReissueIsResumable.NEW
+
+    def _write_started(self, reports: Path, identity: Any, **overrides: Any) -> None:
+        payload = _reissue_payload(
+            **{
+                "status": "STARTED",
+                "previous_guarded_schema_signature_sha256": self.OLD,
+                "guarded_schema_signature_sha256": self.NEW,
+                "recovery_archive_sha256": "c" * 64,
+                "recovery_completed_at": "2026-08-25T00:05:00Z",
+                "recovery_runtime_contract_sha256": "d" * 64,
+                "migration_sha256": guard.migration_sha256(
+                    guard.load_and_validate_sql()[0]
+                ),
+                "guarded_identity": dict(identity),
+                **overrides,
+            }
+        )
+        guard.reissue_receipt_path(
+            "kosa_agent_e2e", str(payload["operation_id"]), root=reports
+        ).write_text(json.dumps(payload), encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        "override",
+        [
+            # 다른 change ref로 시작해 멈춘 건
+            {"change_reference": "GH-999"},
+            # 다른 복구 archive로 시작해 멈춘 건
+            {"recovery_archive_sha256": "f" * 64},
+            # 같은 archive지만 다른 복구 시각·계약
+            {"recovery_completed_at": "2026-01-01T00:00:00Z"},
+            {"recovery_runtime_contract_sha256": "e" * 64},
+            # 다른 migration
+            {"migration_sha256": "e" * 64},
+        ],
+    )
+    def test_a_foreign_pending_record_blocks_a_new_operation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, override: dict[str, Any]
+    ) -> None:
+        """**새 operation을 만들지 않는다.** 사람이 그 건을 먼저 닫아야 한다."""
+
+        markers, reports, identity = TestReissueIsResumable._wire(monkeypatch, tmp_path)
+        self._write_started(reports, identity, **override)
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            TestReissueIsResumable._run(markers, reports)
+        assert exc.value.reason_code == "AMBIGUOUS_REISSUE"
+        # 숨기지 않았다 — 미완결 건이 그대로 하나뿐이다.
+        assert TestReissueIsResumable._statuses(reports) == ["STARTED"]
+        assert TestReissueIsResumable._marker_signature(self, markers) == self.OLD
+
+    def test_a_foreign_pending_record_also_blocks_a_no_op(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """바꿀 것이 없어도 미완결 건이 있으면 `NO_OP`이 아니다."""
+
+        markers, reports, identity = TestReissueIsResumable._wire(monkeypatch, tmp_path)
+        assert TestReissueIsResumable._run(markers, reports) == "REISSUED"
+        self._write_started(reports, identity, change_reference="GH-999")
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            TestReissueIsResumable._run(markers, reports)
+        assert exc.value.reason_code == "AMBIGUOUS_REISSUE"
+
+    def test_a_renamed_receipt_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """파일 이름과 payload가 다른 operation을 가리키면 거부한다."""
+
+        markers, reports, identity = TestReissueIsResumable._wire(monkeypatch, tmp_path)
+        self._write_started(reports, identity)
+        source = next(reports.glob(f"{guard.REISSUE_ARTIFACT_TYPE}.*.json"))
+        source.rename(
+            guard.reissue_receipt_path(
+                "kosa_agent_e2e", "3d6a4adc-4fc3-11d2-883f-0016d3cca427", root=reports
+            )
+        )
+        with pytest.raises(guard.SeverityGuardArtifactError) as exc:
+            TestReissueIsResumable._run(markers, reports)
+        assert exc.value.reason_code == "AMBIGUOUS_REISSUE"
+
+    def test_observation_and_transition_share_the_exclusive_region(self) -> None:
+        """**판단의 입력까지** 배타 구간 안이다(구현리뷰 19차 필수 1).
+
+        18차는 pending 조회부터 감쌌지만 그 입력인 marker·live는 lock 밖에서 먼저
+        읽었다. 두 실행이 같은 stale 입력을 들고 순서대로 lock에 들어가면 뒤엣것이
+        앞선 실행의 marker를 다시 읽지 않아 두 번째 신규 operation을 만든다.
+
+        AST 검사는 **보조**다. 실제 경쟁은 아래 동시 실행 회귀가 본다.
+        """
+
+        outer = _code_without_docstring(guard.run_reissue_marker_after_restore)
+        # 바깥은 lock을 잡고 helper에 위임하기만 한다 — 관측을 여기서 하지 않는다.
+        assert outer.index("_exclusive_artifact_lock") < outer.index(
+            "_reissue_under_lock"
+        )
+        assert "load_marker" not in outer
+        assert "run_verify_recovery" not in outer
+
+        inner = _code_without_docstring(guard._reissue_under_lock)
+        # 관측과 전이가 전부 helper 안이다.
+        for name in (
+            "load_marker",
+            "run_verify_recovery",
+            "assert_guarded_postcondition",
+            "_resume_candidate",
+            "_commit_reissue",
+            "save_marker",
+        ):
+            assert name in inner, name
+
+    def test_two_concurrent_runs_produce_one_operation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """**같은 stale 입력으로 동시에 진입해도 operation은 하나다.**
+
+        barrier로 두 호출을 lock 직전까지 함께 보낸다. 이전 판이라면 둘 다 lock 밖에서
+        `marker=old`를 읽어 두 개의 `COMMITTED`가 남는다.
+        """
+
+        import threading
+
+        markers, reports, _ = TestReissueIsResumable._wire(monkeypatch, tmp_path)
+        barrier = threading.Barrier(2)
+        results: list[Any] = []
+        errors: list[BaseException] = []
+
+        def _call() -> None:
+            barrier.wait()
+            try:
+                results.append(TestReissueIsResumable._run(markers, reports))
+            except BaseException as exc:  # pragma: no cover - 진단용
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_call) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert errors == [], errors
+        assert sorted(results) == ["NO_OP", "REISSUED"]
+        # **operation은 하나뿐이다.** 같은 mutation을 설명하는 증적이 둘이면 안 된다.
+        assert TestReissueIsResumable._statuses(reports) == ["COMMITTED"]
+        assert (
+            TestReissueIsResumable._marker_signature(self, markers)
+            == TestReissueIsResumable.NEW
+        )

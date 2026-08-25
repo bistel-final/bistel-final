@@ -155,9 +155,7 @@ B_SCHEMA_TARGETS: frozenset[str] = frozenset(
 #: fingerprint 산식을 돌릴 근거가 없다. 이름만 같은 table에 돌리면 컬럼이 달라
 #: `UndefinedColumn`으로 죽는다 — Gate 0 §2.3이 "세 DB의 RAG 형상이 서로 다르다"고
 #: 적어 둔 그대로다. marker가 있는 target에만 적용한다.
-B_LOADED_RAG_TARGETS: frozenset[str] = frozenset(
-    {"kosa_agent", "kosa_agent_e2e"}
-)
+B_LOADED_RAG_TARGETS: frozenset[str] = frozenset({"kosa_agent", "kosa_agent_e2e"})
 
 #: Gate 0 실측. 전부 이 저장소의 커밋된 migration이 만든 현행 설계 구조다
 #: (`001_reference_extensions.sql` PR #48 · `002_agent_runtime_clean.sql` PR #58).
@@ -191,11 +189,31 @@ PRESERVED_SEQUENCES_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType
 )
 
 #: `V5-B-1.1`이 "채택하지 않는다"고 한 legacy 객체. 2.6은 보존만 하고 B가 정리한다.
+#:
+#: ## `document_corpus`를 뺀 이유
+#:
+#: 이 목록은 셋을 한 덩어리로 묶고 있었지만 **최종 기준에서의 지위가 다르다.**
+#:
+#: - `document`·`document_chunk` — `evaluation.evaluation_reference` manifest에
+#:   `bootstrap_empty` 0행으로 **등록돼 있다.** 즉 evaluation에서도 "존재하되 비어
+#:   있어야" 하는 최종 table이다. 여기서 빼면 `check_relation_set()`이 정상 DB를
+#:   거부한다.
+#: - `document_corpus` — 최종 manifest 세 개 **어디에도 없다.** 구 epoch
+#:   `kosa_0813`에만 있고, `apply_rag_schema`는 이것을 `DROP`하며
+#:   `verify_rag_schema()`는 잔존을 거부한다. B의 정리가 끝난 결과로 live에서
+#:   사라졌고, 낡은 것은 DB가 아니라 이 기대값이었다(`V5-CM-3.4` 묶음 2 준비).
+#:
+#: 이 값을 바꾸면 `preserved_projection_sha256`·`target_fingerprint`가 바뀐다.
+#: PostgreSQL transition 증적(approval·receipt·marker)이 아직 하나도 발급되지 않은
+#: 시점에 고쳤다 — 뒤로 미루면 그 증적들에 낡은 fingerprint가 박힌다.
 LEGACY_HANDOFF_TABLES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {"kosa_text2sql": ("document", "document_chunk", "document_corpus")}
+    {"kosa_text2sql": ("document", "document_chunk")}
 )
+#: `ux_document_corpus_active`는 `document_corpus`에 딸린 index였다. table이
+#: 사라졌으므로 index도 함께 없다(live 확인). 구조는 남기고 목록만 비운다 —
+#: 다른 target이 생길 수 있다.
 LEGACY_HANDOFF_INDEXES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {"kosa_text2sql": ("ux_document_corpus_active",)}
+    {"kosa_text2sql": ()}
 )
 LEGACY_HANDOFF_LABEL = "LEGACY_HANDOFF_B"
 
