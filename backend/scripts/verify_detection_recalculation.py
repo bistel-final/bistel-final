@@ -257,23 +257,42 @@ def _print_r03_persist_report(result: R03PersistResult) -> bool:
 
 def _print_incident_report(result: IncidentVerificationResult) -> bool:
     # V5-A-1.1~1.4와 달리 저장하는 값이 없다 — v_alarm_event 집계와 action_history
-    # fixture를 대조만 한다. action_history가 0건인 DB(runtime 2개)에 대고 돌리면
-    # reference_action_count=0으로 나와 항상 FAIL이다 — 코드 문제가 아니라 그 DB에는
-    # 애초에 참고 action fixture가 없기 때문이다(evaluation profile에만 12건).
+    # fixture를 대조만 한다. 정상 기대값 자체가 DB 상태에 따라 갈린다 —
+    # R03가 아직 저장 전이면 alarm 합계는 192가 아니라 189가 정상이고,
+    # action_history가 0건인 DB(runtime 2개)에서는 1:1 대조 자체가 "판정
+    # 불가"다(코드 문제가 아니라 그 DB에는 애초에 참고 action fixture가
+    # 없기 때문 — evaluation profile에만 12건). 고정값(192·action 12) 하나만
+    # 기준으로 삼으면 정상 상태도 상시 FAIL로 나오므로, service.
+    # IncidentVerificationResult가 이미 구분해 둔 r03_persisted·
+    # reference_action_available을 그대로 보여준다.
     print("\n=== V5-A-1.5 incident 집계 (action_history fixture 1:1 대조) ===")
     print(
         f"알람이 있는 (lot_id, chamber_id) incident 수: "
         f"{result.incident_count}(기준 12)"
     )
-    print(f"참고 action fixture 건수: {result.reference_action_count}(기준 12)")
-    print(f"R03 포함 alarm 합계: {result.total_alarm_count}(기준 192)")
-    print(f"1:1 불일치 건수: {len(result.mismatches)}")
-    for mismatch in result.mismatches:
-        print(f"  - ({mismatch.lot_id}, {mismatch.chamber_id}): {mismatch.reason}")
-    print(
-        f"수용값(incident 12·action 12·1:1·alarm 192) 전체 일치: "
-        f"{'PASS' if result.matches_acceptance_values else 'FAIL'}"
+    expected_total = 192 if result.r03_persisted else 189
+    r03_state = (
+        "저장됨(--persist-r03 완료)" if result.r03_persisted else "미저장(dry-run)"
     )
+    print(f"R03 저장 상태: {r03_state}")
+    print(
+        f"R03 포함 alarm 합계: {result.total_alarm_count}"
+        f"(현재 상태 기준 {expected_total} = TRACE+SUMMARY 189 + R03 "
+        f"{'3' if result.r03_persisted else '0'})"
+    )
+    if result.reference_action_available:
+        print(f"참고 action fixture 건수: {result.reference_action_count}(기준 12)")
+        print(f"1:1 불일치 건수: {len(result.mismatches)}")
+        for mismatch in result.mismatches:
+            print(f"  - ({mismatch.lot_id}, {mismatch.chamber_id}): {mismatch.reason}")
+    else:
+        print(
+            "참고 action fixture 건수: 0 — SKIPPED"
+            "(이 DB profile에는 action_history fixture가 없음, evaluation "
+            "profile에서만 1:1 대조까지 판정 가능. 코드 결함 아님)"
+        )
+    verdict = "PASS" if result.matches_acceptance_values else "FAIL"
+    print(f"수용값(incident 12·alarm {expected_total}) 판정: {verdict}")
     return result.matches_acceptance_values
 
 

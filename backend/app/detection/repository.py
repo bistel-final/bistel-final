@@ -612,24 +612,43 @@ def insert_r03_alarms(connection: Connection, records: Sequence[R03AlarmRecord])
 #
 # incident은 실제 알람(TRACE·SUMMARY·R03)이 있는 (lot_id, chamber_id) 조합이다
 # (시스템설계서 v2.1 2.1: "TRACE·SUMMARY·R03의 lot_id·chamber_id 합집합은 12
-# incident"). `v_alarm_event`는 V5-CM-3.1이 만든 View로 이미 세 source를
-# UNION ALL 해뒀으므로(`backend/migrations/v5/001_reference_extensions_final.sql`
-# 확인), 여기서는 lot_id·chamber_id로 GROUP BY만 하면 된다 — TRACE·SUMMARY·R03
-# 원본 테이블을 각각 다시 조인할 필요가 없다.
+# incident").
+# `v_alarm_event`(`backend/migrations/v5/001_reference_extensions_final.sql`)는
+# TRACE·SUMMARY·R03 세 source를 UNION ALL 했지만, View가 내보내는 lot_id·
+# chamber_id 컬럼 자체는 source마다 출처가 다르다 — TRACE·SUMMARY 분기는 원본
+# 테이블의 lot·chamber(경량 축약 컬럼, 값 형식이 lot_history.chamber_id의
+# `EQP0x-PMy` 합성 표기와 같은지 실 데이터로 확인된 적이 없다)를 그대로
+# alias하고, R03 분기는 r03_alarm_history.chamber_id(derive_r03_events가
+# lot_history.chamber_id를 그대로 복사해 적재 — service.py의
+# `chamber_id=row.chamber_id` 참고)를 쓴다. 두 값의 실제 형식이 같다는 보장
+# 없이 View의 lot_id·chamber_id를 곧바로 GROUP BY 하면, 형식이 다를 경우 같은
+# incident가 서로 다른 그룹으로 쪼개져 12보다 많은 incident가 나올 수 있다
+# (코드 리뷰 지적).
+#
+# 그래서 View가 직접 내보내는 lot_id·chamber_id는 쓰지 않고, View 안에서 이미
+# resolve된 lot_hist_id(TRACE·SUMMARY는 LEFT JOIN, R03는 JOIN)로 lot_history를
+# 다시 조인해 그 lot_id·chamber_id만 쓴다. R03의 chamber_id도 애초에
+# lot_history.chamber_id 출처이므로, 이렇게 하면 세 source가 항상 같은 한 곳
+# (lot_history)의 값으로 통일되어 형식 불일치 가능성이 원천적으로 사라진다.
+# lot_hist_id가 resolve되지 않은(NULL) 행이 있으면 — 기준표(§2)상 실 데이터
+# 에서는 0건이어야 한다 — 조용히 집계에서 빼지 않고 즉시 예외를 낸다.
 #
 # `action_history`는 12건 참고 fixture다(evaluation profile `kosa_text2sql`에만
 # 적재되고 runtime 2 DB(`kosa_agent`·`kosa_agent_e2e`)는 `action_history=0`
 # guard 대상이라 항상 0건이다 — 시스템설계서 v2.1 2.4·2.5). 이 함수를 runtime
-# DB에 대고 부르면 참고 action이 0건으로 나와 service.verify_incident_aggregation의
-# 1:1 대조가 매번 불일치로 판정된다 — 코드 결함이 아니라 profile 특성이다.
+# DB에 대고 부르면 참고 action이 0건으로 나온다 — service.verify_incident_
+# aggregation이 이 경우를 "판정 불가"로 따로 처리한다(코드 결함이 아니다).
 # evaluation profile이나, `verify_detection_recalculation.py`가 원래 가정하는
-# "9개 CSV를 전부 올려둔 로컬 dev DB"에 대고 불러야 의미가 있다.
+# "9개 CSV를 전부 올려둔 로컬 dev DB"에 대고 불러야 1:1 대조까지 의미가 있다.
 #
-# `lot_id`·`chamber_id`·`action_code` 컬럼명은 이 파일 상단 "컬럼 근거" 문단과
-# 같은 사정으로 03_schema_clean.sql 원문을 아직 대조하지 못한 최선 추정치다
-# (lot_history가 쓰는 lot_id·chamber_id 전체 이름 관례를 따랐다 — trace_alarm_history·
-# summary_alarm_history의 lot·chamber 축약 관례와는 다르다). V5-CM-2.4 적재 검증
-# 결과 실제 컬럼명이 다르면 이 함수만 맞춰 고치면 된다(호출부는 영향 없음).
+# `action_history`의 lot_id·chamber_id·action_code 컬럼명은 이 파일 상단
+# "컬럼 근거" 문단과 같은 사정으로 03_schema_clean.sql 원문을 아직 대조하지
+# 못한 최선 추정치다(lot_history가 쓰는 lot_id·chamber_id 전체 이름 관례를
+# 따랐다 — trace_alarm_history·summary_alarm_history의 lot·chamber 축약
+# 관례와는 다르다). V5-CM-2.4 적재 검증 결과 실제 컬럼명이 다르면 이 함수만
+# 맞춰 고치면 된다(호출부는 영향 없음). action_history는 알람 union이 아니라
+# 별도 테이블이라 위 lot_history 재조인 우회를 적용할 수 없다 — 이 컬럼명은
+# 아직 실 DB로 검증되지 않았다(PR 미완료 항목 참고).
 # ---------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class IncidentAlarmCountRow:
@@ -649,23 +668,43 @@ class IncidentAlarmCountRow:
 
 
 def fetch_incident_alarm_counts(connection: Connection) -> list[IncidentAlarmCountRow]:
-    """`v_alarm_event`를 (lot_id, chamber_id)로 묶어 source별 alarm 건수를 센다.
+    """`v_alarm_event`를 `lot_history` 기준 (lot_id, chamber_id)로 묶어
+    source별 alarm 건수를 센다.
 
-    읽기 전용이다. 알람이 하나도 없는 (lot_id, chamber_id) 조합은 애초에
+    읽기 전용이다. `v_alarm_event`가 직접 내보내는 lot_id·chamber_id가 아니라
+    lot_hist_id로 lot_history를 다시 조인해 그 값을 쓴다 — TRACE·SUMMARY·R03
+    세 source의 chamber 표기 형식이 실제로 같은지 확인된 적이 없어서다(위
+    모듈 주석 참고). 알람이 하나도 없는 (lot_id, chamber_id) 조합은 애초에
     `v_alarm_event`에 행이 없으므로 결과에도 나타나지 않는다 — "알람이 있는"
     incident만 세는 완료 기준과 그대로 맞는다.
+
+    v_alarm_event.lot_hist_id가 resolve되지 않은(NULL) 행이 하나라도 있으면
+    ValueError를 낸다 — 그런 행을 조용히 집계에서 빼면 incident 수가 실제보다
+    적게 나올 수 있고, 기준표(§2)상 실 데이터에서는 이런 행이 0건이어야
+    하므로 있다면 그 자체가 즉시 확인해야 할 이상 징후다.
     """
+
+    unresolved_count = connection.execute(
+        text("SELECT COUNT(*) FROM v_alarm_event WHERE lot_hist_id IS NULL")
+    ).scalar_one()
+    if unresolved_count:
+        raise ValueError(
+            "v_alarm_event에 lot_history로 resolve되지 않은(lot_hist_id "
+            f"NULL) 알람이 {unresolved_count}건 있습니다 — incident 집계가 "
+            "조용히 누락되는 대신 즉시 확인이 필요합니다."
+        )
 
     query = """
         SELECT
-            lot_id,
-            chamber_id,
-            COUNT(*) FILTER (WHERE source = 'TRACE')   AS trace_count,
-            COUNT(*) FILTER (WHERE source = 'SUMMARY') AS summary_count,
-            COUNT(*) FILTER (WHERE source = 'R03')     AS r03_count
-        FROM v_alarm_event
-        GROUP BY lot_id, chamber_id
-        ORDER BY lot_id, chamber_id
+            h.lot_id     AS lot_id,
+            h.chamber_id AS chamber_id,
+            COUNT(*) FILTER (WHERE v.source = 'TRACE')   AS trace_count,
+            COUNT(*) FILTER (WHERE v.source = 'SUMMARY') AS summary_count,
+            COUNT(*) FILTER (WHERE v.source = 'R03')     AS r03_count
+        FROM v_alarm_event AS v
+        JOIN lot_history AS h ON h.lot_hist_id = v.lot_hist_id
+        GROUP BY h.lot_id, h.chamber_id
+        ORDER BY h.lot_id, h.chamber_id
     """
     rows = connection.execute(text(query)).mappings().all()
     return [

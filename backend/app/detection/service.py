@@ -793,7 +793,16 @@ class IncidentReferenceMismatch:
 
 @dataclass(frozen=True, slots=True)
 class IncidentVerificationResult:
-    """V5-A-1.5 완료 기준(incident 12·action 12·1:1·alarm 합계 192) 판정 결과."""
+    """V5-A-1.5 완료 기준(incident 12·alarm 합계 189/192, action fixture가
+    있는 DB에서는 action 12·1:1까지) 판정 결과.
+
+    action fixture 1:1 대조와 alarm 합계 192는 DB 상태(evaluation profile
+    여부·`--persist-r03` 여부)에 따라 애초에 성립할 수 없는 경우가 있다 — 그
+    경우를 "불일치"로 잘못 보고하지 않으려고 `reference_action_available`·
+    `r03_persisted`로 상태를 먼저 구분한다(코드 리뷰 지적: 상시 실패하는
+    검사를 fail-closed로 오인하면 사람이 곧 무시하게 되고, 진짜 실패도 같이
+    묻힌다).
+    """
 
     incidents: list[repository.IncidentAlarmCountRow]
     reference_actions: list[repository.ReferenceActionRow]
@@ -809,9 +818,25 @@ class IncidentVerificationResult:
 
     @property
     def total_alarm_count(self) -> int:
-        """R03를 포함한 alarm 합계(수용값 192)."""
+        """R03를 포함한 alarm 합계(R03 저장 전 189 / 저장 후 192)."""
 
         return sum(incident.total_count for incident in self.incidents)
+
+    @property
+    def r03_alarm_count(self) -> int:
+        """incident에 포함된 R03 alarm 합계. `--persist-r03` 없이(dry-run)
+        부르면 r03_alarm_history가 비어 있어 0이고, 저장 후에는 3이어야
+        한다."""
+
+        return sum(incident.r03_count for incident in self.incidents)
+
+    @property
+    def r03_persisted(self) -> bool:
+        """R03 alarm이 r03_alarm_history에 이미 저장돼 v_alarm_event에
+        반영됐는지. False면 아직 dry-run 상태(총합 189가 정상), True면 저장된
+        상태(총합 192가 정상)다."""
+
+        return self.r03_alarm_count > 0
 
     @property
     def matches_incident_count(self) -> bool:
@@ -823,23 +848,61 @@ class IncidentVerificationResult:
 
     @property
     def matches_total_alarm_count(self) -> bool:
-        return self.total_alarm_count == 192
+        """TRACE+SUMMARY 189건은 R03 저장 여부와 무관하게 항상 성립해야 하고,
+        R03는 저장 전 0건·저장 후 3건 둘 중 하나여야 한다(그 사이 값은
+        비정상). 고정값 192 하나만 기준으로 삼으면, `--persist-r03` 없이 돌린
+        기본 실행에서는 정상 상태(189)도 항상 FAIL로 나온다(코드 리뷰 지적) —
+        R03 저장 여부에 따라 기대값을 189/192로 갈라 판정한다."""
+
+        trace_and_summary_total = sum(
+            incident.trace_count + incident.summary_count for incident in self.incidents
+        )
+        if trace_and_summary_total != 189:
+            return False
+        if self.r03_alarm_count not in (0, 3):
+            return False
+        expected_total = 192 if self.r03_persisted else 189
+        return self.total_alarm_count == expected_total
+
+    @property
+    def reference_action_available(self) -> bool:
+        """참고 action fixture가 이 DB에 존재하는지. evaluation profile
+        (`kosa_text2sql`)에만 12건이 있고 runtime 2 DB는 항상 0건이다
+        (`repository.fetch_reference_actions` docstring 참고) — 0건이면 1:1
+        대조는 "불일치"가 아니라 "이 DB로는 판정 불가"다."""
+
+        return self.reference_action_count > 0
 
     @property
     def ok(self) -> bool:
-        """incident-action fixture 1:1 대응 여부(불일치 0건)."""
+        """incident-action fixture 1:1 대응 여부. 참고 action fixture가 없는
+        DB(reference_action_available=False)에서는 애초에 대조하지 않았으므로
+        True를 반환한다 — "판정 불가"를 "일치"로 위장하지 않되, 이 속성 하나만
+        보고는 그 차이가 드러나지 않으므로 반드시 reference_action_available과
+        함께 확인해야 한다."""
 
+        if not self.reference_action_available:
+            return True
         return len(self.mismatches) == 0
 
     @property
     def matches_acceptance_values(self) -> bool:
-        """수용값(incident 12·action 12·1:1·alarm 합계 192) 전체 일치 여부."""
+        """수용값(incident 12·alarm 189/192) 전체 일치 여부.
 
+        참고 action fixture가 없는 DB(reference_action_available=False)에서는
+        action 12건·1:1 기준을 판정에서 제외한다 — 그 DB에는 애초에 대조
+        대상이 없으므로 "불일치"가 아니라 "대조 불가"이기 때문이다(코드 리뷰
+        지적). fixture가 있는 DB에서는 지금까지처럼 action 12건·1:1까지 모두
+        확인한다.
+        """
+
+        reference_ok = not self.reference_action_available or (
+            self.matches_reference_action_count and self.ok
+        )
         return (
             self.matches_incident_count
-            and self.matches_reference_action_count
-            and self.ok
             and self.matches_total_alarm_count
+            and reference_ok
         )
 
 
@@ -849,34 +912,42 @@ def verify_incident_aggregation(connection: Connection) -> IncidentVerificationR
     읽기 전용이다(아무것도 저장하지 않는다). `action_history`는 evaluation
     profile(`kosa_text2sql`)에만 12건이 있으므로(`repository.fetch_reference_actions`
     docstring 참고) runtime DB(`kosa_agent`·`kosa_agent_e2e`)로 이 함수를 부르면
-    reference_actions가 0건으로 나와 매번 불일치로 판정된다 — 코드 결함이 아니라
-    profile 특성이니, action fixture 대조까지 확인하려면 evaluation profile이나
-    9개 CSV를 전부 올려둔 로컬 dev DB에 대고 불러야 한다.
+    reference_actions가 0건으로 나온다 — `IncidentVerificationResult.
+    reference_action_available`이 이 경우를 "불일치"가 아니라 "판정 불가"로
+    구분하니(코드 결함이 아니라 profile 특성), action fixture 대조까지
+    확인하려면 evaluation profile이나 9개 CSV를 전부 올려둔 로컬 dev DB에
+    대고 불러야 한다.
     """
 
     incidents = repository.fetch_incident_alarm_counts(connection)
     reference_actions = repository.fetch_reference_actions(connection)
 
-    incident_keys = {(row.lot_id, row.chamber_id) for row in incidents}
-    reference_keys = {(row.lot_id, row.chamber_id) for row in reference_actions}
-
     mismatches: list[IncidentReferenceMismatch] = []
-    for lot_id, chamber_id in sorted(reference_keys - incident_keys):
-        mismatches.append(
-            IncidentReferenceMismatch(
-                lot_id=lot_id,
-                chamber_id=chamber_id,
-                reason="missing_in_incidents",
+    if reference_actions:
+        # reference_actions가 비어 있으면(runtime DB) 대조할 fixture 자체가
+        # 없다 — 이 경우 아래 두 집합 차 계산을 그대로 두면 incident 12개
+        # 전부가 "missing_in_reference"로 잡혀, 판정 불가 상황을 대량의 가짜
+        # 불일치로 보고하게 된다. 그래서 reference_actions가 있을 때만
+        # 대조한다.
+        incident_keys = {(row.lot_id, row.chamber_id) for row in incidents}
+        reference_keys = {(row.lot_id, row.chamber_id) for row in reference_actions}
+
+        for lot_id, chamber_id in sorted(reference_keys - incident_keys):
+            mismatches.append(
+                IncidentReferenceMismatch(
+                    lot_id=lot_id,
+                    chamber_id=chamber_id,
+                    reason="missing_in_incidents",
+                )
             )
-        )
-    for lot_id, chamber_id in sorted(incident_keys - reference_keys):
-        mismatches.append(
-            IncidentReferenceMismatch(
-                lot_id=lot_id,
-                chamber_id=chamber_id,
-                reason="missing_in_reference",
+        for lot_id, chamber_id in sorted(incident_keys - reference_keys):
+            mismatches.append(
+                IncidentReferenceMismatch(
+                    lot_id=lot_id,
+                    chamber_id=chamber_id,
+                    reason="missing_in_reference",
+                )
             )
-        )
 
     return IncidentVerificationResult(
         incidents=incidents,
