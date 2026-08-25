@@ -136,8 +136,8 @@ def test_the_active_artifacts_match_the_final_source_exactly(parsed) -> None:
     """
 
     manifest = master.validate_generated_artifacts(parsed)
-    assert manifest["node_count"] == 44
-    assert manifest["relationship_count"] == 85
+    assert manifest["node_count"] == master.EXPECTED_NODE_COUNT
+    assert manifest["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
     # canonical JSON 기준이다 — 파일 raw bytes 기준과 다르다.
     assert master.graph_manifest_sha256(manifest) == ACTIVE_MANIFEST_SHA256
     assert manifest["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
@@ -188,12 +188,53 @@ def test_the_active_manifest_holds_no_secret() -> None:
     )
 
 
+#: PostgreSQL `lot_history.area_id`·`evaluation.area`·`dim_parameter.area`가 쓰는 표기.
+#: 공용 3 DB 실측값이며 Neo4j `Area.area_id`·`Equipment.area`와 같아야 한다.
+CROSS_STORE_AREA_IDS = frozenset({"Photo", "Etch"})
+
+
+def test_area_id_matches_the_postgresql_representation(parsed) -> None:
+    """**store를 넘나드는 join key의 표기를 고정한다**(팀 리뷰 확인 1).
+
+    최종 `master.cypher`가 `photo/etch` → `Photo/Etch`로 바꿨다. 이 값은 Neo4j
+    안에서만 쓰이지 않는다 — `V5-B-3.3`의 `get_equipment_context`가 chamber →
+    equipment → area를 반환하고, PostgreSQL `lot_history.area_id`와 대조하는 경로가
+    생긴다.
+
+    한쪽이 소문자로 매칭하면 **예외가 아니라 빈 결과**가 나온다. CI에서 안 잡힌다.
+
+    공용 3 DB 실측: `lot_history.area_id`·`evaluation.area`·`dim_parameter.area`가
+    전부 `['Etch', 'Photo']`다. 이 회귀가 그 일치를 계약으로 고정한다.
+    """
+
+    areas = {
+        node.properties["area_id"] for node in parsed.nodes if node.label == "Area"
+    }
+    assert areas == set(CROSS_STORE_AREA_IDS)
+
+    # Equipment의 area 속성도 같은 표기를 쓴다.
+    equipment_areas = {
+        node.properties["area"]
+        for node in parsed.nodes
+        if node.label == "Equipment" and "area" in node.properties
+    }
+    assert equipment_areas <= set(CROSS_STORE_AREA_IDS)
+
+    # 소문자 표기가 섞이면 실패한다.
+    assert not any(value.islower() for value in areas | equipment_areas)
+
+
 def test_registered_artifact_counts_and_first_relation_id(parsed) -> None:
     assert parsed.destructive_statement == "MATCH (n) DETACH DELETE n;"
-    assert len(parsed.seed_statements) == 99
-    assert len(parsed.corrected_statements) == 99
-    assert len(parsed.nodes) == 44
-    assert len(parsed.relationships) == 85
+    # **수치는 `master_cypher`의 정본 상수에서 유도한다.**
+    #
+    # 같은 값이 이름을 달리해 여러 자리에 있으면 artifact를 다시 발급할 때 한 곳만
+    # 고쳐도 나머지가 조용히 낡는다. dry-run의 38/81 literal이 정확히 그랬다
+    # (팀 리뷰 필수 1).
+    assert len(parsed.seed_statements) == master.EXPECTED_SEED_STATEMENT_COUNT
+    assert len(parsed.corrected_statements) == master.EXPECTED_SEED_STATEMENT_COUNT
+    assert len(parsed.nodes) == master.EXPECTED_NODE_COUNT
+    assert len(parsed.relationships) == master.EXPECTED_RELATIONSHIP_COUNT
     first = parsed.relationships[0]
     assert first.canonical_tuple == (
         "STEP_OF|RecipeStep:recipe_id=s:RECIPE01+recipe_step_no=i:1|"
@@ -218,7 +259,11 @@ def test_corrected_artifact_never_contains_destructive_statement(parsed) -> None
 
 def test_relationship_ids_are_unique_and_deterministic(parsed) -> None:
     relation_ids = [item.relation_id for item in parsed.relationships]
-    assert len(relation_ids) == len(set(relation_ids)) == 85
+    assert (
+        len(relation_ids)
+        == len(set(relation_ids))
+        == (master.EXPECTED_RELATIONSHIP_COUNT)
+    )
     assert master.parse_master_cypher(_actual_source()).corrected_text == (
         parsed.corrected_text
     )
@@ -344,8 +389,8 @@ def test_graph_manifest_is_exact_and_canonical(parsed) -> None:
     assert expected["corrected_cypher_sha256"] == FINAL_CORRECTED_SHA256
     assert expected["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
     assert expected["expected_legacy_fingerprint_sha256"] == FINAL_LEGACY_FINGERPRINT
-    assert expected["node_count"] == 44
-    assert expected["relationship_count"] == 85
+    assert expected["node_count"] == master.EXPECTED_NODE_COUNT
+    assert expected["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
     assert expected["label_distribution"] == EXPECTED_LABEL_DISTRIBUTION
     assert expected["relationship_type_distribution"] == (
         EXPECTED_RELATIONSHIP_TYPE_DISTRIBUTION

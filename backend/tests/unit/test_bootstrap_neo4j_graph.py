@@ -231,8 +231,8 @@ def test_the_active_marker_passes_the_strict_schema() -> None:
 
     assert marker["status"] == "ADOPTED_EXISTING"
     assert marker["database"] == "neo4j"
-    assert marker["node_count"] == 44
-    assert marker["relationship_count"] == 85
+    assert marker["node_count"] == master.EXPECTED_NODE_COUNT
+    assert marker["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
     assert marker["relation_id_duplicates"] == 0
     assert marker["expected_graph_fingerprint_sha256"] == ACTIVE_GRAPH_FINGERPRINT
     assert marker["actual_graph_fingerprint_sha256"] == ACTIVE_GRAPH_FINGERPRINT
