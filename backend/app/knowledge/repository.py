@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -13,36 +12,19 @@ from app.knowledge.graph_revision import (
     load_graph_revision,
 )
 
-BUSINESS_KEYS: dict[str, tuple[str, ...]] = {
-    "Area": ("area_id",),
-    "Recipe": ("recipe_id",),
-    "RecipeStep": ("recipe_id", "recipe_step_no"),
-    "ProcessStep": ("step_id",),
-    "EquipmentModel": ("model_code",),
-    "Equipment": ("equipment_id",),
-    "Chamber": ("chamber_id",),
-    "Parameter": ("parameter_id",),
-}
-
 
 @dataclass(frozen=True)
-class EquipmentContextRow:
-    chamber: dict[str, Any]
-    equipment: dict[str, Any]
-    model: dict[str, Any]
-    area: dict[str, Any] | None
-    step: dict[str, Any] | None
-    sibling_chambers: list[dict[str, Any]]
-    adjacent_steps: list[dict[str, Any]]
-    parameters: list[dict[str, Any]]
-    relations: list[dict[str, Any]]
+class ChamberGraphProjection:
+    root_node_id: str
+    nodes: list[dict[str, Any]]
+    relationships: list[dict[str, Any]]
     graph_revision: str
 
 
 class ChamberGraphRepository:
-    """Read API graph projection context from the verified Neo4j graph."""
+    """Read graph drawing projection from the verified Neo4j graph."""
 
-    CONTEXT_QUERY = """
+    GRAPH_PROJECTION_QUERY = """
 MATCH (c:Chamber {chamber_id: $chamber_id})-[part:PART_OF]->(e:Equipment)
 MATCH (e)-[ofModel:OF_MODEL]->(m:EquipmentModel)
 OPTIONAL MATCH (e)-[performs:PERFORMS]->(step:ProcessStep)
@@ -54,39 +36,77 @@ OPTIONAL MATCH (previous:ProcessStep)-[previousRel:NEXT_STEP]->(step)
 OPTIONAL MATCH (step)-[nextRel:NEXT_STEP]->(next:ProcessStep)
 WITH
   c,
-  e,
-  m,
-  area,
-  step,
-  collect(DISTINCT properties(sibling)) AS sibling_chambers,
-  collect(DISTINCT properties(previous)) + collect(DISTINCT properties(next))
-    AS adjacent_steps,
-  collect(DISTINCT properties(parameter)) AS parameters,
+  [node IN [c, e, m, area, step] +
+    collect(DISTINCT sibling) +
+    collect(DISTINCT previous) +
+    collect(DISTINCT next) +
+    collect(DISTINCT parameter)
+    WHERE node IS NOT NULL
+    | {
+        id: labels(node)[0] + ':' + coalesce(
+          node.chamber_id,
+          node.equipment_id,
+          node.model_code,
+          node.area_id,
+          node.step_id,
+          node.parameter_id
+        ),
+        label: labels(node)[0],
+        business_id: coalesce(
+          node.chamber_id,
+          node.equipment_id,
+          node.model_code,
+          node.area_id,
+          node.step_id,
+          node.parameter_id
+        ),
+        display_name: coalesce(
+          node.chamber_id,
+          node.equipment_name,
+          node.model_name,
+          node.area_name,
+          node.step_name,
+          node.parameter_name,
+          node.equipment_id,
+          node.model_code,
+          node.area_id,
+          node.step_id,
+          node.parameter_id
+        ),
+        properties: properties(node)
+      }
+  ] AS graph_nodes,
   collect(DISTINCT part) + collect(DISTINCT ofModel) + collect(DISTINCT performs) +
     collect(DISTINCT stepArea) + collect(DISTINCT measured) +
     collect(DISTINCT siblingPart) + collect(DISTINCT previousRel) +
     collect(DISTINCT nextRel) AS graph_relations
 RETURN
-  properties(c) AS chamber,
-  properties(e) AS equipment,
-  properties(m) AS model,
-  properties(area) AS area,
-  properties(step) AS step,
-  sibling_chambers,
-  adjacent_steps,
-  parameters,
+  'Chamber:' + c.chamber_id AS root_node_id,
+  graph_nodes AS nodes,
   [
     rel IN graph_relations
     WHERE rel IS NOT NULL
     | {
-        relation_id: rel.relation_id,
-        relation_type: type(rel),
-        from_label: labels(startNode(rel))[0],
-        from_properties: properties(startNode(rel)),
-        to_label: labels(endNode(rel))[0],
-        to_properties: properties(endNode(rel))
+        id: rel.relation_id,
+        type: type(rel),
+        source: labels(startNode(rel))[0] + ':' + coalesce(
+          startNode(rel).chamber_id,
+          startNode(rel).equipment_id,
+          startNode(rel).model_code,
+          startNode(rel).area_id,
+          startNode(rel).step_id,
+          startNode(rel).parameter_id
+        ),
+        target: labels(endNode(rel))[0] + ':' + coalesce(
+          endNode(rel).chamber_id,
+          endNode(rel).equipment_id,
+          endNode(rel).model_code,
+          endNode(rel).area_id,
+          endNode(rel).step_id,
+          endNode(rel).parameter_id
+        )
       }
-  ] AS relations
+  ] AS relationships
 """
 
     def __init__(
@@ -100,36 +120,40 @@ RETURN
         self._graph_revision_loader = graph_revision_loader
         self._database = database or graph_database_name()
 
-    def get_equipment_context(self, chamber_id: str) -> EquipmentContextRow | None:
+    def get_chamber_graph_projection(
+        self,
+        chamber_id: str,
+    ) -> ChamberGraphProjection | None:
         driver = self._driver_factory()
         with driver.session(
             database=self._database,
             default_access_mode="READ",
         ) as session:
             record = session.run(
-                self.CONTEXT_QUERY,
+                self.GRAPH_PROJECTION_QUERY,
                 {"chamber_id": chamber_id},
             ).single()
         if record is None:
             return None
 
         row = _record_to_mapping(record)
-        return EquipmentContextRow(
-            chamber=_clean_map(row.get("chamber")),
-            equipment=_clean_map(row.get("equipment")),
-            model=_clean_map(row.get("model")),
-            area=_optional_map(row.get("area")),
-            step=_optional_map(row.get("step")),
-            sibling_chambers=_clean_maps(row.get("sibling_chambers")),
-            adjacent_steps=_clean_maps(row.get("adjacent_steps")),
-            parameters=_clean_maps(row.get("parameters")),
-            relations=_relation_refs(row.get("relations")),
+        root_node_id = row.get("root_node_id")
+        if root_node_id is None:
+            raise RuntimeError("Neo4j graph projection root_node_id가 없습니다")
+
+        return ChamberGraphProjection(
+            root_node_id=str(root_node_id),
+            nodes=_clean_projection_items(row.get("nodes"), item_name="node"),
+            relationships=_clean_projection_items(
+                row.get("relationships"),
+                item_name="relationship",
+            ),
             graph_revision=self._graph_revision_loader(),
         )
 
 
 # ============================
-# Neo4j record helper
+# Neo4j projection helper
 # ============================
 def _record_to_mapping(record: Any) -> Mapping[str, Any]:
     if isinstance(record, Mapping):
@@ -141,81 +165,17 @@ def _record_to_mapping(record: Any) -> Mapping[str, Any]:
     return dict(record)
 
 
-def _clean_map(value: Any) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        return {}
-    return {str(key): item for key, item in value.items() if item is not None}
-
-
-def _optional_map(value: Any) -> dict[str, Any] | None:
-    cleaned = _clean_map(value)
-    return cleaned or None
-
-
-def _clean_maps(value: Any) -> list[dict[str, Any]]:
+def _clean_projection_items(value: Any, *, item_name: str) -> list[dict[str, Any]]:
     if not isinstance(value, Sequence) or isinstance(value, str | bytes):
         return []
+
     unique: dict[str, dict[str, Any]] = {}
-    for item in value:
-        cleaned = _clean_map(item)
-        if cleaned:
-            unique[json.dumps(cleaned, ensure_ascii=False, sort_keys=True)] = cleaned
-    return list(unique.values())
-
-
-# ============================
-# API relation helper
-# ============================
-def _relation_refs(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
-        return []
-    refs: dict[str, dict[str, Any]] = {}
     for item in value:
         if not isinstance(item, Mapping):
             continue
-        if not item.get("relation_id"):
-            raise RuntimeError("Neo4j relationship에 relation_id가 없습니다")
-        if not item.get("relation_type"):
-            raise RuntimeError("Neo4j relationship type을 확인할 수 없습니다")
-        if not item.get("from_label") or not item.get("to_label"):
-            raise RuntimeError("Neo4j relationship endpoint label이 없습니다")
-        if not item.get("from_properties") or not item.get("to_properties"):
-            raise RuntimeError("Neo4j relationship endpoint business key가 없습니다")
-        from_label = str(item.get("from_label", ""))
-        to_label = str(item.get("to_label", ""))
-        ref = {
-            "relation_id": item["relation_id"],
-            "relation_type": item["relation_type"],
-            "from_label": from_label,
-            "from_business_id": _business_id(
-                from_label,
-                _clean_map(item.get("from_properties")),
-            ),
-            "to_label": to_label,
-            "to_business_id": _business_id(
-                to_label,
-                _clean_map(item.get("to_properties")),
-            ),
-        }
-        refs[str(ref["relation_id"])] = ref
-    return list(refs.values())
-
-
-def _business_id(label: str, properties: Mapping[str, Any]) -> str:
-    keys = BUSINESS_KEYS[label]
-    return "+".join(f"{key}={_business_value(properties[key])}" for key in sorted(keys))
-
-
-def _business_value(value: Any) -> str:
-    if isinstance(value, bool):
-        raise RuntimeError("bool business key는 허용하지 않습니다")
-    if isinstance(value, int):
-        return f"i:{value:d}"
-    return f"s:{_escape_business_value(str(value))}"
-
-
-def _escape_business_value(value: str) -> str:
-    escaped = value.replace("\\", "\\\\")
-    for delimiter in ("|", ":", "+", "="):
-        escaped = escaped.replace(delimiter, f"\\{delimiter}")
-    return escaped
+        cleaned = {str(key): field for key, field in item.items() if field is not None}
+        item_id = cleaned.get("id")
+        if item_id is None:
+            raise RuntimeError(f"Neo4j graph projection {item_name} id가 없습니다")
+        unique[str(item_id)] = cleaned
+    return list(unique.values())

@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from app.common.tool_contracts import (
-    AreaNode,
-    ChamberNode,
     DocumentHit,
-    EquipmentNode,
     EquipmentContextToolResult,
-    GraphRelationRef,
-    ParameterNode,
-    ProcessStepNode,
 )
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.embedding import embed_query
 from app.knowledge.graph_query import GraphQueryRepository
 from app.knowledge.repository import ChamberGraphRepository
+from app.knowledge.schemas import ChamberRelationResponse
 
 
 # ==================
@@ -49,33 +42,25 @@ class DocumentSearchService:
         return [DocumentHit.model_validate(row) for row in rows]
 
 
-# ==================
-# Graph
-# ==================
-@dataclass(frozen=True)
-class EquipmentContext:
-    equipment: EquipmentNode
-    area: AreaNode | None
-    step: ProcessStepNode | None
-    sibling_chambers: list[ChamberNode]
-    adjacent_steps: list[ProcessStepNode]
-    parameters: list[ParameterNode]
-    relations: list[GraphRelationRef]
-    graph_revision: str
-
-
 class GraphService:
     """API graph context service."""
 
     def __init__(self, repository: ChamberGraphRepository | None = None) -> None:
         self._repository = repository or ChamberGraphRepository()
 
-    def get_equipment_context(self, chamber_id: str) -> EquipmentContext | None:
-        row = self._repository.get_equipment_context(chamber_id)
-        if row is None:
+    def get_chamber_relations(self, chamber_id: str) -> ChamberRelationResponse | None:
+        projection = self._repository.get_chamber_graph_projection(chamber_id)
+        if projection is None:
             return None
 
-        return _equipment_context_from_row(row)
+        return ChamberRelationResponse.model_validate(
+            {
+                "root_node_id": projection.root_node_id,
+                "nodes": projection.nodes,
+                "relationships": projection.relationships,
+                "graph_revision": projection.graph_revision,
+            }
+        )
 
 
 class EquipmentContextService:
@@ -93,151 +78,3 @@ class EquipmentContextService:
             return None
 
         return EquipmentContextToolResult.model_validate({"ok": True, **payload})
-
-
-# ============================
-# API helper
-# ============================
-def _equipment_context_from_row(row: object) -> EquipmentContext:
-    area_id = _string_or_none(row.area, "area_id")
-    step_id = _string_or_none(row.step, "step_id")
-    model_code = _string(row.model, "model_code", row.equipment.get("model_code"))
-    equipment_id = _string(row.equipment, "equipment_id")
-
-    equipment = _equipment_node(
-        row.equipment,
-        equipment_id=equipment_id,
-        model_code=model_code,
-        area_id=area_id,
-        step_id=step_id,
-    )
-    return EquipmentContext(
-        equipment=equipment,
-        area=_area_node(row.area),
-        step=_step_node(row.step),
-        sibling_chambers=[
-            _chamber_node(
-                item,
-                equipment_id=equipment_id,
-                model_code=model_code,
-                area_id=equipment.area_id,
-                step_id=step_id,
-            )
-            for item in row.sibling_chambers
-        ],
-        adjacent_steps=[
-            item
-            for item in (_step_node(step) for step in row.adjacent_steps)
-            if item
-        ],
-        parameters=[_parameter_node(item) for item in row.parameters],
-        relations=[GraphRelationRef.model_validate(item) for item in row.relations],
-        graph_revision=row.graph_revision,
-    )
-
-
-def _equipment_node(
-    value: dict[str, object],
-    *,
-    equipment_id: str,
-    model_code: str,
-    area_id: str | None,
-    step_id: str | None,
-) -> EquipmentNode:
-    return EquipmentNode.model_validate(
-        {
-            "equipment_id": equipment_id,
-            "equipment_name": _string(
-                value,
-                "equipment_name",
-                value.get("name") or equipment_id,
-            ),
-            "model_code": model_code,
-            "area_id": area_id or _string(value, "area_id"),
-            "step_id": step_id,
-        }
-    )
-
-
-def _area_node(value: dict[str, object] | None) -> AreaNode | None:
-    if not value:
-        return None
-    return AreaNode.model_validate(
-        {
-            "area_id": _string(value, "area_id"),
-            "area_name": _string_or_none(value, "area_name"),
-        }
-    )
-
-
-def _step_node(value: dict[str, object] | None) -> ProcessStepNode | None:
-    if not value:
-        return None
-    step_id = _string(value, "step_id")
-    return ProcessStepNode.model_validate(
-        {
-            "step_id": step_id,
-            "step_name": _string(value, "step_name", value.get("name") or step_id),
-            "step_seq": _int_or_none(value, "step_seq"),
-            "layer": _string_or_none(value, "layer"),
-        }
-    )
-
-
-def _chamber_node(
-    value: dict[str, object],
-    *,
-    equipment_id: str,
-    model_code: str,
-    area_id: str | None,
-    step_id: str | None,
-) -> ChamberNode:
-    return ChamberNode.model_validate(
-        {
-            "chamber_id": _string(value, "chamber_id"),
-            "equipment_id": equipment_id,
-            "chamber_no": _int_or_none(value, "chamber_no"),
-            "model_code": model_code,
-            "area_id": area_id,
-            "step_id": step_id,
-        }
-    )
-
-
-def _parameter_node(value: dict[str, object]) -> ParameterNode:
-    parameter_id = _string(value, "parameter_id")
-    return ParameterNode.model_validate(
-        {
-            "parameter_id": parameter_id,
-            "parameter_name": _string(
-                value,
-                "parameter_name",
-                value.get("name") or parameter_id,
-            ),
-            "unit": _string_or_none(value, "unit"),
-        }
-    )
-
-
-def _string(
-    value: dict[str, object],
-    key: str,
-    default: object | None = None,
-) -> str:
-    item = value.get(key, default)
-    if item is None:
-        raise ValueError(f"graph context field is missing: {key}")
-    return str(item)
-
-
-def _string_or_none(value: dict[str, object] | None, key: str) -> str | None:
-    if not value or value.get(key) is None:
-        return None
-    return str(value[key])
-
-
-def _int_or_none(value: dict[str, object], key: str) -> int | None:
-    item = value.get(key)
-    if item is None:
-        return None
-    return int(item)

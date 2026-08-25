@@ -3,19 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.common.tool_contracts import (
-    AreaNode,
-    ChamberNode,
-    EquipmentNode,
     EquipmentContextToolResult,
-    GraphRelationRef,
-    ParameterNode,
-    ProcessStepNode,
 )
 from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
-from app.knowledge.repository import ChamberGraphRepository, EquipmentContextRow
+from app.knowledge.repository import ChamberGraphProjection, ChamberGraphRepository
 from app.knowledge.service import EquipmentContextService, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
@@ -23,39 +17,37 @@ REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
 
 
 class FakeGraphRepository:
-    def get_equipment_context(self, chamber_id: str) -> EquipmentContextRow | None:
+    def get_chamber_graph_projection(
+        self,
+        chamber_id: str,
+    ) -> ChamberGraphProjection | None:
         if chamber_id == "missing":
             return None
-        return EquipmentContextRow(
-            chamber={"chamber_id": chamber_id, "chamber_no": 1},
-            equipment={
-                "equipment_id": "EQP01",
-                "equipment_name": "Photo Scanner 01",
-                "model_code": "PH-9000",
-            },
-            model={"model_code": "PH-9000", "model_name": "Photo Scanner"},
-            area={"area_id": "photo", "area_name": "Photolithography"},
-            step={"step_id": "CT-PHOTO", "step_name": "Coat Track", "step_seq": 1},
-            sibling_chambers=[
-                {"chamber_id": "EQP01-PM2", "chamber_no": 2},
-            ],
-            adjacent_steps=[{"step_id": "CT-ETCH", "step_name": "Etch", "step_seq": 2}],
-            parameters=[
+        return ChamberGraphProjection(
+            root_node_id=f"Chamber:{chamber_id}",
+            nodes=[
                 {
-                    "parameter_id": "PH_FOCUS",
-                    "parameter_name": "Focus",
-                    "unit": "um",
-                }
-            ],
-            relations=[
+                    "id": f"Chamber:{chamber_id}",
+                    "label": "Chamber",
+                    "business_id": chamber_id,
+                    "display_name": chamber_id,
+                    "properties": {"chamber_id": chamber_id, "chamber_no": 1},
+                },
                 {
-                    "relation_id": "REL-1",
-                    "relation_type": "PART_OF",
-                    "from_label": "Chamber",
-                    "from_business_id": "chamber_id=s:EQP01-PM1",
-                    "to_label": "Equipment",
-                    "to_business_id": "equipment_id=s:EQP01",
-                }
+                    "id": "Equipment:EQP01",
+                    "label": "Equipment",
+                    "business_id": "EQP01",
+                    "display_name": "Photo Scanner 01",
+                    "properties": {"equipment_id": "EQP01"},
+                },
+            ],
+            relationships=[
+                {
+                    "id": "REL-1",
+                    "type": "PART_OF",
+                    "source": f"Chamber:{chamber_id}",
+                    "target": "Equipment:EQP01",
+                },
             ],
             graph_revision=REVISION,
         )
@@ -77,54 +69,28 @@ class FakeGraphRepository:
         }
 
 
-def test_graph_service_maps_equipment_context_payload() -> None:
-    result = GraphService(FakeGraphRepository()).get_equipment_context("EQP01-PM1")
+def test_graph_service_maps_chamber_relation_graph_projection() -> None:
+    result = GraphService(FakeGraphRepository()).get_chamber_relations("EQP01-PM1")
 
     assert result is not None
-    assert result.equipment == EquipmentNode(
-        equipment_id="EQP01",
-        equipment_name="Photo Scanner 01",
-        model_code="PH-9000",
-        area_id="photo",
-        step_id="CT-PHOTO",
-    )
-    assert result.area == AreaNode(
-        area_id="photo",
-        area_name="Photolithography",
-    )
-    assert result.step == ProcessStepNode(
-        step_id="CT-PHOTO",
-        step_name="Coat Track",
-        step_seq=1,
-    )
-    assert result.sibling_chambers == [
-        ChamberNode(
-            chamber_id="EQP01-PM2",
-            equipment_id="EQP01",
-            chamber_no=2,
-            model_code="PH-9000",
-            area_id="photo",
-            step_id="CT-PHOTO",
-        ),
-    ]
-    assert result.parameters == [
-        ParameterNode(parameter_id="PH_FOCUS", parameter_name="Focus", unit="um")
-    ]
-    assert result.relations == [
-        GraphRelationRef(
-            relation_id="REL-1",
-            relation_type="PART_OF",
-            from_label="Chamber",
-            from_business_id="chamber_id=s:EQP01-PM1",
-            to_label="Equipment",
-            to_business_id="equipment_id=s:EQP01",
-        )
-    ]
+    assert result.root_node_id == "Chamber:EQP01-PM1"
     assert result.graph_revision == REVISION
+    assert [node.id for node in result.nodes] == [
+        "Chamber:EQP01-PM1",
+        "Equipment:EQP01",
+    ]
+    assert [relationship.model_dump() for relationship in result.relationships] == [
+        {
+            "id": "REL-1",
+            "type": "PART_OF",
+            "source": "Chamber:EQP01-PM1",
+            "target": "Equipment:EQP01",
+        }
+    ]
 
 
 def test_graph_service_returns_none_for_missing_chamber() -> None:
-    assert GraphService(FakeGraphRepository()).get_equipment_context("missing") is None
+    assert GraphService(FakeGraphRepository()).get_chamber_relations("missing") is None
 
 
 def test_equipment_context_service_returns_compact_tool_context() -> None:
@@ -176,7 +142,7 @@ def test_equipment_context_service_uses_next_step_direction_for_process_flow() -
 
 
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
-    query = ChamberGraphRepository.CONTEXT_QUERY
+    query = ChamberGraphRepository.GRAPH_PROJECTION_QUERY
 
     assert "MATCH (n)" not in query
     assert "MATCH (a)-[r]->(b)" not in query
@@ -187,7 +153,7 @@ def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
 
 
 def test_graph_repository_uses_process_step_area_not_model_area() -> None:
-    query = ChamberGraphRepository.CONTEXT_QUERY
+    query = ChamberGraphRepository.GRAPH_PROJECTION_QUERY
 
     assert "(step)-[stepArea:IN_AREA]->(area:Area)" in query
     assert "(m)-[modelArea:IN_AREA]->(area:Area)" not in query
@@ -203,29 +169,70 @@ def test_graph_repository_tool_query_returns_compact_directional_payload() -> No
     assert "relation_id" not in query
 
 
-def test_graph_repository_maps_raw_neo4j_row() -> None:
-    driver = _Driver()
+def test_graph_repository_returns_api_graph_projection() -> None:
+    driver = _Driver(
+        graph_record={
+            "root_node_id": "Chamber:EQP01-PM1",
+            "nodes": [
+                {
+                    "id": "Chamber:EQP01-PM1",
+                    "label": "Chamber",
+                    "business_id": "EQP01-PM1",
+                    "display_name": "EQP01-PM1",
+                    "properties": {"chamber_id": "EQP01-PM1"},
+                },
+                {
+                    "id": "Equipment:EQP01",
+                    "label": "Equipment",
+                    "business_id": "EQP01",
+                    "display_name": "EQP01",
+                    "properties": {"equipment_id": "EQP01"},
+                },
+            ],
+            "relationships": [
+                {
+                    "id": "REL-x",
+                    "type": "PART_OF",
+                    "source": "Chamber:EQP01-PM1",
+                    "target": "Equipment:EQP01",
+                }
+            ],
+        }
+    )
     repository = ChamberGraphRepository(
         driver_factory=lambda: driver,
         graph_revision_loader=lambda: REVISION,
         database="neo4j",
     )
 
-    result = repository.get_equipment_context("EQP01-PM1")
+    result = repository.get_chamber_graph_projection("EQP01-PM1")
 
     assert result is not None
     assert result.graph_revision == REVISION
-    assert result.chamber["chamber_id"] == "EQP01-PM1"
-    assert result.equipment["equipment_id"] == "EQP01"
-    assert result.relations == [
+    assert result.root_node_id == "Chamber:EQP01-PM1"
+    assert result.nodes == [
         {
-            "relation_id": "REL-x",
-            "relation_type": "PART_OF",
-            "from_label": "Chamber",
-            "from_business_id": "chamber_id=s:EQP01-PM1",
-            "to_label": "Equipment",
-            "to_business_id": "equipment_id=s:EQP01",
-        }
+            "id": "Chamber:EQP01-PM1",
+            "label": "Chamber",
+            "business_id": "EQP01-PM1",
+            "display_name": "EQP01-PM1",
+            "properties": {"chamber_id": "EQP01-PM1"},
+        },
+        {
+            "id": "Equipment:EQP01",
+            "label": "Equipment",
+            "business_id": "EQP01",
+            "display_name": "EQP01",
+            "properties": {"equipment_id": "EQP01"},
+        },
+    ]
+    assert result.relationships == [
+        {
+            "id": "REL-x",
+            "type": "PART_OF",
+            "source": "Chamber:EQP01-PM1",
+            "target": "Equipment:EQP01",
+        },
     ]
     assert driver.session_options == {
         "database": "neo4j",
@@ -302,49 +309,37 @@ def test_load_graph_revision_rejects_invalid_marker(tmp_path: Any) -> None:
 
 def test_relation_id_is_required_for_returned_relationships() -> None:
     repository = ChamberGraphRepository(
-        driver_factory=lambda: _Driver(relation_id=None),
+        driver_factory=lambda: _Driver(
+            graph_record={
+                "root_node_id": "Chamber:EQP01-PM1",
+                "nodes": [
+                    {
+                        "id": "Chamber:EQP01-PM1",
+                        "label": "Chamber",
+                        "business_id": "EQP01-PM1",
+                        "display_name": "EQP01-PM1",
+                        "properties": {},
+                    }
+                ],
+                "relationships": [
+                    {
+                        "type": "PART_OF",
+                        "source": "Chamber:EQP01-PM1",
+                        "target": "Equipment:EQP01",
+                    }
+                ],
+            }
+        ),
         graph_revision_loader=lambda: REVISION,
         database="neo4j",
     )
 
     try:
-        repository.get_equipment_context("EQP01-PM1")
+        repository.get_chamber_graph_projection("EQP01-PM1")
     except RuntimeError as exc:
-        assert "relation_id" in str(exc)
+        assert "relationship id" in str(exc)
     else:
         raise AssertionError("missing relation_id must fail fast")
-
-
-def test_process_step_business_id_uses_step_id() -> None:
-    driver = _Driver(
-        relation={
-            "relation_id": "REL-step",
-            "relation_type": "NEXT_STEP",
-            "from_label": "ProcessStep",
-            "from_properties": {"step_id": "CT-PHOTO", "step_seq": 1},
-            "to_label": "ProcessStep",
-            "to_properties": {"step_id": "CT-ETCH", "step_seq": 2},
-        }
-    )
-    repository = ChamberGraphRepository(
-        driver_factory=lambda: driver,
-        graph_revision_loader=lambda: REVISION,
-        database="neo4j",
-    )
-
-    result = repository.get_equipment_context("EQP01-PM1")
-
-    assert result is not None
-    assert result.relations == [
-        {
-            "relation_id": "REL-step",
-            "relation_type": "NEXT_STEP",
-            "from_label": "ProcessStep",
-            "from_business_id": "step_id=s:CT-PHOTO",
-            "to_label": "ProcessStep",
-            "to_business_id": "step_id=s:CT-ETCH",
-        }
-    ]
 
 
 def test_get_equipment_context_tool_returns_common_success_contract(
@@ -442,29 +437,25 @@ def test_get_equipment_context_tool_returns_dependency_failure(
 class _Driver:
     def __init__(
         self,
-        relation_id: str | None = "REL-x",
-        relation: dict[str, Any] | None = None,
+        graph_record: dict[str, Any] | None = None,
         tool_record: dict[str, Any] | None = None,
     ) -> None:
-        self.relation_id = relation_id
-        self.relation = relation
+        self.graph_record = graph_record
         self.tool_record = tool_record
         self.session_options: dict[str, Any] | None = None
 
     def session(self, **options: Any) -> _Session:
         self.session_options = options
-        return _Session(self.relation_id, self.relation, self.tool_record)
+        return _Session(self.graph_record, self.tool_record)
 
 
 class _Session:
     def __init__(
         self,
-        relation_id: str | None,
-        relation: dict[str, Any] | None,
+        graph_record: dict[str, Any] | None,
         tool_record: dict[str, Any] | None,
     ) -> None:
-        self.relation_id = relation_id
-        self.relation = relation
+        self.graph_record = graph_record
         self.tool_record = tool_record
 
     def __enter__(self) -> _Session:
@@ -474,44 +465,13 @@ class _Session:
         return False
 
     def run(self, query: str, parameters: dict[str, Any]) -> _Result:
-        if query == ChamberGraphRepository.CONTEXT_QUERY:
+        if query == ChamberGraphRepository.GRAPH_PROJECTION_QUERY:
             assert parameters == {"chamber_id": "EQP01-PM1"}
-            return _Result(self.relation_id, self.relation)
+            return _PayloadResult(self.graph_record)
         if query == GraphQueryRepository.TOOL_CONTEXT_QUERY:
             assert parameters == {"chamber_id": "EQP04-PM2"}
             return _PayloadResult(self.tool_record)
         raise AssertionError(f"unexpected query: {query}")
-
-
-class _Result:
-    def __init__(
-        self,
-        relation_id: str | None,
-        relation: dict[str, Any] | None,
-    ) -> None:
-        self.relation_id = relation_id
-        self.relation = relation
-
-    def single(self) -> dict[str, Any]:
-        relation = self.relation or {
-            "relation_id": self.relation_id,
-            "relation_type": "PART_OF",
-            "from_label": "Chamber",
-            "from_properties": {"chamber_id": "EQP01-PM1"},
-            "to_label": "Equipment",
-            "to_properties": {"equipment_id": "EQP01"},
-        }
-        return {
-            "chamber": {"chamber_id": "EQP01-PM1"},
-            "equipment": {"equipment_id": "EQP01", "model_code": "PH-9000"},
-            "model": {"model_code": "PH-9000"},
-            "area": {"area_id": "photo"},
-            "step": {"step_id": "CT-PHOTO", "step_name": "Photo"},
-            "sibling_chambers": [],
-            "adjacent_steps": [],
-            "parameters": [],
-            "relations": [relation],
-        }
 
 
 class _PayloadResult:

@@ -297,42 +297,44 @@ class TestDetectionSchemas:
 
 
 class TestKnowledgeSchemas:
-    def test_relation_returns_static_adjacency_with_provenance(self) -> None:
+    def test_relation_returns_graph_projection_with_provenance(self) -> None:
         response = ChamberRelationResponse(
-            chamber={
-                "chamber_id": "EQP04-PM2",
-                "equipment_id": "EQP04",
-            },
-            equipment=_equipment_payload(),
-            sibling_chambers=[],
-            adjacent_steps=[
+            root_node_id="Chamber:EQP04-PM2",
+            nodes=[
                 {
-                    "step_id": "PHOTO",
-                    "step_name": "Photo",
-                }
+                    "id": "Chamber:EQP04-PM2",
+                    "label": "Chamber",
+                    "business_id": "EQP04-PM2",
+                    "display_name": "EQP04-PM2",
+                    "properties": {
+                        "chamber_id": "EQP04-PM2",
+                        "equipment_id": "EQP04",
+                    },
+                },
+                {
+                    "id": "Equipment:EQP04",
+                    "label": "Equipment",
+                    "business_id": "EQP04",
+                    "display_name": "Dry Etcher #1",
+                    "properties": _equipment_payload(),
+                },
             ],
-            parameters=[
+            relationships=[
                 {
-                    "parameter_id": "ET_REFL",
-                    "parameter_name": "Reflected Power",
-                }
-            ],
-            relations=[
-                {
-                    "relation_id": "REL-1",
-                    "relation_type": "ADJACENT_TO",
-                    "from_label": "ProcessStep",
-                    "from_business_id": "PHOTO",
-                    "to_label": "ProcessStep",
-                    "to_business_id": "CT-ETCH",
+                    "id": "REL-1",
+                    "type": "PART_OF",
+                    "source": "Chamber:EQP04-PM2",
+                    "target": "Equipment:EQP04",
                 }
             ],
             graph_revision="graph-r1",
         )
 
-        assert response.adjacent_steps[0].step_id == "PHOTO"
-        assert response.relations[0].relation_id == "REL-1"
-        assert "upstream" not in ChamberRelationResponse.model_fields
+        assert response.root_node_id == "Chamber:EQP04-PM2"
+        assert response.nodes[0].id == "Chamber:EQP04-PM2"
+        assert response.relationships[0].id == "REL-1"
+        assert "adjacent_steps" not in ChamberRelationResponse.model_fields
+        assert "relations" not in ChamberRelationResponse.model_fields
 
     @pytest.mark.parametrize("doc_type", ["SPEC", "MANUAL", "TROUBLESHOOT", None])
     def test_document_type_matches_database_constraint(

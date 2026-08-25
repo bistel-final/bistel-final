@@ -4,14 +4,6 @@ from pydantic import Field
 
 from app.common.ids import NonEmptyId
 from app.common.schemas import ApiModel
-from app.common.tool_contracts import (
-    AreaNode,
-    ChamberNode,
-    EquipmentNode,
-    GraphRelationRef,
-    ParameterNode,
-    ProcessStepNode,
-)
 from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 
 
@@ -24,26 +16,25 @@ class DocumentType(StrEnum):
 # ==================
 # Graph
 # ==================
+class GraphNode(ApiModel):
+    id: NonEmptyId
+    label: NonEmptyId
+    business_id: NonEmptyId
+    display_name: str = Field(min_length=1)
+    properties: dict[str, object]
+
+
+class GraphRelationship(ApiModel):
+    id: NonEmptyId
+    type: NonEmptyId
+    source: NonEmptyId
+    target: NonEmptyId
+
+
 class ChamberRelationResponse(ApiModel):
-    chamber: ChamberNode
-    equipment: EquipmentNode
-    area: AreaNode | None = None
-    step: ProcessStepNode | None = None
-    sibling_chambers: list[ChamberNode]
-    adjacent_steps: list[ProcessStepNode]
-    parameters: list[ParameterNode]
-    relations: list[GraphRelationRef]
-    graph_revision: NonEmptyId
-
-
-class EquipmentRelationResponse(ApiModel):
-    equipment: EquipmentNode
-    chambers: list[ChamberNode]
-    area: AreaNode | None = None
-    step: ProcessStepNode | None = None
-    adjacent_steps: list[ProcessStepNode]
-    parameters: list[ParameterNode]
-    relations: list[GraphRelationRef]
+    root_node_id: NonEmptyId
+    nodes: list[GraphNode]
+    relationships: list[GraphRelationship]
     graph_revision: NonEmptyId
 
 
