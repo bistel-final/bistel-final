@@ -15,7 +15,9 @@
     실행 오류  HTTP 200 · is_valid=true · error_msg · 결과 배열 비움
     형식 오류  FastAPI 422 (router 진입 전) — 정책 거부와 구분된다
 
-nl_query_log_id 는 질의 이력(V5-D-2.4) 전까지 placeholder 1 을 쓴다.
+질의 이력(V5-D-2.4): 성공·정책 거부·실행 오류를 kosa_text2sql 의 nl_query_log 에
+기록하고 실제 log id 를 응답에 싣는다. 기록 불가(logger DSN 미구성 등)시에도
+질의 응답은 계속되며 id 는 null 이다 (query_log.py).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import sqlglot
 from sqlglot import expressions as exp
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
+from app.analytics.query_log import record_query_log
 from app.analytics.repository import (
     QueryExecution,
     QueryExecutionError,
@@ -42,9 +45,6 @@ from app.common.tool_contracts import (
     MetricPlan,
     VisualizationPlan,
 )
-
-#: V5-D-2.4 전까지의 placeholder. 질의 이력 도입 시 실제 log id 로 교체한다.
-_LOG_ID_PLACEHOLDER = 1
 
 #: question 을 SQL 원문으로 간주하는 첫 토큰. 쓰기 키워드를 일부러 포함한다.
 #: planner 가 거르면 validator 거부 경로를 시연할 수 없다.
@@ -163,12 +163,21 @@ def _rejected_response(
         reject_reason=reject_reason,
         error_msg=None,
         latency_ms=latency_ms,
-        nl_query_log_id=_LOG_ID_PLACEHOLDER,
+        nl_query_log_id=None,
     )
 
 
 def run_analysis_query(question: str) -> AnalysisQueryResponse:
-    """자연어 질의 한 건을 처리한다. 어떤 입력에도 예외를 던지지 않는다."""
+    """자연어 질의 한 건을 처리하고 이력을 기록한다. 예외를 던지지 않는다."""
+    response = _execute_analysis_query(question)
+    log_id = record_query_log(response)
+    if log_id is None:
+        return response
+    return response.model_copy(update={"nl_query_log_id": log_id})
+
+
+def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
+    """질의 본체 — 계획→검증→실행. 이력 기록은 run_analysis_query 가 한다."""
     started = time.perf_counter()
 
     def _elapsed_ms() -> int:
@@ -226,7 +235,7 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
             reject_reason=None,
             error_msg=str(exc),
             latency_ms=_elapsed_ms(),
-            nl_query_log_id=_LOG_ID_PLACEHOLDER,
+            nl_query_log_id=None,
         )
 
     # ── 4. 성공 ────────────────────────────────────────────────────────
@@ -247,7 +256,7 @@ def run_analysis_query(question: str) -> AnalysisQueryResponse:
         reject_reason=None,
         error_msg=None,
         latency_ms=_elapsed_ms(),
-        nl_query_log_id=_LOG_ID_PLACEHOLDER,
+        nl_query_log_id=None,
     )
 
 
