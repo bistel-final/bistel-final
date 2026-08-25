@@ -65,7 +65,8 @@ _SYSTEM_PROMPT = """당신은 반도체 FDC 데이터의 PostgreSQL Text2SQL 변
 규칙:
 1. 데이터 조회 질문만 처리한다. 삭제·수정·생성 등 조회가 아닌 요청이면
    SQL을 작성하지 말고 정확히 `REFUSED: 조회 질문만 처리한다` 한 줄만 출력한다.
-   요청을 조회로 바꿔 해석하지 않는다.
+   요청을 조회로 바꿔 해석하지 않는다. 단, 데이터를 표·차트·히스토그램·
+   그래프로 보여 달라는 시각화 요청은 데이터 조회다 — 거부하지 않는다.
 2. 단일 SELECT 문 하나만 작성한다. 쓰기·DDL·다중 문장 금지.
 3. 아래 목록의 테이블·컬럼만 사용한다. 목록에 없는 것을 지어내지 않는다.
 4. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
@@ -166,18 +167,23 @@ def _extract_group_by_columns(sql: str) -> list[str]:
     return columns
 
 
-def _plan_from_sql(sql: str) -> AnalysisPlanToolResult:
-    """[팀 잠정] metric·visualization 은 SQL 형태 기반 최소 heuristic.
+def _plan_from_sql(sql: str, question: str = "") -> AnalysisPlanToolResult:
+    """[팀 잠정] metric·visualization 은 SQL 형태 + 질문 키워드 최소 heuristic.
 
-    metric_result 계산·차트 세분화는 후속(V5-D-2.3 잔여)이다. 계약상
-    성공 결과에 세 필드가 필수라 최소값을 채운다.
-
-    표현 일관성: BAR 는 범주 축(group_by)이 있을 때만 지정한다. GROUP BY
-    가 있어도 컴럼을 추출하지 못하면(위치 번호·함수 등) TABLE 로
-    내려 메타데이터와 차트 지정이 모순되지 않게 한다.
+    FR-D-04 는 table·bar·line·histogram 4종을 요구한다. 질문이 분포·
+    히스토그램을 명시하면 HISTOGRAM, 추이·시계열이면 LINE 을 지정한다.
+    그 외에는 범주 축(group_by)이 있을 때만 BAR, 아니면 TABLE.
+    GROUP BY 가 있어도 컴럼을 추출하지 못하면 TABLE 로 내려 메타데이터와
+    차트 지정이 모순되지 않게 한다.
     """
     group_by = _extract_group_by_columns(sql)
-    chart = ChartType.BAR if group_by else ChartType.TABLE
+    q = question.lower()
+    if "히스토그램" in q or "histogram" in q or "분포" in q:
+        chart = ChartType.HISTOGRAM
+    elif "추이" in q or "시계열" in q or "trend" in q:
+        chart = ChartType.LINE
+    else:
+        chart = ChartType.BAR if group_by else ChartType.TABLE
     return AnalysisPlanToolResult(
         ok=True,
         sql=sql,
@@ -225,11 +231,14 @@ def generate_analysis_plan(
 
     # 프롬프트 규칙 1: 비조회 요청은 LLM 이 REFUSED 마커로 거부한다.
     # 조회로 암묵 변환하지 않고 정직하게 거부하는 것이 계약이다.
+    # 사유 문구는 중립으로 유지한다 — 사용자가 무엇을 요청했는지 단정하지
+    # 않는다 (조회 질문이 오판으로 거부될 수도 있다).
     if raw.strip().upper().startswith("REFUSED"):
         return fail(
             AnalysisPlanToolResult,
-            "POLICY_REJECTED: 이 시스템은 데이터 조회 질문만 처리한다. "
-            "삭제·수정 등 요청된 작업은 수행되지 않았다.",
+            "POLICY_REJECTED: 조회 질문으로 판정되지 않아 SQL 을 생성하지 "
+            "않았다. 이 시스템은 데이터 조회만 수행하며, 조회 외 동작은 "
+            "실행되지 않는다.",
         )
 
     sql = _extract_sql(raw)
@@ -239,4 +248,4 @@ def generate_analysis_plan(
             "DEPENDENCY_ERROR: LLM 출력에서 SELECT 문을 찾지 못했다.",
         )
 
-    return _plan_from_sql(sql)
+    return _plan_from_sql(sql, tool_input.question)

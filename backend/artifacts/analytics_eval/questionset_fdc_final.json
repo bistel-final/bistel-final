@@ -3,9 +3,12 @@
   "dataset_epoch": "fdc_final_20260818",
   "description": "V5-D-2.5 Text2SQL 평가 질문셋. final snapshot 스키마(base 9 + reference) 기준으로 재작성했다. 정답은 상수가 아니라 gold_sql을 동일 검증·readonly 경로로 실행한 결과다.",
   "grading_criteria": {
-    "row_comparison": "행 다중집합 비교. 컬럼 순서는 채점하지 않는다(행 내 값 다중집합). mode=ordered 질문은 다중집합 일치 + sort_check 정렬축 단조성을 채점한다 (동률 내 순서는 채점하지 않는다).",
+    "value_normalization": "Decimal→float, date→ISO 날짜, 자정 datetime은 해당 timezone의 ISO 날짜로 접기(그 외 datetime은 UTC ISO). date_trunc 답과 CAST(.. AS DATE) 답은 같은 값으로 비교된다.",
+    "row_comparison": "행 다중집합 비교. 컬럼 이름·순서는 채점하지 않되, 하나의 컬럼 순열을 전 행에 일관 적용해야 한다(행마다 다른 뒤섞임은 오답). mode=ordered는 추가로 sort_check 정렬축 단조성을 채점한다(동률 내 순서 미채점).",
     "numeric_tolerance": "실수는 rel/abs 1e-6 (math.isclose) 이내면 정답. 정수·문자열은 완전 일치.",
     "chart": "expected_chart가 명시된 질문만 visualization.chart_type 일치를 채점한다. 나머지는 차트 미채점.",
+    "chart_mode": "mode=chart: 결과 셰이프가 다중 정답인 질문(히스토그램 등 — raw 값 반환과 SQL 비닝이 모두 정답)은 미거부·실행 성공·행 존재·expected_chart 일치만 채점한다. 행 셰이프는 채점하지 않는다.",
+    "failure_detail": "실패 시 컬럼 구성 차이 → 처음 어긋난 행 쌍(정규화 값) 순으로 원인을 기록한다.",
     "pass_threshold": "12건 이상 중 10건 이상 정답 (FR-D-08)"
   },
   "questions": [
@@ -96,7 +99,8 @@
       "id": "Q14",
       "question": "TRACE 알람 측정값(value)의 분포를 히스토그램으로 보여줘",
       "gold_sql": "SELECT value FROM trace_alarm_history LIMIT 500",
-      "mode": "set",
+      "mode": "chart",
+      "note": "히스토그램은 raw 값 반환(프론트 비닝)과 SQL 사전 비닝(value,frequency)이 모두 정답이라 행 셰이프를 단일 gold 로 채점하지 않는다. gold_sql 은 실행 경로 건전성 확인용.",
       "expected_chart": "histogram"
     }
   ]
