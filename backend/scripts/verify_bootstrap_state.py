@@ -29,6 +29,7 @@ import apply_reference_extensions_v5 as reference_v5
 import apply_severity_pair_guard as severity_guard
 import bootstrap_neo4j_graph as neo4j_bootstrap
 import build_source_manifest_v4 as source_manifest_v4
+import checkpoint_contract
 import final_profile_manifests as final_manifests
 import intake_final_zip as intake
 import manifest_v3
@@ -77,7 +78,8 @@ EXIT_UNVERIFIABLE = 7
 #: Evaluation DB schema 변경이 아니라 **verifier routing 오류 수정**이다.
 LIVE_FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
     {
-        "runtime": "runtime_guarded",
+        # `V5-CM-3.4`가 checkpoint 저장소를 얹으면서 live final이 한 칸 올라갔다.
+        "runtime": "runtime_checkpointed",
         "evaluation": "evaluation_reference",
     }
 )
@@ -87,7 +89,12 @@ LIVE_FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
 #: live final stage 하나만으로 routing하면 predecessor `runtime_clean`이 V4 경로로
 #: 잘못 떨어진다. 두 계약을 분리한다(`V5-CM-3.3` 계획 §6.3).
 FINAL_REFERENCE_STAGES: frozenset[str] = frozenset(
-    {"runtime_clean", "runtime_guarded", "evaluation_reference"}
+    {
+        "runtime_clean",
+        "runtime_guarded",
+        "runtime_checkpointed",
+        "evaluation_reference",
+    }
 )
 
 EXPECTED_STAGES = {
@@ -331,14 +338,27 @@ def _scalar(result: Any) -> Any:
 #: `runtime_clean`은 `agent_runtime_final` marker가, `runtime_guarded`는
 #: `agent_severity_guard_final` marker가 증명한다. 둘 다 검증 대상이다 —
 #: predecessor를 빼면 그 marker가 검증할 계약을 잃는다.
+#: `V5-CM-3.4`가 만드는 stage. checkpoint table 4종을 postcheck에 더하는 유일한 곳이다.
+CHECKPOINT_STAGE = "runtime_checkpointed"
+
+#: CM-3.3 named guard를 유지하는 stage. successor가 늘어도 guard는 사라지지 않는다.
+GUARDED_CONSTRAINT_STAGES: frozenset[str] = frozenset(
+    {"runtime_guarded", CHECKPOINT_STAGE}
+)
+
 RUNTIME_POSTCHECK_STAGES: frozenset[tuple[str, str]] = frozenset(
-    {("runtime", "runtime_clean"), ("runtime", "runtime_guarded")}
+    {
+        ("runtime", "runtime_clean"),
+        ("runtime", "runtime_guarded"),
+        ("runtime", "runtime_checkpointed"),
+    }
 )
 
 FINAL_STAGES: frozenset[tuple[str, str]] = frozenset(
     {
         ("runtime", "runtime_clean"),
         ("runtime", "runtime_guarded"),
+        ("runtime", "runtime_checkpointed"),
         ("evaluation", "evaluation_reference"),
     }
 )
@@ -414,6 +434,85 @@ def _guarded_mismatches(
     except severity_guard.SeverityGuardError:
         mismatches.append({"mismatch_kind": "GUARD_MARKER"})
     return mismatches
+
+
+def _checkpoint_mismatches(
+    connection: Any,
+    target: Any,
+    *,
+    require_marker: bool,
+) -> list[dict[str, Any]]:
+    """`runtime_checkpointed` 전용 계약. **read-only다.**
+
+    세 가지를 본다.
+
+    1. **live catalog가 package 계약과 정확히 같은가** — table 4·컬럼·PK·index 정의까지.
+       table 이름 26개가 맞는 것과 checkpoint 저장소가 정상인 것은 다른 질문이다.
+    2. **checkpoint table의 owner와 `PUBLIC` ACL** — `setup()`은 자기가 만든 object의
+       권한을 좁혀 주지 않는다. 사후 `GRANT ... TO PUBLIC`도 여기서 걸린다.
+    3. **CM-3.4 marker가 그 catalog와 현재 target·계보를 증명하는가** — catalog
+       signature뿐 아니라 `target_host_fingerprint`와 실제 CM-3.3 marker의 canonical
+       hash까지 본다. 2차는 앞의 둘이 없어서 **같은 이름 DB의 다른 host** marker가
+       통과했다(3차 필수 1).
+
+    `_guarded_mismatches()`와 같은 이유로 함수로 뺀다: 인라인 `if`는 소비 경계를
+    회귀가 잡지 못한다.
+    """
+
+    import setup_checkpoint as checkpoint
+
+    mismatches: list[dict[str, Any]] = []
+    try:
+        cursor = _checkpoint_cursor(connection)
+        # **한 본을 읽어 두 판정에 쓴다.** 검증 계정이 적용 계정과 같다고 가정하지
+        # 않는다 — 정확한 소유자는 아래 marker의 catalog signature가 묶는다.
+        catalog = checkpoint.read_catalog(cursor)
+        checkpoint.contract.assert_checkpoint_acl(catalog)
+        signature = checkpoint.contract.assert_ready(catalog)
+    except (
+        SQLAlchemyError,
+        checkpoint.contract.CheckpointContractError,
+        checkpoint.contract.CheckpointStateError,
+    ):
+        # guard 쪽과 같은 이유로 원인을 뭉개지 않는다.
+        return [{"mismatch_kind": "CHECKPOINT_SCHEMA"}]
+
+    if not require_marker:
+        return mismatches
+    try:
+        marker = checkpoint.load_marker(target.database)
+        if marker is None:
+            raise checkpoint.CheckpointArtifactError("checkpoint marker가 없습니다")
+        # **apply·preflight·verify와 같은 helper다.** 여기만 다르게 비교하면 full
+        # verifier가 가장 느슨한 경로가 된다.
+        identity = checkpoint.predecessor_identity(target)
+        if checkpoint.marker_identity_mismatches(
+            marker, identity, catalog_signature=signature
+        ):
+            raise checkpoint.CheckpointArtifactError(
+                "checkpoint marker가 현재 target·계보와 다릅니다"
+            )
+    except (
+        checkpoint.CheckpointArtifactError,
+        checkpoint.contract.CheckpointStateError,
+        severity_guard.SeverityGuardError,
+        agent_runtime.AgentRuntimeError,
+    ):
+        mismatches.append({"mismatch_kind": "CHECKPOINT_MARKER"})
+    return mismatches
+
+
+def _checkpoint_cursor(connection: Any) -> Any:
+    """SQLAlchemy 연결에서 **psycopg cursor**를 꺼낸다.
+
+    `checkpoint_contract`의 catalog SQL은 dict row cursor를 받는다. 여기서 SQL을
+    다시 쓰면 계약이 두 벌이 되므로 연결 모양만 맞춘다.
+    """
+
+    from psycopg.rows import dict_row
+
+    raw = connection.connection.driver_connection
+    return raw.cursor(row_factory=dict_row)
 
 
 def reference_postcheck_routing(profile: str, stage: str) -> str:
@@ -586,6 +685,16 @@ def _expected_column_types(table: str) -> dict[str, str]:
     if table in agent_runtime.EXPECTED_TABLE_COLUMNS:
         columns = agent_runtime.EXPECTED_TABLE_COLUMNS[table]
         return {column.name: logical_type(column.data_type) for column in columns}
+    if table in checkpoint_contract.EXPECTED_COLUMNS:
+        # 5. checkpoint 4종 — package 2.0.9 실측 계약(`V5-CM-3.4`).
+        #
+        # registry가 없으면 `runtime_checkpointed` manifest를 순회하는 순간
+        # `logical type registry가 없습니다`로 죽는다 — 정상 DB가 검증 불가였다
+        # (구현리뷰 필수 1).
+        return {
+            column["column"]: logical_type(column["type"])
+            for column in checkpoint_contract.EXPECTED_COLUMNS[table]
+        }
     raise manifest_v3.ManifestSchemaError(f"{table}: logical type registry가 없습니다")
 
 
@@ -955,10 +1064,21 @@ def verify_database(
                 # **constraint allowlist만 stage별로 갈린다.** baseline을 그대로 쓰면
                 # 정상 guarded DB가 `-agent_run_check1 +ck_...pair`로 반드시 실패한다
                 # (`V5-CM-3.3` 구현리뷰 필수 A).
+                # `V5-CM-3.4` successor도 CM-3.3 guard를 **유지**한다. checkpoint를
+                # 얹는다고 guard가 사라지지 않으므로 baseline을 쓰면 정상 DB가
+                # 실패한다(구현리뷰 필수 1).
                 expected_constraints = (
                     severity_guard.GUARDED_CONSTRAINTS
-                    if stage == severity_guard.GUARDED_STAGE
+                    if stage in GUARDED_CONSTRAINT_STAGES
                     else agent_runtime.EXPECTED_CONSTRAINTS
+                )
+                # **stage가 정한 table만 더한다.** 임의 확장을 받지 않는다 —
+                # 전역 allowlist를 넓히면 checkpoint 이전 stage가 거꾸로 checkpoint
+                # table을 요구한다(계획 §4.2).
+                extra_tables = (
+                    checkpoint_contract.CHECKPOINT_TABLES
+                    if stage == CHECKPOINT_STAGE
+                    else ()
                 )
                 runtime_result = None
                 try:
@@ -966,6 +1086,7 @@ def verify_database(
                         connection,
                         alarm_rows_before=agent_runtime.alarm_event_count(connection),
                         expected_constraints=expected_constraints,
+                        extra_tables=extra_tables,
                     )
                 except agent_runtime.AgentRuntimeError:
                     mismatches.append({"mismatch_kind": "RUNTIME_SCHEMA"})
@@ -999,7 +1120,12 @@ def verify_database(
                         # guarded에서 두 값을 잇는 것은 successor marker의
                         # `baseline_schema_signature_sha256`이며
                         # `_guarded_mismatches()`가 그것을 본다.
-                        if stage != severity_guard.GUARDED_STAGE and (
+                        # `runtime_checkpointed`도 같은 이유로 제외한다. checkpoint는
+                        # `RUNTIME_TABLES` 밖에 4개를 더할 뿐이라 live signature는
+                        # 여전히 **guarded**의 것이고, `runtime_clean` marker와는
+                        # 달라야 정상이다. 초판은 checkpointed에서 이 비교가 살아
+                        # 있어서 정상 상태가 mismatch로 보고됐다(2차 필수 1).
+                        if stage not in GUARDED_CONSTRAINT_STAGES and (
                             runtime_marker["schema_signature_sha256"]
                             != runtime_result.schema_signature_sha256
                         ):
@@ -1015,13 +1141,31 @@ def verify_database(
                 # guard 정의가 다르면 `V5-CM-3.3`이 하지 않은 일을 했다고
                 # 주장하는 것이다. CM-3.2 postcheck는 constraint **집합**을 보지만
                 # 이 stage에서 무엇이 무엇으로 바뀌었는지는 보지 않는다.
-                if stage == severity_guard.GUARDED_STAGE:
+                # checkpoint stage도 **guarded 위에** 얹힌 것이므로 같은 계약을
+                # 그대로 만족해야 한다. stage 하나만 보고 건너뛰면 checkpoint를
+                # 얹은 DB에서 CM-3.3 guard가 사라져도 통과한다(2차 필수 1).
+                if stage in GUARDED_CONSTRAINT_STAGES:
                     mismatches.extend(
                         _guarded_mismatches(
                             connection,
                             target,
                             require_marker=require_runtime_marker,
                             runtime_result=runtime_result,
+                        )
+                    )
+
+                # **checkpoint marker를 실제로 읽는다.**
+                #
+                # 초판은 `runtime_checkpointed`를 stage 이름과 table 26개로만
+                # 판정했다. 그러면 CM-3.4가 발급한 증적이 없거나 live catalog와
+                # 갈라져도 full verifier가 통과한다 — stage를 "도달했다"고 말할
+                # 근거가 marker인데 그 marker를 보지 않았다(2차 필수 1).
+                if stage == CHECKPOINT_STAGE:
+                    mismatches.extend(
+                        _checkpoint_mismatches(
+                            connection,
+                            target,
+                            require_marker=require_runtime_marker,
                         )
                     )
             if mismatches:

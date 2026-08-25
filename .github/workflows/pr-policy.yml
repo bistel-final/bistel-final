@@ -172,6 +172,8 @@ jobs:
           psycopg[binary]==3.2.3
           python-dotenv==1.0.1
           neo4j==5.26.0
+          langgraph==0.2.53
+          langgraph-checkpoint-postgres==2.0.9
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
@@ -221,6 +223,43 @@ jobs:
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_runtime_v5_container.py
+          -rs --no-header
+
+      # V5-CM-3.4 LangGraph checkpoint 초기화. 최종 dataset이 필요 없다 —
+      # package `setup()`이 만드는 4 table·3 index·version 0..8을 실측하고,
+      # 부분 적용이 재실행으로 낫지 않는다는 전제를 DB로 고정한다.
+      - name: Prove the checkpoint one-shot setup
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_checkpoint_container.py
+          -rs --no-header
+
+      # V5-CM-3.4 묶음 2 준비. checkpoint 전용 backup 계약은 container가 필요 없다 —
+      # 전환 backup(base 9)과 다른 계약이라는 것과 `restore_verified`가 관측 결과라는
+      # 것을 순수 판정으로 고정한다. 지명하지 않으면 어느 job에도 잡히지 않는다.
+      - name: Prove the checkpoint backup contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_checkpoint_backup.py
+          -rs --no-header
+
+      # V5-CM-3.4가 바꾼 계약의 단위 회귀. container가 필요 없다.
+      #
+      # workflow가 파일을 **하나씩 지명**하는 구조라 새 파일·수정 파일은 자동으로
+      # 돌지 않는다. 이 Task가 stage registry(`manifest_v3`)·guard 분기
+      # (`severity_pair_guard`)·verifier 배선(`verify_bootstrap_state`)을 바꿨으므로
+      # 그 회귀도 함께 지명한다(구현리뷰 전 자체점검 3항).
+      - name: Prove the checkpoint and stage contracts
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_checkpoint_contract.py
+          tests/unit/test_manifest_v3.py
+          tests/unit/test_dataset_epoch.py
+          tests/unit/test_severity_pair_guard.py
+          tests/unit/test_verify_bootstrap_state.py
           -rs --no-header
 
       # V5-CM-3.3 action/severity pair guard. 최종 dataset이 필요 없다 —

@@ -83,6 +83,9 @@ REMAINING_MANIFESTS = {
     "evaluation.evaluation_reference.json",
     # `V5-CM-2.7`이 최종 `master.cypher`로 발급한다.
     "neo4j.graph.json",
+    # `V5-CM-3.4` successor. predecessor `runtime.runtime_guarded.json`은 CM-3.3
+    # marker가 증명하는 계약이라 **덮어쓰지 않고 나란히 둔다**.
+    "runtime.runtime_checkpointed.json",
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
 # 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.

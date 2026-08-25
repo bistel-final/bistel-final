@@ -27,6 +27,13 @@ class ValueNormalizationError(ValueError):
     """값 또는 logical type이 계약과 다를 때 발생한다."""
 
 
+#: 값이 아니라 **스키마만** 검증하는 logical type.
+#:
+#: `logical_type()`은 이 값을 돌려주지만 `normalize_value()`는 받지 않는다. 그 경계를
+#: 상수로 드러내 두 함수의 계약이 한눈에 맞물리게 한다(구현리뷰 4차 권장 2).
+SCHEMA_ONLY_LOGICAL_TYPES = frozenset({"bytes"})
+
+
 def logical_type(data_type: str) -> str:
     """PostgreSQL format_type 값을 안정적인 logical type으로 축약한다."""
 
@@ -47,6 +54,15 @@ def logical_type(data_type: str) -> str:
         return "text"
     if normalized == "text":
         return "text"
+    if normalized == "bytea":
+        # **`V5-CM-3.4` checkpoint 저장소가 쓰는 유일한 이진 타입이다.**
+        #
+        # `text`로 접으면 checkpoint blob 컬럼이 문자열 계약과 같아 보여, 타입이
+        # 바뀌어도 full verifier가 통과한다. 별도 logical type으로 둔다.
+        #
+        # 값 정규화 대상은 아니다 — checkpoint 4 table은 `SCHEMA_ONLY_TABLES`라
+        # content hash를 계산하지 않는다.
+        return "bytes"
     raise ValueNormalizationError(f"지원하지 않는 PostgreSQL type입니다: {data_type}")
 
 
@@ -158,6 +174,16 @@ def normalize_value(value: Any, value_type: str) -> Any:
         return _canonical_json(value)
     if value_type in {"text", "vector"}:
         return unicodedata.normalize("NFC", str(value))
+    if value_type in SCHEMA_ONLY_LOGICAL_TYPES:
+        # **의도적으로 값 정규화를 하지 않는다.**
+        #
+        # `logical_type()`이 돌려주는 값을 같은 모듈의 normalize가 거부하면 비대칭이
+        # 남는다. 그 비대칭을 "지원하지 않음"이 아니라 **schema-only 계약**으로
+        # 명시한다 — 임의 이진 blob에는 우리가 검증한 정본 표현이 없고, 이 type을 쓰는
+        # table은 전부 `SCHEMA_ONLY_TABLES`다(구현리뷰 4차 권장 2).
+        raise ValueNormalizationError(
+            f"schema-only 전용 logical type은 값 정규화 대상이 아닙니다: {value_type}"
+        )
     raise ValueNormalizationError(f"지원하지 않는 logical type입니다: {value_type}")
 
 
