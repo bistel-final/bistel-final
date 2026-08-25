@@ -113,6 +113,13 @@ REMAINING_MARKERS = {
     "agent_severity_guard_final.kosa_agent_e2e.json",
     # Neo4j 최종 graph 적용 증적 (`V5-CM-2.7` 묶음 2)
     "neo4j_graph.neo4j.json",
+    # checkpoint 저장소 적용 증적 (`V5-CM-3.4` 묶음 2)
+    #
+    # **runtime 2 DB만이다.** checkpoint는 Agent graph의 thread 상태를 담으므로
+    # 평가 DB(`kosa_text2sql`)에는 적용 대상이 아니다 — `assert_runtime_database()`가
+    # 거부한다. 그래서 여기에도 `kosa_text2sql` 이름이 오면 안 된다.
+    "checkpoint_setup_final.kosa_agent.json",
+    "checkpoint_setup_final.kosa_agent_e2e.json",
 }
 
 

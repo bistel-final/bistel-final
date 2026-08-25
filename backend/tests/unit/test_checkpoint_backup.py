@@ -419,18 +419,35 @@ def _trusted_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def source_state(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """live catalog만 갈아 끼우고 lock·identity·계보는 **실물 함수**를 남긴다."""
+    """live catalog만 갈아 끼우고 lock·계보 판정은 **실물 함수**를 남긴다.
+
+    ## marker와 identity를 명시적으로 고정한다
+
+    초판은 `predecessor_identity`를 `{"stage": "guarded"}`로 두고 marker는 patch하지
+    않았다. 그때는 저장소에 checkpoint marker가 **없어서** `load_marker()`가 `None`을
+    돌려줬고, `READY`가 곧 `READY_UNMARKED`였다. 즉 회귀가 **저장소에 파일이 없다는
+    사실**에 기대고 있었다.
+
+    묶음 2가 그 marker 2본을 tracked로 발급하자 `load_marker()`가 실제 marker를
+    돌려줬고, 자리표시자 identity를 소비하는 순간 `KeyError`가 났다. 테스트 환경을
+    저장소 상태에 의존시키지 않는다.
+    """
 
     import setup_checkpoint as checkpoint
 
     monkeypatch.setattr(checkpoint, "_acquire_session_lock", lambda cursor: None)
     monkeypatch.setattr(checkpoint, "_release_session_lock", lambda cursor: None)
     monkeypatch.setattr(
-        checkpoint, "predecessor_identity", lambda target: {"stage": "guarded"}
+        checkpoint,
+        "predecessor_identity",
+        lambda target: {key: "a" * 64 for key in checkpoint.IDENTITY_BOUND_KEYS},
     )
     monkeypatch.setattr(
         checkpoint, "predecessor_postcheck", lambda cursor, identity, **kw: None
     )
+    # 기본값은 **marker 없음**이다. `READY_MARKED`가 필요한 회귀는
+    # `_install_marked_state()`가 이 patch를 덮어쓴다.
+    monkeypatch.setattr(checkpoint, "load_marker", lambda *a, **k: None)
 
     def _install(state: str) -> None:
         monkeypatch.setattr(checkpoint, "read_catalog", lambda cursor: _catalog(state))
