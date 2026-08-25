@@ -1,4 +1,4 @@
-"""Detection Repository (V5-A-1.1~V5-A-1.4).
+"""Detection Repository (V5-A-1.1~V5-A-1.5).
 
 시스템설계서 v2.1 1.3 계층 규칙: Repository는 PostgreSQL 조회만 담당한다.
 HTTP 응답 조립, 업무 판정(OOS/OOC/IN, alarm 발행 등), LLM 호출을 하지 않는다.
@@ -86,6 +86,10 @@ __all__ = [
     "fetch_trace_alarm_refs_by_group",
     "fetch_r03_alarm_count",
     "insert_r03_alarms",
+    "IncidentAlarmCountRow",
+    "fetch_incident_alarm_counts",
+    "ReferenceActionRow",
+    "fetch_reference_actions",
 ]
 
 
@@ -601,3 +605,114 @@ def insert_r03_alarms(connection: Connection, records: Sequence[R03AlarmRecord])
         # 생긴 행 수"다.
         inserted_count += result.rowcount
     return inserted_count
+
+
+# ---------------------------------------------------------------------
+# v_alarm_event / action_history — V5-A-1.5 incident 집계 대조용
+#
+# incident은 실제 알람(TRACE·SUMMARY·R03)이 있는 (lot_id, chamber_id) 조합이다
+# (시스템설계서 v2.1 2.1: "TRACE·SUMMARY·R03의 lot_id·chamber_id 합집합은 12
+# incident"). `v_alarm_event`는 V5-CM-3.1이 만든 View로 이미 세 source를
+# UNION ALL 해뒀으므로(`backend/migrations/v5/001_reference_extensions_final.sql`
+# 확인), 여기서는 lot_id·chamber_id로 GROUP BY만 하면 된다 — TRACE·SUMMARY·R03
+# 원본 테이블을 각각 다시 조인할 필요가 없다.
+#
+# `action_history`는 12건 참고 fixture다(evaluation profile `kosa_text2sql`에만
+# 적재되고 runtime 2 DB(`kosa_agent`·`kosa_agent_e2e`)는 `action_history=0`
+# guard 대상이라 항상 0건이다 — 시스템설계서 v2.1 2.4·2.5). 이 함수를 runtime
+# DB에 대고 부르면 참고 action이 0건으로 나와 service.verify_incident_aggregation의
+# 1:1 대조가 매번 불일치로 판정된다 — 코드 결함이 아니라 profile 특성이다.
+# evaluation profile이나, `verify_detection_recalculation.py`가 원래 가정하는
+# "9개 CSV를 전부 올려둔 로컬 dev DB"에 대고 불러야 의미가 있다.
+#
+# `lot_id`·`chamber_id`·`action_code` 컬럼명은 이 파일 상단 "컬럼 근거" 문단과
+# 같은 사정으로 03_schema_clean.sql 원문을 아직 대조하지 못한 최선 추정치다
+# (lot_history가 쓰는 lot_id·chamber_id 전체 이름 관례를 따랐다 — trace_alarm_history·
+# summary_alarm_history의 lot·chamber 축약 관례와는 다르다). V5-CM-2.4 적재 검증
+# 결과 실제 컬럼명이 다르면 이 함수만 맞춰 고치면 된다(호출부는 영향 없음).
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class IncidentAlarmCountRow:
+    """incident(=lot_id, chamber_id) 하나의 alarm union 집계 한 행."""
+
+    lot_id: str
+    chamber_id: str
+    trace_count: int
+    summary_count: int
+    r03_count: int
+
+    @property
+    def total_count(self) -> int:
+        # R03를 포함한 이 incident의 alarm 총 건수. 전체 incident에 대해
+        # 합산하면 수용값 192(=189 TRACE+SUMMARY + 3 R03 각 3건 alarm)가 된다.
+        return self.trace_count + self.summary_count + self.r03_count
+
+
+def fetch_incident_alarm_counts(connection: Connection) -> list[IncidentAlarmCountRow]:
+    """`v_alarm_event`를 (lot_id, chamber_id)로 묶어 source별 alarm 건수를 센다.
+
+    읽기 전용이다. 알람이 하나도 없는 (lot_id, chamber_id) 조합은 애초에
+    `v_alarm_event`에 행이 없으므로 결과에도 나타나지 않는다 — "알람이 있는"
+    incident만 세는 완료 기준과 그대로 맞는다.
+    """
+
+    query = """
+        SELECT
+            lot_id,
+            chamber_id,
+            COUNT(*) FILTER (WHERE source = 'TRACE')   AS trace_count,
+            COUNT(*) FILTER (WHERE source = 'SUMMARY') AS summary_count,
+            COUNT(*) FILTER (WHERE source = 'R03')     AS r03_count
+        FROM v_alarm_event
+        GROUP BY lot_id, chamber_id
+        ORDER BY lot_id, chamber_id
+    """
+    rows = connection.execute(text(query)).mappings().all()
+    return [
+        IncidentAlarmCountRow(
+            lot_id=row["lot_id"],
+            chamber_id=row["chamber_id"],
+            trace_count=int(row["trace_count"]),
+            summary_count=int(row["summary_count"]),
+            r03_count=int(row["r03_count"]),
+        )
+        for row in rows
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceActionRow:
+    """`action_history` 참고 fixture 한 행(V5-A-1.5 1:1 대조용).
+
+    `trigger_alarm_lot_hist_id`·`recipe_step_name`은 12행 모두 NULL이라(기준표
+    §2 "검증된 물리 데이터" 하단 문단) 여기서는 읽지 않는다 — 단일 알람 FK로
+    쓰지 말라는 게 원본 데이터의 의도이므로, 이 Row도 incident 매칭에 실제로
+    쓰는 lot_id·chamber_id·action_code 세 컬럼만 담는다.
+    """
+
+    lot_id: str
+    chamber_id: str
+    action_code: str
+
+
+def fetch_reference_actions(connection: Connection) -> list[ReferenceActionRow]:
+    """`action_history` 참고 fixture(수용값 12건: MONITORING 5 / WARNING 4 /
+    EQP_HOLD 3)를 읽는다.
+
+    evaluation profile(`kosa_text2sql`)에만 12건이 적재된다 — runtime 2 DB는
+    `action_history=0` guard 대상이라 항상 0건이 반환된다(모듈 docstring 참고).
+    """
+
+    query = """
+        SELECT lot_id, chamber_id, action_code
+        FROM action_history
+    """
+    rows = connection.execute(text(query)).mappings().all()
+    return [
+        ReferenceActionRow(
+            lot_id=row["lot_id"],
+            chamber_id=row["chamber_id"],
+            action_code=row["action_code"],
+        )
+        for row in rows
+    ]
