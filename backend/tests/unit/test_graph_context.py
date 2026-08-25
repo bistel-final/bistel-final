@@ -250,18 +250,34 @@ def test_get_equipment_context_tool_returns_common_success_contract(
                     step_id="CT-PHOTO",
                 ),
                 area=AreaNode(area_id="photo", area_name="Photolithography"),
-                step=ProcessStepNode(step_id="CT-PHOTO", step_name="Photo"),
+                step=ProcessStepNode(
+                    step_id="CT-PHOTO",
+                    step_name="Photo",
+                    step_seq=1,
+                ),
                 sibling_chambers=[],
-                adjacent_steps=[],
-                parameters=[],
+                adjacent_steps=[
+                    ProcessStepNode(
+                        step_id="CT-ETCH",
+                        step_name="Etch",
+                        step_seq=2,
+                    )
+                ],
+                parameters=[
+                    ParameterNode(
+                        parameter_id="PH_FOCUS",
+                        parameter_name="Focus",
+                        unit="um",
+                    )
+                ],
                 relations=[
                     GraphRelationRef(
-                        relation_id="REL-1",
-                        relation_type="PART_OF",
-                        from_label="Chamber",
-                        from_business_id="chamber_id=s:EQP01-PM1",
-                        to_label="Equipment",
-                        to_business_id="equipment_id=s:EQP01",
+                        relation_id="REL-STEP",
+                        relation_type="NEXT_STEP",
+                        from_label="ProcessStep",
+                        from_business_id="step_id=s:CT-PHOTO",
+                        to_label="ProcessStep",
+                        to_business_id="step_id=s:CT-ETCH",
                     )
                 ],
                 graph_revision=REVISION,
@@ -273,10 +289,14 @@ def test_get_equipment_context_tool_returns_common_success_contract(
 
     assert result.ok is True
     assert result.reason == ""
-    assert result.equipment is not None
-    assert result.equipment.equipment_id == "EQP01"
+    assert result.chamber_id == "EQP01-PM1"
+    assert result.equipment_id == "EQP01"
+    assert result.model_code == "PH-9000"
+    assert result.process_step_id == "CT-PHOTO"
+    assert result.upstream_process_step_ids == []
+    assert result.downstream_process_step_ids == ["CT-ETCH"]
+    assert result.parameter_ids == ["PH_FOCUS"]
     assert result.graph_revision == REVISION
-    assert result.relations[0].relation_id == "REL-1"
 
 
 def test_get_equipment_context_tool_returns_not_found(monkeypatch: Any) -> None:
@@ -294,9 +314,8 @@ def test_get_equipment_context_tool_returns_not_found(monkeypatch: Any) -> None:
 
     assert result.ok is False
     assert result.reason == "NOT_FOUND: chamber_id=missing"
-    assert result.equipment is None
+    assert result.chamber_id is None
     assert result.graph_revision is None
-    assert result.relations == []
 
 
 def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
@@ -313,7 +332,7 @@ def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
 
     assert result.ok is False
     assert result.reason == "TIMEOUT: neo4j read timed out"
-    assert result.equipment is None
+    assert result.chamber_id is None
 
 
 def test_get_equipment_context_tool_returns_dependency_failure(
@@ -332,7 +351,7 @@ def test_get_equipment_context_tool_returns_dependency_failure(
 
     assert result.ok is False
     assert result.reason == "DEPENDENCY_ERROR: marker invalid"
-    assert result.equipment is None
+    assert result.chamber_id is None
 
 
 class _Driver:

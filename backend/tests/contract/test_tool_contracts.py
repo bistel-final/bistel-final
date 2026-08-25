@@ -21,10 +21,8 @@ from app.common.tool_contracts import (
     DocumentSearchToolResult,
     EquipmentContextToolInput,
     EquipmentContextToolResult,
-    EquipmentNode,
     FdcSummaryToolInput,
     FdcSummaryToolResult,
-    GraphRelationRef,
     IncidentModelSignal,
     MetricPlan,
     ParameterSummaryItem,
@@ -56,21 +54,16 @@ PARAMETER = {
     "alarm_type": AlarmType.OOS,
 }
 
-EQUIPMENT = {
+EQUIPMENT_CONTEXT = {
+    "chamber_id": "EQP04-PM2",
     "equipment_id": "EQP04",
-    "equipment_name": "Dry Etcher #4",
+    "sibling_chamber_ids": ["EQP04-PM1"],
+    "area": "Etch",
     "model_code": "ET-7500",
-    "area_id": "etch",
-    "step_id": "CT-ETCH",
-}
-
-RELATION = {
-    "relation_id": "REL-aabbcc",
-    "relation_type": "NEXT_STEP",
-    "from_label": "ProcessStep",
-    "from_business_id": "PHOTO",
-    "to_label": "ProcessStep",
-    "to_business_id": "ETCH",
+    "process_step_id": "CT-ETCH",
+    "upstream_process_step_ids": ["CT-PHOTO"],
+    "downstream_process_step_ids": [],
+    "parameter_ids": ["ET_CF4", "ET_ESC", "ET_PRES", "ET_REFL"],
 }
 
 DOCUMENT = {
@@ -478,30 +471,84 @@ class TestIncidentModelSignalContract:
 
 
 class TestEquipmentContextContract:
-    def test_success_carries_stable_graph_provenance(self) -> None:
+    def test_success_returns_compact_context_and_graph_provenance(self) -> None:
         result = EquipmentContextToolResult(
             ok=True,
-            equipment=EquipmentNode(**EQUIPMENT),
+            **EQUIPMENT_CONTEXT,
             graph_revision="GRAPH-20260813",
-            relations=[GraphRelationRef(**RELATION)],
         )
 
-        assert result.relations[0].relation_id == "REL-aabbcc"
+        assert result.process_step_id == "CT-ETCH"
+        assert result.upstream_process_step_ids == ["CT-PHOTO"]
+        assert result.downstream_process_step_ids == []
         assert result.graph_revision == "GRAPH-20260813"
 
-    def test_graph_revision_is_required_on_success(self) -> None:
-        with pytest.raises(ValidationError, match="graph_revision"):
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            "chamber_id",
+            "equipment_id",
+            "area",
+            "model_code",
+            "process_step_id",
+            "graph_revision",
+        ],
+    )
+    def test_core_context_fields_are_required_on_success(
+        self,
+        missing: str,
+    ) -> None:
+        payload = {
+            "ok": True,
+            **EQUIPMENT_CONTEXT,
+            "graph_revision": "GRAPH-20260813",
+        }
+        payload[missing] = None
+
+        with pytest.raises(ValidationError, match=missing):
             EquipmentContextToolResult(
-                ok=True,
-                equipment=EquipmentNode(**EQUIPMENT),
+                **payload,
             )
 
-    def test_fixed_equipment_upstream_downstream_is_not_in_contract(self) -> None:
+    def test_tool_context_excludes_graph_projection_and_api_only_fields(self) -> None:
         fields = set(EquipmentContextToolResult.model_fields)
 
-        assert "upstream" not in fields
-        assert "downstream" not in fields
-        assert {"adjacent_steps", "relations", "graph_revision"} <= fields
+        assert {
+            "chamber_id",
+            "equipment_id",
+            "area",
+            "model_code",
+            "process_step_id",
+            "graph_revision",
+        } <= fields
+        assert {
+            "equipment",
+            "step",
+            "sibling_chambers",
+            "adjacent_steps",
+            "parameters",
+            "relations",
+            "relation_ids",
+            "nodes",
+            "relationships",
+            "context",
+            "provenance",
+        }.isdisjoint(fields)
+        assert {
+            "relation_ids",
+            "nodes",
+            "relationships",
+            "recipe_id",
+            "recipe_step_no",
+            "area_name",
+            "model_name",
+            "process_step_seq",
+        }.isdisjoint(fields)
+        assert {
+            "upstream_process_step_ids",
+            "downstream_process_step_ids",
+            "sibling_chamber_ids",
+        } <= fields
 
 
 class TestDocumentContract:

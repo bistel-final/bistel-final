@@ -54,16 +54,101 @@ def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
             )
         return EquipmentContextToolResult(
             ok=True,
-            equipment=context.equipment,
-            area=context.area,
-            step=context.step,
-            sibling_chambers=context.sibling_chambers,
-            adjacent_steps=context.adjacent_steps,
-            parameters=context.parameters,
-            relations=context.relations,
+            chamber_id=chamber_id,
+            equipment_id=context.equipment.equipment_id,
+            sibling_chamber_ids=sorted(
+                chamber.chamber_id for chamber in context.sibling_chambers
+            ),
+            area=(
+                context.area.area_id
+                if context.area is not None
+                else context.equipment.area_id
+            ),
+            model_code=context.equipment.model_code,
+            process_step_id=(
+                context.step.step_id
+                if context.step is not None
+                else context.equipment.step_id
+            ),
+            upstream_process_step_ids=_step_ids_before_current_step(context),
+            downstream_process_step_ids=_step_ids_after_current_step(context),
+            parameter_ids=sorted(
+                parameter.parameter_id for parameter in context.parameters
+            ),
             graph_revision=context.graph_revision,
         )
     except TimeoutError as exc:
         return fail(EquipmentContextToolResult, f"TIMEOUT: {exc}")
     except Exception as exc:
         return fail(EquipmentContextToolResult, f"DEPENDENCY_ERROR: {exc}")
+
+
+def _step_ids_before_current_step(context: object) -> list[str]:
+    related = _step_ids_from_next_step_relations(context, incoming=True)
+    if related:
+        return related
+
+    current_seq = getattr(getattr(context, "step", None), "step_seq", None)
+    if current_seq is None:
+        return []
+
+    return sorted(
+        step.step_id
+        for step in getattr(context, "adjacent_steps", [])
+        if step.step_seq is not None and step.step_seq < current_seq
+    )
+
+
+def _step_ids_after_current_step(context: object) -> list[str]:
+    related = _step_ids_from_next_step_relations(context, incoming=False)
+    if related:
+        return related
+
+    current_seq = getattr(getattr(context, "step", None), "step_seq", None)
+    if current_seq is None:
+        return []
+
+    return sorted(
+        step.step_id
+        for step in getattr(context, "adjacent_steps", [])
+        if step.step_seq is not None and step.step_seq > current_seq
+    )
+
+
+def _step_ids_from_next_step_relations(
+    context: object,
+    *,
+    incoming: bool,
+) -> list[str]:
+    current_step_id = getattr(getattr(context, "step", None), "step_id", None)
+    if current_step_id is None:
+        return []
+
+    step_ids: set[str] = set()
+    for relation in getattr(context, "relations", []):
+        if relation.relation_type != "NEXT_STEP":
+            continue
+        from_step_id = _step_id_from_business_ref(
+            relation.from_label,
+            relation.from_business_id,
+        )
+        to_step_id = _step_id_from_business_ref(
+            relation.to_label,
+            relation.to_business_id,
+        )
+        if incoming and to_step_id == current_step_id and from_step_id is not None:
+            step_ids.add(from_step_id)
+        elif not incoming and from_step_id == current_step_id and to_step_id is not None:
+            step_ids.add(to_step_id)
+
+    return sorted(step_ids)
+
+
+def _step_id_from_business_ref(label: str, business_id: str) -> str | None:
+    if label != "ProcessStep":
+        return None
+
+    prefix = "step_id=s:"
+    if not business_id.startswith(prefix):
+        return None
+    return business_id[len(prefix) :]
