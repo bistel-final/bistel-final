@@ -711,6 +711,70 @@ def test_a_valid_existing_row_is_preserved_and_recorded(
 # ---------------------------------------------------------------------------
 
 
+def test_the_003_whitespace_folding_is_currently_inert(baseline: Any) -> None:
+    r"""**003의 정규화가 실제로는 아무것도 접지 않음을 고정한다**(팀 리뷰 필수 1).
+
+    ```sql
+    regexp_replace(predecessor_def, '\\s+', ' ', 'g')
+    ```
+
+    `standard_conforming_strings=on`(9.1 이후 기본)에서 `'\\s+'`는 **리터럴 백슬래시 +
+    `s+`**다. 공백이 아니라 `\sss` 같은 문자열에만 매칭되므로 이 `regexp_replace`는
+    양쪽에서 no-op이고, 주석이 약속한 "공백만 접어 비교한다"는 성립하지 않는다.
+
+    ## 왜 이 PR에서 고치지 않는가
+
+    003은 **이미 공용 두 DB에 적용됐고** marker 2본이 그 `migration_sha256`을 고정한다.
+    파일을 한 글자라도 고치면 SHA가 바뀌어 두 marker가 즉시 무효가 된다 — 실측으로
+    확인했다.
+
+    ```text
+    적용된 파일 SHA   f06e9aa4…   marker와 일치
+    수정 후 파일 SHA  d4d7ac40…   marker 무효 → verifier FAIL
+    ```
+
+    이것이 정확히 이 Task가 `002`를 고치지 않고 `003`을 successor로 쌓은 이유다.
+    같은 규칙이 003에도 적용된다.
+
+    ## 지금 무해한 이유
+
+    `pg_get_constraintdef()`는 parse tree에서 **다시 렌더링**하므로 catalog 출력에
+    개행·연속 공백이 들어갈 수 없다(아래에서 실측). 따라서 접을 공백이 애초에 없고,
+    두 표현의 비교 결과가 같다.
+
+    남는 위험은 **PG 부버전이 출력 포맷을 바꾸는 경우**뿐이며, 그때는 successor
+    migration으로 닫는다.
+    """
+
+    import re as _re
+
+    sql = SQL_003.read_text(encoding="utf-8")
+    patterns = _re.findall(r"regexp_replace\([^,]+,\s*'([^']*)'", sql)
+    assert len(set(patterns)) == 1, patterns
+    pattern = patterns[0]
+
+    cursor = baseline.cursor()
+    cursor.execute("BEGIN")
+    # ① 현재 pattern은 공백을 접지 않는다.
+    sample = "CHECK (a  IS NULL\n   AND b)"
+    cursor.execute("SELECT regexp_replace(%s, %s, ' ', 'g') AS r", (sample, pattern))
+    assert cursor.fetchone()[0] == sample, "003 정규화가 동작하면 이 회귀를 갱신한다"
+
+    # ② 올바른 표현은 접는다 — 무엇이 달라지는지 함께 고정한다.
+    cursor.execute("SELECT regexp_replace(%s, %s, ' ', 'g') AS r", (sample, r"\s+"))
+    assert cursor.fetchone()[0] == "CHECK (a IS NULL AND b)"
+
+    # ③ catalog 출력에는 접을 공백이 없다 — 그래서 ①이 지금 무해하다.
+    cursor.execute(
+        "SELECT pg_get_constraintdef(oid, true) AS d FROM pg_constraint "
+        "WHERE conrelid = 'public.agent_run'::regclass AND conname = 'agent_run_check1'"
+    )
+    live = cursor.fetchone()[0]
+    cursor.execute("COMMIT")
+    assert "\n" not in live and "  " not in live
+    assert live == guard.PREDECESSOR_DEFINITION_SQL
+
+
 def test_a_public_grant_stops_the_apply(
     runner_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1923,6 +1923,28 @@ def _validate_indexes_contract(indexes: Any) -> None:
             raise AgentRuntimeStateError(f"{name} index 계약이 다릅니다")
 
 
+def schema_signature_sha256(
+    connection: Any,
+    *,
+    expected_constraints: Mapping[str, ConstraintContract] = EXPECTED_CONSTRAINTS,
+) -> str:
+    """live schema signature의 **유일한 정본 계산**이다.
+
+    `V5-CM-3.3`이 처음에 `_canonical_hash(_json_safe(signature))`를 따로 계산했다.
+    두 값이 같은 것은 `_json_safe()`가 이 payload에서 항등이기 때문이었고 **우연에
+    걸려 있었다.** `build_schema_signature()`가 `Decimal`·`datetime`·tuple을 하나라도
+    담게 되면 갈리고, 그때 apply는 성공하는데 `--verify`가 곧바로 `DRIFT`가 된다
+    (팀 리뷰 필수 2).
+
+    signature를 쓰는 모든 경로가 이 함수를 부른다.
+    """
+
+    return _validate_signature_contract(
+        build_schema_signature(connection),
+        expected_constraints=expected_constraints,
+    )
+
+
 def _validate_signature_contract(
     signature: Mapping[str, Any],
     *,

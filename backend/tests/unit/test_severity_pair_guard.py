@@ -770,6 +770,42 @@ class TestGuardedPostcondition:
         assert "postcheck_database" in source
         assert "GUARDED_CONSTRAINTS" in source
 
+    def test_signature_has_exactly_one_computation(self) -> None:
+        """**signature 정본이 하나인지 본다**(팀 리뷰 필수 2).
+
+        `inspect_guard()`가 `_canonical_hash(_json_safe(signature))`를 따로 계산했다.
+        marker는 그 값을, `assert_guarded_marker_agrees()`의 live 비교는
+        `postcheck_database()` 값을 썼다. 두 값이 같았던 것은 `_json_safe()`가 이
+        payload에서 항등이기 때문이며 **우연에 걸려 있었다.**
+
+        `build_schema_signature()`가 `Decimal`·`datetime`·tuple을 하나라도 담게 되면
+        apply는 성공하고 `--verify`가 곧바로 `DRIFT`로 떨어진다.
+
+        이제 둘 다 `agent_runtime.schema_signature_sha256()`을 부른다.
+        """
+
+        import ast
+        import inspect
+
+        tree = ast.parse(inspect.getsource(guard.inspect_guard).lstrip())
+        called = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert "schema_signature_sha256" in called
+        # **코드만 본다.** 주석에는 왜 그렇게 했는지가 적혀 있어 문자열로 세면
+        # 설명 문구에 걸린다.
+        assert not (called & {"_canonical_hash", "_json_safe"})
+        names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        assert not (names & {"_canonical_hash", "_json_safe"})
+
+        # 두 경로가 한 계산으로 모인다 — `postcheck_database()`도 같은 helper를 탄다.
+        runtime_src = inspect.getsource(
+            guard.agent_runtime._validate_signature_contract
+        )
+        assert "_canonical_hash(signature)" in runtime_src
+
     def test_every_read_path_uses_it(self) -> None:
         """**DB를 읽는 모든 진입점이** 물리 계약을 본다.
 

@@ -64,7 +64,6 @@ from bootstrap_common import (
     ReferenceExtensionError,
     _canonical_hash,
     _engine_for,
-    _json_safe,
     _result_rows,
     _single_row,
     _timezone_text,
@@ -367,10 +366,27 @@ def inspect_guard(connection: Any) -> GuardInspection:
         if guard != GUARD_DEFINITION:
             return GuardInspection("DRIFT", predecessor, guard, None)
         state = "GUARDED_UNMARKED"
-    signature = agent_runtime.build_schema_signature(connection)
-    return GuardInspection(
-        state, predecessor, guard, _canonical_hash(_json_safe(signature))
+    # **signature 계산을 `agent_runtime`에 위임한다.**
+    #
+    # 여기서 `_canonical_hash(_json_safe(signature))`를 따로 계산하면 정본이 두
+    # 갈래가 된다. marker는 이쪽 값을, `assert_guarded_marker_agrees()`의 live
+    # 비교는 `postcheck_database()` 값을 쓰므로, 두 계산이 갈리는 순간 apply는
+    # 성공하고 `--verify`가 곧바로 `DRIFT`로 떨어진다(팀 리뷰 필수 2).
+    #
+    # 지금 두 값이 같은 것은 `_json_safe()`가 이 payload에서 항등이기 때문이며
+    # **우연에 걸려 있다.** `build_schema_signature()`가 `Decimal`·`datetime`·tuple을
+    # 하나라도 담게 되면 갈린다.
+    #
+    # `GUARDED_CONSTRAINTS`를 `EXPECTED_CONSTRAINTS`에서 파생시킨 것과 같은 규칙이다.
+    signature_sha256 = agent_runtime.schema_signature_sha256(
+        connection,
+        expected_constraints=(
+            GUARDED_CONSTRAINTS
+            if state == "GUARDED_UNMARKED"
+            else agent_runtime.EXPECTED_CONSTRAINTS
+        ),
     )
+    return GuardInspection(state, predecessor, guard, signature_sha256)
 
 
 #: 새 CHECK의 정규화 정의. **PostgreSQL 16 실측값이다.**
@@ -462,7 +478,20 @@ def _refuse(state: str) -> NoReturn:
         "GUARDED_DRIFT": "guarded 물리 계약이 성립하지 않습니다",
         "INVALID_EXISTING_ROWS": "기존 행이 pair 계약을 위반합니다",
     }
-    raise SeverityGuardStateError(messages[state], reason_code=state)
+    # **없는 key를 `KeyError`로 터뜨리지 않는다.**
+    #
+    # 구현리뷰 필수 B가 `GUARDED_UNMARKED` 누락으로 `KeyError`가 난 건이었다.
+    # 호출부가 실제 상태를 그대로 넘기게 바꾸면서(팀 리뷰 권고 1) 새 상태가 들어올
+    # 여지가 생겼으므로 fallback을 명시한다. 상태 이름 자체는 계약이므로
+    # `GUARD_STATES` 밖이면 그것을 먼저 알린다.
+    if state not in GUARD_STATES:
+        raise SeverityGuardStateError(
+            "알 수 없는 guard 상태입니다", reason_code="CONTRACT_INVALID"
+        )
+    raise SeverityGuardStateError(
+        messages.get(state, "guard 상태가 자동 보정 대상이 아닙니다"),
+        reason_code=state,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +504,23 @@ MATRIX_INSERT = f"""INSERT INTO public.{GUARD_TABLE}
      representative_alarm_source, representative_alarm_id,
      status, autonomy_level, action, severity)
 VALUES (%s, %s, %s, %s, 'TRACE', %s, 'TRACE', %s, 'COMPLETED', 1, %s, %s)"""
+
+
+def _is_integrity_error(exc: BaseException) -> bool:
+    """제약 위반 계열인지 driver에 관계없이 판정한다.
+
+    `_constraint_name()`이 `None`을 내는 위반이 있다 — NOT NULL은
+    `diag.constraint_name`이 비고 `column_name`만 채워진다. 그런 실패를 그대로
+    전파하면 `MATRIX_FIXTURE_INVALID`와 구분되지 않는다(팀 리뷰 권고 3).
+    """
+
+    for candidate in (exc, getattr(exc, "orig", None)):
+        if candidate is None:
+            continue
+        for klass in type(candidate).__mro__:
+            if klass.__name__ in {"IntegrityError", "DatabaseError"}:
+                return True
+    return False
 
 
 def _matrix_row(
@@ -536,10 +582,21 @@ def run_matrix(connection: Any) -> MatrixResult:
         # 격리 container의 psycopg 어댑터는 `psycopg.errors.CheckViolation`을
         # 그대로 낸다. 둘 다 CHECK 위반이므로 constraint 이름으로 판정한다.
         except Exception as exc:
-            if _constraint_name(exc) is None:
+            name = _constraint_name(exc)
+            if name is None:
+                # **이름 없는 제약 위반도 fixture 결함이다.**
+                #
+                # NOT NULL 위반은 `diag.constraint_name`이 비고 `column_name`만
+                # 채워진다. 그대로 전파하면 승인 Gate의 실패 원인이 "guard가 4/12가
+                # 아니다"인지 "fixture가 틀렸다"인지 구분되지 않는다
+                # (팀 리뷰 권고 3).
+                if _is_integrity_error(exc):
+                    raise SeverityGuardStateError(
+                        "matrix fixture가 pair guard 외 제약에 걸렸습니다",
+                        reason_code="MATRIX_FIXTURE_INVALID",
+                    ) from exc
                 raise
             connection.exec_driver_sql("ROLLBACK TO SAVEPOINT cm33_matrix")
-            name = _constraint_name(exc)
             if name != GUARD_CONSTRAINT:
                 # 다른 제약에 걸린 거부를 pair guard 증거로 오인하지 않는다.
                 raise SeverityGuardStateError(
@@ -1451,7 +1508,7 @@ def run_verify(
                     "guard marker가 없습니다", reason_code="GUARDED_UNMARKED"
                 )
             if inspection.state != "GUARDED_UNMARKED":
-                _refuse("DRIFT")
+                _refuse(inspection.state)
             # **유일한 guarded 판정을 쓴다**(구현리뷰 필수 J·J-2).
             assert_guarded_marker_agrees(
                 connection, marker=marker, identity=guarded_identity(target)
@@ -1558,8 +1615,11 @@ def run_rehearse(
             connection.exec_driver_sql(
                 f"LOCK TABLE public.{GUARD_TABLE} IN ACCESS EXCLUSIVE MODE"
             )
-            if inspect_guard(connection).state != "BASELINE_MARKED":
-                _refuse("PARTIAL_OR_DRIFT")
+            rehearsal = inspect_guard(connection)
+            if rehearsal.state != "BASELINE_MARKED":
+                # **실제 상태를 넘긴다.** 상수로 뭉개면 `DRIFT`가
+                # `PARTIAL_OR_DRIFT`로 보고된다(팀 리뷰 권고 1).
+                _refuse(rehearsal.state)
             if violation_rows(connection) > 0:
                 _refuse("INVALID_EXISTING_ROWS")
             # rehearsal도 **같은** precondition을 쓴다 — 리허설이 실제보다 느슨하면
@@ -1628,7 +1688,7 @@ def run_recover_marker(
                 raise SeverityGuardArtifactError("marker가 이미 있습니다")
             inspection = inspect_guard(connection)
             if inspection.state != "GUARDED_UNMARKED":
-                _refuse("PARTIAL_OR_DRIFT")
+                _refuse(inspection.state)
             # **marker를 쓰기 전에 물리 계약 전체를 본다.**
             #
             # `inspect_guard()`의 signature에는 `PUBLIC` privilege·table

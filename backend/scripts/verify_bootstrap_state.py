@@ -360,7 +360,12 @@ def _guarded_mismatches(
     mismatches: list[dict[str, Any]] = []
     try:
         inspection = severity_guard.inspect_guard(connection)
-    except Exception:
+    except (SQLAlchemyError, severity_guard.SeverityGuardError):
+        # **원인을 하나로 뭉개지 않는다.**
+        #
+        # `except Exception`이면 연결 끊김·드라이버 오류·`AttributeError`가 전부
+        # "guard schema가 다르다"로 보고된다. full verifier 출력이 원인 규명 입력인데
+        # 거기서 정보가 사라진다(팀 리뷰 권고 2). 나머지는 전파한다.
         return [{"mismatch_kind": "GUARD_SCHEMA"}]
 
     if inspection.state != "GUARDED_UNMARKED":
