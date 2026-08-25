@@ -65,9 +65,7 @@ RETURN
         return {
             "chamber_id": row.get("chamber_id"),
             "equipment_id": row.get("equipment_id"),
-            "sibling_chamber_ids": _clean_scalar_list(
-                row.get("sibling_chamber_ids")
-            ),
+            "sibling_chamber_ids": _clean_scalar_list(row.get("sibling_chamber_ids")),
             "area": row.get("area"),
             "model_code": row.get("model_code"),
             "process_step_id": row.get("process_step_id"),

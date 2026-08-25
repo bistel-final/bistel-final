@@ -12,8 +12,8 @@ from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
-from app.knowledge.router import router as knowledge_router
 from app.knowledge.repository import ChamberGraphProjection, ChamberGraphRepository
+from app.knowledge.router import router as knowledge_router
 from app.knowledge.schemas import ChamberRelationResponse
 from app.knowledge.service import EquipmentContextService, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
@@ -126,7 +126,9 @@ class FakeGraphRepository:
             graph_revision=REVISION,
         )
 
-    def get_equipment_context_payload(self, chamber_id: str) -> dict[str, object] | None:
+    def get_equipment_context_payload(
+        self, chamber_id: str
+    ) -> dict[str, object] | None:
         if chamber_id == "missing":
             return None
         return {
@@ -356,7 +358,7 @@ def test_graph_repository_returns_api_graph_projection() -> None:
                     "type": "PART_OF",
                     "source": "Chamber:EQP01-PM1",
                     "target": "Equipment:EQP01",
-                }
+                },
             ],
         }
     )
@@ -638,7 +640,7 @@ class _Session:
     def __exit__(self, *_: object) -> bool:
         return False
 
-    def run(self, query: str, parameters: dict[str, Any]) -> _Result:
+    def run(self, query: str, parameters: dict[str, Any]) -> _PayloadResult:
         if query == ChamberGraphRepository.GRAPH_PROJECTION_QUERY:
             assert parameters == {"chamber_id": "EQP01-PM1"}
             return _PayloadResult(self.graph_record)
