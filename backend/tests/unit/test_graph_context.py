@@ -12,10 +12,10 @@ from app.common.tool_contracts import (
     ProcessStepNode,
 )
 from app.knowledge.graph_query import (
-    EquipmentContextRow,
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
+from app.knowledge.repository import ChamberGraphRepository, EquipmentContextRow
 from app.knowledge.service import EquipmentContextService, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
@@ -176,7 +176,7 @@ def test_equipment_context_service_uses_next_step_direction_for_process_flow() -
 
 
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
-    query = GraphQueryRepository.CONTEXT_QUERY
+    query = ChamberGraphRepository.CONTEXT_QUERY
 
     assert "MATCH (n)" not in query
     assert "MATCH (a)-[r]->(b)" not in query
@@ -187,7 +187,7 @@ def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
 
 
 def test_graph_repository_uses_process_step_area_not_model_area() -> None:
-    query = GraphQueryRepository.CONTEXT_QUERY
+    query = ChamberGraphRepository.CONTEXT_QUERY
 
     assert "(step)-[stepArea:IN_AREA]->(area:Area)" in query
     assert "(m)-[modelArea:IN_AREA]->(area:Area)" not in query
@@ -205,7 +205,7 @@ def test_graph_repository_tool_query_returns_compact_directional_payload() -> No
 
 def test_graph_repository_maps_raw_neo4j_row() -> None:
     driver = _Driver()
-    repository = GraphQueryRepository(
+    repository = ChamberGraphRepository(
         driver_factory=lambda: driver,
         graph_revision_loader=lambda: REVISION,
         database="neo4j",
@@ -301,7 +301,7 @@ def test_load_graph_revision_rejects_invalid_marker(tmp_path: Any) -> None:
 
 
 def test_relation_id_is_required_for_returned_relationships() -> None:
-    repository = GraphQueryRepository(
+    repository = ChamberGraphRepository(
         driver_factory=lambda: _Driver(relation_id=None),
         graph_revision_loader=lambda: REVISION,
         database="neo4j",
@@ -326,7 +326,7 @@ def test_process_step_business_id_uses_step_id() -> None:
             "to_properties": {"step_id": "CT-ETCH", "step_seq": 2},
         }
     )
-    repository = GraphQueryRepository(
+    repository = ChamberGraphRepository(
         driver_factory=lambda: driver,
         graph_revision_loader=lambda: REVISION,
         database="neo4j",
@@ -474,7 +474,7 @@ class _Session:
         return False
 
     def run(self, query: str, parameters: dict[str, Any]) -> _Result:
-        if query == GraphQueryRepository.CONTEXT_QUERY:
+        if query == ChamberGraphRepository.CONTEXT_QUERY:
             assert parameters == {"chamber_id": "EQP01-PM1"}
             return _Result(self.relation_id, self.relation)
         if query == GraphQueryRepository.TOOL_CONTEXT_QUERY:

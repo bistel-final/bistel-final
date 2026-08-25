@@ -17,6 +17,7 @@ from app.common.tool_contracts import (
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.embedding import embed_query
 from app.knowledge.graph_query import GraphQueryRepository
+from app.knowledge.repository import ChamberGraphRepository
 
 
 # ==================
@@ -66,8 +67,8 @@ class EquipmentContext:
 class GraphService:
     """API graph context service."""
 
-    def __init__(self, repository: GraphQueryRepository | None = None) -> None:
-        self._repository = repository or GraphQueryRepository()
+    def __init__(self, repository: ChamberGraphRepository | None = None) -> None:
+        self._repository = repository or ChamberGraphRepository()
 
     def get_equipment_context(self, chamber_id: str) -> EquipmentContext | None:
         row = self._repository.get_equipment_context(chamber_id)
