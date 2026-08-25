@@ -9,6 +9,7 @@ from app.common.tool_contracts import (
     ChamberNode,
     DocumentHit,
     EquipmentNode,
+    EquipmentContextToolResult,
     GraphRelationRef,
     ParameterNode,
     ProcessStepNode,
@@ -63,7 +64,7 @@ class EquipmentContext:
 
 
 class GraphService:
-    """Graph context service shared by the API and Agent Tool."""
+    """API graph context service."""
 
     def __init__(self, repository: GraphQueryRepository | None = None) -> None:
         self._repository = repository or GraphQueryRepository()
@@ -73,41 +74,65 @@ class GraphService:
         if row is None:
             return None
 
-        area_id = _string_or_none(row.area, "area_id")
-        step_id = _string_or_none(row.step, "step_id")
-        model_code = _string(row.model, "model_code", row.equipment.get("model_code"))
-        equipment_id = _string(row.equipment, "equipment_id")
+        return _equipment_context_from_row(row)
 
-        equipment = _equipment_node(
-            row.equipment,
-            equipment_id=equipment_id,
-            model_code=model_code,
-            area_id=area_id,
-            step_id=step_id,
-        )
-        return EquipmentContext(
-            equipment=equipment,
-            area=_area_node(row.area),
-            step=_step_node(row.step),
-            sibling_chambers=[
-                _chamber_node(
-                    item,
-                    equipment_id=equipment_id,
-                    model_code=model_code,
-                    area_id=equipment.area_id,
-                    step_id=step_id,
-                )
-                for item in row.sibling_chambers
-            ],
-            adjacent_steps=[
-                item
-                for item in (_step_node(step) for step in row.adjacent_steps)
-                if item
-            ],
-            parameters=[_parameter_node(item) for item in row.parameters],
-            relations=[GraphRelationRef.model_validate(item) for item in row.relations],
-            graph_revision=row.graph_revision,
-        )
+
+class EquipmentContextService:
+    """Agent Tool 전용 compact graph context service."""
+
+    def __init__(self, repository: GraphQueryRepository | None = None) -> None:
+        self._repository = repository or GraphQueryRepository()
+
+    def get_equipment_context(
+        self,
+        chamber_id: str,
+    ) -> EquipmentContextToolResult | None:
+        payload = self._repository.get_equipment_context_payload(chamber_id)
+        if payload is None:
+            return None
+
+        return EquipmentContextToolResult.model_validate({"ok": True, **payload})
+
+
+# ============================
+# API helper
+# ============================
+def _equipment_context_from_row(row: object) -> EquipmentContext:
+    area_id = _string_or_none(row.area, "area_id")
+    step_id = _string_or_none(row.step, "step_id")
+    model_code = _string(row.model, "model_code", row.equipment.get("model_code"))
+    equipment_id = _string(row.equipment, "equipment_id")
+
+    equipment = _equipment_node(
+        row.equipment,
+        equipment_id=equipment_id,
+        model_code=model_code,
+        area_id=area_id,
+        step_id=step_id,
+    )
+    return EquipmentContext(
+        equipment=equipment,
+        area=_area_node(row.area),
+        step=_step_node(row.step),
+        sibling_chambers=[
+            _chamber_node(
+                item,
+                equipment_id=equipment_id,
+                model_code=model_code,
+                area_id=equipment.area_id,
+                step_id=step_id,
+            )
+            for item in row.sibling_chambers
+        ],
+        adjacent_steps=[
+            item
+            for item in (_step_node(step) for step in row.adjacent_steps)
+            if item
+        ],
+        parameters=[_parameter_node(item) for item in row.parameters],
+        relations=[GraphRelationRef.model_validate(item) for item in row.relations],
+        graph_revision=row.graph_revision,
+    )
 
 
 def _equipment_node(

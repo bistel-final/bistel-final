@@ -6,6 +6,7 @@ from app.common.tool_contracts import (
     AreaNode,
     ChamberNode,
     EquipmentNode,
+    EquipmentContextToolResult,
     GraphRelationRef,
     ParameterNode,
     ProcessStepNode,
@@ -15,7 +16,7 @@ from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
-from app.knowledge.service import EquipmentContext, GraphService
+from app.knowledge.service import EquipmentContextService, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
 REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
@@ -58,6 +59,22 @@ class FakeGraphRepository:
             ],
             graph_revision=REVISION,
         )
+
+    def get_equipment_context_payload(self, chamber_id: str) -> dict[str, object] | None:
+        if chamber_id == "missing":
+            return None
+        return {
+            "chamber_id": chamber_id,
+            "equipment_id": "EQP01",
+            "sibling_chamber_ids": ["EQP01-PM2"],
+            "area": "photo",
+            "model_code": "PH-9000",
+            "process_step_id": "CT-PHOTO",
+            "upstream_process_step_ids": [],
+            "downstream_process_step_ids": ["CT-ETCH"],
+            "parameter_ids": ["PH_FOCUS"],
+            "graph_revision": REVISION,
+        }
 
 
 def test_graph_service_maps_equipment_context_payload() -> None:
@@ -110,6 +127,54 @@ def test_graph_service_returns_none_for_missing_chamber() -> None:
     assert GraphService(FakeGraphRepository()).get_equipment_context("missing") is None
 
 
+def test_equipment_context_service_returns_compact_tool_context() -> None:
+    result = EquipmentContextService(FakeGraphRepository()).get_equipment_context(
+        "EQP01-PM1"
+    )
+
+    assert result is not None
+    assert result.ok is True
+    assert result.chamber_id == "EQP01-PM1"
+    assert result.equipment_id == "EQP01"
+    assert result.sibling_chamber_ids == ["EQP01-PM2"]
+    assert result.area == "photo"
+    assert result.model_code == "PH-9000"
+    assert result.process_step_id == "CT-PHOTO"
+    assert result.upstream_process_step_ids == []
+    assert result.downstream_process_step_ids == ["CT-ETCH"]
+    assert result.parameter_ids == ["PH_FOCUS"]
+    assert result.graph_revision == REVISION
+
+
+def test_equipment_context_service_uses_next_step_direction_for_process_flow() -> None:
+    class EtchGraphRepository:
+        def get_equipment_context_payload(
+            self,
+            chamber_id: str,
+        ) -> dict[str, object]:
+            return {
+                "chamber_id": chamber_id,
+                "equipment_id": "EQP04",
+                "sibling_chamber_ids": ["EQP04-PM1"],
+                "area": "Etch",
+                "model_code": "ET-7500",
+                "process_step_id": "CT-ETCH",
+                "upstream_process_step_ids": ["CT-PHOTO"],
+                "downstream_process_step_ids": [],
+                "parameter_ids": ["ET_CF4"],
+                "graph_revision": REVISION,
+            }
+
+    result = EquipmentContextService(EtchGraphRepository()).get_equipment_context(
+        "EQP04-PM2"
+    )
+
+    assert result is not None
+    assert result.process_step_id == "CT-ETCH"
+    assert result.upstream_process_step_ids == ["CT-PHOTO"]
+    assert result.downstream_process_step_ids == []
+
+
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
     query = GraphQueryRepository.CONTEXT_QUERY
 
@@ -126,6 +191,16 @@ def test_graph_repository_uses_process_step_area_not_model_area() -> None:
 
     assert "(step)-[stepArea:IN_AREA]->(area:Area)" in query
     assert "(m)-[modelArea:IN_AREA]->(area:Area)" not in query
+
+
+def test_graph_repository_tool_query_returns_compact_directional_payload() -> None:
+    query = GraphQueryRepository.TOOL_CONTEXT_QUERY
+
+    assert "previous:ProcessStep)-[:NEXT_STEP]->(step)" in query
+    assert "(step)-[:NEXT_STEP]->(next:ProcessStep)" in query
+    assert "previous.step_id) AS upstream_process_step_ids" in query
+    assert "next.step_id) AS downstream_process_step_ids" in query
+    assert "relation_id" not in query
 
 
 def test_graph_repository_maps_raw_neo4j_row() -> None:
@@ -152,6 +227,46 @@ def test_graph_repository_maps_raw_neo4j_row() -> None:
             "to_business_id": "equipment_id=s:EQP01",
         }
     ]
+    assert driver.session_options == {
+        "database": "neo4j",
+        "default_access_mode": "READ",
+    }
+
+
+def test_graph_repository_maps_tool_payload_row() -> None:
+    driver = _Driver(
+        tool_record={
+            "chamber_id": "EQP04-PM2",
+            "equipment_id": "EQP04",
+            "sibling_chamber_ids": ["EQP04-PM1", None],
+            "area": "Etch",
+            "model_code": "ET-7500",
+            "process_step_id": "CT-ETCH",
+            "upstream_process_step_ids": ["CT-PHOTO"],
+            "downstream_process_step_ids": [],
+            "parameter_ids": ["ET_REFL", "ET_CF4", None],
+        }
+    )
+    repository = GraphQueryRepository(
+        driver_factory=lambda: driver,
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    result = repository.get_equipment_context_payload("EQP04-PM2")
+
+    assert result == {
+        "chamber_id": "EQP04-PM2",
+        "equipment_id": "EQP04",
+        "sibling_chamber_ids": ["EQP04-PM1"],
+        "area": "Etch",
+        "model_code": "ET-7500",
+        "process_step_id": "CT-ETCH",
+        "upstream_process_step_ids": ["CT-PHOTO"],
+        "downstream_process_step_ids": [],
+        "parameter_ids": ["ET_CF4", "ET_REFL"],
+        "graph_revision": REVISION,
+    }
     assert driver.session_options == {
         "database": "neo4j",
         "default_access_mode": "READ",
@@ -239,51 +354,21 @@ def test_get_equipment_context_tool_returns_common_success_contract(
         def __init__(self, repository: object) -> None:
             self.repository = repository
 
-        def get_equipment_context(self, chamber_id: str) -> EquipmentContext:
+        def get_equipment_context(self, chamber_id: str) -> EquipmentContextToolResult:
             assert chamber_id == "EQP01-PM1"
-            return EquipmentContext(
-                equipment=EquipmentNode(
-                    equipment_id="EQP01",
-                    equipment_name="Photo Scanner 01",
-                    model_code="PH-9000",
-                    area_id="photo",
-                    step_id="CT-PHOTO",
-                ),
-                area=AreaNode(area_id="photo", area_name="Photolithography"),
-                step=ProcessStepNode(
-                    step_id="CT-PHOTO",
-                    step_name="Photo",
-                    step_seq=1,
-                ),
-                sibling_chambers=[],
-                adjacent_steps=[
-                    ProcessStepNode(
-                        step_id="CT-ETCH",
-                        step_name="Etch",
-                        step_seq=2,
-                    )
-                ],
-                parameters=[
-                    ParameterNode(
-                        parameter_id="PH_FOCUS",
-                        parameter_name="Focus",
-                        unit="um",
-                    )
-                ],
-                relations=[
-                    GraphRelationRef(
-                        relation_id="REL-STEP",
-                        relation_type="NEXT_STEP",
-                        from_label="ProcessStep",
-                        from_business_id="step_id=s:CT-PHOTO",
-                        to_label="ProcessStep",
-                        to_business_id="step_id=s:CT-ETCH",
-                    )
-                ],
+            return EquipmentContextToolResult(
+                ok=True,
+                chamber_id="EQP01-PM1",
+                equipment_id="EQP01",
+                area="photo",
+                model_code="PH-9000",
+                process_step_id="CT-PHOTO",
+                downstream_process_step_ids=["CT-ETCH"],
+                parameter_ids=["PH_FOCUS"],
                 graph_revision=REVISION,
             )
 
-    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
 
     result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
 
@@ -308,7 +393,7 @@ def test_get_equipment_context_tool_returns_not_found(monkeypatch: Any) -> None:
             assert chamber_id == "missing"
             return None
 
-    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
 
     result = get_equipment_context_tool.invoke({"chamber_id": "missing"})
 
@@ -326,7 +411,7 @@ def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
         def get_equipment_context(self, chamber_id: str) -> None:
             raise TimeoutError("neo4j read timed out")
 
-    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
 
     result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
 
@@ -345,7 +430,7 @@ def test_get_equipment_context_tool_returns_dependency_failure(
         def get_equipment_context(self, chamber_id: str) -> None:
             raise RuntimeError("marker invalid")
 
-    monkeypatch.setattr("app.knowledge.tools.GraphService", FakeService)
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
 
     result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
 
@@ -359,14 +444,16 @@ class _Driver:
         self,
         relation_id: str | None = "REL-x",
         relation: dict[str, Any] | None = None,
+        tool_record: dict[str, Any] | None = None,
     ) -> None:
         self.relation_id = relation_id
         self.relation = relation
+        self.tool_record = tool_record
         self.session_options: dict[str, Any] | None = None
 
     def session(self, **options: Any) -> _Session:
         self.session_options = options
-        return _Session(self.relation_id, self.relation)
+        return _Session(self.relation_id, self.relation, self.tool_record)
 
 
 class _Session:
@@ -374,9 +461,11 @@ class _Session:
         self,
         relation_id: str | None,
         relation: dict[str, Any] | None,
+        tool_record: dict[str, Any] | None,
     ) -> None:
         self.relation_id = relation_id
         self.relation = relation
+        self.tool_record = tool_record
 
     def __enter__(self) -> _Session:
         return self
@@ -385,9 +474,13 @@ class _Session:
         return False
 
     def run(self, query: str, parameters: dict[str, Any]) -> _Result:
-        assert query == GraphQueryRepository.CONTEXT_QUERY
-        assert parameters == {"chamber_id": "EQP01-PM1"}
-        return _Result(self.relation_id, self.relation)
+        if query == GraphQueryRepository.CONTEXT_QUERY:
+            assert parameters == {"chamber_id": "EQP01-PM1"}
+            return _Result(self.relation_id, self.relation)
+        if query == GraphQueryRepository.TOOL_CONTEXT_QUERY:
+            assert parameters == {"chamber_id": "EQP04-PM2"}
+            return _PayloadResult(self.tool_record)
+        raise AssertionError(f"unexpected query: {query}")
 
 
 class _Result:
@@ -419,6 +512,14 @@ class _Result:
             "parameters": [],
             "relations": [relation],
         }
+
+
+class _PayloadResult:
+    def __init__(self, record: dict[str, Any] | None) -> None:
+        self.record = record
+
+    def single(self) -> dict[str, Any] | None:
+        return self.record
 
 
 def _marker(revision: str, *, status: str = "APPLIED") -> str:
