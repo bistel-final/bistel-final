@@ -1530,3 +1530,240 @@ def test_every_declared_conflict_name_exists_in_the_catalog(engine: Any) -> None
         }
     missing = sorted(set(repo.CONFLICT_CODES) - known)
     assert missing == [], missing
+
+
+# ===========================================================================
+# 구현리뷰 필수 1·2 — 실제 DB에서만 성립하는 축
+# ===========================================================================
+
+MISSING_RUN = "RUN-c01ffffffffffff"
+MISSING_ACTION = "ACT-c01ffffffffffff"
+
+
+def test_every_declared_foreign_key_name_exists_in_the_catalog(engine: Any) -> None:
+    """**선언한 FK 이름이 전부 실재한다.**
+
+    `002`가 FK에 이름을 주지 않아 PostgreSQL 자동 명명에 의존한다. 이름 하나가
+    어긋나면 `_insert_one()`은 조용히 `CONSTRAINT_VIOLATION`으로 떨어지고, 그
+    상태는 어떤 성공 경로 테스트도 red로 만들지 못한다.
+    """
+
+    with engine.connect() as connection:
+        known = {
+            row.conname
+            for row in connection.execute(
+                text("SELECT conname FROM pg_constraint WHERE contype = 'f'")
+            ).all()
+        }
+    missing = sorted(set(repo.FOREIGN_KEY_CODES) - known)
+    assert missing == [], missing
+
+
+def test_a_review_for_a_missing_run_says_the_run_is_missing(engine: Any) -> None:
+    """이전에는 `CONSTRAINT_VIOLATION`이었다 — CHECK 위반과 같은 코드다."""
+
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as exc:
+            repo.insert_human_prediction_review(
+                connection,
+                agent_run_id=MISSING_RUN,
+                reviewed_fault_code=FaultHypothesis.RFM,
+                disposition="CORRECTED",
+                label_source="HUMAN_REVIEW",
+                reviewer="qa",
+            )
+    assert exc.value.code == "RUN_NOT_FOUND"
+
+
+def test_a_check_violation_and_a_missing_parent_are_now_different(
+    engine: Any,
+) -> None:
+    """**같은 table의 두 실패가 서로 다른 code다.**
+
+    이 대조가 없으면 "FK를 NotFound로 올린다"가 CHECK까지 삼켰는지 알 수 없다.
+    """
+
+    run = _run_id(engine)
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryContractError) as check:
+            repo.insert_human_prediction_review(
+                connection,
+                agent_run_id=run,
+                reviewed_fault_code=None,
+                disposition="CORRECTED",
+                label_source="HUMAN_REVIEW",
+                reviewer="qa",
+            )
+    assert check.value.code == "CONSTRAINT_VIOLATION"
+
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as missing:
+            repo.insert_human_prediction_review(
+                connection,
+                agent_run_id=MISSING_RUN,
+                reviewed_fault_code=FaultHypothesis.RFM,
+                disposition="CORRECTED",
+                label_source="HUMAN_REVIEW",
+                reviewer="qa",
+            )
+    assert missing.value.code == "RUN_NOT_FOUND"
+    assert check.value.code != missing.value.code
+
+
+def test_a_link_names_which_parent_is_missing(engine: Any) -> None:
+    """**단일 `missing_code`로는 표현할 수 없던 구분이다.**
+
+    `agent_run_action`은 FK가 둘이다. 없는 것이 run인지 action인지에 따라 상위가
+    다른 응답을 내야 한다.
+    """
+
+    action_id = _seed_action(engine)
+    run = _run_id(engine)
+
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as no_action:
+            repo.link_run_action(
+                connection,
+                agent_run_id=run,
+                action_id=MISSING_ACTION,
+                link_role=ActionLinkRole.CREATED,
+                lot_id="LOT-C01",
+                chamber_id="EQP01-PM-C01",
+                trigger_alarm=_ref("TA-01"),
+            )
+    assert no_action.value.code == "ACTION_NOT_FOUND"
+
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as no_run:
+            repo.link_run_action(
+                connection,
+                agent_run_id=MISSING_RUN,
+                action_id=action_id,
+                link_role=ActionLinkRole.CREATED,
+                lot_id="LOT-C01",
+                chamber_id="EQP01-PM-C01",
+                trigger_alarm=_ref("TA-01"),
+            )
+    assert no_run.value.code == "RUN_NOT_FOUND"
+
+
+def test_a_delivery_for_a_missing_action_says_so(engine: Any) -> None:
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as exc:
+            repo.insert_action_delivery(
+                connection,
+                action_id=MISSING_ACTION,
+                channel=DeliveryChannel.EMAIL,
+                status=DeliveryStatus.WAITING,
+                request_hash="a" * 64,
+            )
+    assert exc.value.code == "ACTION_NOT_FOUND"
+
+
+def test_an_approval_for_a_missing_action_says_so(engine: Any) -> None:
+    """리뷰가 지목하지 않았지만 같은 결함이 있던 자리다."""
+
+    run = _run_id(engine)
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as exc:
+            repo.create_approval_request(
+                connection, action_id=MISSING_ACTION, agent_run_id=run
+            )
+    assert exc.value.code == "ACTION_NOT_FOUND"
+
+
+def test_a_prediction_for_a_missing_run_says_so(engine: Any) -> None:
+    """`# pragma: no cover`로 표시만 해 뒀던 자리다 — 이제 실제로 도달한다."""
+
+    with engine.begin() as connection:
+        with pytest.raises(repo.RepositoryNotFound) as exc:
+            repo.insert_prediction(
+                connection,
+                agent_run_id=MISSING_RUN,
+                predicted_fault_code=FaultHypothesis.RFM,
+                confidence=0.5,
+                cause_summary="missing run",
+                evidence={"alarm": "TA-01"},
+                llm_model="claude",
+                prompt_version="v1",
+            )
+    assert exc.value.code == "RUN_NOT_FOUND"
+
+
+def test_lock_expiry_is_retryable_not_an_outage(runtime_engine: Any) -> None:
+    """**이 Task가 만든 상황을 그대로 재현한다**(구현리뷰 필수 2).
+
+    `reserve_tool_call()`의 `FOR UPDATE`가 같은 run의 예약을 직렬화한다. 그래서
+    `lock_timeout`이 걸린 DB에서는 두 번째 예약이 `55P03`으로 만료된다. psycopg는
+    그것을 `OperationalError` 아래 두므로 이전에는 `DATABASE_UNAVAILABLE`이었다 —
+    상위가 503으로 올리면 재시도하면 될 것을 장애로 보고한다.
+    """
+
+    with runtime_engine.begin() as connection:
+        for table in _RUNTIME_TABLES:
+            connection.execute(text(f"TRUNCATE {table} RESTART IDENTITY CASCADE"))
+    run = _run_id(runtime_engine)
+
+    with runtime_engine.begin() as holder:
+        repo.reserve_tool_call(holder, agent_run_id=run, tool_name="holder")
+        with runtime_engine.connect() as waiter:
+            with waiter.begin():
+                waiter.execute(text("SET LOCAL lock_timeout = '200ms'"))
+                with pytest.raises(repo.RepositoryRetryable) as exc:
+                    repo.reserve_tool_call(waiter, agent_run_id=run, tool_name="wait")
+
+    assert exc.value.code == "LOCK_NOT_AVAILABLE"
+    assert not isinstance(exc.value, repo.RepositoryUnavailable)
+
+
+def test_a_deadlock_is_retryable_not_an_outage(runtime_engine: Any) -> None:
+    """서로 반대 순서로 두 run을 잠가 실제 deadlock을 만든다.
+
+    PostgreSQL이 한쪽을 `40P01`로 중단한다. 나머지 한쪽은 성공해야 한다 — 둘 다
+    실패하면 그것은 경합이 아니라 다른 문제다.
+    """
+
+    import threading
+
+    with runtime_engine.begin() as connection:
+        for table in _RUNTIME_TABLES:
+            connection.execute(text(f"TRUNCATE {table} RESTART IDENTITY CASCADE"))
+    # **incident key가 서로 달라야 한다.** 같은 lot·chamber·대표 알람이면 두 번째
+    # run이 `ux_agent_run_incident_active`에 걸려 deadlock까지 가지 못한다.
+    first = _run_id(runtime_engine)
+    second = _run_id(
+        runtime_engine,
+        lot_id="LOT-C01-B",
+        requested_alarm=_ref("TA-02"),
+        representative_alarm=_ref("TA-02"),
+        member_alarms=(_ref("TA-02"),),
+    )
+
+    barrier = threading.Barrier(2)
+    outcomes: list[BaseException | None] = []
+
+    def _cross(a: str, b: str) -> None:
+        try:
+            with runtime_engine.begin() as connection:
+                repo.reserve_tool_call(connection, agent_run_id=a, tool_name="cross-1")
+                barrier.wait(timeout=20)
+                repo.reserve_tool_call(connection, agent_run_id=b, tool_name="cross-2")
+            outcomes.append(None)
+        except BaseException as exc:  # noqa: BLE001 - 진단용
+            outcomes.append(exc)
+
+    threads = [
+        threading.Thread(target=_cross, args=(first, second)),
+        threading.Thread(target=_cross, args=(second, first)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    failures = [item for item in outcomes if item is not None]
+    assert len(outcomes) == 2
+    assert len(failures) == 1, outcomes
+    assert isinstance(failures[0], repo.RepositoryRetryable), failures[0]
+    assert failures[0].code == "DEADLOCK_DETECTED"
+    assert not isinstance(failures[0], repo.RepositoryUnavailable)

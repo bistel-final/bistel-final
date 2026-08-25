@@ -10,9 +10,11 @@ import ast
 import inspect
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 if str(BACKEND_ROOT) not in sys.path:
@@ -90,6 +92,17 @@ class _Connection:
     def execute(self, statement: Any, params: Any = None) -> Any:  # pragma: no cover
         self.statements.append(statement)
         raise AssertionError("단위 회귀는 SQL을 실행하지 않는다")
+
+
+class _FailingConnection(_Connection):
+    """**driver 예외만** 흉내 낸다. 성공 경로는 container가 소유한다."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self._error = error
+
+    def execute(self, statement: Any, params: Any = None) -> Any:
+        raise self._error
 
 
 # --- transaction 계약 -------------------------------------------------------
@@ -504,6 +517,22 @@ class TestStringBoundariesMatchTheMigration:
             repo._optional_text("   ", "llm_model")
 
 
+#: 업무 DML을 실행하는 호출 표기.
+#:
+#: `_insert_one()` 도입 전에는 `connection.execute` 하나였다. 그 이름만 찾으면
+#: INSERT 경로에서 순서 검사가 **조용히 사라진다** — 실제로 이 helper를 넣기 전에
+#: `insert_prediction`이 `ValueError: substring not found`로 깨졌다.
+_DML_MARKERS = ("connection.execute", "_insert_one(", "_fetch_one(")
+
+
+def _first_dml(body: str) -> int:
+    """함수 본문에서 **첫 DML 실행 위치**를 돌려준다."""
+
+    found = [body.index(marker) for marker in _DML_MARKERS if marker in body]
+    assert found, "DML 실행 지점을 찾지 못했다 — 순서 검사가 무의미해진다"
+    return min(found)
+
+
 class TestAuditRecordIsBuiltBeforeDml:
     """감사 record 구성이 업무 DML보다 **앞**이다(구현리뷰 묶음 1 필수 1)."""
 
@@ -515,7 +544,7 @@ class TestAuditRecordIsBuiltBeforeDml:
         body = ast.unparse(
             ast.parse(inspect.getsource(getattr(repo, function)).lstrip())
         )
-        assert body.index("_run_audit_record") < body.index("connection.execute")
+        assert body.index("_run_audit_record") < _first_dml(body)
 
     @pytest.mark.parametrize(
         "function",
@@ -647,7 +676,7 @@ class TestJsonSerialisationIsSanitised:
             body = ast.unparse(
                 ast.parse(inspect.getsource(getattr(repo, name)).lstrip())
             )
-            assert body.index("_json_payload") < body.index("connection.execute"), name
+            assert body.index("_json_payload") < _first_dml(body), name
 
 
 # ===========================================================================
@@ -832,3 +861,185 @@ class TestBundleTwoConflictCoverage:
             if name.endswith("_key"):
                 continue  # inline UNIQUE — PostgreSQL 자동 명명
             assert name in migration, name
+
+
+# ===========================================================================
+# 구현리뷰 필수 1·2 — INSERT의 "부모 없음"과 경합/장애 구분
+# ===========================================================================
+
+
+class _Orig(Exception):
+    """psycopg 예외 자리표시자. `_translate()`가 읽는 것만 갖는다."""
+
+    def __init__(self, sqlstate: str, constraint: str | None = None) -> None:
+        super().__init__("driver detail with dsn and sql")
+        self.sqlstate = sqlstate
+        self.diag = SimpleNamespace(constraint_name=constraint)
+
+
+def _operational(sqlstate: str | None) -> OperationalError:
+    return OperationalError(
+        "SELECT 1", {}, _Orig(sqlstate) if sqlstate else Exception()
+    )
+
+
+def _integrity(sqlstate: str, constraint: str | None) -> IntegrityError:
+    return IntegrityError("INSERT INTO t VALUES (1)", {}, _Orig(sqlstate, constraint))
+
+
+class TestContentionIsNotAnOutage:
+    """lock 경합은 장애가 아니다(구현리뷰 필수 2).
+
+    psycopg3는 `DeadlockDetected`·`SerializationFailure`·`LockNotAvailable`·
+    `QueryCanceled`를 모두 `OperationalError` 아래에 둔다. 클래스만 보면 접속 실패와
+    구분되지 않아 전부 `DATABASE_UNAVAILABLE`이 됐고, 상위가 503으로 올리면
+    **재시도하면 되는 상황을 장애로 보고**한다.
+    """
+
+    @pytest.mark.parametrize(
+        ("sqlstate", "code"),
+        [
+            ("40001", "SERIALIZATION_FAILURE"),
+            ("40P01", "DEADLOCK_DETECTED"),
+            ("55P03", "LOCK_NOT_AVAILABLE"),
+            ("57014", "STATEMENT_CANCELED"),
+        ],
+    )
+    def test_a_contention_sqlstate_is_retryable(self, sqlstate: str, code: str) -> None:
+        translated = repo._translate(_operational(sqlstate))
+        assert isinstance(translated, repo.RepositoryRetryable)
+        assert translated.code == code
+
+    def test_retryable_is_not_an_unavailable_subclass(self) -> None:
+        """상위가 `RepositoryUnavailable`을 503으로 잡아도 경합은 걸리지 않는다."""
+
+        assert not issubclass(repo.RepositoryRetryable, repo.RepositoryUnavailable)
+        assert not issubclass(repo.RepositoryUnavailable, repo.RepositoryRetryable)
+        assert issubclass(repo.RepositoryRetryable, repo.AgentRepositoryError)
+
+    def test_a_real_connection_failure_is_still_unavailable(self) -> None:
+        """음성 대조군. SQLSTATE가 없는 접속 실패는 그대로 장애다."""
+
+        translated = repo._translate(_operational(None))
+        assert isinstance(translated, repo.RepositoryUnavailable)
+        assert translated.code == "DATABASE_UNAVAILABLE"
+
+    def test_the_contention_check_precedes_the_outage_branch(self) -> None:
+        body = ast.unparse(ast.parse(inspect.getsource(repo._translate).lstrip()))
+        assert body.index("RETRYABLE_SQLSTATES") < body.index("DATABASE_UNAVAILABLE")
+
+    def test_no_driver_text_reaches_the_caller(self) -> None:
+        translated = repo._translate(_operational("40P01"))
+        assert "dsn" not in str(translated).lower()
+        assert "insert" not in str(translated).lower()
+
+
+class TestInsertPathsNameTheMissingParent:
+    """`INSERT ... RETURNING`은 0행이 아니라 예외다(구현리뷰 필수 1).
+
+    그래서 INSERT 자리의 `missing_code`는 도달할 수 없었고, 실제로는 FK 위반이
+    `CONSTRAINT_VIOLATION`으로 나와 CHECK 위반과 구분되지 않았다. 후속 C Task가
+    "없는 run이면 `RUN_NOT_FOUND`"로 읽고 404로 mapping할 것이라서 문제다.
+    """
+
+    def test_no_insert_statement_is_routed_through_fetch_one(self) -> None:
+        """**표기가 아니라 배선을 본다.** 한 자리라도 되돌아가면 여기서 걸린다."""
+
+        tree = ast.parse(Path(repo.__file__).read_text(encoding="utf-8"))
+        offenders = [
+            node.args[1].id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "_fetch_one"
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Name)
+            and node.args[1].id.startswith("_INSERT_")
+        ]
+        assert offenders == [], offenders
+
+    def test_insert_one_only_ever_receives_insert_statements(self) -> None:
+        """**"INSERT 자리에 한정한다"를 구조로 닫는다.**
+
+        `23503`은 방향을 구분하지 못한다 — 자식 INSERT(부모 없음)와 부모 DELETE(자식
+        남음)가 같은 constraint 이름·같은 `diag.table_name`을 준다(실측). 그래서
+        `_insert_one()`에 SELECT·UPDATE 문이 하나라도 들어오면 "부모가 없다"는 해석이
+        더 이상 참이 아니게 된다. 반대 방향(`_fetch_one`에 INSERT)만 막아서는 이 성질이
+        지켜지지 않는다.
+        """
+
+        tree = ast.parse(Path(repo.__file__).read_text(encoding="utf-8"))
+        statements = [
+            node.args[1].id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "_insert_one"
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Name)
+        ]
+        assert statements, "호출 자리를 찾지 못했다 — 검사가 무의미해진다"
+        offenders = [name for name in statements if not name.startswith("_INSERT_")]
+        assert offenders == [], offenders
+
+    def test_fetch_one_is_never_given_a_dead_missing_code(self) -> None:
+        """남은 `_fetch_one`은 전부 SELECT·UPDATE다 — 0행이 실제로 가능하다."""
+
+        tree = ast.parse(Path(repo.__file__).read_text(encoding="utf-8"))
+        statements = {
+            node.args[1].id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "_fetch_one"
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Name)
+        }
+        assert statements
+        assert all(
+            name.startswith(("_SELECT_", "_UPDATE_", "_FINALIZE_"))
+            for name in statements
+        ), sorted(statements)
+
+    @pytest.mark.parametrize(
+        ("constraint", "code"),
+        sorted(repo.FOREIGN_KEY_CODES.items()),
+    )
+    def test_an_insert_fk_violation_names_the_parent(
+        self, constraint: str, code: str
+    ) -> None:
+        connection = _FailingConnection(_integrity("23503", constraint))
+        with pytest.raises(repo.RepositoryNotFound) as exc:
+            repo._insert_one(connection, "INSERT", {})
+        assert exc.value.code == code
+
+    def test_a_check_violation_stays_a_contract_error(self) -> None:
+        """**둘이 구분된다**는 것이 이 수정의 핵심이다."""
+
+        connection = _FailingConnection(_integrity("23514", "agent_run_severity_pair"))
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._insert_one(connection, "INSERT", {})
+        assert exc.value.code == "CONSTRAINT_VIOLATION"
+
+    def test_an_unknown_fk_name_is_not_silently_a_not_found(self) -> None:
+        """표에 없는 이름을 추측으로 404로 만들지 않는다."""
+
+        connection = _FailingConnection(_integrity("23503", "some_future_fkey"))
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._insert_one(connection, "INSERT", {})
+        assert exc.value.code == "CONSTRAINT_VIOLATION"
+
+    def test_a_known_conflict_name_still_wins(self) -> None:
+        """unique 위반은 FK 경로를 타지 않는다 — `23505`다."""
+
+        connection = _FailingConnection(
+            _integrity("23505", "ux_agent_run_incident_active")
+        )
+        with pytest.raises(repo.RepositoryConflict) as exc:
+            repo._insert_one(connection, "INSERT", {})
+        assert exc.value.code == "ACTIVE_RUN_EXISTS"
+
+    def test_every_declared_fk_code_is_a_stable_name(self) -> None:
+        assert all(name.endswith("_fkey") for name in repo.FOREIGN_KEY_CODES)
+        assert set(repo.FOREIGN_KEY_CODES.values()) == {
+            "RUN_NOT_FOUND",
+            "ACTION_NOT_FOUND",
+            "RETRY_SOURCE_RUN_NOT_FOUND",
+        }

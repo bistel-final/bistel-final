@@ -75,6 +75,7 @@ __all__ = [
     "RepositoryConflict",
     "RepositoryContractError",
     "RepositoryNotFound",
+    "RepositoryRetryable",
     "RepositoryUnavailable",
     "AgentRunRow",
     "CreateAgentRunCommand",
@@ -143,8 +144,28 @@ class RepositoryContractError(AgentRepositoryError):
     """입력 또는 물리 계약 위반. 대부분 DB에 닿기 전에 걸린다."""
 
 
+class RepositoryRetryable(AgentRepositoryError):
+    """**일시적 경합이다.** 같은 요청을 그대로 다시 보내면 성공할 수 있다.
+
+    deadlock·직렬화 실패·lock 대기 만료·statement 취소가 여기 온다. psycopg3에서
+    이 넷은 모두 `OperationalError` 계열이라 이전에는 `DATABASE_UNAVAILABLE`로
+    분류됐다. 그러면 상위가 503으로 올려 **재시도하면 되는 상황을 장애로 보고**한다
+    (구현리뷰 필수 2).
+
+    이 Task가 그 상황을 새로 만든다 — `reserve_tool_call()`의 `FOR UPDATE`가 같은
+    run의 예약을 직렬화하므로, `lock_timeout`이 걸린 DB에서는 두 번째 예약이
+    `55P03`으로 만료된다.
+    """
+
+
 class RepositoryUnavailable(AgentRepositoryError):
-    """DB에 닿지 못했다. 업무 판정이 아니다."""
+    """**접속·소켓 또는 DB 가용성 문제다.** 업무 판정도 일시적 경합도 아니다.
+
+    경합(`RepositoryRetryable`)을 먼저 걸러 낸 뒤 남는 것이 여기 온다. 접속 실패만
+    있는 것이 아니다 — `DiskFull(53100)`·`OutOfMemory(53200)`·
+    `TooManyConnections(53300)`처럼 **연결이 성립한 뒤 생기는 가용성 오류**도 psycopg
+    `OperationalError` 계열이라 같은 분류로 온다(구현리뷰 편집 1).
+    """
 
 
 #: 알려진 제약 이름 → 안정 conflict code.
@@ -177,7 +198,55 @@ def _constraint_name(error: BaseException) -> str | None:
     return str(name) if name else None
 
 
+#: SQLSTATE → 재시도 가능한 경합 code.
+#:
+#: **`OperationalError` 하위 클래스 이름이 아니라 SQLSTATE로 본다.** psycopg는
+#: `DeadlockDetected`·`SerializationFailure`·`LockNotAvailable`·`QueryCanceled`를
+#: 모두 `OperationalError` 아래에 두므로 클래스만으로는 접속 실패와 구분되지 않는다.
+RETRYABLE_SQLSTATES: Final[Mapping[str, str]] = {
+    "40001": "SERIALIZATION_FAILURE",
+    "40P01": "DEADLOCK_DETECTED",
+    "55P03": "LOCK_NOT_AVAILABLE",
+    "57014": "STATEMENT_CANCELED",
+}
+
+#: `23503`. FK 위반의 SQLSTATE.
+FOREIGN_KEY_VIOLATION: Final[str] = "23503"
+
+#: FK 이름 → "참조하는 부모 row가 없다"는 안정 code.
+#:
+#: **이름은 격리 PostgreSQL 16 실측이다.** `002`가 FK에 이름을 주지 않으므로
+#: PostgreSQL이 `<table>_<column>_fkey`로 자동 명명한다.
+#:
+#: 이 표는 `_insert_one()`만 참조한다. `23503`은 방향을 구분하지 못하기 때문이다 —
+#: 자식 INSERT(부모 없음)와 부모 DELETE(자식 남음)가 **같은 constraint 이름·같은
+#: `diag.table_name`**을 준다(실측). INSERT 문에서는 후자가 불가능하므로 그 자리에
+#: 한정해야 "부모가 없다"가 참이 된다.
+FOREIGN_KEY_CODES: Final[Mapping[str, str]] = {
+    "agent_run_retry_of_run_id_fkey": "RETRY_SOURCE_RUN_NOT_FOUND",
+    "agent_prediction_agent_run_id_fkey": "RUN_NOT_FOUND",
+    "agent_prediction_review_agent_run_id_fkey": "RUN_NOT_FOUND",
+    "agent_run_action_agent_run_id_fkey": "RUN_NOT_FOUND",
+    "agent_run_action_action_id_fkey": "ACTION_NOT_FOUND",
+    "agent_tool_call_agent_run_id_fkey": "RUN_NOT_FOUND",
+    "approval_request_agent_run_id_fkey": "RUN_NOT_FOUND",
+    "approval_request_action_id_fkey": "ACTION_NOT_FOUND",
+    "action_delivery_action_id_fkey": "ACTION_NOT_FOUND",
+}
+
+
+def _sqlstate(error: BaseException) -> str | None:
+    """psycopg가 준 SQLSTATE만 꺼낸다. **메시지는 읽지 않는다.**"""
+
+    return getattr(getattr(error, "orig", None), "sqlstate", None)
+
+
 def _translate(error: SQLAlchemyError) -> AgentRepositoryError:
+    retryable = RETRYABLE_SQLSTATES.get(_sqlstate(error) or "")
+    if retryable is not None:
+        # **경합을 장애보다 먼저 본다.** 아래 `OperationalError` 분기가 이것을
+        # 삼키면 재시도 가능한 상황이 `DATABASE_UNAVAILABLE`이 된다.
+        return RepositoryRetryable(retryable)
     if isinstance(error, IntegrityError):
         name = _constraint_name(error)
         code = CONFLICT_CODES.get(name or "")
@@ -186,7 +255,7 @@ def _translate(error: SQLAlchemyError) -> AgentRepositoryError:
         # CHECK·FK·NOT NULL 위반. 원인은 `raise ... from`으로 보존한다.
         return RepositoryContractError("CONSTRAINT_VIOLATION")
     if isinstance(error, OperationalError | InterfaceError):
-        # **연결 실패만 Unavailable이다.**
+        # **연결 실패만 Unavailable이다.** 경합은 위에서 이미 갈라졌다.
         #
         # 이전에는 모든 `DBAPIError`를 여기로 보냈다. 그래서 `thread_id`가 varchar
         # 경계를 넘겨 생긴 `DataError`가 "DB를 못 쓴다"로 분류돼 caller 입력 오류가
@@ -536,7 +605,8 @@ def create_agent_run(
     )
 
     def _run() -> Any:
-        row = connection.execute(
+        row = _insert_one(
+            connection,
             _INSERT_RUN,
             {
                 "agent_run_id": agent_run_id,
@@ -555,7 +625,7 @@ def create_agent_run(
                 "llm_model": command.llm_model,
                 "prompt_version": command.prompt_version,
             },
-        ).one()
+        )
         for alarm in command.member_alarms:
             connection.execute(
                 _INSERT_RUN_ALARM,
@@ -833,7 +903,8 @@ def insert_prediction(
     )
 
     def _run() -> Any:
-        row = connection.execute(
+        row = _insert_one(
+            connection,
             _INSERT_PREDICTION,
             {
                 "agent_run_id": agent_run_id,
@@ -844,9 +915,7 @@ def insert_prediction(
                 "llm_model": llm_model,
                 "prompt_version": prompt_version,
             },
-        ).one_or_none()
-        if row is None:  # pragma: no cover - RETURNING은 항상 1행이다
-            raise RepositoryNotFound("RUN_NOT_FOUND")
+        )
         append_audit_log(connection, record)
         return row
 
@@ -930,7 +999,7 @@ def insert_human_prediction_review(
     disposition = _require_text(disposition, "disposition")
     if label_source not in RUNTIME_REVIEW_LABEL_SOURCES:
         raise RepositoryContractError("LABEL_SOURCE_NOT_ALLOWED")
-    row = _fetch_one(
+    row = _insert_one(
         connection,
         _INSERT_REVIEW,
         {
@@ -943,7 +1012,6 @@ def insert_human_prediction_review(
             "reviewer": reviewer,
             "comment": comment,
         },
-        "RUN_NOT_FOUND",
     )
     return _review_row(row)
 
@@ -976,6 +1044,34 @@ def _fetch_one(
         raise _translate(exc) from exc
     if row is None:
         raise RepositoryNotFound(missing_code)
+    return row
+
+
+def _insert_one(
+    connection: Connection, statement: Any, params: Mapping[str, Any]
+) -> Row[Any]:
+    """`INSERT ... RETURNING` 전용 실행. **"행이 없다" 분기가 없다.**
+
+    성공하면 정확히 1행이고 실패하면 0행이 아니라 예외다. 그래서 INSERT 자리에
+    `_fetch_one(..., missing_code)`를 쓰면 그 `missing_code`가 **한 번도 도달하지
+    못한다**(구현리뷰 필수 1). 죽은 분기라서가 아니라, 후속 C Task가 "없는 run이면
+    `RUN_NOT_FOUND`"로 읽고 404로 mapping할 것이라서 문제다.
+
+    실제로 "부모가 없다"를 알려 주는 것은 FK 위반이다. **INSERT 문에서 `23503`은
+    자식을 넣는데 부모가 없다는 뜻뿐이므로** 여기서만 `RepositoryNotFound`로 올린다.
+    CHECK 위반은 그대로 `CONSTRAINT_VIOLATION`이라 이제 둘이 구분된다.
+    """
+
+    try:
+        row = connection.execute(statement, dict(params)).one()
+    except IntegrityError as exc:
+        if _sqlstate(exc) == FOREIGN_KEY_VIOLATION:
+            code = FOREIGN_KEY_CODES.get(_constraint_name(exc) or "")
+            if code is not None:
+                raise RepositoryNotFound(code) from exc
+        raise _translate(exc) from exc
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
     return row
 
 
@@ -1123,7 +1219,9 @@ def link_run_action(
         "trigger_alarm_source": trigger_alarm.source.value,
         "trigger_alarm_id": _require_text(trigger_alarm.alarm_id, "alarm_id"),
     }
-    row = _fetch_one(connection, _INSERT_RUN_ACTION, payload, "RUN_NOT_FOUND")
+    # FK 두 개가 서로 다른 뜻이다 — run이 없으면 `RUN_NOT_FOUND`,
+    # action이 없으면 `ACTION_NOT_FOUND`. 단일 `missing_code`로는 표현할 수 없었다.
+    row = _insert_one(connection, _INSERT_RUN_ACTION, payload)
     return _run_action_row(row)
 
 
@@ -1319,7 +1417,8 @@ def reserve_tool_call(
         next_seq = connection.execute(
             _NEXT_CALL_SEQ, {"run_id": agent_run_id}
         ).scalar_one()
-        return connection.execute(
+        return _insert_one(
+            connection,
             _INSERT_TOOL_CALL,
             {
                 "tool_call_id": new_tool_call_id(),
@@ -1330,7 +1429,7 @@ def reserve_tool_call(
                 "status": ToolCallStatus.ERROR.value,
                 "error_msg": RESERVED_ERROR_MSG,
             },
-        ).one()
+        )
 
     return _tool_call_row(_write(connection, _run))
 
@@ -1486,7 +1585,8 @@ def create_approval_request(
     )
 
     def _run() -> Any:
-        row = connection.execute(
+        row = _insert_one(
+            connection,
             _INSERT_APPROVAL,
             {
                 "approval_id": approval_id,
@@ -1494,7 +1594,7 @@ def create_approval_request(
                 "agent_run_id": agent_run_id,
                 "status": ApprovalStatus.PENDING.value,
             },
-        ).one()
+        )
         append_audit_log(connection, record)
         return row
 
@@ -1623,7 +1723,7 @@ def insert_action_delivery(
     if INITIAL_DELIVERY_PAIRS[resolved_channel] is not resolved:
         # channel과 status를 따로 보지 않는다 — 조합이 계약이다.
         raise RepositoryContractError("NOT_INITIAL_DELIVERY_PAIR")
-    row = _fetch_one(
+    row = _insert_one(
         connection,
         _INSERT_DELIVERY,
         {
@@ -1632,7 +1732,6 @@ def insert_action_delivery(
             "status": resolved.value,
             "request_hash": request_hash,
         },
-        "ACTION_NOT_FOUND",
     )
     return _delivery_row(row)
 
