@@ -1059,19 +1059,55 @@ class TestFinalPostcheckRouting:
     final DB는 여기서 실패한다(구현리뷰 7차 필수 2).
     """
 
-    def test_the_final_stages_are_exactly_the_registered_pair(self) -> None:
+    def test_the_final_stages_cover_the_whole_final_lineage(self) -> None:
+        """**`FINAL_STAGE_BY_PROFILE`에서 파생하지 않는다**(`V5-CM-3.3` 계획 §6.3).
+
+        그 map은 profile당 stage 하나만 담는다. `runtime_guarded`가 추가된 순간
+        predecessor `runtime_clean`이 집합에서 빠져 **V4 경로로 잘못 떨어진다** —
+        R03 11컬럼·V4 View 계약이라 final DB가 거기서 실패한다.
+
+        "현재 live final stage"와 "final reference stages"는 다른 질문이다.
+        """
+
         import apply_reference_extensions_v5 as v5
 
         assert verifier.FINAL_STAGES == {
             ("runtime", "runtime_clean"),
+            ("runtime", "runtime_guarded"),
             ("evaluation", "evaluation_reference"),
         }
-        assert verifier.FINAL_STAGES == set(v5.FINAL_STAGE_BY_PROFILE.items())
+        # live final stage는 부분집합이다 — 같지 않다.
+        assert set(v5.FINAL_STAGE_BY_PROFILE.items()) < verifier.FINAL_STAGES
+
+    def test_the_predecessor_stage_still_routes_to_final(self) -> None:
+        """CM-3.2 marker가 증명하는 stage가 V4로 떨어지면 안 된다."""
+
+        assert (
+            verifier.reference_postcheck_routing("runtime", "runtime_clean") == "final"
+        )
+
+    def test_live_stages_are_derived_not_hand_written(self) -> None:
+        """`EXPECTED_STAGES`를 DB 이름마다 손으로 적으면 한쪽만 갱신된다.
+
+        실제로 `kosa_text2sql`이 `evaluation_mock`으로 남아 있었다 — `V5-CM-1.8`이
+        stage를 교체했는데 이 map만 따라오지 않았다.
+        """
+
+        assert verifier.EXPECTED_STAGES == {
+            "kosa_agent": "runtime_guarded",
+            "kosa_agent_e2e": "runtime_guarded",
+            "kosa_text2sql": "evaluation_reference",
+        }
+        assert "evaluation_mock" not in set(verifier.EXPECTED_STAGES.values())
+        for database, stage in verifier.EXPECTED_STAGES.items():
+            profile = "evaluation" if database == "kosa_text2sql" else "runtime"
+            assert stage == verifier.LIVE_FINAL_STAGE_BY_PROFILE[profile], database
 
     @pytest.mark.parametrize(
         ("profile", "stage", "expected"),
         [
             ("runtime", "runtime_clean", "final"),
+            ("runtime", "runtime_guarded", "final"),
             ("evaluation", "evaluation_reference", "final"),
             ("runtime", "base_schema", "none"),
             ("evaluation", "base_schema", "none"),

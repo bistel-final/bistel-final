@@ -421,7 +421,7 @@ class TestCandidateEnvelope:
         self, profile: str, source: dict[str, Any]
     ) -> None:
         candidate = _candidate(profile, source)
-        stage = v5.FINAL_STAGE_BY_PROFILE[profile]
+        stage = v5.REGISTRAR_STAGE_BY_PROFILE[profile]
         contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
 
         assert candidate["dataset_epoch"] == manifest_v3.DATASET_EPOCH

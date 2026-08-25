@@ -66,6 +66,9 @@ ISOLATED_MARKERS = (
 #: `V5-CM-1.8`이 active를 final로 교체했다 — `evaluation_mock`은 history로 갔고
 #: `evaluation_reference`가 그 자리를 대신한다.
 REMAINING_MANIFESTS = {
+    # `V5-CM-3.3` successor. predecessor `runtime.runtime_clean.json`은 CM-3.2
+    # marker가 증명하는 계약이라 **덮어쓰지 않고 나란히 둔다**.
+    "runtime.runtime_guarded.json",
     "runtime.runtime_clean.json",
     "evaluation.evaluation_reference.json",
 }
@@ -85,6 +88,14 @@ REMAINING_MARKERS = {
     # 구조적으로 가능해진다.
     "agent_runtime_final.kosa_agent.json",
     "agent_runtime_final.kosa_agent_e2e.json",
+    # Runtime 003 적용 증적 (`V5-CM-3.3` 묶음 2)
+    #
+    # predecessor `agent_runtime_final.<db>.json`을 **덮어쓰지 않는다.** CM-3.2가
+    # 증명한 `runtime_clean` 계약과 CM-3.3이 증명한 `runtime_guarded` 계약은 서로
+    # 다른 것을 주장하며, 둘을 잇는 것은 이 marker의
+    # `baseline_schema_signature_sha256`이다.
+    "agent_severity_guard_final.kosa_agent.json",
+    "agent_severity_guard_final.kosa_agent_e2e.json",
 }
 
 
