@@ -7,6 +7,15 @@ const env = import.meta.env ?? {}
 // VITE_USE_MOCK 기본 true — 'false'로 명시해야 실제 API 호출
 export const USE_MOCK = env.VITE_USE_MOCK !== 'false'
 
+// 도메인별 오버라이드 — 백엔드에 아직 없는 영역(A/C)만 mock으로 남기고
+// 구현된 영역(D analytics · B documents)은 실서버로 보내기 위해 쓴다.
+// 예) VITE_USE_MOCK=false + VITE_USE_MOCK_DETECTION=true — 미설정 시 전역 값을 따른다.
+// TODO(api): detection·agent 라우터 구현 완료 시 이 오버라이드를 제거한다.
+export const useMockFor = (domain) => {
+  const value = env[`VITE_USE_MOCK_${domain}`]
+  return value == null ? USE_MOCK : value !== 'false'
+}
+
 export const MOCK_DELAY_MS = 300
 export const ANALYTICS_QUERY_TIMEOUT_MS = 150000
 

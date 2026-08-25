@@ -1,8 +1,48 @@
-"""Safely apply the runtime-only 002 Agent schema migration.
+"""최종 epoch Runtime 002 migration runner (`V5-CM-3.2`).
 
-The supported mutation path is this runner.  The SQL file intentionally keeps
-only target/empty-data guards; transaction-scoped write exclusion is owned by
-the runner so direct ``psql -f`` execution is not supported.
+`002_agent_runtime_clean.sql`의 9-table 물리 계약을 최종 `fdc_final_20260818` epoch에
+다시 연결하고, Runtime 두 DB의 **적용 증명 marker**를 발급한다.
+
+지원되는 mutation 경로는 이 runner뿐이다. SQL 파일은 target·빈 데이터 guard만 담고
+transaction 범위의 쓰기 배제는 runner가 소유하므로 `psql -f` 직접 실행은
+지원하지 않는다.
+
+## V4 계보와의 분리
+
+`V5-CM-1.6`이 이 runner를 `FINAL_RUNTIME_MIGRATION_NOT_WIRED`로 막았다. 구 corrected
+계보 위에서만 성립했기 때문이다. 막힌 이유는 두 겹이었다.
+
+1. `run_apply()`가 engine 생성 전에 명시적으로 raise했다.
+2. `_artifact_identity()`가 **active에 없는 V4 `001` marker**와 v4
+   `001_reference_extensions.sql`의 SHA를 요구했다. 그 marker는 `V5-CM-1.2`가
+   `history/kosa_0813/markers/`로 격리했고, 최종 계보는
+   `migrations/v5/001_reference_extensions_final.sql`이다.
+
+둘 다 제거했다. V4 `001` provenance 주장은 다음 둘이 대체한다.
+
+- **V5 reference가 lineage 앞에 있음** — schema 검증을 통과한 active manifest의
+  exact `applied_migrations` 2원소와 `manifest_sha256`
+- **V5 reference 물리 결과가 맞음** — CM-3.1 순수 판정기를 read-only로 돌린
+  live R03/View postcheck
+
+**V4 module을 import하지 않는다.** 계보 심볼(`load_marker`·`postcheck_database`)은
+제거했고, epoch 중립 plumbing은 `bootstrap_common`으로 옮겨 거기서 가져온다. V4는
+같은 module에서 재수출하므로 기존 소비자는 그대로다(구현리뷰 필수 4).
+
+## 상태 기계
+
+물리 schema가 이미 있는 DB를 다시 만들지 않는다. 상태를 먼저 판정하고
+그에 맞는 동작만 한다.
+
+| 상태 | 동작 |
+|---|---|
+| `ABSENT` | 승인된 fresh apply에서만 9 table 생성 |
+| `EXACT_UNMARKED` | **DB 쓰기 0건**, receipt·marker만 발급 (`VERIFIED_EXISTING`) |
+| `EXACT_MARKED` | `NO_OP` |
+| `PARTIAL`·`DRIFT` | 중단. 자동 drop/add/rename **금지** |
+| `ACTION_PRESENT` | lock 안에서 중단, DDL·artifact 0건 |
+| `PROFILE_NOT_ALLOWED` | parser 직후 중단 |
+| `MARKER_STALE` | final marker로 간주하지 않으며 덮어쓰지 않음 |
 """
 
 from __future__ import annotations
@@ -18,9 +58,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, NoReturn
 
-from apply_reference_extensions import (
+import apply_reference_extensions_v5 as reference_v5
+import manifest_v3
+from bootstrap_common import (
     BASE_TABLES,
     REFERENCE_TABLES,
     REFERENCE_VIEW,
@@ -34,12 +77,6 @@ from apply_reference_extensions import (
     _timezone_text,
     acquire_advisory_lock,
     validate_change_reference,
-)
-from apply_reference_extensions import (
-    load_marker as load_reference_marker,
-)
-from apply_reference_extensions import (
-    postcheck_database as postcheck_reference_database,
 )
 from db_target import (
     ALLOWED_DATABASES,
@@ -72,6 +109,29 @@ MARKER_ROOT = BOOTSTRAP_ROOT / "markers"
 REPORT_ROOT = BOOTSTRAP_ROOT / "reports"
 
 RUNTIME_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e"})
+RUNTIME_PROFILE = "runtime"
+RUNTIME_STAGE = "runtime_clean"
+
+#: 이 runner가 발급하는 artifact의 단일 식별자.
+#:
+#: `V5-CM-1.2`가 격리한 구 `runtime_clean.<database>.json`과 이름이
+#: **겹치지 않게** 한다.
+#: 같은 이름을 재사용하면 history의 폐기 marker를 final로 잘못 복원·승격하는 사고가
+#: 구조적으로 가능해진다(계획 §4.7).
+FINAL_ARTIFACT_TYPE = "agent_runtime_final"
+FINAL_MARKER_FORMAT_VERSION = 1
+TASK_ID = "V5-CM-3.2"
+
+#: active Runtime manifest가 등록한 migration 계보. 순서까지 계약이다.
+MIGRATION_ID = "002_agent_runtime_clean"
+EXPECTED_MIGRATION_LINEAGE = ("v5_001_reference_extensions_final", MIGRATION_ID)
+
+#: R03 실측 행 수로 허용하는 값.
+#:
+#: `V5-A-1.4`가 연속 3회 파생을 적재하기 전에는 0, 적재 뒤에는 3이다. 그 사이 값은
+#: 적재가 끊긴 상태이므로 Runtime marker를 발급할 근거가 되지 않는다.
+#: View 총량 189·192 대조는 CM-3.1 판정기가 한다.
+ALLOWED_R03_ROWS = frozenset({0, 3})
 RUNTIME_TABLES = (
     "action_delivery",
     "agent_prediction",
@@ -84,45 +144,6 @@ RUNTIME_TABLES = (
     "audit_log",
 )
 EXPECTED_ALL_TABLES = frozenset({*BASE_TABLES, *REFERENCE_TABLES, *RUNTIME_TABLES})
-PARTIAL_INDEX_VALUES = {
-    "ux_agent_run_incident_active": {"RUNNING", "WAITING_APPROVAL"},
-    "ux_agent_run_action_created": {"CREATED"},
-    "ux_agent_run_action_incident": {"CREATED"},
-    "ux_agent_run_alarm_representative": set(),
-}
-EXPECTED_INDEX_NAMES = frozenset(
-    {
-        "action_delivery_pkey",
-        "agent_prediction_pkey",
-        "agent_prediction_review_pkey",
-        "agent_run_pkey",
-        "agent_run_action_pkey",
-        "agent_run_alarm_pkey",
-        "agent_tool_call_pkey",
-        "agent_tool_call_agent_run_id_call_seq_key",
-        "approval_request_pkey",
-        "approval_request_action_id_key",
-        "audit_log_pkey",
-        *PARTIAL_INDEX_VALUES,
-    }
-)
-EXPECTED_INDEX_COLUMNS = {
-    "action_delivery_pkey": ("action_id", "channel"),
-    "agent_prediction_pkey": ("agent_run_id",),
-    "agent_prediction_review_pkey": ("review_id",),
-    "agent_run_pkey": ("agent_run_id",),
-    "agent_run_action_pkey": ("agent_run_id",),
-    "agent_run_alarm_pkey": ("agent_run_id", "alarm_source", "alarm_id"),
-    "agent_tool_call_pkey": ("tool_call_id",),
-    "agent_tool_call_agent_run_id_call_seq_key": ("agent_run_id", "call_seq"),
-    "approval_request_pkey": ("approval_id",),
-    "approval_request_action_id_key": ("action_id",),
-    "audit_log_pkey": ("audit_id",),
-    "ux_agent_run_incident_active": ("lot_id", "chamber_id"),
-    "ux_agent_run_action_created": ("action_id",),
-    "ux_agent_run_action_incident": ("lot_id", "chamber_id"),
-    "ux_agent_run_alarm_representative": ("agent_run_id",),
-}
 EXPECTED_SEQUENCE_NAMES = frozenset(
     {"agent_prediction_review_review_id_seq", "audit_log_audit_id_seq"}
 )
@@ -269,17 +290,1025 @@ EXPECTED_TABLE_COLUMNS: dict[str, tuple[ColumnContract, ...]] = {
     ),
 }
 
-EXPECTED_CONSTRAINT_COUNTS = {
-    "agent_run": Counter({"p": 1, "f": 1, "c": 19}),
-    "agent_run_alarm": Counter({"p": 1, "f": 1, "c": 2}),
-    "agent_prediction": Counter({"p": 1, "f": 1, "c": 5}),
-    "agent_prediction_review": Counter({"p": 1, "f": 1, "c": 5}),
-    "agent_run_action": Counter({"p": 1, "f": 2, "c": 6}),
-    "agent_tool_call": Counter({"p": 1, "u": 1, "f": 1, "c": 5}),
-    "approval_request": Counter({"p": 1, "u": 1, "f": 2, "c": 4}),
-    "action_delivery": Counter({"p": 1, "f": 1, "c": 7}),
-    "audit_log": Counter({"p": 1, "c": 4}),
-}
+
+#: **exact constraint 계약.** 이름을 key로 두고 table·종류·컬럼·FK endpoint·참조 동작·
+#: 정규화 정의를 전부 비교한다.
+#:
+#: 구 `EXPECTED_CONSTRAINT_COUNTS`는 table별 **종류 개수**와 전체 정의를 이어 붙인
+#: 문자열에서 조각을 찾는 방식이었다. 그러면 다음이 전부 통과한다(계획 §4.3).
+#:
+#: - constraint가 엉뚱한 table로 옮겨져도 개수만 맞으면 통과
+#: - 이름만 같고 정의가 다른 변조
+#: - FK가 허용 table을 가리키되 컬럼·`ON DELETE`가 다른 경우
+#:
+#: 값은 PostgreSQL 16에 `002_agent_runtime_clean.sql`을 실제로 적용해
+#: `pg_constraint`에서 뜬 것이다. 손으로 적은 기대값이 아니다.
+@dataclass(frozen=True)
+class ConstraintContract:
+    table: str
+    contype: str
+    columns: tuple[str, ...]
+    referenced_table: str | None
+    referenced_columns: tuple[str, ...]
+    on_delete: str
+    on_update: str
+    definition: str
+
+
+#: **exact index 계약.** predicate를 정규화 문자열로 통째 비교한다.
+#:
+#: 구 `PARTIAL_INDEX_VALUES`는 predicate에서 `'([A-Z_]+)'` 값만 뽑아 집합 비교했다.
+#: 같은 값을 그대로 두고 `OR true`나 다른 조건을 덧붙인 변조가 통과한다(계획 §4.4).
+@dataclass(frozen=True)
+class IndexContract:
+    table: str
+    unique: bool
+    method: str
+    columns: tuple[str, ...]
+    predicate: str | None
+    expressions: str | None
+
+
+EXPECTED_CONSTRAINTS: Mapping[str, ConstraintContract] = MappingProxyType(
+    {
+        "action_delivery_action_id_fkey": ConstraintContract(
+            table="action_delivery",
+            contype="f",
+            columns=("action_id",),
+            referenced_table="action_history",
+            referenced_columns=("action_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (action_id) references action_history(action_id)",
+        ),
+        "action_delivery_attempt_count_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("attempt_count",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (attempt_count >= 0)",
+        ),
+        "action_delivery_channel_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("channel",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (channel = any (array['email', 'mes_mock']))",
+        ),
+        "action_delivery_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("completed_at", "started_at"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (completed_at is null or started_at is not null)",
+        ),
+        "action_delivery_check1": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("completed_at", "started_at"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (completed_at is null or completed_at >= started_at)",
+        ),
+        "action_delivery_pkey": ConstraintContract(
+            table="action_delivery",
+            contype="p",
+            columns=("action_id", "channel"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (action_id, channel)",
+        ),
+        "action_delivery_provider_message_id_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("provider_message_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (provider_message_id is null or btrim(provider_message_id)"
+                " <> '')"
+            ),
+        ),
+        "action_delivery_request_hash_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("request_hash",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (request_hash ~ '^[0-9a-f]{64}$')",
+        ),
+        "action_delivery_status_check": ConstraintContract(
+            table="action_delivery",
+            contype="c",
+            columns=("status",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (status = any (array['blocked', 'waiting', 'sending', "
+                "'sent', 'failed', 'canceled', 'unknown']))"
+            ),
+        ),
+        "agent_prediction_agent_run_id_fkey": ConstraintContract(
+            table="agent_prediction",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "agent_prediction_cause_summary_check": ConstraintContract(
+            table="agent_prediction",
+            contype="c",
+            columns=("cause_summary",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(cause_summary) <> '')",
+        ),
+        "agent_prediction_confidence_check": ConstraintContract(
+            table="agent_prediction",
+            contype="c",
+            columns=("confidence",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (confidence >= 0 and confidence <= 1)",
+        ),
+        "agent_prediction_llm_model_check": ConstraintContract(
+            table="agent_prediction",
+            contype="c",
+            columns=("llm_model",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(llm_model) <> '')",
+        ),
+        "agent_prediction_pkey": ConstraintContract(
+            table="agent_prediction",
+            contype="p",
+            columns=("agent_run_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (agent_run_id)",
+        ),
+        "agent_prediction_predicted_fault_code_check": ConstraintContract(
+            table="agent_prediction",
+            contype="c",
+            columns=("predicted_fault_code",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (predicted_fault_code = any (array['foc', 'rfm', 'mfd', "
+                "'tmd', 'oth']))"
+            ),
+        ),
+        "agent_prediction_prompt_version_check": ConstraintContract(
+            table="agent_prediction",
+            contype="c",
+            columns=("prompt_version",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(prompt_version) <> '')",
+        ),
+        "agent_prediction_review_agent_run_id_fkey": ConstraintContract(
+            table="agent_prediction_review",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "agent_prediction_review_check": ConstraintContract(
+            table="agent_prediction_review",
+            contype="c",
+            columns=("disposition", "reviewed_fault_code"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (disposition <> 'corrected' or reviewed_fault_code is not "
+                "null)"
+            ),
+        ),
+        "agent_prediction_review_disposition_check": ConstraintContract(
+            table="agent_prediction_review",
+            contype="c",
+            columns=("disposition",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (disposition = any (array['accepted', 'corrected', "
+                "'undetermined']))"
+            ),
+        ),
+        "agent_prediction_review_label_source_check": ConstraintContract(
+            table="agent_prediction_review",
+            contype="c",
+            columns=("label_source",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (label_source = any (array['human_review', "
+                "'mentor_review', 'hidden_gold']))"
+            ),
+        ),
+        "agent_prediction_review_pkey": ConstraintContract(
+            table="agent_prediction_review",
+            contype="p",
+            columns=("review_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (review_id)",
+        ),
+        "agent_prediction_review_reviewed_fault_code_check": ConstraintContract(
+            table="agent_prediction_review",
+            contype="c",
+            columns=("reviewed_fault_code",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (reviewed_fault_code = any (array['foc', 'rfm', 'mfd', "
+                "'tmd', 'oth']))"
+            ),
+        ),
+        "agent_prediction_review_reviewer_check": ConstraintContract(
+            table="agent_prediction_review",
+            contype="c",
+            columns=("reviewer",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(reviewer) <> '')",
+        ),
+        "agent_run_action_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("action",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (action = any (array['monitoring', 'warning', " "'eqp_hold']))"
+            ),
+        ),
+        "agent_run_agent_run_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("agent_run_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (agent_run_id ~ '^run-[0-9a-f]{16}$')",
+        ),
+        "agent_run_autonomy_level_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("autonomy_level",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (autonomy_level = any (array[1, 2, 3]))",
+        ),
+        "agent_run_chamber_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("chamber_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(chamber_id) <> '')",
+        ),
+        "agent_run_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("ended_at", "started_at"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (ended_at is null or ended_at >= started_at)",
+        ),
+        "agent_run_check1": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("action", "severity"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (action is null and severity is null or action = "
+                "'monitoring' and severity = 'low' or action = 'warning' and "
+                "severity = 'medium' or action = 'eqp_hold' and severity = "
+                "'high')"
+            ),
+        ),
+        "agent_run_input_tokens_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("input_tokens",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (input_tokens >= 0)",
+        ),
+        "agent_run_latency_ms_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("latency_ms",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (latency_ms >= 0)",
+        ),
+        "agent_run_llm_model_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("llm_model",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (llm_model is null or btrim(llm_model) <> '')",
+        ),
+        "agent_run_lot_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("lot_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(lot_id) <> '')",
+        ),
+        "agent_run_output_tokens_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("output_tokens",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (output_tokens >= 0)",
+        ),
+        "agent_run_pkey": ConstraintContract(
+            table="agent_run",
+            contype="p",
+            columns=("agent_run_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (agent_run_id)",
+        ),
+        "agent_run_prompt_version_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("prompt_version",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (prompt_version is null or btrim(prompt_version) <> '')",
+        ),
+        "agent_run_representative_alarm_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("representative_alarm_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(representative_alarm_id) <> '')",
+        ),
+        "agent_run_representative_alarm_source_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("representative_alarm_source",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (representative_alarm_source = any (array['trace', "
+                "'summary', 'r03']))"
+            ),
+        ),
+        "agent_run_requested_alarm_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("requested_alarm_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(requested_alarm_id) <> '')",
+        ),
+        "agent_run_requested_alarm_source_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("requested_alarm_source",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (requested_alarm_source = any (array['trace', 'summary', "
+                "'r03']))"
+            ),
+        ),
+        "agent_run_retry_of_run_id_fkey": ConstraintContract(
+            table="agent_run",
+            contype="f",
+            columns=("retry_of_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition=(
+                "foreign key (retry_of_run_id) references agent_run(agent_run_id)"
+            ),
+        ),
+        "agent_run_severity_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("severity",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (severity = any (array['low', 'medium', 'high']))",
+        ),
+        "agent_run_status_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("status",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (status = any (array['running', 'waiting_approval', "
+                "'completed', 'failed']))"
+            ),
+        ),
+        "agent_run_thread_id_check": ConstraintContract(
+            table="agent_run",
+            contype="c",
+            columns=("thread_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(thread_id) <> '')",
+        ),
+        "agent_run_action_action_id_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("action_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(action_id) <> '')",
+        ),
+        "agent_run_action_action_id_fkey": ConstraintContract(
+            table="agent_run_action",
+            contype="f",
+            columns=("action_id",),
+            referenced_table="action_history",
+            referenced_columns=("action_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (action_id) references action_history(action_id)",
+        ),
+        "agent_run_action_agent_run_id_fkey": ConstraintContract(
+            table="agent_run_action",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "agent_run_action_chamber_id_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("chamber_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(chamber_id) <> '')",
+        ),
+        "agent_run_action_link_role_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("link_role",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (link_role = any (array['created', 'reused']))",
+        ),
+        "agent_run_action_lot_id_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("lot_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(lot_id) <> '')",
+        ),
+        "agent_run_action_pkey": ConstraintContract(
+            table="agent_run_action",
+            contype="p",
+            columns=("agent_run_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (agent_run_id)",
+        ),
+        "agent_run_action_trigger_alarm_id_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("trigger_alarm_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(trigger_alarm_id) <> '')",
+        ),
+        "agent_run_action_trigger_alarm_source_check": ConstraintContract(
+            table="agent_run_action",
+            contype="c",
+            columns=("trigger_alarm_source",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (trigger_alarm_source = any (array['trace', 'summary', "
+                "'r03']))"
+            ),
+        ),
+        "agent_run_alarm_agent_run_id_fkey": ConstraintContract(
+            table="agent_run_alarm",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "agent_run_alarm_alarm_id_check": ConstraintContract(
+            table="agent_run_alarm",
+            contype="c",
+            columns=("alarm_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(alarm_id) <> '')",
+        ),
+        "agent_run_alarm_alarm_source_check": ConstraintContract(
+            table="agent_run_alarm",
+            contype="c",
+            columns=("alarm_source",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (alarm_source = any (array['trace', 'summary', 'r03']))",
+        ),
+        "agent_run_alarm_pkey": ConstraintContract(
+            table="agent_run_alarm",
+            contype="p",
+            columns=("agent_run_id", "alarm_source", "alarm_id"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (agent_run_id, alarm_source, alarm_id)",
+        ),
+        "agent_tool_call_agent_run_id_call_seq_key": ConstraintContract(
+            table="agent_tool_call",
+            contype="u",
+            columns=("agent_run_id", "call_seq"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="unique (agent_run_id, call_seq)",
+        ),
+        "agent_tool_call_agent_run_id_fkey": ConstraintContract(
+            table="agent_tool_call",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "agent_tool_call_call_seq_check": ConstraintContract(
+            table="agent_tool_call",
+            contype="c",
+            columns=("call_seq",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (call_seq >= 1)",
+        ),
+        "agent_tool_call_latency_ms_check": ConstraintContract(
+            table="agent_tool_call",
+            contype="c",
+            columns=("latency_ms",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (latency_ms >= 0)",
+        ),
+        "agent_tool_call_pkey": ConstraintContract(
+            table="agent_tool_call",
+            contype="p",
+            columns=("tool_call_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (tool_call_id)",
+        ),
+        "agent_tool_call_status_check": ConstraintContract(
+            table="agent_tool_call",
+            contype="c",
+            columns=("status",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (status = any (array['success', 'error', 'timeout']))",
+        ),
+        "agent_tool_call_tool_call_id_check": ConstraintContract(
+            table="agent_tool_call",
+            contype="c",
+            columns=("tool_call_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (tool_call_id ~ '^tool-[0-9a-f]{24}$')",
+        ),
+        "agent_tool_call_tool_name_check": ConstraintContract(
+            table="agent_tool_call",
+            contype="c",
+            columns=("tool_name",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(tool_name) <> '')",
+        ),
+        "approval_request_action_id_fkey": ConstraintContract(
+            table="approval_request",
+            contype="f",
+            columns=("action_id",),
+            referenced_table="action_history",
+            referenced_columns=("action_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (action_id) references action_history(action_id)",
+        ),
+        "approval_request_action_id_key": ConstraintContract(
+            table="approval_request",
+            contype="u",
+            columns=("action_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="unique (action_id)",
+        ),
+        "approval_request_agent_run_id_fkey": ConstraintContract(
+            table="approval_request",
+            contype="f",
+            columns=("agent_run_id",),
+            referenced_table="agent_run",
+            referenced_columns=("agent_run_id",),
+            on_delete="a",
+            on_update="a",
+            definition="foreign key (agent_run_id) references agent_run(agent_run_id)",
+        ),
+        "approval_request_approval_id_check": ConstraintContract(
+            table="approval_request",
+            contype="c",
+            columns=("approval_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (approval_id ~ '^apr-[0-9a-f]{16}$')",
+        ),
+        "approval_request_check": ConstraintContract(
+            table="approval_request",
+            contype="c",
+            columns=(
+                "status",
+                "decided_by",
+                "decided_at",
+                "decision_comment",
+                "requested_at",
+            ),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (status = 'pending' and decided_by is null and decided_at "
+                "is null and decision_comment is null or (status = any "
+                "(array['approved', 'rejected'])) and coalesce(btrim(decided_by),"
+                " '') <> '' and decided_at is not null and decided_at >= "
+                "requested_at or status = 'expired' and decided_by is null)"
+            ),
+        ),
+        "approval_request_decision_comment_check": ConstraintContract(
+            table="approval_request",
+            contype="c",
+            columns=("decision_comment",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (decision_comment is null or btrim(decision_comment) <> " "'')"
+            ),
+        ),
+        "approval_request_pkey": ConstraintContract(
+            table="approval_request",
+            contype="p",
+            columns=("approval_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (approval_id)",
+        ),
+        "approval_request_status_check": ConstraintContract(
+            table="approval_request",
+            contype="c",
+            columns=("status",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (status = any (array['pending', 'approved', 'rejected', "
+                "'expired']))"
+            ),
+        ),
+        "audit_log_actor_id_check": ConstraintContract(
+            table="audit_log",
+            contype="c",
+            columns=("actor_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (actor_id is null or btrim(actor_id) <> '')",
+        ),
+        "audit_log_actor_type_check": ConstraintContract(
+            table="audit_log",
+            contype="c",
+            columns=("actor_type",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (actor_type = any (array['system', 'agent', 'human']))",
+        ),
+        "audit_log_check": ConstraintContract(
+            table="audit_log",
+            contype="c",
+            columns=("event_type", "entity_type"),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition=(
+                "check (event_type = 'detection_completed' and entity_type = "
+                "'lot_hist' or event_type = 'agent_run_started' and entity_type ="
+                " 'agent_run' or event_type = 'hypothesis_generated' and "
+                "entity_type = 'agent_run' or event_type = 'approval_requested' "
+                "and entity_type = 'approval' or event_type = 'approval_decided' "
+                "and entity_type = 'approval' or event_type = 'action_sent' and "
+                "entity_type = 'action' or event_type = 'action_send_failed' and "
+                "entity_type = 'action' or event_type = 'agent_run_completed' and"
+                " entity_type = 'agent_run' or event_type = 'agent_run_failed' "
+                "and entity_type = 'agent_run')"
+            ),
+        ),
+        "audit_log_entity_id_check": ConstraintContract(
+            table="audit_log",
+            contype="c",
+            columns=("entity_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="check (btrim(entity_id) <> '')",
+        ),
+        "audit_log_pkey": ConstraintContract(
+            table="audit_log",
+            contype="p",
+            columns=("audit_id",),
+            referenced_table=None,
+            referenced_columns=(),
+            on_delete=" ",
+            on_update=" ",
+            definition="primary key (audit_id)",
+        ),
+    }
+)
+
+EXPECTED_INDEXES: Mapping[str, IndexContract] = MappingProxyType(
+    {
+        "action_delivery_pkey": IndexContract(
+            table="action_delivery",
+            unique=True,
+            method="btree",
+            columns=("action_id", "channel"),
+            predicate=None,
+            expressions=None,
+        ),
+        "agent_prediction_pkey": IndexContract(
+            table="agent_prediction",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "agent_prediction_review_pkey": IndexContract(
+            table="agent_prediction_review",
+            unique=True,
+            method="btree",
+            columns=("review_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "agent_run_pkey": IndexContract(
+            table="agent_run",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "ux_agent_run_incident_active": IndexContract(
+            table="agent_run",
+            unique=True,
+            method="btree",
+            columns=("lot_id", "chamber_id"),
+            predicate="((status) = any ((array['running', 'waiting_approval'])))",
+            expressions=None,
+        ),
+        "agent_run_action_pkey": IndexContract(
+            table="agent_run_action",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "ux_agent_run_action_created": IndexContract(
+            table="agent_run_action",
+            unique=True,
+            method="btree",
+            columns=("action_id",),
+            predicate="((link_role) = 'created')",
+            expressions=None,
+        ),
+        "ux_agent_run_action_incident": IndexContract(
+            table="agent_run_action",
+            unique=True,
+            method="btree",
+            columns=("lot_id", "chamber_id"),
+            predicate="((link_role) = 'created')",
+            expressions=None,
+        ),
+        "agent_run_alarm_pkey": IndexContract(
+            table="agent_run_alarm",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id", "alarm_source", "alarm_id"),
+            predicate=None,
+            expressions=None,
+        ),
+        "ux_agent_run_alarm_representative": IndexContract(
+            table="agent_run_alarm",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id",),
+            predicate="is_representative",
+            expressions=None,
+        ),
+        "agent_tool_call_agent_run_id_call_seq_key": IndexContract(
+            table="agent_tool_call",
+            unique=True,
+            method="btree",
+            columns=("agent_run_id", "call_seq"),
+            predicate=None,
+            expressions=None,
+        ),
+        "agent_tool_call_pkey": IndexContract(
+            table="agent_tool_call",
+            unique=True,
+            method="btree",
+            columns=("tool_call_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "approval_request_action_id_key": IndexContract(
+            table="approval_request",
+            unique=True,
+            method="btree",
+            columns=("action_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "approval_request_pkey": IndexContract(
+            table="approval_request",
+            unique=True,
+            method="btree",
+            columns=("approval_id",),
+            predicate=None,
+            expressions=None,
+        ),
+        "audit_log_pkey": IndexContract(
+            table="audit_log",
+            unique=True,
+            method="btree",
+            columns=("audit_id",),
+            predicate=None,
+            expressions=None,
+        ),
+    }
+)
+
 
 TABLES_SQL = """/* agent-runtime:tables */
 SELECT c.relname AS object_name, c.relkind
@@ -301,18 +1330,34 @@ ORDER BY c.relname, a.attnum
 """
 CONSTRAINTS_SQL = """/* agent-runtime:constraints */
 SELECT t.relname AS table_name, con.conname AS constraint_name,
-       con.contype AS constraint_type, pg_get_constraintdef(con.oid, true) AS definition
+       con.contype::text AS constraint_type,
+       pg_get_constraintdef(con.oid, true) AS definition,
+       (SELECT array_agg(a.attname ORDER BY k.ord)
+          FROM unnest(con.conkey) WITH ORDINALITY k(attnum, ord)
+          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
+       ) AS local_columns,
+       ref.relname AS referenced_table,
+       (SELECT array_agg(a.attname ORDER BY k.ord)
+          FROM unnest(con.confkey) WITH ORDINALITY k(attnum, ord)
+          JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum
+       ) AS referenced_columns,
+       con.confdeltype::text AS on_delete,
+       con.confupdtype::text AS on_update
 FROM pg_constraint con JOIN pg_class t ON t.oid = con.conrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
+LEFT JOIN pg_class ref ON ref.oid = con.confrelid
 WHERE n.nspname = 'public' AND t.relname = ANY(%s)
 ORDER BY t.relname, con.conname
 """
 INDEXES_SQL = """/* agent-runtime:indexes */
 SELECT t.relname AS table_name, i.relname AS index_name,
+       x.indisunique AS is_unique, am.amname AS method,
        pg_get_indexdef(i.oid) AS definition,
-       pg_get_expr(x.indpred, x.indrelid) AS predicate
+       pg_get_expr(x.indpred, x.indrelid) AS predicate,
+       pg_get_expr(x.indexprs, x.indrelid) AS expressions
 FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid
 JOIN pg_class t ON t.oid = x.indrelid
+JOIN pg_am am ON am.oid = i.relam
 JOIN pg_namespace n ON n.oid = t.relnamespace
 WHERE n.nspname = 'public' AND t.relname = ANY(%s)
 ORDER BY t.relname, i.relname
@@ -535,8 +1580,97 @@ def validate_prerequisites(connection: Any, target: BootstrapTarget) -> tuple[in
             "runtime action_history가 비어 있지 않습니다",
             reason_code="ACTION_PRESENT",
         )
-    reference = postcheck_reference_database(connection, action_rows_before=0)
-    return rows, reference.alarm_event_rows
+    assert_final_reference_state(connection)
+    return rows, alarm_event_count(connection)
+
+
+def _v5_execute(connection: Any) -> Callable[..., list[dict[str, Any]]]:
+    """CM-3.1 판정기가 기대하는 `(sql, params) -> rows` 어댑터.
+
+    v5 module은 driver를 고르지 않는다. named parameter(`%(view)s`)를 쓰므로 그대로
+    넘긴다.
+    """
+
+    def run(sql: str, params: Any = None) -> list[dict[str, Any]]:
+        return [
+            dict(row) for row in _result_rows(connection.exec_driver_sql(sql, params))
+        ]
+
+    return run
+
+
+def assert_final_reference_state(connection: Any) -> None:
+    """002를 얹기 전에 **final reference 계보**가 먼저 서 있는지 본다.
+
+    구현은 `V5-CM-3.1`이 만든 정본 판정기를 read-only로 재사용한다. 판정 규칙을 여기서
+    다시 쓰면 두 경로가 갈린다. **V4 `postcheck_database()`는 부르지 않는다** —
+    그 경로는 R03 11컬럼·V4 View 계약이라 final DB가 거기서 실패한다.
+
+    이 검사가 `_artifact_identity()`가 잃은 001 provenance의 절반을 대신한다. 나머지
+    절반은 active manifest의 `applied_migrations` 2원소와 `manifest_sha256`이다.
+
+    ## 왜 columns 3종으로는 부족한가
+
+    1차 구현은 R03 columns·constraints·View columns 셋만 봤다. 그러면 **View 컬럼 이름만
+    같은 임의 정의**나 comment drift, `PUBLIC` grant가 있어도 adopt와 marker 발급이
+    통과한다(구현리뷰 필수 2). active manifest hash는 *계약 문서*의 identity일 뿐
+    이 target의 live View 정의를 증명하지 못한다.
+
+    그래서 CM-3.1의 `read_live_schema()`·`live_signatures()`를 그대로 돌린다. 그 둘은
+    `assert_*`를 먼저 통과해야 signature를 내주므로, **non-canonical catalog에서는
+    signature 자체가 나오지 않는다.**
+    """
+
+    execute = _v5_execute(connection)
+    try:
+        live = reference_v5.read_live_schema(execute)
+        reference_v5.assert_r03_columns(live["r03_columns"])
+        reference_v5.assert_r03_constraints(live["r03_constraints"])
+        reference_v5.assert_view_columns(live["view_columns"])
+        reference_v5.assert_view_identity(str(live["view_definition"]))
+
+        security = live["security"]
+        reference_v5.assert_canonical_comments(
+            r03_comment=security[reference_v5.R03_TABLE].get("comment"),
+            view_comment=security[reference_v5.ALARM_VIEW].get("comment"),
+        )
+        for row in security.values():
+            reference_v5.assert_no_public_grant(row.get("relacl"))
+
+        # signature를 실제로 만들어 본다 — 판정기 전부가 통과해야 값이 나온다.
+        reference_v5.live_signatures(live, mode="base_only")
+
+        # **data gate를 완화하지 않는다.**
+        #
+        # 1차 구현은 `require_final_dataset=False`로 불렀다. R03 행 수만 유연하게
+        # 하려던 것인데, CM-3.1 판정기는 그 flag에서 **즉시 반환**한다 — 그 아래
+        # TRACE 138·SUMMARY 51 분포와 `null_owner` 검사가 통째로 죽는다.
+        # `TRACE=1 · SUMMARY=0 · null_owner=1`인 View도 통과했다(구현리뷰 2차 필수 1).
+        #
+        # 두 요구는 충돌하지 않는다. R03 행 수 allowlist를 **바깥에서** 고정하면
+        # 판정기가 동적 `r03_rows`를 기대 분포에 넣어 주므로 나머지를 전부 볼 수 있다.
+        r03_rows = int(
+            execute(f"SELECT count(*) AS n FROM public.{reference_v5.R03_TABLE}")[0][
+                "n"
+            ]
+        )
+        if r03_rows not in ALLOWED_R03_ROWS:
+            # `V5-A-1.4` 적재 전 0, 적재 후 3. 그 사이 값은 적재가 끊긴 상태다.
+            raise AgentRuntimeStateError(
+                "R03 행 수가 허용 범위 밖입니다",
+                reason_code="MISSING_FINAL_REFERENCE",
+            )
+        reference_v5.assert_view_branches(
+            execute,
+            r03_rows=r03_rows,
+            view_rows=alarm_event_count(connection),
+            require_final_dataset=True,
+        )
+    except (reference_v5.ReferenceV5Error, KeyError, IndexError, TypeError) as exc:
+        raise AgentRuntimeStateError(
+            "final reference 계약이 서 있지 않습니다",
+            reason_code="MISSING_FINAL_REFERENCE",
+        ) from exc
 
 
 def build_schema_signature(connection: Any) -> dict[str, Any]:
@@ -565,8 +1699,114 @@ def build_schema_signature(connection: Any) -> dict[str, Any]:
     }
 
 
-def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
-    columns = signature.get("columns")
+#: catalog 텍스트를 비교 가능한 하나의 형태로 만든다.
+#:
+#: PostgreSQL이 돌려주는 `pg_get_constraintdef`·`pg_get_expr`에는 cast 표기와 공백이
+#: 섞여 있어(`(status)::text = ANY ((ARRAY['RUNNING'::character varying])::text[])`)
+#: 원문 그대로는 비교 기준이 될 수 없다. cast를 지우고 공백을 접어 정규화한다.
+#: `::` cast에서 지울 수 있는 **type 이름만** 나열한다.
+#:
+#: 구현은 `::[a-z_ ]+`였다. 그 패턴은 lowercase 입력에서 type이 아닌 keyword까지
+#: 먹는다 — `check (status::text is not null)`이 `check (status)`로 접혀
+#: `is null` 버전과 구별되지 않는다. 실제 PostgreSQL 출력은 keyword가 uppercase라
+#: 충돌하지 않았지만, **입력 대소문자에 따라 의미가 달라지는 정규화**는 계약이 될 수
+#: 없다(구현리뷰 권장 1).
+#:
+#: 002가 쓰는 type만 열거하고, 모르는 type이 나오면 지우지 않는다.
+_CAST_TYPES = (
+    "character varying",
+    "timestamp with time zone",
+    "timestamp without time zone",
+    "double precision",
+    "numeric",
+    "integer",
+    "smallint",
+    "bigint",
+    "boolean",
+    "jsonb",
+    "json",
+    "text",
+    "uuid",
+    "date",
+)
+_CAST_PATTERN = re.compile(
+    r"::(?:" + "|".join(re.escape(name) for name in _CAST_TYPES) + r")(\[\])?",
+    re.IGNORECASE,
+)
+
+
+def normalize_catalog_text(value: str | None) -> str | None:
+    """catalog 텍스트를 비교 가능한 하나의 형태로 만든다. **멱등이다.**
+
+    cast는 알려진 type 이름에만 붙는다. 대소문자를 가리지 않으므로 이미 lowercase로
+    접힌 문자열을 다시 넣어도 같은 결과가 나온다.
+    """
+
+    if value is None:
+        return None
+    text_value = _CAST_PATTERN.sub("", str(value))
+    text_value = re.sub(r"\s+", " ", text_value).strip().lower()
+    return text_value.replace("( ", "(").replace(" )", ")")
+
+
+#: schema·데이터를 바꾸지 않는 문장의 **첫 키워드**.
+#:
+#: `SET`·`LOCK`은 runner가 쓰기 배제를 거는 수단이고 transaction 제어는 그 경계다.
+#: 셋 다 catalog나 행을 건드리지 않는다.
+NON_MUTATING_KEYWORDS = frozenset(
+    {"SELECT", "WITH", "SHOW", "SET", "LOCK", "BEGIN", "COMMIT", "ROLLBACK"}
+)
+
+_LEADING_COMMENT = re.compile(r"\A\s*(?:/\*.*?\*/|--[^\n]*\n)+", re.S)
+
+
+def is_mutating_statement(statement: str) -> bool:
+    """이 문장이 schema·데이터를 바꾸는가.
+
+    **선행 주석을 먼저 걷어낸다.** SQL에서 블록 주석은 문장의 종류를 바꾸지 않으므로
+    `/* agent-runtime:x */ CREATE TABLE ...`은 DDL 그대로다. 주석 prefix를 무해 목록에
+    넣으면 그 한 줄이 DDL 우회 경로가 된다(PR #123 리뷰 필수 1).
+
+    catalog query가 `/* agent-runtime:tables */`로 시작하므로 주석 제거는 **필요하다** —
+    prefix 항목만 지우면 그 query들이 쓰기로 잡힌다.
+
+    회귀가 "adopt는 DB에 쓰지 않는다"를 이 함수로 증명한다. 판정을 테스트마다 따로
+    두면 정의가 갈린다 — 실제로 container와 unit 두 벌이 이미 달랐다.
+    """
+
+    body = _LEADING_COMMENT.sub("", statement).strip()
+    if not body:
+        return False
+    return body.split(None, 1)[0].upper().rstrip(";") not in NON_MUTATING_KEYWORDS
+
+
+def mutating_statements(statements: Sequence[str]) -> list[str]:
+    """발행된 문장 중 schema·데이터를 바꾸는 것만 남긴다."""
+
+    return [item for item in statements if is_mutating_statement(item)]
+
+
+def _tuple_of(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def _index_columns(definition: str) -> tuple[str, ...]:
+    """`pg_get_indexdef`에서 대상 컬럼만 뽑는다.
+
+    `WHERE`를 먼저 떼지 않으면 greedy match가 predicate까지 삼켜 컬럼 계약이
+    predicate 변조에 딸려 움직인다. 두 축은 분리돼야 한다.
+    """
+
+    body = str(definition).split(" WHERE ", 1)[0]
+    match = re.search(r"\(([^()]*(?:\([^()]*\)[^()]*)*)\)\s*$", body)
+    if match is None:
+        return ()
+    return tuple(part.strip() for part in match.group(1).split(","))
+
+
+def _validate_columns_contract(columns: Any) -> None:
     if not isinstance(columns, list):
         raise AgentRuntimeStateError("runtime column signature가 잘못됐습니다")
     for table, expected in EXPECTED_TABLE_COLUMNS.items():
@@ -584,68 +1824,107 @@ def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
         )
         if actual != expected:
             raise AgentRuntimeStateError(f"{table} 컬럼 계약이 다릅니다")
-    constraints = signature.get("constraints")
+
+
+def _validate_constraints_contract(constraints: Any) -> None:
+    """이름을 key로 **전수 exact** 대조한다.
+
+    `!=` 한 번으로 끝내지 않고 이름 집합을 먼저 가르는 이유는, 추가·누락과 정의 변조가
+    서로 다른 사고이고 reason이 갈려야 원인을 찾을 수 있기 때문이다.
+    """
+
     if not isinstance(constraints, list):
         raise AgentRuntimeStateError("runtime constraint signature가 잘못됐습니다")
-    for table, expected in EXPECTED_CONSTRAINT_COUNTS.items():
-        actual = Counter(
-            str(row["constraint_type"])
-            for row in constraints
-            if row["table_name"] == table
-            and str(row["constraint_type"]) in {"p", "u", "f", "c"}
+    actual: dict[str, ConstraintContract] = {}
+    for row in constraints:
+        name = str(row["constraint_name"])
+        if name in actual:
+            raise AgentRuntimeStateError("runtime constraint 이름이 중복됐습니다")
+        actual[name] = ConstraintContract(
+            table=str(row["table_name"]),
+            contype=str(row["constraint_type"]),
+            columns=_tuple_of(row.get("local_columns")),
+            referenced_table=(
+                str(row["referenced_table"])
+                if row.get("referenced_table") is not None
+                else None
+            ),
+            referenced_columns=_tuple_of(row.get("referenced_columns")),
+            on_delete=str(row.get("on_delete") or " "),
+            on_update=str(row.get("on_update") or " "),
+            definition=normalize_catalog_text(row["definition"]) or "",
         )
-        if actual != expected:
-            raise AgentRuntimeStateError(f"{table} 제약 수·종류가 다릅니다")
-    definitions = " ".join(str(row["definition"]).lower() for row in constraints)
-    required = (
-        "foreign key (retry_of_run_id) references agent_run",
-        "foreign key (action_id) references action_history",
-        "pending",
-        "approved",
-        "rejected",
-        "expired",
-        "blocked",
-        "waiting",
-        "sending",
-        "sent",
-        "failed",
-        "canceled",
-        "unknown",
-        "hypothesis_generated",
-    )
-    if (
-        any(fragment not in definitions for fragment in required)
-        or "'auto'" in definitions
-    ):
-        raise AgentRuntimeStateError("runtime CHECK/FK 값 집합이 다릅니다")
-    indexes = signature.get("indexes")
+    if set(actual) != set(EXPECTED_CONSTRAINTS):
+        # 추가·누락 자체가 drift다. extra CHECK 하나로도 계약이 달라진다.
+        raise AgentRuntimeStateError("runtime constraint allowlist가 다릅니다")
+    for name, expected in EXPECTED_CONSTRAINTS.items():
+        if actual[name] != expected:
+            raise AgentRuntimeStateError(f"{name} constraint 계약이 다릅니다")
+
+
+#: Runtime FK가 가리킬 수 있는 **전부**.
+#:
+#: AlarmRef는 `(source, alarm_id)` **값 계약**으로만 저장한다. TRACE·SUMMARY·R03을
+#: 물리 FK로 묶으면 세 계보가 Runtime schema에 얽힌다.
+ALLOWED_FK_TARGETS = frozenset({"agent_run", "action_history"})
+
+
+def _validate_legacy_alarm_fk(constraints: Sequence[Mapping[str, Any]]) -> None:
+    """legacy alarm FK **0건**을 독립 축으로 다시 센다(WBS 완료 기준).
+
+    `_validate_constraints_contract()`가 이미 전수 대조를 하므로 중복처럼 보이지만
+    같지 않다. 저쪽은 "계약과 같은가"를, 여기는 "AlarmRef를 물리 FK로 묶지
+    않았는가"를 본다.
+
+    **allowlist다.** 구현은 알람 table 이름 4개를 denylist로 나열했는데, 그러면 새
+    알람 계보 table이 생겼을 때 이 검사가 통과시킨다 — 독립 축으로 둔 의미가 없다
+    (PR #123 리뷰 권고 1). 완료 기준 문구도 "참조 대상은 둘뿐"이다.
+    """
+
+    for row in constraints:
+        if str(row["constraint_type"]) != "f":
+            continue
+        referenced = row.get("referenced_table")
+        if referenced is None:
+            continue
+        if str(referenced) not in ALLOWED_FK_TARGETS:
+            raise AgentRuntimeStateError(
+                "허용되지 않은 FK 대상입니다",
+                reason_code="LEGACY_ALARM_FK",
+            )
+
+
+def _validate_indexes_contract(indexes: Any) -> None:
     if not isinstance(indexes, list):
         raise AgentRuntimeStateError("runtime index signature가 잘못됐습니다")
-    index_names = {str(row["index_name"]) for row in indexes}
-    if index_names != EXPECTED_INDEX_NAMES:
-        raise AgentRuntimeStateError("runtime index allowlist가 다릅니다")
-    definitions_by_index = {
-        str(row["index_name"]): str(row["definition"]).lower() for row in indexes
-    }
-    for name, columns_for_index in EXPECTED_INDEX_COLUMNS.items():
-        rendered = f"({', '.join(columns_for_index)})"
-        if rendered not in definitions_by_index[name]:
-            raise AgentRuntimeStateError(f"{name} 대상 컬럼이 다릅니다")
-    predicates = {
-        str(row["index_name"]): str(row.get("predicate") or "").lower()
-        for row in indexes
-        if row["index_name"] in PARTIAL_INDEX_VALUES
-    }
-    if set(predicates) != set(PARTIAL_INDEX_VALUES):
-        raise AgentRuntimeStateError("runtime partial index가 누락됐습니다")
-    for name, expected_values in PARTIAL_INDEX_VALUES.items():
-        actual_values = set(re.findall(r"'([A-Z_]+)'", predicates[name].upper()))
-        if actual_values != expected_values:
-            raise AgentRuntimeStateError(f"{name} predicate가 다릅니다")
-    if "is_representative" not in predicates["ux_agent_run_alarm_representative"]:
-        raise AgentRuntimeStateError(
-            "ux_agent_run_alarm_representative predicate가 다릅니다"
+    actual: dict[str, IndexContract] = {}
+    for row in indexes:
+        name = str(row["index_name"])
+        if name in actual:
+            # constraint 쪽과 형태를 맞춘다. live catalog에서는 index 이름이 유일하지만
+            # 뒤 row가 앞을 덮어쓰는 구조를 남겨 둘 이유가 없다(PR #123 리뷰 권고 3).
+            raise AgentRuntimeStateError("runtime index 이름이 중복됐습니다")
+        actual[name] = IndexContract(
+            table=str(row["table_name"]),
+            unique=bool(row["is_unique"]),
+            method=str(row["method"]),
+            columns=_index_columns(row["definition"]),
+            predicate=normalize_catalog_text(row.get("predicate")),
+            expressions=normalize_catalog_text(row.get("expressions")),
         )
+    if set(actual) != set(EXPECTED_INDEXES):
+        raise AgentRuntimeStateError("runtime index allowlist가 다릅니다")
+    for name, expected in EXPECTED_INDEXES.items():
+        if actual[name] != expected:
+            raise AgentRuntimeStateError(f"{name} index 계약이 다릅니다")
+
+
+def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
+    _validate_columns_contract(signature.get("columns"))
+    constraints = signature.get("constraints")
+    _validate_constraints_contract(constraints)
+    _validate_legacy_alarm_fk(constraints if isinstance(constraints, list) else ())
+    _validate_indexes_contract(signature.get("indexes"))
     sequences = signature.get("sequences")
     if (
         not isinstance(sequences, list)
@@ -656,6 +1935,14 @@ def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
 
 
 def inspect_database(connection: Any) -> RuntimeInspection:
+    """물리 상태를 판정한다. **읽기만 한다.**
+
+    `PARTIAL`과 `DRIFT`를 가른다. 구현은 둘 다 `DRIFT`로 묶었는데 원인이 다르다 —
+    `PARTIAL`은 9종 중 일부만 있는 것이고(적용이 중간에 끊겼다), `DRIFT`는 9종이 다
+    있는데 계약이 다른 것이다(누가 손댔다). **어느 쪽도 자동 보정하지 않지만** reason이
+    갈려야 원인을 찾을 수 있다.
+    """
+
     rows = _result_rows(connection.exec_driver_sql(TABLES_SQL, (list(RUNTIME_TABLES),)))
     inventory = tuple(
         sorted((str(row["object_name"]), str(row["relkind"])) for row in rows)
@@ -664,7 +1951,9 @@ def inspect_database(connection: Any) -> RuntimeInspection:
         return RuntimeInspection("ABSENT", (), None, None)
     expected = tuple(sorted((table, "r") for table in RUNTIME_TABLES))
     if inventory != expected:
-        return RuntimeInspection("DRIFT", inventory, None, None)
+        names = {name for name, _kind in inventory}
+        state = "PARTIAL" if names < set(RUNTIME_TABLES) else "DRIFT"
+        return RuntimeInspection(state, inventory, None, None)
     signature = build_schema_signature(connection)
     try:
         signature_hash = _validate_signature_contract(signature)
@@ -739,7 +2028,7 @@ def execute_schema(connection: Any, statements: Sequence[str]) -> None:
 def marker_path(database: str, *, root: Path = MARKER_ROOT) -> Path:
     if database not in RUNTIME_DATABASES:
         raise AgentRuntimeArtifactError("runtime marker database가 허용되지 않았습니다")
-    return root / f"runtime_clean.{database}.json"
+    return root / f"{FINAL_ARTIFACT_TYPE}.{database}.json"
 
 
 def receipt_path(database: str, operation_id: str, *, root: Path = REPORT_ROOT) -> Path:
@@ -749,7 +2038,7 @@ def receipt_path(database: str, operation_id: str, *, root: Path = REPORT_ROOT) 
         raise AgentRuntimeArtifactError(
             "runtime receipt operation id가 잘못됐습니다"
         ) from exc
-    return root / f"agent_runtime.{database}.{operation_id}.json"
+    return root / f"{FINAL_ARTIFACT_TYPE}.{database}.{operation_id}.json"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -763,20 +2052,51 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _artifact_identity(target: BootstrapTarget) -> dict[str, Any]:
+def load_final_manifest() -> dict[str, Any]:
+    """active Runtime manifest를 **schema 검증한 뒤** 돌려준다.
+
+    검증 없이 읽으면 변조된 manifest의 hash를 marker에 그대로 박게 된다. marker가
+    주장하는 것은 "이 DB가 **이 계약**과 같다"이므로, 계약 자체가 먼저 유효해야 한다.
+    """
+
     manifest = _read_json(resolve_bootstrap_manifest_path("runtime", "runtime_clean"))
-    reference_sql = (
-        REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
-    ).read_text(encoding="utf-8")
-    reference = load_reference_marker(
-        target,
-        migration_sha256=hashlib.sha256(reference_sql.encode()).hexdigest(),
-    )
-    if reference is None:
-        raise AgentRuntimeArtifactError("001 marker가 없습니다")
+    try:
+        manifest_v3.validate_manifest_schema(
+            manifest,
+            expected_artifact_type="db_bootstrap",
+            expected_profile=RUNTIME_PROFILE,
+            expected_stage=RUNTIME_STAGE,
+            expected_archive_sha256=manifest_v3.FINAL_ARCHIVE_SHA256,
+        )
+    except VerificationError as exc:
+        raise AgentRuntimeArtifactError(
+            "active Runtime manifest가 최종 계약과 다릅니다"
+        ) from exc
+    lineage = tuple(manifest["applied_migrations"])
+    if lineage != EXPECTED_MIGRATION_LINEAGE:
+        raise AgentRuntimeArtifactError("Runtime migration lineage가 다릅니다")
+    return manifest
+
+
+def _artifact_identity(target: BootstrapTarget) -> dict[str, Any]:
+    """final marker가 주장할 계보 identity.
+
+    **V4 `001` marker를 읽지 않는다.** `V5-CM-1.2`가 `reference_extensions.*`를
+    `history/kosa_0813/markers/`로 격리했고, 그 marker의 SHA 입력이던
+    `migrations/001_reference_extensions.sql`은 최종 계보가 아니다
+    (최종은 `migrations/v5/001_reference_extensions_final.sql`).
+
+    001 provenance는 둘이 대신한다 — 여기의 lineage·manifest hash와,
+    `assert_final_reference_state()`의 live R03/View postcheck다.
+    """
+
+    _require_runtime_target(target)
+    manifest = load_final_manifest()
     return {
+        "dataset_epoch": str(manifest["dataset_epoch"]),
+        "source_archive_sha256": str(manifest["source_archive_sha256"]),
+        "bootstrap_stage": str(manifest["bootstrap_stage"]),
         "manifest_sha256": _canonical_hash(manifest),
-        "reference_marker_sha256": _canonical_hash(reference),
     }
 
 
@@ -788,65 +2108,119 @@ def _marker_candidate(
     change_reference: str,
     status: str,
     applied_at: str | None = None,
+    identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    manifest = _read_json(resolve_bootstrap_manifest_path("runtime", "runtime_clean"))
+    """final marker payload.
+
+    `dataset_epoch`·`source_archive_sha256`·`bootstrap_stage`·`manifest_sha256`는
+    `_artifact_identity()`가 **schema 검증을 통과한** active manifest에서 낸 값이다.
+
+    `identity`를 넘기면 그것을 쓴다. 호출자가 이미 읽어 둔 값과 marker에 박히는 값이
+    **같은 읽기**여야 한다(PR #123 리뷰 권고 2). `validate_marker()`는 반대로 자기
+    읽기를 유지한다 — 그쪽은 독립 검증이므로 넘겨받으면 대조가 무의미해진다.
+    """
+
+    identity = dict(identity) if identity is not None else _artifact_identity(target)
     now = _timezone_text(datetime.now(UTC))
     return {
-        "artifact_type": "runtime_clean",
-        "format_version": 1,
+        "artifact_type": FINAL_ARTIFACT_TYPE,
+        "format_version": FINAL_MARKER_FORMAT_VERSION,
+        "task_id": TASK_ID,
         "database": target.database,
         "profile": target.profile,
         "status": status,
+        "dataset_epoch": identity["dataset_epoch"],
+        "source_archive_sha256": identity["source_archive_sha256"],
+        "bootstrap_stage": identity["bootstrap_stage"],
+        "migration_id": MIGRATION_ID,
         "migration_sha256": migration_sha,
+        "manifest_sha256": identity["manifest_sha256"],
         "schema_signature_sha256": result.schema_signature_sha256,
-        "dataset_epoch": manifest["dataset_epoch"],
-        "correction_version": manifest["correction_version"],
-        "value_normalization_version": manifest["value_normalization_version"],
-        "change_reference": change_reference,
         "action_history_rows": result.action_history_rows,
+        "change_reference": change_reference,
         "applied_at": applied_at or now,
         "recorded_at": now,
     }
 
 
-def validate_marker(
-    payload: Mapping[str, Any], target: BootstrapTarget, *, migration_sha: str
-) -> None:
-    expected_keys = {
+MARKER_KEYS = frozenset(
+    {
         "artifact_type",
         "format_version",
+        "task_id",
         "database",
         "profile",
         "status",
-        "migration_sha256",
-        "schema_signature_sha256",
         "dataset_epoch",
-        "correction_version",
-        "value_normalization_version",
-        "change_reference",
+        "source_archive_sha256",
+        "bootstrap_stage",
+        "migration_id",
+        "migration_sha256",
+        "manifest_sha256",
+        "schema_signature_sha256",
         "action_history_rows",
+        "change_reference",
         "applied_at",
         "recorded_at",
     }
+)
+MARKER_STATUSES = frozenset({"APPLIED", "VERIFIED_EXISTING"})
+
+
+def validate_marker(
+    payload: Mapping[str, Any], target: BootstrapTarget, *, migration_sha: str
+) -> None:
+    """final marker 계약. **구 계보 marker는 여기서 걸린다.**
+
+    구 `runtime_clean.<database>.json`은 `artifact_type`이 `runtime_clean`이고
+    `task_id`·`bootstrap_stage`·`manifest_sha256`가 없다. 파일명을 바꿔 넣어도 key 집합
+    비교에서 거부된다 — `MARKER_STALE`이지 final 증적이 아니다.
+    """
+
     if (
-        set(payload) != expected_keys
-        or payload.get("artifact_type") != "runtime_clean"
-        or payload.get("format_version") != 1
+        set(payload) != MARKER_KEYS
+        or payload.get("artifact_type") != FINAL_ARTIFACT_TYPE
+        or payload.get("format_version") != FINAL_MARKER_FORMAT_VERSION
+        or payload.get("task_id") != TASK_ID
     ):
-        raise AgentRuntimeArtifactError("runtime marker key/value 계약이 다릅니다")
+        raise AgentRuntimeArtifactError(
+            "runtime marker key/value 계약이 다릅니다",
+            reason_code="MARKER_STALE",
+        )
     if (
         payload.get("database") != target.database
-        or payload.get("profile") != "runtime"
+        or payload.get("profile") != RUNTIME_PROFILE
+        or payload.get("migration_id") != MIGRATION_ID
         or payload.get("migration_sha256") != migration_sha
     ):
         raise AgentRuntimeArtifactError("runtime marker provenance가 다릅니다")
+
+    # **epoch·manifest도 provenance다.** 여기서 안 보면 다른 epoch에서 만든 marker가
+    # 이름만 맞으면 통과한다. 001 marker를 뺀 자리를 이 두 값이 메운다.
+    identity = _artifact_identity(target)
     if (
-        payload.get("status") not in {"APPLIED", "VERIFIED_EXISTING"}
+        payload.get("dataset_epoch") != identity["dataset_epoch"]
+        or payload.get("source_archive_sha256") != identity["source_archive_sha256"]
+        or payload.get("bootstrap_stage") != identity["bootstrap_stage"]
+        or payload.get("manifest_sha256") != identity["manifest_sha256"]
+    ):
+        raise AgentRuntimeArtifactError("runtime marker epoch/manifest가 다릅니다")
+
+    if (
+        payload.get("status") not in MARKER_STATUSES
         or payload.get("action_history_rows") != 0
     ):
         raise AgentRuntimeArtifactError("runtime marker 상태가 다릅니다")
+    if not _is_sha256(payload.get("schema_signature_sha256")):
+        raise AgentRuntimeArtifactError(
+            "runtime marker schema signature가 잘못됐습니다"
+        )
     validate_change_reference(str(payload.get("change_reference")))
     scan_for_sensitive_values(payload)
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 def load_marker(
@@ -877,14 +2251,187 @@ def save_marker(
         atomic_save_json(path, dict(payload))
 
 
+RECEIPT_ARTIFACT_TYPE = "agent_runtime_final_receipt"
+RECEIPT_FORMAT_VERSION = 1
+RECEIPT_STATUSES = frozenset({"STARTED", "COMMITTED", "ABORTED"})
+RECEIPT_RESULTS = frozenset({"APPLIED", "VERIFIED_EXISTING"})
+
+#: 모든 status가 공통으로 갖는 key.
+_RECEIPT_COMMON_KEYS = frozenset(
+    {
+        "artifact_type",
+        "format_version",
+        "task_id",
+        "operation_id",
+        "attempt",
+        "database",
+        "profile",
+        "status",
+        "status_result",
+        "migration_id",
+        "migration_sha256",
+        "adoption_identity",
+        "change_reference",
+        "started_at",
+        "action_history_rows_before",
+    }
+)
+#: status별 추가 key. exact 집합이므로 부족해도 남아도 거부다.
+_RECEIPT_STATUS_KEYS = MappingProxyType(
+    {
+        "STARTED": frozenset(),
+        "COMMITTED": frozenset(
+            {"committed_at", "action_history_rows_after", "schema_signature_sha256"}
+        ),
+        "ABORTED": frozenset({"aborted_at", "abort_reason"}),
+    }
+)
+
+
 def _receipt_files(database: str, *, root: Path) -> list[Path]:
-    return (
-        sorted(root.glob(f"agent_runtime.{database}.*.json")) if root.exists() else []
-    )
+    """final receipt만 찾는다.
+
+    구현은 구 `agent_runtime.<db>.*.json`을 찾았다. 저장은 final prefix로 하면서
+    탐색만 구 prefix였으므로 **저장한 receipt를 한 건도 찾지 못했다**. 방향도 반대였다 —
+    계획이 "읽어 증적으로 승격하지 않는다"고 못 박은 폐기 prefix를 뒤지고 있었다
+    (구현리뷰 필수 1-1).
+    """
+
+    if not root.exists():
+        return []
+    return sorted(root.glob(f"{FINAL_ARTIFACT_TYPE}.{database}.*.json"))
+
+
+#: `_finish_receipt`가 쓸 수 있는 중단 사유. 자유 문자열을 받지 않는다.
+ABORT_REASONS = frozenset({"APPLY_FAILED", "SUPERSEDED_BEFORE_RETRY"})
+
+
+def _is_zero_int(value: Any) -> bool:
+    """`0`만 참. **`False`는 거부한다** — `bool`은 `int`의 부분형이다."""
+
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
+def assert_adoption_identity(value: Any) -> None:
+    """receipt가 담은 manifest identity를 **값까지** 본다.
+
+    key 존재만 확인하면 `dataset_epoch=123`·`manifest_sha256=[]`인 receipt가 통과한다
+    (구현리뷰 2차 필수 2). `_artifact_identity()`가 내는 것과 같은 모양이어야 한다.
+    """
+
+    if not isinstance(value, Mapping) or set(value) != {
+        "dataset_epoch",
+        "source_archive_sha256",
+        "bootstrap_stage",
+        "manifest_sha256",
+    }:
+        raise AgentRuntimeArtifactError("runtime receipt manifest identity가 다릅니다")
+    if value["dataset_epoch"] != manifest_v3.DATASET_EPOCH:
+        raise AgentRuntimeArtifactError("runtime receipt epoch가 다릅니다")
+    if value["bootstrap_stage"] != RUNTIME_STAGE:
+        raise AgentRuntimeArtifactError("runtime receipt stage가 다릅니다")
+    for key in ("source_archive_sha256", "manifest_sha256"):
+        if not _is_sha256(value[key]):
+            raise AgentRuntimeArtifactError(f"runtime receipt {key}가 잘못됐습니다")
+
+
+def validate_receipt(
+    payload: Mapping[str, Any], *, database: str, operation_id: str | None = None
+) -> None:
+    """receipt exact schema. **key가 아니라 값이 계약이다.**
+
+    없으면 `{"operation_id": "<uuid>"}` 한 필드짜리 임의 JSON도 복구 후보가 된다.
+    receipt는 "이 DB에서 이 migration이 commit됐다"는 주장이므로, 그 주장을 이루는
+    필드가 전부 있고 **각 값이 계약을 만족해야** 근거가 된다(구현리뷰 1·2차 필수).
+    """
+
+    status = payload.get("status")
+    if status not in RECEIPT_STATUSES:
+        raise AgentRuntimeArtifactError("runtime receipt status가 잘못됐습니다")
+    expected = _RECEIPT_COMMON_KEYS | _RECEIPT_STATUS_KEYS[str(status)]
+    if set(payload) != expected:
+        raise AgentRuntimeArtifactError("runtime receipt key 계약이 다릅니다")
+    if (
+        payload.get("artifact_type") != RECEIPT_ARTIFACT_TYPE
+        or payload.get("format_version") != RECEIPT_FORMAT_VERSION
+        or payload.get("task_id") != TASK_ID
+        or payload.get("migration_id") != MIGRATION_ID
+    ):
+        raise AgentRuntimeArtifactError("runtime receipt 계보가 다릅니다")
+    if payload.get("database") != database or payload.get("profile") != RUNTIME_PROFILE:
+        raise AgentRuntimeArtifactError("runtime receipt 대상이 다릅니다")
+    if payload.get("status_result") not in RECEIPT_RESULTS:
+        raise AgentRuntimeArtifactError("runtime receipt 적용 방식이 잘못됐습니다")
+    if not _is_sha256(payload.get("migration_sha256")):
+        raise AgentRuntimeArtifactError("runtime receipt migration sha가 잘못됐습니다")
+    try:
+        parsed = uuid.UUID(str(payload.get("operation_id")))
+    except ValueError as exc:
+        raise AgentRuntimeArtifactError(
+            "runtime receipt operation id가 잘못됐습니다"
+        ) from exc
+    if operation_id is not None and str(parsed) != operation_id:
+        # 파일명과 payload가 다르면 어느 쪽이 참인지 알 수 없다.
+        raise AgentRuntimeArtifactError("runtime receipt 파일명과 내용이 다릅니다")
+    attempt = payload.get("attempt")
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
+        raise AgentRuntimeArtifactError("runtime receipt attempt가 잘못됐습니다")
+
+    # **행 수는 정수 0만이다.** `"not-zero"`·`False`·`0.0`을 전부 거부한다.
+    if not _is_zero_int(payload.get("action_history_rows_before")):
+        raise AgentRuntimeArtifactError("runtime receipt action 행 수가 잘못됐습니다")
+    if status == "COMMITTED" and not _is_zero_int(
+        payload.get("action_history_rows_after")
+    ):
+        raise AgentRuntimeArtifactError("runtime receipt 완료 행 수가 잘못됐습니다")
+
+    assert_adoption_identity(payload.get("adoption_identity"))
+    validate_change_reference(str(payload.get("change_reference")))
+
+    for key in ("started_at", *_RECEIPT_STATUS_KEYS[str(status)]):
+        if key.endswith("_at") and not _is_timestamp(payload.get(key)):
+            raise AgentRuntimeArtifactError(f"runtime receipt {key}가 잘못됐습니다")
+    if status == "COMMITTED" and not _is_sha256(payload.get("schema_signature_sha256")):
+        raise AgentRuntimeArtifactError(
+            "runtime receipt schema signature가 잘못됐습니다"
+        )
+    if status == "ABORTED" and payload.get("abort_reason") not in ABORT_REASONS:
+        raise AgentRuntimeArtifactError("runtime receipt 중단 사유가 잘못됐습니다")
+    scan_for_sensitive_values(payload)
+
+
+def _is_timestamp(value: Any) -> bool:
+    """**timezone-aware**만 참.
+
+    naive 문자열을 받으면 두 DB의 시각을 비교할 수 없다. `_timezone_text()`가 쓰기
+    쪽에서 이미 강제하지만, 읽기 쪽이 안 보면 손으로 만든 파일이 통과한다.
+    """
+
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
 
 
 def _load_receipts(target: BootstrapTarget, *, root: Path) -> list[dict[str, Any]]:
-    receipts = [_read_json(path) for path in _receipt_files(target.database, root=root)]
+    """**검증을 통과한** receipt만 돌려준다.
+
+    깨진 payload를 조용히 거르지 않고 거부한다 — 무시하면 "후보가 정확히 1건"이라는
+    recovery 계약이 다른 파일의 존재 여부에 따라 흔들린다.
+    """
+
+    receipts = []
+    for path in _receipt_files(target.database, root=root):
+        payload = _read_json(path)
+        validate_receipt(
+            payload,
+            database=target.database,
+            operation_id=path.name.split(".")[-2],
+        )
+        receipts.append(payload)
     return sorted(
         receipts,
         key=lambda item: (int(item.get("attempt", 0)), str(item.get("started_at", ""))),
@@ -894,11 +2441,15 @@ def _load_receipts(target: BootstrapTarget, *, root: Path) -> list[dict[str, Any
 def _save_receipt(
     payload: Mapping[str, Any], target: BootstrapTarget, *, root: Path
 ) -> None:
-    scan_for_sensitive_values(payload)
-    atomic_save_json(
-        receipt_path(target.database, str(payload["operation_id"]), root=root),
-        dict(payload),
-    )
+    validate_receipt(payload, database=target.database)
+    try:
+        atomic_save_json(
+            receipt_path(target.database, str(payload["operation_id"]), root=root),
+            dict(payload),
+        )
+    except OSError as exc:
+        # 경로·권한 오류가 그대로 올라가면 절대경로가 노출된다.
+        raise AgentRuntimeArtifactError("runtime receipt 저장에 실패했습니다") from exc
 
 
 def _start_receipt(
@@ -907,6 +2458,7 @@ def _start_receipt(
     migration_sha: str,
     change_reference: str,
     adoption_identity: Mapping[str, Any],
+    status_result: str,
     root: Path,
 ) -> dict[str, Any]:
     existing = [
@@ -924,17 +2476,22 @@ def _start_receipt(
             )
             _save_receipt(stale, target, root=root)
     payload = {
-        "artifact_type": "agent_runtime_receipt",
-        "format_version": 1,
+        "artifact_type": RECEIPT_ARTIFACT_TYPE,
+        "format_version": RECEIPT_FORMAT_VERSION,
+        "task_id": TASK_ID,
         "operation_id": str(uuid.uuid4()),
         "attempt": max((int(item.get("attempt", 0)) for item in existing), default=0)
         + 1,
         "database": target.database,
         "profile": target.profile,
         "status": "STARTED",
+        # **적용 방식을 여기에 적는다.** recovery가 그대로 승계해야 fresh `APPLIED`가
+        # `VERIFIED_EXISTING`으로 바뀌지 않는다(구현리뷰 필수 1-2).
+        "status_result": status_result,
+        "migration_id": MIGRATION_ID,
         "migration_sha256": migration_sha,
-        "change_reference": change_reference,
         "adoption_identity": dict(adoption_identity),
+        "change_reference": change_reference,
         "started_at": now,
         "action_history_rows_before": 0,
     }
@@ -952,12 +2509,17 @@ def _finish_receipt(
 ) -> dict[str, Any]:
     payload = dict(receipt)
     if result is None:
+        payload.pop("committed_at", None)
+        payload.pop("action_history_rows_after", None)
+        payload.pop("schema_signature_sha256", None)
         payload.update(
             status="ABORTED",
             aborted_at=_timezone_text(datetime.now(UTC)),
             abort_reason=reason or "APPLY_FAILED",
         )
     else:
+        payload.pop("aborted_at", None)
+        payload.pop("abort_reason", None)
         payload.update(
             status="COMMITTED",
             committed_at=_timezone_text(datetime.now(UTC)),
@@ -1060,99 +2622,159 @@ def _exact_marker(
     )
 
 
+#: 이 runner가 판정하는 전체 상태. CLI reason code와 1:1이다.
+RUNTIME_STATES = frozenset(
+    {
+        "ABSENT",
+        "EXACT_UNMARKED",
+        "EXACT_MARKED",
+        "PARTIAL",
+        "DRIFT",
+        "LOST_SCHEMA",
+    }
+)
+
+
+def classify_state(
+    inspection: RuntimeInspection,
+    marker: Mapping[str, Any] | None,
+    *,
+    migration_sha: str,
+) -> str:
+    """물리 상태 + marker 유무를 **하나의 판정**으로 접는다.
+
+    분기를 `run_apply()` 본문에 인라인으로 두면 판정 자체를 회귀가 잡지 못한다 —
+    `EXACT_UNMARKED`를 `ABSENT`로 잘못 접어도 정상 입력에서는 어차피 통과한다
+    (CM-1.8 `reference_postcheck_routing`과 같은 이유).
+    """
+
+    if inspection.state == "ABSENT":
+        # marker가 있는데 schema가 없다 — 절대 자동 재생성하지 않는다.
+        return "LOST_SCHEMA" if marker is not None else "ABSENT"
+    if inspection.state in {"PARTIAL", "DRIFT"}:
+        return inspection.state
+    if marker is None:
+        return "EXACT_UNMARKED"
+    if not _exact_marker(marker, inspection, migration_sha=migration_sha):
+        return "DRIFT"
+    return "EXACT_MARKED"
+
+
+def _refuse(state: str) -> NoReturn:
+    """자동 보정하지 않는 상태를 sanitized reason으로 끝낸다.
+
+    **`NoReturn`이다.** 타입 체커가 호출 이후를 unreachable로 좁혀 준다 — 반환형이
+    `None`이면 `if state in {...}: _refuse(state)` 뒤가 계속 살아 있는 것으로 보인다
+    (PR #123 리뷰 필수 2).
+    """
+
+    messages = {
+        "PARTIAL": "부분 runtime schema를 자동 보정하지 않습니다",
+        "DRIFT": "runtime schema drift를 자동 보정하지 않습니다",
+        "LOST_SCHEMA": "marker는 있는데 runtime schema가 없습니다",
+    }
+    raise AgentRuntimeStateError(messages[state], reason_code=state)
+
+
 def run_apply(
     target: BootstrapTarget,
     *,
     change_reference: str,
-    recover_artifact: bool = False,
     engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
     marker_root: Path = MARKER_ROOT,
     report_root: Path = REPORT_ROOT,
 ) -> tuple[str, RuntimePostcheck]:
+    """`ABSENT`면 생성하고, `EXACT_UNMARKED`면 **DB를 건드리지 않고 채택**한다.
+
+    `V5-CM-1.6`이 걸어 둔 `FINAL_RUNTIME_MIGRATION_NOT_WIRED` 차단을 이 Task가 해제했다.
+    해제한 것은 raise 한 줄이 아니다 — 그 아래 경로가 요구하던 V4 `001` marker 의존을
+    같이 끊어야 실제로 성립한다(모듈 docstring).
+
+    ## `EXACT_UNMARKED`는 왜 DB에 쓰지 않는가
+
+    공용 두 Runtime DB에는 9 table이 이미 있다(`V5-CM-1.8` 묶음 3이 22/22로 실측).
+    없는 것을 만드는 것이 아니라 **그 상태를 증명**하는 것이 남은 일이므로, DDL을 다시
+    치면 오히려 계약이 아니라 사고다. 이 경로에서 발행되는 문장은 `SELECT`·`SET`·
+    `LOCK`뿐이며 회귀가 실제 발행 SQL을 수집해 그것을 단언한다.
+    """
+
     _require_runtime_target(target)
-    # **`V5-CM-1.6` fail-closed.** 이 runner는 구 corrected 계보 위에서만 성립했다.
-    #
-    # active corrected marker가 이미 history로 격리돼 현행 apply는 실제 final 환경에서
-    # 성공할 수 없다. 그 우연한 실패를 **engine 생성 전** 명시적 reason으로 바꾼다.
-    # V5 재기준화(mutation·receipt·marker)는 `V5-CM-3.2` 소관이다(계획 §7.2).
-    raise AgentRuntimeStateError(
-        "Runtime migration은 V5-CM-3.2에서 재기준화된다",
-        reason_code="FINAL_RUNTIME_MIGRATION_NOT_WIRED",
-    )
     change_reference = validate_change_reference(change_reference)
     sql, statements = load_and_validate_sql()
     migration_sha = migration_sha256(sql)
+    # manifest 검증을 engine보다 먼저 한다 — 계약이 깨져 있으면 접속할 이유가 없다.
+    #
+    # **한 번만 읽고 재사용한다.** 이 함수는 매번 manifest 파일을 다시 읽고 hash를
+    # 낸다. lock을 먼저 잡아 판정과 실행 사이를 막은 것과 같은 이유로, 검증한
+    # identity와 receipt에 박히는 identity는 **같은 읽기**여야 한다
+    # (PR #123 리뷰 권고 2).
     adoption = _artifact_identity(target)
     engine = engine_factory(target)
     receipt: dict[str, Any] | None = None
     result: RuntimePostcheck | None = None
-    alarm_before = 0
+    status = "APPLIED"
     try:
         with engine.connect() as connection, connection.begin():
             _prepare_transaction(connection, target, readonly=False)
+            # **lock이 먼저다.** action count·schema·marker를 lock 뒤에 다시 읽는다.
+            # 그러지 않으면 concurrent INSERT가 판정과 실행 사이로 들어온다.
             lock_action_history(connection)
             _, alarm_before = validate_prerequisites(connection, target)
             inspection = inspect_database(connection)
             marker = load_marker(target, migration_sha=migration_sha, root=marker_root)
-            if marker is not None:
-                if inspection.state != "PRESENT" or not _exact_marker(
-                    marker, inspection, migration_sha=migration_sha
-                ):
-                    raise AgentRuntimeStateError(
-                        "runtime marker와 schema가 다릅니다", reason_code="LOST_SCHEMA"
-                    )
-                result = postcheck_database(connection, alarm_rows_before=alarm_before)
-                return "NO_OP", result
-            if inspection.state == "DRIFT":
+            state = classify_state(inspection, marker, migration_sha=migration_sha)
+            if state in {"PARTIAL", "DRIFT", "LOST_SCHEMA"}:
+                _refuse(state)
+            if state == "EXACT_MARKED":
+                return "NO_OP", postcheck_database(
+                    connection, alarm_rows_before=alarm_before
+                )
+            if state not in {"EXACT_UNMARKED", "ABSENT"}:
+                # **미지 상태에서 기본 동작이 mutation이면 안 된다.**
+                #
+                # 구현은 `else`가 곧 `ABSENT`였다. 정확성이 "집합 밖 요소가 없다"는
+                # 사실에만 걸려 있어, `classify_state()`에 상태가 하나 추가되면 그것이
+                # `else`로 떨어져 공용 DB에 DDL이 돈다. CLI에서 `default_mode="apply"`를
+                # 없앤 것과 같은 이유다(PR #123 리뷰 필수 2).
                 raise AgentRuntimeStateError(
-                    "부분 runtime schema를 자동 보정하지 않습니다", reason_code="DRIFT"
+                    "알 수 없는 runtime 상태입니다", reason_code="DRIFT"
                 )
-            if inspection.state == "PRESENT":
-                if not recover_artifact:
-                    raise AgentRuntimeArtifactError(
-                        "외부 생성 runtime schema는 자동 채택하지 않습니다"
-                    )
-                candidates = [
-                    item
-                    for item in _load_receipts(target, root=report_root)
-                    if item.get("migration_sha256") == migration_sha
-                    and item.get("adoption_identity") == adoption
-                    and item.get("status") in {"STARTED", "COMMITTED"}
-                ]
-                if len(candidates) != 1:
-                    raise AgentRuntimeArtifactError(
-                        "복구 receipt 후보는 정확히 1건이어야 합니다"
-                    )
-                result = postcheck_database(connection, alarm_rows_before=alarm_before)
-                receipt = candidates[0]
-            elif inspection.state == "ABSENT":
-                if recover_artifact:
-                    raise AgentRuntimeArtifactError("복구할 runtime schema가 없습니다")
-                receipt = _start_receipt(
-                    target,
-                    migration_sha=migration_sha,
-                    change_reference=change_reference,
-                    adoption_identity=adoption,
-                    root=report_root,
-                )
+
+            status = "VERIFIED_EXISTING" if state == "EXACT_UNMARKED" else "APPLIED"
+            # **receipt를 분기 앞에서 연다.** 두 분기의 인자가 완전히 같고,
+            # 완료 기준이 "receipt 먼저, marker 마지막"이다(PR #123 리뷰 확인 2).
+            receipt = _start_receipt(
+                target,
+                migration_sha=migration_sha,
+                change_reference=change_reference,
+                adoption_identity=adoption,
+                status_result=status,
+                root=report_root,
+            )
+            if state == "ABSENT":
                 execute_schema(connection, statements)
-                result = postcheck_database(connection, alarm_rows_before=alarm_before)
-            else:
-                raise AgentRuntimeStateError("runtime schema 상태가 잘못됐습니다")
+            # `EXACT_UNMARKED`는 DB에 쓰지 않는다. postcheck는 양쪽 다 read-only다.
+            result = postcheck_database(connection, alarm_rows_before=alarm_before)
         if result is None or receipt is None:
             raise AgentRuntimeStateError("runtime apply 결과가 없습니다")
-        if receipt.get("status") != "COMMITTED":
-            receipt = _finish_receipt(receipt, target, result=result, root=report_root)
-        marker = _marker_candidate(
+        # **receipt 먼저, marker 마지막.** marker는 "commit된 사실"의 증명서이므로
+        # commit·postcheck·committed receipt 뒤에만 나온다.
+        receipt = _finish_receipt(receipt, target, result=result, root=report_root)
+        save_marker(
+            _marker_candidate(
+                target,
+                result,
+                migration_sha=migration_sha,
+                change_reference=change_reference,
+                status=status,
+                applied_at=str(receipt.get("committed_at")),
+                identity=adoption,
+            ),
             target,
-            result,
             migration_sha=migration_sha,
-            change_reference=change_reference,
-            status="VERIFIED_EXISTING" if recover_artifact else "APPLIED",
-            applied_at=str(receipt.get("committed_at")),
+            root=marker_root,
         )
-        save_marker(marker, target, migration_sha=migration_sha, root=marker_root)
-        return "RECOVERED" if recover_artifact else "APPLIED", result
+        return status, result
     except Exception:
         if receipt is not None and receipt.get("status") == "STARTED":
             _finish_receipt(receipt, target, result=None, root=report_root)
@@ -1161,45 +2783,187 @@ def run_apply(
         engine.dispose()
 
 
+def run_recover_marker(
+    target: BootstrapTarget,
+    *,
+    change_reference: str,
+    engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
+    marker_root: Path = MARKER_ROOT,
+    report_root: Path = REPORT_ROOT,
+) -> tuple[str, RuntimePostcheck]:
+    """commit은 됐는데 marker 쓰기가 실패한 경우만 되살린다.
+
+    DB는 건드리지 않는다. **committed receipt가 정확히 1건**이고 그 receipt의 schema
+    signature가 live와 같을 때만 marker를 쓴다. 그 조건이 없으면 "무엇을 증명하는지"
+    모르는 marker가 나온다.
+    """
+
+    _require_runtime_target(target)
+    change_reference = validate_change_reference(change_reference)
+    sql, _ = load_and_validate_sql()
+    migration_sha = migration_sha256(sql)
+    adoption = _artifact_identity(target)
+    engine = engine_factory(target)
+    try:
+        with engine.connect() as connection, connection.begin():
+            _prepare_transaction(connection, target, readonly=True)
+            validate_prerequisites(connection, target)
+            inspection = inspect_database(connection)
+            if load_marker(target, migration_sha=migration_sha, root=marker_root):
+                raise AgentRuntimeArtifactError("marker가 이미 있습니다")
+            if inspection.state != "PRESENT":
+                _refuse("DRIFT" if inspection.state != "ABSENT" else "LOST_SCHEMA")
+            candidates = [
+                item
+                for item in _load_receipts(target, root=report_root)
+                if item.get("migration_sha256") == migration_sha
+                and item.get("adoption_identity") == adoption
+                and item.get("status") == "COMMITTED"
+                # **요청한 변경과 같은 receipt만 본다.** 빠뜨리면 다른 변경 건의
+                # committed receipt로 marker를 발급하게 된다.
+                and item.get("change_reference") == change_reference
+                and item.get("schema_signature_sha256")
+                == inspection.schema_signature_sha256
+            ]
+            if len(candidates) != 1:
+                raise AgentRuntimeArtifactError(
+                    "복구 receipt 후보는 정확히 1건이어야 합니다"
+                )
+            result = postcheck_database(
+                connection, alarm_rows_before=alarm_event_count(connection)
+            )
+            receipt = candidates[0]
+        save_marker(
+            _marker_candidate(
+                target,
+                result,
+                migration_sha=migration_sha,
+                change_reference=change_reference,
+                # **적용 방식을 receipt에서 그대로 승계한다.** fallback을 두면
+                # fresh `APPLIED` 뒤 marker만 실패한 경우가 `VERIFIED_EXISTING`으로
+                # 바뀌어 실제 적용 방식을 잃는다(구현리뷰 필수 1-2).
+                status=str(receipt["status_result"]),
+                applied_at=str(receipt.get("committed_at")),
+                identity=adoption,
+            ),
+            target,
+            migration_sha=migration_sha,
+            root=marker_root,
+        )
+        return "RECOVERED", result
+    finally:
+        engine.dispose()
+
+
+def run_verify(
+    target: BootstrapTarget,
+    *,
+    engine_factory: Callable[[BootstrapTarget], Engine] = _engine_for,
+    marker_root: Path = MARKER_ROOT,
+) -> tuple[str, RuntimePostcheck]:
+    """live schema와 발급된 marker가 같은지 본다. **read-only다.**
+
+    `run_preflight()`와 다른 점은 marker를 **필수**로 본다는 것이다. preflight는
+    marker가 없는 상태(`EXACT_UNMARKED`)도 정상 보고이지만, verify는 실패로 본다.
+    """
+
+    _require_runtime_target(target)
+    sql, _ = load_and_validate_sql()
+    migration_sha = migration_sha256(sql)
+    engine = engine_factory(target)
+    try:
+        with engine.connect() as connection, connection.begin():
+            _prepare_transaction(connection, target, readonly=True)
+            _, alarm_before = validate_prerequisites(connection, target)
+            inspection = inspect_database(connection)
+            marker = load_marker(target, migration_sha=migration_sha, root=marker_root)
+            state = classify_state(inspection, marker, migration_sha=migration_sha)
+            if state != "EXACT_MARKED":
+                raise AgentRuntimeStateError(
+                    "live schema와 marker가 일치하지 않습니다",
+                    reason_code=state if state in RUNTIME_STATES else "DRIFT",
+                )
+            return state, postcheck_database(connection, alarm_rows_before=alarm_before)
+    finally:
+        engine.dispose()
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="V5-CM-3.2 Runtime 002 migration")
     parser.add_argument("--database", choices=sorted(ALLOWED_DATABASES))
     parser.add_argument("--confirm-target")
     parser.add_argument("--change-ref")
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--rehearse", action="store_true")
-    parser.add_argument("--recover-artifact", action="store_true")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--recover-marker", action="store_true")
     return parser
 
 
 def resolve_mode(args: argparse.Namespace) -> str:
-    return resolve_exclusive_mode(
+    """mode는 **하나만** 명시한다. mutation을 암묵적 기본값으로 두지 않는다."""
+
+    mode = resolve_exclusive_mode(
         {
             "preflight": args.preflight,
             "rehearse": args.rehearse,
-            "recover": args.recover_artifact,
+            "apply": args.apply,
+            "verify": args.verify,
+            "recover": args.recover_marker,
         },
-        default_mode="apply",
-        mutually_exclusive_message="runtime apply mode는 하나만 선택해야 합니다",
+        default_mode="",
+        mutually_exclusive_message="runtime mode는 하나만 선택해야 합니다",
     )
+    if not mode:
+        # 구현은 mode 누락을 `apply`로 접었다. mutation이 기본값이면 오타 한 번으로
+        # 공용 DB에 쓰기가 돌 수 있다. 명시하지 않으면 아무것도 하지 않는다.
+        raise AgentRuntimeError(
+            "runtime mode를 하나 명시해야 합니다 "
+            "(--preflight/--rehearse/--apply/--verify/--recover-marker)"
+        )
+    return mode
+
+
+def assert_runtime_database(database: str | None) -> str:
+    """**parser 직후 경계.** evaluation·임의 DB를 여기서 끝낸다.
+
+    `load_dotenv`·`load_bootstrap_target`·engine보다 앞이다. 뒤에 두면 거부되는
+    입력에도 자격증명을 읽고 connection을 만들려 시도한 뒤에야 멈춘다 — 계획 §6이
+    "connector 이전 경계"라고 적은 자리다.
+    """
+
+    if database is None:
+        raise AgentRuntimeError("--database가 필요합니다")
+    if database not in RUNTIME_DATABASES:
+        raise AgentRuntimeStateError(
+            "002는 runtime profile에만 적용할 수 있습니다",
+            reason_code="PROFILE_NOT_ALLOWED",
+        )
+    return database
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    load_dotenv(REPOSITORY_ROOT / ".env", override=False)
     try:
         mode = resolve_mode(args)
-        if args.database is None:
-            raise AgentRuntimeError("--database가 필요합니다")
-        if args.database not in RUNTIME_DATABASES:
-            raise AgentRuntimeStateError(
-                "evaluation DB에는 002를 적용할 수 없습니다",
-                reason_code="PROFILE_NOT_ALLOWED",
-            )
-        target = load_bootstrap_target(args.database)
+        database = assert_runtime_database(args.database)
+        # 여기서부터만 자격증명을 읽는다.
+        load_dotenv(REPOSITORY_ROOT / ".env", override=False)
+        target = load_bootstrap_target(database)
         if mode == "preflight":
-            state = run_preflight(target)
-            print(f"RUNTIME_PREFLIGHT database={target.database} state={state.state}")
+            inspection = run_preflight(target)
+            print(
+                f"RUNTIME_PREFLIGHT database={target.database} "
+                f"state={inspection.state}"
+            )
+            return 0
+        if mode == "verify":
+            state, result = run_verify(target)
+            print(
+                f"RUNTIME_VERIFY_OK database={target.database} state={state} "
+                f"action_rows={result.action_history_rows}"
+            )
             return 0
         if args.confirm_target != target.database:
             raise AgentRuntimeError("--confirm-target이 대상 database와 다릅니다")
@@ -1212,9 +2976,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if not args.change_ref:
             raise AgentRuntimeError("apply/recover에는 --change-ref가 필요합니다")
-        status, result = run_apply(
-            target, change_reference=args.change_ref, recover_artifact=mode == "recover"
-        )
+        runner = run_recover_marker if mode == "recover" else run_apply
+        status, result = runner(target, change_reference=args.change_ref)
         print(
             f"RUNTIME_{status} database={target.database} tables=9 "
             f"action_rows={result.action_history_rows}"

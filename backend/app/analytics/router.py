@@ -8,8 +8,11 @@ API v3 §5.2 선택 확장 계약:
 오류에만 쓴다 — 둘을 구분하는 것이 계약이다(요구사항 FR-D-02).
 """
 
-from fastapi import APIRouter
+from datetime import date
 
+from fastapi import APIRouter, Query
+
+from app.analytics.audit import AuditLogPageResponse, fetch_audit_logs
 from app.analytics.schemas import (
     AnalysisQueryRequest,
     AnalysisQueryResponse,
@@ -19,8 +22,37 @@ from app.analytics.schemas import (
 )
 from app.analytics.service import CHECK_LABELS, run_analysis_query
 from app.analytics.sql_validator import validate_sql
+from app.common.db import engine
 
 router = APIRouter(tags=["Analytics"])
+
+
+@router.get("/audit-logs", response_model=AuditLogPageResponse)
+def get_audit_logs(
+    event_type: str | None = None,
+    actor_type: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=200),
+) -> AuditLogPageResponse:
+    """감사로그 조회(append-only · 읽기 전용, FR-D-07 · NFR-05).
+
+    entity_id 는 부분 일치, date 필터는 Asia/Seoul 자정 기준(NFR-13)이다.
+    """
+    return fetch_audit_logs(
+        engine,
+        event_type=event_type,
+        actor_type=actor_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        size=size,
+    )
 
 
 @router.post("/analytics/query", response_model=AnalysisQueryResponse)
