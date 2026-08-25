@@ -1096,6 +1096,10 @@ class TestApplyRequiresEvidenceOnTheCommandLine:
         monkeypatch.setattr(
             runner, "run_apply", lambda *a, **k: calls.append(1) or "APPLIED"
         )
+        # **자격증명 환경에 기대지 않는다.** `main()`은 `.env`를 읽고 target을
+        # 해석하므로, stub이 없으면 `.env`가 있는 기계에서만 이 인자 계약에 도달한다.
+        # CI에는 `.env`가 없어 `TargetValidationError`로 먼저 끝났다.
+        self._stub_target(monkeypatch)
         assert runner.main(self._argv("--apply")) == runner.EXIT_USAGE
         assert calls == []
         assert not hasattr(runner, "DEFAULT_BACKUP_ROOT")
@@ -1107,6 +1111,7 @@ class TestApplyRequiresEvidenceOnTheCommandLine:
         monkeypatch.setattr(
             runner, "run_apply", lambda *a, **k: calls.append(1) or "APPLIED"
         )
+        self._stub_target(monkeypatch)
         assert (
             runner.main(self._argv("--apply", "--backup-root", "/tmp/cm34"))
             == runner.EXIT_USAGE
