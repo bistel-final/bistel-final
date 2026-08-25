@@ -24,6 +24,13 @@
   backup/restore 검증·명시적 confirm·단일 transaction·재실행 no-op을 통과해야 한다.
 - PostgreSQL은 profile별 fresh bootstrap, migration, runtime seed를 분리한다.
 - Neo4j는 destructive 문장을 제거한 safe loader만 사용하며 검증 성공 뒤 marker를 마지막에 쓴다.
+- **현행 graph 상태(`V5-CM-2.7`)** — `markers/neo4j_graph.neo4j.json`이
+  `ADOPTED_EXISTING`으로 44 nodes / 85 relationships · `relation_id` 중복 0을 증명한다.
+  등록 artifact는 `master_graph.cypher`(seed 99문장)와 `manifests/neo4j.graph.json`이며
+  최종 `project.zip`의 `master.cypher`에서 결정적으로 생성된다.
+- **재실행 경계** — `--preflight`가 `EXACT_WITH_MARKER`를 내면 이미 적용된 상태다.
+  그 상태에서 mutation mode(`--apply-empty`·`--adopt-existing`·`--replace`)를 호출하지
+  않고 종료한다. loader도 marker가 있으면 fail-closed로 거부한다.
 - 공용 PostgreSQL·Neo4j·n8n은 외부 canonical 서비스다. 팀 compose에는
   Backend·Frontend·Kafka·MES Mock만 포함하고 두 번째 DB·Neo4j·n8n을 만들지 않는다.
 - 대응 `V5-*` 구현·리뷰가 끝나기 전에는 이 문서에서 임시 실행 명령을 만들어 사용하지 않는다.

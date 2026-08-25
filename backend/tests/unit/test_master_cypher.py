@@ -28,9 +28,7 @@ FINAL_ARCHIVE_SHA256 = (
     "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3"
 )
 FINAL_MEMBER_PATH = "project/repository/sample/ontology/master.cypher"
-FINAL_MEMBER_SHA256 = (
-    "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
-)
+FINAL_MEMBER_SHA256 = "51604707c9a0f3bc97b21773b7bd43d0049f2dacf322042c36f090ec63c74eea"
 FINAL_GRAPH_FINGERPRINT = (
     "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
 )
@@ -79,6 +77,12 @@ def test_final_source_contract_constants() -> None:
     assert master.SOURCE_MEMBER_SHA256 == FINAL_MEMBER_SHA256
 
 
+#: tracked fixture의 **raw bytes** SHA-256. archive member와 다르다.
+FIXTURE_RAW_SHA256 = "bb1febc0894ec566bb22aff9f28a6258789aa2361e8c804f5ff00c7d633dc1be"
+FIXTURE_RAW_BYTES = 11_021
+MEMBER_RAW_BYTES = 11_121
+
+
 def test_fixture_matches_registered_master_cypher_member_hash() -> None:
     source = _actual_source()
     assert master.sha256_bytes(source.replace("\n", "\r\n").encode()) == (
@@ -86,12 +90,151 @@ def test_fixture_matches_registered_master_cypher_member_hash() -> None:
     )
 
 
+def test_the_fixture_and_the_archive_member_are_not_byte_identical() -> None:
+    """**두 파일의 byte 경계를 고정한다.**
+
+    `.gitattributes`의 `*.cypher text eol=lf` 때문에 tracked fixture는 **구조적으로
+    영원히 LF**다. 원본 ZIP member는 100개 CRLF 줄바꿈으로 정확히 100 bytes 더 크다.
+
+    따라서 provenance의 `SOURCE_MEMBER_SHA256`은 **오직 archive member bytes**로
+    계산한다. fixture bytes로 계산하면 다른 값이 나오는데, 그때 상수를 fixture 값으로
+    "고치면" **실제 아카이브 경로가 거부된다.** 그 사고를 이 회귀가 막는다.
+
+    기존 `test_fixture_matches_registered_master_cypher_member_hash`는 `read_text()`로
+    읽어 newline을 정규화하므로, fixture raw bytes가 CRLF로 바뀌어도 통과한다.
+    여기서는 **raw bytes**를 본다.
+    """
+
+    raw = FIXTURE_PATH.read_bytes()
+    assert len(raw) == FIXTURE_RAW_BYTES
+    assert master.sha256_bytes(raw) == FIXTURE_RAW_SHA256
+
+    # **member hash와 같지 않다.** 같아지면 둘 중 하나가 오염된 것이다.
+    assert master.sha256_bytes(raw) != FINAL_MEMBER_SHA256
+
+    # CRLF로 복원하면 member와 같다 — 내용은 동일하다는 증명이다.
+    restored = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    assert len(restored) == MEMBER_RAW_BYTES
+    assert master.sha256_bytes(restored) == FINAL_MEMBER_SHA256
+
+
+ACTIVE_MANIFEST_SHA256 = (
+    "1fd92a73186d6ae7d7ee8d7a7a2e1bf4a5fa5016491f4b5df29a93cd6ca6f3d3"
+)
+
+
+def test_the_active_artifacts_match_the_final_source_exactly(parsed) -> None:
+    """**저장소에 등록된 실물 두 본**을 최종 source와 exact 대조한다.
+
+    지금까지 회귀는 메모리에서 새 manifest를 만들어 비교했을 뿐
+    `infra/bootstrap/manifests/neo4j.graph.json`을 **읽지 않았다.** 그래서 active
+    manifest를 임의의 다른 내용으로 바꿔도 history와만 다르면 통과했다
+    (구현리뷰 필수 1).
+
+    `validate_generated_artifacts()`는 loader가 실행 시 쓰는 바로 그 판정이다.
+    게시 전 회귀 Gate에서도 같은 것을 돌린다.
+    """
+
+    manifest = master.validate_generated_artifacts(parsed)
+    assert manifest["node_count"] == master.EXPECTED_NODE_COUNT
+    assert manifest["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
+    # canonical JSON 기준이다 — 파일 raw bytes 기준과 다르다.
+    assert master.graph_manifest_sha256(manifest) == ACTIVE_MANIFEST_SHA256
+    assert manifest["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
+    assert manifest["source_member_sha256"] == FINAL_MEMBER_SHA256
+
+
+def test_a_tampered_active_manifest_is_refused(parsed, tmp_path) -> None:
+    """active manifest를 변이하면 위 판정이 실제로 실패한다."""
+
+    import json
+
+    good = json.loads(master.GRAPH_MANIFEST_PATH.read_text(encoding="utf-8"))
+    cypher = tmp_path / "master_graph.cypher"
+    cypher.write_bytes(master.CORRECTED_CYPHER_PATH.read_bytes())
+
+    for key, value in (
+        ("node_count", 43),
+        ("relationship_count", 84),
+        ("expected_graph_fingerprint_sha256", "0" * 64),
+        ("dataset_epoch", "kosa_0813"),
+    ):
+        tampered = tmp_path / f"{key}.json"
+        tampered.write_text(
+            json.dumps({**good, key: value}, ensure_ascii=False), encoding="utf-8"
+        )
+        with pytest.raises(master.GraphManifestError):
+            master.validate_generated_artifacts(
+                parsed, cypher_path=cypher, manifest_path=tampered
+            )
+
+
+def test_the_active_manifest_holds_no_secret() -> None:
+    """active manifest에도 secret scan을 돌린다.
+
+    `test_dataset_epoch.py`의 scan은 이름과 달리 **marker에만** 실행된다
+    (구현리뷰 필수 1).
+    """
+
+    import json
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "scripts"))
+    import manifest_v3
+
+    manifest_v3.scan_for_sensitive_values(
+        json.loads(master.GRAPH_MANIFEST_PATH.read_text(encoding="utf-8"))
+    )
+
+
+#: PostgreSQL `lot_history.area_id`·`evaluation.area`·`dim_parameter.area`가 쓰는 표기.
+#: 공용 3 DB 실측값이며 Neo4j `Area.area_id`·`Equipment.area`와 같아야 한다.
+CROSS_STORE_AREA_IDS = frozenset({"Photo", "Etch"})
+
+
+def test_area_id_matches_the_postgresql_representation(parsed) -> None:
+    """**store를 넘나드는 join key의 표기를 고정한다**(팀 리뷰 확인 1).
+
+    최종 `master.cypher`가 `photo/etch` → `Photo/Etch`로 바꿨다. 이 값은 Neo4j
+    안에서만 쓰이지 않는다 — `V5-B-3.3`의 `get_equipment_context`가 chamber →
+    equipment → area를 반환하고, PostgreSQL `lot_history.area_id`와 대조하는 경로가
+    생긴다.
+
+    한쪽이 소문자로 매칭하면 **예외가 아니라 빈 결과**가 나온다. CI에서 안 잡힌다.
+
+    공용 3 DB 실측: `lot_history.area_id`·`evaluation.area`·`dim_parameter.area`가
+    전부 `['Etch', 'Photo']`다. 이 회귀가 그 일치를 계약으로 고정한다.
+    """
+
+    areas = {
+        node.properties["area_id"] for node in parsed.nodes if node.label == "Area"
+    }
+    assert areas == set(CROSS_STORE_AREA_IDS)
+
+    # Equipment의 area 속성도 같은 표기를 쓴다.
+    equipment_areas = {
+        node.properties["area"]
+        for node in parsed.nodes
+        if node.label == "Equipment" and "area" in node.properties
+    }
+    assert equipment_areas <= set(CROSS_STORE_AREA_IDS)
+
+    # 소문자 표기가 섞이면 실패한다.
+    assert not any(value.islower() for value in areas | equipment_areas)
+
+
 def test_registered_artifact_counts_and_first_relation_id(parsed) -> None:
     assert parsed.destructive_statement == "MATCH (n) DETACH DELETE n;"
-    assert len(parsed.seed_statements) == 99
-    assert len(parsed.corrected_statements) == 99
-    assert len(parsed.nodes) == 44
-    assert len(parsed.relationships) == 85
+    # **수치는 `master_cypher`의 정본 상수에서 유도한다.**
+    #
+    # 같은 값이 이름을 달리해 여러 자리에 있으면 artifact를 다시 발급할 때 한 곳만
+    # 고쳐도 나머지가 조용히 낡는다. dry-run의 38/81 literal이 정확히 그랬다
+    # (팀 리뷰 필수 1).
+    assert len(parsed.seed_statements) == master.EXPECTED_SEED_STATEMENT_COUNT
+    assert len(parsed.corrected_statements) == master.EXPECTED_SEED_STATEMENT_COUNT
+    assert len(parsed.nodes) == master.EXPECTED_NODE_COUNT
+    assert len(parsed.relationships) == master.EXPECTED_RELATIONSHIP_COUNT
     first = parsed.relationships[0]
     assert first.canonical_tuple == (
         "STEP_OF|RecipeStep:recipe_id=s:RECIPE01+recipe_step_no=i:1|"
@@ -116,7 +259,11 @@ def test_corrected_artifact_never_contains_destructive_statement(parsed) -> None
 
 def test_relationship_ids_are_unique_and_deterministic(parsed) -> None:
     relation_ids = [item.relation_id for item in parsed.relationships]
-    assert len(relation_ids) == len(set(relation_ids)) == 85
+    assert (
+        len(relation_ids)
+        == len(set(relation_ids))
+        == (master.EXPECTED_RELATIONSHIP_COUNT)
+    )
     assert master.parse_master_cypher(_actual_source()).corrected_text == (
         parsed.corrected_text
     )
@@ -242,8 +389,8 @@ def test_graph_manifest_is_exact_and_canonical(parsed) -> None:
     assert expected["corrected_cypher_sha256"] == FINAL_CORRECTED_SHA256
     assert expected["expected_graph_fingerprint_sha256"] == FINAL_GRAPH_FINGERPRINT
     assert expected["expected_legacy_fingerprint_sha256"] == FINAL_LEGACY_FINGERPRINT
-    assert expected["node_count"] == 44
-    assert expected["relationship_count"] == 85
+    assert expected["node_count"] == master.EXPECTED_NODE_COUNT
+    assert expected["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
     assert expected["label_distribution"] == EXPECTED_LABEL_DISTRIBUTION
     assert expected["relationship_type_distribution"] == (
         EXPECTED_RELATIONSHIP_TYPE_DISTRIBUTION
