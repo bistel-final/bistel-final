@@ -155,6 +155,11 @@ _SELECT = (
 )
 _ORDER = " ORDER BY occurred_at DESC, audit_id DESC"
 
+#: bare array 서버측 상한 — append-only 테이블은 행이 줄지 않으므로 무상한 조회를
+#: 허용하면 필터 없는 호출 한 번이 전체를 메모리에 올린다. 상한을 넘는 조회·전체
+#: 건수(total)가 필요하면 /paged 를 쓴다. 정렬이 DESC 라 최신 이벤트부터 담긴다.
+BARE_MAX_ROWS = 500
+
 
 def fetch_audit_logs(
     engine: Engine,
@@ -166,7 +171,10 @@ def fetch_audit_logs(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> list[AuditLogItem]:
-    """호환 필수 bare array. 화면 total 은 items.length 로 해석한다 (V5-D-1.2)."""
+    """호환 필수 bare array — 최신순 최대 BARE_MAX_ROWS 건 (V5-D-1.2).
+
+    응답 형태만의 계약이지 무제한이 아니다. 상한 밖 조회와 전체 집계는 /paged 몫이다.
+    """
     where, params = _build_where(
         event_type=event_type,
         actor_type=actor_type,
@@ -176,7 +184,10 @@ def fetch_audit_logs(
         date_to=date_to,
     )
     with engine.connect() as connection:
-        rows = connection.execute(text(f"{_SELECT} {where}{_ORDER}"), params).mappings()
+        rows = connection.execute(
+            text(f"{_SELECT} {where}{_ORDER} LIMIT :limit"),
+            {**params, "limit": BARE_MAX_ROWS},
+        ).mappings()
         return [_to_item(row) for row in rows]
 
 
