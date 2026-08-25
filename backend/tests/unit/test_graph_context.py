@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from app.common.tool_contracts import (
     EquipmentContextToolResult,
 )
@@ -9,11 +12,82 @@ from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
+from app.knowledge.router import router as knowledge_router
 from app.knowledge.repository import ChamberGraphProjection, ChamberGraphRepository
+from app.knowledge.schemas import ChamberRelationResponse
 from app.knowledge.service import EquipmentContextService, GraphService
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
 REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
+
+TOOL_CONTEXT_FIXTURES: dict[str, dict[str, object]] = {
+    "EQP01-PM1": {
+        "chamber_id": "EQP01-PM1",
+        "equipment_id": "EQP01",
+        "sibling_chamber_ids": ["EQP01-PM2"],
+        "area": "Photo",
+        "model_code": "PH-9000",
+        "process_step_id": "CT-PHOTO",
+        "upstream_process_step_ids": [],
+        "downstream_process_step_ids": ["CT-ETCH"],
+        "parameter_ids": ["PH_DEV", "PH_DOSE", "PH_FOCUS", "PH_PEB"],
+        "graph_revision": REVISION,
+    },
+    "EQP04-PM2": {
+        "chamber_id": "EQP04-PM2",
+        "equipment_id": "EQP04",
+        "sibling_chamber_ids": ["EQP04-PM1"],
+        "area": "Etch",
+        "model_code": "ET-7500",
+        "process_step_id": "CT-ETCH",
+        "upstream_process_step_ids": ["CT-PHOTO"],
+        "downstream_process_step_ids": [],
+        "parameter_ids": ["ET_CF4", "ET_ESC", "ET_PRES", "ET_REFL"],
+        "graph_revision": REVISION,
+    },
+}
+
+CHAMBER_GRAPH_FIXTURE = ChamberGraphProjection(
+    root_node_id="Chamber:EQP04-PM2",
+    nodes=[
+        {
+            "id": "Chamber:EQP04-PM2",
+            "label": "Chamber",
+            "business_id": "EQP04-PM2",
+            "display_name": "EQP04-PM2",
+            "properties": {"chamber_id": "EQP04-PM2", "chamber_no": 2},
+        },
+        {
+            "id": "Equipment:EQP04",
+            "label": "Equipment",
+            "business_id": "EQP04",
+            "display_name": "Dry Etcher 04",
+            "properties": {"equipment_id": "EQP04", "model_code": "ET-7500"},
+        },
+        {
+            "id": "ProcessStep:CT-ETCH",
+            "label": "ProcessStep",
+            "business_id": "CT-ETCH",
+            "display_name": "Etch",
+            "properties": {"step_id": "CT-ETCH", "step_name": "Etch"},
+        },
+    ],
+    relationships=[
+        {
+            "id": "REL-PART-04-2",
+            "type": "PART_OF",
+            "source": "Chamber:EQP04-PM2",
+            "target": "Equipment:EQP04",
+        },
+        {
+            "id": "REL-PERFORMS-04",
+            "type": "PERFORMS",
+            "source": "Equipment:EQP04",
+            "target": "ProcessStep:CT-ETCH",
+        },
+    ],
+    graph_revision=REVISION,
+)
 
 
 class FakeGraphRepository:
@@ -112,6 +186,23 @@ def test_equipment_context_service_returns_compact_tool_context() -> None:
     assert result.graph_revision == REVISION
 
 
+def test_equipment_context_service_matches_final_compact_fixtures() -> None:
+    class FixtureRepository:
+        def get_equipment_context_payload(
+            self,
+            chamber_id: str,
+        ) -> dict[str, object] | None:
+            return TOOL_CONTEXT_FIXTURES.get(chamber_id)
+
+    service = EquipmentContextService(FixtureRepository())
+
+    for chamber_id, expected in TOOL_CONTEXT_FIXTURES.items():
+        result = service.get_equipment_context(chamber_id)
+
+        assert result is not None
+        assert result.model_dump() == {"ok": True, "reason": "", **expected}
+
+
 def test_equipment_context_service_uses_next_step_direction_for_process_flow() -> None:
     class EtchGraphRepository:
         def get_equipment_context_payload(
@@ -139,6 +230,63 @@ def test_equipment_context_service_uses_next_step_direction_for_process_flow() -
     assert result.process_step_id == "CT-ETCH"
     assert result.upstream_process_step_ids == ["CT-PHOTO"]
     assert result.downstream_process_step_ids == []
+
+
+def test_chamber_relations_api_returns_graph_projection(monkeypatch: Any) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_chamber_relations(
+            self,
+            chamber_id: str,
+        ) -> ChamberRelationResponse:
+            assert chamber_id == "EQP04-PM2"
+            return ChamberRelationResponse.model_validate(
+                {
+                    "root_node_id": CHAMBER_GRAPH_FIXTURE.root_node_id,
+                    "nodes": CHAMBER_GRAPH_FIXTURE.nodes,
+                    "relationships": CHAMBER_GRAPH_FIXTURE.relationships,
+                    "graph_revision": CHAMBER_GRAPH_FIXTURE.graph_revision,
+                }
+            )
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    monkeypatch.setattr("app.knowledge.router.GraphService", FakeService)
+
+    response = TestClient(app).get("/relations/chambers/EQP04-PM2")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "root_node_id": "Chamber:EQP04-PM2",
+        "nodes": CHAMBER_GRAPH_FIXTURE.nodes,
+        "relationships": CHAMBER_GRAPH_FIXTURE.relationships,
+        "graph_revision": REVISION,
+    }
+    assert "relations" not in body
+    assert "relation_ids" not in body
+
+
+def test_chamber_relations_api_returns_404_for_missing_chamber(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_chamber_relations(self, chamber_id: str) -> None:
+            assert chamber_id == "missing"
+            return None
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+    monkeypatch.setattr("app.knowledge.router.GraphService", FakeService)
+
+    response = TestClient(app).get("/relations/chambers/missing")
+
+    assert response.status_code == 404
 
 
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
