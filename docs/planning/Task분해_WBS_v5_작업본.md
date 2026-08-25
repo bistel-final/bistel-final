@@ -303,7 +303,7 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 | Text2SQL 활성 여부 | 선택 확장. 필수 인수 기준에 미포함 | 일정 여유에 따라 |
 | v4 corrected/bootstrap 코드 삭제 | `V5-CM-1.6`·`V5-CM-1.7`로 분리 | 공용 profile 전환 뒤, 최종 gate 전 |
 | compatibility alias 제거 | `V5-CM-4.4-3`이 조건을 고정하고 최종 API gate가 충족 여부를 기록 | 모든 화면 canonical 전환 후 |
-| `V5-CM-1.2` skip 중 graph 2건(`test_master_cypher`) | `V5-CM-1.7`의 명시적 예외. B-3.1 offline parser를 거쳐 safe apply하는 `V5-CM-2.7`에서 해제 | `V5-CM-2.7` 수행 시 |
+| ~~`V5-CM-1.2` skip 중 graph 2건(`test_master_cypher`)~~ | **해제 완료.** `V5-B-3.1`(#106)이 offline parser·fixture를 넣으면서 literal skip이 0이 됐고, `V5-CM-2.7`이 최종 artifact 재기준화와 safe apply로 계약을 닫았다 | 해소 |
 | Ontology 화면 조회 범위 | chamber 기준으로 구현(`V5-B-3.3`). 노드 타입 확장은 `GET /relations/{node_type}/{node_id}` 형태로 흡수하며 응답 스키마를 바꾸지 않는다 | 필수 5화면 완료 후 |
 | 최종 epoch profile manifest 발급 | **확정:** `V5-CM-3.1`은 발급하지 않는다. `manifest_v3` epoch 상수·evaluation stage·R03 type registry·V5 migration 등록·Text2SQL manifest-backed R03 allowlist 다섯 공백을 `V5-CM-1.8`이 닫은 뒤 발급한다. 공백은 `final_manifest_blockers()`가 코드로 센다 | `V5-CM-1.8` |
 | FR-B-08 하이브리드 검색 | **P2 미편성·명시적 defer.** 필수 벡터 검색·Recall/MRR gate 이후 일정 여유가 있을 때만 새 Task로 등록 | 필수 B 13 Task 완료 후 |

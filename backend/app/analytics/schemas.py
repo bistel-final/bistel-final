@@ -36,7 +36,9 @@ class AnalysisQueryResponse(ApiModel):
     reject_reason: str | None = None
     error_msg: str | None = None
     latency_ms: int = Field(ge=0)
-    nl_query_log_id: int = Field(ge=1)
+    # V5-D-2.4: 이력은 evaluation-only 선택 확장 — logger DSN 미구성 배포에서는
+    # 기록이 생략되므로 null 이다. 가짜 placeholder id 로 채우지 않는다.
+    nl_query_log_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_outcome(self) -> "AnalysisQueryResponse":

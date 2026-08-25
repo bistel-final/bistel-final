@@ -1826,7 +1826,11 @@ def _validate_columns_contract(columns: Any) -> None:
             raise AgentRuntimeStateError(f"{table} 컬럼 계약이 다릅니다")
 
 
-def _validate_constraints_contract(constraints: Any) -> None:
+def _validate_constraints_contract(
+    constraints: Any,
+    *,
+    expected: Mapping[str, ConstraintContract] = EXPECTED_CONSTRAINTS,
+) -> None:
     """이름을 key로 **전수 exact** 대조한다.
 
     `!=` 한 번으로 끝내지 않고 이름 집합을 먼저 가르는 이유는, 추가·누락과 정의 변조가
@@ -1854,11 +1858,11 @@ def _validate_constraints_contract(constraints: Any) -> None:
             on_update=str(row.get("on_update") or " "),
             definition=normalize_catalog_text(row["definition"]) or "",
         )
-    if set(actual) != set(EXPECTED_CONSTRAINTS):
+    if set(actual) != set(expected):
         # 추가·누락 자체가 drift다. extra CHECK 하나로도 계약이 달라진다.
         raise AgentRuntimeStateError("runtime constraint allowlist가 다릅니다")
-    for name, expected in EXPECTED_CONSTRAINTS.items():
-        if actual[name] != expected:
+    for name, contract in expected.items():
+        if actual[name] != contract:
             raise AgentRuntimeStateError(f"{name} constraint 계약이 다릅니다")
 
 
@@ -1919,10 +1923,43 @@ def _validate_indexes_contract(indexes: Any) -> None:
             raise AgentRuntimeStateError(f"{name} index 계약이 다릅니다")
 
 
-def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
+def schema_signature_sha256(
+    connection: Any,
+    *,
+    expected_constraints: Mapping[str, ConstraintContract] = EXPECTED_CONSTRAINTS,
+) -> str:
+    """live schema signature의 **유일한 정본 계산**이다.
+
+    `V5-CM-3.3`이 처음에 `_canonical_hash(_json_safe(signature))`를 따로 계산했다.
+    두 값이 같은 것은 `_json_safe()`가 이 payload에서 항등이기 때문이었고 **우연에
+    걸려 있었다.** `build_schema_signature()`가 `Decimal`·`datetime`·tuple을 하나라도
+    담게 되면 갈리고, 그때 apply는 성공하는데 `--verify`가 곧바로 `DRIFT`가 된다
+    (팀 리뷰 필수 2).
+
+    signature를 쓰는 모든 경로가 이 함수를 부른다.
+    """
+
+    return _validate_signature_contract(
+        build_schema_signature(connection),
+        expected_constraints=expected_constraints,
+    )
+
+
+def _validate_signature_contract(
+    signature: Mapping[str, Any],
+    *,
+    expected_constraints: Mapping[str, ConstraintContract] = EXPECTED_CONSTRAINTS,
+) -> str:
+    """**constraint allowlist만 stage별로 갈린다.**
+
+    column·index·sequence·FK·`PUBLIC` privilege 계약은 두 stage가 같다. successor가
+    바꾸는 것은 CHECK 하나뿐이므로 나머지를 복제하면 두 벌이 갈린다
+    (`V5-CM-3.3` 구현리뷰 필수 A).
+    """
+
     _validate_columns_contract(signature.get("columns"))
     constraints = signature.get("constraints")
-    _validate_constraints_contract(constraints)
+    _validate_constraints_contract(constraints, expected=expected_constraints)
     _validate_legacy_alarm_fk(constraints if isinstance(constraints, list) else ())
     _validate_indexes_contract(signature.get("indexes"))
     sequences = signature.get("sequences")
@@ -1934,7 +1971,11 @@ def _validate_signature_contract(signature: Mapping[str, Any]) -> str:
     return _canonical_hash(signature)
 
 
-def inspect_database(connection: Any) -> RuntimeInspection:
+def inspect_database(
+    connection: Any,
+    *,
+    expected_constraints: Mapping[str, ConstraintContract] | None = None,
+) -> RuntimeInspection:
     """물리 상태를 판정한다. **읽기만 한다.**
 
     `PARTIAL`과 `DRIFT`를 가른다. 구현은 둘 다 `DRIFT`로 묶었는데 원인이 다르다 —
@@ -1956,7 +1997,10 @@ def inspect_database(connection: Any) -> RuntimeInspection:
         return RuntimeInspection(state, inventory, None, None)
     signature = build_schema_signature(connection)
     try:
-        signature_hash = _validate_signature_contract(signature)
+        signature_hash = _validate_signature_contract(
+            signature,
+            expected_constraints=expected_constraints or EXPECTED_CONSTRAINTS,
+        )
     except AgentRuntimeStateError:
         return RuntimeInspection("DRIFT", inventory, signature, None)
     return RuntimeInspection("PRESENT", inventory, signature, signature_hash)
@@ -1989,8 +2033,13 @@ def _privilege_violations(connection: Any) -> list[tuple[str, str, str]]:
     return violations
 
 
-def postcheck_database(connection: Any, *, alarm_rows_before: int) -> RuntimePostcheck:
-    inspection = inspect_database(connection)
+def postcheck_database(
+    connection: Any,
+    *,
+    alarm_rows_before: int,
+    expected_constraints: Mapping[str, ConstraintContract] | None = None,
+) -> RuntimePostcheck:
+    inspection = inspect_database(connection, expected_constraints=expected_constraints)
     if (
         inspection.state != "PRESENT"
         or inspection.signature is None

@@ -31,6 +31,7 @@ def _load(name: str):
 master = _load("master_cypher")
 target_mod = _load("neo4j_target")
 bootstrap = _load("bootstrap_neo4j_graph")
+manifest_v3 = _load("manifest_v3")
 
 BOOTSTRAP_ROOT = Path(__file__).resolve().parents[3] / "infra" / "bootstrap"
 CORRECTED_PATH = BOOTSTRAP_ROOT / "master_graph.cypher"
@@ -110,6 +111,324 @@ def context(parsed, fake_target):
         manifest,
         master.graph_manifest_sha256(manifest),
     )
+
+
+def test_directory_package_resolves_to_the_final_archive(tmp_path) -> None:
+    """**폐기 epoch fallback이 되살아나면 실패한다.**
+
+    directory `MENTOR_PACKAGE_DIR`는 `manifest_v3.FINAL_ARCHIVE_FILENAME`으로만
+    해석한다. `kosa_0813.zip`을 남기면 최종 기준이 아닌 원본이 조용히 선택된다
+    (구현리뷰 필수 3).
+    """
+
+    resolved = bootstrap._resolve_archive(None, {"MENTOR_PACKAGE_DIR": str(tmp_path)})
+    assert resolved == tmp_path / manifest_v3.FINAL_ARCHIVE_FILENAME
+    assert resolved.name == "project.zip"
+    assert "kosa_0813" not in str(resolved)
+
+
+def test_explicit_archive_wins_over_the_package_directory(tmp_path) -> None:
+    """`--archive`를 주면 그대로 쓴다 — directory 해석보다 앞이다."""
+
+    explicit = tmp_path / "elsewhere.zip"
+    assert (
+        bootstrap._resolve_archive(str(explicit), {"MENTOR_PACKAGE_DIR": str(tmp_path)})
+        == explicit
+    )
+
+
+def test_missing_package_directory_fails_closed() -> None:
+    with pytest.raises(bootstrap.Neo4jBootstrapError):
+        bootstrap._resolve_archive(None, {})
+
+
+def test_dry_run_counts_come_from_the_manifest(context, capsys, monkeypatch) -> None:
+    """**dry-run 출력이 유도값인지 본다.**
+
+    구 epoch의 `nodes=38 relationships=81`이 literal로 박혀 있어, source가 최종
+    44/85로 바뀐 뒤에도 그대로 출력됐다(구현리뷰 필수 3).
+
+    manifest count를 임의 값으로 바꾼 context에서도 출력이 따라가는지 확인해
+    literal이 아님을 증명한다.
+    """
+
+    monkeypatch.setattr(bootstrap, "_resolve_archive", lambda *_a, **_k: Path("x.zip"))
+
+    def _run(ctx):
+        monkeypatch.setattr(bootstrap, "load_context", lambda *_a, **_k: ctx)
+        bootstrap.main(["--dry-run", "--database", ctx.target.database])
+        return capsys.readouterr().out
+
+    # **token으로 본다.** 출력 전체 부분 문자열로 `38`·`81`을 부정하면
+    # target fingerprint 안에 우연히 그 숫자가 들어갔을 때 count와 무관하게
+    # 실패한다(구현리뷰 2차 권장 1).
+    def _tokens(text: str) -> set[str]:
+        return set(text.split())
+
+    out = _run(context)
+    assert "DRY_RUN_OK" in _tokens(out)
+    assert "nodes=44" in _tokens(out)
+    assert "relationships=85" in _tokens(out)
+    assert "nodes=38" not in _tokens(out)
+    assert "relationships=81" not in _tokens(out)
+
+    # **유도값 증명** — manifest를 바꾸면 출력도 바뀐다.
+    drifted = bootstrap.LoaderContext(
+        context.target,
+        context.parsed,
+        {**context.manifest, "node_count": 7, "relationship_count": 9},
+        context.corrected_manifest_sha256,
+    )
+    out = _run(drifted)
+    assert "nodes=7" in _tokens(out)
+    assert "relationships=9" in _tokens(out)
+
+
+ACTIVE_GRAPH_FINGERPRINT = (
+    "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
+)
+ACTIVE_MANIFEST_SHA256 = (
+    "1fd92a73186d6ae7d7ee8d7a7a2e1bf4a5fa5016491f4b5df29a93cd6ca6f3d3"
+)
+
+
+def _active_marker():
+    marker = bootstrap.load_marker("neo4j")
+    assert marker is not None, "active Neo4j marker가 없다"
+    return marker
+
+
+def _offline_context(marker, parsed):
+    """공용 연결 없이 marker 계보를 검증할 synthetic context."""
+
+    manifest = master.validate_generated_artifacts(parsed)
+    target = target_mod.Neo4jBootstrapTarget(
+        uri="bolt://offline.example.invalid:7687",
+        username="offline",
+        password="do-not-print",
+        database=marker["database"],
+        target_fingerprint_sha256=marker["target_fingerprint_sha256"],
+        backup_root="/tmp/offline",
+    )
+    return bootstrap.LoaderContext(
+        target, parsed, manifest, master.graph_manifest_sha256(manifest)
+    )
+
+
+def test_the_active_marker_passes_the_strict_schema() -> None:
+    """**저장소에 등록된 marker 실물**을 status별 strict schema로 검증한다.
+
+    `test_dataset_epoch.py`의 재발급 검사는 `dataset_epoch`와 history 대비 차이만
+    본다. final epoch만 맞춘 malformed marker도 그것만으로는 통과한다
+    (구현리뷰 4차 필수 3).
+
+    CI는 공용 Neo4j를 부를 수 없으므로 active 실물 회귀가 따로 필요하다.
+    """
+
+    marker = _active_marker()
+    bootstrap.validate_marker(marker)
+    assert bootstrap.marker_is_readiness_success(marker)
+
+    assert marker["status"] == "ADOPTED_EXISTING"
+    assert marker["database"] == "neo4j"
+    assert marker["node_count"] == master.EXPECTED_NODE_COUNT
+    assert marker["relationship_count"] == master.EXPECTED_RELATIONSHIP_COUNT
+    assert marker["relation_id_duplicates"] == 0
+    assert marker["expected_graph_fingerprint_sha256"] == ACTIVE_GRAPH_FINGERPRINT
+    assert marker["actual_graph_fingerprint_sha256"] == ACTIVE_GRAPH_FINGERPRINT
+    assert marker["corrected_manifest_sha256"] == ACTIVE_MANIFEST_SHA256
+    assert marker["source_archive_sha256"] == bootstrap.SOURCE_ARCHIVE_SHA256
+    assert marker["source_member_sha256"] == bootstrap.SOURCE_MEMBER_SHA256
+    assert marker["dataset_epoch"] == bootstrap.DATASET_EPOCH
+    bootstrap.validate_approval_ref(marker["approval_ref"])
+
+
+def test_the_active_marker_matches_the_active_artifacts(parsed) -> None:
+    """marker가 **active manifest·source와 같은 계보**를 가리키는지 본다.
+
+    공용에 연결하지 않는다 — marker가 기록한 fingerprint로 synthetic target을
+    만들어 `validate_marker_for_context()`를 그대로 태운다.
+    """
+
+    marker = _active_marker()
+    context = _offline_context(marker, parsed)
+    bootstrap.validate_marker_for_context(marker, context)
+
+
+#: **두 층이 다른 것을 본다.**
+#:
+#: `validate_marker()`는 status별 key 집합·hash 형식·provenance 상수·success의
+#: expected=actual 같은 **schema 수준**을 본다. count가 manifest와 맞는지는 보지
+#: 않는다 — 그것은 `validate_marker_for_context()`가 active manifest와 대조한다.
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("status", "REPLACED"),
+        ("actual_graph_fingerprint_sha256", "0" * 64),
+        ("source_member_sha256", "0" * 64),
+        ("source_archive_sha256", "0" * 64),
+        ("dataset_epoch", "kosa_0813"),
+        ("approval_ref", "not-a-ref"),
+        ("relation_id_algorithm_version", "rel-id-v0"),
+    ],
+)
+def test_a_tampered_active_marker_is_refused_by_the_schema(key, value) -> None:
+    """schema 수준 변이는 `validate_marker()`가 잡는다."""
+
+    tampered = {**_active_marker(), key: value}
+    with pytest.raises((bootstrap.MarkerError, bootstrap.EvidenceError)):
+        bootstrap.validate_marker(tampered)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("corrected_manifest_sha256", "0" * 64),
+        ("corrected_cypher_sha256", "0" * 64),
+        ("expected_graph_fingerprint_sha256", "0" * 64),
+        ("target_fingerprint_sha256", "0" * 64),
+        ("database", "other"),
+    ],
+)
+def test_a_tampered_active_marker_is_refused_by_the_context(parsed, key, value) -> None:
+    """계보 수준 변이는 `validate_marker_for_context()`가 잡는다.
+
+    count·manifest hash·expected fingerprint는 active manifest와 대조해야 드러난다.
+    """
+
+    marker = _active_marker()
+    context = _offline_context(marker, parsed)
+    with pytest.raises((bootstrap.MarkerError, bootstrap.EvidenceError)):
+        bootstrap.validate_marker_for_context({**marker, key: value}, context)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("node_count", 43),
+        ("node_count", 999),
+        ("relationship_count", 84),
+        ("relationship_count", 999),
+        ("relation_id_duplicates", 1),
+    ],
+)
+def test_a_tampered_marker_count_is_refused(parsed, key, value) -> None:
+    """**marker count도 manifest와 대조한다**(구현리뷰 5차 필수 1).
+
+    이 세 값은 UI 메모가 아니라 시스템설계서 §5.2의 **적용 증적**이다.
+    대조하기 전에는 `node_count: 999`인 marker가 두 validator를 다 통과했고,
+    public verifier는 live와 manifest만 비교하므로 잘못된 count가 계속 노출됐다.
+
+    초판에서 나는 이 공백을 "현재 계약"으로 **고정만 했다.** 닫았어야 했다.
+    """
+
+    marker = _active_marker()
+    context = _offline_context(marker, parsed)
+    with pytest.raises(bootstrap.MarkerError):
+        bootstrap.validate_marker_for_context({**marker, key: value}, context)
+
+
+def test_the_active_marker_counts_match_the_manifest(parsed) -> None:
+    """양성 경로 — active marker 44/85/0이 manifest와 맞는다."""
+
+    marker = _active_marker()
+    bootstrap.validate_marker_for_context(marker, _offline_context(marker, parsed))
+    assert (marker["node_count"], marker["relationship_count"]) == (44, 85)
+    assert marker["relation_id_duplicates"] == 0
+
+
+def test_the_full_preflight_path_is_a_read_only_no_op(
+    context, parsed, tmp_path, capsys, monkeypatch
+) -> None:
+    """**계획 §5.6의 no-op을 `run()` 전체 경로로 고정한다.**
+
+    `--adopt-existing` 재호출이 `MarkerError`로 죽는 것은 **잘못된 mode를 다시 부른
+    fail-closed guard**이지 no-op 성공 경로가 아니다(구현리뷰 5차 필수 2).
+
+    진짜 no-op은 같은 절차가 preflight에서 `EXACT_WITH_MARKER`를 보고 graph·marker·
+    backup을 **아무것도 바꾸지 않고 정상 종료**하는 것이다. 기존 회귀는
+    `graph_state()` 분류만 봤고 `run()` 전체가 read-only인지는 보지 않았다.
+    """
+
+    import json
+
+    marker_root = tmp_path / "markers"
+    marker_root.mkdir()
+    # **active marker 실물**을 fixture target에 맞춰 옮긴다. database와 target
+    # fingerprint만 바꾸고 나머지(status·count·hash·approval_ref)는 그대로다.
+    marker = {
+        **_active_marker(),
+        "database": context.target.database,
+        "target_fingerprint_sha256": context.target.target_fingerprint_sha256,
+    }
+    marker_path = bootstrap.marker_path(context.target.database, root=marker_root)
+    marker_path.write_text(json.dumps(marker, ensure_ascii=False), encoding="utf-8")
+    before_bytes = marker_path.read_bytes()
+    before_mtime_ns = marker_path.stat().st_mtime_ns
+
+    driver = FakeDriver(
+        context.target.database, bootstrap.expected_snapshot(parsed), parsed
+    )
+    monkeypatch.setattr(bootstrap, "_resolve_archive", lambda *_a, **_k: Path("x.zip"))
+    monkeypatch.setattr(bootstrap, "load_context", lambda *_a, **_k: context)
+
+    backup_root = Path(context.target.backup_root)
+    receipt_out = backup_root / "noop_preflight.json"
+    before_entries = {p.name for p in backup_root.rglob("*") if p.is_file()}
+
+    code = bootstrap.run(
+        [
+            "--preflight",
+            "--database",
+            context.target.database,
+            "--confirm-target",
+            context.target.database,
+            "--receipt-out",
+            str(receipt_out),
+        ],
+        driver_factory=_factory(driver),
+        marker_root=marker_root,
+    )
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert "state=EXACT_WITH_MARKER" in out
+
+    # **read-only다.** session은 READ만 열리고 write callback은 0회다.
+    assert driver.session_access_modes == ["READ"]
+    assert driver.tx_writes == []
+
+    # **marker를 재기록조차 하지 않는다.**
+    #
+    # bytes만 보면 같은 내용을 다시 쓰는 회귀가 생겨도 통과한다. 재기록은 감사
+    # 시각과 운영 증적을 흔들므로 mtime도 함께 고정한다(구현리뷰 6차 필수 1).
+    assert marker_path.read_bytes() == before_bytes
+    assert marker_path.stat().st_mtime_ns == before_mtime_ns
+
+    # backup manifest가 새로 생기지 않는다. preflight receipt와 advisory lock만
+    # 허용된다 — 둘 다 graph·marker를 바꾸지 않는다.
+    after_entries = {p.name for p in backup_root.rglob("*") if p.is_file()}
+    assert after_entries - before_entries <= {
+        receipt_out.name,
+        ".neo4j-bootstrap.lock",
+    }
+    assert not any(
+        name.endswith(".manifest.json") for name in after_entries - before_entries
+    )
+    assert json.loads(receipt_out.read_text())["artifact_type"] == (
+        "neo4j_preflight_receipt"
+    )
+    receipt_out.unlink()
+
+
+def test_a_marker_missing_a_required_key_is_refused() -> None:
+    """key 하나가 빠져도 status별 exact 집합에서 걸린다."""
+
+    marker = _active_marker()
+    for key in ("approval_ref", "node_count", "actual_graph_fingerprint_sha256"):
+        stripped = {k: v for k, v in marker.items() if k != key}
+        with pytest.raises(bootstrap.MarkerError):
+            bootstrap.validate_marker(stripped)
 
 
 def _snapshot_rows(snapshot):
@@ -242,6 +561,7 @@ class FakeSession:
         return callback(self.tx)
 
     def execute_write(self, callback):
+        self.driver.tx_writes.append("execute_write")
         original = copy.deepcopy(self.driver.snapshot)
         self.tx = FakeTx(self.driver, copy.deepcopy(original), self.driver.parsed)
         try:
@@ -262,6 +582,8 @@ class FakeDriver:
         self.constraint_rows = []
         self.closed = False
         self.session_access_modes = []
+        #: `execute_write` 호출과 mutation query를 기록한다 — no-op 회귀가 본다.
+        self.tx_writes = []
 
     def session(self, *, database, default_access_mode=None):
         assert database == self.database
@@ -913,7 +1235,7 @@ def test_driver_is_closed_on_read_success_and_failure(context, parsed) -> None:
     snapshot = bootstrap.read_current_snapshot(
         context.target, driver_factory=_factory(driver)
     )
-    assert snapshot.node_count == 38
+    assert snapshot.node_count == len(parsed.nodes)
     assert driver.session_access_modes == ["READ"]
     assert driver.closed
 

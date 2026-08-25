@@ -782,18 +782,30 @@ class TestCorrectedSurfaceIsGone:
         with pytest.raises(mv3.ManifestMetadataError):
             mv3.resolve_bootstrap_manifest_path(profile, "corrected_base")
 
-    def test_registered_stages_are_exactly_four(self) -> None:
-        """`V5-CM-1.8`이 `evaluation_mock`을 `evaluation_reference`로 교체했다."""
+    def test_registered_stages_are_exactly_five(self) -> None:
+        """`V5-CM-1.8`이 `evaluation_mock`을 `evaluation_reference`로 교체했고,
+        `V5-CM-3.3`이 `runtime_guarded` successor를 **더했다**.
+
+        `runtime_clean`은 남는다 — CM-3.2 marker가 그 stage를 증명하고 있어서
+        registry에서 빼면 그 marker가 검증할 계약을 잃는다.
+        """
 
         assert set(mv3.BOOTSTRAP_STAGE_CONTRACTS) == {
             ("runtime", "base_schema"),
             ("evaluation", "base_schema"),
             ("evaluation", "evaluation_reference"),
             ("runtime", "runtime_clean"),
+            ("runtime", "runtime_guarded"),
         }
         # 구 stage는 active 등록부에서 사라지고 history 계보로만 남는다.
         assert ("evaluation", "evaluation_mock") not in mv3.BOOTSTRAP_STAGE_CONTRACTS
         assert ("evaluation", "evaluation_mock") in mv3.HISTORICAL_CONTRACTS
+
+        # successor는 predecessor lineage에 003을 **더한** 것이다.
+        clean = mv3.BOOTSTRAP_STAGE_CONTRACTS[("runtime", "runtime_clean")]
+        guarded = mv3.BOOTSTRAP_STAGE_CONTRACTS[("runtime", "runtime_guarded")]
+        assert guarded.applied_migrations[:2] == clean.applied_migrations
+        assert guarded.applied_migrations[2] == "003_agent_run_severity_pair"
 
     def test_the_final_evaluation_stage_replaces_the_mock_one(self) -> None:
         """**역방향 회귀.**
@@ -827,11 +839,10 @@ class TestCorrectedSurfaceIsGone:
         import apply_reference_extensions_v5 as v5
 
         assert mv3.FINAL_MIGRATION_ID == v5.MIGRATION_ID
+        # `PROFILE_MIGRATIONS`는 **현재 live final** 계보다. `V5-CM-3.3` 이후
+        # runtime은 `runtime_guarded`이며 003이 포함된다.
         for profile, migrations in v5.PROFILE_MIGRATIONS.items():
-            stage = {
-                "runtime": "runtime_clean",
-                "evaluation": "evaluation_reference",
-            }[profile]
+            stage = v5.FINAL_STAGE_BY_PROFILE[profile]
             contract = mv3.BOOTSTRAP_STAGE_CONTRACTS[(profile, stage)]
             assert contract.applied_migrations == tuple(migrations)
 

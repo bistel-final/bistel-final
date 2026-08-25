@@ -84,7 +84,9 @@ export function getEvaluations(filter = { latest: true }) {
   return apiClient.get('/analytics/evaluations', { params: filter }).then((response) => response.data)
 }
 
-// GET /audit-logs — event_type?·actor_type?·entity_type?·entity_id?·date_from?·date_to?·page·size
+// GET /audit-logs/paged — event_type?·actor_type?·entity_type?·entity_id?·date_from?·date_to?·page·size
+// 화면 3 subview 는 페이지·집계가 필요해 선택 확장 /paged 를 소비한다 (API v3 5.2).
+// 호환 필수 GET /audit-logs 는 bare array 로 별도 제공된다 (API v3 3.8).
 // entity_id 는 부분 일치로 거른다.
 export function getAuditLogs(params = {}) {
   if (USE_MOCK) {
@@ -115,5 +117,5 @@ export function getAuditLogs(params = {}) {
       ),
     })
   }
-  return apiClient.get('/audit-logs', { params }).then((response) => response.data)
+  return apiClient.get('/audit-logs/paged', { params }).then((response) => response.data)
 }

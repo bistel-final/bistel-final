@@ -17,8 +17,9 @@ V5-A-1.1~V5-A-1.4 완료 기준 자체가 무엇인지는 `app/detection/service
 본다. 이 스크립트는 그 함수들을 호출해서 사람이 읽기 좋은 리포트로 출력만 한다 —
 업무 판정 로직은 여기에 없다.
 
-V5-A-1.1(Summary)·V5-A-1.2(evaluation)·V5-A-1.3(TRACE·SUMMARY 알람)은 전부
-읽기 전용 재현·대조라 옵션 없이 항상 실행한다. V5-A-1.4(R03)만 다르다 —
+V5-A-1.1(Summary)·V5-A-1.2(evaluation)·V5-A-1.3(TRACE·SUMMARY 알람)·
+V5-A-1.5(incident 집계)는 전부 읽기 전용 재현·대조·집계라 옵션 없이 항상
+실행한다. V5-A-1.4(R03)만 다르다 —
 `r03_alarm_history`에 실제 INSERT가 일어나는 유일한 단계라서, 기본값은
 `derive_r03_events`(계산만, 저장 안 함)로 "몇 건이 나올지"만 먼저 보여주고,
 `--persist-r03` 플래그를 줘야만 `persist_r03_alarms`(실제 INSERT + 이 스크립트가
@@ -65,6 +66,7 @@ from app.detection import service
 from app.detection.service import (
     AlarmReproductionResult,
     EvaluationVerificationResult,
+    IncidentVerificationResult,
     R03DerivationResult,
     R03PersistResult,
     SummaryAlarmVerificationResult,
@@ -79,8 +81,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "지정한 PostgreSQL DB(기본 fdc_final)에서 V5-A-1.1(Summary)·"
-            "V5-A-1.2(evaluation)·V5-A-1.3(TRACE·SUMMARY 알람)·V5-A-1.4(R03) "
-            "재계산·재현을 검증한다."
+            "V5-A-1.2(evaluation)·V5-A-1.3(TRACE·SUMMARY 알람)·V5-A-1.4(R03)·"
+            "V5-A-1.5(incident 집계) 재계산·재현·대조를 검증한다."
         )
     )
     parser.add_argument("--host", default="localhost", help="기본값: localhost")
@@ -253,6 +255,47 @@ def _print_r03_persist_report(result: R03PersistResult) -> bool:
     return result.matches_acceptance_value
 
 
+def _print_incident_report(result: IncidentVerificationResult) -> bool:
+    # V5-A-1.1~1.4와 달리 저장하는 값이 없다 — v_alarm_event 집계와 action_history
+    # fixture를 대조만 한다. 정상 기대값 자체가 DB 상태에 따라 갈린다 —
+    # R03가 아직 저장 전이면 alarm 합계는 192가 아니라 189가 정상이고,
+    # action_history가 0건인 DB(runtime 2개)에서는 1:1 대조 자체가 "판정
+    # 불가"다(코드 문제가 아니라 그 DB에는 애초에 참고 action fixture가
+    # 없기 때문 — evaluation profile에만 12건). 고정값(192·action 12) 하나만
+    # 기준으로 삼으면 정상 상태도 상시 FAIL로 나오므로, service.
+    # IncidentVerificationResult가 이미 구분해 둔 r03_persisted·
+    # reference_action_available을 그대로 보여준다.
+    print("\n=== V5-A-1.5 incident 집계 (action_history fixture 1:1 대조) ===")
+    print(
+        f"알람이 있는 (lot_id, chamber_id) incident 수: "
+        f"{result.incident_count}(기준 12)"
+    )
+    expected_total = 192 if result.r03_persisted else 189
+    r03_state = (
+        "저장됨(--persist-r03 완료)" if result.r03_persisted else "미저장(dry-run)"
+    )
+    print(f"R03 저장 상태: {r03_state}")
+    print(
+        f"R03 포함 alarm 합계: {result.total_alarm_count}"
+        f"(현재 상태 기준 {expected_total} = TRACE+SUMMARY 189 + R03 "
+        f"{'3' if result.r03_persisted else '0'})"
+    )
+    if result.reference_action_available:
+        print(f"참고 action fixture 건수: {result.reference_action_count}(기준 12)")
+        print(f"1:1 불일치 건수: {len(result.mismatches)}")
+        for mismatch in result.mismatches:
+            print(f"  - ({mismatch.lot_id}, {mismatch.chamber_id}): {mismatch.reason}")
+    else:
+        print(
+            "참고 action fixture 건수: 0 — SKIPPED"
+            "(이 DB profile에는 action_history fixture가 없음, evaluation "
+            "profile에서만 1:1 대조까지 판정 가능. 코드 결함 아님)"
+        )
+    verdict = "PASS" if result.matches_acceptance_values else "FAIL"
+    print(f"수용값(incident 12·alarm {expected_total}) 판정: {verdict}")
+    return result.matches_acceptance_values
+
+
 def _run_checks(connection: Connection, max_mismatches: int, persist_r03: bool) -> bool:
     summary_ok = _print_summary_report(
         service.verify_summary_recalculation(connection), max_mismatches
@@ -278,7 +321,11 @@ def _run_checks(connection: Connection, max_mismatches: int, persist_r03: bool) 
     else:
         r03_ok = _print_r03_derivation_report(service.derive_r03_events(connection))
 
-    return summary_ok and evaluation_ok and alarm_ok and r03_ok
+    incident_ok = _print_incident_report(
+        service.verify_incident_aggregation(connection)
+    )
+
+    return summary_ok and evaluation_ok and alarm_ok and r03_ok and incident_ok
 
 
 def main() -> int:
