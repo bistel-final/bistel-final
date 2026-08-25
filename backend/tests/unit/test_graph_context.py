@@ -323,6 +323,13 @@ def test_graph_repository_returns_api_graph_projection() -> None:
             "root_node_id": "Chamber:EQP01-PM1",
             "nodes": [
                 {
+                    "id": "Equipment:EQP01",
+                    "label": "Equipment",
+                    "business_id": "EQP01",
+                    "display_name": "EQP01",
+                    "properties": {"equipment_id": "EQP01"},
+                },
+                {
                     "id": "Chamber:EQP01-PM1",
                     "label": "Chamber",
                     "business_id": "EQP01-PM1",
@@ -330,14 +337,20 @@ def test_graph_repository_returns_api_graph_projection() -> None:
                     "properties": {"chamber_id": "EQP01-PM1"},
                 },
                 {
-                    "id": "Equipment:EQP01",
-                    "label": "Equipment",
-                    "business_id": "EQP01",
-                    "display_name": "EQP01",
-                    "properties": {"equipment_id": "EQP01"},
+                    "id": "Area:Photo",
+                    "label": "Area",
+                    "business_id": "Photo",
+                    "display_name": "Photo",
+                    "properties": {"area_id": "Photo"},
                 },
             ],
             "relationships": [
+                {
+                    "id": "REL-z",
+                    "type": "PERFORMS",
+                    "source": "Equipment:EQP01",
+                    "target": "ProcessStep:CT-PHOTO",
+                },
                 {
                     "id": "REL-x",
                     "type": "PART_OF",
@@ -360,6 +373,13 @@ def test_graph_repository_returns_api_graph_projection() -> None:
     assert result.root_node_id == "Chamber:EQP01-PM1"
     assert result.nodes == [
         {
+            "id": "Area:Photo",
+            "label": "Area",
+            "business_id": "Photo",
+            "display_name": "Photo",
+            "properties": {"area_id": "Photo"},
+        },
+        {
             "id": "Chamber:EQP01-PM1",
             "label": "Chamber",
             "business_id": "EQP01-PM1",
@@ -380,6 +400,12 @@ def test_graph_repository_returns_api_graph_projection() -> None:
             "type": "PART_OF",
             "source": "Chamber:EQP01-PM1",
             "target": "Equipment:EQP01",
+        },
+        {
+            "id": "REL-z",
+            "type": "PERFORMS",
+            "source": "Equipment:EQP01",
+            "target": "ProcessStep:CT-PHOTO",
         },
     ]
     assert driver.session_options == {

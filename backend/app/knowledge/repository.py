@@ -180,4 +180,24 @@ def _clean_projection_items(value: Any, *, item_name: str) -> list[dict[str, Any
         if item_id is None:
             raise RuntimeError(f"Neo4j graph projection {item_name} id가 없습니다")
         unique[str(item_id)] = cleaned
-    return list(unique.values())
+    items = list(unique.values())
+    if item_name == "node":
+        return sorted(
+            items,
+            key=lambda item: (
+                str(item.get("label", "")),
+                str(item.get("business_id", "")),
+                str(item.get("id", "")),
+            ),
+        )
+    if item_name == "relationship":
+        return sorted(
+            items,
+            key=lambda item: (
+                str(item.get("type", "")),
+                str(item.get("source", "")),
+                str(item.get("target", "")),
+                str(item.get("id", "")),
+            ),
+        )
+    return items
