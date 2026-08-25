@@ -50,8 +50,14 @@ RETURN
 
     def get_equipment_context_payload(self, chamber_id: str) -> dict[str, Any] | None:
         driver = self._driver_factory()
-        with driver.session(database=self._database, default_access_mode="READ",) as session:
-            record = session.run(self.TOOL_CONTEXT_QUERY, {"chamber_id": chamber_id},).single()
+        with driver.session(
+            database=self._database,
+            default_access_mode="READ",
+        ) as session:
+            record = session.run(
+                self.TOOL_CONTEXT_QUERY,
+                {"chamber_id": chamber_id},
+            ).single()
         if record is None:
             return None
 
