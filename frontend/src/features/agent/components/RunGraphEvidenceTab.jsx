@@ -13,24 +13,6 @@ const NODE_HEX = {
   ProcessStep: '#f59e0b',
 }
 
-const LABEL_X = {
-  Area: 100,
-  ProcessStep: 240,
-  EquipmentModel: 380,
-  Equipment: 520,
-  Chamber: 680,
-  Parameter: 520,
-}
-
-const LABEL_Y = {
-  Area: 92,
-  ProcessStep: 92,
-  EquipmentModel: 92,
-  Equipment: 92,
-  Chamber: 92,
-  Parameter: 238,
-}
-
 const LABEL_TEXT = {
   Area: 'AREA',
   Chamber: 'CHAMBER',
@@ -38,6 +20,17 @@ const LABEL_TEXT = {
   EquipmentModel: 'MODEL',
   Parameter: 'PARAM',
   ProcessStep: 'STEP',
+}
+
+const GRAPH_CENTER = { x: 410, y: 185 }
+
+const RELATION_TEXT = {
+  IN_AREA: '공정 영역',
+  MEASURED_ON: '측정 챔버',
+  NEXT_STEP: '다음 공정',
+  OF_MODEL: '설비 모델',
+  PART_OF: '소속 설비',
+  PERFORMS: '수행 공정',
 }
 
 const sortById = (a, b) => String(a.id).localeCompare(String(b.id))
@@ -52,9 +45,10 @@ const graphNode = (label, businessId, displayName = businessId, properties = {})
   properties,
 })
 
-const graphRelationship = (type, source, target) => ({
+const graphRelationship = (type, source, target, displayType = type) => ({
   id: `${type}:${source}->${target}`,
   type,
+  display_type: displayType,
   source,
   target,
 })
@@ -63,13 +57,15 @@ function normalizeProjection(raw) {
   if (!raw) return null
   if (Array.isArray(raw.nodes) && Array.isArray(raw.relationships)) return raw
 
+  // legacy mock DTO를 화면 표시용 projection으로 변환하는 경로다.
+  // 여기서 만드는 display_type은 Neo4j 실제 relationship type이 아니다.
   const nodes = []
   const relationships = []
   const pushNode = (node) => {
     if (node?.business_id && !nodes.some((item) => item.id === node.id)) nodes.push(node)
   }
-  const pushRel = (type, source, target) => {
-    if (source && target) relationships.push(graphRelationship(type, source, target))
+  const pushRel = (type, source, target, displayType) => {
+    if (source && target) relationships.push(graphRelationship(type, source, target, displayType))
   }
 
   const chamber = raw.chamber
@@ -87,21 +83,25 @@ function normalizeProjection(raw) {
   pushNode(areaId && graphNode('Area', areaId, area.area_name ?? areaId, area))
   pushNode(stepId && graphNode('ProcessStep', stepId, step.step_name ?? stepId, step))
 
-  if (equipmentId && chamberId) pushRel('HAS_CHAMBER', nodeId('Equipment', equipmentId), nodeId('Chamber', chamberId))
-  if (equipmentId && areaId) pushRel('IN_AREA', nodeId('Equipment', equipmentId), nodeId('Area', areaId))
-  if (equipmentId && stepId) pushRel('PERFORMS', nodeId('Equipment', equipmentId), nodeId('ProcessStep', stepId))
+  if (equipmentId && chamberId) {
+    pushRel('mock-has-chamber', nodeId('Equipment', equipmentId), nodeId('Chamber', chamberId), '장비 챔버')
+  }
+  if (equipmentId && areaId) pushRel('mock-area', nodeId('Equipment', equipmentId), nodeId('Area', areaId), '공정 영역')
+  if (equipmentId && stepId) {
+    pushRel('mock-step', nodeId('Equipment', equipmentId), nodeId('ProcessStep', stepId), '공정 단계')
+  }
 
   for (const sibling of raw.sibling_chambers ?? []) {
     pushNode(graphNode('Chamber', sibling.chamber_id, sibling.chamber_id, sibling))
-    pushRel('SIBLING_CHAMBER', nodeId('Chamber', chamberId), nodeId('Chamber', sibling.chamber_id))
+    pushRel('mock-sibling-chamber', nodeId('Chamber', chamberId), nodeId('Chamber', sibling.chamber_id), '같은 설비 챔버')
   }
   for (const upstream of raw.upstream ?? []) {
     pushNode(graphNode('Equipment', upstream.equipment_id, upstream.equipment_name ?? upstream.equipment_id, upstream))
-    pushRel('UPSTREAM_OF', nodeId('Equipment', upstream.equipment_id), nodeId('Equipment', equipmentId))
+    pushRel('mock-upstream-equipment', nodeId('Equipment', upstream.equipment_id), nodeId('Equipment', equipmentId), '상류 설비')
   }
   for (const downstream of raw.downstream ?? []) {
     pushNode(graphNode('Equipment', downstream.equipment_id, downstream.equipment_name ?? downstream.equipment_id, downstream))
-    pushRel('UPSTREAM_OF', nodeId('Equipment', equipmentId), nodeId('Equipment', downstream.equipment_id))
+    pushRel('mock-downstream-equipment', nodeId('Equipment', equipmentId), nodeId('Equipment', downstream.equipment_id), '하류 설비')
   }
 
   return {
@@ -112,31 +112,52 @@ function normalizeProjection(raw) {
   }
 }
 
+function spreadItems(items, slot) {
+  const sorted = [...items].sort(sortById)
+  const offset = ((sorted.length - 1) * slot.gap) / 2
+  return sorted.map((node, index) => ({
+    ...node,
+    x: slot.axis === 'x' ? slot.x + index * slot.gap - offset : slot.x,
+    y: slot.axis === 'x' ? slot.y : slot.y + index * slot.gap - offset,
+    isRoot: false,
+  }))
+}
+
 function layoutNodes(nodes, rootNodeId) {
+  const root = nodes.find((node) => node.id === rootNodeId)
   const groups = nodes.reduce((acc, node) => {
+    if (node.id === rootNodeId) return acc
     const label = node.label ?? 'Unknown'
     acc[label] = [...(acc[label] ?? []), node]
     return acc
   }, {})
 
   const positioned = new Map()
-  for (const [label, group] of Object.entries(groups)) {
-    const sorted = [...group].sort(sortById)
-    const baseX = LABEL_X[label] ?? 420
-    const baseY = LABEL_Y[label] ?? 170
-    const gap = label === 'Parameter' ? 54 : 62
-    const offset = ((sorted.length - 1) * gap) / 2
-    sorted.forEach((node, index) => {
-      const x = baseX
-      const y = baseY + index * gap - offset
-      positioned.set(node.id, { ...node, x, y, isRoot: node.id === rootNodeId })
-    })
+  if (root) positioned.set(root.id, { ...root, ...GRAPH_CENTER, isRoot: true })
+
+  const slots = {
+    Area: { x: 560, y: 78, axis: 'x', gap: 120 },
+    Chamber: { x: 410, y: 76, axis: 'x', gap: 130 },
+    Equipment: { x: 245, y: 185, axis: 'y', gap: 76 },
+    EquipmentModel: { x: 92, y: 185, axis: 'y', gap: 76 },
+    Parameter: { x: 410, y: 310, axis: 'x', gap: 116 },
+    ProcessStep: { x: 590, y: 185, axis: 'y', gap: 76 },
   }
+
+  for (const [label, group] of Object.entries(groups)) {
+    const slot = slots[label] ?? { x: 410, y: 185, axis: 'y', gap: 76 }
+    for (const node of spreadItems(group, slot)) positioned.set(node.id, node)
+  }
+
   return positioned
 }
 
 function nodeTitle(node) {
   return node.display_name && node.display_name !== node.business_id ? node.display_name : node.business_id
+}
+
+function relationTitle(rel) {
+  return rel.display_type ?? RELATION_TEXT[rel.type] ?? rel.type
 }
 
 function EvidenceGraph({ graph }) {
@@ -145,7 +166,7 @@ function EvidenceGraph({ graph }) {
   const relationships = graph.relationships.filter((rel) => positioned.has(rel.source) && positioned.has(rel.target))
 
   return (
-    <svg viewBox="0 0 780 340" className="block w-full" fontFamily="IBM Plex Mono, monospace">
+    <svg viewBox="0 0 820 370" className="block w-full" fontFamily="IBM Plex Mono, monospace">
       <defs>
         <marker id="graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
           <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--color-dash-line)" />
@@ -168,7 +189,7 @@ function EvidenceGraph({ graph }) {
               markerEnd="url(#graph-arrow)"
             />
             <text x={midX} y={midY - 6} fontSize="8.5" fill="var(--color-g2)" textAnchor="middle">
-              {rel.type}
+              {relationTitle(rel)}
             </text>
           </g>
         )
@@ -178,18 +199,18 @@ function EvidenceGraph({ graph }) {
         return (
           <g key={node.id}>
             <rect
-              x={node.x - 50}
+              x={node.x - 55}
               y={node.y - 24}
-              width="100"
+              width="110"
               height="48"
               rx="10"
               fill={color}
               opacity={node.isRoot ? '0.18' : '0.1'}
             />
             <rect
-              x={node.x - 50}
+              x={node.x - 55}
               y={node.y - 24}
-              width="100"
+              width="110"
               height="48"
               rx="10"
               fill="none"
@@ -210,20 +231,32 @@ function EvidenceGraph({ graph }) {
 }
 
 function RelationList({ graph }) {
-  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
+  const root = graph.nodes.find((node) => node.id === graph.root_node_id)
+  const valuesByLabel = (label, filter = () => true) =>
+    graph.nodes
+      .filter((node) => node.label === label && filter(node))
+      .map((node) => node.business_id)
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b)))
+
+  const rows = [
+    ['기준 챔버', root?.business_id],
+    ['설비', valuesByLabel('Equipment').join(', ')],
+    ['형제 챔버', valuesByLabel('Chamber', (node) => node.id !== graph.root_node_id).join(', ')],
+    ['모델', valuesByLabel('EquipmentModel').join(', ')],
+    ['공정 단계', valuesByLabel('ProcessStep').join(', ')],
+    ['공정 영역', valuesByLabel('Area').join(', ')],
+    ['파라미터', valuesByLabel('Parameter').join(', ')],
+  ].filter(([, value]) => value)
+
   return (
     <div className="grid gap-2 md:grid-cols-2">
-      {graph.relationships.map((rel) => {
-        const source = nodeById.get(rel.source)
-        const target = nodeById.get(rel.target)
-        return (
-          <div key={rel.id} className="rounded-lg border border-line bg-white px-3 py-2 font-mono text-[11px] text-g1">
-            <span className="font-bold text-navy">{source?.business_id ?? rel.source}</span>
-            <span className="mx-1.5 text-blue">{rel.type}</span>
-            <span className="font-bold text-ink">{target?.business_id ?? rel.target}</span>
-          </div>
-        )
-      })}
+      {rows.map(([label, value]) => (
+        <div key={label} className="rounded-lg border border-line bg-white px-3 py-2 text-[12px]">
+          <span className="font-bold text-navy">{label}: </span>
+          <span className="font-mono font-semibold text-ink">{value}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -286,7 +319,7 @@ function RunGraphEvidenceTab({ run }) {
         <EvidenceGraph graph={state.graph} />
       </div>
       <div>
-        <div className="mb-2 text-[11px] font-bold text-g2">관계 목록</div>
+        <div className="mb-2 text-[11px] font-bold text-g2">근거 요약</div>
         <RelationList graph={state.graph} />
       </div>
     </div>
