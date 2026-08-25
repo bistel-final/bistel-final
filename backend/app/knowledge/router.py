@@ -1,11 +1,33 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.knowledge.document_search import DocumentSearchRepository
-from app.knowledge.schemas import DocumentHit, DocumentSearchRequest
-from app.knowledge.service import DocumentSearchService
+from app.knowledge.repository import ChamberGraphRepository
+from app.knowledge.schemas import (
+    ChamberRelationResponse,
+    DocumentHit,
+    DocumentSearchRequest,
+)
+from app.knowledge.service import DocumentSearchService, GraphService
 
 router = APIRouter(tags=["Knowledge"])
+
+
+# ==================
+# 그래프 관계
+# ==================
+@router.get(
+    "/relations/chambers/{chamber_id}",
+    response_model=ChamberRelationResponse,
+)
+def get_chamber_relations(chamber_id: str) -> ChamberRelationResponse:
+    """챔버 기준 Neo4j 그래프 projection을 조회한다."""
+
+    service = GraphService(ChamberGraphRepository())
+    response = service.get_chamber_relations(chamber_id)
+    if response is None:
+        raise HTTPException(status_code=404, detail="chamber relation not found")
+    return response
 
 
 # ==================
