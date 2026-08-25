@@ -219,7 +219,9 @@ class TestGenerateAnalysisPlan:
 
     def test_refused_marker_becomes_policy_rejected(self, monkeypatch) -> None:
         # 프롬프트 규칙 1: 비조회 요청은 REFUSED 마커로 온다 — 조회로 암묵
-        # 변환하지 않고 "수행되지 않았다"를 명시해 사용자 혼란을 막는다.
+        # 변환하지 않는다. 사유 문구는 중립이다: 사용자가 무엇을 요청했는지
+        # 단정하지 않고(조회 질문이 오판으로 거부될 수 있다), 조회 외 동작이
+        # 실행되지 않았음만 명시한다 (V5-D-2.5 평가 리뷰 반영).
         monkeypatch.setattr(
             llm, "chat", lambda messages: "REFUSED: 조회 질문만 처리한다"
         )
@@ -228,7 +230,11 @@ class TestGenerateAnalysisPlan:
 
         assert result.ok is False
         assert result.reason.startswith("POLICY_REJECTED:")
-        assert "수행되지 않았다" in result.reason
+        # 중립 사유: 판정 결과와 미실행 사실만 말한다
+        assert "조회 질문으로 판정되지 않아" in result.reason
+        assert "실행되지 않는다" in result.reason
+        # 사용자 요청을 단정하는 문구는 금지 (예: "삭제·수정 등 요청된 작업")
+        assert "요청된 작업" not in result.reason
         assert result.sql is None
 
     def test_retry_feedback_is_appended_as_user_message(self, monkeypatch) -> None:

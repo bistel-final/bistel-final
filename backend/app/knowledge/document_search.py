@@ -1,4 +1,4 @@
-"""Knowledge RAG 문서 검색 Repository."""
+"""Knowledge RAG 문서 검색 저장소."""
 
 from __future__ import annotations
 

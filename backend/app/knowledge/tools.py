@@ -1,8 +1,9 @@
-"""Knowledge Agent Tools."""
+"""Knowledge Agent Tool 정의."""
 
 from __future__ import annotations
 
 from langchain_core.tools import tool
+from pydantic import ValidationError
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.common.tool_contracts import (
@@ -12,7 +13,7 @@ from app.common.tool_contracts import (
 )
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.graph_query import GraphQueryRepository
-from app.knowledge.service import DocumentSearchService, GraphService
+from app.knowledge.service import DocumentSearchService, EquipmentContextService
 
 
 # ==================
@@ -36,34 +37,29 @@ def search_documents(
 
 
 # ==================
-# Graph
+# 그래프 조회
 # ==================
 
 
 @tool
 def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
-    """Chamber 기준 장비·공정 graph context를 조회한다."""
+    """챔버 기준 장비·공정 그래프 context를 조회한다."""
 
     try:
-        service = GraphService(GraphQueryRepository())
-        context = service.get_equipment_context(chamber_id)
-        if context is None:
+        service = EquipmentContextService(GraphQueryRepository())
+        result = service.get_equipment_context(chamber_id)
+        if result is None:
             return fail(
                 EquipmentContextToolResult,
                 f"NOT_FOUND: chamber_id={chamber_id}",
             )
-        return EquipmentContextToolResult(
-            ok=True,
-            equipment=context.equipment,
-            area=context.area,
-            step=context.step,
-            sibling_chambers=context.sibling_chambers,
-            adjacent_steps=context.adjacent_steps,
-            parameters=context.parameters,
-            relations=context.relations,
-            graph_revision=context.graph_revision,
-        )
+        return result
     except TimeoutError as exc:
         return fail(EquipmentContextToolResult, f"TIMEOUT: {exc}")
+    except ValidationError:
+        return fail(
+            EquipmentContextToolResult,
+            "GRAPH_SHAPE_ERROR: 장비 graph context 필수 값이 누락됐습니다",
+        )
     except Exception as exc:
         return fail(EquipmentContextToolResult, f"DEPENDENCY_ERROR: {exc}")

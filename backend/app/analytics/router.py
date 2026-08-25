@@ -10,12 +10,19 @@ API v3 §5.2 선택 확장 계약:
 
 from datetime import date
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
-from app.analytics.audit import AuditLogPageResponse, fetch_audit_logs
+from app.analytics.audit import (
+    AuditLogItem,
+    AuditLogPageResponse,
+    fetch_audit_logs,
+    fetch_audit_logs_paged,
+)
+from app.analytics.query_log import QueryHistoryUnavailableError, fetch_query_history
 from app.analytics.schemas import (
     AnalysisQueryRequest,
     AnalysisQueryResponse,
+    NlQueryHistoryResponse,
     SqlValidateRequest,
     SqlValidateResponse,
     ValidationCheck,
@@ -27,7 +34,34 @@ from app.common.db import engine
 router = APIRouter(tags=["Analytics"])
 
 
-@router.get("/audit-logs", response_model=AuditLogPageResponse)
+@router.get("/analytics/history", response_model=NlQueryHistoryResponse)
+def get_query_history(
+    is_valid: bool | None = None,
+    is_rejected: bool | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> NlQueryHistoryResponse:
+    """질의 이력 조회 (V5-D-2.4, FR-D-05 · evaluation-only).
+
+    kosa_text2sql 의 nl_query_log 만 읽는다. 저장소 미구성·장애는 503 —
+    이 기능 불능이 기본 화면을 막지 않는다 (NFR-17).
+    """
+    try:
+        return fetch_query_history(
+            is_valid=is_valid,
+            is_rejected=is_rejected,
+            date_from=date_from,
+            date_to=date_to,
+            page=page,
+            size=size,
+        )
+    except QueryHistoryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/audit-logs", response_model=list[AuditLogItem])
 def get_audit_logs(
     event_type: str | None = None,
     actor_type: str | None = None,
@@ -35,14 +69,36 @@ def get_audit_logs(
     entity_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=200),
-) -> AuditLogPageResponse:
-    """감사로그 조회(append-only · 읽기 전용, FR-D-07 · NFR-05).
+) -> list[AuditLogItem]:
+    """호환 필수 감사로그 조회 — bare array (API v3 3.8, FR-D-07 · NFR-05).
 
+    화면 total 은 items.length 로 해석한다. 페이지·집계는 /paged 에서만 제공한다.
     entity_id 는 부분 일치, date 필터는 Asia/Seoul 자정 기준(NFR-13)이다.
     """
     return fetch_audit_logs(
+        engine,
+        event_type=event_type,
+        actor_type=actor_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+@router.get("/audit-logs/paged", response_model=AuditLogPageResponse)
+def get_audit_logs_paged(
+    event_type: str | None = None,
+    actor_type: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> AuditLogPageResponse:
+    """선택 확장 — PageEnvelope + 동일 필터 전체 집계 (API v3 5.2, V5-D-1.2)."""
+    return fetch_audit_logs_paged(
         engine,
         event_type=event_type,
         actor_type=actor_type,

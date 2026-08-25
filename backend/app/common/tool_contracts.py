@@ -18,6 +18,7 @@ REASON_PREFIXES: tuple[str, ...] = (
     "TIMEOUT:",
     "MODEL_NOT_READY:",
     "LLM_NOT_READY:",
+    "GRAPH_SHAPE_ERROR:",
     "DEPENDENCY_ERROR:",
     "POLICY_REJECTED:",
     "IDEMPOTENCY_CONFLICT:",
@@ -342,17 +343,23 @@ class EquipmentContextToolInput(ToolModel):
 
 class EquipmentContextToolResult(ToolResult):
     required_on_success: ClassVar[tuple[str, ...]] = (
-        "equipment",
+        "chamber_id",
+        "equipment_id",
+        "area",
+        "model_code",
+        "process_step_id",
         "graph_revision",
     )
 
-    equipment: EquipmentNode | None = None
-    area: AreaNode | None = None
-    step: ProcessStepNode | None = None
-    sibling_chambers: list[ChamberNode] = Field(default_factory=list)
-    adjacent_steps: list[ProcessStepNode] = Field(default_factory=list)
-    parameters: list[ParameterNode] = Field(default_factory=list)
-    relations: list[GraphRelationRef] = Field(default_factory=list)
+    chamber_id: NonEmptyId | None = None
+    equipment_id: NonEmptyId | None = None
+    sibling_chamber_ids: list[NonEmptyId] = Field(default_factory=list)
+    area: NonEmptyId | None = None
+    model_code: NonEmptyId | None = None
+    process_step_id: NonEmptyId | None = None
+    upstream_process_step_ids: list[NonEmptyId] = Field(default_factory=list)
+    downstream_process_step_ids: list[NonEmptyId] = Field(default_factory=list)
+    parameter_ids: list[NonEmptyId] = Field(default_factory=list)
     graph_revision: NonEmptyId | None = None
 
 

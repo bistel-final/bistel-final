@@ -3,13 +3,16 @@ import { searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
-import { DOC_CHIPS } from '../mock/documents.js'
+import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
+
+const ALL_MODELS = '전체'
 
 // 문서 검색 — 라이트 시안 4번
 // 좌 280px: 추천 질의 + 검색 기록(세션 state) / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
   const [input, setInput] = useState('')
   const [result, setResult] = useState(null) // { query, hits }
+  const [modelCode, setModelCode] = useState(ALL_MODELS)
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -18,11 +21,16 @@ function DocumentsPage() {
     const q = query.trim()
     if (!q || loading) return
     setLoading(true)
-    searchDocuments({ query: q, top_k: 4 })
+    searchDocuments({
+      query: q,
+      model_code: modelCode === ALL_MODELS ? undefined : modelCode,
+      top_k: 4,
+    })
       .then((res) => {
-        setResult(res)
+        setResult({ ...res, model_code: modelCode })
         setHistory((prev) => [q, ...prev.filter((h) => h !== q)].slice(0, 8))
         setInput('')
+        setError(null)
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
@@ -100,7 +108,8 @@ function DocumentsPage() {
               <div className="flex flex-col gap-3">
                 <div className="text-[12px] text-g1">
                   <span className="font-semibold text-ink">“{result.query}”</span> 검색 결과{' '}
-                  <span className="font-mono">{result.hits.length}</span>건
+                  <span className="font-mono">{result.count ?? result.hits.length}</span>건
+                  <span className="ml-2 font-mono text-[11px] text-faint">model {result.model_code}</span>
                 </div>
                 {result.hits.map((h) => (
                   <Card key={h.chunk_id} className="px-5 py-4">
@@ -121,6 +130,17 @@ function DocumentsPage() {
           </div>
 
           <div className="mt-3 flex flex-none items-center gap-2">
+            <select
+              value={modelCode}
+              onChange={(e) => setModelCode(e.target.value)}
+              className="h-10 w-[120px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+            >
+              {DOC_FILTERS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
