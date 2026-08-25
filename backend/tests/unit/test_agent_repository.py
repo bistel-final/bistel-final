@@ -1,0 +1,834 @@
+"""`V5-C-0.1` Runtime Repository 단위 회귀 — 묶음 1.
+
+DB 없이 확인할 수 있는 것만 여기서 본다. transaction 원자성·제약 충돌·동시성은
+실제 PostgreSQL이 필요하므로 `test_agent_repository_container.py`가 소유한다.
+"""
+
+from __future__ import annotations
+
+import ast
+import inspect
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.agent import repository as repo  # noqa: E402
+from app.common.enums import (  # noqa: E402
+    ActionCode,
+    AlarmSource,
+    ApprovalStatus,
+    DeliveryChannel,
+    DeliveryStatus,
+    FaultHypothesis,
+    RunStatus,
+    Severity,
+    ToolCallStatus,
+    resolve_severity,
+)
+from app.common.schemas import AlarmRef  # noqa: E402
+
+TRACE = AlarmSource.TRACE
+
+
+def _code_only(module_path: Path) -> str:
+    """**docstring을 뺀 본문 코드만** 문자열로 낸다.
+
+    `ast.unparse()`는 docstring을 그대로 담는다. 그래서 "`commit`을 부르지 않는다"라고
+    적은 설명이 `commit` 호출로 오인된다. 주석은 애초에 AST에 없다.
+    """
+
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            body.pop(0)
+    return ast.unparse(tree)
+
+
+def _ref(alarm_id: str, source: AlarmSource = TRACE) -> AlarmRef:
+    return AlarmRef(source=source, alarm_id=alarm_id)
+
+
+def _command(**overrides: Any) -> repo.CreateAgentRunCommand:
+    members = (_ref("A1"), _ref("A2"))
+    payload: dict[str, Any] = {
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "lot_id": "LOT-1",
+        "chamber_id": "CH-1",
+        "autonomy_level": 2,
+        "requested_alarm": members[0],
+        "representative_alarm": members[0],
+        "member_alarms": members,
+    }
+    payload.update(overrides)
+    return repo.CreateAgentRunCommand(**payload)
+
+
+class _Connection:
+    """활성 transaction만 흉내 낸다. SQL은 실행하지 않는다."""
+
+    def __init__(self, *, in_transaction: bool = True) -> None:
+        self._in_transaction = in_transaction
+        self.statements: list[Any] = []
+
+    def in_transaction(self) -> bool:
+        return self._in_transaction
+
+    def execute(self, statement: Any, params: Any = None) -> Any:  # pragma: no cover
+        self.statements.append(statement)
+        raise AssertionError("단위 회귀는 SQL을 실행하지 않는다")
+
+
+# --- transaction 계약 -------------------------------------------------------
+
+
+class TestRepositoryDoesNotOwnTransactions:
+    """**caller가 transaction을 소유한다**(계획 §1.1).
+
+    Repository가 engine을 만들거나 commit하면 업무 rollback 시 감사만 남는 상태가
+    가능해진다. `V5-CM-4.2`가 그 원자성 증명을 이 Task에 넘겼다.
+    """
+
+    def test_no_engine_or_commit_anywhere(self) -> None:
+        body = _code_only(Path(repo.__file__))
+        for forbidden in (
+            "create_engine",
+            ".commit(",
+            ".rollback(",
+            ".begin(",
+            "get_db_connection",
+        ):
+            assert forbidden not in body, forbidden
+
+    def test_repository_has_no_audit_sql(self) -> None:
+        """감사 SQL을 재구현하지 않는다 — Common helper만 부른다.
+
+        `audit_log`를 언급하는 SQL 상수가 하나라도 생기면 두 벌의 감사 writer가 되고,
+        그때부터 어느 쪽이 실효 계약인지 알 수 없다.
+        """
+
+        tree = ast.parse(Path(repo.__file__).read_text(encoding="utf-8"))
+        literals = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        sql_literals = [value for value in literals if "INSERT INTO" in value.upper()]
+        assert sql_literals, "SQL 상수를 못 찾았다"
+        assert all("audit_log" not in value for value in sql_literals)
+
+        # 그리고 Common helper를 **실제로** 부른다.
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "append_audit_log"
+        ]
+        assert calls, "Common helper를 부르지 않는다"
+
+        # **record를 만드는 자리는 하나다.** 여러 곳에서 만들면 검증 시점이 갈리고,
+        # 그중 하나가 업무 DML 뒤로 밀리면 업무만 commit되는 창이 생긴다.
+        constructed = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "AuditRecord"
+        ]
+        assert len(constructed) == 1
+
+    @pytest.mark.parametrize(
+        ("call", "kwargs"),
+        [
+            ("create_agent_run", {}),
+            ("set_run_action", {}),
+            ("insert_prediction", {}),
+            ("insert_human_prediction_review", {}),
+            ("finish_agent_run", {}),
+        ],
+    )
+    def test_write_requires_an_active_transaction(
+        self, call: str, kwargs: dict[str, Any]
+    ) -> None:
+        """비활성 connection이면 **DB에 닿기 전에** 멈춘다."""
+
+        connection = _Connection(in_transaction=False)
+        arguments: dict[str, dict[str, Any]] = {
+            "create_agent_run": {"command": _command()},
+            "set_run_action": {"agent_run_id": "RUN-1", "action": None},
+            "insert_prediction": {
+                "agent_run_id": "RUN-1",
+                "predicted_fault_code": FaultHypothesis.FOC,
+                "confidence": 0.5,
+                "cause_summary": "x",
+                "evidence": {},
+                "llm_model": "m",
+                "prompt_version": "v",
+            },
+            "insert_human_prediction_review": {
+                "agent_run_id": "RUN-1",
+                "disposition": "ACCEPTED",
+                "label_source": "HUMAN_REVIEW",
+                "reviewer": "r",
+            },
+            "finish_agent_run": {
+                "agent_run_id": "RUN-1",
+                "status": RunStatus.COMPLETED,
+            },
+        }[call]
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            getattr(repo, call)(connection, **{**arguments, **kwargs})
+        assert exc.value.code == "NO_ACTIVE_TRANSACTION"
+        assert connection.statements == []
+
+
+# --- run 생성 입력과 불변 ---------------------------------------------------
+
+
+class TestCreateAgentRunInvariants:
+    """1차 계획리뷰 필수 2 — 대표 알람 불변을 **표현할 수 없게** 만든다."""
+
+    @pytest.mark.parametrize(
+        ("overrides", "code"),
+        [
+            ({"member_alarms": ()}, "EMPTY_MEMBER_ALARMS"),
+            (
+                {"member_alarms": (_ref("A1"), _ref("A1"))},
+                "DUPLICATE_MEMBER_ALARM",
+            ),
+            (
+                {"requested_alarm": _ref("ZZ")},
+                "REQUESTED_ALARM_NOT_MEMBER",
+            ),
+            (
+                {"representative_alarm": _ref("ZZ")},
+                "REPRESENTATIVE_ALARM_NOT_MEMBER",
+            ),
+            ({"autonomy_level": 4}, "INVALID_AUTONOMY_LEVEL"),
+            ({"autonomy_level": 0}, "INVALID_AUTONOMY_LEVEL"),
+        ],
+    )
+    def test_bad_input_is_refused_before_sql(
+        self, overrides: dict[str, Any], code: str
+    ) -> None:
+        connection = _Connection()
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.create_agent_run(connection, _command(**overrides))
+        assert exc.value.code == code
+        assert connection.statements == []
+
+    def test_same_alarm_id_from_another_source_is_not_a_duplicate(self) -> None:
+        """중복 판정은 `(source, alarm_id)` 짝이다 — id만 같은 것은 다른 알람이다."""
+
+        members = (_ref("A1", AlarmSource.TRACE), _ref("A1", AlarmSource.R03))
+        repo._validate_create_command(
+            _command(
+                member_alarms=members,
+                requested_alarm=members[0],
+                representative_alarm=members[1],
+            )
+        )
+
+    def test_is_representative_is_not_a_caller_input(self) -> None:
+        """caller가 대표 flag를 줄 자리가 없다.
+
+        `agent_run`의 대표 scalar와 `agent_run_alarm`의 대표 행이 어긋난 상태를
+        public API로 만들 수 없어야 한다.
+        """
+
+        fields = repo.CreateAgentRunCommand.__dataclass_fields__
+        assert "is_representative" not in fields
+        body = ast.unparse(ast.parse(inspect.getsource(repo.create_agent_run).lstrip()))
+        # 대표 여부는 representative token과의 equality로만 파생한다.
+        assert "alarm.to_token() == representative" in body
+
+
+# --- action·severity --------------------------------------------------------
+
+
+class TestActionSeverityCannotBeMismatched:
+    def test_severity_is_not_a_parameter(self) -> None:
+        signature = inspect.signature(repo.set_run_action)
+        assert "severity" not in signature.parameters
+        assert list(signature.parameters) == [
+            "connection",
+            "agent_run_id",
+            "action",
+        ]
+
+    @pytest.mark.parametrize(
+        ("action", "severity"),
+        [
+            (ActionCode.MONITORING, Severity.LOW),
+            (ActionCode.WARNING, Severity.MEDIUM),
+            (ActionCode.EQP_HOLD, Severity.HIGH),
+        ],
+    )
+    def test_the_only_derivation_is_the_shared_rule(
+        self, action: ActionCode, severity: Severity
+    ) -> None:
+        """003의 named CHECK가 허용하는 3쌍이 곧 `resolve_severity()`의 출력이다."""
+
+        assert resolve_severity(action) is severity
+
+    def test_terminal_status_is_closed(self) -> None:
+        assert set(repo.TERMINAL_EVENTS) == {RunStatus.COMPLETED, RunStatus.FAILED}
+        connection = _Connection()
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.finish_agent_run(connection, "RUN-1", RunStatus.RUNNING)
+        assert exc.value.code == "NOT_TERMINAL_STATUS"
+        assert connection.statements == []
+
+
+# --- label 격리 -------------------------------------------------------------
+
+
+class TestHiddenGoldIsolation:
+    """Runtime 기본 경로는 정답 label을 읽지도 쓰지도 않는다(계획 §7)."""
+
+    def test_runtime_label_sources_exclude_hidden_gold(self) -> None:
+        assert repo.RUNTIME_REVIEW_LABEL_SOURCES == ("HUMAN_REVIEW", "MENTOR_REVIEW")
+        assert repo.HIDDEN_GOLD not in repo.RUNTIME_REVIEW_LABEL_SOURCES
+
+    def test_hidden_gold_write_is_refused_before_sql(self) -> None:
+        connection = _Connection()
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.insert_human_prediction_review(
+                connection,
+                agent_run_id="RUN-1",
+                disposition="ACCEPTED",
+                label_source=repo.HIDDEN_GOLD,
+                reviewer="r",
+            )
+        assert exc.value.code == "LABEL_SOURCE_NOT_ALLOWED"
+        assert connection.statements == []
+
+    def test_the_read_filter_lives_in_sql(self) -> None:
+        """애플리케이션 필터가 아니라 SQL이 막는다.
+
+        새 조회 경로가 생길 때마다 같은 필터를 다시 붙이는 실수를 없앤다.
+        """
+
+        statement = str(repo._SELECT_REVIEWS)
+        assert "label_source = ANY(:allowed)" in statement
+
+    def test_no_evaluation_label_join(self) -> None:
+        body = _code_only(Path(repo.__file__))
+        for forbidden in ("lot_history", "fault_code FROM", "evaluation"):
+            assert forbidden not in body, forbidden
+
+
+# --- SQL·오류 계약 ----------------------------------------------------------
+
+
+class TestSqlAndErrorContract:
+    def test_every_statement_is_a_module_constant_with_bind_params(self) -> None:
+        """문자열 보간 SQL을 만들지 않는다.
+
+        f-string으로 컬럼 목록을 조립하는 자리는 있지만 그 입력은 module 상수뿐이며,
+        **값**은 전부 bind parameter다.
+        """
+
+        source = Path(repo.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", None) != "text":
+                continue
+            argument = node.args[0]
+            if isinstance(argument, ast.JoinedStr):
+                # 컬럼 목록 상수만 삽입한다 — 값 보간이 아니다.
+                names = {
+                    part.value.id
+                    for part in argument.values
+                    if isinstance(part, ast.FormattedValue)
+                    and isinstance(part.value, ast.Name)
+                }
+                assert names <= {
+                    "_RUN_COLUMNS",
+                    "_PREDICTION_COLUMNS",
+                    "_REVIEW_COLUMNS",
+                    "_RUN_ACTION_COLUMNS",
+                    "_TOOL_CALL_COLUMNS",
+                    "_APPROVAL_COLUMNS",
+                    "_DELIVERY_COLUMNS",
+                }
+                continue
+            assert isinstance(argument, ast.Constant)
+
+    def test_conflict_codes_are_stable_and_unique(self) -> None:
+        codes = list(repo.CONFLICT_CODES.values())
+        assert len(set(codes)) == len(codes)
+        # 1차 계획리뷰 필수 3 — PK 3종이 포함돼야 한다.
+        for name in (
+            "agent_run_action_pkey",
+            "action_delivery_pkey",
+            "agent_run_alarm_pkey",
+        ):
+            assert name in repo.CONFLICT_CODES
+
+    def test_constraint_name_comes_from_the_driver_not_the_message(self) -> None:
+        """메시지 문자열을 파싱하지 않는다 — 형식이 바뀌면 조용히 어긋난다."""
+
+        class _Diag:
+            constraint_name = "ux_agent_run_incident_active"
+
+        class _Orig(Exception):
+            diag = _Diag()
+
+        class _Error(Exception):
+            orig = _Orig()
+
+        assert repo._constraint_name(_Error()) == "ux_agent_run_incident_active"
+        assert repo._constraint_name(Exception()) is None
+
+    def test_unknown_constraint_is_a_contract_error(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+
+        error = IntegrityError("stmt", {}, Exception("boom"))
+        translated = repo._translate(error)
+        assert isinstance(translated, repo.RepositoryContractError)
+        assert translated.code == "CONSTRAINT_VIOLATION"
+
+    def test_known_constraint_becomes_a_conflict(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+
+        class _Diag:
+            constraint_name = "approval_request_action_id_key"
+
+        class _Orig(Exception):
+            diag = _Diag()
+
+        error = IntegrityError("stmt", {}, _Orig())
+        translated = repo._translate(error)
+        assert isinstance(translated, repo.RepositoryConflict)
+        assert translated.code == "APPROVAL_ALREADY_EXISTS"
+
+    def test_sanitized_messages_carry_no_sql_or_dsn(self) -> None:
+        for error in (
+            repo.RepositoryConflict("ACTIVE_RUN_EXISTS"),
+            repo.RepositoryNotFound("RUN_NOT_FOUND"),
+            repo.RepositoryContractError("CONSTRAINT_VIOLATION"),
+            repo.RepositoryUnavailable("DATABASE_UNAVAILABLE"),
+        ):
+            text_value = str(error)
+            assert "postgresql" not in text_value
+            assert "INSERT" not in text_value
+            assert "SELECT" not in text_value
+
+
+class TestErrorClassification:
+    """**연결 실패만 Unavailable이다**(구현리뷰 묶음 1 필수 2).
+
+    이전에는 모든 `DBAPIError`가 `DATABASE_UNAVAILABLE`이었다. 그래서 caller 입력이
+    varchar 경계를 넘겨 생긴 `DataError`가 장애로 분류돼 503 후보가 됐다.
+    """
+
+    @staticmethod
+    def _error(kind: type) -> Any:
+        return kind("stmt", {}, Exception("boom"))
+
+    def test_data_errors_are_contract_violations(self) -> None:
+        from sqlalchemy.exc import DataError, ProgrammingError
+
+        for kind in (DataError, ProgrammingError):
+            translated = repo._translate(self._error(kind))
+            assert isinstance(translated, repo.RepositoryContractError), kind
+            assert translated.code == "DATA_CONTRACT_VIOLATION"
+
+    def test_only_connection_failures_are_unavailable(self) -> None:
+        from sqlalchemy.exc import InterfaceError, OperationalError
+
+        for kind in (OperationalError, InterfaceError):
+            translated = repo._translate(self._error(kind))
+            assert isinstance(translated, repo.RepositoryUnavailable), kind
+            assert translated.code == "DATABASE_UNAVAILABLE"
+
+
+class TestStringBoundariesMatchTheMigration:
+    """경계값은 `002_agent_runtime_clean.sql`의 varchar 상한이다."""
+
+    def test_limits_match_the_migration(self) -> None:
+        migration = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        for column, limit in (
+            ("thread_id", 36),
+            ("lot_id", 20),
+            ("chamber_id", 24),
+            ("alarm_id", 24),
+            ("llm_model", 64),
+            ("prompt_version", 40),
+        ):
+            assert f"{column} varchar({limit})" in migration, column
+            assert repo.COLUMN_LIMITS[column] == limit
+
+    @pytest.mark.parametrize(
+        ("value", "code"),
+        [
+            ("", "EMPTY_LOT_ID"),
+            ("   ", "EMPTY_LOT_ID"),
+            ("L" * 21, "LOT_ID_TOO_LONG"),
+            (None, "INVALID_LOT_ID"),
+            (123, "INVALID_LOT_ID"),
+        ],
+    )
+    def test_bad_text_is_refused(self, value: Any, code: str) -> None:
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._require_text(value, "lot_id")
+        assert exc.value.code == code
+
+    def test_the_boundary_value_passes_and_is_trimmed(self) -> None:
+        assert repo._require_text("  L" + "x" * 17 + "  ", "lot_id") == "L" + "x" * 17
+        assert repo._require_text("L" * 20, "lot_id") == "L" * 20
+
+    def test_optional_text_allows_none_but_not_blank(self) -> None:
+        assert repo._optional_text(None, "llm_model") is None
+        with pytest.raises(repo.RepositoryContractError):
+            repo._optional_text("   ", "llm_model")
+
+
+class TestAuditRecordIsBuiltBeforeDml:
+    """감사 record 구성이 업무 DML보다 **앞**이다(구현리뷰 묶음 1 필수 1)."""
+
+    @pytest.mark.parametrize(
+        "function",
+        ["create_agent_run", "finish_agent_run", "insert_prediction"],
+    )
+    def test_record_precedes_execute(self, function: str) -> None:
+        body = ast.unparse(
+            ast.parse(inspect.getsource(getattr(repo, function)).lstrip())
+        )
+        assert body.index("_run_audit_record") < body.index("connection.execute")
+
+    @pytest.mark.parametrize(
+        "function",
+        ["create_agent_run", "finish_agent_run", "insert_prediction"],
+    )
+    def test_audit_append_is_inside_the_boundary(self, function: str) -> None:
+        """`append_audit_log`가 `_write()` 경계 밖에 있으면 raw 예외가 샌다."""
+
+        body = ast.unparse(
+            ast.parse(inspect.getsource(getattr(repo, function)).lstrip())
+        )
+        assert "append_audit_log(connection, record)" in body
+        # 감사 append는 `_write`에 넘기는 내부 함수 안에서만 불린다.
+        assert body.index("append_audit_log") < body.index("_write(connection")
+
+    def test_an_invalid_record_is_a_contract_error(self) -> None:
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._run_audit_record(
+                repo.AuditEvent.AGENT_RUN_STARTED,
+                entity_id="R" * 21,
+                actor_type=repo.ActorType.AGENT,
+                actor_id=None,
+                after={},
+            )
+        assert exc.value.code == "AUDIT_RECORD_INVALID"
+
+
+class TestNormalisationReachesTheWrite:
+    """검증 결과를 **쓰지 않으면** 검증이 아무것도 보장하지 않는다(2차 필수 1-A)."""
+
+    def test_the_validator_returns_a_normalised_command(self) -> None:
+        padded = _command(
+            thread_id="  " + "T" * 36 + "  ",
+            lot_id="  LOT-1  ",
+            chamber_id="  CH-1  ",
+            llm_model="  claude  ",
+            prompt_version="  v1  ",
+        )
+        normalized = repo._validate_create_command(padded)
+        assert normalized.thread_id == "T" * 36
+        assert normalized.lot_id == "LOT-1"
+        assert normalized.chamber_id == "CH-1"
+        assert normalized.llm_model == "claude"
+        assert normalized.prompt_version == "v1"
+        # 원본은 그대로다 — frozen dataclass를 제자리에서 바꾸지 않는다.
+        assert padded.lot_id == "  LOT-1  "
+
+    def test_create_rebinds_the_command_before_use(self) -> None:
+        """`command = _validate_create_command(command)` 형태여야 한다.
+
+        반환값을 버리면 원문이 bind된다 — 그게 2차 지적의 재현이었다.
+        """
+
+        body = ast.unparse(ast.parse(inspect.getsource(repo.create_agent_run).lstrip()))
+        assert "command = _validate_create_command(command)" in body
+
+    @pytest.mark.parametrize(
+        ("function", "names"),
+        [
+            ("insert_prediction", ("cause_summary", "llm_model", "prompt_version")),
+            ("insert_human_prediction_review", ("reviewer", "disposition")),
+        ],
+    )
+    def test_text_arguments_are_rebound(
+        self, function: str, names: tuple[str, ...]
+    ) -> None:
+        body = ast.unparse(
+            ast.parse(inspect.getsource(getattr(repo, function)).lstrip())
+        )
+        for name in names:
+            # `ast.unparse()`는 따옴표를 작은따옴표로 정규화한다.
+            assert f"{name} = _require_text({name}, '{name}')" in body, name
+
+
+class TestJsonSerialisationIsSanitised:
+    """직렬화 실패가 raw `TypeError`로 새지 않는다(2차 필수 1-B)."""
+
+    def test_serialisation_happens_in_one_place(self) -> None:
+        tree = ast.parse(Path(repo.__file__).read_text(encoding="utf-8"))
+        dumps = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(getattr(node.func, "value", None), "id", None) == "json"
+            and getattr(node.func, "attr", None) == "dumps"
+        ]
+        assert len(dumps) == 1, "직렬화 지점이 여러 곳이면 하나가 경계 밖에 남는다"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            {"bad": object()},
+            {"cycle": {1, 2}},
+            # **non-finite float는 직렬화에 성공한다** — 그게 문제였다.
+            # `json.dumps()` 기본값 `allow_nan=True`가 `{"v": NaN}`을 만들고,
+            # 그 출력은 JSON이 아니라 PostgreSQL `::jsonb`가 거부한다.
+            {"v": float("nan")},
+            {"v": float("inf")},
+            {"v": float("-inf")},
+            {"nested": {"deep": [1, float("nan")]}},
+        ],
+    )
+    def test_unserialisable_payload_becomes_a_contract_error(
+        self, value: dict[str, Any]
+    ) -> None:
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._json_payload(value, "evidence")
+        assert exc.value.code == "INVALID_JSON_EVIDENCE"
+        assert "object" not in str(exc.value)
+
+    def test_finite_floats_still_serialise(self) -> None:
+        """**양성 대조군.** 정상 float까지 막지 않는다."""
+
+        assert repo._json_payload({"v": 1.5, "z": 0.0}, "evidence") == (
+            '{"v": 1.5, "z": 0.0}'
+        )
+
+    def test_allow_nan_is_disabled(self) -> None:
+        """계약을 상수 위치에서 고정한다 — 기본값으로 되돌아가면 red다."""
+
+        body = ast.unparse(ast.parse(inspect.getsource(repo._json_payload).lstrip()))
+        assert "allow_nan=False" in body
+
+    def test_none_stays_none(self) -> None:
+        assert repo._json_payload(None, "evidence") is None
+
+    def test_serialisation_precedes_execute(self) -> None:
+        for name in ("finish_agent_run", "insert_prediction"):
+            body = ast.unparse(
+                ast.parse(inspect.getsource(getattr(repo, name)).lstrip())
+            )
+            assert body.index("_json_payload") < body.index("connection.execute"), name
+
+
+# ===========================================================================
+# 묶음 2 — 계약을 DB 없이 확인할 수 있는 부분
+# ===========================================================================
+
+
+class TestToolCallContract:
+    def test_the_sentinel_uses_a_status_the_migration_allows(self) -> None:
+        """`002`의 status CHECK에 `STARTED`가 없어 sentinel이 불가피하다."""
+
+        migration = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        assert "status IN ('SUCCESS', 'ERROR', 'TIMEOUT')" in migration
+        # `agent_tool_call`의 status 절에 `STARTED`가 없다.
+        # (`AGENT_RUN_STARTED`는 audit event라 문서 전체 검색은 무의미하다.)
+        clause = migration[migration.index("CREATE TABLE agent_tool_call (") :].split(
+            ");", 1
+        )[0]
+        assert "STARTED" not in clause
+        assert repo.RESERVED_ERROR_MSG == "CALL_RESERVED_NOT_COMPLETED"
+
+    def test_reserve_locks_the_run_before_reading_the_sequence(self) -> None:
+        """lock이 `max(call_seq)` 조회보다 **앞**이어야 직렬화된다."""
+
+        body = ast.unparse(
+            ast.parse(inspect.getsource(repo.reserve_tool_call).lstrip())
+        )
+        assert body.index("_LOCK_RUN") < body.index("_NEXT_CALL_SEQ")
+        assert "FOR UPDATE" in str(repo._LOCK_RUN)
+
+    def test_finalize_matches_the_whole_sentinel(self) -> None:
+        """조건이 sentinel 전체와 맞을 때만 1행이다.
+
+        하나라도 빠지면 이미 닫힌 호출을 다시 덮을 수 있다.
+        """
+
+        statement = str(repo._FINALIZE_TOOL_CALL)
+        for clause in (
+            "status = :reserved_status",
+            "error_msg = :reserved_error",
+            "output IS NULL",
+            "latency_ms IS NULL",
+            "agent_run_id = :agent_run_id",
+        ):
+            assert clause in statement, clause
+
+    @pytest.mark.parametrize("key", repo.RESERVED_TOOL_OUTPUT_KEYS)
+    def test_reserved_output_keys_are_refused(self, key: str) -> None:
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo._assert_no_reserved_keys({key: 1})
+        assert exc.value.code == "RESERVED_OUTPUT_KEY"
+
+    def test_domain_payload_is_allowed(self) -> None:
+        """**양성 대조군.** 실행 metadata가 아닌 key는 통과한다."""
+
+        repo._assert_no_reserved_keys({"rows": 3, "summary": "x"})
+        repo._assert_no_reserved_keys(None)
+
+    def test_negative_latency_is_refused(
+        self,
+    ) -> None:
+        connection = _Connection()
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.finalize_tool_call(
+                connection,
+                tool_call_id="TOOL-" + "0" * 24,
+                agent_run_id="RUN-1",
+                status=ToolCallStatus.SUCCESS,
+                latency_ms=-1,
+            )
+        assert exc.value.code == "NEGATIVE_LATENCY"
+        assert connection.statements == []
+
+
+class TestApprovalStatusCannotBeAuto:
+    """`ApprovalStatus`는 5값인데 DB CHECK는 4값이다(계획리뷰 1차 권장 1)."""
+
+    def test_the_enum_and_the_migration_disagree(self) -> None:
+        migration = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        assert "status IN ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED')" in migration
+        assert "AUTO" in {member.value for member in ApprovalStatus}
+
+    def test_create_has_no_status_parameter(self) -> None:
+        """넘길 자리가 없으면 잘못된 값을 만들 수 없다."""
+
+        assert (
+            "status" not in inspect.signature(repo.create_approval_request).parameters
+        )
+        tree = ast.parse(inspect.getsource(repo.create_approval_request).lstrip())
+        function = tree.body[0]
+        # docstring이 `AUTO`를 설명하므로 본문 코드만 본다.
+        statements = [
+            node
+            for node in function.body  # type: ignore[attr-defined]
+            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))
+        ]
+        body = "\n".join(ast.unparse(node) for node in statements)
+        assert "ApprovalStatus.PENDING.value" in body
+        assert "AUTO" not in body
+
+
+class TestDeliveryInitialContract:
+    def test_the_pairs_match_the_design(self) -> None:
+        """설계 §7.1이 초기 조합을 **둘로** 고정한다.
+
+        상태 목록으로 두고 channel과 독립 검증하면 `MES_MOCK=WAITING`(승인 전 전송
+        가능)·`EMAIL=CANCELED`(반려 전이 우회) 같은 조합이 만들어진다
+        (구현리뷰 묶음 2 필수 1).
+        """
+
+        design = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "specifications"
+            / "시스템설계서_v2_1_작업본.md"
+        ).read_text(encoding="utf-8")
+        assert "| EQP_HOLD | PENDING | EMAIL=WAITING, MES_MOCK=BLOCKED |" in design
+        assert "| WARNING | AUTO | EMAIL=WAITING |" in design
+
+        assert dict(repo.INITIAL_DELIVERY_PAIRS) == {
+            DeliveryChannel.EMAIL: DeliveryStatus.WAITING,
+            DeliveryChannel.MES_MOCK: DeliveryStatus.BLOCKED,
+        }
+        # 모든 channel이 정확히 하나의 초기 상태를 갖는다.
+        assert set(repo.INITIAL_DELIVERY_PAIRS) == set(DeliveryChannel)
+
+    def test_no_post_send_status_is_creatable(self) -> None:
+        """전이 결과 상태는 어느 channel의 초기값도 아니다."""
+
+        for forbidden in (
+            DeliveryStatus.SENDING,
+            DeliveryStatus.SENT,
+            DeliveryStatus.FAILED,
+            DeliveryStatus.CANCELED,
+            DeliveryStatus.UNKNOWN,
+        ):
+            assert forbidden not in repo.INITIAL_DELIVERY_PAIRS.values()
+
+    def test_request_hash_pattern_matches_the_migration(self) -> None:
+        migration = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        assert "request_hash char(64)" in migration
+        assert "request_hash ~ '^[0-9a-f]{64}$'" in migration
+        assert repo._HEX64.fullmatch("a" * 64)
+        assert not repo._HEX64.fullmatch("A" * 64)
+
+
+class TestBundleTwoConflictCoverage:
+    def test_every_declared_conflict_name_is_in_the_migration(self) -> None:
+        """**이름은 실측이어야 한다.**
+
+        index·unique는 migration에 문자열로 있고, PK 3종은 PostgreSQL이
+        `<table>_pkey`로 자동 명명한다. 후자는 container 회귀가 실제 위반으로
+        확인한다.
+        """
+
+        migration = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        for name in repo.CONFLICT_CODES:
+            if name.endswith("_pkey"):
+                table = name[: -len("_pkey")]
+                assert f"CREATE TABLE {table} (" in migration, name
+                continue
+            if name.endswith("_key"):
+                continue  # inline UNIQUE — PostgreSQL 자동 명명
+            assert name in migration, name
