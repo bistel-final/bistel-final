@@ -40,17 +40,27 @@ ISOLATED_MANIFESTS = (
     "evaluation.base_schema.json",
     "runtime.base_schema.json",
     "evaluation.corrected_base.json",
-    "neo4j.graph.json",
     # `V5-CM-1.6`이 구 corrected 소비자를 제거하면서 함께 격리했다.
     "runtime.corrected_base.json",
 )
+
+#: **history에는 남지만 active 위치에 다시 발급된** manifest.
+#:
+#: `V5-CM-1.2`가 구 epoch 사본을 history로 격리했고, `V5-CM-2.7`이 최종
+#: `project.zip`의 `master.cypher`로 **같은 이름의 다른 artifact**를 새로 발급했다.
+#: history 사본은 복원한 것이 아니라 구 epoch 이력으로 남는다 — 두 파일의 내용은
+#: 다르며 회귀가 그것을 고정한다.
+REISSUED_MANIFESTS = ("neo4j.graph.json",)
+
+#: history에 구 epoch 사본이 있고 **최종 적용으로 다시 발급된** marker.
+#: `V5-CM-2.7` 묶음 2가 `ADOPTED_EXISTING`으로 발급했다.
+REISSUED_MARKERS = ("neo4j_graph.neo4j.json",)
 ISOLATED_MARKERS = (
     "base_schema.kosa_agent_e2e.json",
     "corrected.v1.json",
     "corrected_base.kosa_agent.json",
     "corrected_base.kosa_agent_e2e.json",
     "evaluation_mock.kosa_text2sql.json",
-    "neo4j_graph.neo4j.json",
     "reference_extensions.kosa_agent.json",
     "reference_extensions.kosa_agent_e2e.json",
     "reference_extensions.kosa_text2sql.json",
@@ -66,8 +76,13 @@ ISOLATED_MARKERS = (
 #: `V5-CM-1.8`이 active를 final로 교체했다 — `evaluation_mock`은 history로 갔고
 #: `evaluation_reference`가 그 자리를 대신한다.
 REMAINING_MANIFESTS = {
+    # `V5-CM-3.3` successor. predecessor `runtime.runtime_clean.json`은 CM-3.2
+    # marker가 증명하는 계약이라 **덮어쓰지 않고 나란히 둔다**.
+    "runtime.runtime_guarded.json",
     "runtime.runtime_clean.json",
     "evaluation.evaluation_reference.json",
+    # `V5-CM-2.7`이 최종 `master.cypher`로 발급한다.
+    "neo4j.graph.json",
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
 # 예정: V5-B-1.4가 rag_load.kosa_text2sql.json을 추가한다.
@@ -85,6 +100,16 @@ REMAINING_MARKERS = {
     # 구조적으로 가능해진다.
     "agent_runtime_final.kosa_agent.json",
     "agent_runtime_final.kosa_agent_e2e.json",
+    # Runtime 003 적용 증적 (`V5-CM-3.3` 묶음 2)
+    #
+    # predecessor `agent_runtime_final.<db>.json`을 **덮어쓰지 않는다.** CM-3.2가
+    # 증명한 `runtime_clean` 계약과 CM-3.3이 증명한 `runtime_guarded` 계약은 서로
+    # 다른 것을 주장하며, 둘을 잇는 것은 이 marker의
+    # `baseline_schema_signature_sha256`이다.
+    "agent_severity_guard_final.kosa_agent.json",
+    "agent_severity_guard_final.kosa_agent_e2e.json",
+    # Neo4j 최종 graph 적용 증적 (`V5-CM-2.7` 묶음 2)
+    "neo4j_graph.neo4j.json",
 }
 
 
@@ -253,12 +278,42 @@ def test_isolation_is_complete() -> None:
             BOOTSTRAP_ROOT / "manifests" / name
         ).exists(), f"원위치 잔존: {name}"
 
+    # 재발급본은 **양쪽에 다 있다.** 다만 내용이 같으면 구 epoch를 복원한 것이므로
+    # 실패시킨다(`V5-CM-2.7`).
+    for name in REISSUED_MANIFESTS:
+        history = HISTORY_ROOT / "manifests" / name
+        active = BOOTSTRAP_ROOT / "manifests" / name
+        assert history.is_file(), f"history에 없음: {name}"
+        assert active.is_file(), f"active에 없음: {name}"
+        assert history.read_bytes() != active.read_bytes(), f"구 epoch 복원: {name}"
+        # **"다르다"만으로는 부족하다.** 임의의 다른 내용도 통과한다.
+        # active가 **최종 발급본과 같은지**는 `test_master_cypher.py`의
+        # `test_the_active_artifacts_match_the_final_source_exactly`가
+        # `validate_generated_artifacts()`로 본다(구현리뷰 필수 1).
+        assert json.loads(active.read_text(encoding="utf-8"))["dataset_epoch"] == (
+            "fdc_final_20260818"
+        )
+
     for name in ISOLATED_MARKERS:
         assert (HISTORY_ROOT / "markers" / name).is_file(), f"history에 없음: {name}"
         assert not (BOOTSTRAP_ROOT / "markers" / name).exists(), f"원위치 잔존: {name}"
 
+    for name in REISSUED_MARKERS:
+        history = HISTORY_ROOT / "markers" / name
+        active = BOOTSTRAP_ROOT / "markers" / name
+        assert history.is_file(), f"history에 없음: {name}"
+        assert active.is_file(), f"active에 없음: {name}"
+        assert history.read_bytes() != active.read_bytes(), f"구 epoch 복원: {name}"
+        assert json.loads(active.read_text(encoding="utf-8"))["dataset_epoch"] == (
+            "fdc_final_20260818"
+        )
+
     assert (
-        len(ISOLATED_REGISTRATION) + len(ISOLATED_MANIFESTS) + len(ISOLATED_MARKERS)
+        len(ISOLATED_REGISTRATION)
+        + len(ISOLATED_MANIFESTS)
+        + len(REISSUED_MANIFESTS)
+        + len(ISOLATED_MARKERS)
+        + len(REISSUED_MARKERS)
         == 19
     )
 

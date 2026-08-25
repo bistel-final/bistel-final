@@ -151,10 +151,6 @@ R03_FOREIGN_KEYS: Mapping[str, tuple[str, str]] = {
 }
 EXPECTED_FK_ACTION = "a"
 
-POLICY_VERSION = "R03_CONSEC_V1"
-ALARM_ID_PATTERN = re.compile(r"^R03-[0-9a-f]{20}$")
-MEMBER_WAFER_REF_COUNT = 3
-
 
 # ---------------------------------------------------------------------------
 # v_alarm_event 최종 계약 (계획 §6)
@@ -337,9 +333,6 @@ FORBIDDEN_TOKENS: tuple[str, ...] = tuple(_IDENTIFIER_BOUNDARY)
 
 #: 지원하지 않는 string literal prefix. 묵시적으로 받지 않고 거부한다.
 _UNSUPPORTED_QUOTE = re.compile(r"(?<![a-z0-9_])(?:[EeBbXx]'|[Uu]&['\"])")
-
-_LINE_COMMENT = re.compile(r"--[^\n]*")
-_BLOCK_COMMENT_OPEN = "/*"
 
 #: statement 앞머리에서 뽑는 `(operation, target)`.
 _STATEMENT = re.compile(
@@ -939,16 +932,6 @@ def security_signature_sha256(
     ).hexdigest()
 
 
-def assert_security_signature(*, marker: Any, live: str) -> None:
-    """marker와 live가 다르면 no-op으로 통과시키지 않는다(계획 §7.3)."""
-
-    for value in (marker, live):
-        if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-            raise ReferenceV5Error("SECURITY_SIGNATURE_MALFORMED", EXIT_MISMATCH)
-    if marker != live:
-        raise ReferenceV5Error("SECURITY_SIGNATURE_MISMATCH", EXIT_MISMATCH)
-
-
 #: Gate 0가 확인해야 하는 **공용 target 전체.** 일부만 넘겨도 통과하면 나머지 DB의 ACL
 #: 미확인을 놓친다(구현리뷰 7차 필수 2). CM-2.6 적용 순서와 같다.
 PUBLIC_TARGETS: tuple[str, ...] = ("kosa_agent_e2e", "kosa_agent", "kosa_text2sql")
@@ -1152,12 +1135,34 @@ def classify_data_phase(*, r03_rows: int, view_rows: int) -> str:
 #: 실제 강제는 `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS`가 한다. 이 상수는 그 등록부에
 #: 무엇을 넣어야 하는지 적어 둔 **기대값 문서**이며, CM-3.1이 직접 쓰지 않는다
 #: (구현리뷰 4차 필수 1·2).
-#: 각 profile의 **최종** stage. `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS`의 key와 같아야
-#: 하며 회귀가 두 곳을 대조한다. Runtime은 계획 §2.2대로 같은 이름으로 원자 교체된다.
+#: 각 profile의 **현재 live final stage**. 정본은 여기 하나다.
+#:
+#: `V5-CM-3.3`이 Runtime을 `runtime_guarded`로 올렸다. predecessor `runtime_clean`은
+#: **사라지지 않는다** — `manifest_v3.BOOTSTRAP_STAGE_CONTRACTS`에 남아 CM-3.2 marker가
+#: 검증할 계약을 제공하고, `verify_bootstrap_state.FINAL_STAGES`의 reference routing
+#: 집합에도 남는다. 그러나 "현재 final"은 하나뿐이다.
+#:
+#: 이 값이 `verify_bootstrap_state.LIVE_FINAL_STAGE_BY_PROFILE`과 갈리면 한쪽은
+#: guarded를, 다른 쪽은 clean을 요구하면서 둘 다 green이 된다(구현리뷰 필수 3).
+#: 회귀가 두 상수를 대조한다.
 FINAL_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
-    {"runtime": "runtime_clean", "evaluation": "evaluation_reference"}
+    {"runtime": "runtime_guarded", "evaluation": "evaluation_reference"}
 )
-FINAL_EVALUATION_STAGE = FINAL_STAGE_BY_PROFILE["evaluation"]
+
+#: `V5-CM-3.2`가 증명한 predecessor stage. history가 아니라 **살아 있는 계보**다.
+PREDECESSOR_RUNTIME_STAGE = "runtime_clean"
+
+#: `V5-CM-1.8` registrar가 **발급하는** stage.
+#:
+#: "현재 live final"(`FINAL_STAGE_BY_PROFILE`)과 다르다. CM-1.8은 live DB inventory에서
+#: profile manifest를 발급하는 Task이고, 그것이 증명한 것은 `runtime_clean`이다.
+#: `V5-CM-3.3`이 그 위에 `runtime_guarded`를 쌓았지만 **발급 주체는 CM-3.3**이다.
+#:
+#: 이 둘을 한 상수로 묶으면 registrar가 자기가 만들지 않은 stage의 manifest를
+#: 발급하려 한다(구현리뷰 필수 3 보완 중 확인).
+REGISTRAR_STAGE_BY_PROFILE: Mapping[str, str] = MappingProxyType(
+    {"runtime": PREDECESSOR_RUNTIME_STAGE, "evaluation": "evaluation_reference"}
+)
 
 #: profile별 **기대 stage 계약 전체**.
 #:
@@ -1172,8 +1177,8 @@ FINAL_STAGE_EXPECTATIONS: Mapping[
     {
         # (schema_stage, applied_migrations, action_policy, action_rows, fixture)
         "runtime": (
-            "runtime_clean",
-            (MIGRATION_ID, "002_agent_runtime_clean"),
+            "runtime_guarded",
+            (MIGRATION_ID, "002_agent_runtime_clean", "003_agent_run_severity_pair"),
             "bootstrap_empty",
             0,
             None,
@@ -1189,7 +1194,7 @@ FINAL_STAGE_EXPECTATIONS: Mapping[
 )
 
 PROFILE_MIGRATIONS: Mapping[str, tuple[str, ...]] = {
-    "runtime": (MIGRATION_ID, "002_agent_runtime_clean"),
+    "runtime": (MIGRATION_ID, "002_agent_runtime_clean", "003_agent_run_severity_pair"),
     "evaluation": (MIGRATION_ID,),
 }
 #: **구 등록 manifest(폐기 epoch `kosa_0813`)의 물리 inventory 개수다.**

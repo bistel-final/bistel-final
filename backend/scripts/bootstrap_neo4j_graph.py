@@ -1,4 +1,4 @@
-"""Destructive-safe loader for the registered kosa_0813 Neo4j graph.
+"""Destructive-safe loader for the registered final Neo4j graph.
 
 No mode connects implicitly.  The raw Cypher is never sent to Neo4j; all
 mutations use the reviewed, deterministic seed produced by ``master_cypher``.
@@ -30,6 +30,7 @@ try:
 except ImportError:  # pragma: no cover - POSIX only
     _msvcrt = None
 
+import manifest_v3
 from dotenv import load_dotenv
 from master_cypher import (
     BOOTSTRAP_ROOT,
@@ -845,6 +846,15 @@ def validate_marker_for_context(
         "expected_graph_fingerprint_sha256": context.manifest[
             "expected_graph_fingerprint_sha256"
         ],
+        # **count도 manifest와 대조한다.**
+        #
+        # 이 세 값은 UI 메모가 아니라 시스템설계서 §5.2의 **적용 증적**이다.
+        # 대조하지 않으면 `node_count: 999`인 marker가 strict validator를 통과하고,
+        # public verifier는 live와 manifest만 비교하므로 잘못된 count가 계속
+        # 노출된다(구현리뷰 5차 필수 1).
+        "node_count": context.manifest["node_count"],
+        "relationship_count": context.manifest["relationship_count"],
+        "relation_id_duplicates": 0,
     }
     if any(payload.get(key) != value for key, value in expected.items()):
         raise MarkerError("Neo4j marker가 현재 target/artifact 계약과 다릅니다")
@@ -1490,7 +1500,9 @@ def _resolve_archive(value: str | None, environ: Mapping[str, str]) -> Path:
         raise Neo4jBootstrapError("--archive 또는 MENTOR_PACKAGE_DIR가 필요합니다")
     path = Path(package).expanduser()
     if path.is_dir():
-        path = path / "kosa_0813.zip"
+        # **최종 아카이브 이름 하나만 본다.** 폐기 epoch `kosa_0813.zip` fallback을
+        # 남기면 최종 기준이 아닌 원본이 조용히 선택된다.
+        path = path / manifest_v3.FINAL_ARCHIVE_FILENAME
     return path
 
 
@@ -1645,8 +1657,13 @@ def run(
     context = load_context(archive_path, args.database, environ=source)
     backup_root = Path(context.target.backup_root)
     if mode == "dry-run":
+        # **manifest에서 유도한다.** 손으로 쓴 수치는 source가 바뀌어도 조용히
+        # 낡는다 — 실제로 구 epoch의 38/81이 최종 44/85로 바뀐 뒤에도 남아 있었다.
+        manifest = context.manifest
         print(
-            f"DRY_RUN_OK database={context.target.database} nodes=38 relationships=81 "
+            f"DRY_RUN_OK database={context.target.database} "
+            f"nodes={manifest['node_count']} "
+            f"relationships={manifest['relationship_count']} "
             f"target_fingerprint_sha256={context.target.target_fingerprint_sha256}"
         )
         return 0

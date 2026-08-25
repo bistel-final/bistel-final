@@ -68,8 +68,8 @@ def isolated(
     active.mkdir(parents=True)
 
     paths = {
-        profile: active / f"{profile}.{v5.FINAL_STAGE_BY_PROFILE[profile]}.json"
-        for profile in v5.FINAL_STAGE_BY_PROFILE
+        profile: active / f"{profile}.{v5.REGISTRAR_STAGE_BY_PROFILE[profile]}.json"
+        for profile in v5.REGISTRAR_STAGE_BY_PROFILE
     }
     retired = active / "evaluation.evaluation_mock.json"
 
@@ -160,7 +160,7 @@ class TestFixedBundleTargets:
 
         for call in calls:
             profile = verifier.DATABASE_PROFILE[call["database"]]
-            assert call["stage"] == v5.FINAL_STAGE_BY_PROFILE[profile]
+            assert call["stage"] == v5.REGISTRAR_STAGE_BY_PROFILE[profile]
 
 
 # ---------------------------------------------------------------------------
@@ -884,7 +884,7 @@ def _synthetic_candidate() -> dict[str, Any]:
     `action_history`만 stage 계약상 12행 immutable이라 행을 만들고 그 hash를 넣는다.
     """
 
-    stage = v5.FINAL_STAGE_BY_PROFILE["evaluation"]
+    stage = v5.REGISTRAR_STAGE_BY_PROFILE["evaluation"]
     contract = manifest_v3.BOOTSTRAP_STAGE_CONTRACTS[("evaluation", stage)]
     real = candidates.build_final_bundle(runtime_rag=GOOD_RAG)["evaluation"]
 

@@ -695,7 +695,12 @@ def test_report_contains_no_connection_values() -> None:
     assert report["overall_status"] == verifier.STATUS_PASS
 
 
-def _neo_fixture(monkeypatch: pytest.MonkeyPatch, *, readiness: bool = True) -> None:
+def _neo_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    readiness: bool = True,
+    status: str | None = None,
+) -> None:
     context = SimpleNamespace(
         target=SimpleNamespace(database="neo4j"),
         manifest={
@@ -707,10 +712,13 @@ def _neo_fixture(monkeypatch: pytest.MonkeyPatch, *, readiness: bool = True) -> 
         },
     )
     marker = {
-        "status": "REPLACED" if readiness else "RESTORED",
+        "status": status or ("REPLACED" if readiness else "RESTORED"),
         "actual_graph_fingerprint_sha256": "a" * 64,
-        "schema_fingerprint_sha256": "b" * 64,
     }
+    # **schema fingerprint는 `REPLACED|RESTORED` marker에만 있다.**
+    # 나머지 success status는 이 key 자체가 없다.
+    if marker["status"] in {"REPLACED", "RESTORED"}:
+        marker["schema_fingerprint_sha256"] = "b" * 64
     monkeypatch.setattr(
         verifier.neo4j_bootstrap, "load_context", lambda *_a, **_k: context
     )
@@ -764,6 +772,71 @@ def test_neo4j_verification_uses_read_state_and_fingerprints(
     assert result.status == verifier.STATUS_PASS
     assert result.details["relation_id_count"] == 1
     assert calls == [True]
+
+
+@pytest.mark.parametrize("status", ["APPLIED", "ADOPTED_EXISTING", "VERIFIED_EXISTING"])
+def test_neo4j_success_without_schema_field_still_passes(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    """**계획 §4.5.** schema field가 없는 success status가 readiness를 통과한다.
+
+    이 3개 marker에는 `schema_fingerprint_sha256`이 없다. 그런데 verifier가
+    `marker.get(...)` → `None`을 live sha256과 비교했기 때문에, **graph가 완벽해도
+    readiness가 항상 실패**했다. 공용 graph가 empty·legacy exact·exact-without-marker인
+    정상 분기가 전부 여기 걸렸다.
+    """
+
+    _neo_fixture(monkeypatch, status=status)
+    snapshot = SimpleNamespace(
+        nodes=(SimpleNamespace(label="Parameter"),),
+        relationships=(
+            SimpleNamespace(relation_type="MEASURED_ON", relation_id="REL-1"),
+        ),
+        node_count=1,
+        relationship_count=1,
+        relation_id_duplicates=0,
+    )
+    calls: list[bool] = []
+
+    def read_state(_target: Any, *, require_supported_schema: bool) -> Any:
+        calls.append(require_supported_schema)
+        return snapshot, "b" * 64
+
+    result = verifier.verify_neo4j(
+        archive_path=Path("unused.zip"),
+        environ={},
+        state_reader=read_state,
+    )
+    assert result.status == verifier.STATUS_PASS
+    # **live schema 검증 자체는 건너뛰지 않는다.** marker 대조만 조건부다.
+    assert calls == [True]
+
+
+def test_neo4j_schema_drift_still_fails_when_marker_pins_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """marker가 schema를 고정하는 status에서는 drift가 계속 잡혀야 한다.
+
+    조건부 비교가 `REPLACED|RESTORED`의 방어까지 걷어내면 안 된다.
+    """
+
+    _neo_fixture(monkeypatch, status="REPLACED")
+    snapshot = SimpleNamespace(
+        nodes=(SimpleNamespace(label="Parameter"),),
+        relationships=(
+            SimpleNamespace(relation_type="MEASURED_ON", relation_id="REL-1"),
+        ),
+        node_count=1,
+        relationship_count=1,
+        relation_id_duplicates=0,
+    )
+    with pytest.raises(manifest_v3.ArtifactMismatchError):
+        verifier.verify_neo4j(
+            archive_path=Path("unused.zip"),
+            environ={},
+            # marker는 "b"*64를 고정하는데 live는 다르다.
+            state_reader=lambda *_a, **_k: (snapshot, "c" * 64),
+        )
 
 
 def test_neo4j_restored_marker_is_not_success(
@@ -1059,19 +1132,55 @@ class TestFinalPostcheckRouting:
     final DB는 여기서 실패한다(구현리뷰 7차 필수 2).
     """
 
-    def test_the_final_stages_are_exactly_the_registered_pair(self) -> None:
+    def test_the_final_stages_cover_the_whole_final_lineage(self) -> None:
+        """**`FINAL_STAGE_BY_PROFILE`에서 파생하지 않는다**(`V5-CM-3.3` 계획 §6.3).
+
+        그 map은 profile당 stage 하나만 담는다. `runtime_guarded`가 추가된 순간
+        predecessor `runtime_clean`이 집합에서 빠져 **V4 경로로 잘못 떨어진다** —
+        R03 11컬럼·V4 View 계약이라 final DB가 거기서 실패한다.
+
+        "현재 live final stage"와 "final reference stages"는 다른 질문이다.
+        """
+
         import apply_reference_extensions_v5 as v5
 
         assert verifier.FINAL_STAGES == {
             ("runtime", "runtime_clean"),
+            ("runtime", "runtime_guarded"),
             ("evaluation", "evaluation_reference"),
         }
-        assert verifier.FINAL_STAGES == set(v5.FINAL_STAGE_BY_PROFILE.items())
+        # live final stage는 부분집합이다 — 같지 않다.
+        assert set(v5.FINAL_STAGE_BY_PROFILE.items()) < verifier.FINAL_STAGES
+
+    def test_the_predecessor_stage_still_routes_to_final(self) -> None:
+        """CM-3.2 marker가 증명하는 stage가 V4로 떨어지면 안 된다."""
+
+        assert (
+            verifier.reference_postcheck_routing("runtime", "runtime_clean") == "final"
+        )
+
+    def test_live_stages_are_derived_not_hand_written(self) -> None:
+        """`EXPECTED_STAGES`를 DB 이름마다 손으로 적으면 한쪽만 갱신된다.
+
+        실제로 `kosa_text2sql`이 `evaluation_mock`으로 남아 있었다 — `V5-CM-1.8`이
+        stage를 교체했는데 이 map만 따라오지 않았다.
+        """
+
+        assert verifier.EXPECTED_STAGES == {
+            "kosa_agent": "runtime_guarded",
+            "kosa_agent_e2e": "runtime_guarded",
+            "kosa_text2sql": "evaluation_reference",
+        }
+        assert "evaluation_mock" not in set(verifier.EXPECTED_STAGES.values())
+        for database, stage in verifier.EXPECTED_STAGES.items():
+            profile = "evaluation" if database == "kosa_text2sql" else "runtime"
+            assert stage == verifier.LIVE_FINAL_STAGE_BY_PROFILE[profile], database
 
     @pytest.mark.parametrize(
         ("profile", "stage", "expected"),
         [
             ("runtime", "runtime_clean", "final"),
+            ("runtime", "runtime_guarded", "final"),
             ("evaluation", "evaluation_reference", "final"),
             ("runtime", "base_schema", "none"),
             ("evaluation", "base_schema", "none"),

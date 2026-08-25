@@ -161,6 +161,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `neo4j`는 Bolt에 붙기 위한 것이 **아니다.** `verify_bootstrap_state`가
+      # module 최상단에서 `neo4j.exceptions`를 import하므로, full verifier를 부르는
+      # `V5-CM-3.3` 회귀가 이것 없이는 collection 단계에서 죽는다.
       - name: Install focused rehearsal dependencies
         run: >-
           python -m pip install
@@ -168,6 +171,7 @@ jobs:
           SQLAlchemy==2.0.36
           psycopg[binary]==3.2.3
           python-dotenv==1.0.1
+          neo4j==5.26.0
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
@@ -217,6 +221,15 @@ jobs:
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_runtime_v5_container.py
+          -rs --no-header
+
+      # V5-CM-3.3 action/severity pair guard. 최종 dataset이 필요 없다 —
+      # base `action_history` + 002 형상만 세우고 16조합 INSERT·rollback을 돌린다.
+      - name: Prove the action/severity pair guard
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_severity_pair_guard_container.py
           -rs --no-header
 
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
