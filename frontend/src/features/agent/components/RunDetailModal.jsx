@@ -8,10 +8,10 @@ import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 
 // 근거 · 조치 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
-// 탭 3개: RAG 문서 근거 / 그래프 근거 (Neo4j) / 권고 조치 · 승인
+// 탭 3개: RAG 문서 근거 / 그래프 근거 / 권고 조치 · 승인
 const TABS = [
   { key: 'rag', label: 'RAG 문서 근거' },
-  { key: 'graph', label: '그래프 근거 (Neo4j)' },
+  { key: 'graph', label: '그래프 근거' },
   { key: 'act', label: '권고 조치 · 승인' },
 ]
 
@@ -32,7 +32,6 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
   if (!open) return null
 
   const hits = docs?.hits ?? []
-  const docId = hits[0]?.document_id
 
   const status = decided ?? action?.approval_status
   const ap = approvalText(status)
@@ -79,7 +78,7 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
         <div className="overflow-y-auto px-6 py-5">
           {tab === 'rag' && <RunRagEvidenceTab hits={hits} />}
 
-          {tab === 'graph' && <RunGraphEvidenceTab run={run} docId={docId} />}
+          {tab === 'graph' && <RunGraphEvidenceTab run={run} />}
 
           {tab === 'act' && action && (
             <div className="flex flex-col gap-5">
