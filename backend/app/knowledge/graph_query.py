@@ -46,7 +46,7 @@ class GraphQueryRepository:
 MATCH (c:Chamber {chamber_id: $chamber_id})-[part:PART_OF]->(e:Equipment)
 MATCH (e)-[ofModel:OF_MODEL]->(m:EquipmentModel)
 OPTIONAL MATCH (e)-[performs:PERFORMS]->(step:ProcessStep)
-OPTIONAL MATCH (m)-[modelArea:IN_AREA]->(area:Area)
+OPTIONAL MATCH (step)-[stepArea:IN_AREA]->(area:Area)
 OPTIONAL MATCH (c)<-[measured:MEASURED_ON]-(parameter:Parameter)
 OPTIONAL MATCH (sibling:Chamber)-[siblingPart:PART_OF]->(e)
   WHERE sibling.chamber_id <> c.chamber_id
@@ -63,7 +63,7 @@ WITH
     AS adjacent_steps,
   collect(DISTINCT properties(parameter)) AS parameters,
   collect(DISTINCT part) + collect(DISTINCT ofModel) + collect(DISTINCT performs) +
-    collect(DISTINCT modelArea) + collect(DISTINCT measured) +
+    collect(DISTINCT stepArea) + collect(DISTINCT measured) +
     collect(DISTINCT siblingPart) + collect(DISTINCT previousRel) +
     collect(DISTINCT nextRel) AS graph_relations
 RETURN

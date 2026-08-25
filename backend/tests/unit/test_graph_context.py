@@ -121,6 +121,13 @@ def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
     assert "Chamber {chamber_id: $chamber_id}" in query
 
 
+def test_graph_repository_uses_process_step_area_not_model_area() -> None:
+    query = GraphQueryRepository.CONTEXT_QUERY
+
+    assert "(step)-[stepArea:IN_AREA]->(area:Area)" in query
+    assert "(m)-[modelArea:IN_AREA]->(area:Area)" not in query
+
+
 def test_graph_repository_maps_raw_neo4j_row() -> None:
     driver = _Driver()
     repository = GraphQueryRepository(
@@ -191,6 +198,38 @@ def test_relation_id_is_required_for_returned_relationships() -> None:
         assert "relation_id" in str(exc)
     else:
         raise AssertionError("missing relation_id must fail fast")
+
+
+def test_process_step_business_id_uses_step_id() -> None:
+    driver = _Driver(
+        relation={
+            "relation_id": "REL-step",
+            "relation_type": "NEXT_STEP",
+            "from_label": "ProcessStep",
+            "from_properties": {"step_id": "CT-PHOTO", "step_seq": 1},
+            "to_label": "ProcessStep",
+            "to_properties": {"step_id": "CT-ETCH", "step_seq": 2},
+        }
+    )
+    repository = GraphQueryRepository(
+        driver_factory=lambda: driver,
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    result = repository.get_equipment_context("EQP01-PM1")
+
+    assert result is not None
+    assert result.relations == [
+        {
+            "relation_id": "REL-step",
+            "relation_type": "NEXT_STEP",
+            "from_label": "ProcessStep",
+            "from_business_id": "step_id=s:CT-PHOTO",
+            "to_label": "ProcessStep",
+            "to_business_id": "step_id=s:CT-ETCH",
+        }
+    ]
 
 
 def test_get_equipment_context_tool_returns_common_success_contract(
@@ -297,18 +336,28 @@ def test_get_equipment_context_tool_returns_dependency_failure(
 
 
 class _Driver:
-    def __init__(self, relation_id: str | None = "REL-x") -> None:
+    def __init__(
+        self,
+        relation_id: str | None = "REL-x",
+        relation: dict[str, Any] | None = None,
+    ) -> None:
         self.relation_id = relation_id
+        self.relation = relation
         self.session_options: dict[str, Any] | None = None
 
     def session(self, **options: Any) -> _Session:
         self.session_options = options
-        return _Session(self.relation_id)
+        return _Session(self.relation_id, self.relation)
 
 
 class _Session:
-    def __init__(self, relation_id: str | None) -> None:
+    def __init__(
+        self,
+        relation_id: str | None,
+        relation: dict[str, Any] | None,
+    ) -> None:
         self.relation_id = relation_id
+        self.relation = relation
 
     def __enter__(self) -> _Session:
         return self
@@ -319,14 +368,27 @@ class _Session:
     def run(self, query: str, parameters: dict[str, Any]) -> _Result:
         assert query == GraphQueryRepository.CONTEXT_QUERY
         assert parameters == {"chamber_id": "EQP01-PM1"}
-        return _Result(self.relation_id)
+        return _Result(self.relation_id, self.relation)
 
 
 class _Result:
-    def __init__(self, relation_id: str | None) -> None:
+    def __init__(
+        self,
+        relation_id: str | None,
+        relation: dict[str, Any] | None,
+    ) -> None:
         self.relation_id = relation_id
+        self.relation = relation
 
     def single(self) -> dict[str, Any]:
+        relation = self.relation or {
+            "relation_id": self.relation_id,
+            "relation_type": "PART_OF",
+            "from_label": "Chamber",
+            "from_properties": {"chamber_id": "EQP01-PM1"},
+            "to_label": "Equipment",
+            "to_properties": {"equipment_id": "EQP01"},
+        }
         return {
             "chamber": {"chamber_id": "EQP01-PM1"},
             "equipment": {"equipment_id": "EQP01", "model_code": "PH-9000"},
@@ -336,16 +398,7 @@ class _Result:
             "sibling_chambers": [],
             "adjacent_steps": [],
             "parameters": [],
-            "relations": [
-                {
-                    "relation_id": self.relation_id,
-                    "relation_type": "PART_OF",
-                    "from_label": "Chamber",
-                    "from_properties": {"chamber_id": "EQP01-PM1"},
-                    "to_label": "Equipment",
-                    "to_properties": {"equipment_id": "EQP01"},
-                }
-            ],
+            "relations": [relation],
         }
 
 
