@@ -610,6 +610,35 @@ def test_get_equipment_context_tool_returns_dependency_failure(
     assert result.chamber_id is None
 
 
+def test_get_equipment_context_tool_sanitizes_graph_shape_failure(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> EquipmentContextToolResult:
+            assert chamber_id == "EQP99-PM1"
+            return EquipmentContextToolResult(
+                ok=True,
+                chamber_id="EQP99-PM1",
+                equipment_id="EQP99",
+                model_code="XX-1000",
+                graph_revision=REVISION,
+            )
+
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP99-PM1"})
+
+    assert result.ok is False
+    assert (
+        result.reason == "GRAPH_SHAPE_ERROR: 장비 graph context 필수 값이 누락됐습니다"
+    )
+    assert "EQP99" not in result.reason
+    assert result.chamber_id is None
+
+
 class _Driver:
     def __init__(
         self,

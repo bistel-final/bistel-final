@@ -18,6 +18,7 @@ REASON_PREFIXES: tuple[str, ...] = (
     "TIMEOUT:",
     "MODEL_NOT_READY:",
     "LLM_NOT_READY:",
+    "GRAPH_SHAPE_ERROR:",
     "DEPENDENCY_ERROR:",
     "POLICY_REJECTED:",
     "IDEMPOTENCY_CONFLICT:",

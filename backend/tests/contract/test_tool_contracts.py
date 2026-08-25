@@ -817,7 +817,7 @@ class TestToolEnvelopeExactness:
             AnalysisPlanToolResult(ok=False, reason="TIMEOUT: x", latency_ms=12)
 
     def test_reason_prefixes_match_the_api_contract(self) -> None:
-        """API v3 §2의 7종과 exact하게 같다."""
+        """API v3 §2의 reason prefix 목록과 exact하게 같다."""
 
         from app.common.tool_contracts import REASON_PREFIXES
 
@@ -826,6 +826,7 @@ class TestToolEnvelopeExactness:
             "TIMEOUT:",
             "MODEL_NOT_READY:",
             "LLM_NOT_READY:",
+            "GRAPH_SHAPE_ERROR:",
             "DEPENDENCY_ERROR:",
             "POLICY_REJECTED:",
             "IDEMPOTENCY_CONFLICT:",

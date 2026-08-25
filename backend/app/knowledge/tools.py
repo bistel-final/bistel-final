@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from langchain_core.tools import tool
+from pydantic import ValidationError
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.common.tool_contracts import (
@@ -55,5 +56,10 @@ def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
         return result
     except TimeoutError as exc:
         return fail(EquipmentContextToolResult, f"TIMEOUT: {exc}")
+    except ValidationError:
+        return fail(
+            EquipmentContextToolResult,
+            "GRAPH_SHAPE_ERROR: 장비 graph context 필수 값이 누락됐습니다",
+        )
     except Exception as exc:
         return fail(EquipmentContextToolResult, f"DEPENDENCY_ERROR: {exc}")
