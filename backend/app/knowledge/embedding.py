@@ -1,4 +1,4 @@
-"""문서 검색용 BGE-M3 query embedding lifecycle을 관리한다."""
+"""문서 검색용 BGE-M3 질의 임베딩 생명주기를 관리한다."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ EXPECTED_EMBEDDING_DIMENSION = 1024
 
 @lru_cache(maxsize=1)
 def get_embedding_model() -> Any:
-    """현재 API process에서 BGE-M3 모델을 한 번만 생성한다."""
+    """현재 API 프로세스에서 BGE-M3 모델을 한 번만 생성한다."""
 
     load_dotenv(REPOSITORY_ROOT / ".env")
 
@@ -50,7 +50,7 @@ def get_embedding_model() -> Any:
 
 
 def embed_query(query: str) -> list[float]:
-    """검색 Query를 정규화된 1024차원 BGE-M3 vector로 변환한다."""
+    """검색 질의를 정규화된 1024차원 BGE-M3 벡터로 변환한다."""
 
     vector = get_embedding_model().encode([query], normalize_embeddings=True)[0]
     return [float(value) for value in vector]

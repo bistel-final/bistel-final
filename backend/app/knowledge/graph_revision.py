@@ -1,4 +1,4 @@
-"""Neo4j graph revision marker validation."""
+"""Neo4j graph revision marker 검증."""
 
 from __future__ import annotations
 

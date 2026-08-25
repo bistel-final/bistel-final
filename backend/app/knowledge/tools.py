@@ -1,4 +1,4 @@
-"""Knowledge Agent Tools."""
+"""Knowledge Agent Tool 정의."""
 
 from __future__ import annotations
 
@@ -37,13 +37,13 @@ def search_documents(
 
 
 # ==================
-# Graph
+# 그래프 조회
 # ==================
 
 
 @tool
 def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
-    """Chamber 기준 장비·공정 graph context를 조회한다."""
+    """챔버 기준 장비·공정 그래프 context를 조회한다."""
 
     try:
         service = EquipmentContextService(GraphQueryRepository())

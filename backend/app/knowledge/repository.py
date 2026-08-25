@@ -1,4 +1,4 @@
-"""Neo4j graph projection repository for API reads."""
+"""API 조회용 Neo4j graph projection 저장소."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class ChamberGraphProjection:
 
 
 class ChamberGraphRepository:
-    """Read graph drawing projection from the verified Neo4j graph."""
+    """검증된 Neo4j 그래프에서 화면 시각화용 projection을 조회한다."""
 
     GRAPH_PROJECTION_QUERY = """
 MATCH (c:Chamber {chamber_id: $chamber_id})-[part:PART_OF]->(e:Equipment)
@@ -165,7 +165,7 @@ RETURN
 
 
 # ============================
-# Neo4j projection helper
+# Neo4j projection 정리 헬퍼
 # ============================
 def _record_to_mapping(record: Any) -> Mapping[str, Any]:
     if isinstance(record, Mapping):

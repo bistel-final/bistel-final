@@ -1,4 +1,4 @@
-"""Neo4j compact graph context query for Agent Tools."""
+"""Agent Tool용 Neo4j compact graph context 질의."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from app.knowledge.graph_revision import (
 
 
 class GraphQueryRepository:
-    """Read Tool compact equipment context from the verified Neo4j graph."""
+    """검증된 Neo4j 그래프에서 Tool용 compact 장비 context를 조회한다."""
 
     TOOL_CONTEXT_QUERY = """
 MATCH (c:Chamber {chamber_id: $chamber_id})-[:PART_OF]->(e:Equipment)
@@ -50,14 +50,8 @@ RETURN
 
     def get_equipment_context_payload(self, chamber_id: str) -> dict[str, Any] | None:
         driver = self._driver_factory()
-        with driver.session(
-            database=self._database,
-            default_access_mode="READ",
-        ) as session:
-            record = session.run(
-                self.TOOL_CONTEXT_QUERY,
-                {"chamber_id": chamber_id},
-            ).single()
+        with driver.session(database=self._database, default_access_mode="READ",) as session:
+            record = session.run(self.TOOL_CONTEXT_QUERY, {"chamber_id": chamber_id},).single()
         if record is None:
             return None
 
@@ -81,7 +75,7 @@ RETURN
 
 
 # ============================
-# Neo4j record helper
+# Neo4j record 정리 헬퍼
 # ============================
 def _record_to_mapping(record: Any) -> Mapping[str, Any]:
     if isinstance(record, Mapping):

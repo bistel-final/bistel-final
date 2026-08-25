@@ -14,7 +14,7 @@ class DocumentType(StrEnum):
 
 
 # ==================
-# Graph
+# 그래프 관계
 # ==================
 class GraphNode(ApiModel):
     id: NonEmptyId

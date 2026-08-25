@@ -1,4 +1,4 @@
-"""Knowledge application services."""
+"""Knowledge application 서비스."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.knowledge.schemas import ChamberRelationResponse
 # 문서 RAG
 # ==================
 class DocumentSearchService:
-    """API와 Tool이 공유하는 문서 검색 application service."""
+    """API와 Tool이 공유하는 문서 검색 서비스."""
 
     def __init__(self, repository: DocumentSearchRepository) -> None:
         self._repository = repository
@@ -43,7 +43,7 @@ class DocumentSearchService:
 
 
 class GraphService:
-    """API graph context service."""
+    """API 그래프 context 조회 서비스."""
 
     def __init__(self, repository: ChamberGraphRepository | None = None) -> None:
         self._repository = repository or ChamberGraphRepository()
@@ -64,7 +64,7 @@ class GraphService:
 
 
 class EquipmentContextService:
-    """Agent Tool 전용 compact graph context service."""
+    """Agent Tool 전용 compact 그래프 context 조회 서비스."""
 
     def __init__(self, repository: GraphQueryRepository | None = None) -> None:
         self._repository = repository or GraphQueryRepository()

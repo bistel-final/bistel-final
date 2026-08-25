@@ -14,14 +14,14 @@ router = APIRouter(tags=["Knowledge"])
 
 
 # ==================
-# Graph
+# 그래프 관계
 # ==================
 @router.get(
     "/relations/chambers/{chamber_id}",
     response_model=ChamberRelationResponse,
 )
 def get_chamber_relations(chamber_id: str) -> ChamberRelationResponse:
-    """Chamber 기준 Neo4j graph projection을 조회한다."""
+    """챔버 기준 Neo4j 그래프 projection을 조회한다."""
 
     service = GraphService(ChamberGraphRepository())
     response = service.get_chamber_relations(chamber_id)
