@@ -36,50 +36,52 @@ OPTIONAL MATCH (previous:ProcessStep)-[previousRel:NEXT_STEP]->(step)
 OPTIONAL MATCH (step)-[nextRel:NEXT_STEP]->(next:ProcessStep)
 WITH
   c,
-  [node IN [c, e, m, area, step] +
-    collect(DISTINCT sibling) +
-    collect(DISTINCT previous) +
-    collect(DISTINCT next) +
-    collect(DISTINCT parameter)
-    WHERE node IS NOT NULL
-    | {
-        id: labels(node)[0] + ':' + coalesce(
-          node.chamber_id,
-          node.equipment_id,
-          node.model_code,
-          node.area_id,
-          node.step_id,
-          node.parameter_id
-        ),
-        label: labels(node)[0],
-        business_id: coalesce(
-          node.chamber_id,
-          node.equipment_id,
-          node.model_code,
-          node.area_id,
-          node.step_id,
-          node.parameter_id
-        ),
-        display_name: coalesce(
-          node.chamber_id,
-          node.equipment_name,
-          node.model_name,
-          node.area_name,
-          node.step_name,
-          node.parameter_name,
-          node.equipment_id,
-          node.model_code,
-          node.area_id,
-          node.step_id,
-          node.parameter_id
-        ),
-        properties: properties(node)
-      }
-  ] AS graph_nodes,
+  e,
+  m,
+  area,
+  step,
+  collect(DISTINCT sibling) AS siblings,
+  collect(DISTINCT previous) AS previous_steps,
+  collect(DISTINCT next) AS next_steps,
+  collect(DISTINCT parameter) AS parameters,
   collect(DISTINCT part) + collect(DISTINCT ofModel) + collect(DISTINCT performs) +
     collect(DISTINCT stepArea) + collect(DISTINCT measured) +
     collect(DISTINCT siblingPart) + collect(DISTINCT previousRel) +
     collect(DISTINCT nextRel) AS graph_relations
+WITH
+  c,
+  [node IN [c, e, m, area, step] + siblings + previous_steps + next_steps + parameters
+    WHERE node IS NOT NULL
+    | {
+        id: labels(node)[0] + ':' + CASE labels(node)[0]
+          WHEN 'Chamber' THEN node.chamber_id
+          WHEN 'Equipment' THEN node.equipment_id
+          WHEN 'EquipmentModel' THEN node.model_code
+          WHEN 'Area' THEN node.area_id
+          WHEN 'ProcessStep' THEN node.step_id
+          WHEN 'Parameter' THEN node.parameter_id
+        END,
+        label: labels(node)[0],
+        business_id: CASE labels(node)[0]
+          WHEN 'Chamber' THEN node.chamber_id
+          WHEN 'Equipment' THEN node.equipment_id
+          WHEN 'EquipmentModel' THEN node.model_code
+          WHEN 'Area' THEN node.area_id
+          WHEN 'ProcessStep' THEN node.step_id
+          WHEN 'Parameter' THEN node.parameter_id
+        END,
+        display_name: CASE labels(node)[0]
+          WHEN 'Chamber' THEN node.chamber_id
+          WHEN 'Equipment' THEN coalesce(node.equipment_name, node.equipment_id)
+          WHEN 'EquipmentModel' THEN coalesce(node.model_name, node.model_code)
+          WHEN 'Area' THEN coalesce(node.area_name, node.area_id)
+          WHEN 'ProcessStep' THEN coalesce(node.step_name, node.step_id)
+          WHEN 'Parameter' THEN node.parameter_id
+        END,
+        properties: properties(node)
+      }
+  ] AS graph_nodes,
+  graph_relations
 RETURN
   'Chamber:' + c.chamber_id AS root_node_id,
   graph_nodes AS nodes,
@@ -89,22 +91,22 @@ RETURN
     | {
         id: rel.relation_id,
         type: type(rel),
-        source: labels(startNode(rel))[0] + ':' + coalesce(
-          startNode(rel).chamber_id,
-          startNode(rel).equipment_id,
-          startNode(rel).model_code,
-          startNode(rel).area_id,
-          startNode(rel).step_id,
-          startNode(rel).parameter_id
-        ),
-        target: labels(endNode(rel))[0] + ':' + coalesce(
-          endNode(rel).chamber_id,
-          endNode(rel).equipment_id,
-          endNode(rel).model_code,
-          endNode(rel).area_id,
-          endNode(rel).step_id,
-          endNode(rel).parameter_id
-        )
+        source: CASE type(rel)
+          WHEN 'PART_OF' THEN 'Chamber:' + startNode(rel).chamber_id
+          WHEN 'OF_MODEL' THEN 'Equipment:' + startNode(rel).equipment_id
+          WHEN 'PERFORMS' THEN 'Equipment:' + startNode(rel).equipment_id
+          WHEN 'IN_AREA' THEN 'ProcessStep:' + startNode(rel).step_id
+          WHEN 'MEASURED_ON' THEN 'Parameter:' + startNode(rel).parameter_id
+          WHEN 'NEXT_STEP' THEN 'ProcessStep:' + startNode(rel).step_id
+        END,
+        target: CASE type(rel)
+          WHEN 'PART_OF' THEN 'Equipment:' + endNode(rel).equipment_id
+          WHEN 'OF_MODEL' THEN 'EquipmentModel:' + endNode(rel).model_code
+          WHEN 'PERFORMS' THEN 'ProcessStep:' + endNode(rel).step_id
+          WHEN 'IN_AREA' THEN 'Area:' + endNode(rel).area_id
+          WHEN 'MEASURED_ON' THEN 'Chamber:' + endNode(rel).chamber_id
+          WHEN 'NEXT_STEP' THEN 'ProcessStep:' + endNode(rel).step_id
+        END
       }
   ] AS relationships
 """
