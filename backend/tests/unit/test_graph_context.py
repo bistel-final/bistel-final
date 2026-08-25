@@ -518,6 +518,63 @@ def test_relation_id_is_required_for_returned_relationships() -> None:
         raise AssertionError("missing relation_id must fail fast")
 
 
+def test_graph_projection_rejects_unsupported_node_label() -> None:
+    repository = ChamberGraphRepository(
+        driver_factory=lambda: _Driver(
+            graph_record={
+                "root_node_id": "Chamber:EQP01-PM1",
+                "nodes": [
+                    {
+                        "id": "Recipe:RECIPE01",
+                        "label": "Recipe",
+                        "business_id": "RECIPE01",
+                        "display_name": "Recipe 01",
+                        "properties": {},
+                    }
+                ],
+                "relationships": [],
+            }
+        ),
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    try:
+        repository.get_chamber_graph_projection("EQP01-PM1")
+    except RuntimeError as exc:
+        assert "지원하지 않는 node label입니다: Recipe" in str(exc)
+    else:
+        raise AssertionError("지원하지 않는 node label은 즉시 실패해야 합니다")
+
+
+def test_graph_projection_rejects_unsupported_relationship_type() -> None:
+    repository = ChamberGraphRepository(
+        driver_factory=lambda: _Driver(
+            graph_record={
+                "root_node_id": "Chamber:EQP01-PM1",
+                "nodes": [],
+                "relationships": [
+                    {
+                        "id": "REL-recipe",
+                        "type": "STEP_OF",
+                        "source": "RecipeStep:RECIPE01+1",
+                        "target": "Recipe:RECIPE01",
+                    }
+                ],
+            }
+        ),
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    try:
+        repository.get_chamber_graph_projection("EQP01-PM1")
+    except RuntimeError as exc:
+        assert "지원하지 않는 relationship type입니다: STEP_OF" in str(exc)
+    else:
+        raise AssertionError("지원하지 않는 relationship type은 즉시 실패해야 합니다")
+
+
 def test_get_equipment_context_tool_returns_common_success_contract(
     monkeypatch: Any,
 ) -> None:

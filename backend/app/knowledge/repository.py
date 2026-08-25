@@ -12,6 +12,13 @@ from app.knowledge.graph_revision import (
     load_graph_revision,
 )
 
+GRAPH_NODE_LABELS = frozenset(
+    {"Area", "Chamber", "Equipment", "EquipmentModel", "Parameter", "ProcessStep"}
+)
+GRAPH_RELATIONSHIP_TYPES = frozenset(
+    {"IN_AREA", "MEASURED_ON", "NEXT_STEP", "OF_MODEL", "PART_OF", "PERFORMS"}
+)
+
 
 @dataclass(frozen=True)
 class ChamberGraphProjection:
@@ -176,6 +183,7 @@ def _clean_projection_items(value: Any, *, item_name: str) -> list[dict[str, Any
         if not isinstance(item, Mapping):
             continue
         cleaned = {str(key): field for key, field in item.items() if field is not None}
+        _validate_projection_contract(cleaned, item_name=item_name)
         item_id = cleaned.get("id")
         if item_id is None:
             raise RuntimeError(f"Neo4j graph projection {item_name} id가 없습니다")
@@ -201,3 +209,25 @@ def _clean_projection_items(value: Any, *, item_name: str) -> list[dict[str, Any
             ),
         )
     return items
+
+
+def _validate_projection_contract(
+    item: Mapping[str, Any],
+    *,
+    item_name: str,
+) -> None:
+    if item_name == "node":
+        label = item.get("label")
+        if label not in GRAPH_NODE_LABELS:
+            raise RuntimeError(
+                f"Neo4j graph projection이 지원하지 않는 node label입니다: {label}"
+            )
+        return
+
+    if item_name == "relationship":
+        relationship_type = item.get("type")
+        if relationship_type not in GRAPH_RELATIONSHIP_TYPES:
+            raise RuntimeError(
+                "Neo4j graph projection이 지원하지 않는 relationship type입니다: "
+                f"{relationship_type}"
+            )
