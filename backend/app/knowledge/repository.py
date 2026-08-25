@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.common.neo4j import get_neo4j_driver
+from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_revision import (
     graph_database_name,
     load_graph_revision,
@@ -148,7 +149,9 @@ RETURN
         row = _record_to_mapping(record)
         root_node_id = row.get("root_node_id")
         if root_node_id is None:
-            raise RuntimeError("Neo4j graph projection root_node_id가 없습니다")
+            raise GraphProjectionShapeError(
+                details={"reason_code": "MISSING_ROOT_NODE_ID"}
+            )
 
         return ChamberGraphProjection(
             root_node_id=str(root_node_id),
@@ -186,7 +189,12 @@ def _clean_projection_items(value: Any, *, item_name: str) -> list[dict[str, Any
         _validate_projection_contract(cleaned, item_name=item_name)
         item_id = cleaned.get("id")
         if item_id is None:
-            raise RuntimeError(f"Neo4j graph projection {item_name} id가 없습니다")
+            raise GraphProjectionShapeError(
+                details={
+                    "reason_code": "MISSING_PROJECTION_ITEM_ID",
+                    "item": item_name,
+                }
+            )
         unique[str(item_id)] = cleaned
     items = list(unique.values())
     if item_name == "node":
@@ -219,15 +227,20 @@ def _validate_projection_contract(
     if item_name == "node":
         label = item.get("label")
         if label not in GRAPH_NODE_LABELS:
-            raise RuntimeError(
-                f"Neo4j graph projection이 지원하지 않는 node label입니다: {label}"
+            raise GraphProjectionShapeError(
+                details={
+                    "reason_code": "UNSUPPORTED_NODE_LABEL",
+                    "label": str(label),
+                }
             )
         return
 
     if item_name == "relationship":
         relationship_type = item.get("type")
         if relationship_type not in GRAPH_RELATIONSHIP_TYPES:
-            raise RuntimeError(
-                "Neo4j graph projection이 지원하지 않는 relationship type입니다: "
-                f"{relationship_type}"
+            raise GraphProjectionShapeError(
+                details={
+                    "reason_code": "UNSUPPORTED_RELATIONSHIP_TYPE",
+                    "type": str(relationship_type),
+                }
             )

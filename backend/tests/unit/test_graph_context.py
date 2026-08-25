@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.common.tool_contracts import (
     EquipmentContextToolResult,
 )
+from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
@@ -512,10 +513,33 @@ def test_relation_id_is_required_for_returned_relationships() -> None:
 
     try:
         repository.get_chamber_graph_projection("EQP01-PM1")
-    except RuntimeError as exc:
-        assert "relationship id" in str(exc)
+    except GraphProjectionShapeError as exc:
+        assert exc.details == {
+            "reason_code": "MISSING_PROJECTION_ITEM_ID",
+            "item": "relationship",
+        }
     else:
-        raise AssertionError("missing relation_id must fail fast")
+        raise AssertionError("relationship id 누락은 즉시 실패해야 합니다")
+
+
+def test_graph_projection_requires_root_node_id() -> None:
+    repository = ChamberGraphRepository(
+        driver_factory=lambda: _Driver(
+            graph_record={
+                "nodes": [],
+                "relationships": [],
+            }
+        ),
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    try:
+        repository.get_chamber_graph_projection("EQP01-PM1")
+    except GraphProjectionShapeError as exc:
+        assert exc.details == {"reason_code": "MISSING_ROOT_NODE_ID"}
+    else:
+        raise AssertionError("root_node_id 누락은 즉시 실패해야 합니다")
 
 
 def test_graph_projection_rejects_unsupported_node_label() -> None:
@@ -541,8 +565,11 @@ def test_graph_projection_rejects_unsupported_node_label() -> None:
 
     try:
         repository.get_chamber_graph_projection("EQP01-PM1")
-    except RuntimeError as exc:
-        assert "지원하지 않는 node label입니다: Recipe" in str(exc)
+    except GraphProjectionShapeError as exc:
+        assert exc.details == {
+            "reason_code": "UNSUPPORTED_NODE_LABEL",
+            "label": "Recipe",
+        }
     else:
         raise AssertionError("지원하지 않는 node label은 즉시 실패해야 합니다")
 
@@ -569,8 +596,11 @@ def test_graph_projection_rejects_unsupported_relationship_type() -> None:
 
     try:
         repository.get_chamber_graph_projection("EQP01-PM1")
-    except RuntimeError as exc:
-        assert "지원하지 않는 relationship type입니다: STEP_OF" in str(exc)
+    except GraphProjectionShapeError as exc:
+        assert exc.details == {
+            "reason_code": "UNSUPPORTED_RELATIONSHIP_TYPE",
+            "type": "STEP_OF",
+        }
     else:
         raise AssertionError("지원하지 않는 relationship type은 즉시 실패해야 합니다")
 
