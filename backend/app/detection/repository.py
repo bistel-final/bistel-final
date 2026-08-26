@@ -90,6 +90,10 @@ __all__ = [
     "fetch_incident_alarm_counts",
     "ReferenceActionRow",
     "fetch_reference_actions",
+    "WaferLotContextRow",
+    "fetch_wafer_lot_context",
+    "WaferParameterRow",
+    "fetch_wafer_parameter_rows",
 ]
 
 
@@ -752,6 +756,157 @@ def fetch_reference_actions(connection: Connection) -> list[ReferenceActionRow]:
             lot_id=row["lot_id"],
             chamber_id=row["chamber_id"],
             action_code=row["action_code"],
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------
+# get_fdc_summary(lot_hist_id) Tool 전용 단건 조회 (V5-A-3.2-1)
+#
+# 위 절들은 전부 "batch 전체를 읽어서 재계산·대조"하는 용도였다. 이 절은
+# 반대로 "lot_hist_id 하나만 콕 짚어 조회"하는 용도라 성격이 다르다 — Agent가
+# incident 처리 중 특정 wafer 하나를 볼 때마다 600건짜리 lot_history나
+# 4,800건짜리 summary_data 전체를 매번 읽을 이유가 없으므로, WHERE
+# lot_hist_id = :lot_hist_id로 딱 그 wafer 행만 가져온다.
+#
+# fault_code(lot_history)·metrology.alarm_result·action_history는 이 절의
+# 두 함수 어디에서도 SELECT하지 않는다 — get_fdc_summary는 Fault 정답과 조치
+# 권고를 반환하지 않는다는 완료 기준(NFR-19, 시스템설계서 v2.1 8절) 때문이다.
+# ---------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class WaferLotContextRow:
+    """`lot_history` 한 행에서 `WaferContext` DTO에 필요한 컬럼만 뽑은 것.
+
+    `LotHistoryRow`(R03 연속성 판정용)와 필드 구성이 다르다 — 저건
+    `chamber_wafer_cum`·`track_in_at`처럼 R03 계산에만 쓰는 컬럼을 담고,
+    이건 `step_id`처럼 화면·Tool 노출용 컬럼을 담는다. 서로 다른 목적의
+    dataclass를 억지로 하나로 합치지 않는다.
+    """
+
+    lot_hist_id: str
+    lot_id: str
+    wafer_no: int
+    chamber_id: str | None
+    equipment_id: str | None
+    step_id: str | None
+    recipe_id: str | None
+
+
+def fetch_wafer_lot_context(
+    connection: Connection, lot_hist_id: str
+) -> WaferLotContextRow | None:
+    """`lot_history`에서 단일 `lot_hist_id`의 wafer context 한 행만 읽는다.
+
+    없으면 None을 반환한다 — 호출자(service.py)가 이를 NOT_FOUND로 번역한다.
+    """
+
+    query = """
+        SELECT lot_hist_id, lot_id, wafer_no, chamber_id, equipment_id,
+               step_id, recipe_id
+        FROM lot_history
+        WHERE lot_hist_id = :lot_hist_id
+    """
+    row = connection.execute(
+        text(query), {"lot_hist_id": lot_hist_id}
+    ).mappings().first()
+    if row is None:
+        return None
+    return WaferLotContextRow(
+        lot_hist_id=row["lot_hist_id"],
+        lot_id=row["lot_id"],
+        wafer_no=int(row["wafer_no"]),
+        chamber_id=row["chamber_id"],
+        equipment_id=row["equipment_id"],
+        step_id=row["step_id"],
+        recipe_id=row["recipe_id"],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WaferParameterRow:
+    """단일 `lot_hist_id`의 `summary_data` × `evaluation` × `dim_parameter`
+    조인 결과 한 행(parameter × recipe_step_no 단위).
+
+    `recipe_step_name`은 이 조인에 없다 — 물리 schema 어디에도 step 이름
+    컬럼이 없으므로(`ReferenceActionRow` docstring과 같은 근거) service.py가
+    `ParameterSummaryItem.recipe_step_name`을 항상 None으로 채운다.
+    """
+
+    parameter_id: str
+    parameter_name: str
+    unit: str | None
+    recipe_step_no: int
+    value_mean: float | None
+    value_std: float | None
+    value_min: float | None
+    value_max: float | None
+    point_cnt: int
+    ooc_point_cnt: int
+    oos_point_cnt: int
+    alarm_type: AlarmType
+    spec_lower: float | None
+    ctrl_lower: float | None
+    target: float | None
+    ctrl_upper: float | None
+    spec_upper: float | None
+    upper_only: bool
+
+
+def fetch_wafer_parameter_rows(
+    connection: Connection, lot_hist_id: str
+) -> list[WaferParameterRow]:
+    """단일 `lot_hist_id`의 parameter별 summary·evaluation·5선을 조회한다.
+
+    `summary_data`·`evaluation`의 PK가 (lot_hist_id, parameter, step_no)라서
+    `lot_hist_id`로 필터한 뒤 `parameter`·`step_no`로 join하면 그 wafer가
+    실제로 측정한 (parameter, step) 조합만 정확히 나온다. 0건이면(이
+    `lot_hist_id`가 `summary_data`에 없으면) 빈 목록을 반환한다 — 호출자가
+    이를 NOT_FOUND로 번역한다(0건도 실패 계약을 따른다는 V5-A-3.2-1 완료
+    기준).
+    """
+
+    query = """
+        SELECT s.parameter AS parameter_id,
+               p.parameter_name,
+               p.unit,
+               s.step_no AS recipe_step_no,
+               s.value_mean, s.value_std, s.value_min, s.value_max, s.point_cnt,
+               e.ooc_point_cnt, e.oos_point_cnt, e.alarm_type,
+               p.spec_lower, p.ctrl_lower, p.target_value AS target,
+               p.ctrl_upper, p.spec_upper, p.upper_only
+        FROM summary_data s
+        JOIN evaluation e
+          ON e.lot_hist_id = s.lot_hist_id
+         AND e.parameter = s.parameter
+         AND e.step_no = s.step_no
+        JOIN dim_parameter p ON p.parameter_id = s.parameter
+        WHERE s.lot_hist_id = :lot_hist_id
+        ORDER BY s.parameter, s.step_no
+    """
+    rows = connection.execute(
+        text(query), {"lot_hist_id": lot_hist_id}
+    ).mappings().all()
+    return [
+        WaferParameterRow(
+            parameter_id=row["parameter_id"],
+            parameter_name=row["parameter_name"],
+            unit=row["unit"],
+            recipe_step_no=int(row["recipe_step_no"]),
+            value_mean=_as_float_or_none(row["value_mean"]),
+            value_std=_as_float_or_none(row["value_std"]),
+            value_min=_as_float_or_none(row["value_min"]),
+            value_max=_as_float_or_none(row["value_max"]),
+            point_cnt=int(row["point_cnt"]),
+            ooc_point_cnt=int(row["ooc_point_cnt"]),
+            oos_point_cnt=int(row["oos_point_cnt"]),
+            alarm_type=AlarmType(row["alarm_type"]),
+            spec_lower=_as_float_or_none(row["spec_lower"]),
+            ctrl_lower=_as_float_or_none(row["ctrl_lower"]),
+            target=_as_float_or_none(row["target"]),
+            ctrl_upper=_as_float_or_none(row["ctrl_upper"]),
+            spec_upper=_as_float_or_none(row["spec_upper"]),
+            upper_only=bool(row["upper_only"]),
         )
         for row in rows
     ]
