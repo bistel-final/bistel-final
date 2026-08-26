@@ -40,11 +40,20 @@ def get_bool_env(name: str, default: str) -> bool:
 
 
 # PostgreSQL
-POSTGRES_USER = get_env("POSTGRES_USER")
-POSTGRES_PASSWORD = get_env("POSTGRES_PASSWORD")
 POSTGRES_DB = get_env("POSTGRES_DB")
 POSTGRES_HOST = get_env("POSTGRES_HOST")
 POSTGRES_PORT = int(get_env("POSTGRES_PORT", "5432"))
+
+# 일반 Backend는 bootstrap/owner credential을 절대 fallback으로 사용하지 않는다.
+# full DSN 또는 app 전용 user/password 조합 중 하나만으로 연결한다.
+APP_DATABASE_URL = os.getenv("APP_DATABASE_URL", "").strip() or None
+APP_DB_USER = get_env("APP_DB_USER", "kosa_app")
+APP_DB_PASSWORD = os.getenv("APP_DB_PASSWORD", "").strip() or None
+if APP_DB_USER != "kosa_app":
+    raise RuntimeError("APP_DB_USER 는 kosa_app 이어야 합니다")
+# credential 부재는 import 실패가 아니라 첫 DB 사용 실패다. `/health`와 DB를 쓰지 않는
+# 테스트·명령은 secret 없이도 떠야 하고, 실제 engine 생성은 common.db가 fail-closed로
+# 검증한다.
 
 # Text2SQL 전용 읽기 전용 계정
 READONLY_USER = get_env("READONLY_USER")

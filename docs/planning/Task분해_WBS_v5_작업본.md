@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 57.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 59.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 42.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **163.0h** | P2 도전 과제 제외 |
+| **합계** | | **165.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 118.5h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 둘이다.
+우선순위별 공수는 **P0 121.0h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 셋이다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -70,6 +70,9 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
   여기에 profile manifest 발급 script 신규 작성, 공용 3 DB read-only 검증, active manifest
   bundle 원자 교체가 더해진다. 쪼개면 "epoch은 바뀌었는데 manifest는 구 inventory"인
   중간 상태가 저장소에 남는다.
+- `V5-CM-3.5` **4.0h** — 공용 3 DB의 profile별 5-role exact ACL, core→checkpoint
+  successor, 실제 login container 검증과 Backend app credential 전환을 한 보안 Gate로
+  닫는다. DB별 transaction·승인·marker는 분리하되 중간 상태를 완료로 선언하지 않는다.
 
 ---
 
@@ -108,7 +111,7 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1, V5-CM-1.8 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
-| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `V5-B-1.1`이 만든 `document`·`document_chunk`의 role별 explicit GRANT도 이 Task가 적용한다(구현리뷰 18차 필수 1). `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
+| V5-CM-3.5 | P0 | 최소권한 role. 완료: final profile manifest와 `role_core → role_checkpointed` stage별 exact inventory에 대해 app/readonly/evaluation/logger/delivery 5-role 허용·거부 matrix를 적용한다. 생성 Text2SQL은 readonly만 실행하고 Runtime app은 owner fallback 없이 `kosa_app`만 사용한다. `document`·`document_chunk`, 합성 label column, Runtime·audit·checkpoint·query-log sequence를 명시 ACL로 고정하며 signed HTTP n8n delivery role은 NOLOGIN·deny-all이다. database/schema/relation/sequence의 `PUBLIC` data-access 권한 0건과 같은 stage no-op을 확인한다 | NFR-01, NFR-02, NFR-05, NFR-19, FR-D-03 | V5-CM-3.2 | 4.0h |
 
 ### V5-CM-4. 공통 계약과 통합
 
@@ -133,7 +136,7 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다 | NFR-02, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7 | 2.0h |
 
-**Common 합계: 55.0h**
+**Common 합계: 59.5h**
 
 ---
 

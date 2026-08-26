@@ -21,6 +21,14 @@ _NO_PREDECESSOR = {"—", "-", ""}
 TaskRow = tuple[str, list[str]]
 
 
+def _task_fields() -> list[list[str]]:
+    return [
+        [cell.strip() for cell in line.split("|")]
+        for line in WBS.read_text(encoding="utf-8").splitlines()
+        if line.startswith("| V5-")
+    ]
+
+
 def _rows() -> dict[str, TaskRow]:
     """`| V5-… | 우선순위 | 완료기준 | 요구사항 | 선행 | 시간 |` 행만 읽는다."""
 
@@ -54,6 +62,34 @@ def test_every_predecessor_exists(rows: dict[str, TaskRow]) -> None:
         for task, (_prio, preds) in rows.items()
     }
     assert not {k: v for k, v in missing.items() if v}
+
+
+def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
+    fields = _task_fields()
+    non_p2 = [row for row in fields if row[2] != "P2"]
+    p0 = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] == "P0")
+    p1 = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] == "P1")
+    total = sum(float(row[-2].removesuffix("h")) for row in non_p2)
+    common = sum(
+        float(row[-2].removesuffix("h"))
+        for row in fields
+        if row[1].startswith("V5-CM-")
+    )
+    cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
+
+    assert (p0, p1, total, common) == (121.0, 44.5, 165.5, 59.5)
+    assert cm_3_5[-2] == "4.0h"
+    assert cm_3_5[-3] == "V5-CM-3.2"
+    for requirement in ("NFR-01", "NFR-02", "NFR-05", "NFR-19", "FR-D-03"):
+        assert requirement in cm_3_5[-4]
+    for phrase in (
+        "5-role",
+        "role_core → role_checkpointed",
+        "kosa_app",
+        "NOLOGIN",
+        "PUBLIC",
+    ):
+        assert phrase in cm_3_5[3]
 
 
 def test_the_dependency_graph_has_no_cycle(rows: dict[str, TaskRow]) -> None:
