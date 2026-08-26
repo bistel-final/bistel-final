@@ -120,6 +120,20 @@ REMAINING_MARKERS = {
     # 거부한다. 그래서 여기에도 `kosa_text2sql` 이름이 오면 안 된다.
     "checkpoint_setup_final.kosa_agent.json",
     "checkpoint_setup_final.kosa_agent_e2e.json",
+    # 공용 3-DB role/grant 적용 증적 (`V5-CM-3.5` 묶음 3)
+    #
+    # `core`는 role·CONNECT·스키마·테이블 GRANT를, `checkpoint`는 checkpoint 4종의
+    # DML GRANT를 각각 증명한다. **한 marker로 합치지 않는다** — checkpoint table은
+    # `V5-CM-3.4` 적용 이후에만 존재하므로 두 적용은 선행관계가 다르고, core만 적용된
+    # 상태와 둘 다 적용된 상태를 marker로 구분할 수 있어야 한다.
+    #
+    # `checkpoint` 쪽에 `kosa_text2sql`이 없는 이유는 바로 위 `checkpoint_setup_final`과
+    # 같다. `core`는 평가 DB에도 role·grant가 필요하므로 3 DB 전부 있다.
+    "role_matrix_core.kosa_agent.json",
+    "role_matrix_core.kosa_agent_e2e.json",
+    "role_matrix_core.kosa_text2sql.json",
+    "role_matrix_checkpoint.kosa_agent.json",
+    "role_matrix_checkpoint.kosa_agent_e2e.json",
 }
 
 
