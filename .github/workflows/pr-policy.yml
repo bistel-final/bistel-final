@@ -315,6 +315,30 @@ jobs:
           tests/unit/test_severity_pair_guard_container.py
           -rs --no-header
 
+      # V5-C-1.1 incident 해석.
+      #
+      # 단위는 DB 없이 대표 정렬·요청 identity 보존·fail-closed mapping과 C-0.1
+      # 오류 계층 재사용을 본다. `_translate()`는 C-0.1의 private 심볼이라 이 회귀가
+      # 그 cross-module 의존을 고정한다.
+      - name: Prove the incident resolution contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_incident.py
+          -rs --no-header
+
+      # 최종 dataset이 필요 없다 — legacy base 9 + wafer 폭 정정 + `v5/001`만 세운다.
+      #
+      # **이 축은 실제 View가 아니면 성립하지 않는다.** TRACE·SUMMARY는 LEFT JOIN이라
+      # owner 결손 행이 남고, R03는 INNER JOIN에 자기 `lot_id·chamber_id`를 쓰므로
+      # raw key와 owner key가 갈릴 수 있다. 단위 fake는 그 차이를 만들지 못한다.
+      - name: Prove incident grouping against the real alarm view
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_incident_container.py
+          -rs --no-header
+
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
       # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
       # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).
