@@ -120,6 +120,16 @@ _EMPTY_MEMBERS: Final = "EMPTY_MEMBER_ALARMS"
 #: `missing_count`는 `v.lot_hist_id`가 아니라 **`v.alarm_id`**로 센다. TRACE·SUMMARY는
 #: View가 `lot_history`에 LEFT JOIN이라 owner를 못 찾아도 알람 행은 남는다.
 #: `lot_hist_id`로 세면 "알람이 없다"와 "owner를 못 찾았다"가 한 code로 뭉쳐진다.
+#:
+#: **owner 결손은 canonical key 두 필드를 모두 본다.** `lot_history.chamber_id`가
+#: nullable이라(`lot_id`만 NOT NULL) `owner_lot_id IS NULL`만 보면 "lot은 있는데
+#: chamber가 없는" owner를 놓친다. 그 행은 drift에도 안 잡히고(`FALSE OR NULL`이
+#: `NULL`이라 `FILTER`가 세지 않는다) mapping까지 들어간 뒤 `_step()`의 NULL 검사에
+#: 걸려 `WAFER_ROUTE_INCOMPLETE`로 끝난다 — fail-closed는 유지되지만 **reason이
+#: 원인을 가리키지 않는다**(구현리뷰 PR #155 필수 2). `V5-C-1.1`이 바로 직전
+#: Task에서 같은 결함을 닫았다.
+#:
+#: `drift_count`는 canonical이 **둘 다 확정된** 행만 보고 `IS DISTINCT FROM`을 쓴다.
 _SNAPSHOT = text(
     """
     WITH member_ref AS (
@@ -145,11 +155,16 @@ _SNAPSHOT = text(
         SELECT
             count(*) FILTER (WHERE event_alarm_id IS NULL)       AS missing_count,
             count(*) FILTER (
-                WHERE event_alarm_id IS NOT NULL AND owner_lot_id IS NULL
+                WHERE event_alarm_id IS NOT NULL
+                  AND (owner_lot_id IS NULL OR owner_chamber_id IS NULL)
             )                                                    AS unresolved_count,
             count(*) FILTER (
                 WHERE owner_lot_id IS NOT NULL
-                  AND (owner_lot_id <> :lot_id OR owner_chamber_id <> :chamber_id)
+                  AND owner_chamber_id IS NOT NULL
+                  AND (
+                      owner_lot_id IS DISTINCT FROM :lot_id
+                      OR owner_chamber_id IS DISTINCT FROM :chamber_id
+                  )
             )                                                    AS drift_count,
             count(*) FILTER (
                 WHERE owner_lot_id IS NOT NULL AND owner_wafer_id IS NULL

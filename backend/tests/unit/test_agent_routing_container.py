@@ -406,6 +406,90 @@ def test_a_missing_wafer_id_is_refused(db: Any) -> None:
     assert exc.value.code == "ROUTE_WAFER_ID_MISSING"
 
 
+def test_an_owner_without_a_chamber_is_refused(db: Any) -> None:
+    """**canonical key의 두 field를 모두 본다**(구현리뷰 PR #155 필수 2).
+
+    `lot_history.chamber_id`는 nullable이다(`001_base_schema.sql` 기준 `lot_id`만
+    NOT NULL). owner 결손을 `owner_lot_id IS NULL`로만 판정하면 "lot은 있는데 chamber가
+    없는" owner가 다섯 검사를 전부 빠져나간다 — drift 검사도 `<>` 비교가
+    `FALSE OR NULL` = `NULL`이라 `FILTER`가 세지 않는다. 그 member는 mapping까지 들어간
+    뒤 `_step()`의 NULL 검사에 걸려 `WAFER_ROUTE_INCOMPLETE`로 끝난다. **fail-closed는
+    유지되지만 reason이 원인을 가리키지 않는다.**
+
+    `test_a_missing_wafer_id_is_refused`와 같은 이유로 **R03로만 재현된다.**
+    TRACE·SUMMARY는 View join 조건이 `h.chamber_id = a.chamber`라 owner가 매칭된 순간
+    `chamber_id`가 NULL일 수 없다.
+
+    raw는 incident와 같은 chamber를 가리킨다(`r03_alarm_history.chamber_id = PHOTO`).
+    즉 "raw만 보면 정상"이고 canonical만 비어 있는 상태다.
+    """
+
+    alarm_id = "R03-" + "2".rjust(20, "0")
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO lot_history "
+                " (lot_hist_id, lot_id, wafer_no, wafer_id, chamber_id, step_id,"
+                "  equipment_id, area_id, recipe_id, track_in_at) "
+                "VALUES ('LH-NOCHAMBER', :l, 1, :w, NULL, 'CT-PHOTO', 'EQP01',"
+                "        'etch', 'RECIPE01', :t)"
+            ),
+            {"l": LOT, "w": f"{LOT}W001", "t": T0},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO r03_alarm_history "
+                " (alarm_id, occurred_at, lot_hist_id, lot_id, equipment_id,"
+                "  chamber_id, parameter_id, recipe_step_no, trigger_wafer_no,"
+                "  member_wafer_refs, member_alarm_refs, policy_version) "
+                "VALUES (:a, :t, 'LH-NOCHAMBER', :l, 'EQP01', :c, 'PARAM01', 1, 1,"
+                "        '[1,2,3]'::jsonb, '[]'::jsonb, 'R03_CONSEC_V1')"
+            ),
+            {"a": alarm_id, "t": T0, "l": LOT, "c": PHOTO},
+        )
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        _fetch(db, _ref(AlarmSource.R03, alarm_id))
+    assert exc.value.code == "ROUTE_MEMBER_OWNER_UNRESOLVED"
+
+
+def test_an_owner_without_a_chamber_is_not_read_as_drift(db: Any) -> None:
+    """chamber가 **없는 것**과 chamber가 **다른 것**은 다른 사실이다.
+
+    `NULL`을 "다른 chamber"로 세면 `ROUTE_INCIDENT_MISMATCH`가 나온다. 그건 "두 read
+    사이에 데이터가 바뀌었다"는 뜻이라 대응이 달라진다. 결손은 결손으로 보고해야 한다.
+    """
+
+    alarm_id = "R03-" + "3".rjust(20, "0")
+    with db.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO lot_history "
+                " (lot_hist_id, lot_id, wafer_no, wafer_id, chamber_id, step_id,"
+                "  equipment_id, area_id, recipe_id, track_in_at) "
+                "VALUES ('LH-NOCHAMBER2', :l, 1, :w, NULL, 'CT-PHOTO', 'EQP01',"
+                "        'etch', 'RECIPE01', :t)"
+            ),
+            {"l": LOT, "w": f"{LOT}W001", "t": T0},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO r03_alarm_history "
+                " (alarm_id, occurred_at, lot_hist_id, lot_id, equipment_id,"
+                "  chamber_id, parameter_id, recipe_step_no, trigger_wafer_no,"
+                "  member_wafer_refs, member_alarm_refs, policy_version) "
+                "VALUES (:a, :t, 'LH-NOCHAMBER2', :l, 'EQP01', :c, 'PARAM01', 1, 1,"
+                "        '[1,2,3]'::jsonb, '[]'::jsonb, 'R03_CONSEC_V1')"
+            ),
+            {"a": alarm_id, "t": T0, "l": LOT, "c": PHOTO},
+        )
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        _fetch(db, _ref(AlarmSource.R03, alarm_id))
+    assert exc.value.code != "ROUTE_INCIDENT_MISMATCH"
+    assert exc.value.code != "WAFER_ROUTE_INCOMPLETE"
+
+
 def test_a_null_track_in_at_is_not_corrected(db: Any) -> None:
     with db.begin() as connection:
         _lot(connection, "LH-W1", track_in_at=T0)

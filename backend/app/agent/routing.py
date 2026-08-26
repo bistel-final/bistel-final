@@ -202,10 +202,25 @@ class IncidentRoute:
     snapshot: RouteSnapshot
 
 
-def _node(label: str, business_id: str) -> str:
-    """B projection의 node id 표기. `labels(node)[0] + ':' + business_id`."""
+def _node_id(full: Any, label: str, business_id: str) -> str | None:
+    """**B가 준 node id를 찾는다. 만들지 않는다.**
 
-    return f"{label}:{business_id}"
+    초판은 `f"{label}:{business_id}"`로 재구성했다. 그건 B의 node id **생성 규칙**을 C가
+    복제해 들고 있는 것이고, 이 모듈이 `relation_ids`에 대해 세운 원칙("합성하지 않고
+    projection 값을 그대로 남긴다")과 정반대다.
+
+    **어긋나면 조용히 틀린다.** B가 표기를 바꾸면 모든 관계 조회가 `None`이 되고,
+    결과는 예외가 아니라 `GRAPH_*_RELATION_MISSING`이 **모든 step·모든 incident에서**
+    나오는 것이다. `route_consistency=false`가 상시화되고 운영에서는 "graph 데이터가
+    깨졌다"로 읽힌다 — 실제로는 계약 파손인데도(구현리뷰 PR #155 필수 1).
+
+    `business_id`·`label`은 B가 node payload에 별도 필드로 실어 준다. 그것으로 찾는다.
+    """
+
+    for node in full.nodes:
+        if node.label == label and node.business_id == business_id:
+            return str(node.id)
+    return None
 
 
 def _graph_shape_error() -> type[BaseException]:
@@ -258,10 +273,25 @@ def _call(load: Callable[[str], Any], chamber_id: str) -> Any:
     return result
 
 
-def _relation_id(full: Any, kind: str, source: str, target: str) -> str | None:
+def _relation_id(
+    full: Any,
+    kind: str,
+    source: tuple[str, str],
+    target: tuple[str, str],
+) -> str | None:
+    """`(label, business_id)` 두 쌍으로 관계를 찾는다.
+
+    양끝 node를 projection에서 먼저 찾고, 그 **id 값**으로 relation을 대조한다. node가
+    없으면 관계도 없는 것이다.
+    """
+
+    source_id = _node_id(full, *source)
+    target_id = _node_id(full, *target)
+    if source_id is None or target_id is None:
+        return None
     for relation in full.relationships:
-        if relation.type == kind and relation.source == source:
-            if relation.target == target:
+        if relation.type == kind and relation.source == source_id:
+            if relation.target == target_id:
                 return str(relation.id)
     return None
 
@@ -324,7 +354,11 @@ def combine_route(
     routes = tuple(
         WaferRoute(
             wafer_id=wafer,
-            member_alarms=tuple(members_by_wafer.get(wafer, ())),
+            # **직접 indexing한다.** `_assert_bound()`가 mapping WAFER 집합과 route
+            # WAFER 집합의 일치를 이미 강제하므로 여기서 빠지는 WAFER는 없다.
+            # `.get(wafer, ())`는 도달 불가 기본값이었고, guard가 미래에 되돌아가면
+            # **member 없는 route를 조용히 만들어 준다**(구현리뷰 7차 권장 2).
+            member_alarms=tuple(members_by_wafer[wafer]),
             steps=tuple(steps),
         )
         for wafer, steps in sorted(
@@ -517,8 +551,8 @@ def _check_step(
     part_of = _relation_id(
         projection,
         "PART_OF",
-        _node("Chamber", step.chamber_id),
-        _node("Equipment", step.equipment_id),
+        ("Chamber", step.chamber_id),
+        ("Equipment", step.equipment_id),
     )
     if part_of is None:
         _add(
@@ -533,8 +567,8 @@ def _check_step(
     performs = _relation_id(
         projection,
         "PERFORMS",
-        _node("Equipment", step.equipment_id),
-        _node("ProcessStep", step.step_id),
+        ("Equipment", step.equipment_id),
+        ("ProcessStep", step.step_id),
     )
     if performs is None:
         _add(
@@ -587,8 +621,8 @@ def _check_adjacency(
     next_step = _relation_id(
         full[first.chamber_id],
         "NEXT_STEP",
-        _node("ProcessStep", first.step_id),
-        _node("ProcessStep", second.step_id),
+        ("ProcessStep", first.step_id),
+        ("ProcessStep", second.step_id),
     )
     if next_step is None:
         _add(

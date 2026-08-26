@@ -32,6 +32,7 @@ from app.common.tool_contracts import (  # noqa: E402
 )
 from app.knowledge.schemas import (  # noqa: E402
     ChamberRelationResponse,
+    GraphNode,
     GraphRelationship,
 )
 
@@ -127,18 +128,58 @@ def _context(
     )
 
 
-def _relation(rel_id: str, kind: str, source: str, target: str) -> GraphRelationship:
-    return GraphRelationship(id=rel_id, type=kind, source=source, target=target)
+#: B의 Cypher가 만드는 node id 표기. **fixture가 재현하고 생산 코드는 가정하지 않는다.**
+#:
+#: B `repository.py`의 projection이 `labels(node)[0] + ':' + business_id`로 만든다.
+#: 이 파일이 그 형식을 아는 것은 괜찮다 — B가 실제로 주는 payload를 흉내 내는 것이
+#: fixture의 일이다. 문제가 되는 것은 **생산 코드**가 같은 규칙을 복제해 드는 경우다.
+def _node_id(label: str, business_id: str) -> str:
+    return f"{label}:{business_id}"
+
+
+def _relation(
+    rel_id: str,
+    kind: str,
+    source: tuple[str, str],
+    target: tuple[str, str],
+) -> GraphRelationship:
+    return GraphRelationship(
+        id=rel_id,
+        type=kind,
+        source=_node_id(*source),
+        target=_node_id(*target),
+    )
+
+
+def _graph_node(node_id: str) -> GraphNode:
+    label, business_id = node_id.split(":", 1)
+    return GraphNode(
+        id=node_id,
+        label=label,
+        business_id=business_id,
+        display_name=business_id,
+        properties={},
+    )
 
 
 def _projection(
     chamber_id: str,
     *relations: GraphRelationship,
     revision: str = REVISION,
+    nodes: list[GraphNode] | None = None,
 ) -> ChamberRelationResponse:
+    """**node를 싣는다.** 생산 코드가 그 값으로 관계를 찾기 때문이다.
+
+    초판 fixture는 `nodes=[]`였고, 그래서 projection의 node 목록이 한 번도 소비되지
+    않았다. 생산 코드가 node id를 형식으로 재구성해도 회귀가 green이었다.
+    """
+
+    if nodes is None:
+        endpoints = {r.source for r in relations} | {r.target for r in relations}
+        nodes = [_graph_node(node_id) for node_id in sorted(endpoints)]
     return ChamberRelationResponse(
-        root_node_id=f"Chamber:{chamber_id}",
-        nodes=[],
+        root_node_id=_node_id("Chamber", chamber_id),
+        nodes=nodes,
         relationships=list(relations),
         graph_revision=revision,
     )
@@ -146,24 +187,43 @@ def _projection(
 
 def _photo_relations() -> tuple[GraphRelationship, ...]:
     return (
-        _relation("REL-part-photo", "PART_OF", "Chamber:EQP01-PM1", "Equipment:EQP01"),
         _relation(
-            "REL-perf-photo", "PERFORMS", "Equipment:EQP01", "ProcessStep:CT-PHOTO"
+            "REL-part-photo",
+            "PART_OF",
+            ("Chamber", "EQP01-PM1"),
+            ("Equipment", "EQP01"),
         ),
         _relation(
-            "REL-next", "NEXT_STEP", "ProcessStep:CT-PHOTO", "ProcessStep:CT-ETCH"
+            "REL-perf-photo",
+            "PERFORMS",
+            ("Equipment", "EQP01"),
+            ("ProcessStep", "CT-PHOTO"),
+        ),
+        _relation(
+            "REL-next",
+            "NEXT_STEP",
+            ("ProcessStep", "CT-PHOTO"),
+            ("ProcessStep", "CT-ETCH"),
         ),
     )
 
 
 def _etch_relations() -> tuple[GraphRelationship, ...]:
     return (
-        _relation("REL-part-etch", "PART_OF", "Chamber:EQP04-PM2", "Equipment:EQP04"),
         _relation(
-            "REL-perf-etch", "PERFORMS", "Equipment:EQP04", "ProcessStep:CT-ETCH"
+            "REL-part-etch", "PART_OF", ("Chamber", "EQP04-PM2"), ("Equipment", "EQP04")
         ),
         _relation(
-            "REL-next", "NEXT_STEP", "ProcessStep:CT-PHOTO", "ProcessStep:CT-ETCH"
+            "REL-perf-etch",
+            "PERFORMS",
+            ("Equipment", "EQP04"),
+            ("ProcessStep", "CT-ETCH"),
+        ),
+        _relation(
+            "REL-next",
+            "NEXT_STEP",
+            ("ProcessStep", "CT-PHOTO"),
+            ("ProcessStep", "CT-ETCH"),
         ),
     )
 
@@ -403,8 +463,8 @@ class TestAConsistentRoute:
                     _relation(
                         "REL-next2",
                         "NEXT_STEP",
-                        f"ProcessStep:{ETCH_STEP}",
-                        f"ProcessStep:{third}",
+                        ("ProcessStep", ETCH_STEP),
+                        ("ProcessStep", third),
                     ),
                 ),
                 clean_chamber: _projection(
@@ -412,14 +472,14 @@ class TestAConsistentRoute:
                     _relation(
                         "REL-part-clean",
                         "PART_OF",
-                        f"Chamber:{clean_chamber}",
-                        "Equipment:EQP05",
+                        ("Chamber", clean_chamber),
+                        ("Equipment", "EQP05"),
                     ),
                     _relation(
                         "REL-perf-clean",
                         "PERFORMS",
-                        "Equipment:EQP05",
-                        f"ProcessStep:{third}",
+                        ("Equipment", "EQP05"),
+                        ("ProcessStep", third),
                     ),
                 ),
             },
@@ -479,8 +539,8 @@ class TestMismatchesArePreservedNotRaised:
                     _relation(
                         "REL-rev",
                         "NEXT_STEP",
-                        f"ProcessStep:{ETCH_STEP}",
-                        f"ProcessStep:{PHOTO_STEP}",
+                        ("ProcessStep", ETCH_STEP),
+                        ("ProcessStep", PHOTO_STEP),
                     ),
                 ),
             },
@@ -882,6 +942,154 @@ class TestTheModulesStayInsideTheirBoundary:
 
 
 # ===========================================================================
+# 구현리뷰 2차 필수 1 — node id는 B가 준 값이다
+# ===========================================================================
+
+
+def _renamed(projection: ChamberRelationResponse) -> ChamberRelationResponse:
+    """**B가 node id 표기만 바꾼** 같은 graph.
+
+    `label`·`business_id`는 그대로 두고 `id` 문자열만 다른 규칙(`n/<label>/<bid>`)으로
+    바꾼다. 관계의 양끝도 같이 바꾼다. 즉 **의미는 동일하고 표기만 다르다.**
+    """
+
+    def rename(node_id: str) -> str:
+        label, business_id = node_id.split(":", 1)
+        return f"n/{label}/{business_id}"
+
+    return ChamberRelationResponse(
+        root_node_id=rename(projection.root_node_id),
+        nodes=[
+            GraphNode(
+                id=rename(node.id),
+                label=node.label,
+                business_id=node.business_id,
+                display_name=node.display_name,
+                properties=node.properties,
+            )
+            for node in projection.nodes
+        ],
+        relationships=[
+            GraphRelationship(
+                id=relation.id,
+                type=relation.type,
+                source=rename(relation.source),
+                target=rename(relation.target),
+            )
+            for relation in projection.relationships
+        ],
+        graph_revision=projection.graph_revision,
+    )
+
+
+class TestNodeIdsComeFromTheProjection:
+    """C가 B의 node id **생성 규칙**을 복제해 들고 있으면 안 된다(2차 필수 1).
+
+    초판은 `f"{label}:{business_id}"`로 id를 재구성했다. 그 경우 B가 표기를 바꾸면
+    모든 관계 조회가 `None`이 되고, 결과는 예외가 아니라 **모든 step에서**
+    `GRAPH_*_RELATION_MISSING`이다. `route_consistency`가 상시 false가 되고 운영은
+    이를 "graph 데이터가 깨졌다"로 읽는다 — 실제로는 C와 B의 계약이 어긋난 것이다.
+    """
+
+    def test_a_changed_node_id_format_still_resolves(self) -> None:
+        """표기가 바뀌어도 **일치는 일치다.** mismatch가 하나도 없어야 한다."""
+
+        graph = _two_step_graph()
+        renamed = _two_step_graph(
+            projections={
+                chamber: _renamed(projection)
+                for chamber, projection in graph.projections.items()
+            }
+        )
+        result = _resolve(_two_step_snapshot(), renamed)
+
+        assert result.route_consistency is True
+        assert result.mismatches == ()
+
+    def test_the_relation_ids_are_unchanged_by_the_rename(self) -> None:
+        """표기가 바뀌어도 **증거로 남는 relation id는 B가 준 그 값** 그대로다."""
+
+        graph = _two_step_graph()
+        renamed = _two_step_graph(
+            projections={
+                chamber: _renamed(projection)
+                for chamber, projection in graph.projections.items()
+            }
+        )
+        before = _resolve(_two_step_snapshot(), graph)
+        after = _resolve(_two_step_snapshot(), renamed)
+
+        assert [e.relation_ids for e in after.graph_evidence] == [
+            e.relation_ids for e in before.graph_evidence
+        ]
+        assert any("REL-part-photo" in e.relation_ids for e in after.graph_evidence)
+
+    def test_a_projection_without_nodes_finds_no_relation(self) -> None:
+        """**node 목록을 실제로 읽는다**는 증거.
+
+        관계는 그대로 두고 node만 비운 projection은 양끝을 특정할 수 없으므로 관계도
+        찾을 수 없다. 초판 fixture가 전부 `nodes=[]`였던 탓에 이 경로가 한 번도
+        실행되지 않았고, 그래서 id 재구성 결함이 green 뒤에 숨었다.
+        """
+
+        graph = _two_step_graph()
+        stripped = _two_step_graph(
+            projections={
+                chamber: _projection(
+                    chamber,
+                    *projection.relationships,
+                    revision=projection.graph_revision,
+                    nodes=[],
+                )
+                for chamber, projection in graph.projections.items()
+            }
+        )
+        result = _resolve(_two_step_snapshot(), stripped)
+
+        assert result.route_consistency is False
+        assert {m.code for m in result.mismatches} == {
+            "GRAPH_PART_OF_RELATION_MISSING",
+            "GRAPH_PERFORMS_RELATION_MISSING",
+            "GRAPH_NEXT_STEP_RELATION_MISSING",
+        }
+        assert all(e.relation_ids == () for e in result.graph_evidence)
+
+    def test_the_module_does_not_build_node_ids(self) -> None:
+        """생산 코드에 node id **합성**이 남아 있지 않다.
+
+        `_code_only()`는 `ast.unparse()` 결과라 따옴표 종류가 원본과 달라질 수 있다.
+        그래서 따옴표를 포함한 문자열로 찾지 않고, **f-string 안에 `label`·`business_id`
+        가 함께 들어간 표현식이 있는지**를 AST로 직접 본다.
+        """
+
+        tree = ast.parse(Path(rt.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.JoinedStr):
+                continue
+            names = {sub.id for sub in ast.walk(node) if isinstance(sub, ast.Name)}
+            assert not {"label", "business_id"} <= names, ast.unparse(node)
+
+        body = _code_only(Path(rt.__file__))
+        for forbidden in ("Chamber:", "ProcessStep:", "Equipment:"):
+            assert forbidden not in body, forbidden
+
+    def test_the_lookup_matches_on_both_label_and_business_id(self) -> None:
+        """label만 같고 business_id가 다른 node를 잘못 집지 않는다."""
+
+        assert (
+            rt._node_id(
+                _projection(
+                    PHOTO_CHAMBER,
+                    *_photo_relations(),
+                ),
+                "Equipment",
+                "EQP99",
+            )
+            is None
+        )
+
+
+# ===========================================================================
 # 구현리뷰 1차 필수 1·2·3
 # ===========================================================================
 
@@ -992,34 +1200,147 @@ class TestTheDbScopeClosesBeforeTheGraphCalls:
             assert not (takes_connection and takes_graph), name
 
 
+KNOWLEDGE_DIR = Path(rt.__file__).resolve().parents[1] / "knowledge"
+
+
+def _module_ast(path: Path) -> ast.Module:
+    """**import하지 않고** 읽는다.
+
+    `app.knowledge.*`는 `app.common.config`를 끌어오고, 그 module은 import 시점에
+    기본값 없는 환경변수 11개(`POSTGRES_*`·`READONLY_*`·`NEO4J_*`·`N8N_WEBHOOK_URL`)를
+    읽는다. CI의 `Prove the routing and graph cross-check contract` step은 focused
+    의존성만 설치하고 `.env`를 두지 않으므로, 이 파일이 B module을 import하면
+    **collection 단계에서 죽는다**(실측: `RuntimeError: 필수 환경변수가 없습니다:
+    POSTGRES_USER`).
+
+    그 환경을 테스트에서 흉내 내려면 credential 모양 이름 11개를 이 파일에 적어야
+    한다. 그것이 `GraphBoundary.production()`이 애초에 import를 지연시킨 이유이기도
+    하다 — **route domain 단위 테스트는 B의 실행 환경을 요구하지 않는다.**
+
+    그래서 identity 대신 **source 계약**을 고정한다. 한계는 분명하다: 같은 이름의
+    다른 class로 옮겨 가면 여기서는 안 잡힌다. 그 축은 실제 wiring을 쓰는 통합
+    경로(`V5-C-2.1` 이후)가 맡는다.
+    """
+
+    return ast.parse(path.read_text(encoding="utf-8"))
+
+
+def _method(tree: ast.Module, class_name: str, method: str) -> ast.FunctionDef:
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == method:
+                    return item
+            raise AssertionError(f"{class_name}에 {method}가 없습니다")
+    raise AssertionError(f"{class_name} class가 없습니다")
+
+
 class TestTheProductionBoundaryIsWiredToB:
     """**기본 경로가 실제 B service로 간다**(구현리뷰 1차 필수 3).
 
     DI는 유지하되, override를 생략했을 때 어디로 가는지를 한 곳이 답해야 한다.
     """
 
-    def test_production_returns_the_real_bound_methods(self) -> None:
-        from app.knowledge.service import EquipmentContextService, GraphService
+    def test_production_binds_the_two_named_service_methods(self) -> None:
+        """`production()`이 B의 어느 class·method로 가는지 코드가 답한다."""
 
-        boundary = rt.GraphBoundary.production()
-        assert (
-            boundary.equipment_context.__func__
-            is EquipmentContextService.get_equipment_context
+        body = ast.unparse(
+            _method(_module_ast(Path(rt.__file__)), "GraphBoundary", "production")
         )
-        assert boundary.chamber_relations.__func__ is GraphService.get_chamber_relations
+        assert "from app.knowledge.service import" in body
+        assert "EquipmentContextService" in body
+        assert "GraphService" in body
+        assert "EquipmentContextService().get_equipment_context" in body
+        assert "GraphService().get_chamber_relations" in body
 
-    def test_production_does_not_touch_neo4j(self) -> None:
-        """service·repository 생성만으로 driver를 열지 않는다."""
+    def test_those_methods_exist_on_b_with_the_arity_c_uses(self) -> None:
+        """**B 쪽 전제를 고정한다.** 이름이 바뀌거나 인자가 늘면 여기서 걸린다."""
 
-        boundary = rt.GraphBoundary.production()
-        assert boundary.equipment_context is not None
-        assert boundary.chamber_relations is not None
+        service = _module_ast(KNOWLEDGE_DIR / "service.py")
+        for class_name, method in (
+            ("EquipmentContextService", "get_equipment_context"),
+            ("GraphService", "get_chamber_relations"),
+        ):
+            found = _method(service, class_name, method)
+            args = found.args
+            assert [a.arg for a in args.args] == ["self", "chamber_id"], method
+            assert args.vararg is None and args.kwonlyargs == [], method
+
+    def test_both_services_construct_with_no_argument(self) -> None:
+        """`Service()`가 성립해야 `production()`이 성립한다.
+
+        `__init__`의 `self` 뒤 인자가 전부 기본값을 가져야 한다.
+        """
+
+        service = _module_ast(KNOWLEDGE_DIR / "service.py")
+        for class_name in ("EquipmentContextService", "GraphService"):
+            init = _method(service, class_name, "__init__")
+            required = len(init.args.args) - 1 - len(init.args.defaults)
+            assert required == 0, class_name
+
+    #: `production()`이 실제로 만드는 네 객체.
+    #: **class마다 어느 module에 사는지 적는다.**
+    #:
+    #: 초판은 네 class를 전부 `repository.py`에서 찾고 없으면 `continue`했다.
+    #: `GraphQueryRepository`는 `graph_query.py`에 있으므로 **조용히 건너뛰었다** —
+    #: 검사한다고 적어 두고 실제로는 절반만 봤다.
+    CONSTRUCTED = (
+        ("service.py", "EquipmentContextService"),
+        ("service.py", "GraphService"),
+        ("repository.py", "ChamberGraphRepository"),
+        ("graph_query.py", "GraphQueryRepository"),
+    )
+
+    def test_production_does_not_open_a_driver(self) -> None:
+        """service·repository 생성만으로 Bolt를 열지 않는다.
+
+        두 repository는 `driver_factory`를 **보관만** 한다. 그래서 금지 대상은
+        "`driver_factory`가 등장하는가"가 아니라 **"호출되는가"**다. 문자열 검색으로는
+        둘을 구분할 수 없어 `ast.Call`의 피호출자만 본다.
+
+        실물 spy가 더 강하지만 그러려면 B module을 import해야 하고, 그건
+        `test_this_file_never_imports_b_at_runtime`이 금지하는 바로 그것이다.
+        실제 호출 0회는 별도 환경에서 확인한 뒤 구현보고에 적는다.
+        """
+
+        for filename, class_name in self.CONSTRUCTED:
+            init = _method(
+                _module_ast(KNOWLEDGE_DIR / filename), class_name, "__init__"
+            )
+            for call in (n for n in ast.walk(init) if isinstance(n, ast.Call)):
+                callee = ast.unparse(call.func)
+                assert "driver" not in callee, f"{class_name}: {callee}"
+                assert "session" not in callee, f"{class_name}: {callee}"
+
+    def test_every_constructed_class_is_actually_found(self) -> None:
+        """**건너뛰기를 금지한다.** 위 표의 네 class가 모두 실재해야 한다."""
+
+        for filename, class_name in self.CONSTRUCTED:
+            _method(_module_ast(KNOWLEDGE_DIR / filename), class_name, "__init__")
 
     def test_the_knowledge_import_is_deferred(self) -> None:
         """module 최상단에서 knowledge를 끌어오지 않는다."""
 
         head = Path(rt.__file__).read_text(encoding="utf-8").split("__all__")[0]
         assert "app.knowledge" not in head
+
+    def test_this_file_never_imports_b_at_runtime(self) -> None:
+        """**CI가 이 파일을 수집할 수 있어야 한다.**
+
+        `app.knowledge.*`를 import하는 순간 `app.common.config`가 딸려 오고, `.env`가
+        없는 CI step에서 collection이 죽는다. 실제로 그렇게 죽었다. 회귀로 고정한다.
+        `app.knowledge.schemas`·`exceptions`는 config를 끌어오지 않으므로 예외다.
+        """
+
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        allowed = {"app.knowledge.schemas", "app.knowledge.exceptions"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module.startswith("app.knowledge"):
+                    assert node.module in allowed, node.module
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("app.knowledge"), alias.name
 
 
 class TestTheRealProjectionShapeErrorIsNotDowngraded:
@@ -1042,11 +1363,14 @@ class TestTheRealProjectionShapeErrorIsNotDowngraded:
         assert exc.value.code == "GRAPH_SHAPE_ERROR"
 
     def test_the_repository_actually_raises_that_class(self) -> None:
-        """**B 쪽 전제를 고정한다.** 그 예외가 사라지면 mapping이 죽은 코드가 된다."""
+        """**B 쪽 전제를 고정한다.** 그 예외가 사라지면 mapping이 죽은 코드가 된다.
 
-        from app.knowledge import repository as knowledge_repository
+        원래는 module을 import해 `__file__`을 얻었다. 그 한 줄 때문에
+        `app.common.config`가 딸려 왔고 `.env` 없는 CI step에서 collection이 죽었다.
+        파일 내용만 필요하므로 경로로 읽는다.
+        """
 
-        body = Path(knowledge_repository.__file__).read_text(encoding="utf-8")
+        body = (KNOWLEDGE_DIR / "repository.py").read_text(encoding="utf-8")
         assert body.count("raise GraphProjectionShapeError(") >= 1
 
     def test_no_projection_detail_reaches_the_caller(self) -> None:
