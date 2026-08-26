@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import logging
 import sys
 from re import sub
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.common.exceptions import ErrorCode
 from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 from app.knowledge import embedding
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.router import search_documents as search_documents_api
 from app.knowledge.schemas import DocumentSearchRequest
@@ -94,6 +98,34 @@ def test_embedding_model_is_loaded_once_from_local_cache(monkeypatch: Any) -> No
     assert first is second
     assert created == [f"{embedding.REPOSITORY_ROOT}|local=True"]
     embedding.get_embedding_model.cache_clear()
+
+
+def test_embedding_model_missing_cache_raises_model_not_ready(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    missing_path = tmp_path / "missing-bge-m3"
+
+    embedding.get_embedding_model.cache_clear()
+    monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+    monkeypatch.setenv(
+        "EMBEDDING_MODEL_REVISION",
+        "5617a9f61b028005a4858fdac845db406aefb181",
+    )
+    monkeypatch.setenv("EMBEDDING_DIM", "1024")
+    monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(missing_path))
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="app.knowledge.embedding"):
+            with pytest.raises(EmbeddingModelNotReadyError) as excinfo:
+                embedding.get_embedding_model()
+
+        assert str(excinfo.value) == "임베딩 모델이 준비되지 않았습니다."
+        assert str(missing_path) not in str(excinfo.value)
+        assert str(missing_path) in caplog.text
+    finally:
+        embedding.get_embedding_model.cache_clear()
 
 
 def test_repository_search_uses_current_rag_schema_and_common_filter(
@@ -305,6 +337,44 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
     ]
 
 
+def test_documents_search_http_returns_model_not_ready(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class ModelNotReadyService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            raise EmbeddingModelNotReadyError()
+
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr(
+        "app.knowledge.router.DocumentSearchService",
+        ModelNotReadyService,
+    )
+
+    from app.main import app
+
+    response = TestClient(app).post("/documents/search", json={"query": "check"})
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": ErrorCode.MODEL_NOT_READY.value,
+        "message": "임베딩 모델이 준비되지 않았습니다.",
+        "details": {},
+    }
+
+
 def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) -> None:
     class FakePoolFactory:
         def get_engine(self, logical_db: object, role: object) -> object:
@@ -391,7 +461,10 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
             top_k: int,
             model_code: str | None,
         ) -> list[ToolDocumentHit]:
-            raise RuntimeError("검색 실패")
+            raise RuntimeError(
+                "SELECT * FROM document_chunk WHERE query='check' "
+                "postgresql://user:secret@localhost/db"
+            )
 
     monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
     monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", FailingService)
@@ -400,7 +473,43 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
 
     assert result.ok is False
     assert result.hits == []
-    assert result.reason == "DEPENDENCY_ERROR: 검색 실패"
+    assert result.reason == "DEPENDENCY_ERROR: 문서 검색 의존성 오류"
+    assert "SELECT" not in result.reason
+    assert "postgresql://" not in result.reason
+    assert "secret" not in result.reason
+
+
+def test_search_documents_tool_returns_model_not_ready_failure(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class ModelNotReadyService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            raise EmbeddingModelNotReadyError()
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr(
+        "app.knowledge.tools.DocumentSearchService",
+        ModelNotReadyService,
+    )
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is False
+    assert result.hits == []
+    assert result.reason == "MODEL_NOT_READY: 임베딩 모델이 준비되지 않았습니다"
 
 
 def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None:

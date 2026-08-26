@@ -350,6 +350,18 @@ jobs:
           tests/unit/test_agent_routing.py
           -rs --no-header
 
+      # V5-C-1.3 중복 실행 방지.
+      #
+      # 단위는 fake Connection으로 **호출 순서**를 고정한다. lock → read 순서가 이
+      # Task의 계약이고, 순서는 실제 DB 없이 관측된다. B runtime module을 import하지
+      # 않으므로 focused 의존성·`.env` 없이 수집된다.
+      - name: Prove the duplicate run guard order and policy
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_run_guard.py
+          -rs --no-header
+
       # 최종 dataset이 필요 없다 — legacy base 9 + wafer 폭 정정 + `v5/001`만 세운다.
       #
       # **이 축은 실제 View가 아니면 성립하지 않는다.** `unnest` 두 배열의 순서쌍 대응,
@@ -360,6 +372,20 @@ jobs:
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_routing_container.py
+          -rs --no-header
+
+      # **이 축은 동시성이라 실제 DB가 아니면 성립하지 않는다.** advisory lock이 두
+      # transaction을 실제로 직렬화하는지, commit·rollback에서 자동 해제되는지,
+      # partial unique가 마지막 방어로 발화하는지, 기본 격리 수준이 실제로
+      # `READ COMMITTED`인지는 단위 fake로 재현되지 않는다.
+      #
+      # base 9 + `v5/001`(incident 해석)과 `002`·`003`(run 생성)을 **한 컨테이너에**
+      # 세운다. 이 Task가 두 계층을 동시에 쓰기 때문이다.
+      - name: Prove the duplicate run guard against real advisory locks
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_run_guard_container.py
           -rs --no-header
 
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,

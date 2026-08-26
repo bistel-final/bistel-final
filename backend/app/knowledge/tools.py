@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
@@ -12,8 +14,11 @@ from app.common.tool_contracts import (
     fail,
 )
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.graph_query import GraphQueryRepository
 from app.knowledge.service import DocumentSearchService, EquipmentContextService
+
+logger = logging.getLogger(__name__)
 
 
 # ==================
@@ -34,8 +39,15 @@ def search_documents(
         return DocumentSearchToolResult(ok=True, hits=hits)
     except TimeoutError as exc:
         return fail(DocumentSearchToolResult, f"TIMEOUT: {exc}")
-    except Exception as exc:
-        return fail(DocumentSearchToolResult, f"DEPENDENCY_ERROR: {exc}")
+    except EmbeddingModelNotReadyError:
+        logger.exception("search_documents embedding model not ready")
+        return fail(
+            DocumentSearchToolResult,
+            "MODEL_NOT_READY: 임베딩 모델이 준비되지 않았습니다",
+        )
+    except Exception:
+        logger.exception("search_documents Tool dependency error")
+        return fail(DocumentSearchToolResult, "DEPENDENCY_ERROR: 문서 검색 의존성 오류")
 
 
 # ==================
@@ -63,5 +75,9 @@ def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
             EquipmentContextToolResult,
             "GRAPH_SHAPE_ERROR: 장비 graph context 필수 값이 누락됐습니다",
         )
-    except Exception as exc:
-        return fail(EquipmentContextToolResult, f"DEPENDENCY_ERROR: {exc}")
+    except Exception:
+        logger.exception("get_equipment_context Tool dependency error")
+        return fail(
+            EquipmentContextToolResult,
+            "DEPENDENCY_ERROR: 장비 그래프 context 의존성 오류",
+        )

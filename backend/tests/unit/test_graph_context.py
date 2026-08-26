@@ -686,14 +686,20 @@ def test_get_equipment_context_tool_returns_dependency_failure(
             self.repository = repository
 
         def get_equipment_context(self, chamber_id: str) -> None:
-            raise RuntimeError("marker invalid")
+            raise RuntimeError(
+                "MATCH (c:Chamber {chamber_id: $chamber_id}) "
+                "bolt://neo4j:secret@localhost:7687 marker invalid"
+            )
 
     monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
 
     result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
 
     assert result.ok is False
-    assert result.reason == "DEPENDENCY_ERROR: marker invalid"
+    assert result.reason == "DEPENDENCY_ERROR: 장비 그래프 context 의존성 오류"
+    assert "MATCH" not in result.reason
+    assert "bolt://" not in result.reason
+    assert "secret" not in result.reason
     assert result.chamber_id is None
 
 
