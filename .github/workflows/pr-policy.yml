@@ -262,6 +262,26 @@ jobs:
           tests/unit/test_verify_bootstrap_state.py
           -rs --no-header
 
+      # V5-C-0.1 Runtime Repository.
+      #
+      # workflow가 파일을 **하나씩 지명**하므로 여기 적지 않으면 단위·container 어느
+      # 쪽도 잡히지 않는다. 단위는 DB 없이 transaction 가드·입력 계약·label 격리·
+      # 오류 변환을 보고, container는 실제 원자성과 제약 충돌을 본다.
+      - name: Prove the Runtime Repository contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_repository.py
+          -rs --no-header
+
+      # 최종 dataset이 필요 없다 — `action_history` DDL과 002→003만 세운다.
+      - name: Prove the Runtime Repository against PostgreSQL
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_repository_container.py
+          -rs --no-header
+
       # V5-CM-3.3 action/severity pair guard. 최종 dataset이 필요 없다 —
       # base `action_history` + 002 형상만 세우고 16조합 INSERT·rollback을 돌린다.
       - name: Prove the action/severity pair guard
