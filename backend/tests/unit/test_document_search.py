@@ -346,6 +346,35 @@ def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) ->
     assert "corpus_revision" not in result.hits[0].model_dump()
 
 
+def test_search_documents_tool_treats_zero_hits_as_success(monkeypatch: Any) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class EmptyService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            assert (query, top_k, model_code) == ("check", 4, None)
+            return []
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", EmptyService)
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is True
+    assert result.reason == ""
+    assert result.hits == []
+
+
 def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> None:
     class FakePoolFactory:
         def get_engine(self, logical_db: object, role: object) -> object:
