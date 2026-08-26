@@ -1,4 +1,4 @@
-import apiClient, { mockResponse, useMockFor } from './client.js'
+import apiClient, { mockEnabledFor, mockResponse } from './client.js'
 import { toIso } from './format.js'
 import { ALARMS } from '../../features/detection/mock/alarms.js'
 import {
@@ -17,7 +17,7 @@ import { ACTIONS } from '../../features/agent/mock/actions.js'
 import { RUNS } from '../../features/agent/mock/runs.js'
 
 // 백엔드 detection 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
-const USE_MOCK = useMockFor('DETECTION')
+const USE_MOCK = mockEnabledFor('DETECTION')
 
 // incident(lot_id, chamber_id) → 조치·런 역인덱스
 const actionOfAlarm = {}

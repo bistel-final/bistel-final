@@ -28,6 +28,7 @@ from decimal import Decimal
 import sqlglot
 from sqlglot import expressions as exp
 
+from app.analytics.charts import resolve_visualization
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.query_log import record_query_log
 from app.analytics.repository import (
@@ -250,7 +251,10 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
             plan.metric, validation.normalized_sql, execution.rows
         ),
         group_by=list(plan.group_by),
-        visualization=plan.visualization,
+        # 차트는 실행된 rows 의 실제 모양으로 확정한다 (FR-D-04, charts.py)
+        visualization=resolve_visualization(
+            question, execution.columns, execution.rows, plan.visualization
+        ),
         is_valid=True,
         is_rejected=False,
         reject_reason=None,

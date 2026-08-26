@@ -178,7 +178,7 @@ def _plan_from_sql(sql: str, question: str = "") -> AnalysisPlanToolResult:
     """
     group_by = _extract_group_by_columns(sql)
     q = question.lower()
-    if "히스토그램" in q or "histogram" in q or "분포" in q:
+    if "히스토그램" in q or "histogram" in q:
         chart = ChartType.HISTOGRAM
     elif "추이" in q or "시계열" in q or "trend" in q:
         chart = ChartType.LINE
