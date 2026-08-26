@@ -29,7 +29,7 @@ from app.analytics.schemas import (
 )
 from app.analytics.service import CHECK_LABELS, run_analysis_query
 from app.analytics.sql_validator import validate_sql
-from app.common.db import engine
+from app.common.db import get_app_engine
 
 router = APIRouter(tags=["Analytics"])
 
@@ -76,7 +76,7 @@ def get_audit_logs(
     entity_id 는 부분 일치, date 필터는 Asia/Seoul 자정 기준(NFR-13)이다.
     """
     return fetch_audit_logs(
-        engine,
+        get_app_engine(),
         event_type=event_type,
         actor_type=actor_type,
         entity_type=entity_type,
@@ -99,7 +99,7 @@ def get_audit_logs_paged(
 ) -> AuditLogPageResponse:
     """선택 확장 — PageEnvelope + 동일 필터 전체 집계 (API v3 5.2, V5-D-1.2)."""
     return fetch_audit_logs_paged(
-        engine,
+        get_app_engine(),
         event_type=event_type,
         actor_type=actor_type,
         entity_type=entity_type,

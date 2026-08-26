@@ -8,9 +8,11 @@ CONFIG_MODULE = "app.common.config"
 BASE_ENV = {
     "POSTGRES_USER": "kosa",
     "POSTGRES_PASSWORD": "pw",
-    "POSTGRES_DB": "kosa",
+    "POSTGRES_DB": "kosa_agent",
     "POSTGRES_HOST": "localhost",
     "POSTGRES_PORT": "5432",
+    "APP_DATABASE_URL": "postgresql+psycopg://kosa_app:pw@localhost:5432/kosa_agent",
+    "APP_DB_USER": "kosa_app",
     "READONLY_USER": "kosa_readonly",
     "READONLY_PASSWORD": "pw",
     "NEO4J_USER": "neo4j",
@@ -48,6 +50,24 @@ class TestDefaults:
         assert config.AGENT_MAX_RETRY == 3
         assert config.HITL_REQUIRED_SEVERITY == "HIGH"
         assert config.MODEL_SIGNAL_ENABLED is False
+
+
+class TestApplicationCredentialBoundary:
+    def test_app_role_name_is_fixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(RuntimeError, match="APP_DB_USER"):
+            load_config(monkeypatch, APP_DB_USER="kosa")
+
+    def test_missing_app_credential_is_deferred_until_database_use(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config = load_config(
+            monkeypatch,
+            APP_DATABASE_URL="",
+            APP_DB_PASSWORD="",
+        )
+
+        assert config.APP_DATABASE_URL is None
+        assert config.APP_DB_PASSWORD is None
 
 
 class TestApprovalGateCannotBeBypassed:
