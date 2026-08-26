@@ -82,6 +82,7 @@ __all__ = [
     "PredictionRow",
     "HumanReviewRow",
     "RUNTIME_REVIEW_LABEL_SOURCES",
+    "translate_db_error",
     "create_agent_run",
     "get_agent_run",
     "find_active_run",
@@ -239,6 +240,24 @@ def _sqlstate(error: BaseException) -> str | None:
     """psycopg가 준 SQLSTATE만 꺼낸다. **메시지는 읽지 않는다.**"""
 
     return getattr(getattr(error, "orig", None), "sqlstate", None)
+
+
+def translate_db_error(error: SQLAlchemyError) -> AgentRepositoryError:
+    """SQLAlchemy 오류를 이 계층의 안정 code로 옮긴다. **public seam이다.**
+
+    `_translate()`가 오래 private이었는데 C-1.1·C-1.2·C-1.3의 Repository가 각각 그것을
+    직접 import하게 됐다. 새 Task가 하나 늘 때마다 private seam 결합점이 늘고, 이름이나
+    서명을 바꾸려면 흩어진 자리를 전부 찾아야 한다.
+
+    같은 판단을 `require_active_transaction()`에 대해 이미 했다(구현리뷰 권고 1).
+
+    **범위를 정확히 적는다.** 지금 이것을 쓰는 것은 `run_guard_repository` 하나이고,
+    먼저 merge된 `incident_repository`·`routing_repository`는 여전히 `_translate()`를
+    직접 부른다. 두 파일을 함께 바꾸면 그 Task들의 diff를 다시 여는 셈이라 이번 범위에
+    넣지 않았다. **신규 외부 Repository는 이 seam을 쓰고 기존 2곳은 후속 정리다.**
+    """
+
+    return _translate(error)
 
 
 def _translate(error: SQLAlchemyError) -> AgentRepositoryError:
