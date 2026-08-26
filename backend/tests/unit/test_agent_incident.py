@@ -226,10 +226,12 @@ class TestSnapshotMappingIsFailClosed:
         assert exc.value.code == "ALARM_NOT_FOUND"
 
     def test_a_duplicate_request_is_never_resolved_by_picking_one(self) -> None:
+        """요청 identity가 여러 행이면 **어느 incident인지 알 수 없다.**"""
+
         rows = _rows([_member(TRACE, "TA-01")], requested_count=2)
         with pytest.raises(repo.RepositoryContractError) as exc:
             _resolve(rows, _ref(TRACE, "TA-01"))
-        assert exc.value.code == "DUPLICATE_ALARM_REF"
+        assert exc.value.code == "REQUESTED_ALARM_AMBIGUOUS"
 
     @pytest.mark.parametrize("key", ["lot_id", "chamber_id"])
     def test_an_unresolved_request_owner_fails(self, key: str) -> None:
@@ -263,7 +265,10 @@ class TestSnapshotMappingIsFailClosed:
         assert exc.value.code == "ALARM_OCCURRED_AT_MISSING"
 
     def test_duplicate_member_identity_fails(self) -> None:
-        """View join fan-out이든 drift든 어느 행을 버릴지 이 계층이 정하지 않는다."""
+        """**요청 중복과 다른 code다.** incident는 특정됐는데 같은 알람이 둘이다.
+
+        어느 행을 버릴지 이 계층이 정하지 않는다.
+        """
 
         rows = _rows(
             [
@@ -273,7 +278,7 @@ class TestSnapshotMappingIsFailClosed:
         )
         with pytest.raises(repo.RepositoryContractError) as exc:
             _resolve(rows, _ref(TRACE, "TA-01"))
-        assert exc.value.code == "DUPLICATE_ALARM_REF"
+        assert exc.value.code == "DUPLICATE_MEMBER_ALARM"
 
     def test_the_mapping_order_is_fixed(self) -> None:
         """요청 수 → owner → scoped unresolved → drift.
@@ -284,7 +289,7 @@ class TestSnapshotMappingIsFailClosed:
         body = ast.unparse(ast.parse(inspect_source(inc_repo.fetch_incident_snapshot)))
         order = [
             body.index("_REQUESTED_MISSING"),
-            body.index("_REQUESTED_DUPLICATE"),
+            body.index("_REQUESTED_AMBIGUOUS"),
             body.index("head.lot_id"),
             body.index("unresolved_count"),
             body.index("drift_count"),

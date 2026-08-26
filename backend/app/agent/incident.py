@@ -52,7 +52,9 @@ SOURCE_PRIORITY: Final[Mapping[AlarmSource, int]] = {
 }
 
 _OCCURRED_AT_MISSING: Final = "ALARM_OCCURRED_AT_MISSING"
-_DUPLICATE_ALARM_REF: Final = "DUPLICATE_ALARM_REF"
+#: **C-0.1과 같은 이름을 쓴다.** `_validate_create_command()`가 member 배열의 중복
+#: identity에 이미 이 code를 쓴다. 같은 뜻에 두 이름을 만들지 않는다.
+_DUPLICATE_MEMBER_ALARM: Final = "DUPLICATE_MEMBER_ALARM"
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +107,7 @@ def resolve_incident(
     tokens = [alarm.to_token() for alarm in members]
     if len(set(tokens)) != len(tokens):
         # View join fan-out이든 drift든, 어느 행을 버릴지 이 계층이 정하지 않는다.
-        raise RepositoryContractError(_DUPLICATE_ALARM_REF)
+        raise RepositoryContractError(_DUPLICATE_MEMBER_ALARM)
 
     # 요청 행은 canonical key가 곧 필터 조건이라 **항상** member에 포함된다.
     # 그래서 "요청이 member에 없다" 분기를 두지 않는다 — 도달할 수 없는 code다.

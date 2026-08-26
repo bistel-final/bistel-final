@@ -146,7 +146,9 @@ _SNAPSHOT = text(
 #: 분기 순서. **앞 단계가 확정하지 않은 값을 뒤 단계가 쓰지 않는다** —
 #: `lot_id`는 요청이 정확히 1건일 때만 의미가 있다.
 _REQUESTED_MISSING: Final = "ALARM_NOT_FOUND"
-_REQUESTED_DUPLICATE: Final = "DUPLICATE_ALARM_REF"
+#: **요청 identity가 여러 행이다.** member 중복과 다른 뜻이다 — 어느 incident인지
+#: 알 수 없다는 것이지, incident 안에 같은 알람이 둘이라는 것이 아니다.
+_REQUESTED_AMBIGUOUS: Final = "REQUESTED_ALARM_AMBIGUOUS"
 _OWNER_UNRESOLVED: Final = "ALARM_OWNER_UNRESOLVED"
 _KEY_MISMATCH: Final = "INCIDENT_KEY_MISMATCH"
 
@@ -174,7 +176,7 @@ def fetch_incident_snapshot(
         raise RepositoryNotFound(_REQUESTED_MISSING)
     if int(head.requested_count) > 1:
         # `.first()`로 임의 한 행을 고르지 않는다 — 어느 incident인지 알 수 없다.
-        raise RepositoryContractError(_REQUESTED_DUPLICATE)
+        raise RepositoryContractError(_REQUESTED_AMBIGUOUS)
     if head.lot_id is None or head.chamber_id is None:
         raise RepositoryContractError(_OWNER_UNRESOLVED)
     if int(head.unresolved_count) > 0:

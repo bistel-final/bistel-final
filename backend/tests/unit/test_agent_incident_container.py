@@ -509,13 +509,16 @@ def test_a_null_occurred_at_is_a_contract_error(db: Any, source: str) -> None:
     assert exc.value.code == "ALARM_OCCURRED_AT_MISSING"
 
 
-def test_a_lot_history_fan_out_is_refused_not_guessed(db: Any) -> None:
-    """**계획리뷰 2차 권장 1의 축이다.**
+def test_a_fan_out_on_the_request_makes_the_incident_ambiguous(db: Any) -> None:
+    """**요청 알람 자신이 fan-out하면 어느 incident인지 알 수 없다.**
 
     `lot_history`에는 `(lot_id, wafer_id, chamber_id)` unique 제약이 없다. 같은 조합이
     두 행이면 View의 LEFT JOIN이 fan-out해 **같은 `alarm_id`가 2행**이 된다. 최종
     dataset에서는 A-1.5 집계가 기준표와 일치하므로 이 상태가 아니지만, schema가
-    막아 주지는 않는다. 어느 행을 버릴지 이 계층이 고르지 않는다.
+    막아 주지는 않는다.
+
+    이 fixture는 fan-out이 **요청 행**에 걸리므로 `requested_count = 2`에서 멈춘다.
+    member 중복 검사까지 가지 않는다 — 그 축은 아래 회귀가 따로 탄다.
     """
 
     with db.begin() as connection:
@@ -525,7 +528,29 @@ def test_a_lot_history_fan_out_is_refused_not_guessed(db: Any) -> None:
 
     with pytest.raises(repo.RepositoryContractError) as exc:
         _resolve(db, _ref(TRACE, "TA-01"))
-    assert exc.value.code == "DUPLICATE_ALARM_REF"
+    assert exc.value.code == "REQUESTED_ALARM_AMBIGUOUS"
+
+
+def test_a_fan_out_on_another_member_is_a_duplicate_member(db: Any) -> None:
+    """**member 중복 분기를 실제 View로 처음 탄다**(구현리뷰 PR #151 필수 1).
+
+    앞 회귀는 요청 행이 fan-out해 `requested_count`에서 멈춘다. 두 code가 같은 문자열일
+    때는 그 사실이 보이지 않았다 — `incident.py`의 member 중복 검사는 단위 fake만
+    덮고 있었고, fake는 SQL의 의미를 대신하지 못한다는 것이 이 파일 자신의 전제다.
+
+    요청은 단일 행으로 두고 **다른 member의 owner만** fan-out시키면 그 분기에 도달한다.
+    """
+
+    with db.begin() as connection:
+        _lot(connection, "LH-A1")  # 요청 owner. 단일
+        _lot(connection, "LH-B1", wafer_no=2)
+        _lot(connection, "LH-B2", wafer_no=2)  # wafer 2가 fan-out
+        _trace(connection, "TA-01", occurred_at=T0)
+        _trace(connection, "TA-FAN", occurred_at=T1, wafer_no=2)
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        _resolve(db, _ref(TRACE, "TA-01"))
+    assert exc.value.code == "DUPLICATE_MEMBER_ALARM"
 
 
 # --- C-0.1 인계 · 읽기 전용 -------------------------------------------------
