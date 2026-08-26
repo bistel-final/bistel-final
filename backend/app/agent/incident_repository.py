@@ -69,9 +69,19 @@ class IncidentSnapshot:
 #: `candidate`는 raw key와 canonical key **둘 중 하나라도** 요청 incident를 가리키는
 #: 행이다. 한쪽만 보면 drift 행이 반대편에서 조용히 성공한다.
 #:
-#: `drift_count`는 `<>`를 쓴다. owner 미해결 행은 canonical이 NULL이라 `<>`가 NULL이
-#: 되어 여기 잡히지 않는데, 그 상태는 `unresolved_count`가 먼저 잡는다(계획리뷰 2차
-#: 편집 2). `IS DISTINCT FROM`이면 같은 행이 두 count에 들어가고 최종 code는 같다.
+#: **owner 결손은 canonical key 두 필드를 모두 본다.** `lot_history.chamber_id`가
+#: nullable이라(`lot_id`만 NOT NULL) `canonical_lot_id IS NULL`만 보면 "lot은 있는데
+#: chamber가 없는" owner를 놓친다. 그러면 R03 member가 오류 없이 **조용히 빠진다** —
+#: raw는 요청 incident를 가리켜 candidate에 들어오고, NULL 비교가 전부 UNKNOWN이라
+#: drift에도 member join에도 걸리지 않기 때문이다(구현리뷰 2차 필수 1).
+#:
+#: `drift_count`는 canonical이 **둘 다 확정된** 행만 본다. 그 안에서는
+#: `IS DISTINCT FROM`으로 NULL-safe하게 비교한다.
+#:
+#: **이 부분은 변이로 red가 되지 않는다.** `<>`로 되돌려도 회귀가 전부 통과한다 — owner
+#: 결손을 먼저 잡으므로 drift 판정에 도달하는 행은 이미 canonical 두 필드가 확정돼 있고,
+#: 그때 두 연산자는 같기 때문이다. 의도를 명시하는 방어이며 mapping 순서가 바뀌면 의미가
+#: 생긴다. 그 순서는 `test_the_mapping_order_is_fixed`가 고정한다.
 _SNAPSHOT = text(
     """
     WITH resolved AS (
@@ -111,11 +121,16 @@ _SNAPSHOT = text(
         s.requested_count   AS requested_count,
         s.lot_id            AS lot_id,
         s.chamber_id        AS chamber_id,
-        (SELECT count(*) FROM candidate WHERE canonical_lot_id IS NULL)
+        (SELECT count(*) FROM candidate
+          WHERE canonical_lot_id IS NULL OR canonical_chamber_id IS NULL)
                             AS unresolved_count,
         (SELECT count(*) FROM candidate
-          WHERE raw_lot_id <> canonical_lot_id
-             OR raw_chamber_id <> canonical_chamber_id)
+          WHERE canonical_lot_id IS NOT NULL
+            AND canonical_chamber_id IS NOT NULL
+            AND (
+                raw_lot_id IS DISTINCT FROM canonical_lot_id
+                OR raw_chamber_id IS DISTINCT FROM canonical_chamber_id
+            ))
                             AS drift_count,
         m.source            AS member_source,
         m.alarm_id          AS member_alarm_id,

@@ -136,7 +136,7 @@ def _lot(
     *,
     lot_id: str = LOT,
     wafer_no: int = 1,
-    chamber_id: str = CHAMBER,
+    chamber_id: str | None = CHAMBER,
 ) -> str:
     connection.execute(
         text(
@@ -425,6 +425,38 @@ def test_an_unresolved_alarm_in_another_incident_does_not_block_this_one(
 
     result = _resolve(db, _ref(TRACE, "TA-01"))
     assert [a.alarm_id for a in result.member_alarms] == ["TA-01"]
+
+
+def test_an_r03_owner_without_a_chamber_is_not_silently_dropped(db: Any) -> None:
+    """**owner 결손은 canonical key 두 필드를 모두 봐야 한다**(구현리뷰 2차 필수 1).
+
+    `lot_history.chamber_id`는 nullable이고 `lot_id`만 NOT NULL이다. R03는 raw
+    `lot_id·chamber_id`를 자기 table에서 가져오므로 다음 상태가 DDL상 가능하다.
+
+    ```text
+    요청 TRACE        raw/canonical = LOT001 / EQP01-PM1
+    같은 incident R03 raw           = LOT001 / EQP01-PM1
+    R03 owner         canonical     = LOT001 / NULL
+    ```
+
+    `canonical_lot_id IS NULL`만 보면 이 행을 놓치고, NULL 비교가 전부 UNKNOWN이라
+    drift에도 member join에도 걸리지 않는다. 그러면 R03 member가 **오류 없이 사라지고**
+    incident member 수·대표 알람·후속 run 입력이 실제 알람 집합과 달라진다.
+
+    요청 자체의 chamber가 NULL인 경우는 status 단계가 먼저 막으므로 이 경로를 증명하지
+    못한다. 그래서 **요청은 정상 TRACE**로 두고 비요청 R03의 owner만 결손시킨다.
+    """
+
+    with db.begin() as connection:
+        _lot(connection, "LH-A1")
+        # owner의 chamber가 없다. lot은 있다.
+        _lot(connection, "LH-NOCHAMBER", wafer_no=2, chamber_id=None)
+        _trace(connection, "TA-01", occurred_at=T0)
+        _r03(connection, _r03_id("9"), "LH-NOCHAMBER", occurred_at=T1)
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        _resolve(db, _ref(TRACE, "TA-01"))
+    assert exc.value.code == "ALARM_OWNER_UNRESOLVED"
 
 
 def test_an_r03_raw_key_drift_is_not_silently_overwritten(db: Any) -> None:
