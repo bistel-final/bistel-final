@@ -116,14 +116,16 @@ def test_embedding_model_missing_cache_raises_model_not_ready(
     monkeypatch.setenv("EMBEDDING_DIM", "1024")
     monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(missing_path))
 
-    with caplog.at_level(logging.WARNING, logger="app.knowledge.embedding"):
-        with pytest.raises(EmbeddingModelNotReadyError) as excinfo:
-            embedding.get_embedding_model()
+    try:
+        with caplog.at_level(logging.WARNING, logger="app.knowledge.embedding"):
+            with pytest.raises(EmbeddingModelNotReadyError) as excinfo:
+                embedding.get_embedding_model()
 
-    assert str(excinfo.value) == "임베딩 모델이 준비되지 않았습니다."
-    assert str(missing_path) not in str(excinfo.value)
-    assert str(missing_path) in caplog.text
-    embedding.get_embedding_model.cache_clear()
+        assert str(excinfo.value) == "임베딩 모델이 준비되지 않았습니다."
+        assert str(missing_path) not in str(excinfo.value)
+        assert str(missing_path) in caplog.text
+    finally:
+        embedding.get_embedding_model.cache_clear()
 
 
 def test_repository_search_uses_current_rag_schema_and_common_filter(
@@ -508,8 +510,6 @@ def test_search_documents_tool_returns_model_not_ready_failure(
     assert result.ok is False
     assert result.hits == []
     assert result.reason == "MODEL_NOT_READY: 임베딩 모델이 준비되지 않았습니다"
-    assert "C:/secret" not in result.reason
-    assert "model-cache" not in result.reason
 
 
 def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None:
