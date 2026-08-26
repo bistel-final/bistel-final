@@ -284,6 +284,10 @@ jobs:
           tests/unit/test_db_pool.py
           tests/unit/test_wbs_dependencies.py
           tests/test_health.py
+          tests/contract/test_tool_contracts.py
+          tests/contract/test_alarm_ref.py
+          tests/contract/test_api_schemas.py
+          tests/contract/test_error_contract.py
           -rs --no-header
 
       # Docker를 자동 기동하면 로컬 전체 pytest가 개발자 모르게 무거워진다. 그래서 test의
