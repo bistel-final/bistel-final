@@ -9,14 +9,12 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 EXPECTED_EMBEDDING_MODEL = "BAAI/bge-m3"
 EXPECTED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 EXPECTED_EMBEDDING_DIMENSION = 1024
-
-
-class EmbeddingModelNotReadyError(RuntimeError):
-    """로컬 임베딩 모델 runtime artifact가 준비되지 않았을 때 발생한다."""
 
 
 @lru_cache(maxsize=1)
@@ -53,13 +51,11 @@ def get_embedding_model() -> Any:
     if not cache_path.is_absolute():
         cache_path = REPOSITORY_ROOT / cache_path
     if not cache_path.exists():
-        raise EmbeddingModelNotReadyError(
-            f"임베딩 모델 캐시 경로가 없습니다: {cache_path}"
-        )
-
-    from sentence_transformers import SentenceTransformer
+        raise EmbeddingModelNotReadyError("임베딩 모델 캐시 경로가 없습니다")
 
     try:
+        from sentence_transformers import SentenceTransformer
+
         return SentenceTransformer(str(cache_path), local_files_only=True)
     except Exception as exc:
         raise EmbeddingModelNotReadyError(

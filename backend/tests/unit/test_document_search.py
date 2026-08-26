@@ -7,16 +7,26 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from app.common.exceptions import AppError, ErrorCode
 from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 from app.knowledge import embedding
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.router import search_documents as search_documents_api
 from app.knowledge.schemas import DocumentSearchRequest
 from app.knowledge.service import DocumentSearchService
 from app.knowledge.tools import search_documents as search_documents_tool
+
+
+async def _handle_app_error(_: object, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_response().model_dump(mode="json"),
+    )
 
 
 class FakeRepository:
@@ -112,7 +122,7 @@ def test_embedding_model_missing_cache_raises_model_not_ready(
     monkeypatch.setenv("EMBEDDING_DIM", "1024")
     monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(missing_path))
 
-    with pytest.raises(embedding.EmbeddingModelNotReadyError):
+    with pytest.raises(EmbeddingModelNotReadyError):
         embedding.get_embedding_model()
 
     embedding.get_embedding_model.cache_clear()
@@ -327,6 +337,46 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
     ]
 
 
+def test_documents_search_http_returns_model_not_ready(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class ModelNotReadyService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            raise EmbeddingModelNotReadyError("임베딩 모델 캐시 경로가 없습니다")
+
+    app = FastAPI()
+    app.add_exception_handler(AppError, _handle_app_error)
+    app.include_router(knowledge_router)
+
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr(
+        "app.knowledge.router.DocumentSearchService",
+        ModelNotReadyService,
+    )
+
+    response = TestClient(app).post("/documents/search", json={"query": "check"})
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": ErrorCode.MODEL_NOT_READY.value,
+        "message": "임베딩 모델이 준비되지 않았습니다.",
+        "details": {},
+    }
+
+
 def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) -> None:
     class FakePoolFactory:
         def get_engine(self, logical_db: object, role: object) -> object:
@@ -449,7 +499,7 @@ def test_search_documents_tool_returns_model_not_ready_failure(
             top_k: int,
             model_code: str | None,
         ) -> list[ToolDocumentHit]:
-            raise embedding.EmbeddingModelNotReadyError(
+            raise EmbeddingModelNotReadyError(
                 "임베딩 모델 캐시 경로가 없습니다: C:/secret/model-cache/bge-m3"
             )
 

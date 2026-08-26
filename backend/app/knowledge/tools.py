@@ -14,7 +14,7 @@ from app.common.tool_contracts import (
     fail,
 )
 from app.knowledge.document_search import DocumentSearchRepository
-from app.knowledge.embedding import EmbeddingModelNotReadyError
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.graph_query import GraphQueryRepository
 from app.knowledge.service import DocumentSearchService, EquipmentContextService
 

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
+from app.common.exceptions import ModelNotReadyError
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.repository import ChamberGraphRepository
 from app.knowledge.schemas import (
     ChamberRelationResponse,
@@ -39,9 +41,12 @@ def search_documents(request: DocumentSearchRequest) -> list[DocumentHit]:
 
     engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
     service = DocumentSearchService(DocumentSearchRepository(engine))
-    hits = service.search(
-        request.query,
-        top_k=request.top_k,
-        model_code=request.model_code,
-    )
+    try:
+        hits = service.search(
+            request.query,
+            top_k=request.top_k,
+            model_code=request.model_code,
+        )
+    except EmbeddingModelNotReadyError as exc:
+        raise ModelNotReadyError("임베딩 모델이 준비되지 않았습니다.") from exc
     return [DocumentHit.from_tool_hit(hit) for hit in hits]
