@@ -233,10 +233,15 @@ def test_preserved_projection_counts_match_gate0() -> None:
     assert len(transition.PRESERVED_SEQUENCES_BY_PROFILE["evaluation"]) == 1
     # `kosa_text2sql`의 RAG 2종은 구 epoch(PR #48) 형상이라 B 관리 대상이 아니다.
     # B가 "지워도 된다"고 했지만 2.6은 보존만 하고 넘긴다(2026-08-22 확인).
+    #
+    # `document_corpus`는 뺐다. 최종 manifest 셋 **어디에도 없고** B의 정리로 live에서
+    # 사라졌다. 반면 `document`·`document_chunk`는
+    # `evaluation.evaluation_reference`에
+    # `bootstrap_empty` 0행으로 등록돼 있으므로 **남아야 한다**
+    # (`V5-CM-3.4` 묶음 2 준비).
     assert transition.LEGACY_HANDOFF_TABLES_BY_TARGET["kosa_text2sql"] == (
         "document",
         "document_chunk",
-        "document_corpus",
     )
     assert "kosa_agent" not in transition.LEGACY_HANDOFF_TABLES_BY_TARGET
     assert transition.B_LOADED_RAG_TARGETS == frozenset(
@@ -623,11 +628,12 @@ def test_preserved_projection_catches_missing_rag_extension() -> None:
 
 
 def test_handoff_index_is_named_in_the_projection() -> None:
-    """`ux_document_corpus_active`를 projection이 **이름으로** 담아야 한다.
+    """projection이 handoff 선언을 **그대로** 담는지 구조로 확인한다.
 
-    상수만 선언하고 쓰지 않으면 index가 다른 table로 옮겨가도 알 수 없다.
-    `document_corpus` 위의 index는 table catalog로도 잡히므로, 여기서는 handoff
-    entry가 그 이름을 실제로 들고 있는지를 구조로 확인한다(필수 5).
+    상수만 선언하고 쓰지 않으면 목록을 바꿔도 projection이 그대로여서 알 수 없다.
+    원래 주체였던 `ux_document_corpus_active`는 `document_corpus`가 사라지면서 함께
+    없어졌으므로, 지금은 **선언된 집합과 projection이 일치하는지**를 본다 — handoff
+    index가 다시 생기면 이 단언이 그것을 요구한다(필수 5).
     """
 
     projection = transition.preserved_projection(_inventory("kosa_text2sql"))
@@ -635,8 +641,8 @@ def test_handoff_index_is_named_in_the_projection() -> None:
     assert set(handoff["indexes"]) == set(
         transition.LEGACY_HANDOFF_INDEXES_BY_TARGET["kosa_text2sql"]
     )
-    assert handoff["indexes"]["ux_document_corpus_active"] is not None
-    assert set(handoff["tables"]) == {"document", "document_chunk", "document_corpus"}
+    assert set(handoff["tables"]) == {"document", "document_chunk"}
+    assert "document_corpus" not in handoff["tables"]
 
     # runtime target에는 handoff가 없다.
     runtime = transition.preserved_projection(_inventory("kosa_agent"))
@@ -644,9 +650,15 @@ def test_handoff_index_is_named_in_the_projection() -> None:
 
 
 def test_handoff_index_drift_changes_the_projection() -> None:
+    """handoff table의 index가 사라지면 projection hash가 바뀐다.
+
+    주체를 `document_corpus`에서 **live에 실제로 있는** `document_chunk`로 옮겼다.
+    없어진 table로 검증하면 fixture만 통과하고 계약은 증명되지 않는다.
+    """
+
     base = _inventory("kosa_text2sql")
     stripped = {k: dict(v) for k, v in base.indexes.items()}
-    stripped["document_corpus"] = {}
+    stripped["document_chunk"] = {}
     assert transition.preserved_projection_sha256(
         _inventory("kosa_text2sql", indexes=stripped)
     ) != transition.preserved_projection_sha256(base)

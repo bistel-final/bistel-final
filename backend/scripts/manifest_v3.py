@@ -338,7 +338,34 @@ SOURCE_EXPECTED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-SCHEMA_ONLY_TABLES = frozenset({"nl_query_log"})
+#: **content hash를 요구하지 않는 table.**
+#:
+#: `V5-CM-3.4`가 checkpoint 4종을 더한다. `bootstrap_empty`로 고정하면 `V5-C-*`가
+#: Agent를 돌리기 시작하는 순간 정상 운영 row 때문에 verifier가 깨진다. migration
+#: version은 manifest row hash가 아니라 checkpoint 전용 postcheck가 exact set으로
+#: 검증한다(계획 §3.2).
+SCHEMA_ONLY_TABLES = frozenset(
+    {
+        "nl_query_log",
+        "checkpoint_migrations",
+        "checkpoints",
+        "checkpoint_blobs",
+        "checkpoint_writes",
+    }
+)
+
+#: `V5-CM-3.4`가 만드는 checkpoint table. **순서가 계약이다** — package migration
+#: 0~3이 이 순서로 만든다.
+CHECKPOINT_TABLES: tuple[str, ...] = (
+    "checkpoint_migrations",
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+)
+
+#: `langgraph-checkpoint-postgres` migration을 하나의 migration ID로 표기한다.
+#: 저장소가 package SQL을 복사해 별도 정본을 만들지 않으므로 version까지 이름에 담는다.
+CHECKPOINT_MIGRATION_ID = "langgraph_checkpoint_postgres_2_0_9_v8"
 PROFILE_APPLIES_TO: dict[str, tuple[str, ...]] = {
     "runtime": ("kosa_agent", "kosa_agent_e2e"),
     "evaluation": ("kosa_text2sql",),
@@ -380,6 +407,17 @@ BOOTSTRAP_STAGE_CONTRACTS: dict[tuple[str, str], BootstrapStageContract] = {
             FINAL_MIGRATION_ID,
             "002_agent_runtime_clean",
             "003_agent_run_severity_pair",
+        ),
+    ),
+    # **`V5-CM-3.4` successor.** `runtime_guarded`를 지우지 않는다 — CM-3.3 marker가
+    # 그 stage를 증명한다. checkpoint 4 table을 더한 26 table 형상이다.
+    ("runtime", "runtime_checkpointed"): BootstrapStageContract(
+        "runtime_checkpointed",
+        (
+            FINAL_MIGRATION_ID,
+            "002_agent_runtime_clean",
+            "003_agent_run_severity_pair",
+            CHECKPOINT_MIGRATION_ID,
         ),
     ),
     # **최종 evaluation stage.** 구 `evaluation_mock`의 48행 MOCK 특례를 재사용하지

@@ -1726,10 +1726,16 @@ def _bump_row(name: str) -> Any:
 
 
 def _drop_handoff_index(inventory: Any) -> Any:
+    """handoff table의 index 하나를 지운다.
+
+    주체를 `document_corpus`에서 `document_chunk`로 옮겼다 — 전자는 최종 기준에 없어
+    handoff 목록에서 빠졌고, 없어진 table로 만드는 drift는 아무것도 증명하지 않는다.
+    """
+
     indexes = {k: dict(v) for k, v in inventory.indexes.items()}
-    corpus = indexes.get("document_corpus", {})
-    if corpus:
-        corpus.pop(next(iter(corpus)))
+    target = indexes.get("document_chunk", {})
+    if target:
+        target.pop(next(iter(target)))
     return _replace(inventory, indexes=indexes)
 
 
@@ -1763,7 +1769,7 @@ def _tampering(state: _StatefulTargets, drift: Any, only: str | None = None) -> 
             lambda i: _replace(i, rag_embedding_projection="2" * 64),
             None,
         ),
-        ("handoff table 행 추가", _bump_row("document_corpus"), "kosa_text2sql"),
+        ("handoff table 행 추가", _bump_row("document_chunk"), "kosa_text2sql"),
         ("handoff index 제거", _drop_handoff_index, "kosa_text2sql"),
         (
             "sequence 추가",

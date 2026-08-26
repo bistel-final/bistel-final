@@ -302,6 +302,121 @@ WHERE n.nspname = 'public'
 """
 
 
+#: `nl_query_log` 단독 object 계약.
+#:
+#: `_validate_signature_contract()`는 `REFERENCE_TABLES` 전체를 한 번에 보는데, 그
+#: 안에는 **V4 R03 11컬럼** 판정이 함께 있다. final stage(R03 12컬럼)에서 그 전체를
+#: 부르면 정상 DB가 R03에서 먼저 실패한다. 그래서 `nl_query_log` 계약만 떼어
+#: 노출한다(`V5-CM-3.4` 구현리뷰 6차 필수 2).
+NL_QUERY_LOG_TABLE = "nl_query_log"
+NL_QUERY_LOG_SEQUENCE = "nl_query_log_nl_query_log_id_seq"
+NL_QUERY_LOG_DEFAULT = f"nextval('{NL_QUERY_LOG_SEQUENCE}'::regclass)"
+
+#: `nl_query_log`의 **constraint 이름 → canonical definition** exact 계약.
+#:
+#: 초판은 `p:1, c:4` 개수와 outcome 문자열 4개의 존재만 봤다. 그러면 PK를 다른 컬럼으로
+#: 바꾸거나 `row_cnt >= 0`을 `<= 0`으로 뒤집어도 개수와 문자열은 그대로라 통과한다
+#: (`V5-CM-3.4` 구현리뷰 7차 필수 1).
+#:
+#: 값은 **손으로 적지 않고** `pg_get_constraintdef(oid, true)` 실측에서 옮겼다.
+#: 그 함수는 출력을 정규화하므로 공백·따옴표 표현이 catalog와 정확히 같다.
+NL_QUERY_LOG_CONSTRAINTS: dict[str, str] = {
+    "nl_query_log_pkey": "PRIMARY KEY (nl_query_log_id)",
+    "nl_query_log_row_cnt_check": "CHECK (row_cnt >= 0)",
+    "nl_query_log_latency_ms_check": "CHECK (latency_ms >= 0)",
+    "nl_query_log_outcome_check": (
+        "CHECK (outcome::text = ANY (ARRAY['SUCCESS'::character varying, "
+        "'POLICY_REJECTED'::character varying, "
+        "'VALIDATION_FAILED'::character varying, "
+        "'DB_ERROR'::character varying]::text[]))"
+    ),
+    "nl_query_log_check": (
+        "CHECK (outcome::text = 'SUCCESS'::text AND is_valid AND NOT is_rejected "
+        "AND reject_reason IS NULL AND error_msg IS NULL AND row_cnt IS NOT NULL "
+        "OR outcome::text = 'POLICY_REJECTED'::text AND NOT is_valid AND is_rejected "
+        "AND COALESCE(btrim(reject_reason), ''::text) <> ''::text "
+        "AND error_msg IS NULL AND row_cnt IS NULL "
+        "OR outcome::text = 'VALIDATION_FAILED'::text AND NOT is_valid "
+        "AND NOT is_rejected AND reject_reason IS NULL "
+        "AND COALESCE(btrim(error_msg), ''::text) <> ''::text AND row_cnt IS NULL "
+        "OR outcome::text = 'DB_ERROR'::text AND is_valid AND NOT is_rejected "
+        "AND reject_reason IS NULL "
+        "AND COALESCE(btrim(error_msg), ''::text) <> ''::text AND row_cnt IS NULL)"
+    ),
+}
+
+NL_QUERY_LOG_DEFAULT_SQL = """/* reference-extensions:nl-query-log-default */
+SELECT pg_get_expr(d.adbin, d.adrelid) AS column_default
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'nl_query_log_id'
+LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+WHERE n.nspname = 'public' AND c.relname = 'nl_query_log'
+"""
+
+NL_QUERY_LOG_SERIAL_SQL = """/* reference-extensions:nl-query-log-serial */
+SELECT pg_get_serial_sequence('public.nl_query_log', 'nl_query_log_id') AS sequence_name
+"""
+
+
+def nl_query_log_object_mismatches(connection: Any) -> list[str]:
+    """`nl_query_log`의 PK·CHECK·default·sequence를 **exact** 대조한다. read-only다.
+
+    column 이름·type·nullability는 호출자가 이미 본다. 여기서 보는 것은 **object**다.
+
+    개수와 문자열 조각이 아니라 **이름 → 정의** 전체를 맞춘다. 개수만 세면 CHECK 넷을
+    다른 넷으로 바꿔도 통과하고, 조각만 보면 `row_cnt >= 0`을 뒤집어도 통과한다.
+    """
+
+    mismatches: list[str] = []
+    rows = _result_rows(
+        connection.exec_driver_sql(CONSTRAINTS_SQL, ([NL_QUERY_LOG_TABLE],))
+    )
+    actual = {
+        str(row["constraint_name"]): str(row["definition"])
+        for row in rows
+        if str(row["constraint_type"]) in KNOWN_CONSTRAINT_TYPES
+    }
+    # **양쪽을 정규화한다.** `pg_restore` 재출력 차이로 복원본이 이 계약을 통과하지
+    # 못하면 backup이 복구 수단이 되지 못한다(`V5-CM-3.4` 구현리뷰 10차 필수 2).
+    import apply_agent_runtime as agent_runtime
+
+    def _folded(source: Mapping[str, str]) -> dict[str, str | None]:
+        return {
+            name: agent_runtime.normalize_catalog_text(value)
+            for name, value in source.items()
+        }
+
+    if _folded(actual) != _folded(NL_QUERY_LOG_CONSTRAINTS):
+        mismatches.append("nl_query_log_constraints")
+
+    default_rows = _result_rows(connection.exec_driver_sql(NL_QUERY_LOG_DEFAULT_SQL))
+    actual_default = (
+        str(default_rows[0]["column_default"])
+        if default_rows and default_rows[0]["column_default"] is not None
+        else None
+    )
+    if actual_default != NL_QUERY_LOG_DEFAULT:
+        mismatches.append("nl_query_log_default")
+
+    # **이름이 같은 sequence가 있다**와 **그 컬럼이 그것을 소유한다**는 다른 질문이다.
+    # `pg_get_serial_sequence()`는 default가 실제로 가리키는 sequence를 돌려주므로,
+    # 소유관계가 끊긴 채 같은 이름만 만들어 둔 상태를 걸러낸다.
+    serial_rows = _result_rows(connection.exec_driver_sql(NL_QUERY_LOG_SERIAL_SQL))
+    actual_serial = (
+        str(serial_rows[0]["sequence_name"])
+        if serial_rows and serial_rows[0]["sequence_name"] is not None
+        else None
+    )
+    if actual_serial != f"public.{NL_QUERY_LOG_SEQUENCE}":
+        mismatches.append("nl_query_log_sequence_ownership")
+
+    sequence_rows = _result_rows(connection.exec_driver_sql(REFERENCE_SEQUENCE_SQL))
+    if not sequence_rows or int(sequence_rows[0]["sequence_count"]) != 1:
+        mismatches.append("nl_query_log_sequence")
+    return mismatches
+
+
 class _RehearsalRollback(Exception):
     """Internal sentinel that guarantees rehearsal transaction rollback."""
 

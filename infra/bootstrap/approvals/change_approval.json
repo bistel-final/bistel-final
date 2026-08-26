@@ -1,0 +1,19 @@
+{
+  "artifact_type": "checkpoint_change_approval",
+  "format_version": 1,
+  "task_id": "V5-CM-3.4",
+  "dataset_epoch": "fdc_final_20260818",
+  "change_reference": "GH-130",
+  "status": "APPROVED",
+  "targets": [
+    "kosa_agent_e2e",
+    "kosa_agent"
+  ],
+  "from_stage": "runtime_guarded",
+  "to_stage": "runtime_checkpointed",
+  "package_name": "langgraph-checkpoint-postgres",
+  "package_version": "2.0.9",
+  "migration_digest_sha256": "59b821ceebaf49a3e31cc431be9705729920c3792eb6064e4f3d2a036dc7e485",
+  "recovery_approved": false,
+  "approved_at": "2026-08-25T22:00:00+09:00"
+}
