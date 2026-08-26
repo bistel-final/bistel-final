@@ -381,6 +381,42 @@ class TestPoolDurabilityIsObservedNotDeclared:
         assert saver is not None
         assert spy == ["checkout"], "관측을 건너뛰었다"
 
+    def test_a_pool_with_a_reset_callback_is_refused_without_borrowing(self) -> None:
+        """**`reset`은 관측으로 잡을 수 없다.**
+
+        `psycopg-pool==3.3.1`의 `_putconn()`은 reset이 있으면 반납을 worker task로
+        보낸다. 블록이 끝났다는 것이 reset 완료 barrier가 아니라서, 두 번 관측하는
+        방식은 같은 container 회귀가 6회 중 2회 실패했다. 그래서 빌리지 않고 거부한다.
+        """
+
+        spy: list[str] = []
+        pool = _fake_pool({"autocommit": True}, spy=spy)
+        pool._reset = lambda conn: None
+        with pytest.raises(ck.AgentCheckpointError) as exc:
+            ck.build_postgres_saver(pool)
+        assert exc.value.reason_code == "CHECKPOINT_POOL_RESET_UNSUPPORTED"
+        assert spy == [], "거부 전에 연결을 빌렸다"
+
+    def test_the_private_reset_attribute_still_exists(self) -> None:
+        """**private 속성 의존을 고정한다.**
+
+        `ConnectionPool`에 reset 설정 여부를 알려 주는 public 접근자가 없어
+        `_reset`을 읽는다. 이름이 바뀌면 `getattr(..., None)`이 조용히 `None`이 되어
+        reset pool을 통과시킨다 — 그 상태를 여기서 red로 만든다.
+        """
+
+        import psycopg_pool
+
+        assert ck._RESET_ATTRIBUTE == "_reset"
+        with_reset = object.__new__(psycopg_pool.ConnectionPool)
+        psycopg_pool.ConnectionPool.__init__(
+            with_reset, "postgresql:///x", open=False, reset=lambda c: None
+        )
+        without = object.__new__(psycopg_pool.ConnectionPool)
+        psycopg_pool.ConnectionPool.__init__(without, "postgresql:///x", open=False)
+        assert getattr(with_reset, ck._RESET_ATTRIBUTE) is not None
+        assert getattr(without, ck._RESET_ATTRIBUTE) is None
+
 
 class TestStateGuardIsMutationSensitive:
     """판정을 실제 DB 없이 직접 검증한다(구현리뷰 1차 필수 3).

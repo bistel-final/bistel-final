@@ -333,6 +333,119 @@ def test_a_configure_override_is_refused_before_any_write(clean: Any) -> None:
     assert _checkpoint_rows(clean, thread) == 0
 
 
+def test_a_reset_override_is_refused_before_any_write(clean: Any) -> None:
+    """**관측으로는 결정론이 되지 않아 거부한다**(구현리뷰 4차 필수 1).
+
+    `_putconn()`이 reset을 worker task로 보내므로 `with pool.connection()` 블록의 끝은
+    reset 완료 barrier가 아니다. 두 번 관측하는 방식은 이 파일 전체를 6회 돌렸을 때
+    **2회 실패**했다 — 통과가 증거가 아니라 비결정성이 증거다.
+
+    지금은 빌려 보기 전에 거부하므로 pool 크기·worker scheduling과 무관하다.
+    """
+
+    def _flip(connection: Any) -> None:
+        connection.autocommit = False
+
+    pool = psycopg_pool.ConnectionPool(
+        _dsn(clean),
+        min_size=3,
+        max_size=3,
+        open=True,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        reset=_flip,
+    )
+    thread = ck.new_thread_id()
+    try:
+        assert pool.kwargs["autocommit"] is True  # 선언은 통과한다
+        # 반복해도 같은 code다 — timing에 기대지 않는다.
+        for _ in range(5):
+            with pytest.raises(ck.AgentCheckpointError) as exc:
+                ck.build_postgres_saver(pool)
+            assert exc.value.reason_code == "CHECKPOINT_POOL_RESET_UNSUPPORTED"
+    finally:
+        pool.close()
+
+    assert _checkpoint_rows(clean, thread) == 0
+
+
+def test_a_non_autocommit_pool_does_not_lose_the_checkpoint(clean: Any) -> None:
+    """**초판이 적은 근거를 정정한다**(구현리뷰 1차 필수 1 추적).
+
+    connection과 달리 pool은 non-autocommit이어도 checkpoint를 잃지 않는다.
+    `pool.connection()`이 `with conn:`으로 감싸 반납 시 commit하기 때문이다.
+
+    그래서 pool guard의 이유는 "유실"이 아니라 **두 경로의 실패 모드를 같게 두는
+    것**이다. 이 대조군이 없으면 누군가 다시 "pool도 잃는다"로 읽는다.
+    """
+
+    pool = psycopg_pool.ConnectionPool(
+        _dsn(clean),
+        min_size=1,
+        max_size=1,
+        open=True,
+        kwargs={"autocommit": False, "row_factory": dict_row},
+    )
+    thread = ck.new_thread_id()
+    try:
+        # 생산 helper는 이 pool을 거부한다 — 계약이기 때문이다.
+        with pytest.raises(ck.AgentCheckpointError) as exc:
+            ck.build_postgres_saver(pool)
+        assert exc.value.reason_code == "CHECKPOINT_POOL_CONFIG_INVALID"
+        # 그러나 실제로 돌려 보면 행은 남는다.
+        _build_graph(PostgresSaver(pool)).invoke(
+            {"pre_interrupt_count": 0}, config=ck.build_thread_config(thread)
+        )
+    finally:
+        pool.close()
+
+    assert _checkpoint_rows(clean, thread) >= 1
+
+
+def test_autocommit_alone_is_enough_for_the_saver(clean: Any) -> None:
+    """**계약이 요구하는 것은 `autocommit` 하나다**(구현리뷰 1차 필수 2).
+
+    다른 fixture는 `prepare_threshold=0`·`row_factory=dict_row`를 함께 넣는다.
+    `from_conn_string()`이 그렇게 하기 때문인데, 그 셋이 다 필요하다는 근거는 없었다.
+    여기서 **autocommit만 준 연결**로 같은 흐름을 돌려 계약과 회귀를 일치시킨다.
+    """
+
+    thread = ck.new_thread_id()
+    connection = psycopg.connect(
+        host=clean.host,
+        port=clean.port,
+        dbname=TARGET_DATABASE,
+        user=clean.username,
+        password=clean.password,
+        autocommit=True,
+    )
+    try:
+        graph = _build_graph(ck.build_postgres_saver(connection))
+        config = ck.build_thread_config(thread)
+        graph.invoke({"pre_interrupt_count": 0}, config=config)
+        assert graph.get_state(config).next == ("wait",)
+    finally:
+        connection.close()
+
+    assert _checkpoint_rows(clean, thread) >= 1
+
+    # 새 연결에서도 같은 구성으로 읽힌다.
+    reader = psycopg.connect(
+        host=clean.host,
+        port=clean.port,
+        dbname=TARGET_DATABASE,
+        user=clean.username,
+        password=clean.password,
+        autocommit=True,
+    )
+    try:
+        assert (
+            ck.build_postgres_saver(reader).get_tuple(ck.build_thread_config(thread))
+            is not None
+        )
+    finally:
+        reader.close()
+
+
 def test_an_unobservable_pool_is_refused(clean: Any) -> None:
     """관측 자체가 불가능하면 통과시키지 않는다 — 판정 불가는 허용이 아니다."""
 

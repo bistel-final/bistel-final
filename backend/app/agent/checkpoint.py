@@ -30,8 +30,40 @@ interrupt 뒤 프로세스가 끝나고 다른 연결에서 재개하는 것이 
 성질이 성립하지 않는 연결은 **saver를 만들기 전에** 거부한다. caller가 `commit()`을
 기억해야 하는 계약으로 두면 잊은 자리에서 조용히 유실된다.
 
-pool은 선언(`pool.kwargs`)만으로 판정하지 않는다. `configure` callback이 checkout
-직전에 그 값을 뒤집을 수 있으므로 **실제로 한 번 꺼내 관측한다.**
+## 요구하는 것은 `autocommit` 하나다
+
+`from_conn_string()`은 `prepare_threshold=0`·`row_factory=dict_row`도 함께 넣는다.
+그러나 `PostgresSaver`의 put·get은 **`autocommit=True`만으로 통과한다** — 격리
+PostgreSQL 16에서 네 조합을 모두 실측했다.
+
+```text
+autocommit만            put=OK get=OK
++ row_factory           put=OK get=OK
++ prepare_threshold     put=OK get=OK
+셋 다                    put=OK get=OK
+```
+
+그래서 계약에 넣지 않는다. 검증하지 않은 것을 요구하면 caller가 이유 없이 따라 적는다.
+
+## pool은 다르다 — 측정으로 정정한 것
+
+초판은 pool도 같은 이유로 autocommit이 필요하다고 적었다. **틀렸다.**
+`psycopg_pool.ConnectionPool.connection()`은 `with conn:`으로 감싸 반납 시 commit하므로
+non-autocommit pool에서도 checkpoint가 남는다. 격리 PostgreSQL 16 실측이다.
+
+```text
+connection autocommit=False → close → checkpoint 0건
+connection autocommit=True  → close → checkpoint 1건
+pool       autocommit=False → 반납 → checkpoint 1건   ← 잃지 않는다
+pool       autocommit=True  → 반납 → checkpoint 1건
+```
+
+그래도 pool에 같은 계약을 요구한다. 이유는 유실이 아니라 **두 경로의 실패 모드를 같게
+두기 위해서**다 — non-autocommit 연결은 saver의 연결 블록에서 예외가 나면 이미 쓴
+checkpoint까지 rollback하고 autocommit이면 남는다. 지금까지 확인된 유일한 차이다.
+
+선언(`pool.kwargs`)만 보지 않는다. `configure`는 연결 생성 시 불리므로 **한 번 꺼내
+관측**하면 잡힌다. `reset`은 반납마다 불리는데 **관측으로는 잡을 수 없어** 거부한다.
 """
 
 from __future__ import annotations
@@ -52,6 +84,13 @@ __all__ = [
 
 #: `agent_run.thread_id`는 `varchar(36)`이고 canonical UUID 문자열이 정확히 36자다.
 THREAD_ID_LENGTH: Final = 36
+
+#: `psycopg_pool.ConnectionPool`이 `reset` callback을 보관하는 속성.
+#:
+#: **public 접근자가 없어 private 속성을 읽는다.** 그래서 `psycopg-pool==3.3.1`을
+#: `requirements.txt`와 CI 양쪽에 exact pin으로 고정했고, 이 이름이 사라지면 단위 회귀가
+#: red가 된다. 이름이 바뀌었는데 조용히 `None`으로 읽혀 통과하는 상태를 막는다.
+_RESET_ATTRIBUTE: Final = "_reset"
 
 
 class AgentCheckpointError(RuntimeError):
@@ -121,16 +160,38 @@ def _assert_pool_durable(pool: Any) -> None:
 
     ## 선언만으로는 부족하다
 
-    `pool.kwargs`는 caller가 적어 넣은 값이다. `psycopg_pool`은 checkout 직전에
-    `configure` callback을 부르고, 그 callback이 `connection.autocommit = False`로
-    되돌릴 수 있다. 그러면 **선언은 참인데 실제 연결은 거짓**인 pool이 만들어지고,
-    checkpoint는 연결이 반납될 때 조용히 사라진다. 계획리뷰 2차가 이 경우를 재현했다.
+    `pool.kwargs`는 caller가 적어 넣은 값이다. `psycopg_pool`은 두 지점에서 그 값을
+    뒤집을 수 있다.
 
-    ## 그래서 한 번 꺼내 본다
+    | callback | 언제 |
+    |---|---|
+    | `configure` | 연결을 **만들 때** 한 번 |
+    | `reset` | 연결을 **반납할 때마다** |
 
-    초판은 "checkout하면 수명주기 소유권이 흐려진다"는 이유로 선언만 봤다. 그 판단을
-    되돌린다 — 여기서 빌린 연결은 즉시 반납하므로 소유권을 가져오지 않고, 반대로
-    관측을 생략하면 **guard가 막겠다고 선언한 바로 그 상태**를 통과시킨다.
+    ## `configure`는 관측으로 잡고 `reset`은 거부한다
+
+    `configure`는 연결을 만들 때 불린다. 그래서 checkout 한 번이면 그 결과를 본다.
+
+    `reset`은 다르다. **관측으로 잡을 수 없다.** `psycopg-pool==3.3.1`의 `_putconn()`은
+    `reset`이 설정돼 있으면 반납 처리를 worker task로 보낸다.
+
+    ```python
+    if self._reset:
+        self.run_task(ReturnConnection(self, conn, from_getconn=from_getconn))
+    ```
+
+    즉 `with pool.connection()` 블록이 끝났다는 것은 reset이 **끝났다는 barrier가
+    아니다.** 빌리고 반납한 뒤 다시 빌려 두 번 관측하는 방식을 먼저 시도했는데, 같은
+    container 회귀가 6회 중 2회 실패했다 — 결정론이 아니다. 통과하는 것이 증거가
+    아니라 **비결정성이 증거**다.
+
+    그래서 `reset`이 설정된 pool은 관측 없이 거부한다. 비용을 적어 둔다 — session 상태를
+    되돌리는 정당한 `reset`도 함께 막힌다. 그런 caller는 그 처리를 `configure`나 연결
+    kwargs로 옮겨야 한다. 매 checkout을 검증하려면 `PostgresSaver` 주입 경계를 감싸야
+    하는데 그것은 이 모듈이 소유하지 않기로 한 범위다.
+
+    **한계를 적어 둔다.** 관측은 build 시점 한 순간이다. 그 뒤에 pool 설정을 바꾸는
+    caller는 막지 못한다. 막을 수 있는 것과 없는 것을 구분해 적는다.
 
     관측 자체가 실패하면(닫힌 pool·대기 만료) 허용하지 않는다. 판정할 수 없는 것을
     통과시키면 fail-closed가 아니다.
@@ -141,6 +202,12 @@ def _assert_pool_durable(pool: Any) -> None:
         raise AgentCheckpointError(
             "CHECKPOINT_POOL_CONFIG_INVALID",
             "pool kwargs에 autocommit=True가 명시돼야 합니다",
+        )
+    if getattr(pool, _RESET_ATTRIBUTE, None) is not None:
+        # 관측 전에 거부한다 — 이 pool은 빌려 봐도 판정할 수 없다.
+        raise AgentCheckpointError(
+            "CHECKPOINT_POOL_RESET_UNSUPPORTED",
+            "reset callback이 설정된 pool은 검증할 수 없습니다",
         )
     try:
         with pool.connection() as connection:
