@@ -32,6 +32,8 @@ def search_documents(
         service = DocumentSearchService(DocumentSearchRepository(engine))
         hits = service.search(query, top_k=top_k, model_code=model_code)
         return DocumentSearchToolResult(ok=True, hits=hits)
+    except TimeoutError as exc:
+        return fail(DocumentSearchToolResult, f"TIMEOUT: {exc}")
     except Exception as exc:
         return fail(DocumentSearchToolResult, f"DEPENDENCY_ERROR: {exc}")
 

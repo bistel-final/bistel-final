@@ -372,3 +372,31 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
     assert result.ok is False
     assert result.hits == []
     assert result.reason == "DEPENDENCY_ERROR: 검색 실패"
+
+
+def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class TimeoutService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            raise TimeoutError("검색 시간 초과")
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", TimeoutService)
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is False
+    assert result.hits == []
+    assert result.reason == "TIMEOUT: 검색 시간 초과"
