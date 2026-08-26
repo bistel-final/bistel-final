@@ -236,7 +236,7 @@ def test_the_first_request_creates_one_run(db: Any) -> None:
 
     assert started.run.lot_id == LOT
     assert started.run.chamber_id == CHAMBER
-    assert started.retry_of_run_id is None
+    assert started.run.retry_of_run_id is None
     assert _counts(db) == {"agent_run": 1, "agent_run_alarm": 1, "audit_log": 1}
 
 
@@ -264,7 +264,7 @@ def test_a_failed_run_allows_a_retry_pointing_at_it(db: Any) -> None:
     _set_status(db, first.run.agent_run_id, RunStatus.FAILED)
 
     second = _start(db)
-    assert second.retry_of_run_id == first.run.agent_run_id
+    assert second.run.retry_of_run_id == first.run.agent_run_id
     assert _counts(db)["agent_run"] == 2
 
 
@@ -277,7 +277,7 @@ def test_a_retry_chain_points_at_the_latest_failure(db: Any) -> None:
     _set_status(db, second.run.agent_run_id, RunStatus.FAILED)
 
     third = _start(db)
-    assert third.retry_of_run_id == second.run.agent_run_id
+    assert third.run.retry_of_run_id == second.run.agent_run_id
 
 
 def test_a_refused_request_leaves_no_trace(db: Any) -> None:
@@ -440,13 +440,21 @@ def test_the_partial_unique_fallback_actually_fires(db: Any) -> None:
     assert _counts(db)["agent_run"] == 1
 
 
-def test_repeatable_read_still_blocks_but_takes_the_other_path(db: Any) -> None:
-    """**강한 격리에서는 경로와 오류가 달라진다.**
+def test_repeatable_read_blocks_through_the_other_defense(db: Any) -> None:
+    """**강한 격리에서는 막는 주체가 달라진다. caller가 보는 결과는 같다.**
 
     `REPEATABLE READ`에서는 transaction 첫 statement가 snapshot을 고정하므로, lock을
     얻은 뒤 재조회해도 앞서 commit된 `RUNNING`이 보이지 않는다. 정책은 history 0건으로
-    통과하고 INSERT까지 간다. 중복 run은 여전히 막히되 partial unique 또는
-    serialization failure로 끝난다.
+    통과하고 INSERT까지 간다. 중복 run은 여전히 막히되 **막는 주체가 달라진다** —
+    history 정책이 아니라 partial unique index다.
+
+    **결과 예외는 하나로 좁힌다.** 초판은 `IncidentAlreadyRunningError`와
+    `RepositoryRetryable`을 모두 받아, 경로가 바뀌어도 red가 되지 않았다(구현리뷰
+    PR #159 권고 3). 실측 3회 모두 `IncidentAlreadyRunningError`였다 — PostgreSQL은 이미
+    commit된 unique key에 INSERT하면 `23505`를 내고, C-0.1이 그것을
+    `RepositoryConflict("ACTIVE_RUN_EXISTS")`로 옮기며, 이 계층이 도메인 예외로
+    정규화한다. `40001` serialization failure는 이 형상에서 나지 않는다 — 두
+    transaction이 **같은 행을 갱신하지 않고** 새 행을 넣기 때문이다.
 
     이 회귀가 없으면 caller가 나중에 격리 수준을 올릴 때 아무도 이 알고리즘을 다시
     보지 않는다.
@@ -460,7 +468,7 @@ def test_repeatable_read_still_blocks_but_takes_the_other_path(db: Any) -> None:
 
         _start(db)  # 다른 connection에서 run 하나를 만들고 commit
 
-        with pytest.raises((IncidentAlreadyRunningError, repo.RepositoryRetryable)):
+        with pytest.raises(IncidentAlreadyRunningError):
             guard.start_incident_run(connection, _ref("TA-01"), autonomy_level=2)
         transaction.rollback()
 

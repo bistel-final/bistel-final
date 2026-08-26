@@ -32,8 +32,13 @@ caller의 commit을 본다"가 참이다 — statement마다 새 snapshot을 잡
 
 `REPEATABLE READ`·`SERIALIZABLE`에서는 transaction 첫 statement(=1번의 incident 해석)가
 snapshot을 고정하므로, lock을 얻은 뒤 다시 읽어도 앞선 caller가 commit한 `RUNNING`이
-**보이지 않는다.** 그러면 판정은 history 0건으로 통과하고 INSERT까지 간다. 중복 run은
-여전히 막히지만 — partial unique index가 잡는다 — **경로와 오류 code가 달라진다.**
+**보이지 않는다.** 그러면 판정은 history 0건으로 통과하고 INSERT까지 간다.
+
+**달라지는 것은 막는 주체이지 caller가 보는 결과가 아니다.** 공개 결과는 정상 active
+경로와 같은 `IncidentAlreadyRunningError`(`INCIDENT_ALREADY_RUNNING`)다 — partial unique
+위반 `23505`를 C-0.1이 `ACTIVE_RUN_EXISTS`로 옮기고 이 계층이 같은 도메인 예외로
+정규화하기 때문이다. 바뀌는 것은 **내부 검출 경로**(history 정책 → partial unique
+index)와 그 아래의 DB SQLSTATE다.
 
 이 계층은 격리 수준을 설정하지 않는다(C-0.1·C-1.1과 같은 계약). 전제를 문서에만 두면
 나중에 caller가 `REPEATABLE READ`를 켤 때 아무도 이 알고리즘을 다시 보지 않으므로,
@@ -48,7 +53,6 @@ common exception handler를 통해 조립한다. 기존 run ID나 DB 메시지�
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
@@ -73,6 +77,7 @@ from app.common.exceptions import (
     IncidentAlreadyProcessedError,
     IncidentAlreadyRunningError,
 )
+from app.common.ids import new_thread_id
 from app.common.schemas import AlarmRef
 
 __all__ = [
@@ -95,6 +100,17 @@ ACTIVE_STATUSES: Final[frozenset[RunStatus]] = frozenset(
 #: C-0.1이 `RepositoryConflict`로 옮기는 partial unique 위반 code.
 _ACTIVE_RUN_EXISTS: Final = "ACTIVE_RUN_EXISTS"
 
+#: **thread ID 생성기를 복제하지 않는다.**
+#:
+#: `app.common.ids.new_thread_id`를 재수출만 한다. 초판은 `str(uuid.uuid4())`를 여기서
+#: 다시 정의했다 — C-0.2 `checkpoint.py`가 정확히 그것을 금지하고
+#: `assert ck.new_thread_id is new_thread_id`로 고정해 둔 것과 반대였다.
+#:
+#: 지금은 두 구현이 같은 값을 낸다. 문제는 **그 일치가 우연에 걸려 있다**는 것이다. 공용
+#: 생성기가 형식을 바꾸면(prefix, uuid7) `normalize_thread_id()`는 새 형식을 받는데
+#: 여기만 `uuid4`를 발급해 `agent_run.thread_id`와 checkpoint key가 갈린다. 그때
+#: C-0.2의 회귀는 여전히 green이다 — 그 파일은 복제본을 모른다(구현리뷰 필수 1).
+
 
 @dataclass(frozen=True, slots=True)
 class StartedIncidentRun:
@@ -103,21 +119,17 @@ class StartedIncidentRun:
     C-2.1이 그래프를 조립할 때 incident를 DB에서 다시 해석하지 않게 하려는 것이다.
     두 값이 따로 다니면 caller가 다른 incident의 해석 결과를 붙일 수 있다 — C-1.2가
     `IncidentRoute` envelope로 닫은 것과 같은 종류의 위험이다.
+
+    **`retry_of_run_id`를 최상위에 두지 않는다.** 초판은 정책이 고른 값을 여기
+    복사했는데 `run.retry_of_run_id`가 DB가 돌려준 같은 사실이다. C-0.1의
+    `_optional_text()`가 trim을 하므로 두 값이 갈릴 여지가 구조적으로 있고, 그러면
+    어느 쪽이 정본인지 caller가 알 수 없다. C-1.2가 `route_consistency`에 대해
+    "같은 사실을 두 곳에 두지 않는다"고 판단한 것과 같다(구현리뷰 권고 2).
+    필요하면 `run.retry_of_run_id`를 읽는다.
     """
 
     run: AgentRunRow
     incident: ResolvedIncident
-    retry_of_run_id: str | None
-
-
-def new_thread_id() -> str:
-    """LangGraph checkpoint thread ID.
-
-    `checkpoint.normalize_thread_id()`가 canonical UUID 표기만 받는다. `str(uuid4())`가
-    그 표기이므로 여기서 별도 가공을 하지 않는다.
-    """
-
-    return str(uuid.uuid4())
 
 
 def select_retry_target(history: tuple[IncidentRunRow, ...]) -> str | None:
@@ -212,6 +224,4 @@ def start_incident_run(
         # 다른 conflict는 뜻이 다르다. 삼키지 않는다.
         raise
 
-    return StartedIncidentRun(
-        run=run, incident=incident, retry_of_run_id=retry_of_run_id
-    )
+    return StartedIncidentRun(run=run, incident=incident)

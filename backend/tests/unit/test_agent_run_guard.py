@@ -309,18 +309,17 @@ class TestTheStatePolicy:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         harness = _Harness(monkeypatch, history=(_run(RunStatus.FAILED, "AR-F1"),))
-        result = harness.start()
+        harness.start()
 
-        assert result.retry_of_run_id == "AR-F1"
+        # `StartedIncidentRun`에 최상위 사본을 두지 않는다 — command가 정본이다.
         assert harness.commands[0].retry_of_run_id == "AR-F1"
 
     def test_no_history_starts_a_first_run(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         harness = _Harness(monkeypatch)
-        result = harness.start()
+        harness.start()
 
-        assert result.retry_of_run_id is None
         assert harness.commands[0].retry_of_run_id is None
 
 
@@ -385,6 +384,22 @@ class TestTheThreadIdIsIssuedLast:
 
         value = guard.new_thread_id()
         assert normalize_thread_id(value) == value
+
+    def test_the_generator_is_the_common_one(self) -> None:
+        """**생성기를 복제하지 않는다.** C-0.2가 `checkpoint.py`에 건 것과 같은 회귀다.
+
+        초판은 `str(uuid.uuid4())`를 이 module에서 다시 정의했다. 지금은 두 구현이 같은
+        값을 내지만 **그 일치가 우연에 걸려 있다** — 공용 생성기가 형식을 바꾸면
+        `normalize_thread_id()`는 새 형식을 받는데 여기만 `uuid4`를 발급해
+        `agent_run.thread_id`와 checkpoint key가 갈린다. 그때 C-0.2의 회귀는 자기
+        module만 보므로 여전히 green이다(구현리뷰 PR #159 필수 1).
+        """
+
+        from app.common.ids import new_thread_id as common_new_thread_id
+
+        assert guard.new_thread_id is common_new_thread_id
+        body = _code_only(Path(guard.__file__))
+        assert "uuid" not in body
 
 
 # ===========================================================================
@@ -590,6 +605,19 @@ class TestDbErrorsAreTranslatedByC01:
 
         assert EXPECTED_RETRYABLE == dict(repo.RETRYABLE_SQLSTATES)
 
+    def test_the_translation_uses_the_public_seam(self) -> None:
+        """`_translate`가 아니라 `translate_db_error()`를 쓴다.
+
+        `require_active_transaction()`에 적용한 것과 같은 논거다 — 새 계층이 C-0.1의
+        private 이름에 직접 결합하면 그것을 바꿀 때 고쳐야 할 자리가 흩어진다
+        (구현리뷰 PR #159 권고 1).
+        """
+
+        body = _code_only(Path(guard_repo.__file__))
+        assert "translate_db_error(" in body
+        assert "_translate(" not in body
+        assert "translate_db_error" in repo.__all__
+
     def test_no_sqlstate_table_is_duplicated_in_the_new_modules(self) -> None:
         """**복제 계층 0.** 새 mapping을 만들지 않고 C-0.1 것을 쓴다."""
 
@@ -650,6 +678,28 @@ def _code_only(path: Path) -> str:
 
 
 class TestTheModulesStayInsideTheirBoundary:
+    def test_every_run_status_is_classified(self) -> None:
+        """**enum 안쪽도 전수 분류한다.**
+
+        `_row()`가 계약 밖 문자열을 거부하는 이유를 "정책이 조용히 무시하면 그 무시가
+        곧 중복 run 허용"이라고 적었다. 같은 논리가 enum 안에도 적용된다 —
+        `ACTIVE_STATUSES ∪ {COMPLETED, FAILED}` 밖의 멤버가 생기면
+        `_assert_startable()`은 지나가고 `select_retry_target()`은 `None`을 낸다.
+        결과는 "새 run을 만들어도 된다"다.
+
+        지금 `RunStatus`가 정확히 4값이라 동작은 맞다. 문제는 그 정확성이 **enum 밖
+        사실에만 걸려 있고 아무 회귀도 붙들지 않는다**는 것이었다(구현리뷰 필수 2).
+
+        나중에 `CANCELED` 같은 값이 늘면 여기서 red가 나고, 그때 "취소된 incident는
+        재실행 가능한가"를 정하게 된다. 지금은 그 질문이 던져지지 않은 채 "가능"으로
+        답해진다.
+        """
+
+        assert set(RunStatus) == guard.ACTIVE_STATUSES | {
+            RunStatus.COMPLETED,
+            RunStatus.FAILED,
+        }
+
     def test_the_active_set_matches_the_partial_index(self) -> None:
         """**활성의 정의가 두 곳에서 갈라지면** DB와 정책이 어긋난다.
 

@@ -33,7 +33,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.agent.repository import (
     AgentRepositoryError,
     _require_transaction,
-    _translate,
+    translate_db_error,
 )
 from app.common.enums import RunStatus
 
@@ -132,7 +132,7 @@ def lock_incident(connection: Connection, *, lot_id: str, chamber_id: str) -> No
     (autocommit statement가 곧 transaction이다) 아무것도 지키지 못한다. 그 상태를
     조용히 통과시키면 "lock을 걸었다"는 사실이 거짓이 된다.
 
-    lock wait 만료·취소는 C-0.1 `_translate()`가 `55P03`·`57014`를
+    lock wait 만료·취소는 C-0.1 `translate_db_error()`가 `55P03`·`57014`를
     `RepositoryRetryable`로 옮긴다. 이 계층이 SQLSTATE 표를 새로 만들지 않는다.
     """
 
@@ -140,7 +140,7 @@ def lock_incident(connection: Connection, *, lot_id: str, chamber_id: str) -> No
     try:
         connection.execute(_LOCK, {"lot_id": lot_id, "chamber_id": chamber_id})
     except SQLAlchemyError as exc:
-        raise _translate(exc) from exc
+        raise translate_db_error(exc) from exc
 
 
 def read_incident_runs(
@@ -159,7 +159,7 @@ def read_incident_runs(
             _HISTORY, {"lot_id": lot_id, "chamber_id": chamber_id}
         ).all()
     except SQLAlchemyError as exc:
-        raise _translate(exc) from exc
+        raise translate_db_error(exc) from exc
     return tuple(_row(row) for row in rows)
 
 
