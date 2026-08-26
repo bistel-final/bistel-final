@@ -339,6 +339,29 @@ jobs:
           tests/unit/test_agent_incident_container.py
           -rs --no-header
 
+      # V5-C-1.2 실제 WAFER routing·Process Step 결합.
+      #
+      # 단위는 B의 **실제 Pydantic DTO**로 graph 근거를 만든다. 평행 계약을 새로 정의하면
+      # B가 DTO를 바꿔도 회귀가 green으로 남는다. 공용 Neo4j를 요구하지 않는다.
+      - name: Prove the routing and graph cross-check contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_routing.py
+          -rs --no-header
+
+      # 최종 dataset이 필요 없다 — legacy base 9 + wafer 폭 정정 + `v5/001`만 세운다.
+      #
+      # **이 축은 실제 View가 아니면 성립하지 않는다.** `unnest` 두 배열의 순서쌍 대응,
+      # source별 join 형상이 만드는 owner resolve, `(lot_id, wafer_id, chamber_id)`
+      # unique 제약 부재가 만드는 fan-out은 단위 fake로 재현되지 않는다.
+      - name: Prove WAFER route scope against the real alarm view
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_routing_container.py
+          -rs --no-header
+
       # **secret으로는 이 값을 만들 수 없다.** secret은 48KB 한도라 ZIP을 담지 못하고,
       # 경로 문자열을 담아도 runner에는 그 파일이 없다. 그래서 asset을 실제로 내려받고
       # 그 경로를 `GITHUB_ENV`로 넘긴다(PR #108 리뷰 확인 2).
