@@ -161,6 +161,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `pgvector`도 vector 연산을 하려는 것이 아니다. `app.main`이
+      # `knowledge/document_search.py`를 거치고 그 module 최상단이
+      # `from pgvector.psycopg import register_vector`라, 없으면 `V5-CM-3.5`의
+      # `tests/test_health.py`가 collection에서 죽는다. `sentence_transformers`는
+      # 함수 안 지연 import라 필요 없다.
+      #
       # `neo4j`는 Bolt에 붙기 위한 것이 **아니다.** `verify_bootstrap_state`가
       # module 최상단에서 `neo4j.exceptions`를 import하므로, full verifier를 부르는
       # `V5-CM-3.3` 회귀가 이것 없이는 collection 단계에서 죽는다.
@@ -178,6 +184,7 @@ jobs:
           sqlglot==26.0.1
           fastapi==0.115.6
           httpx==0.28.1
+          pgvector==0.3.6
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
