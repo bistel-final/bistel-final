@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from app.common.exceptions import DependencyNotReadyError
-from app.common.exceptions import ModelNotReadyError
+from app.common.exceptions import DependencyNotReadyError, ModelNotReadyError
 
 
 class GraphProjectionShapeError(DependencyNotReadyError):
