@@ -68,5 +68,9 @@ def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
             EquipmentContextToolResult,
             "GRAPH_SHAPE_ERROR: 장비 graph context 필수 값이 누락됐습니다",
         )
-    except Exception as exc:
-        return fail(EquipmentContextToolResult, f"DEPENDENCY_ERROR: {exc}")
+    except Exception:
+        logger.exception("get_equipment_context Tool dependency error")
+        return fail(
+            EquipmentContextToolResult,
+            "DEPENDENCY_ERROR: 장비 그래프 context 의존성 오류",
+        )
