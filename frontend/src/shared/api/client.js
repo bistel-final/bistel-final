@@ -10,8 +10,9 @@ export const USE_MOCK = env.VITE_USE_MOCK !== 'false'
 // 도메인별 오버라이드 — 백엔드에 아직 없는 영역(A/C)만 mock으로 남기고
 // 구현된 영역(D analytics · B documents)은 실서버로 보내기 위해 쓴다.
 // 예) VITE_USE_MOCK=false + VITE_USE_MOCK_DETECTION=true — 미설정 시 전역 값을 따른다.
+// 이름이 use* 이면 ESLint 가 React Hook 으로 오인하므로 mock* 으로 둔다.
 // TODO(api): detection·agent 라우터 구현 완료 시 이 오버라이드를 제거한다.
-export const useMockFor = (domain) => {
+export const mockEnabledFor = (domain) => {
   const value = env[`VITE_USE_MOCK_${domain}`]
   return value == null ? USE_MOCK : value !== 'false'
 }
