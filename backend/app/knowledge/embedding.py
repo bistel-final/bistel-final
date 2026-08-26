@@ -15,6 +15,10 @@ EXPECTED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 EXPECTED_EMBEDDING_DIMENSION = 1024
 
 
+class EmbeddingModelNotReadyError(RuntimeError):
+    """로컬 임베딩 모델 runtime artifact가 준비되지 않았을 때 발생한다."""
+
+
 @lru_cache(maxsize=1)
 def get_embedding_model() -> Any:
     """현재 API 프로세스에서 BGE-M3 모델을 한 번만 생성한다."""
@@ -26,15 +30,22 @@ def get_embedding_model() -> Any:
         "EMBEDDING_MODEL_REVISION",
         EXPECTED_EMBEDDING_REVISION,
     ).strip()
-    dimension = int(os.getenv("EMBEDDING_DIM", str(EXPECTED_EMBEDDING_DIMENSION)))
+    try:
+        dimension = int(os.getenv("EMBEDDING_DIM", str(EXPECTED_EMBEDDING_DIMENSION)))
+    except ValueError as exc:
+        raise EmbeddingModelNotReadyError("EMBEDDING_DIM은 정수여야 합니다") from exc
     model_path = os.getenv("EMBEDDING_MODEL_PATH", "backend/model-cache/bge-m3").strip()
 
     if model_id != EXPECTED_EMBEDDING_MODEL:
-        raise RuntimeError(f"EMBEDDING_MODEL은 {EXPECTED_EMBEDDING_MODEL}이어야 합니다")
+        raise EmbeddingModelNotReadyError(
+            f"EMBEDDING_MODEL은 {EXPECTED_EMBEDDING_MODEL}이어야 합니다"
+        )
     if revision != EXPECTED_EMBEDDING_REVISION:
-        raise RuntimeError("EMBEDDING_MODEL_REVISION이 공식 revision과 다릅니다")
+        raise EmbeddingModelNotReadyError(
+            "EMBEDDING_MODEL_REVISION이 공식 revision과 다릅니다"
+        )
     if dimension != EXPECTED_EMBEDDING_DIMENSION:
-        raise RuntimeError(
+        raise EmbeddingModelNotReadyError(
             f"EMBEDDING_DIM은 {EXPECTED_EMBEDDING_DIMENSION}이어야 합니다"
         )
 
@@ -42,11 +53,18 @@ def get_embedding_model() -> Any:
     if not cache_path.is_absolute():
         cache_path = REPOSITORY_ROOT / cache_path
     if not cache_path.exists():
-        raise RuntimeError(f"임베딩 모델 캐시 경로가 없습니다: {cache_path}")
+        raise EmbeddingModelNotReadyError(
+            f"임베딩 모델 캐시 경로가 없습니다: {cache_path}"
+        )
 
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(str(cache_path), local_files_only=True)
+    try:
+        return SentenceTransformer(str(cache_path), local_files_only=True)
+    except Exception as exc:
+        raise EmbeddingModelNotReadyError(
+            "임베딩 모델을 로컬 캐시에서 로드할 수 없습니다"
+        ) from exc
 
 
 def embed_query(query: str) -> list[float]:

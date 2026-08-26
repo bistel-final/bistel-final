@@ -14,6 +14,7 @@ from app.common.tool_contracts import (
     fail,
 )
 from app.knowledge.document_search import DocumentSearchRepository
+from app.knowledge.embedding import EmbeddingModelNotReadyError
 from app.knowledge.graph_query import GraphQueryRepository
 from app.knowledge.service import DocumentSearchService, EquipmentContextService
 
@@ -38,6 +39,12 @@ def search_documents(
         return DocumentSearchToolResult(ok=True, hits=hits)
     except TimeoutError as exc:
         return fail(DocumentSearchToolResult, f"TIMEOUT: {exc}")
+    except EmbeddingModelNotReadyError:
+        logger.exception("search_documents embedding model not ready")
+        return fail(
+            DocumentSearchToolResult,
+            "MODEL_NOT_READY: 임베딩 모델이 준비되지 않았습니다",
+        )
     except Exception:
         logger.exception("search_documents Tool dependency error")
         return fail(DocumentSearchToolResult, "DEPENDENCY_ERROR: 문서 검색 의존성 오류")

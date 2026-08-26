@@ -5,6 +5,7 @@ from re import sub
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -93,6 +94,27 @@ def test_embedding_model_is_loaded_once_from_local_cache(monkeypatch: Any) -> No
 
     assert first is second
     assert created == [f"{embedding.REPOSITORY_ROOT}|local=True"]
+    embedding.get_embedding_model.cache_clear()
+
+
+def test_embedding_model_missing_cache_raises_model_not_ready(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    missing_path = tmp_path / "missing-bge-m3"
+
+    embedding.get_embedding_model.cache_clear()
+    monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+    monkeypatch.setenv(
+        "EMBEDDING_MODEL_REVISION",
+        "5617a9f61b028005a4858fdac845db406aefb181",
+    )
+    monkeypatch.setenv("EMBEDDING_DIM", "1024")
+    monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(missing_path))
+
+    with pytest.raises(embedding.EmbeddingModelNotReadyError):
+        embedding.get_embedding_model()
+
     embedding.get_embedding_model.cache_clear()
 
 
@@ -407,6 +429,43 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
     assert "SELECT" not in result.reason
     assert "postgresql://" not in result.reason
     assert "secret" not in result.reason
+
+
+def test_search_documents_tool_returns_model_not_ready_failure(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class ModelNotReadyService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            raise embedding.EmbeddingModelNotReadyError(
+                "임베딩 모델 캐시 경로가 없습니다: C:/secret/model-cache/bge-m3"
+            )
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr(
+        "app.knowledge.tools.DocumentSearchService",
+        ModelNotReadyService,
+    )
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is False
+    assert result.hits == []
+    assert result.reason == "MODEL_NOT_READY: 임베딩 모델이 준비되지 않았습니다"
+    assert "C:/secret" not in result.reason
+    assert "model-cache" not in result.reason
 
 
 def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None:
