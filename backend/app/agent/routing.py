@@ -476,6 +476,11 @@ def _assert_bound(incident: ResolvedIncident, snapshot: RouteSnapshot) -> None:
     if set(snapshot.member_keys) != set(snapshot.wafer_of_member):
         # provenance와 mapping key가 어긋나면 lookup이 raw KeyError로 나간다.
         raise RepositoryContractError(_INCIDENT_MISMATCH)
+    if set(snapshot.member_keys) != set(snapshot.lot_hist_id_of_member):
+        # RouteSnapshot.__post_init__은 mapping을 불변으로만 만들고 key 정합성은
+        # 판정하지 않는다. 실제 incident까지 가진 이 결합 경계에서 wafer mapping과
+        # 같은 계약으로 대조한다.
+        raise RepositoryContractError(_INCIDENT_MISMATCH)
     mapped = set(snapshot.wafer_of_member.values())
     walked = {step.wafer_id for step in snapshot.steps}
     if mapped != walked:

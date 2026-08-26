@@ -41,8 +41,8 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-1.1 | P0 | incident 해석. 완료: source-aware `AlarmRef`를 `(lot_id, chamber_id)`로 묶고 대표 알람을 `occurred_at ASC, source priority, alarm_id ASC`로 결정한다 | FR-C-01 | V5-A-1.5, V5-C-0.1 | 2.0h |
 | V5-C-1.2 | P0 | 실제 routing 결합. 완료: `lot_history` LOT/WAFER routing과 B `GraphService`·`get_equipment_context`의 Process Step 인접을 결합한다. public graph API를 내부 Tool 대신 호출하지 않으며 불일치는 `route_consistency=false`로 보존한다 | FR-C-10 | V5-C-1.1, V5-B-3.2 | 2.0h |
 | V5-C-1.3 | P0 | 중복 실행 방지. 완료: 동일 incident 동시 요청에서 활성 run 1개만 만들고 처리 완료 incident는 재선택하지 않는다 | FR-C-09, FR-C-14 | V5-C-1.1 | 1.5h |
-| V5-C-2.1 | P0 | LangGraph Level 1·2 골격. 완료: load_incident→A/B Tool 수집→가설→규칙 조치→저장→delivery/HITL→finalize를 같은 State·Tool로 구성하고 설정만으로 고정 흐름/조건 분기를 전환한다. fixture에서 완료율·호출·지연 비교를 기록한다 | FR-C-02 | V5-C-1.2, V5-A-3.2-1, V5-B-2.2, V5-B-3.2 | 2.0h |
-| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다 | FR-C-08, NFR-03 | V5-C-2.1 | 2.0h |
+| V5-C-2.1 | P0 | LangGraph Level 1·2 골격. 완료: load_incident→A/B Tool 수집→가설→규칙 조치→저장→delivery/HITL→finalize를 같은 State·Tool로 구성하고 설정만으로 고정 흐름/조건 분기를 전환한다. fixture에서 완료율·호출·지연·token 비교를 기록한다 | FR-C-02 | V5-C-1.2, V5-A-3.2-1, V5-B-2.2, V5-B-3.2 | 6.5h |
+| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다. 읽기 Tool hard 상한 8초의 실제 집행 지점(A/B driver 또는 C runner)을 확정하고, 미적용이면 사유·후속 담당·Task ID를 기록한다 | FR-C-08, NFR-03 | V5-C-2.1 | 2.0h |
 | V5-C-2.3 | P0 | 원인 가설. 완료: `FOC\|RFM\|MFD\|TMD\|OTH` 구조화 출력과 실제 AlarmRef·chunk·relation 근거 인용을 생성한다. `NRM`과 합성 라벨·Generator FAULTS는 query·State·Tool·prompt에 넣지 않는다 | FR-C-07, FR-C-15, NFR-19 | V5-C-2.2 | 2.0h |
 | V5-C-3.1 | P0 | `decide_action`. 완료: SUMMARY OOC-only → MONITORING, TRACE OOS → WARNING, strict R03 → EQP_HOLD의 3단계 순수 규칙 함수를 만든다. LLM·score·metrology를 입력에서 제외한다 | FR-C-03 | V5-C-2.3 | 1.5h |
 | V5-C-3.2 | P0 | action 생성 transaction. 완료: `action_history`·link·approval·delivery를 한 트랜잭션에서 만들고 incident당 유효 action 1건을 보장한다 | FR-C-14 | V5-C-3.1 | 2.0h |
@@ -60,7 +60,7 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**합계 23 Task / 42.0h** · **P2 제외 필수·권장 합계 40.0h**
+**합계 23 Task / 46.5h** · **P2 제외 필수·권장 합계 44.5h**
 
 ---
 

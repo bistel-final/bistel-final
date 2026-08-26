@@ -6,8 +6,8 @@
 `_insert_one()`·감사 append가 그 파일의 계약인데 여기에는 하나도 해당하지 않는다. 같은
 파일에 두면 다음 구현자가 그 관례를 따라 읽기에도 transaction을 요구할 유인이 생긴다.
 
-예외 계층과 `_translate()`는 **재사용한다.** 평행한 오류 계층·SQLSTATE 표를 새로 만들면
-같은 DB 오류가 두 이름을 갖게 된다.
+예외 계층과 공용 `execute_read_all()` seam을 **재사용한다.** 평행한 오류 계층·SQLSTATE
+표를 새로 만들면 같은 DB 오류가 두 이름을 갖게 된다.
 
 ## 왜 한 statement인가
 
@@ -18,19 +18,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Row
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.agent.repository import (
     RepositoryContractError,
     RepositoryNotFound,
-    _translate,
+    execute_read_all,
 )
 from app.common.enums import AlarmSource
 from app.common.schemas import AlarmRef
@@ -162,8 +160,9 @@ def fetch_incident_snapshot(
     (요구사항 §8.1) source 없는 조회는 다른 source의 동명 ID를 집어올 수 있다.
     """
 
-    rows = _execute(
+    rows = execute_read_all(
         connection,
+        _SNAPSHOT,
         {
             "source": AlarmSource(requested_alarm.source).value,
             "alarm_id": requested_alarm.alarm_id,
@@ -202,17 +201,3 @@ def _member(row: Row[Any]) -> IncidentAlarmEvent:
         occurred_at=row.member_occurred_at,
         lot_hist_id=row.member_lot_hist_id,
     )
-
-
-def _execute(connection: Connection, params: dict[str, Any]) -> Sequence[Row[Any]]:
-    """driver 오류를 **C-0.1과 같은 계층으로** 옮긴다.
-
-    `_translate()`를 재사용하므로 lock 경합은 `RepositoryRetryable`, 접속·가용성은
-    `RepositoryUnavailable`로 같은 이름을 갖는다. 이 Task는 재시도하지 않는다 —
-    분류만 보존하고 정책은 caller가 정한다.
-    """
-
-    try:
-        return connection.execute(_SNAPSHOT, params).all()
-    except SQLAlchemyError as exc:
-        raise _translate(exc) from exc

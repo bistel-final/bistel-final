@@ -46,6 +46,7 @@ from sqlalchemy.exc import (
     OperationalError,
     SQLAlchemyError,
 )
+from sqlalchemy.sql.elements import TextClause
 
 from app.common.audit import (
     AuditContractError,
@@ -82,6 +83,7 @@ __all__ = [
     "PredictionRow",
     "HumanReviewRow",
     "RUNTIME_REVIEW_LABEL_SOURCES",
+    "execute_read_all",
     "translate_db_error",
     "create_agent_run",
     "get_agent_run",
@@ -251,13 +253,29 @@ def translate_db_error(error: SQLAlchemyError) -> AgentRepositoryError:
 
     같은 판단을 `require_active_transaction()`에 대해 이미 했다(구현리뷰 권고 1).
 
-    **범위를 정확히 적는다.** 지금 이것을 쓰는 것은 `run_guard_repository` 하나이고,
-    먼저 merge된 `incident_repository`·`routing_repository`는 여전히 `_translate()`를
-    직접 부른다. 두 파일을 함께 바꾸면 그 Task들의 diff를 다시 여는 셈이라 이번 범위에
-    넣지 않았다. **신규 외부 Repository는 이 seam을 쓰고 기존 2곳은 후속 정리다.**
+    `V5-C-2.1`부터 `run_guard_repository`·`incident_repository`·
+    `routing_repository`가 모두 이 public seam을 쓴다. 신규 외부 Repository도 private
+    `_translate()`를 import하지 않는다.
     """
 
     return _translate(error)
+
+
+def execute_read_all(
+    connection: Connection,
+    statement: TextClause,
+    params: Mapping[str, Any],
+) -> Sequence[Row[Any]]:
+    """읽기 statement를 실행하고 DB 오류를 공용 계층으로 옮긴다.
+
+    transaction·재시도 정책은 소유하지 않는다. caller가 제공한 connection과 snapshot에서
+    한 statement를 실행하는 얇은 public seam이다.
+    """
+
+    try:
+        return connection.execute(statement, params).all()
+    except SQLAlchemyError as exc:
+        raise translate_db_error(exc) from exc
 
 
 def _translate(error: SQLAlchemyError) -> AgentRepositoryError:
@@ -1514,7 +1532,8 @@ def list_tool_calls(connection: Connection, agent_run_id: str) -> list[ToolCallR
 def count_tool_calls(connection: Connection, agent_run_id: str) -> int:
     """총 호출 **시도** 수. 예약만 된 것도 센다.
 
-    예산 8회 정책은 `V5-C-2.2`가 이 값 위에 구현한다. 이 계층은 세기만 한다.
+    `V5-C-2.1`은 이 값으로 State의 DB-derived `ToolBudget` snapshot을 만들고,
+    예산 8회 정책은 `V5-C-2.2`가 그 위에 구현한다. 이 계층은 세기만 한다.
     """
 
     try:

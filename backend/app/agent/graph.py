@@ -1,0 +1,656 @@
+"""LangGraph Level 1·2 실행 골격 (`V5-C-2.1`, 담당 방대혁 C).
+
+이 Task는 위상과 안전 경계를 소유한다. 가설·정책·영속화·delivery 구현은 9개 port로
+남기며, 미배선 production port는 성공처럼 통과하지 않고 ``PORT_NOT_WIRED``로 끝난다.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any, Final
+
+from langgraph.graph import END, START, StateGraph
+from pydantic import ValidationError
+
+from app.agent.checkpoint import AgentCheckpointError
+from app.agent.repository import AgentRepositoryError, finish_agent_run, get_agent_run
+from app.agent.routing import (
+    GraphBoundary,
+    combine_route,
+    read_route_snapshot,
+)
+from app.agent.run_guard import start_incident_run
+from app.agent.state import (
+    ActionDecision,
+    AgentError,
+    AgentGraphInput,
+    AgentGraphState,
+    AgentNodePorts,
+    CompletedAgentState,
+    DeliveryPlan,
+    Hypothesis,
+    PersistResult,
+    ToolBudget,
+)
+from app.agent.tools import AuditedToolExecutor, ToolBoundaryError, TransactionFactory
+from app.common.enums import ActionCode, AlarmSource, Decision, RunStatus
+from app.common.schemas import AlarmRef
+from app.common.tool_contracts import (
+    DocumentSearchToolInput,
+    EquipmentContextToolInput,
+    FdcSummaryToolInput,
+    ToolResult,
+)
+
+CANONICAL_NODES: Final[tuple[str, ...]] = (
+    "load_incident",
+    "collect_fdc",
+    "collect_equipment",
+    "collect_documents",
+    "generate_hypothesis",
+    "decide_action",
+    "persist_action",
+    "notify_email",
+    "approval_email",
+    "hitl_interrupt",
+    "publish_mes",
+    "writeback_result",
+    "cancel_mes",
+    "finalize",
+)
+INTERNAL_NODES: Final[tuple[str, ...]] = ("fail_run",)
+
+
+class PortNotWiredError(RuntimeError):
+    """후속 Task port가 아직 연결되지 않은 정상적인 fail-closed 상태."""
+
+    code = "PORT_NOT_WIRED"
+
+
+class AgentGraphInputError(ValueError):
+    """run 생성 전에 거부하는 sanitized 입력 오류."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+class _UnwiredPorts:
+    """production 기본값. 어떤 downstream 부작용도 흉내 내지 않는다."""
+
+    @staticmethod
+    def _fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise PortNotWiredError
+
+    generate_hypothesis = _fail
+    decide_action = _fail
+    persist_action = _fail
+    notify_email = _fail
+    approval_email = _fail
+    hitl_interrupt = _fail
+    publish_mes = _fail
+    writeback_result = _fail
+    cancel_mes = _fail
+
+
+@dataclass(frozen=True, slots=True)
+class AgentGraphDependencies:
+    """그래프가 소유하지 않는 DB·Tool·routing·후속 node 경계."""
+
+    transactions: TransactionFactory
+    tools: AuditedToolExecutor
+    routing_graph: GraphBoundary
+    ports: AgentNodePorts | None = None
+    now: Callable[[], datetime] = lambda: datetime.now(UTC)
+
+
+class CompiledAgentGraph:
+    """성공 ``invoke`` 결과에서 실행 전용 channel을 제거하는 얇은 proxy.
+
+    checkpoint 자체에는 내부 channel이 남아 재개에 쓰인다. 호출자에게 돌려주는 성공
+    결과만 canonical 20개로 projection하며, 실패·향후 interrupt의 부분 State는 원형을
+    유지한다. 완전성 판정은 여전히 ``finalize``의 명시 검증이 담당한다.
+    """
+
+    def __init__(self, compiled: Any) -> None:
+        self._compiled = compiled
+
+    @staticmethod
+    def _project(result: Any) -> Any:
+        if not isinstance(result, dict) or result.get("terminal_error") is not None:
+            return result
+        if not all(name in result for name in CompletedAgentState.model_fields):
+            return result
+        return {name: result[name] for name in CompletedAgentState.model_fields}
+
+    def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        return self._project(self._compiled.invoke(*args, **kwargs))
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        return self._project(await self._compiled.ainvoke(*args, **kwargs))
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._compiled, name)
+
+
+def _classify_exception(exc: Exception) -> str:
+    """예외 타입·sanitized 속성만 본다. ``str(exc)``는 읽지 않는다."""
+
+    if isinstance(exc, AgentRepositoryError):
+        return exc.code
+    if isinstance(exc, AgentCheckpointError):
+        return exc.reason_code
+    if isinstance(exc, ToolBoundaryError):
+        return exc.code
+    if isinstance(exc, PortNotWiredError):
+        return exc.code
+    if isinstance(exc, AgentGraphInputError):
+        return exc.code
+    if isinstance(exc, ValidationError):
+        return "STATE_CONTRACT_ERROR"
+    if isinstance(exc, ValueError):
+        return "NODE_CONTRACT_ERROR"
+    return "NODE_EXECUTION_ERROR"
+
+
+def _terminal(exc: Exception, node: str) -> AgentError:
+    return AgentError(code=_classify_exception(exc), node=node, terminal=True)
+
+
+def _append_nonterminal_error(
+    state: AgentGraphState,
+    *,
+    result: ToolResult | None,
+    node: str,
+) -> tuple[AgentError, ...]:
+    existing = state.get("errors", ())
+    if result is not None and result.ok:
+        return existing
+    if result is None:
+        code = "TOOL_CALL_FAILED"
+    else:
+        code = result.reason.partition(":")[0]
+    return (*existing, AgentError(code=code, node=node, terminal=False))
+
+
+def _safe_node(
+    name: str,
+    fn: Callable[[AgentGraphState], dict[str, Any]],
+) -> Callable[[AgentGraphState], dict[str, Any]]:
+    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+        try:
+            return fn(state)
+        except Exception as exc:
+            error = _terminal(exc, name)
+            return {
+                "terminal_error": error,
+                "errors": (*state.get("errors", ()), error),
+            }
+
+    return wrapped
+
+
+def _route_or_fail(target: str) -> Callable[[AgentGraphState], str]:
+    def route(state: AgentGraphState) -> str:
+        return "fail_run" if state.get("terminal_error") is not None else target
+
+    return route
+
+
+def _canonical_payload(state: AgentGraphState) -> dict[str, Any]:
+    # LangGraph checkpoint는 값이 None인 optional channel을 물리 State에서 생략할 수
+    # 있다. nullable은 None으로 복원하고, 실제 필수 channel 누락은 아래 Pydantic
+    # 완료 검증이 거부하게 한다.
+    return {name: state.get(name) for name in CompletedAgentState.model_fields}
+
+
+def _required_state_id(state: AgentGraphState, name: str) -> str:
+    value = state.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name.upper()}_MISSING")
+    return value
+
+
+def _document_query(state: AgentGraphState) -> str:
+    """가설·label 없이 이미 수집된 식별자만으로 검색문을 만든다."""
+
+    representative = state["representative_alarm"]
+    route = state["route"]
+    step_ids = tuple(
+        dict.fromkeys(
+            item.process_step_id
+            for item in route.graph_evidence
+            if item.process_step_id is not None
+        )
+    )
+    fdc = state.get("fdc_evidence")
+    parameter_ids = ()
+    if fdc is not None and fdc.ok:
+        parameter_ids = tuple(item.parameter_id for item in fdc.parameters)
+    fields = (
+        representative.source.value,
+        representative.alarm_id,
+        state["chamber_id"],
+        *step_ids,
+        *parameter_ids,
+    )
+    return " ".join(dict.fromkeys(str(field) for field in fields))[:1000]
+
+
+def build_agent_graph(
+    dependencies: AgentGraphDependencies,
+    *,
+    checkpointer: Any | None = None,
+    interrupt_after: tuple[str, ...] | None = None,
+) -> Any:
+    """canonical 14 node와 내부 ``fail_run`` 하나를 조립한다."""
+
+    ports: AgentNodePorts = dependencies.ports or _UnwiredPorts()  # type: ignore[assignment]
+
+    def run_latency_ms(connection: Any, run_id: str) -> int:
+        """DB 정본 ``started_at``과 현재 UTC 시각으로 경과 시간을 계산한다."""
+
+        started_at = get_agent_run(connection, run_id).started_at
+        try:
+            elapsed = dependencies.now() - started_at
+        except (TypeError, OverflowError) as exc:
+            raise ValueError("RUN_CLOCK_INVALID") from exc
+        return max(0, int(elapsed.total_seconds() * 1000))
+
+    def load_incident(state: AgentGraphState) -> dict[str, Any]:
+        """run·route snapshot을 한 UoW에서 확정하고 DB를 놓은 뒤 graph를 읽는다."""
+
+        level = state.get("autonomy_level")
+        if not isinstance(level, int) or isinstance(level, bool):
+            raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
+        if level not in (1, 2):
+            if level == 3:
+                raise AgentGraphInputError("AUTONOMY_LEVEL_NOT_IMPLEMENTED")
+            raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
+        try:
+            requested = AlarmRef.model_validate(state.get("requested_alarm"))
+        except ValidationError as exc:
+            raise AgentGraphInputError("REQUESTED_ALARM_INVALID") from exc
+        with dependencies.transactions() as connection:
+            started = start_incident_run(
+                connection,
+                requested,
+                autonomy_level=level,
+            )
+            bound = read_route_snapshot(connection, started.incident)
+            representative = started.incident.representative_alarm
+            fdc_lot_hist_id = bound.snapshot.lot_hist_id_of_member[
+                (AlarmSource(representative.source), representative.alarm_id)
+            ]
+
+        base: dict[str, Any] = {
+            "run_id": started.run.agent_run_id,
+            "thread_id": started.run.thread_id,
+            "retry_of_run_id": started.run.retry_of_run_id,
+            "requested_alarm": started.incident.requested_alarm,
+            "representative_alarm": representative,
+            "member_alarms": started.incident.member_alarms,
+            "lot_id": started.incident.lot_id,
+            "chamber_id": started.incident.chamber_id,
+            "fdc_evidence": None,
+            "optional_anomaly_evidence": None,
+            "graph_evidence": None,
+            "document_evidence": None,
+            "hypothesis": None,
+            "action_decision": None,
+            "action_id": None,
+            "approval_id": None,
+            "deliveries": (),
+            # 방금 생성한 run에는 예약 Tool row가 구조적으로 0건이다. 첫 호출부터는
+            # AuditedToolExecutor가 실제 count_tool_calls() 값으로 교체한다.
+            "tool_budget": ToolBudget(used=0),
+            "errors": (),
+            "autonomy_level": level,
+            "terminal_error": None,
+            "fdc_lot_hist_id": fdc_lot_hist_id,
+            "approval_decision": None,
+        }
+        try:
+            base["route"] = combine_route(bound, graph=dependencies.routing_graph)
+        except Exception as exc:
+            error = _terminal(exc, "load_incident")
+            base["terminal_error"] = error
+            base["errors"] = (error,)
+        return base
+
+    def collect_fdc(state: AgentGraphState) -> dict[str, Any]:
+        result = dependencies.tools.fdc_summary(
+            state["run_id"],
+            FdcSummaryToolInput(lot_hist_id=state["fdc_lot_hist_id"]),
+        )
+        return {
+            "fdc_evidence": result,
+            "optional_anomaly_evidence": None if result is None else result.anomaly,
+            "tool_budget": dependencies.tools.budget(state["run_id"]),
+            "errors": _append_nonterminal_error(
+                state, result=result, node="collect_fdc"
+            ),
+        }
+
+    def collect_equipment(state: AgentGraphState) -> dict[str, Any]:
+        result = dependencies.tools.equipment_context(
+            state["run_id"],
+            EquipmentContextToolInput(chamber_id=state["chamber_id"]),
+        )
+        return {
+            "graph_evidence": result,
+            "tool_budget": dependencies.tools.budget(state["run_id"]),
+            "errors": _append_nonterminal_error(
+                state, result=result, node="collect_equipment"
+            ),
+        }
+
+    def collect_documents(state: AgentGraphState) -> dict[str, Any]:
+        graph = state.get("graph_evidence")
+        model_code = graph.model_code if graph is not None and graph.ok else None
+        result = dependencies.tools.document_search(
+            state["run_id"],
+            DocumentSearchToolInput(
+                query=_document_query(state),
+                model_code=model_code,
+            ),
+        )
+        return {
+            "document_evidence": result,
+            "tool_budget": dependencies.tools.budget(state["run_id"]),
+            "errors": _append_nonterminal_error(
+                state, result=result, node="collect_documents"
+            ),
+        }
+
+    def generate_hypothesis(state: AgentGraphState) -> dict[str, Any]:
+        return {
+            "hypothesis": Hypothesis.model_validate(
+                ports.generate_hypothesis(
+                    state.get("fdc_evidence"),
+                    state.get("graph_evidence"),
+                    state.get("document_evidence"),
+                    state["route"],
+                )
+            )
+        }
+
+    def decide_action(state: AgentGraphState) -> dict[str, Any]:
+        return {
+            "action_decision": ActionDecision.model_validate(
+                ports.decide_action(state["route"])
+            )
+        }
+
+    def persist_action(state: AgentGraphState) -> dict[str, Any]:
+        decision = state["action_decision"]
+        if decision is None:
+            raise ValueError("ACTION_DECISION_MISSING")
+        result = PersistResult.model_validate(
+            ports.persist_action(state["run_id"], decision)
+        )
+        result.assert_matches(decision)
+        return {
+            "action_id": result.action_id,
+            "approval_id": result.approval_id,
+            "deliveries": result.deliveries,
+        }
+
+    def notify_email(state: AgentGraphState) -> dict[str, Any]:
+        ports.notify_email(_required_state_id(state, "action_id"))
+        return {"errors": state.get("errors", ())}
+
+    def approval_email(state: AgentGraphState) -> dict[str, Any]:
+        ports.approval_email(
+            _required_state_id(state, "action_id"),
+            _required_state_id(state, "approval_id"),
+        )
+        return {"errors": state.get("errors", ())}
+
+    def hitl_interrupt(state: AgentGraphState) -> dict[str, Any]:
+        decision = Decision(
+            ports.hitl_interrupt(_required_state_id(state, "approval_id"))
+        )
+        return {
+            "approval_decision": decision,
+            "errors": state.get("errors", ()),
+        }
+
+    def publish_mes(state: AgentGraphState) -> dict[str, Any]:
+        ports.publish_mes(_required_state_id(state, "action_id"))
+        return {"errors": state.get("errors", ())}
+
+    def writeback_result(state: AgentGraphState) -> dict[str, Any]:
+        return {
+            "deliveries": tuple(
+                DeliveryPlan.model_validate(item)
+                for item in ports.writeback_result(
+                    _required_state_id(state, "action_id")
+                )
+            )
+        }
+
+    def cancel_mes(state: AgentGraphState) -> dict[str, Any]:
+        return {
+            "deliveries": tuple(
+                DeliveryPlan.model_validate(item)
+                for item in ports.cancel_mes(_required_state_id(state, "action_id"))
+            )
+        }
+
+    def finalize(state: AgentGraphState) -> dict[str, Any]:
+        # 검증이 COMMITTED 전이어야 한다.
+        completed = CompletedAgentState.model_validate(_canonical_payload(state))
+        with dependencies.transactions() as connection:
+            latency_ms = run_latency_ms(connection, completed.run_id)
+            finish_agent_run(
+                connection,
+                completed.run_id,
+                RunStatus.COMPLETED,
+                evidence={
+                    "route_consistency": completed.route.route_consistency,
+                    "error_codes": [error.code for error in completed.errors],
+                },
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=latency_ms,
+            )
+        return {name: getattr(completed, name) for name in completed.model_fields}
+
+    def fail_run(state: AgentGraphState) -> dict[str, Any]:
+        error = state.get("terminal_error")
+        if error is None:
+            raise ValueError("TERMINAL_ERROR_MISSING")
+        run_id = state.get("run_id")
+        if run_id is None:
+            # load_pre 실패는 graph 밖으로 올라가므로 정상 구성에서는 도달하지 않는다.
+            raise ValueError("FAILED_RUN_ID_MISSING")
+        with dependencies.transactions() as connection:
+            latency_ms = run_latency_ms(connection, run_id)
+            finish_agent_run(
+                connection,
+                run_id,
+                RunStatus.FAILED,
+                evidence={"code": error.code},
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=latency_ms,
+            )
+        return {"terminal_error": error}
+
+    graph = StateGraph(AgentGraphState, input=AgentGraphInput)
+    graph.add_node("load_incident", load_incident)
+    implementations = {
+        "collect_fdc": collect_fdc,
+        "collect_equipment": collect_equipment,
+        "collect_documents": collect_documents,
+        "generate_hypothesis": generate_hypothesis,
+        "decide_action": decide_action,
+        "persist_action": persist_action,
+        "notify_email": notify_email,
+        "approval_email": approval_email,
+        "hitl_interrupt": hitl_interrupt,
+        "publish_mes": publish_mes,
+        "writeback_result": writeback_result,
+        "cancel_mes": cancel_mes,
+        "finalize": finalize,
+    }
+    for name, implementation in implementations.items():
+        graph.add_node(name, _safe_node(name, implementation))
+    graph.add_node("fail_run", fail_run)
+
+    graph.add_edge(START, "load_incident")
+    graph.add_conditional_edges(
+        "load_incident",
+        _route_or_fail("collect_fdc"),
+        {"collect_fdc": "collect_fdc", "fail_run": "fail_run"},
+    )
+
+    def after_fdc(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        route = state["route"]
+        covered = any(
+            evidence.chamber_id == state["chamber_id"]
+            for evidence in route.graph_evidence
+        )
+        if state["autonomy_level"] == 2 and route.route_consistency and covered:
+            return "collect_documents"
+        return "collect_equipment"
+
+    graph.add_conditional_edges(
+        "collect_fdc",
+        after_fdc,
+        {
+            "collect_equipment": "collect_equipment",
+            "collect_documents": "collect_documents",
+            "fail_run": "fail_run",
+        },
+    )
+    graph.add_conditional_edges(
+        "collect_equipment",
+        _route_or_fail("collect_documents"),
+        {"collect_documents": "collect_documents", "fail_run": "fail_run"},
+    )
+
+    linear = (
+        ("collect_documents", "generate_hypothesis"),
+        ("generate_hypothesis", "decide_action"),
+    )
+    for source, target in linear:
+        graph.add_conditional_edges(
+            source,
+            _route_or_fail(target),
+            {target: target, "fail_run": "fail_run"},
+        )
+
+    def after_decision(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        decision = state.get("action_decision")
+        if decision is None:
+            return "fail_run"
+        return "finalize" if decision.action is None else "persist_action"
+
+    graph.add_conditional_edges(
+        "decide_action",
+        after_decision,
+        {
+            "persist_action": "persist_action",
+            "finalize": "finalize",
+            "fail_run": "fail_run",
+        },
+    )
+
+    def after_persist(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        decision: ActionDecision | None = state.get("action_decision")
+        if decision is None or decision.action is None:
+            return "fail_run"
+        return {
+            ActionCode.MONITORING: "finalize",
+            ActionCode.WARNING: "notify_email",
+            ActionCode.EQP_HOLD: "approval_email",
+        }[decision.action]
+
+    graph.add_conditional_edges(
+        "persist_action",
+        after_persist,
+        {
+            "finalize": "finalize",
+            "notify_email": "notify_email",
+            "approval_email": "approval_email",
+            "fail_run": "fail_run",
+        },
+    )
+    graph.add_conditional_edges(
+        "notify_email",
+        _route_or_fail("finalize"),
+        {"finalize": "finalize", "fail_run": "fail_run"},
+    )
+    graph.add_conditional_edges(
+        "approval_email",
+        _route_or_fail("hitl_interrupt"),
+        {"hitl_interrupt": "hitl_interrupt", "fail_run": "fail_run"},
+    )
+
+    def after_hitl(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        value = state.get("approval_decision")
+        try:
+            decision = Decision(value)
+        except (TypeError, ValueError):
+            return "fail_run"
+        if decision is Decision.APPROVE:
+            return "publish_mes"
+        if decision is Decision.REJECT:
+            return "cancel_mes"
+        return "fail_run"
+
+    graph.add_conditional_edges(
+        "hitl_interrupt",
+        after_hitl,
+        {
+            "publish_mes": "publish_mes",
+            "cancel_mes": "cancel_mes",
+            "fail_run": "fail_run",
+        },
+    )
+    graph.add_conditional_edges(
+        "publish_mes",
+        _route_or_fail("writeback_result"),
+        {"writeback_result": "writeback_result", "fail_run": "fail_run"},
+    )
+    for source in ("writeback_result", "cancel_mes"):
+        graph.add_conditional_edges(
+            source,
+            _route_or_fail("finalize"),
+            {"finalize": "finalize", "fail_run": "fail_run"},
+        )
+    graph.add_conditional_edges(
+        "finalize",
+        _route_or_fail("__end__"),
+        {"__end__": END, "fail_run": "fail_run"},
+    )
+    graph.add_edge("fail_run", END)
+    return CompiledAgentGraph(
+        graph.compile(
+            checkpointer=checkpointer,
+            interrupt_after=[] if interrupt_after is None else list(interrupt_after),
+        )
+    )
+
+
+__all__ = [
+    "CANONICAL_NODES",
+    "INTERNAL_NODES",
+    "AgentGraphDependencies",
+    "AgentGraphInputError",
+    "CompiledAgentGraph",
+    "PortNotWiredError",
+    "build_agent_graph",
+]

@@ -280,6 +280,7 @@ def _snapshot(
     wafer_of_member: dict[Any, str],
     steps: tuple[Any, ...],
     incident: ResolvedIncident | None = None,
+    lot_hist_id_of_member: dict[Any, str] | None = None,
 ) -> rt_repo.RouteSnapshot:
     """**incident와 일치하는** snapshot을 만든다. 어긋난 조합은 회귀가 따로 만든다."""
 
@@ -289,6 +290,14 @@ def _snapshot(
         chamber_id=target.chamber_id,
         member_keys=tuple((a.source, a.alarm_id) for a in target.member_alarms),
         wafer_of_member=wafer_of_member,
+        lot_hist_id_of_member=lot_hist_id_of_member
+        or {
+            key: next(
+                (step.lot_hist_id for step in steps if step.wafer_id == wafer_id),
+                "LH-MISSING",
+            )
+            for key, wafer_id in wafer_of_member.items()
+        },
         steps=steps,
     )
 
@@ -738,6 +747,7 @@ def _row(kind: str, **overrides: Any) -> Any:
         "duplicate_count": 0,
         "member_source": "TRACE" if kind == "member" else None,
         "member_alarm_id": "TA-01" if kind == "member" else None,
+        "member_lot_hist_id": "LH-1" if kind == "member" else None,
         "wafer_id": "LOT001W001",
         "lot_hist_id": "LH-1" if kind == "step" else None,
         "lot_id": LOT if kind == "step" else None,
@@ -1529,6 +1539,7 @@ class TestTheThreeSetsMustAgree:
             chamber_id=PHOTO_CHAMBER,
             member_keys=((TRACE, "TA-01"),),
             wafer_of_member={(TRACE, "OTHER"): "LOT001W001"},
+            lot_hist_id_of_member={(TRACE, "TA-01"): "LH-1"},
             steps=_two_step_snapshot().steps,
         )
         with pytest.raises(repo.RepositoryContractError) as exc:
@@ -1577,6 +1588,7 @@ class TestTheThreeSetsMustAgree:
             chamber_id=PHOTO_CHAMBER,
             member_keys=((TRACE, "TA-01"), (TRACE, "TA-01")),
             wafer_of_member={(TRACE, "TA-01"): "LOT001W001"},
+            lot_hist_id_of_member={(TRACE, "TA-01"): "LH-1"},
             steps=_two_step_snapshot().steps,
         )
         with pytest.raises(repo.RepositoryContractError) as exc:
