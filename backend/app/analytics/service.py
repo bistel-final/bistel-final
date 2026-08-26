@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from decimal import Decimal
 
@@ -74,6 +75,71 @@ def _is_sql_passthrough(question: str) -> bool:
     stripped = question.strip()
     leading = stripped.split(maxsplit=1)[0].lower() if stripped else ""
     return leading in _SQL_LEADING_KEYWORDS
+
+
+# ── semantic lint: '~별' 집계 질문의 GROUP BY 누락 감지 ──────────────
+#: 그룹 신호 3종 — '챔버별(로)', '각 챔버마다', '챔버 단위로'.
+#: 조사까지 포함해 토큰을 잡는다.
+_GROUP_SIGNAL_RE = re.compile(
+    r"[가-힣A-Za-z0-9_]+별(?:로)?(?=[\s,.?!)]|$)"
+    r"|각\s+[가-힣A-Za-z0-9_]+마다"
+    r"|[가-힣A-Za-z0-9_]+\s*단위로"
+)
+#: 그룹 의미가 아닌 '별' 단어 — 오탐 차단 (유니크 토큰 기준)
+_GROUP_SIGNAL_BLACKLIST: frozenset[str] = frozenset({"특별", "각별", "이별", "유별"})
+#: 집계 의도 어휘 — 그룹 신호만으로는 재생성하지 않는다(목록 조회 질문 보호)
+_AGGREGATE_WORDS: tuple[str, ...] = (
+    "수",
+    "건수",
+    "개수",
+    "평균",
+    "합계",
+    "합",
+    "최대",
+    "최소",
+    "분포",
+    "비율",
+    "count",
+    "avg",
+    "sum",
+)
+
+
+def _has_group_signal(question: str) -> bool:
+    """질문에 그룹별 집계 신호(~별 · 각 ~마다 · ~단위로)가 있는지 본다.
+
+    '~별' 토큰은 그룹 의미가 아닌 단어(blacklist)를 제외한다.
+    """
+    for match in _GROUP_SIGNAL_RE.finditer(question):
+        token = match.group(0)
+        if token.endswith("마다") or token.endswith("단위로"):
+            return True
+        token = token[:-1] if token.endswith("로") else token
+        if token not in _GROUP_SIGNAL_BLACKLIST:
+            return True
+    return False
+
+
+def _has_group_by(sql: str) -> bool:
+    try:
+        statement = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return True  # 파싱 불가면 lint 를 걸지 않는다 — 판단은 validator 몫
+    return statement.args.get("group") is not None
+
+
+def _needs_group_by_hint(question: str, sql: str) -> bool:
+    """'~별' + 집계 어휘 질문인데 SQL 에 GROUP BY 가 없으면 참 (V5 Q08 패턴).
+
+    결정론 규칙이며 차단이 아니라 재생성 힌트 트리거다 — 힌트 반영본이
+    검증을 통과하지 못하면 원안이 그대로 실행된다 (오탐 내성).
+    """
+    lowered = question.lower()
+    if not _has_group_signal(question):
+        return False
+    if not any(word in lowered for word in _AGGREGATE_WORDS):
+        return False
+    return not _has_group_by(sql)
 
 
 def _generate_plan(question: str) -> AnalysisPlanToolResult:
@@ -213,6 +279,26 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
     if not validation.valid or validation.normalized_sql is None:
         reason = validation.reason or "SQL 검증에 실패했다."
         return _rejected_response(question, f"POLICY_REJECTED: {reason}", _elapsed_ms())
+
+    # ── 2.5 semantic lint — '~별' 집계 질문의 GROUP BY 누락이면 힌트 재생성 ─
+    # 검증을 통과한 '의미상 틀린' SQL(Q08)은 기존 self-correction 에 안
+    # 걸린다. 힌트 반영본도 검증을 통과해야만 채택하며, 아니면 원안 유지.
+    if not _is_sql_passthrough(question) and _needs_group_by_hint(
+        question, validation.normalized_sql
+    ):
+        hinted = generate_analysis_plan(
+            AnalysisPlanToolInput(question=question.strip()),
+            retry_feedback=(
+                f"직전 SQL: {validation.normalized_sql}\n"
+                "질문의 '~별' 표현은 그룹별 집계를 요구한다. 해당 컬럼으로 "
+                "GROUP BY 를 추가해 다시 작성하라."
+            ),
+        )
+        if hinted.ok:
+            hinted_validation = validate_sql(hinted.sql or "")
+            if hinted_validation.valid and hinted_validation.normalized_sql:
+                plan = hinted
+                validation = hinted_validation
 
     # ── 3. 실행 — 대상은 언제나 normalized_sql, pool 은 QUERY 전용 ─────
     engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
