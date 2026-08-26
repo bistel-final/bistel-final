@@ -39,18 +39,27 @@
      그대로 쓸 수 있게 한다.
 
 [함수 실행 순서 — 코드에서 실제로 이 순서대로 호출된다]
-  1) compute_expected_point_counts  (parameter, step)별 관측 point_cnt 최댓값 산정
-  2) build_group_feature      summary_data·evaluation·dim_parameter 한 그룹 -> feature
-  3) feature_schema            관측된 (parameter, step) 조합으로 고정 feature 이름 생성
-  4) aggregate_wafer_features   그룹 feature -> lot_hist_id 단위 고정 폭 벡터로 pivot
-  5) split_lots                 lot_id 단위로 train/test 분리 (wafer 단위 분리 금지)
+  1) split_lots                 lot_id 목록을 train/test로 분리 (반드시 제일 먼저)
+  2) compute_expected_point_counts  train LOT에 속한 행만 넘겨 (parameter, step)별
+                                 관측 point_cnt 최댓값(coverage 분모) 산정
+  3) build_group_feature      summary_data·evaluation·dim_parameter 한 그룹 -> feature
+                               (train+test 전체 행에 적용, 분모는 2)의 결과를 그대로 씀)
+  4) feature_schema            train LOT의 그룹만 넘겨 고정 feature 이름 생성
+  5) aggregate_wafer_features   3)의 그룹 feature(전체) -> lot_hist_id 단위 고정 폭
+                                 벡터로 pivot (열 이름은 4)의 결과를 그대로 씀)
   6) fit_normalizer/apply_normalizer   train 표본에서만 평균·표준편차 산정
   7) train_isolation_forest     IsolationForest 학습
   8) raw_anomaly_scores         점수 방향 통일(높을수록 이상)
   9) fit_score_scaling/scale_scores   train 분포로 [0,1] 스케일 고정
   10) compute_display_threshold  train 분포 quantile로 표시 임계값 산정
   11) to_anomaly_signal         app.common.tool_contracts.AnomalySignal로 변환
-실제로 이 순서를 엮어서 실행하는 코드는 이 파일이 아니라
+
+1)이 제일 먼저인 이유(코드 리뷰로 드러난 실수): 2)와 4)도 "train에서만 기준을
+잡는다"는 이 모듈의 원칙을 따라야 하는 함수들인데, split_lots보다 먼저
+불리면 test LOT의 값이 그 기준(coverage 분모·feature 열 구성)에 섞여
+들어간다. fit_normalizer·fit_score_scaling이 이미 지키던 원칙을 2)·4)에도
+똑같이 적용한 것뿐이다 — 예외가 아니라 원래 규칙이 뒤늦게 넓게 적용된
+것이다. 실제로 이 순서를 엮어서 실행하는 코드는 이 파일이 아니라
 `scripts/train_anomaly_score_model.py`에 있다(이 파일은 "부품"만 제공하고
 "조립 순서"는 그 스크립트가 정한다).
 
@@ -122,6 +131,7 @@ __all__ = [
     "ScoreScaling",
     "ModelManifest",
     "compute_expected_point_counts",
+    "compute_spec_range",
     "build_group_feature",
     "feature_schema",
     "aggregate_wafer_features",
@@ -187,6 +197,13 @@ class WaferGroupFeature:
     # (value_mean - center) / spec_range — "이 그룹의 평균값이 규격 중심에서
     # 얼마나(규격 폭 대비 몇 %만큼) 벗어났는지"를 나타내는 상대 거리다.
     # 0에 가까우면 규격 중심 근처, 절대값이 크면 중심에서 많이 벗어난 것이다.
+    # 예외: upper_only=True인 parameter(예: ET_REFL)는 _center()가 spec_lower
+    # 없이 spec_upper 자체를 중심으로 쓰므로, 이 해석이 반대로 뒤집힌다 — 0에
+    # 가까우면 "상한에 붙어있다"는 뜻이고, 음수 방향으로 클수록 상한에서 멀리
+    # (즉 더 정상적인 방향으로) 떨어져 있다는 뜻이다. 모델 입력값 자체는 정규화
+    # 단계에서 이 오프셋이 상쇄되어 학습·채점 결과에 영향이 없지만, 사람이 이
+    # 숫자를 직접 읽거나 화면에 노출할 때는 upper_only parameter에 한해 방향이
+    # 뒤집혀 있다는 걸 감안해야 한다.
     relative_mean_distance: float
     # value_std / spec_range — 이 그룹 안에서 값이 얼마나 들쭉날쭉했는지(변동성)를
     # 역시 규격 폭 대비 비율로 나타낸다. 값이 크면 같은 조건에서도 측정값이 안정적이지
@@ -257,6 +274,16 @@ class ModelManifest:
     나중에 누군가 "이 점수가 왜 이렇게 나왔지?"라고 물었을 때, 이 파일 하나만
     보면 feature 구성·seed·정규화 기준·threshold까지 전부 다시 확인할 수 있어야
     한다. 그래야 "재현 가능한 score"라는 완료 기준을 실제로 지킬 수 있다.
+
+    코드 리뷰에서 지적된 두 가지를 이 버전에서 채웠다:
+      - `expected_point_counts`가 빠져 있으면, 나중에 새 wafer를 채점할 때
+        coverage 분모를 다시 DB에서 구해야 하고, 그 사이 데이터가 늘면 같은
+        wafer가 다른 점수를 받을 수 있다(재현성 위반). 그래서 학습 시점에 쓴
+        분모 표 자체를 영수증에 그대로 박아둔다.
+      - `sklearn_version`·`numpy_version`이 빠져 있으면, "같은 seed·같은
+        데이터인데 라이브러리 버전이 달라서 점수가 달라진" 경우를 이 파일
+        하나로는 구분할 수 없다. `generated_at`과 같은 성격(생성 시점의
+        환경 정보)이라, 그 옆에 나란히 둔다.
     """
 
     model_version: str
@@ -271,6 +298,14 @@ class ModelManifest:
     train_lot_count: int
     test_lot_count: int
     train_wafer_count: int
+    # coverage 분모(=만점) 표. (parameter_id, recipe_step_no, expected_point_cnt)
+    # 튜플들을 정렬해서 담는다 — dict는 dataclass(frozen=True)라도 내부 값이
+    # 바뀔 수 있는 mutable 타입이라 여기 필드로 쓰지 않는다(다른 필드들도 전부
+    # tuple을 쓰는 것과 같은 이유). 새 wafer를 채점할 때 DB를 다시 훑지 않고
+    # 이 표를 그대로 재사용해야 학습 때와 같은 coverage가 나온다.
+    expected_point_counts: tuple[tuple[str, int, int], ...]
+    sklearn_version: str
+    numpy_version: str
 
 
 # ---------------------------------------------------------------------
@@ -323,7 +358,7 @@ def build_group_feature(
     죽지 않게 하기 위해서다(다만 이렇게 0.0으로 넘어간 행이 많다면 그 자체가
     데이터 이상 신호이니 학습 스크립트의 `skipped` 카운트를 같이 봐야 한다).
     """
-    spec_range = _spec_range(limit)
+    spec_range = compute_spec_range(limit)
     center = _center(limit)
 
     # 아래 5줄이 이 함수의 핵심이다 — "원본 통계값"을 "비교 가능한 비율"로
@@ -346,10 +381,19 @@ def build_group_feature(
     )
 
 
-def _spec_range(limit: ParameterLimit) -> float:
+def compute_spec_range(limit: ParameterLimit) -> float:
     """규격 상한·하한 사이의 폭(USL - LSL)을 구한다 — "이 parameter가 허용하는
     전체 범위"라고 보면 된다. `upper_only=True`인 parameter(예: ET_REFL)는
     하한이 아예 없으므로 상한값 자체를 기준 폭으로 대신 쓴다.
+
+    (공개 함수다 — `build_group_feature` 내부 계산뿐 아니라, 학습 스크립트가
+    "규격 폭이 0이라 이 그룹이 아무 신호도 못 주는" 경우를 별도로 집계할 때도
+    이 함수를 그대로 재사용한다. 함수 안에서 이 값을 담는 지역 변수 이름은
+    똑같이 `spec_range`이지만 이름이 겹쳐도 상관없다 — 지역 변수 할당은 그
+    줄의 오른쪽(`compute_spec_range(limit)`)이 먼저 평가된 뒤에 이뤄지므로,
+    만약 이름이 완전히 같은 `spec_range`라는 함수였다면 오히려
+    `UnboundLocalError`가 났을 것이다. 그래서 함수 이름을 `compute_spec_range`로
+    지어 지역 변수 `spec_range`와 겹치지 않게 피했다.)
     """
     if limit.upper_only:
         return abs(limit.spec_upper) if limit.spec_upper else 0.0

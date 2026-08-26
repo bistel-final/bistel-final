@@ -152,15 +152,63 @@ def test_aggregate_wafer_features_fills_missing_with_zero() -> None:
     assert by_id["H1"].values[p2_index] == 0.0
 
 
+def test_train_only_fit_excludes_test_only_signal() -> None:
+    """코드 리뷰 필수1 회귀 테스트.
+
+    `compute_expected_point_counts`·`feature_schema`는 "무엇을 넘겨받았는지"만
+    아는 순수 함수라 train/test라는 개념 자체를 모른다 — 실제 버그는
+    `train_anomaly_score_model.py`가 이 두 함수를 train+test 전체 데이터로
+    불렀던 "호출 순서"에 있었다(지금은 고쳐졌다). 이 테스트는 그 대신 "train
+    그룹만 넘기면 test의 신호가 전혀 안 섞인다"는 것을, model.py 레벨에서
+    직접 확인한다 — 스크립트를 다시 잘못 짜더라도(예: 다음 사람이 다시 전체
+    데이터를 넘기도록 되돌리더라도) 이 테스트 자체는 "train만 넘겼을 때
+    맞는 동작"의 기준으로 계속 남는다.
+
+    LOT-TRAIN의 (P1, step1) point_cnt는 3이다. LOT-TEST는 그 조합을
+    point_cnt=999로도 갖고(만점을 부풀릴 수 있는 값), train에는 전혀 없는
+    (P2, step1) 조합도 갖는다. train 그룹만 fit에 넘기면: (1) (P1, step1)의
+    만점은 999가 아니라 3이어야 하고, (2) feature 이름 목록에 P2가 아예
+    없어야 한다.
+    """
+    train_key = GroupKey(lot_hist_id="H-TRAIN", parameter_id="P1", recipe_step_no=1)
+    train_group = anomaly_model.build_group_feature(
+        key=train_key,
+        lot_id="LOT-TRAIN",
+        value_mean=5.0,
+        value_std=1.0,
+        point_cnt=3,
+        ooc_point_cnt=0,
+        oos_point_cnt=0,
+        limit=_limit("P1"),
+        expected_point_cnt=3,
+    )
+
+    # compute_expected_point_counts에 train 그룹의 (key, point_cnt)만 넘긴다
+    # — test의 999는 애초에 이 목록에 들어오지 않는다.
+    expected_point_counts = anomaly_model.compute_expected_point_counts(
+        [(train_key, 3)]
+    )
+    assert expected_point_counts[("P1", 1)] == 3
+
+    # feature_schema에도 train 그룹만 넘긴다 — P2는 train에 없으므로 열에도 없다.
+    feature_names = anomaly_model.feature_schema([train_group])
+    assert not any(name.startswith("P2__") for name in feature_names)
+
+
 def test_score_direction_and_bounds() -> None:
     """ "높을수록 이상"과 "점수는 항상 0~1 사이"라는 두 가지 계약을 확인한다.
 
     정상적인(평균 0, 표준편차 1짜리 정규분포) 데이터 50개로 모델을 학습시킨
-    뒤, 값이 8.0으로 확 튀는 명백한 이상치 하나를 채점해본다. 이 이상치의
-    점수가 정상 데이터 점수들의 상위 10% 지점(quantile 0.9)보다 높게
-    나와야, "이상할수록 점수가 높다"는 방향이 실제로 맞다고 확인할 수 있다.
-    (완전히 무작위 데이터라 이상치가 항상 1등을 하리라는 보장은 없지만, 최소
-    상위권에는 들어야 정상이다.)
+    뒤, 값이 8.0으로 확 튀는 명백한 이상치 하나를 채점해본다.
+
+    방향(이상할수록 점수가 높다) 확인은 반드시 `raw_anomaly_scores`(스케일링
+    전 원점수)로 해야 한다 — 코드 리뷰 지적: outlier처럼 train 분포를 크게
+    벗어나는 값은 `scale_scores`의 `np.clip(scaled, 0.0, 1.0)`이 무조건 1.0으로
+    잘라버리므로, 스케일링 후 값으로 "outlier_score >= 어떤 값"을 비교하면
+    방향이 반대로 뒤집혀 있어도(즉 `raw_anomaly_scores`의 부호를 실수로 다시
+    뒤집어도) 1.0이 그 비교를 항상 통과시켜 테스트가 거짓으로 green이 된다.
+    그래서 방향은 raw 값끼리, 범위(0~1)는 scale_scores 결과로 따로 나눠서
+    확인한다.
     """
     rng = np.random.default_rng(0)
     train_matrix = rng.normal(0, 1, size=(50, 4))  # "정상" 데이터 50개(4개 feature)
@@ -169,15 +217,16 @@ def test_score_direction_and_bounds() -> None:
     forest = anomaly_model.train_isolation_forest(train_matrix)
     train_raw = anomaly_model.raw_anomaly_scores(forest, train_matrix)
     scaling = anomaly_model.fit_score_scaling(train_raw)
-
     train_scores = anomaly_model.scale_scores(train_raw, scaling)
-    outlier_score = anomaly_model.scale_scores(
-        anomaly_model.raw_anomaly_scores(forest, outlier), scaling
-    )
 
     assert (train_scores >= 0).all() and (train_scores <= 1).all()  # 항상 0~1 범위
-    # 이상치가 정상 분포 상위 90%보다 더 높은 점수를 받아야 한다(방향 통일 확인)
-    assert outlier_score[0] >= np.quantile(train_scores, 0.9)
+
+    # 방향 검증은 스케일링 이전의 raw 값으로 직접 한다 — outlier의 raw
+    # anomaly score가 train raw 점수들의 최댓값보다 커야, "이상할수록
+    # raw_anomaly_scores가 크다"는 이 Task의 실제 계약(부호 뒤집기)이 맞다고
+    # 확인할 수 있다.
+    outlier_raw = anomaly_model.raw_anomaly_scores(forest, outlier)
+    assert outlier_raw[0] > train_raw.max()
 
 
 def test_normalizer_uses_train_only() -> None:
@@ -221,23 +270,52 @@ _LEAKAGE_CHECKED_FUNCTIONS = (
 )
 
 
-def test_repository_fetch_functions_never_touch_labels() -> None:
-    """`train_anomaly_score_model.py`가 실제로 호출하는 4개 조회 함수의 소스 전체
-    (SQL 리터럴 포함)에 금지 토큰이 없는지 정적으로 검사한다.
+def _leak_check_text(fn) -> str:
+    """`fn`의 소스 텍스트에, `fn`이 실행 중 참조하는 모듈 전역 변수 중 SQL
+    문자열로 보이는 것들의 실제 값까지 이어붙여 돌려준다.
 
-    `inspect.getsource(fn)`은 파이썬 표준 라이브러리 기능으로, 함수 `fn`이
-    정의된 소스 코드를 문자열 그대로 가져온다(docstring·주석·SQL 문자열
-    리터럴까지 전부 포함). 이 문자열을 소문자로 바꾼 뒤(대소문자 차이로
+    지금은 4개 조회 함수가 SQL을 함수 본문 안에 인라인 문자열로 두고 있어서
+    `inspect.getsource(fn)` 하나만으로도 충분하다. 하지만 코드 리뷰 지적대로,
+    이 저장소의 다른 repository들(C 파트)은 이미 `_SNAPSHOT = text(...)`처럼
+    SQL을 module 상수로 빼두는 패턴을 쓴다 — 그렇게 리팩터링되면 함수 본문에는
+    상수 이름만 남고 실제 SQL 문자열은 안 보이게 되어, `getsource(fn)`만
+    검사하는 이전 버전은 아무것도 못 보고도 통과(green)해 버린다.
+
+    `fn.__code__.co_names`는 그 함수가 실행 중 참조하는 이름(변수·함수·모듈
+    등)의 목록이다. 그중 `fn`이 정의된 모듈의 전역 변수이면서, 문자열이거나
+    (`str`) SQLAlchemy `text(...)`처럼 `.text` 속성으로 원본 SQL을 들고 있는
+    객체라면 그 값도 검사 대상에 포함시킨다. 이렇게 하면 SQL이 함수 안에
+    있든 module 상수로 빠지든 이 검사가 계속 그 값을 보게 된다.
+    """
+    parts = [inspect.getsource(fn)]
+    module = inspect.getmodule(fn)
+    module_globals = vars(module) if module is not None else {}
+    for name in fn.__code__.co_names:
+        value = module_globals.get(name)
+        if isinstance(value, str):
+            parts.append(value)
+        elif hasattr(value, "text"):  # sqlalchemy text(...) 같은 SQL 객체 대응
+            parts.append(str(value))
+    return "\n".join(parts).lower()
+
+
+def test_repository_fetch_functions_never_touch_labels() -> None:
+    """`train_anomaly_score_model.py`가 실제로 호출하는 4개 조회 함수의 소스
+    (및 그 함수가 참조하는 module 상수, SQL 리터럴 포함)에 금지 토큰이 없는지
+    정적으로 검사한다.
+
+    `_leak_check_text`가 모으는 문자열을 소문자로 바꾼 뒤(대소문자 차이로
     빠져나가지 못하게) `_FORBIDDEN_SQL_TOKENS`의 각 단어가 들어있는지 하나씩
     확인한다. 새 컬럼·JOIN을 추가하다 실수로 저 테이블 이름을 SQL에 끌어오면
     이 테스트가 즉시 깨진다 — "코드 리뷰에서 놓쳐도 테스트가 잡아준다"는
     안전망 역할이다.
     """
     for fn in _LEAKAGE_CHECKED_FUNCTIONS:
-        source = inspect.getsource(fn).lower()
+        source = _leak_check_text(fn)
         for token in _FORBIDDEN_SQL_TOKENS:
             assert token not in source, (
-                f"{fn.__name__}의 소스에서 금지된 토큰을 발견했습니다: {token!r}"
+                f"{fn.__name__}의 소스(또는 참조하는 module 상수)에서 금지된 "
+                f"토큰을 발견했습니다: {token!r}"
             )
 
 
@@ -318,13 +396,21 @@ def _run_pipeline(
     "완전히 같은 절차를 두 번 실행"해야 하기 때문이다 — 같은 코드를 두 번
     복사해 붙이는 대신, 함수 하나로 만들어 두 번 호출하면 "정말 같은 절차를
     실행했다"는 게 코드로도 명확해진다.
-    """
-    feature_names = anomaly_model.feature_schema(group_features)
-    vectors = anomaly_model.aggregate_wafer_features(group_features, feature_names)
 
-    lot_ids = [v.lot_id for v in vectors]
+    코드 리뷰 필수1 반영: `split_lots`를 `feature_schema`보다 먼저 호출한다.
+    실제 스크립트와 순서가 다르면 이 헬퍼가 "실제 파이프라인을 재현한다"는
+    자기 docstring이 거짓이 되고, test LOT의 신호가 train 쪽 feature 열
+    구성에 새는 문제를 이 테스트가 놓치게 된다.
+    """
+    lot_ids = [gf.lot_id for gf in group_features]
     train_lots, test_lots = anomaly_model.split_lots(lot_ids)
     train_set = set(train_lots)
+
+    # feature 열 이름은 train 그룹에서만 뽑는다 — test에만 있는 (parameter,
+    # step) 조합이 열로 새로 생기지 않게 한다.
+    train_group_features = [gf for gf in group_features if gf.lot_id in train_set]
+    feature_names = anomaly_model.feature_schema(train_group_features)
+    vectors = anomaly_model.aggregate_wafer_features(group_features, feature_names)
     train_vectors = [v for v in vectors if v.lot_id in train_set]
 
     train_matrix = np.array([v.values for v in train_vectors])
