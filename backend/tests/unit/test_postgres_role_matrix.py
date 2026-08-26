@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -155,6 +156,47 @@ def test_contract_inventory_and_digest_are_stable(
         _contract(database, stage)
     )
     assert len(matrix.contract_digest(contract)) == 64
+
+
+def test_import_does_not_read_profile_manifests() -> None:
+    """manifest 손상이 무관한 app import·pytest collection을 막지 않는다."""
+
+    script = f"""
+import pathlib
+import sys
+original = pathlib.Path.read_text
+def guarded(path, *args, **kwargs):
+    if path.suffix == '.json':
+        raise AssertionError(f'manifest read at import: {{path}}')
+    return original(path, *args, **kwargs)
+pathlib.Path.read_text = guarded
+sys.path.insert(0, {str(SCRIPTS_ROOT)!r})
+import postgres_role_matrix
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_first_contract_build_reports_manifest_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    matrix._manifest_contract.cache_clear()
+    monkeypatch.setattr(matrix, "MANIFEST_ROOT", tmp_path)
+
+    with pytest.raises(matrix.ContractError, match="읽을 수 없습니다"):
+        matrix.build_contract(
+            "kosa_agent",
+            matrix.MatrixStage.CORE,
+            matrix.SchemaStage.RUNTIME_CHECKPOINTED,
+        )
+    matrix._manifest_contract.cache_clear()
 
 
 def test_runtime_core_then_checkpoint_is_exact_successor() -> None:
@@ -314,8 +356,8 @@ def test_marker_binds_target_contract_and_predecessors(tmp_path: Path) -> None:
         contract,
         target,
         "GH-999",
-        runner.ZERO_SHA256,
-        runner.ZERO_SHA256,
+        "b" * 64,
+        "c" * 64,
         "a" * 64,
         "RECOVERED",
         marker_root=tmp_path,
@@ -333,6 +375,103 @@ def test_marker_binds_target_contract_and_predecessors(tmp_path: Path) -> None:
     )
     with pytest.raises(runner.RoleMatrixError, match="identity"):
         runner.validate_marker(payload, contract, target, tmp_path)
+
+
+def test_recovered_marker_rejects_missing_provenance(tmp_path: Path) -> None:
+    contract = _contract()
+    source = Path(__file__).resolve().parents[3] / "infra/bootstrap/markers"
+    for prefix in ("agent_severity_guard_final", "checkpoint_setup_final"):
+        shutil.copy2(
+            source / f"{prefix}.kosa_agent.json",
+            tmp_path / f"{prefix}.kosa_agent.json",
+        )
+    target = db_target.BootstrapTarget(
+        host="db.example.invalid",
+        port=5432,
+        username="bootstrap",
+        password="not-persisted",
+        database="kosa_agent",
+        profile="runtime",
+    )
+    payload = runner._marker_payload(
+        contract,
+        target,
+        "GH-999",
+        runner.ZERO_SHA256,
+        runner.ZERO_SHA256,
+        "a" * 64,
+        "RECOVERED",
+        marker_root=tmp_path,
+    )
+
+    with pytest.raises(runner.RoleMatrixError, match="증적 hash"):
+        runner.validate_marker(payload, contract, target, tmp_path)
+
+
+def test_snapshot_validation_binds_recovery_provenance() -> None:
+    contract = _contract()
+    snapshot = _exact_snapshot(contract)
+    snapshot.update(
+        {
+            "relation_catalog": [],
+            "view_definitions": [],
+            "indexes": [],
+            "constraints": [],
+        }
+    )
+    payload = runner._snapshot_payload(snapshot, contract, "GH-999")
+
+    assert len(runner.validate_snapshot(payload, contract, "GH-999")) == 64
+    forged = dict(payload)
+    forged["change_reference"] = "GH-998"
+    with pytest.raises(runner.RoleMatrixError, match="identity"):
+        runner.validate_snapshot(forged, contract, "GH-999")
+
+
+def test_new_login_role_sql_contains_scram_verifier_not_plaintext() -> None:
+    verifier = "SCRAM-SHA-256$4096:c2FsdA==$stored:server"
+
+    class FakePGconn:
+        calls: list[tuple[bytes, bytes, bytes]] = []
+
+        def encrypt_password(
+            self, password: bytes, username: bytes, algorithm: bytes
+        ) -> bytes:
+            self.calls.append((password, username, algorithm))
+            return verifier.encode("ascii")
+
+    class FakeCursor:
+        statements: list[object] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def execute(self, statement: object) -> None:
+            self.statements.append(statement)
+
+    class FakeDriver:
+        pgconn = FakePGconn()
+
+        @staticmethod
+        def cursor() -> FakeCursor:
+            return FakeCursor()
+
+    class FakeConnection:
+        class Raw:
+            driver_connection = FakeDriver()
+
+        connection = Raw()
+
+    secrets = {role: f"plain-secret-{role.value}" for role in matrix.LOGIN_ROLES}
+    runner._create_missing_roles(FakeConnection(), {"roles": []}, secrets)  # type: ignore[arg-type]
+
+    rendered = repr(FakeCursor.statements)
+    assert verifier in rendered
+    assert all(secret not in rendered for secret in secrets.values())
+    assert {call[2] for call in FakePGconn.calls} == {b"scram-sha-256"}
 
 
 def test_snapshot_rejects_repository_and_symlink_paths(tmp_path: Path) -> None:

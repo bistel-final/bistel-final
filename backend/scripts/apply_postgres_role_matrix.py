@@ -9,7 +9,8 @@ ACL은 database-local이므로 3 DB 성공을 하나의 원자 transaction처럼
 * ``--preview``: read-only delta 집계(원문 SQL·secret 없음)
 * ``--apply``: 승인·snapshot·target confirm 뒤 한 DB transaction 적용
 * ``--verify``: live effective privilege와 marker exact 대조
-* ``--recover-marker``: live post-state가 exact일 때 marker만 복구
+* ``--recover-marker``: live post-state가 exact이고 원 approval·snapshot이 있을 때
+  marker만 복구
 
 ``PUBLIC`` 회수 범위는 database/schema/relation/sequence data access surface다. pgvector
 extension function/type/operator ACL은 수정하지 않는다.
@@ -27,7 +28,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 
 from dotenv import load_dotenv
 from psycopg import Error as PsycopgError
@@ -53,6 +54,31 @@ APPROVAL_FORMAT_VERSION = 1
 CHANGE_REFERENCE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ZERO_SHA256 = "0" * 64
+SNAPSHOT_SAFE_KEYS: Final = (
+    "database",
+    "tables",
+    "views",
+    "sequences",
+    "relation_columns",
+    "roles",
+    "memberships",
+    "role_settings",
+    "managed_owners",
+    "unmanageable_owners",
+    "relation_catalog",
+    "view_definitions",
+    "indexes",
+    "constraints",
+    "public_acl",
+    "default_acl",
+    "database_privileges",
+    "schema_privileges",
+    "relation_privileges",
+    "column_privileges",
+    "sequence_privileges",
+    "row_counts",
+    "content_hashes",
+)
 
 EXIT_OK = 0
 EXIT_MISMATCH = 1
@@ -853,11 +879,12 @@ def _create_missing_roles(
         login = matrix.ROLE_SPECS[role].login
         with driver.cursor() as cursor:
             if login:
+                verifier = _scram_verifier(driver, role, secrets[role])
                 cursor.execute(
                     sql.SQL(
                         "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                         "NOREPLICATION NOBYPASSRLS PASSWORD {}"
-                    ).format(sql.Identifier(role.value), sql.Literal(secrets[role]))
+                    ).format(sql.Identifier(role.value), sql.Literal(verifier))
                 )
             else:
                 cursor.execute(
@@ -866,6 +893,31 @@ def _create_missing_roles(
                         "NOREPLICATION NOBYPASSRLS"
                     ).format(sql.Identifier(role.value))
                 )
+
+
+def _scram_verifier(driver: Any, role: matrix.ManagedRole, secret: str) -> str:
+    """libpq로 SCRAM verifier를 만들어 평문 secret의 SQL 전송을 막는다."""
+
+    try:
+        encrypted = driver.pgconn.encrypt_password(
+            secret.encode("utf-8"),
+            role.value.encode("utf-8"),
+            b"scram-sha-256",
+        )
+        verifier = encrypted.decode("ascii")
+    except (AttributeError, TypeError, ValueError, UnicodeError, PsycopgError) as exc:
+        raise RoleMatrixError(
+            "SCRAM verifier를 생성할 수 없습니다",
+            reason_code="ROLE_VERIFIER_FAILED",
+            exit_code=EXIT_BLOCKED,
+        ) from exc
+    if not verifier.startswith("SCRAM-SHA-256$") or verifier == secret:
+        raise RoleMatrixError(
+            "SCRAM verifier 형식이 잘못됐습니다",
+            reason_code="ROLE_VERIFIER_FAILED",
+            exit_code=EXIT_BLOCKED,
+        )
+    return verifier
 
 
 def _all_columns(snapshot: Mapping[str, Any], relation: str) -> tuple[str, ...]:
@@ -1080,34 +1132,7 @@ def _snapshot_payload(
     contract: matrix.RoleMatrixContract,
     change_reference: str,
 ) -> dict[str, Any]:
-    safe = {
-        key: snapshot[key]
-        for key in (
-            "database",
-            "tables",
-            "views",
-            "sequences",
-            "relation_columns",
-            "roles",
-            "memberships",
-            "role_settings",
-            "managed_owners",
-            "unmanageable_owners",
-            "relation_catalog",
-            "view_definitions",
-            "indexes",
-            "constraints",
-            "public_acl",
-            "default_acl",
-            "database_privileges",
-            "schema_privileges",
-            "relation_privileges",
-            "column_privileges",
-            "sequence_privileges",
-            "row_counts",
-            "content_hashes",
-        )
-    }
+    safe = {key: snapshot[key] for key in SNAPSHOT_SAFE_KEYS}
     return {
         "artifact_type": "postgres_role_matrix_acl_snapshot",
         "format_version": 1,
@@ -1218,6 +1243,65 @@ def validate_approval(
             "approval target이 없습니다", reason_code="APPROVAL_MISMATCH"
         )
     _validate_utc_timestamp(payload["approved_at"], "approval")
+    manifest_v3.scan_for_sensitive_values(payload)
+    return _canonical_hash(payload)
+
+
+def validate_snapshot(
+    payload: Mapping[str, Any],
+    contract: matrix.RoleMatrixContract,
+    change_reference: str,
+) -> str:
+    """유실 marker 복구에 사용할 원 pre-state snapshot의 provenance를 검증한다."""
+
+    expected_keys = {
+        "artifact_type",
+        "format_version",
+        "task_id",
+        "dataset_epoch",
+        "database",
+        "profile",
+        "schema_stage",
+        "matrix_stage",
+        "matrix_digest_sha256",
+        "change_reference",
+        "captured_at",
+        "snapshot",
+    }
+    if set(payload) != expected_keys:
+        raise RoleMatrixError(
+            "ACL snapshot key가 계약과 다릅니다",
+            reason_code="SNAPSHOT_INVALID",
+        )
+    expected_identity = {
+        "artifact_type": "postgres_role_matrix_acl_snapshot",
+        "format_version": 1,
+        "task_id": matrix.TASK_ID,
+        "dataset_epoch": matrix.DATASET_EPOCH,
+        "database": contract.database,
+        "profile": contract.profile.value,
+        "schema_stage": contract.schema_stage.value,
+        "matrix_stage": contract.matrix_stage.value,
+        "matrix_digest_sha256": matrix.contract_digest(contract),
+        "change_reference": change_reference,
+    }
+    if any(payload.get(key) != value for key, value in expected_identity.items()):
+        raise RoleMatrixError(
+            "ACL snapshot identity가 다릅니다",
+            reason_code="SNAPSHOT_MISMATCH",
+        )
+    snapshot = payload.get("snapshot")
+    if not isinstance(snapshot, dict) or set(snapshot) != set(SNAPSHOT_SAFE_KEYS):
+        raise RoleMatrixError(
+            "ACL snapshot inventory가 계약과 다릅니다",
+            reason_code="SNAPSHOT_INVALID",
+        )
+    if snapshot.get("database") != contract.database:
+        raise RoleMatrixError(
+            "ACL snapshot database가 다릅니다",
+            reason_code="SNAPSHOT_MISMATCH",
+        )
+    _validate_utc_timestamp(payload["captured_at"], "snapshot")
     manifest_v3.scan_for_sensitive_values(payload)
     return _canonical_hash(payload)
 
@@ -1364,20 +1448,12 @@ def validate_marker(
             raise RoleMatrixError(
                 "role marker hash가 잘못됐습니다", reason_code="MARKER_INVALID"
             )
-    if payload["status"] == "APPLIED" and (
+    if payload["status"] in {"APPLIED", "RECOVERED"} and (
         payload["approval_sha256"] == ZERO_SHA256
         or payload["snapshot_sha256"] == ZERO_SHA256
     ):
         raise RoleMatrixError(
-            "applied marker 증적 hash가 비어 있습니다",
-            reason_code="MARKER_INVALID",
-        )
-    if payload["status"] == "RECOVERED" and (
-        payload["approval_sha256"] != ZERO_SHA256
-        or payload["snapshot_sha256"] != ZERO_SHA256
-    ):
-        raise RoleMatrixError(
-            "recovered marker hash 계약이 다릅니다",
+            "role marker 증적 hash가 비어 있습니다",
             reason_code="MARKER_INVALID",
         )
     if not CHANGE_REFERENCE.fullmatch(str(payload["change_reference"])):
@@ -1532,12 +1608,21 @@ def run(
                 raise RoleMatrixError(
                     "--recover-marker에는 valid --change-ref가 필요합니다"
                 )
+            if args.approval is None or args.snapshot_out is None:
+                raise RoleMatrixError(
+                    "--recover-marker에는 원 --approval과 --snapshot-out이 필요합니다"
+                )
+            approval = _read_json(args.approval, "change approval을 읽을 수 없습니다")
+            approval_sha = validate_approval(approval, contract, args.change_ref)
+            snapshot_path = _validate_snapshot_path(args.snapshot_out)
+            snapshot = _read_json(snapshot_path, "ACL snapshot을 읽을 수 없습니다")
+            snapshot_sha = validate_snapshot(snapshot, contract, args.change_ref)
             payload = _marker_payload(
                 contract,
                 target,
                 args.change_ref,
-                "0" * 64,
-                "0" * 64,
+                approval_sha,
+                snapshot_sha,
                 _row_fingerprint(before),
                 "RECOVERED",
                 marker_root=marker_root,

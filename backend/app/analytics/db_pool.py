@@ -3,7 +3,9 @@
 Runtime(kosa_agent)과 평가(kosa_text2sql)라는 두 논리 DB 에 대해,
 용도별(query 실행 / log 기록) engine 을 분리 생성한다.
 
-계정 분리가 1차 방어선이다 (V5-CM-3.5 role matrix).
+계정 분리가 1차 방어선이다 (V5-CM-3.5 role matrix). 단, Evaluation의
+``nl_query_log`` 조회는 이력 화면을 위해 readonly에 명시 허용하므로 예외다.
+LLM 생성 SQL이 그 table을 읽지 못하게 하는 1차 장벽은 SQL validator allowlist다.
 - query pool: kosa_readonly — SELECT 만 가능. LLM 이 생성한 SQL 은 반드시
   이 pool 로만 실행한다.
 - logger pool: Evaluation의 kosa_query_logger — nl_query_log INSERT 만 가능.

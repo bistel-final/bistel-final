@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -38,6 +39,7 @@ def test_health_import_succeeds_without_app_database_credential() -> None:
         capture_output=True,
         text=True,
         env=env,
+        cwd=Path(__file__).resolve().parents[1],
         timeout=30,
     )
 

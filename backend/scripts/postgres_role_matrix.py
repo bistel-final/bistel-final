@@ -23,6 +23,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final
@@ -205,33 +206,6 @@ def _manifest_tables(payload: Mapping[str, Any]) -> frozenset[str]:
     return frozenset(payload["tables"])
 
 
-RUNTIME_GUARDED_MANIFEST: Final = _load_manifest(
-    "runtime.runtime_guarded.json", SchemaStage.RUNTIME_GUARDED.value
-)
-RUNTIME_CHECKPOINTED_MANIFEST: Final = _load_manifest(
-    "runtime.runtime_checkpointed.json", SchemaStage.RUNTIME_CHECKPOINTED.value
-)
-EVALUATION_MANIFEST: Final = _load_manifest(
-    "evaluation.evaluation_reference.json", "reference_final"
-)
-
-
-RUNTIME_GUARDED_TABLES: Final = _manifest_tables(RUNTIME_GUARDED_MANIFEST)
-RUNTIME_CHECKPOINTED_TABLES: Final = _manifest_tables(RUNTIME_CHECKPOINTED_MANIFEST)
-EVALUATION_TABLES: Final = _manifest_tables(EVALUATION_MANIFEST)
-
-if RUNTIME_CHECKPOINTED_TABLES != (
-    RUNTIME_GUARDED_TABLES | CHECKPOINT_CATALOG | CHECKPOINT_OPERATIONAL
-):
-    raise ContractError(
-        "Runtime checkpoint successor inventory가 guarded + 4 table이 아닙니다"
-    )
-if len(RUNTIME_GUARDED_TABLES) != 22 or len(RUNTIME_CHECKPOINTED_TABLES) != 26:
-    raise ContractError("Runtime final inventory 수가 22/26 계약과 다릅니다")
-if len(EVALUATION_TABLES) != 13:
-    raise ContractError("Evaluation final inventory 수가 13 계약과 다릅니다")
-
-
 LOT_HISTORY_COLUMNS: Final = (
     "lot_hist_id",
     "lot_id",
@@ -274,25 +248,78 @@ EVALUATION_ACTION_COLUMNS: Final = (
     "approval_status",
 )
 
-for _manifest in (
-    RUNTIME_GUARDED_MANIFEST,
-    RUNTIME_CHECKPOINTED_MANIFEST,
-    EVALUATION_MANIFEST,
-):
-    if tuple(_manifest["tables"]["lot_history"]["columns"]) != LOT_HISTORY_COLUMNS:
-        raise ContractError("lot_history column projection이 final manifest와 다릅니다")
-if not set(EVALUATION_ACTION_COLUMNS).issubset(
-    EVALUATION_MANIFEST["tables"]["action_history"]["columns"]
-):
-    raise ContractError("evaluation action projection이 final manifest와 다릅니다")
+
+@dataclass(frozen=True, slots=True)
+class _ManifestContract:
+    runtime_guarded: Mapping[str, Any]
+    runtime_checkpointed: Mapping[str, Any]
+    evaluation: Mapping[str, Any]
+    runtime_guarded_tables: frozenset[str]
+    runtime_checkpointed_tables: frozenset[str]
+    evaluation_tables: frozenset[str]
+
+
+@cache
+def _manifest_contract() -> _ManifestContract:
+    """final manifest를 첫 contract build 시점에 한 번만 적재한다.
+
+    모듈 import는 app 기동과 pytest collection에서도 사용된다. manifest 파일
+    손상은 권한 계약을 실제로 사용할 때 ``ContractError``로 보고하고, 무관한
+    liveness/import 경로를 막지 않는다.
+    """
+
+    runtime_guarded = _load_manifest(
+        "runtime.runtime_guarded.json", SchemaStage.RUNTIME_GUARDED.value
+    )
+    runtime_checkpointed = _load_manifest(
+        "runtime.runtime_checkpointed.json", SchemaStage.RUNTIME_CHECKPOINTED.value
+    )
+    # SchemaStage enum과 파일명은 현재 lifecycle인 evaluation_reference지만,
+    # pin된 manifest 내부 schema_stage는 발급 이력값 reference_final을 유지한다.
+    # 두 값의 차이는 typo가 아니며 manifest 재발급 Task 없이 바꾸지 않는다.
+    evaluation = _load_manifest(
+        "evaluation.evaluation_reference.json", "reference_final"
+    )
+
+    runtime_guarded_tables = _manifest_tables(runtime_guarded)
+    runtime_checkpointed_tables = _manifest_tables(runtime_checkpointed)
+    evaluation_tables = _manifest_tables(evaluation)
+    if runtime_checkpointed_tables != (
+        runtime_guarded_tables | CHECKPOINT_CATALOG | CHECKPOINT_OPERATIONAL
+    ):
+        raise ContractError(
+            "Runtime checkpoint successor inventory가 guarded + 4 table이 아닙니다"
+        )
+    if len(runtime_guarded_tables) != 22 or len(runtime_checkpointed_tables) != 26:
+        raise ContractError("Runtime final inventory 수가 22/26 계약과 다릅니다")
+    if len(evaluation_tables) != 13:
+        raise ContractError("Evaluation final inventory 수가 13 계약과 다릅니다")
+    for payload in (runtime_guarded, runtime_checkpointed, evaluation):
+        if tuple(payload["tables"]["lot_history"]["columns"]) != LOT_HISTORY_COLUMNS:
+            raise ContractError(
+                "lot_history column projection이 final manifest와 다릅니다"
+            )
+    if not set(EVALUATION_ACTION_COLUMNS).issubset(
+        evaluation["tables"]["action_history"]["columns"]
+    ):
+        raise ContractError("evaluation action projection이 final manifest와 다릅니다")
+    return _ManifestContract(
+        runtime_guarded=runtime_guarded,
+        runtime_checkpointed=runtime_checkpointed,
+        evaluation=evaluation,
+        runtime_guarded_tables=runtime_guarded_tables,
+        runtime_checkpointed_tables=runtime_checkpointed_tables,
+        evaluation_tables=evaluation_tables,
+    )
 
 
 def expected_inventory(profile: Profile, schema_stage: SchemaStage) -> Inventory:
+    manifests = _manifest_contract()
     if profile is Profile.RUNTIME:
         if schema_stage is SchemaStage.RUNTIME_GUARDED:
-            tables = RUNTIME_GUARDED_TABLES
+            tables = manifests.runtime_guarded_tables
         elif schema_stage is SchemaStage.RUNTIME_CHECKPOINTED:
-            tables = RUNTIME_CHECKPOINTED_TABLES
+            tables = manifests.runtime_checkpointed_tables
         else:
             raise ContractError("Runtime profile의 schema stage가 아닙니다")
         sequences = RUNTIME_SEQUENCES | {QUERY_LOG_SEQUENCE}
@@ -300,7 +327,7 @@ def expected_inventory(profile: Profile, schema_stage: SchemaStage) -> Inventory
     if schema_stage is not SchemaStage.EVALUATION_REFERENCE:
         raise ContractError("Evaluation profile의 schema stage가 아닙니다")
     return Inventory(
-        tables=EVALUATION_TABLES,
+        tables=manifests.evaluation_tables,
         views=VIEWS,
         sequences=frozenset({QUERY_LOG_SEQUENCE}),
     )
@@ -311,15 +338,16 @@ def expected_table_columns(
 ) -> Mapping[str, tuple[str, ...]]:
     """선택한 final profile manifest의 exact table column 계약."""
 
+    manifests = _manifest_contract()
     if profile is Profile.RUNTIME:
         if schema_stage is SchemaStage.RUNTIME_GUARDED:
-            payload = RUNTIME_GUARDED_MANIFEST
+            payload = manifests.runtime_guarded
         elif schema_stage is SchemaStage.RUNTIME_CHECKPOINTED:
-            payload = RUNTIME_CHECKPOINTED_MANIFEST
+            payload = manifests.runtime_checkpointed
         else:
             raise ContractError("Runtime profile의 schema stage가 아닙니다")
     elif schema_stage is SchemaStage.EVALUATION_REFERENCE:
-        payload = EVALUATION_MANIFEST
+        payload = manifests.evaluation
     else:
         raise ContractError("Evaluation profile의 schema stage가 아닙니다")
     return MappingProxyType(

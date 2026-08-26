@@ -65,6 +65,7 @@ def test_every_predecessor_exists(rows: dict[str, TaskRow]) -> None:
 
 
 def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
+    text = WBS.read_text(encoding="utf-8")
     fields = _task_fields()
     non_p2 = [row for row in fields if row[2] != "P2"]
     p0 = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] == "P0")
@@ -78,8 +79,28 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
     assert (p0, p1, total, common) == (121.0, 44.5, 165.5, 59.5)
+    summary = re.search(
+        r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
+        r"(?:\|[^\n]*\n){4}"
+        r"\| \*\*합계\*\* \| \| \*\*(?P<total>[0-9.]+)h\*\* \|",
+        text,
+    )
+    priorities = re.search(
+        r"우선순위별 공수는 \*\*P0 (?P<p0>[0-9.]+)h / P1 " r"(?P<p1>[0-9.]+)h\*\*",
+        text,
+    )
+    common_prose = re.search(r"\*\*Common 합계: (?P<common>[0-9.]+)h\*\*", text)
+    assert summary is not None and priorities is not None and common_prose is not None
+    assert float(summary["common"]) == common
+    assert float(summary["total"]) == total
+    assert float(priorities["p0"]) == p0
+    assert float(priorities["p1"]) == p1
+    assert float(common_prose["common"]) == common
     assert cm_3_5[-2] == "4.0h"
-    assert cm_3_5[-3] == "V5-CM-3.2"
+    assert {item.strip() for item in cm_3_5[-3].split(",")} == {
+        "V5-CM-3.3",
+        "V5-CM-3.4",
+    }
     for requirement in ("NFR-01", "NFR-02", "NFR-05", "NFR-19", "FR-D-03"):
         assert requirement in cm_3_5[-4]
     for phrase in (
@@ -130,7 +151,8 @@ def test_no_p0_task_waits_on_a_p1_task(rows: dict[str, TaskRow]) -> None:
     assert not inverted
 
 
-#: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.5 → B-1.3` (구현리뷰 18차 §88).
+#: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.3 → CM-3.4 → CM-3.5`
+#: `→ B-1.3` (구현리뷰 18차 §88과 PR #168 팀 리뷰).
 #:
 #: **direct edge로 고정한다.** 위상 순서만 비교하면 파일의 행 배치가 우연히 그 순서라서
 #: edge를 지워도 통과한다 — 19차가 3건을 그렇게 뚫었다(권장 1).
@@ -138,7 +160,10 @@ REFERENCE_CHAIN: tuple[tuple[str, str], ...] = (
     ("V5-B-1.1", "V5-CM-3.1"),
     ("V5-CM-1.8", "V5-B-1.1"),
     ("V5-CM-3.2", "V5-CM-1.8"),
-    ("V5-CM-3.5", "V5-CM-3.2"),
+    ("V5-CM-3.3", "V5-CM-3.2"),
+    ("V5-CM-3.4", "V5-CM-3.3"),
+    ("V5-CM-3.5", "V5-CM-3.3"),
+    ("V5-CM-3.5", "V5-CM-3.4"),
     ("V5-B-1.3", "V5-CM-3.5"),
 )
 

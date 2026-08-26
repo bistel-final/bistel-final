@@ -280,6 +280,9 @@ jobs:
           python -m pytest -q
           tests/unit/test_postgres_role_matrix.py
           tests/unit/test_sql_validator.py
+          tests/unit/test_config_validation.py
+          tests/unit/test_db_pool.py
+          tests/unit/test_wbs_dependencies.py
           tests/test_health.py
           -rs --no-header
 

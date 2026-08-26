@@ -140,6 +140,32 @@ def _args(
     )
 
 
+def _recover_args(
+    contract: matrix.RoleMatrixContract,
+    approval: Path,
+    snapshot: Path,
+) -> object:
+    return runner._parser().parse_args(
+        [
+            "--database",
+            contract.database,
+            "--profile",
+            contract.profile.value,
+            "--schema-stage",
+            contract.schema_stage.value,
+            "--matrix-stage",
+            contract.matrix_stage.value,
+            "--change-ref",
+            "GH-999",
+            "--approval",
+            str(approval),
+            "--snapshot-out",
+            str(snapshot),
+            "--recover-marker",
+        ]
+    )
+
+
 def _connect(
     port: int, database: str, role: str, password: str
 ) -> psycopg.Connection[tuple[object, ...]]:
@@ -285,6 +311,16 @@ def test_role_matrix_real_login_core_checkpoint_and_noop(
                 assert not unused.exists()
                 assert role_marker.read_bytes() == marker_bytes
                 assert role_marker.stat().st_mtime_ns == marker_mtime
+                role_marker.unlink()
+                code, result = runner.run(
+                    _recover_args(contract, approval, snapshot),
+                    environ=environ,
+                    marker_root=marker_root,
+                )
+                assert (code, result["status"]) == (0, "RECOVERED")
+                recovered = json.loads(role_marker.read_text(encoding="utf-8"))
+                assert recovered["approval_sha256"] != runner.ZERO_SHA256
+                assert recovered["snapshot_sha256"] != runner.ZERO_SHA256
 
         core_marker = runner.marker_path(runtime_core, marker_root)
         before_bytes = core_marker.read_bytes()
