@@ -391,7 +391,10 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
             top_k: int,
             model_code: str | None,
         ) -> list[ToolDocumentHit]:
-            raise RuntimeError("검색 실패")
+            raise RuntimeError(
+                "SELECT * FROM document_chunk WHERE query='check' "
+                "postgresql://user:secret@localhost/db"
+            )
 
     monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
     monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", FailingService)
@@ -400,7 +403,10 @@ def test_search_documents_tool_returns_dependency_failure(monkeypatch: Any) -> N
 
     assert result.ok is False
     assert result.hits == []
-    assert result.reason == "DEPENDENCY_ERROR: 검색 실패"
+    assert result.reason == "DEPENDENCY_ERROR: 문서 검색 의존성 오류"
+    assert "SELECT" not in result.reason
+    assert "postgresql://" not in result.reason
+    assert "secret" not in result.reason
 
 
 def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None:

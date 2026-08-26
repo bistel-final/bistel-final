@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
@@ -14,6 +16,8 @@ from app.common.tool_contracts import (
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.graph_query import GraphQueryRepository
 from app.knowledge.service import DocumentSearchService, EquipmentContextService
+
+logger = logging.getLogger(__name__)
 
 
 # ==================
@@ -34,8 +38,9 @@ def search_documents(
         return DocumentSearchToolResult(ok=True, hits=hits)
     except TimeoutError as exc:
         return fail(DocumentSearchToolResult, f"TIMEOUT: {exc}")
-    except Exception as exc:
-        return fail(DocumentSearchToolResult, f"DEPENDENCY_ERROR: {exc}")
+    except Exception:
+        logger.exception("search_documents Tool dependency error")
+        return fail(DocumentSearchToolResult, "DEPENDENCY_ERROR: 문서 검색 의존성 오류")
 
 
 # ==================
