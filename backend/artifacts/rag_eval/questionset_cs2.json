@@ -17,7 +17,10 @@
       "audience": "user",
       "query": "같은 챔버에서 이상이 반복되면 어떤 조치를 해야 하나요?",
       "model_code": null,
-      "expected_targets": [{"document_id": "DOC-TROUBLE-FDC", "section": "5. 업무 조치 기준"}]
+      "expected_targets": [
+        {"document_id": "DOC-TROUBLE-FDC", "section": "2. 이상 확인 순서"},
+        {"document_id": "DOC-TROUBLE-FDC", "section": "5. 업무 조치 기준"}
+      ]
     },
     {
       "id": "ALL-USER-002",
@@ -25,6 +28,13 @@
       "query": "식각 결과 이상이 이전 포토 공정 영향인지 어떻게 확인하나요?",
       "model_code": null,
       "expected_targets": [{"document_id": "DOC-TROUBLE-FDC", "section": "4. 상류 공정 영향 확인"}]
+    },
+    {
+      "id": "ALL-USER-003",
+      "audience": "user",
+      "query": "SUMMARY OOC만 있을 때, TRACE OOS가 있을 때, R03 반복 이상일 때 업무 조치는 어떻게 다른가요?",
+      "model_code": null,
+      "expected_targets": [{"document_id": "DOC-TROUBLE-FDC", "section": "5. 업무 조치 기준"}]
     },
     {
       "id": "ALL-AGENT-001",

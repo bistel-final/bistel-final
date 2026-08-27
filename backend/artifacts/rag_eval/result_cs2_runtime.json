@@ -1,7 +1,7 @@
 {
   "questionset_id": "rag-cs2-search-eval-v2",
   "chunk_schema_version": "cs2",
-  "executed_at": "2026-08-27T07:07:05.790655+00:00",
+  "executed_at": "2026-08-27T07:50:55.980217+00:00",
   "grading_criteria": {
     "minimum_question_count": 12,
     "recall_at_k_threshold": 0.8,
@@ -14,19 +14,19 @@
   },
   "summary": {
     "overall": {
-      "question_count": 12,
-      "recall_at_k": 0.9166666666666666,
-      "mrr": 0.7916666666666666
+      "question_count": 13,
+      "recall_at_k": 0.9615384615384616,
+      "mrr": 0.8461538461538461
     },
     "audience:user": {
-      "question_count": 6,
-      "recall_at_k": 0.8333333333333334,
-      "mrr": 0.6666666666666666
+      "question_count": 7,
+      "recall_at_k": 0.9285714285714286,
+      "mrr": 0.7857142857142857
     },
     "model_code:NONE": {
-      "question_count": 4,
-      "recall_at_k": 0.75,
-      "mrr": 0.625
+      "question_count": 5,
+      "recall_at_k": 0.9,
+      "mrr": 0.8
     },
     "audience:agent": {
       "question_count": 6,
@@ -44,18 +44,7 @@
       "mrr": 0.75
     }
   },
-  "group_warnings": [
-    {
-      "group": "audience:user",
-      "recall_at_k": 0.8333333333333334,
-      "mrr": 0.6666666666666666
-    },
-    {
-      "group": "model_code:NONE",
-      "recall_at_k": 0.75,
-      "mrr": 0.625
-    }
-  ],
+  "group_warnings": [],
   "passed": true,
   "results": [
     {
@@ -66,13 +55,17 @@
       "expected_targets": [
         {
           "document_id": "DOC-TROUBLE-FDC",
+          "section": "2. 이상 확인 순서"
+        },
+        {
+          "document_id": "DOC-TROUBLE-FDC",
           "section": "5. 업무 조치 기준"
         }
       ],
       "top_k": 4,
-      "first_relevant_rank": null,
-      "recall_at_k": 0.0,
-      "reciprocal_rank": 0.0,
+      "first_relevant_rank": 1,
+      "recall_at_k": 0.5,
+      "reciprocal_rank": 1.0,
       "passed": false,
       "hits": [
         {
@@ -164,6 +157,61 @@
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
           "score": 0.5672419498192706,
           "content": "`ET_REFL` 이상은 `RFM` 후보로 우선 검토한다. 반사파가 증가하면 플라즈마에 전달되는 실효 전력이 줄어 식각 부족으로 이어질 수 있다. 정합기 튜닝 상태, 챔버 내벽 폴리머 누적, 상부 전극 상태를 확인한다.",
+          "model_code": "COMMON"
+        }
+      ]
+    },
+    {
+      "id": "ALL-USER-003",
+      "audience": "user",
+      "query": "SUMMARY OOC만 있을 때, TRACE OOS가 있을 때, R03 반복 이상일 때 업무 조치는 어떻게 다른가요?",
+      "model_code": null,
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "5. 업무 조치 기준"
+        }
+      ],
+      "top_k": 4,
+      "first_relevant_rank": 2,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 0.5,
+      "passed": true,
+      "hits": [
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0003",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "1. 이상 상태 이해하기 > 1.2 R03 — 반복 OOS",
+          "score": 0.7689049243927002,
+          "content": "R03는 같은 챔버·파라미터·공정 단계(`recipe_step_no`)의 TRACE OOS만 대상으로 한다. 챔버 누적 처리 순번(`chamber_wafer_cum`)을 기준으로 LOT 경계를 넘어 연속성을 계산하며, OOS가 아닌 항목이 나오면 연속 수를 초기화한다. 서로 다른 파라미터 또는 공정 단계의 OOS는 합산하지 않는다.\n\n연속 OOS가 3개에 최초 도달한 시점에만 R03를 한 번 생성한다. R03 근거에는 연속 OOS 웨이퍼 3개와 해당 웨이퍼의 같은 파라미터·공정 단계 TRACE 알람 근거가 포함된다. 최종 기준 데이터에서 R03 한 건은 TRACE 알람 근거 9개를 가진다.",
+          "model_code": "COMMON"
+        },
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "5. 업무 조치 기준",
+          "score": 0.6653702259063721,
+          "content": "| 관측 상황 | 권고 조치 | 설명 |\n|---|---|---|\n| SUMMARY OOC만 존재 | `MONITORING` | 조건 변화와 다음 생산 결과를 관찰한다. |\n| TRACE OOS가 있고 R03는 없음 | `WARNING` | 담당자에게 알리고 설비·챔버 점검을 진행한다. |\n| strict R03가 존재 | `EQP_HOLD` | 설비 투입 보류를 검토하며 사람의 승인이 필요하다. |\n\n`EQP_HOLD`는 강한 조치이므로 R03가 있으면 n8n 승인 요청 EMAIL을 보내고 사람의 승인을 기다린다. 승인 전에는 Kafka MES Mock 실행을 요청하지 않으며, 승인된 `EQP_HOLD`만 Kafka MES Mock 실행을 요청한다. 이상 유형, 계측 결과, 챔버 비교는 점검 범위를 정하는 데 사용하며 조치 기준을 임의로 바꾸는 근거로 사용하지 않는다.",
+          "model_code": "COMMON"
+        },
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0002",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "1. 이상 상태 이해하기 > 1.1 R01 — 단일 규격 이탈",
+          "score": 0.6277401073133893,
+          "content": "원시(raw) 측정 한 점이 상한 규격(USL) 또는 하한 규격(LSL)을 벗어나면 즉시 TRACE OOS 알람으로 기록한다. 상한 중심 관리 항목인 `ET_REFL`은 상한 규격만 평가한다.",
+          "model_code": "COMMON"
+        },
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0001",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "1. 이상 상태 이해하기",
+          "score": 0.5070452387902007,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 (R01) | 원시 측정 한 점이 허용 규격을 벗어남 | TRACE OOS 알람과 해당 웨이퍼 즉시 확인 |\n| 반복 이상 (R03) | 같은 챔버·파라미터·공정 단계의 OOS가 연속 3개 웨이퍼에 도달 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         }
       ]
