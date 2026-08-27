@@ -163,8 +163,6 @@ def _classify_exception(exc: Exception) -> str:
         return exc.reason_code
     if isinstance(exc, ToolBoundaryError):
         return exc.code
-    if isinstance(exc, ToolBudgetBlocked):
-        return exc.code
     if isinstance(exc, PortNotWiredError):
         return exc.code
     if isinstance(exc, AgentGraphInputError):
@@ -227,6 +225,15 @@ def _safe_node(
     def wrapped(state: AgentGraphState) -> dict[str, Any]:
         try:
             return fn(state)
+        except ToolBudgetBlocked as exc:
+            # 예산 차단은 호출 위치와 무관하게 Tool을 실행하지 않았다는 뜻이다.
+            # 각 node의 공용 수집 helper가 놓친 미래 send_action 경로도 terminal로
+            # 바꾸지 않는 최후의 안전 경계다.
+            error = AgentError(code=exc.code, node=name, terminal=False)
+            return {
+                "tool_budget": exc.budget,
+                "errors": (*state.get("errors", ()), error),
+            }
         except Exception as exc:
             error = _terminal(exc, name)
             return {
@@ -532,9 +539,16 @@ def build_agent_graph(
         }
 
     def finalize(state: AgentGraphState) -> dict[str, Any]:
-        # 검증이 COMMITTED 전이어야 한다.
-        completed = CompletedAgentState.model_validate(_canonical_payload(state))
         with dependencies.transactions() as connection:
+            # 재개 뒤 Tool node가 없어도 완료 State는 checkpoint의 stale 표시값이 아니라
+            # 같은 terminal transaction에서 읽은 DB 정본으로 확정한다.
+            payload = _canonical_payload(state)
+            payload["tool_budget"] = dependencies.tools.budget_from_connection(
+                connection,
+                state["run_id"],
+            )
+            # 검증이 COMMITTED 전이어야 한다.
+            completed = CompletedAgentState.model_validate(payload)
             latency_ms = run_latency_ms(connection, completed.run_id)
             finish_agent_run(
                 connection,

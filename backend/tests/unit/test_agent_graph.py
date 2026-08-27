@@ -140,11 +140,21 @@ def _equipment(*, ok: bool = True) -> EquipmentContextToolResult:
 class _FakeTools:
     def __init__(self, *, fdc_ok: bool = True, equipment_ok: bool = True) -> None:
         self.calls: list[tuple[str, Any]] = []
+        self.budget_connections: list[Any] = []
+        self.finish_connections: list[Any] = []
         self._fdc_ok = fdc_ok
         self._equipment_ok = equipment_ok
 
     def budget(self, run_id: str) -> ToolBudget:
         return ToolBudget(used=len(self.calls))
+
+    def budget_from_connection(
+        self,
+        connection: Any,
+        run_id: str,
+    ) -> ToolBudget:
+        self.budget_connections.append(connection)
+        return self.budget(run_id)
 
     def fdc_summary(self, run_id: str, request: Any) -> FdcSummaryToolResult:
         self.calls.append(("fdc", request))
@@ -338,6 +348,7 @@ def _build(
 
     def finish(connection: Any, run_id: str, status: RunStatus, **kwargs: Any) -> Any:
         transaction_events.append("finish")
+        tool_set.finish_connections.append(connection)
         finish_events.append((status.value, kwargs))
         if finish_error is not None:
             raise finish_error
@@ -505,9 +516,10 @@ def test_interrupt_result_keeps_internal_channels_for_resume_detection(
 def test_latency_reads_started_at_inside_the_terminal_transaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, _, _, _, transactions = _build(monkeypatch, ports=_Ports())
+    graph, tools, _, _, transactions = _build(monkeypatch, ports=_Ports())
     _invoke(graph)
     assert transactions[-4:] == ["begin", "get_run", "finish", "commit"]
+    assert tools.budget_connections[-1] is tools.finish_connections[-1]
 
 
 @pytest.mark.parametrize("route", [_route(consistent=False), _route(covered=False)])
@@ -580,6 +592,25 @@ def test_budget_block_is_nonterminal_and_reaches_completed_run_evidence(
         "fdc-blocked",
         "equipment",
         "documents",
+    ]
+
+
+def test_safe_node_keeps_budget_block_nonterminal_for_future_tool_nodes() -> None:
+    counts = ToolBudgetCounts(
+        total=8,
+        by_tool={"get_fdc_summary": 4, "send_action": 2, "search_documents": 2},
+        pending_reservations=0,
+    )
+
+    def blocked(_state: Any) -> dict[str, Any]:
+        raise ToolBudgetBlocked("TOOL_BUDGET_EXHAUSTED", counts)
+
+    result = subject._safe_node("send_action", blocked)({"errors": ()})
+
+    assert "terminal_error" not in result
+    assert result["tool_budget"].used == 8
+    assert [(error.code, error.node, error.terminal) for error in result["errors"]] == [
+        ("TOOL_BUDGET_EXHAUSTED", "send_action", False)
     ]
 
 

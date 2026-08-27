@@ -575,8 +575,9 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
 
     assert second_ports.calls == ["publish_mes", "writeback_result"]
     assert resumed["action_decision"].action is ActionCode.EQP_HOLD
-    # checkpoint 표시는 중단 시점 값이고, 집행은 위 새 executor가 DB 5건으로 막았다.
-    assert resumed["tool_budget"].used == 2
+    # 중단 checkpoint는 2건이지만 완료 State는 terminal transaction에서
+    # DB 5건을 다시 읽는다.
+    assert resumed["tool_budget"].used == 5
     assert "approval_decision" not in resumed
     assert run.status == RunStatus.COMPLETED.value
     assert run.latency_ms is not None and run.latency_ms >= 0

@@ -202,8 +202,16 @@ class AuditedToolExecutor:
         """실제 예약 행의 상세 snapshot을 단일 기준으로 읽는다."""
 
         with self.transactions() as connection:
-            counts = count_tool_calls_for_budget(connection, agent_run_id)
-        return _budget_snapshot(counts)
+            return self.budget_from_connection(connection, agent_run_id)
+
+    def budget_from_connection(
+        self,
+        connection: Connection,
+        agent_run_id: str,
+    ) -> ToolBudget:
+        """caller가 연 transaction 안에서 종료 시점 DB snapshot을 읽는다."""
+
+        return _budget_snapshot(count_tool_calls_for_budget(connection, agent_run_id))
 
     def _reserve_within_budget(
         self,
