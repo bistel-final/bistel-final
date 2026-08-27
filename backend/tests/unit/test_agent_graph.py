@@ -24,7 +24,12 @@ from app.agent.graph import (
 )
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.incident import ResolvedIncident
-from app.agent.repository import PredictionRow, RepositoryConflict, ToolBudgetCounts
+from app.agent.repository import (
+    PredictionRow,
+    RepositoryConflict,
+    RepositoryContractError,
+    ToolBudgetCounts,
+)
 from app.agent.routing import (
     GraphBoundary,
     GraphRouteEvidence,
@@ -145,6 +150,7 @@ class _FakeTools:
         self.calls: list[tuple[str, Any]] = []
         self.budget_connections: list[Any] = []
         self.finish_connections: list[Any] = []
+        self.usage_connections: list[Any] = []
         self.llm_usage: list[tuple[int, int]] = []
         self._fdc_ok = fdc_ok
         self._equipment_ok = equipment_ok
@@ -322,6 +328,7 @@ def _build(
     lot_hist_id_of_member: dict[tuple[AlarmSource, str], str] | None = None,
     transaction_entry_error: Exception | None = None,
     usage_record_error_once: Exception | None = None,
+    usage_record_error_always: Exception | None = None,
     existing_prediction: PredictionRow | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
@@ -426,7 +433,7 @@ def _build(
         return prediction
 
     def record_usage(
-        _connection: Any,
+        connection: Any,
         _run_id: str,
         *,
         llm_model: str,
@@ -436,6 +443,9 @@ def _build(
     ) -> Any:
         nonlocal usage_record_calls
         usage_record_calls += 1
+        tool_set.usage_connections.append(connection)
+        if usage_record_error_always is not None:
+            raise usage_record_error_always
         if usage_record_calls == 1 and usage_record_error_once is not None:
             raise usage_record_error_once
         run.llm_model = llm_model
@@ -871,6 +881,40 @@ def test_post_llm_save_failure_moves_usage_to_failed_uow_once(
     assert state["pending_llm_usage"].output_tokens == 5
     assert tools.llm_usage == [(10, 5)]
     assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+
+
+@pytest.mark.parametrize(
+    ("usage_error", "expected_code"),
+    [
+        (RepositoryConflict("PREDICTION_CONFLICT"), "PREDICTION_CONFLICT"),
+        (RepositoryContractError("RUN_TOKEN_OVERFLOW"), "RUN_TOKEN_OVERFLOW"),
+    ],
+)
+def test_failed_usage_record_never_blocks_failed_terminal_transition(
+    monkeypatch: pytest.MonkeyPatch,
+    usage_error: Exception,
+    expected_code: str,
+) -> None:
+    graph, tools, _, finishes, transactions = _build(
+        monkeypatch,
+        ports=_Ports(),
+        usage_record_error_always=usage_error,
+    )
+
+    state = _invoke(graph)
+
+    assert state["terminal_error"].code == expected_code
+    assert [(item.code, item.node) for item in state["errors"]][-2:] == [
+        (expected_code, "generate_hypothesis"),
+        (expected_code, "fail_run"),
+    ]
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+    assert len(tools.usage_connections) == 2
+    assert all(
+        tools.finish_connections[0] is not connection
+        for connection in tools.usage_connections
+    )
+    assert transactions[-3:] == ["get_run", "finish", "commit"]
 
 
 def test_sequential_replay_restores_prediction_without_llm_or_token_readd(

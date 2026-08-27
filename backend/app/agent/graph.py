@@ -719,18 +719,25 @@ def build_agent_graph(
                 "terminal_error": error,
                 "errors": (*errors, persistence_error),
             }
+        usage_persistence_exc: Exception | None = None
         try:
             with dependencies.transactions() as connection:
                 pending_usage = state.get("pending_llm_usage")
                 if pending_usage is not None:
-                    record_run_llm_usage(
-                        connection,
-                        run_id,
-                        llm_model=pending_usage.model,
-                        prompt_version=pending_usage.prompt_version,
-                        input_tokens=pending_usage.input_tokens,
-                        output_tokens=pending_usage.output_tokens,
-                    )
+                    try:
+                        record_run_llm_usage(
+                            connection,
+                            run_id,
+                            llm_model=pending_usage.model,
+                            prompt_version=pending_usage.prompt_version,
+                            input_tokens=pending_usage.input_tokens,
+                            output_tokens=pending_usage.output_tokens,
+                        )
+                    except Exception as exc:
+                        # SQL 오류면 현재 transaction이 aborted됐을 수 있으므로 여기서
+                        # FAILED 전이를 계속하지 않고 바깥의 새 UoW로 넘긴다.
+                        usage_persistence_exc = exc
+                        raise
                 latency_ms = run_latency_ms(connection, run_id)
                 finish_agent_run(
                     connection,
@@ -740,6 +747,36 @@ def build_agent_graph(
                     latency_ms=latency_ms,
                 )
         except Exception as exc:
+            if usage_persistence_exc is not None:
+                usage_error = _terminal(usage_persistence_exc, "fail_run")
+                errors = (*errors, usage_error)
+                logger.error(
+                    "failed-run usage persistence failed (code=%s)",
+                    usage_error.code,
+                )
+                try:
+                    # usage UoW는 rollback시킨 뒤 fresh transaction에서 terminal
+                    # 전이만 수행해 RUNNING 고착을 막는다.
+                    with dependencies.transactions() as connection:
+                        latency_ms = run_latency_ms(connection, run_id)
+                        finish_agent_run(
+                            connection,
+                            run_id,
+                            RunStatus.FAILED,
+                            evidence={"code": error.code},
+                            latency_ms=latency_ms,
+                        )
+                except Exception as finish_exc:
+                    persistence_error = _terminal(finish_exc, "fail_run")
+                    logger.error(
+                        "failed-run terminal persistence failed (code=%s)",
+                        persistence_error.code,
+                    )
+                    return {
+                        "terminal_error": error,
+                        "errors": (*errors, persistence_error),
+                    }
+                return {"terminal_error": error, "errors": errors}
             # fail_run은 자기 자신으로 재라우팅할 수 없다. 원문을 호출자에게 올리지
             # 않고 최초 terminal 원인은 보존하되, 영속화 실패를 별도 sanitized
             # error로 남긴다. stale RUNNING 회수는 설계 §12.3 복구 정책의 몫이다.

@@ -61,7 +61,7 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | **합계** | | **176.0h** | P2 도전 과제 제외 |
 
 우선순위별 공수는 **P0 129.5h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 95건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 다섯이다.
+Task 수는 95건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 여섯이다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -79,6 +79,9 @@ Task 수는 95건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-C-2.2` **4.0h** — DB 직렬화 기반 총·Tool별·전송 예약 예산, checkpoint 재개와
   동시 예약 경합, worker queue 포화 분류, sentinel 보존 정책을 한 실행 경계로 닫고
   hard timeout 미적용 구간을 `V5-CM-4.8` 후속 Gate에 연결한다.
+- `V5-C-2.3` **4.0h** — 실제 provider model·usage를 포함한 2-round 구조화 생성과 근거
+  allowlist, prediction/run의 경쟁 저장·재개·실패 usage 보존을 하나의 provenance 경계로
+  닫는다.
 
 ---
 
