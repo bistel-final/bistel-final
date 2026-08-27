@@ -1,7 +1,7 @@
 {
   "questionset_id": "rag-cs2-search-eval-v2",
   "chunk_schema_version": "cs2",
-  "executed_at": "2026-08-27T06:45:09.148338+00:00",
+  "executed_at": "2026-08-27T07:07:05.790655+00:00",
   "grading_criteria": {
     "minimum_question_count": 12,
     "recall_at_k_threshold": 0.8,
@@ -15,18 +15,18 @@
   "summary": {
     "overall": {
       "question_count": 12,
-      "recall_at_k": 1.0,
-      "mrr": 0.8194444444444445
+      "recall_at_k": 0.9166666666666666,
+      "mrr": 0.7916666666666666
     },
     "audience:user": {
       "question_count": 6,
-      "recall_at_k": 1.0,
-      "mrr": 0.7222222222222222
+      "recall_at_k": 0.8333333333333334,
+      "mrr": 0.6666666666666666
     },
     "model_code:NONE": {
       "question_count": 4,
-      "recall_at_k": 1.0,
-      "mrr": 0.7083333333333334
+      "recall_at_k": 0.75,
+      "mrr": 0.625
     },
     "audience:agent": {
       "question_count": 6,
@@ -44,7 +44,18 @@
       "mrr": 0.75
     }
   },
-  "group_warnings": [],
+  "group_warnings": [
+    {
+      "group": "audience:user",
+      "recall_at_k": 0.8333333333333334,
+      "mrr": 0.6666666666666666
+    },
+    {
+      "group": "model_code:NONE",
+      "recall_at_k": 0.75,
+      "mrr": 0.625
+    }
+  ],
   "passed": true,
   "results": [
     {
@@ -59,13 +70,13 @@
         }
       ],
       "top_k": 4,
-      "first_relevant_rank": 3,
-      "recall_at_k": 1.0,
-      "reciprocal_rank": 0.3333333333333333,
-      "passed": true,
+      "first_relevant_rank": null,
+      "recall_at_k": 0.0,
+      "reciprocal_rank": 0.0,
+      "passed": false,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0002",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "2. 이상 확인 순서",
@@ -78,18 +89,9 @@
           "document_id": "DOC-SPEC-PH9000",
           "title": "PH-9000 Photo Scanner 장비 스펙 및 운전 기준",
           "section": "8. 챔버 비교 확인",
-          "score": 0.6594706184145328,
+          "score": 0.6594706970295521,
           "content": "| 관측 | 점검 방향 |\n|---|---|\n| 한 챔버에 이상이 집중됨 | 해당 챔버의 척, 센서, 온도 제어를 우선 확인 |\n| 같은 설비의 두 챔버에서 함께 발생 | 광원, 공통 제어 조건, 공급 계통을 함께 확인 |\n\n챔버 비교는 점검 범위를 정하는 근거다. 설비 보류 여부는 반복 이상 여부와 승인 절차에 따라 결정한다.",
           "model_code": "PH-9000"
-        },
-        {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0009",
-          "document_id": "DOC-TROUBLE-FDC",
-          "title": "FDC 이상 유형 진단 및 조치 가이드",
-          "section": "5. 업무 조치 기준",
-          "score": 0.6464846326853229,
-          "content": "| 관측 상황 | 권고 조치 | 설명 |\n|---|---|---|\n| 평균 추세가 관리 범위를 벗어남 | `MONITORING` | 조건 변화와 다음 생산 결과를 관찰한다. |\n| 측정값이 허용 규격을 벗어남 | `WARNING` | 담당자에게 알리고 설비·챔버 점검을 진행한다. |\n| 같은 챔버·동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | `EQP_HOLD` | 설비 투입 보류를 검토하며 사람의 승인이 필요하다. |\n\n`EQP_HOLD`는 강한 조치이므로 승인 전에는 설비 보류 절차를 확정하지 않는다. 이상 유형, 계측 결과, 챔버 비교는 점검 범위를 정하는 데 사용하며 조치 기준을 임의로 바꾸는 근거로 사용하지 않는다.",
-          "model_code": "COMMON"
         },
         {
           "chunk_id": "DOC-SPEC-ET7500:cs2:0011",
@@ -99,6 +101,15 @@
           "score": 0.6446499248162051,
           "content": "| 관측 | 점검 방향 |\n|---|---|\n| 한 챔버에 이상이 집중됨 | 해당 챔버의 부품·상태를 우선 확인 |\n| 같은 설비의 두 챔버에서 함께 발생 | 장비 공통 조건과 공급 계통을 함께 확인 |\n\n챔버 비교는 점검 범위를 정하는 근거다. 설비 보류 여부는 반복 이상 여부와 승인 절차에 따라 결정한다.",
           "model_code": "ET-7500"
+        },
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0003",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "1. 이상 상태 이해하기 > 1.2 R03 — 반복 OOS",
+          "score": 0.6373466443224745,
+          "content": "R03는 같은 챔버·파라미터·공정 단계(`recipe_step_no`)의 TRACE OOS만 대상으로 한다. 챔버 누적 처리 순번(`chamber_wafer_cum`)을 기준으로 LOT 경계를 넘어 연속성을 계산하며, OOS가 아닌 항목이 나오면 연속 수를 초기화한다. 서로 다른 파라미터 또는 공정 단계의 OOS는 합산하지 않는다.\n\n연속 OOS가 3개에 최초 도달한 시점에만 R03를 한 번 생성한다. R03 근거에는 연속 OOS 웨이퍼 3개와 해당 웨이퍼의 같은 파라미터·공정 단계 TRACE 알람 근거가 포함된다. 최종 기준 데이터에서 R03 한 건은 TRACE 알람 근거 9개를 가진다.",
+          "model_code": "COMMON"
         }
       ]
     },
@@ -120,7 +131,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0008",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0010",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "4. 상류 공정 영향 확인",
@@ -133,8 +144,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.5781359844844339,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.5797689980337346,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 (R01) | 원시 측정 한 점이 허용 규격을 벗어남 | TRACE OOS 알람과 해당 웨이퍼 즉시 확인 |\n| 반복 이상 (R03) | 같은 챔버·파라미터·공정 단계의 OOS가 연속 3개 웨이퍼에 도달 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         },
         {
@@ -147,7 +158,7 @@
           "model_code": "ET-7500"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
@@ -184,7 +195,7 @@
           "model_code": "ET-7500"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0005",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0007",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.3 MFD — MFC Flow Drift (가스 유량 이탈)",
@@ -193,16 +204,16 @@
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0013",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "7. 진단 요약표",
-          "score": 0.5846732011242639,
+          "score": 0.5846732506350736,
           "content": "| 대표 파라미터 | 확인할 이상 유형 | 우선 점검 범위 |\n|---|---|---|\n| `PH_FOCUS` | 포커스 이탈 | 척, 웨이퍼 평탄도, 포커스 센서 |\n| `ET_REFL` | RF 정합 이상 | 정합기, 챔버 내벽, 상부 전극 |\n| `ET_CF4` | 가스 유량 이탈 | MFC, 배관, 가스 공급 계통 |\n| `ET_ESC` | 정전척 온도 이상 | He 가스, 냉각수, 정전척 표면 |\n| `PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES` | 복합 확인 필요 | 관련 조건과 다른 이상 징후 함께 확인 |",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
@@ -230,25 +241,25 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0007",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0009",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
-          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상",
-          "score": 0.7701435500126703,
-          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 복합 또는 미분류 이상으로 기록한다.",
+          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상 (OTH)",
+          "score": 0.7520933895055433,
+          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 `OTH`(Other) 복합 또는 미분류 이상 후보로 기록한다.",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0013",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "7. 진단 요약표",
-          "score": 0.7071094512939503,
+          "score": 0.7071093669999401,
           "content": "| 대표 파라미터 | 확인할 이상 유형 | 우선 점검 범위 |\n|---|---|---|\n| `PH_FOCUS` | 포커스 이탈 | 척, 웨이퍼 평탄도, 포커스 센서 |\n| `ET_REFL` | RF 정합 이상 | 정합기, 챔버 내벽, 상부 전극 |\n| `ET_CF4` | 가스 유량 이탈 | MFC, 배관, 가스 공급 계통 |\n| `ET_ESC` | 정전척 온도 이상 | He 가스, 냉각수, 정전척 표면 |\n| `PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES` | 복합 확인 필요 | 관련 조건과 다른 이상 징후 함께 확인 |",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0003",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0005",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.1 FOC — Focus Excursion (포커스 이탈)",
@@ -261,8 +272,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.6435852859267434,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.6452652638834401,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 (R01) | 원시 측정 한 점이 허용 규격을 벗어남 | TRACE OOS 알람과 해당 웨이퍼 즉시 확인 |\n| 반복 이상 (R03) | 같은 챔버·파라미터·공정 단계의 OOS가 연속 3개 웨이퍼에 도달 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         }
       ]
@@ -294,7 +305,7 @@
           "model_code": "PH-9000"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0003",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0005",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.1 FOC — Focus Excursion (포커스 이탈)",
@@ -307,8 +318,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.6193977963565478,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.6242755651474043,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 (R01) | 원시 측정 한 점이 허용 규격을 벗어남 | TRACE OOS 알람과 해당 웨이퍼 즉시 확인 |\n| 반복 이상 (R03) | 같은 챔버·파라미터·공정 단계의 OOS가 연속 3개 웨이퍼에 도달 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         },
         {
@@ -316,7 +327,7 @@
           "document_id": "DOC-SPEC-PH9000",
           "title": "PH-9000 Photo Scanner 장비 스펙 및 운전 기준",
           "section": "3. 파라미터 운전 기준",
-          "score": 0.613277966971216,
+          "score": 0.6132779486941079,
           "content": "| 파라미터 | 이름 | 단위 | 목표값 | 관리 범위 | 허용 범위 |\n|---|---|---:|---:|---|---|\n| `PH_DOSE` | Exposure Dose | mJ/cm2 | 25.0 | 24.4 ~ 25.6 | 24.0 ~ 26.0 |\n| `PH_FOCUS` | Focus Offset | nm | 0.0 | -36.0 ~ 36.0 | -60.0 ~ 60.0 |\n| `PH_PEB` | PEB Temperature | degC | 115.0 | 113.8 ~ 116.2 | 113.0 ~ 117.0 |\n| `PH_DEV` | Developer Temperature | degC | 23.0 | 22.64 ~ 23.36 | 22.4 ~ 23.6 |",
           "model_code": "PH-9000"
         }
@@ -353,7 +364,7 @@
           "document_id": "DOC-SPEC-PH9000",
           "title": "PH-9000 Photo Scanner 장비 스펙 및 운전 기준",
           "section": "7. 소모품 및 정기 점검",
-          "score": 0.571696604985202,
+          "score": 0.571696570909432,
           "content": "| 점검 대상 | 확인 이유 |\n|---|---|\n| 광원·조명 경로 | 노광량 안정성과 오염 여부를 확인 |\n| 포커스 센서 | 초점 위치와 교정 상태를 확인 |\n| 웨이퍼 척 | 이물, 평탄도 영향, 웨이퍼 접촉 상태를 확인 |\n| 베이크 온도 제어 | 감광액 반응 조건의 안정성을 확인 |\n| 현상액 공급·온도 제어 | 현상 속도와 패턴 형상 안정성을 확인 |",
           "model_code": "PH-9000"
         },
@@ -395,7 +406,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0003",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0005",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.1 FOC — Focus Excursion (포커스 이탈)",
@@ -404,30 +415,30 @@
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0013",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "7. 진단 요약표",
-          "score": 0.6261793375015303,
+          "score": 0.6261794416690538,
           "content": "| 대표 파라미터 | 확인할 이상 유형 | 우선 점검 범위 |\n|---|---|---|\n| `PH_FOCUS` | 포커스 이탈 | 척, 웨이퍼 평탄도, 포커스 센서 |\n| `ET_REFL` | RF 정합 이상 | 정합기, 챔버 내벽, 상부 전극 |\n| `ET_CF4` | 가스 유량 이탈 | MFC, 배관, 가스 공급 계통 |\n| `ET_ESC` | 정전척 온도 이상 | He 가스, 냉각수, 정전척 표면 |\n| `PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES` | 복합 확인 필요 | 관련 조건과 다른 이상 징후 함께 확인 |",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0010",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0009",
+          "document_id": "DOC-TROUBLE-FDC",
+          "title": "FDC 이상 유형 진단 및 조치 가이드",
+          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상 (OTH)",
+          "score": 0.6234285459859057,
+          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 `OTH`(Other) 복합 또는 미분류 이상 후보로 기록한다.",
+          "model_code": "COMMON"
+        },
+        {
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0012",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "6. 점검 권고에 포함할 내용",
           "score": 0.6078820228576703,
           "content": "- 이상이 관측된 파라미터와 공정 단계\n- 대상 설비와 챔버\n- 단발 이상 또는 반복 이상 여부\n- 의심 원인과 우선 점검 항목\n- 상류 공정 영향 확인 필요 여부\n- 권고 조치와 승인 필요 여부\n\n원인 후보는 확정 사실처럼 표현하지 않고, “확인 필요”, “가능성” 등의 표현으로 구분한다.",
-          "model_code": "COMMON"
-        },
-        {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0007",
-          "document_id": "DOC-TROUBLE-FDC",
-          "title": "FDC 이상 유형 진단 및 조치 가이드",
-          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상",
-          "score": 0.598302913015561,
-          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 복합 또는 미분류 이상으로 기록한다.",
           "model_code": "COMMON"
         }
       ]
@@ -450,16 +461,16 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0007",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0009",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
-          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상",
-          "score": 0.6391064954869202,
-          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 복합 또는 미분류 이상으로 기록한다.",
+          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상 (OTH)",
+          "score": 0.6391960382461548,
+          "content": "`PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES`는 단일 항목 이탈만으로 특정 이상 유형을 단정하지 않는다. 다른 이상 징후와 설비 상태를 함께 확인한 뒤에도 분류하기 어려운 경우에만 `OTH`(Other) 복합 또는 미분류 이상 후보로 기록한다.",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0010",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0012",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "6. 점검 권고에 포함할 내용",
@@ -477,11 +488,11 @@
           "model_code": "PH-9000"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0013",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "7. 진단 요약표",
-          "score": 0.5935664530734104,
+          "score": 0.5935664419194207,
           "content": "| 대표 파라미터 | 확인할 이상 유형 | 우선 점검 범위 |\n|---|---|---|\n| `PH_FOCUS` | 포커스 이탈 | 척, 웨이퍼 평탄도, 포커스 센서 |\n| `ET_REFL` | RF 정합 이상 | 정합기, 챔버 내벽, 상부 전극 |\n| `ET_CF4` | 가스 유량 이탈 | MFC, 배관, 가스 공급 계통 |\n| `ET_ESC` | 정전척 온도 이상 | He 가스, 냉각수, 정전척 표면 |\n| `PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES` | 복합 확인 필요 | 관련 조건과 다른 이상 징후 함께 확인 |",
           "model_code": "COMMON"
         }
@@ -505,7 +516,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
@@ -527,12 +538,12 @@
           "document_id": "DOC-SPEC-ET7500",
           "title": "ET-7500 Dry Etcher 장비 스펙 및 운전 기준",
           "section": "7. 소모품 및 정기 점검",
-          "score": 0.5619305874643258,
+          "score": 0.5619304943660052,
           "content": "| 점검 대상 | 확인 이유 |\n|---|---|\n| 정합기 | 반사파 증가와 전력 전달 저하를 확인 |\n| 챔버 내벽 | 폴리머 누적과 플라즈마 조건 변화를 확인 |\n| 상부 전극 | 전력 전달 상태와 마모를 확인 |\n| MFC·가스 배관 | 가스 유량 안정성과 누설 여부를 확인 |\n| 정전척·냉각 계통 | 온도 안정성과 웨이퍼 접촉 상태를 확인 |",
           "model_code": "ET-7500"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0008",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.4 TMD — ESC Temperature Deviation (정전척 온도 이상)",
@@ -560,7 +571,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0005",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0007",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.3 MFD — MFC Flow Drift (가스 유량 이탈)",
@@ -578,16 +589,16 @@
           "model_code": "ET-7500"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0011",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0013",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "7. 진단 요약표",
-          "score": 0.5367620311237602,
+          "score": 0.5367620267413848,
           "content": "| 대표 파라미터 | 확인할 이상 유형 | 우선 점검 범위 |\n|---|---|---|\n| `PH_FOCUS` | 포커스 이탈 | 척, 웨이퍼 평탄도, 포커스 센서 |\n| `ET_REFL` | RF 정합 이상 | 정합기, 챔버 내벽, 상부 전극 |\n| `ET_CF4` | 가스 유량 이탈 | MFC, 배관, 가스 공급 계통 |\n| `ET_ESC` | 정전척 온도 이상 | He 가스, 냉각수, 정전척 표면 |\n| `PH_DOSE`, `PH_PEB`, `PH_DEV`, `ET_PRES` | 복합 확인 필요 | 관련 조건과 다른 이상 징후 함께 확인 |",
           "model_code": "COMMON"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
@@ -615,7 +626,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0004",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.2 RFM — RF Mismatch (RF 정합 이상)",
@@ -637,7 +648,7 @@
           "document_id": "DOC-SPEC-ET7500",
           "title": "ET-7500 Dry Etcher 장비 스펙 및 운전 기준",
           "section": "7. 소모품 및 정기 점검",
-          "score": 0.6102794408798261,
+          "score": 0.6102794641089769,
           "content": "| 점검 대상 | 확인 이유 |\n|---|---|\n| 정합기 | 반사파 증가와 전력 전달 저하를 확인 |\n| 챔버 내벽 | 폴리머 누적과 플라즈마 조건 변화를 확인 |\n| 상부 전극 | 전력 전달 상태와 마모를 확인 |\n| MFC·가스 배관 | 가스 유량 안정성과 누설 여부를 확인 |\n| 정전척·냉각 계통 | 온도 안정성과 웨이퍼 접촉 상태를 확인 |",
           "model_code": "ET-7500"
         },
@@ -670,7 +681,7 @@
       "passed": true,
       "hits": [
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0006",
+          "chunk_id": "DOC-TROUBLE-FDC:cs2:0008",
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "3. 대표 이상 유형별 진단 > 3.4 TMD — ESC Temperature Deviation (정전척 온도 이상)",
@@ -701,7 +712,7 @@
           "document_id": "DOC-SPEC-ET7500",
           "title": "ET-7500 Dry Etcher 장비 스펙 및 운전 기준",
           "section": "7. 소모품 및 정기 점검",
-          "score": 0.5784947872161906,
+          "score": 0.5784947527352133,
           "content": "| 점검 대상 | 확인 이유 |\n|---|---|\n| 정합기 | 반사파 증가와 전력 전달 저하를 확인 |\n| 챔버 내벽 | 폴리머 누적과 플라즈마 조건 변화를 확인 |\n| 상부 전극 | 전력 전달 상태와 마모를 확인 |\n| MFC·가스 배관 | 가스 유량 안정성과 누설 여부를 확인 |\n| 정전척·냉각 계통 | 온도 안정성과 웨이퍼 접촉 상태를 확인 |",
           "model_code": "ET-7500"
         }
