@@ -55,8 +55,8 @@ def test_corrected_documents_are_loaded_from_canonical_source_dir() -> None:
         "DOC-SPEC-PH9000",
         "DOC-TROUBLE-FDC",
     ]
-    assert len(corpus.chunks) >= 3
-    assert all(chunk.chunk_id.startswith(chunk.doc_id + ":cs1:") for chunk in corpus.chunks)
+    assert len(corpus.chunks) == 33
+    assert all(chunk.chunk_id.startswith(chunk.doc_id + ":cs2:") for chunk in corpus.chunks)
     assert all("corpus_revision" not in chunk.metadata_json for chunk in corpus.chunks)
 
 
@@ -70,12 +70,32 @@ def test_chunk_ids_are_deterministic_and_title_is_embedding_only() -> None:
         for document in corpus.documents
     }
 
-    assert first_by_doc["DOC-SPEC-ET7500"].chunk_id == "DOC-SPEC-ET7500:cs1:0001"
-    assert first_by_doc["DOC-SPEC-PH9000"].chunk_id == "DOC-SPEC-PH9000:cs1:0001"
-    assert first_by_doc["DOC-TROUBLE-FDC"].chunk_id == "DOC-TROUBLE-FDC:cs1:0001"
+    assert first_by_doc["DOC-SPEC-ET7500"].chunk_id == "DOC-SPEC-ET7500:cs2:0001"
+    assert first_by_doc["DOC-SPEC-PH9000"].chunk_id == "DOC-SPEC-PH9000:cs2:0001"
+    assert first_by_doc["DOC-TROUBLE-FDC"].chunk_id == "DOC-TROUBLE-FDC:cs2:0001"
     assert first_by_doc["DOC-SPEC-ET7500"].content.strip()
     assert "ET-7500 Dry Etcher" not in first_by_doc["DOC-SPEC-ET7500"].content
     assert "ET-7500 Dry Etcher" in first_by_doc["DOC-SPEC-ET7500"].embedding_input
+
+
+def test_h3_chunks_keep_parent_h2_context_without_short_piece_merge() -> None:
+    corpus = loader.prepare_corpus(loader.DEFAULT_CORRECTED_RAG_DIR)
+    et_chunks = [chunk for chunk in corpus.chunks if chunk.doc_id == "DOC-SPEC-ET7500"]
+
+    reflected_power = next(
+        chunk for chunk in et_chunks if "4.2 Reflected Power" in chunk.section_title
+    )
+    assert reflected_power.section_title == (
+        "4. 파라미터별 상세 > 4.2 Reflected Power (`ET_REFL`)"
+    )
+    assert "4.1 Chamber Pressure" not in reflected_power.content
+
+
+def test_chunk_contract_uses_cs2_title_hierarchy_rules() -> None:
+    assert loader.CHUNK_SCHEMA_VERSION == "cs2"
+    assert loader.CHUNK_CONTRACT_SHA256 == (
+        "1498123916cb73f5c9df8906f1ba6a9c2ed0736db9b5d3de7eb583653bb1e61e"
+    )
 
 
 def test_target_allowlist_excludes_evaluation_database() -> None:
