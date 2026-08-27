@@ -143,6 +143,7 @@ class GraphRouteEvidence:
 
     chamber_id: str
     equipment_id: str | None
+    model_code: str | None
     process_step_id: str | None
     upstream_process_step_ids: tuple[str, ...]
     downstream_process_step_ids: tuple[str, ...]
@@ -415,6 +416,7 @@ def combine_route(
         GraphRouteEvidence(
             chamber_id=chamber,
             equipment_id=compact[chamber].equipment_id,
+            model_code=compact[chamber].model_code,
             process_step_id=compact[chamber].process_step_id,
             upstream_process_step_ids=tuple(compact[chamber].upstream_process_step_ids),
             downstream_process_step_ids=tuple(

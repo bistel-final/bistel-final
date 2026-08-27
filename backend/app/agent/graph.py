@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -15,7 +16,12 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
 from app.agent.checkpoint import AgentCheckpointError
-from app.agent.repository import AgentRepositoryError, finish_agent_run, get_agent_run
+from app.agent.repository import (
+    AgentRepositoryError,
+    RepositoryContractError,
+    finish_agent_run,
+    get_agent_run,
+)
 from app.agent.routing import (
     GraphBoundary,
     combine_route,
@@ -61,6 +67,11 @@ CANONICAL_NODES: Final[tuple[str, ...]] = (
     "finalize",
 )
 INTERNAL_NODES: Final[tuple[str, ...]] = ("fail_run",)
+logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class PortNotWiredError(RuntimeError):
@@ -103,7 +114,7 @@ class AgentGraphDependencies:
     tools: AuditedToolExecutor
     routing_graph: GraphBoundary
     ports: AgentNodePorts | None = None
-    now: Callable[[], datetime] = lambda: datetime.now(UTC)
+    now: Callable[[], datetime] = field(default_factory=lambda: _utc_now)
 
 
 class CompiledAgentGraph:
@@ -114,11 +125,14 @@ class CompiledAgentGraph:
     유지한다. 완전성 판정은 여전히 ``finalize``의 명시 검증이 담당한다.
     """
 
-    def __init__(self, compiled: Any) -> None:
+    def __init__(self, compiled: Any, *, project_completed: bool) -> None:
         self._compiled = compiled
+        self._project_completed = project_completed
 
-    @staticmethod
-    def _project(result: Any) -> Any:
+    def _project(self, result: Any) -> Any:
+        if not self._project_completed:
+            # interrupt_after 구성은 내부 channel이 호출자의 재개 판단 근거다.
+            return result
         if not isinstance(result, dict) or result.get("terminal_error") is not None:
             return result
         if not all(name in result for name in CompletedAgentState.model_fields):
@@ -247,7 +261,9 @@ def build_agent_graph(
 ) -> Any:
     """canonical 14 node와 내부 ``fail_run`` 하나를 조립한다."""
 
-    ports: AgentNodePorts = dependencies.ports or _UnwiredPorts()  # type: ignore[assignment]
+    ports: AgentNodePorts = (  # type: ignore[assignment]
+        dependencies.ports if dependencies.ports is not None else _UnwiredPorts()
+    )
 
     def run_latency_ms(connection: Any, run_id: str) -> int:
         """DB 정본 ``started_at``과 현재 UTC 시각으로 경과 시간을 계산한다."""
@@ -281,9 +297,9 @@ def build_agent_graph(
             )
             bound = read_route_snapshot(connection, started.incident)
             representative = started.incident.representative_alarm
-            fdc_lot_hist_id = bound.snapshot.lot_hist_id_of_member[
+            fdc_lot_hist_id = bound.snapshot.lot_hist_id_of_member.get(
                 (AlarmSource(representative.source), representative.alarm_id)
-            ]
+            )
 
         base: dict[str, Any] = {
             "run_id": started.run.agent_run_id,
@@ -309,9 +325,17 @@ def build_agent_graph(
             "errors": (),
             "autonomy_level": level,
             "terminal_error": None,
-            "fdc_lot_hist_id": fdc_lot_hist_id,
             "approval_decision": None,
         }
+        if fdc_lot_hist_id is None:
+            error = _terminal(
+                RepositoryContractError("ROUTE_INCIDENT_MISMATCH"),
+                "load_incident",
+            )
+            base["terminal_error"] = error
+            base["errors"] = (error,)
+            return base
+        base["fdc_lot_hist_id"] = fdc_lot_hist_id
         try:
             base["route"] = combine_route(bound, graph=dependencies.routing_graph)
         except Exception as exc:
@@ -349,7 +373,18 @@ def build_agent_graph(
 
     def collect_documents(state: AgentGraphState) -> dict[str, Any]:
         graph = state.get("graph_evidence")
-        model_code = graph.model_code if graph is not None and graph.ok else None
+        if graph is not None and graph.ok:
+            model_code = graph.model_code
+        else:
+            route_graph = next(
+                (
+                    item
+                    for item in state["route"].graph_evidence
+                    if item.chamber_id == state["chamber_id"]
+                ),
+                None,
+            )
+            model_code = None if route_graph is None else route_graph.model_code
         result = dependencies.tools.document_search(
             state["run_id"],
             DocumentSearchToolInput(
@@ -453,32 +488,56 @@ def build_agent_graph(
                     "route_consistency": completed.route.route_consistency,
                     "error_codes": [error.code for error in completed.errors],
                 },
-                input_tokens=0,
-                output_tokens=0,
                 latency_ms=latency_ms,
             )
         return {name: getattr(completed, name) for name in completed.model_fields}
 
     def fail_run(state: AgentGraphState) -> dict[str, Any]:
         error = state.get("terminal_error")
-        if error is None:
-            raise ValueError("TERMINAL_ERROR_MISSING")
-        run_id = state.get("run_id")
-        if run_id is None:
-            # load_pre 실패는 graph 밖으로 올라가므로 정상 구성에서는 도달하지 않는다.
-            raise ValueError("FAILED_RUN_ID_MISSING")
-        with dependencies.transactions() as connection:
-            latency_ms = run_latency_ms(connection, run_id)
-            finish_agent_run(
-                connection,
-                run_id,
-                RunStatus.FAILED,
-                evidence={"code": error.code},
-                input_tokens=0,
-                output_tokens=0,
-                latency_ms=latency_ms,
+        if not isinstance(error, AgentError):
+            error = AgentError(
+                code="TERMINAL_ERROR_MISSING",
+                node="fail_run",
+                terminal=True,
             )
-        return {"terminal_error": error}
+        errors = state.get("errors", ())
+        if error not in errors:
+            errors = (*errors, error)
+        run_id = state.get("run_id")
+        if not isinstance(run_id, str) or not run_id.strip():
+            persistence_error = AgentError(
+                code="FAILED_RUN_ID_MISSING",
+                node="fail_run",
+                terminal=True,
+            )
+            return {
+                "terminal_error": error,
+                "errors": (*errors, persistence_error),
+            }
+        try:
+            with dependencies.transactions() as connection:
+                latency_ms = run_latency_ms(connection, run_id)
+                finish_agent_run(
+                    connection,
+                    run_id,
+                    RunStatus.FAILED,
+                    evidence={"code": error.code},
+                    latency_ms=latency_ms,
+                )
+        except Exception as exc:
+            # fail_run은 자기 자신으로 재라우팅할 수 없다. 원문을 호출자에게 올리지
+            # 않고 최초 terminal 원인은 보존하되, 영속화 실패를 별도 sanitized
+            # error로 남긴다. stale RUNNING 회수는 설계 §12.3 복구 정책의 몫이다.
+            persistence_error = _terminal(exc, "fail_run")
+            logger.error(
+                "failed-run terminal persistence failed (code=%s)",
+                persistence_error.code,
+            )
+            return {
+                "terminal_error": error,
+                "errors": (*errors, persistence_error),
+            }
+        return {"terminal_error": error, "errors": errors}
 
     graph = StateGraph(AgentGraphState, input=AgentGraphInput)
     graph.add_node("load_incident", load_incident)
@@ -641,7 +700,8 @@ def build_agent_graph(
         graph.compile(
             checkpointer=checkpointer,
             interrupt_after=[] if interrupt_after is None else list(interrupt_after),
-        )
+        ),
+        project_completed=not bool(interrupt_after),
     )
 
 

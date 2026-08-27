@@ -461,7 +461,7 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
             checkpointer=ck.build_postgres_saver(connection),
             interrupt_after=("hitl_interrupt",),
         )
-        first_graph.invoke(
+        interrupted = first_graph.invoke(
             {
                 "requested_alarm": AlarmRef(
                     source=AlarmSource.TRACE,
@@ -473,6 +473,9 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
         )
         checkpoint = first_graph.get_state(config).values
 
+    assert Decision(interrupted["approval_decision"]) is Decision.APPROVE
+    assert interrupted["terminal_error"] is None
+    assert "autonomy_level" in interrupted
     assert Decision(checkpoint["approval_decision"]) is Decision.APPROVE
     assert first_ports.calls[-2:] == ["approval_email", "hitl_interrupt"]
     with engine.connect() as connection:
@@ -543,7 +546,7 @@ def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(
         ).scalar_one()
 
     assert run.status == RunStatus.COMPLETED.value
-    assert (run.input_tokens, run.output_tokens) == (0, 0)
+    assert (run.input_tokens, run.output_tokens) == (None, None)
     assert run.latency_ms is not None and run.latency_ms >= 0
     assert [row.tool_name for row in calls] == ["get_fdc_summary", "search_documents"]
     assert all(row.status == "SUCCESS" and row.error_msg is None for row in calls)

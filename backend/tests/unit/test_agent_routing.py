@@ -347,6 +347,7 @@ class TestAConsistentRoute:
         assert result.route_consistency is True
         assert result.mismatches == ()
         assert [s.lot_hist_id for s in result.wafer_routes[0].steps] == ["LH-1", "LH-2"]
+        assert {item.model_code for item in result.graph_evidence} == {"PH-9000"}
 
     def test_real_relation_ids_are_preserved(self) -> None:
         """`REL-*`를 만들지 않고 projection이 준 값을 그대로 남긴다."""

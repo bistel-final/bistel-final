@@ -7,6 +7,7 @@ TIMEOUT 기록까지다. executor의 수명과 worker 회수는 주입한 쪽이
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor
 from concurrent.futures import TimeoutError as FuturesTimeout
@@ -38,6 +39,7 @@ from app.common.tool_contracts import (
 )
 
 ResultT = TypeVar("ResultT", bound=ToolResult)
+logger = logging.getLogger(__name__)
 
 
 class ToolDeadlineExceeded(TimeoutError):
@@ -47,9 +49,10 @@ class ToolDeadlineExceeded(TimeoutError):
 class ToolBoundaryError(RuntimeError):
     """Tool wrapper 자체의 sanitized 구성 오류."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, prior_code: str | None = None) -> None:
         super().__init__(code)
         self.code = code
+        self.prior_code = prior_code
 
 
 class DeadlineRunner(Protocol):
@@ -231,9 +234,9 @@ class AuditedToolExecutor:
             status = ToolCallStatus.ERROR
             output = None
             error_code = "TOOL_INVOCATION_ERROR"
-        finally:
-            latency_ms = max(0, int((self.clock() - started_at) * 1000))
-            # UoW 2. 외부 호출의 성공 여부와 무관하게 예약한 행을 정확히 한 번 닫는다.
+        latency_ms = max(0, int((self.clock() - started_at) * 1000))
+        # UoW 2. 외부 호출의 성공 여부와 무관하게 예약한 행을 정확히 한 번 닫는다.
+        try:
             with self.transactions() as connection:
                 finalize_tool_call(
                     connection,
@@ -244,6 +247,17 @@ class AuditedToolExecutor:
                     output=output,
                     error_msg=error_code,
                 )
+        except Exception:
+            # finalize 오류가 Tool의 원 분류를 raw 예외로 덮지 않게 prior_code를
+            # 구조화해 보존한다. 예약 sentinel 복구는 V5-C-2.2가 맡는다.
+            logger.error(
+                "tool-call finalization failed (prior_code=%s)",
+                error_code,
+            )
+            raise ToolBoundaryError(
+                "TOOL_FINALIZE_FAILED",
+                prior_code=error_code,
+            ) from None
         return result
 
 
@@ -257,10 +271,15 @@ def _classify_result(
         return ToolCallStatus.SUCCESS, payload, None
 
     prefix = next(
-        candidate
-        for candidate in REASON_PREFIXES
-        if result.reason.startswith(candidate)
+        (
+            candidate
+            for candidate in REASON_PREFIXES
+            if result.reason.startswith(candidate)
+        ),
+        None,
     )
+    if prefix is None:
+        raise ToolBoundaryError("REASON_PREFIX_INVALID")
     safe_payload = dict(payload)
     safe_payload["reason"] = prefix
     status = ToolCallStatus.TIMEOUT if prefix == "TIMEOUT:" else ToolCallStatus.ERROR

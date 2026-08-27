@@ -57,6 +57,7 @@ def _route() -> ResolvedIncidentRoute:
             GraphRouteEvidence(
                 chamber_id="EQP01-PM1",
                 equipment_id="EQP01",
+                model_code="MODEL-1",
                 process_step_id="CT-PHOTO",
                 upstream_process_step_ids=(),
                 downstream_process_step_ids=(),

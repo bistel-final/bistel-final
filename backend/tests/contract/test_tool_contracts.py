@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -878,7 +879,19 @@ class TestToolEnvelopeExactness:
         numeral = {7: "일곱", 8: "여덟", 9: "아홉"}[len(REASON_PREFIXES)]
 
         for label, relative, anchor in sources:
-            path = repository_root / relative
+            path = repository_root
+            for component in Path(relative).parts:
+                expected_component = unicodedata.normalize("NFC", component)
+                matches = [
+                    child
+                    for child in path.iterdir()
+                    if unicodedata.normalize("NFC", child.name) == expected_component
+                ]
+                assert len(matches) == 1, (
+                    f"{label}: NFC/NFD 정규화 기준 문서 경로를 찾지 못했거나 "
+                    f"중복이다: {relative}"
+                )
+                path = matches[0]
             text = path.read_text(encoding="utf-8")
             match = re.search(anchor, text, re.DOTALL)
             assert match is not None, f"{label}: allowlist 구간 anchor를 찾지 못했다"

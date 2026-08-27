@@ -47,6 +47,7 @@ def _harness(
     *,
     document: Any,
     runner: Any | None = None,
+    finalize_error: Exception | None = None,
 ) -> tuple[AuditedToolExecutor, list[tuple[str, Any]]]:
     events: list[tuple[str, Any]] = []
     connection = object()
@@ -63,6 +64,8 @@ def _harness(
 
     def finalize(_connection: Any, **kwargs: Any) -> Any:
         events.append(("finalize", kwargs))
+        if finalize_error is not None:
+            raise finalize_error
         return SimpleNamespace()
 
     monkeypatch.setattr(subject, "reserve_tool_call", reserve)
@@ -210,6 +213,37 @@ def test_output_shape_rejection_cannot_leak_a_validated_result(
     assert finalized["status"] is ToolCallStatus.ERROR
     assert finalized["output"] is None
     assert finalized["error_msg"] == "RESERVED_OUTPUT_KEY"
+
+
+def test_unknown_reason_prefix_is_a_contract_error_not_an_invocation_error() -> None:
+    invalid = subject.DocumentSearchToolResult.model_construct(
+        ok=False,
+        reason="UNKNOWN: detail",
+        hits=[],
+    )
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        subject._classify_result(invalid)
+
+    assert exc.value.code == "REASON_PREFIX_INVALID"
+
+
+def test_finalize_failure_is_sanitized_and_preserves_the_prior_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: (_ for _ in ()).throw(RuntimeError("dsn secret")),
+        finalize_error=RuntimeError("postgresql://secret"),
+    )
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        executor.document_search("RUN-1", DocumentSearchToolInput(query="query"))
+
+    assert exc.value.code == "TOOL_FINALIZE_FAILED"
+    assert exc.value.prior_code == "TOOL_INVOCATION_ERROR"
+    assert _finalized(events)["error_msg"] == "TOOL_INVOCATION_ERROR"
+    assert "secret" not in repr(exc.value)
 
 
 def test_missing_runner_fails_before_reservation(

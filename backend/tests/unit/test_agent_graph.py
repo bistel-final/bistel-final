@@ -6,7 +6,7 @@ import ast
 import inspect
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -77,6 +77,7 @@ def _route(*, consistent: bool = True, covered: bool = True) -> ResolvedIncident
             GraphRouteEvidence(
                 chamber_id="EQP01-PM1",
                 equipment_id="EQP01",
+                model_code="MODEL-1",
                 process_step_id="CT-PHOTO",
                 upstream_process_step_ids=(),
                 downstream_process_step_ids=(),
@@ -264,6 +265,9 @@ def _build(
     ports: _Ports | None = None,
     combine_error: Exception | None = None,
     now: Any | None = None,
+    finish_error: Exception | None = None,
+    interrupt_after: tuple[str, ...] | None = None,
+    lot_hist_id_of_member: dict[tuple[AlarmSource, str], str] | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -287,7 +291,11 @@ def _build(
         chamber_id="EQP01-PM1",
         member_keys=((AlarmSource.TRACE, "TA-01"),),
         wafer_of_member={(AlarmSource.TRACE, "TA-01"): "LOT001W001"},
-        lot_hist_id_of_member={(AlarmSource.TRACE, "TA-01"): "LH-REP"},
+        lot_hist_id_of_member=(
+            {(AlarmSource.TRACE, "TA-01"): "LH-REP"}
+            if lot_hist_id_of_member is None
+            else lot_hist_id_of_member
+        ),
         steps=(),
     )
     monkeypatch.setattr(subject, "start_incident_run", lambda *args, **kwargs: started)
@@ -309,6 +317,8 @@ def _build(
     def finish(connection: Any, run_id: str, status: RunStatus, **kwargs: Any) -> Any:
         transaction_events.append("finish")
         finish_events.append((status.value, kwargs))
+        if finish_error is not None:
+            raise finish_error
         return SimpleNamespace()
 
     def get_run(connection: Any, run_id: str) -> Any:
@@ -324,7 +334,8 @@ def _build(
             routing_graph=GraphBoundary(lambda value: None, lambda value: None),
             ports=ports,
             now=(lambda: RUN_STARTED_AT) if now is None else now,
-        )
+        ),
+        interrupt_after=interrupt_after,
     )
     return graph, tool_set, ports, finish_events, transaction_events
 
@@ -388,9 +399,7 @@ def test_graph_edges_are_the_reviewed_canonical_and_failure_routes(
         ("finalize", "__end__"),
         ("fail_run", "__end__"),
     }
-    failure_edges = {
-        (node, "fail_run") for node in CANONICAL_NODES if node not in {"fail_run"}
-    }
+    failure_edges = {(node, "fail_run") for node in CANONICAL_NODES}
     assert actual == canonical | failure_edges
 
 
@@ -419,7 +428,7 @@ def test_level_one_warning_calls_all_read_tools_and_email(
     } & set(state)
 
 
-def test_level_two_skips_only_redundant_equipment_context(
+def test_level_two_skips_only_redundant_equipment_context_and_keeps_model_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, tools, _, finishes, _ = _build(monkeypatch, ports=_Ports())
@@ -427,39 +436,48 @@ def test_level_two_skips_only_redundant_equipment_context(
     assert [name for name, _ in tools.calls] == ["fdc", "documents"]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
     document_input = tools.calls[-1][1]
-    assert document_input.model_code is None
+    assert document_input.model_code == "MODEL-1"
 
 
-def test_level_one_and_two_record_the_required_comparison_metrics(
+def test_level_one_and_two_compare_completion_and_actual_tool_call_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph_one, tools_one, _, finishes_one, _ = _build(
         monkeypatch,
         ports=_Ports(),
-        now=lambda: RUN_STARTED_AT + timedelta(seconds=3),
     )
     _invoke(graph_one, level=1)
 
     graph_two, tools_two, _, finishes_two, _ = _build(
         monkeypatch,
         ports=_Ports(),
-        now=lambda: RUN_STARTED_AT + timedelta(seconds=2),
     )
     _invoke(graph_two, level=2)
 
-    latency_by_tool = {"fdc": 100, "equipment": 200, "documents": 100}
-    tool_latency_one = sum(latency_by_tool[name] for name, _ in tools_one.calls)
-    tool_latency_two = sum(latency_by_tool[name] for name, _ in tools_two.calls)
-    metrics_one = finishes_one[0][1]
-    metrics_two = finishes_two[0][1]
-
     assert len(tools_one.calls) == 3 and len(tools_two.calls) == 2
-    assert tool_latency_one > tool_latency_two
-    assert metrics_one["latency_ms"] > metrics_two["latency_ms"]
-    assert (metrics_one["input_tokens"], metrics_one["output_tokens"]) == (0, 0)
-    assert (metrics_two["input_tokens"], metrics_two["output_tokens"]) == (0, 0)
     assert [status for status, _ in finishes_one] == [RunStatus.COMPLETED.value]
     assert [status for status, _ in finishes_two] == [RunStatus.COMPLETED.value]
+
+
+def test_interrupt_result_keeps_internal_channels_for_resume_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _, ports, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(action=ActionCode.EQP_HOLD, decision=Decision.APPROVE),
+        interrupt_after=("hitl_interrupt",),
+    )
+
+    state = _invoke(graph)
+
+    assert ports is not None and ports.calls[-2:] == [
+        "approval_email",
+        "hitl_interrupt",
+    ]
+    assert state["approval_decision"] is Decision.APPROVE
+    assert state["terminal_error"] is None
+    assert "autonomy_level" in state
+    assert finishes == []
 
 
 def test_latency_reads_started_at_inside_the_terminal_transaction(
@@ -560,6 +578,40 @@ def test_route_dependency_failure_marks_the_started_run_failed(
     assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
     assert state["terminal_error"].code == "NODE_EXECUTION_ERROR"
     assert finishes[0][1]["evidence"] == {"code": "NODE_EXECUTION_ERROR"}
+
+
+def test_missing_representative_lot_hist_id_is_sanitized_after_run_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, tools, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(),
+        lot_hist_id_of_member={},
+    )
+
+    state = _invoke(graph)
+
+    assert tools.calls == []
+    assert state["terminal_error"].code == "ROUTE_INCIDENT_MISMATCH"
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+
+
+def test_fail_run_persistence_error_never_escapes_or_hides_the_root_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(invalid_citation=True),
+        finish_error=RuntimeError("postgresql://secret"),
+    )
+
+    state = _invoke(graph)
+
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+    assert state["terminal_error"].code == "STATE_CONTRACT_ERROR"
+    assert state["errors"][-1].node == "fail_run"
+    assert state["errors"][-1].code == "NODE_EXECUTION_ERROR"
+    assert "secret" not in repr(state)
 
 
 def test_finalize_contract_failure_never_commits_completed(
