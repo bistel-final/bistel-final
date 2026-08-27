@@ -1,0 +1,108 @@
+{
+  "questionset_id": "rag-cs2-search-eval-v1",
+  "chunk_schema_version": "cs2",
+  "grading_criteria": {
+    "minimum_question_count": 12,
+    "recall_at_k_threshold": 0.8,
+    "mrr_threshold": 0.7,
+    "top_k": 4
+  },
+  "questions": [
+    {
+      "id": "ALL-USER-001",
+      "audience": "user",
+      "query": "같은 챔버에서 이상이 반복되면 어떤 조치를 해야 하나요?",
+      "model_code": null,
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["5. 업무 조치 기준"]
+    },
+    {
+      "id": "ALL-USER-002",
+      "audience": "user",
+      "query": "식각 결과 이상이 이전 포토 공정 영향인지 어떻게 확인하나요?",
+      "model_code": null,
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["4. 상류 공정 영향 확인"]
+    },
+    {
+      "id": "ALL-AGENT-001",
+      "audience": "agent",
+      "query": "ET_CF4 이상에 대응하는 고정 Fault 후보를 확인한다.",
+      "model_code": null,
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["3. 대표 이상 유형별 진단 > 3.3 MFD"]
+    },
+    {
+      "id": "ALL-AGENT-002",
+      "audience": "agent",
+      "query": "PH_DOSE, PH_PEB, PH_DEV 또는 ET_PRES 이상에서 Fault 유형을 단정할 수 있는지 확인한다.",
+      "model_code": null,
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상"]
+    },
+    {
+      "id": "PH-USER-001",
+      "audience": "user",
+      "query": "포토 공정에서 포커스 값이 기준을 벗어나면 무엇을 확인해야 하나요?",
+      "model_code": "PH-9000",
+      "expected_document_ids": ["DOC-SPEC-PH9000"],
+      "expected_sections": ["4. 파라미터별 상세 > 4.2 Focus Offset"]
+    },
+    {
+      "id": "PH-USER-002",
+      "audience": "user",
+      "query": "노광량이 달라졌을 때 현장에서 우선 확인할 항목은 무엇인가요?",
+      "model_code": "PH-9000",
+      "expected_document_ids": ["DOC-SPEC-PH9000"],
+      "expected_sections": ["4. 파라미터별 상세 > 4.1 Exposure Dose"]
+    },
+    {
+      "id": "PH-AGENT-001",
+      "audience": "agent",
+      "query": "PH_FOCUS 이상에 대응하는 고정 Fault 후보를 확인한다.",
+      "model_code": "PH-9000",
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["3. 대표 이상 유형별 진단 > 3.1 FOC"]
+    },
+    {
+      "id": "PH-AGENT-002",
+      "audience": "agent",
+      "query": "포토 장비에서 반복 이상에 대한 조치 수준과 승인 필요 여부를 확인한다.",
+      "model_code": "PH-9000",
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["5. 업무 조치 기준"]
+    },
+    {
+      "id": "ET-USER-001",
+      "audience": "user",
+      "query": "식각 장비에서 반사파가 높아지면 어떤 상태를 점검해야 하나요?",
+      "model_code": "ET-7500",
+      "expected_document_ids": ["DOC-SPEC-ET7500"],
+      "expected_sections": ["4. 파라미터별 상세 > 4.2 Reflected Power"]
+    },
+    {
+      "id": "ET-USER-002",
+      "audience": "user",
+      "query": "CF4 유량 이상은 무엇과 관련될 수 있나요?",
+      "model_code": "ET-7500",
+      "expected_document_ids": ["DOC-SPEC-ET7500"],
+      "expected_sections": ["4. 파라미터별 상세 > 4.3 CF4 Flow"]
+    },
+    {
+      "id": "ET-AGENT-001",
+      "audience": "agent",
+      "query": "ET_REFL 이상에 대응하는 고정 Fault 후보와 점검 방향을 확인한다.",
+      "model_code": "ET-7500",
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["3. 대표 이상 유형별 진단 > 3.2 RFM"]
+    },
+    {
+      "id": "ET-AGENT-002",
+      "audience": "agent",
+      "query": "ET_ESC 이상에 대응하는 고정 Fault 후보를 확인한다.",
+      "model_code": "ET-7500",
+      "expected_document_ids": ["DOC-TROUBLE-FDC"],
+      "expected_sections": ["3. 대표 이상 유형별 진단 > 3.4 TMD"]
+    }
+  ]
+}
