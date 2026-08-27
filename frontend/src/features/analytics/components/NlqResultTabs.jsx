@@ -3,9 +3,8 @@
 // 차트는 visualization.chart_type · x · y 를 그대로 읽는다.
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
-import HBar from '../../../shared/components/ui/HBar.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
-import { HistogramChart, LineChart } from './NlqCharts.jsx'
+import { BarChart, HistogramChart, LineChart } from './NlqCharts.jsx'
 import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 
 const TABS = [
@@ -70,18 +69,14 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
   const viz = def.visualization
   const columns = def.columns ?? []
   const groupBy = def.group_by ?? []
-  // 바 폭은 항상 값/최대값 비율 (하드코딩 % 금지)
-  const max = Math.max(0, ...rows.map((r) => Number(r[y]) || 0))
+  // 단위는 응답의 y 컬럼명이 근거다 (창작 금지) — raw 히스토그램은 값 컬럼 빈도
+  const unitLabel = viz?.y ?? (type === 'histogram' && viz?.x ? `${viz.x} 빈도` : null)
 
   return (
     <Card className="animate-[om-fadein_.25s]">
       <CardHeader
         title="결과"
-        note={
-          <span className="font-mono">
-            {def.row_count ?? rows.length}행 · {(def.latency_ms ?? 0).toLocaleString()}ms
-          </span>
-        }
+        note={<span className="font-mono">{def.row_count ?? rows.length}행</span>}
       />
 
       <div className="flex items-center justify-between px-5 pb-4">
@@ -92,10 +87,8 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
             </Button>
           ))}
         </div>
-        {viz && (
-          <span className="font-mono text-[11px] text-g1">
-            chart_type = {viz.chart_type} · x = {viz.x ?? '—'} · y = {viz.y ?? '—'}
-          </span>
+        {unitLabel && (
+          <span className="font-mono text-[11px] text-g1">단위 · {unitLabel}</span>
         )}
       </div>
 
@@ -165,17 +158,7 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
       {tab === 'chart' && (
         <div className="flex flex-col gap-[22px] px-6 pb-5 pt-1.5">
           {type === 'bar' ? (
-            rows.map((r) => (
-              <div key={String(r[x])}>
-                <div className="mb-2 font-mono text-xs font-bold text-navy">{String(r[x])}</div>
-                <div className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <HBar value={Number(r[y]) || 0} max={max} />
-                  </div>
-                  <span className="w-[26px] font-mono text-xs font-bold text-navy">{String(r[y])}</span>
-                </div>
-              </div>
-            ))
+            <BarChart rows={rows} x={x} y={y} />
           ) : type === 'line' ? (
             <LineChart rows={rows} x={x} y={y} />
           ) : type === 'histogram' ? (
