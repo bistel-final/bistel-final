@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.agent.router import router as agent_router
 from app.analytics.router import router as analytics_router
 from app.common.config import CORS_ORIGINS
-from app.common.db import dispose_engines, engine, readonly_engine
+from app.common.db import dispose_engines, get_app_engine, get_readonly_engine
 from app.common.exceptions import AppError, ErrorCode, ErrorResponse
 from app.common.neo4j import close_neo4j_driver, get_neo4j_driver
 from app.detection.router import router as detection_router
@@ -135,14 +135,14 @@ def readiness() -> dict[str, object]:
     services: dict[str, str] = {}
 
     try:
-        with engine.connect() as connection:
+        with get_app_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
         services["postgres"] = "available"
     except Exception:
         services["postgres"] = "unavailable"
 
     try:
-        with readonly_engine.connect() as connection:
+        with get_readonly_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
         services["postgres_readonly"] = "available"
     except Exception:

@@ -3,11 +3,13 @@
 Runtime(kosa_agent)과 평가(kosa_text2sql)라는 두 논리 DB 에 대해,
 용도별(query 실행 / log 기록) engine 을 분리 생성한다.
 
-계정 분리가 1차 방어선이다 (backend/migrations/002_analytics_roles.sql).
+계정 분리가 1차 방어선이다 (V5-CM-3.5 role matrix). 단, Evaluation의
+``nl_query_log`` 조회는 이력 화면을 위해 readonly에 명시 허용하므로 예외다.
+LLM 생성 SQL이 그 table을 읽지 못하게 하는 1차 장벽은 SQL validator allowlist다.
 - query pool: kosa_readonly — SELECT 만 가능. LLM 이 생성한 SQL 은 반드시
   이 pool 로만 실행한다.
-- logger pool: kosa_query_logger — nl_query_log INSERT 만 가능. 로그 기록이
-  query pool 로 흘러가거나 그 반대가 되면 안 된다.
+- logger pool: Evaluation의 kosa_query_logger — nl_query_log INSERT 만 가능.
+  Runtime logger route는 지원하지 않는다.
 
 설계 원칙
 - 지연 생성: import 시점이 아니라 첫 요청 시 engine 을 만든다. 평가 DSN 이
@@ -50,7 +52,6 @@ class PoolRole(str, Enum):
 #: (논리 DB, 용도) -> DSN 환경변수 이름
 _DSN_ENV_NAMES: dict[tuple[LogicalDb, PoolRole], str] = {
     (LogicalDb.RUNTIME, PoolRole.QUERY): "TEXT2SQL_DATABASE_URL",
-    (LogicalDb.RUNTIME, PoolRole.LOGGER): "TEXT2SQL_LOG_DATABASE_URL",
     (LogicalDb.EVALUATION, PoolRole.QUERY): "TEXT2SQL_EVAL_DATABASE_URL",
     (LogicalDb.EVALUATION, PoolRole.LOGGER): "TEXT2SQL_EVAL_LOG_DATABASE_URL",
 }
@@ -142,7 +143,11 @@ class AnalyticsPoolFactory:
 
     # ------------------------------------------------------------------
     def _parse_dsn(self, logical_db: LogicalDb, role: PoolRole):
-        env_name = _DSN_ENV_NAMES[(logical_db, role)]
+        env_name = _DSN_ENV_NAMES.get((logical_db, role))
+        if env_name is None:
+            raise PoolConfigurationError(
+                f"{logical_db.value}/{role.value} pool은 지원하지 않는다."
+            )
         raw = os.getenv(env_name, "").strip()
 
         if not raw:

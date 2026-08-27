@@ -18,9 +18,10 @@ from app.analytics.db_pool import (
 RUNTIME_QUERY_DSN = (
     "postgresql+psycopg://kosa_readonly:secret_pw@db.example.com:53001/kosa_agent"
 )
-RUNTIME_LOGGER_DSN = (
-    "postgresql+psycopg://kosa_query_logger:secret_pw@db.example.com:53001/kosa_agent"
+EVALUATION_QUERY_DSN = (
+    "postgresql+psycopg://kosa_readonly:secret_pw@db.example.com:53001/kosa_text2sql"
 )
+EVALUATION_LOGGER_DSN = "postgresql+psycopg://kosa_query_logger:secret_pw@db.example.com:53001/kosa_text2sql"
 
 
 @pytest.fixture()
@@ -32,7 +33,6 @@ def factory() -> AnalyticsPoolFactory:
 
 def _set_runtime_dsns(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEXT2SQL_DATABASE_URL", RUNTIME_QUERY_DSN)
-    monkeypatch.setenv("TEXT2SQL_LOG_DATABASE_URL", RUNTIME_LOGGER_DSN)
 
 
 # ---------------------------------------------------------------------------
@@ -55,10 +55,11 @@ def test_query_and_logger_pools_are_distinct(
     factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """query 와 logger 는 계정이 다르므로 engine 도 달라야 한다."""
-    _set_runtime_dsns(monkeypatch)
+    monkeypatch.setenv("TEXT2SQL_EVAL_DATABASE_URL", EVALUATION_QUERY_DSN)
+    monkeypatch.setenv("TEXT2SQL_EVAL_LOG_DATABASE_URL", EVALUATION_LOGGER_DSN)
 
-    query = factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
-    logger = factory.get_engine(LogicalDb.RUNTIME, PoolRole.LOGGER)
+    query = factory.get_engine(LogicalDb.EVALUATION, PoolRole.QUERY)
+    logger = factory.get_engine(LogicalDb.EVALUATION, PoolRole.LOGGER)
 
     assert query is not logger
     assert query.url.username == "kosa_readonly"
@@ -162,14 +163,27 @@ def test_logger_pool_rejects_readonly_account(
 ) -> None:
     """logger 자리에 readonly 를 적으면 로그 기록이 조용히 실패한다."""
     monkeypatch.setenv(
-        "TEXT2SQL_LOG_DATABASE_URL",
-        "postgresql+psycopg://kosa_readonly:pw@db.example.com:53001/kosa_agent",
+        "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+        "postgresql+psycopg://kosa_readonly:pw@db.example.com:53001/kosa_text2sql",
     )
 
     with pytest.raises(PoolConfigurationError) as excinfo:
-        factory.get_engine(LogicalDb.RUNTIME, PoolRole.LOGGER)
+        factory.get_engine(LogicalDb.EVALUATION, PoolRole.LOGGER)
 
     assert "kosa_query_logger" in str(excinfo.value)
+
+
+def test_runtime_logger_route_is_rejected_even_if_legacy_env_exists(
+    factory: AnalyticsPoolFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "TEXT2SQL_LOG_DATABASE_URL",
+        "postgresql+psycopg://kosa_query_logger:secret@db.example.com:53001/kosa_agent",
+    )
+
+    with pytest.raises(PoolConfigurationError, match="지원하지") as excinfo:
+        factory.get_engine(LogicalDb.RUNTIME, PoolRole.LOGGER)
+    assert "secret" not in str(excinfo.value)
 
 
 def test_account_mismatch_error_hides_password(
