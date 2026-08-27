@@ -106,16 +106,11 @@ class ToolBoundary:
     def production(cls) -> ToolBoundary:
         """실 Tool을 지연 import한다.
 
-        A의 ``get_fdc_summary``가 아직 merge되지 않은 상태에서는 명시적으로 막힌다.
-        무의미한 stub을 production 성공 경로로 제공하지 않는다.
+        module import를 이 factory 호출 시점까지 늦춰 설정·DB 연결 없이 State와
+        graph 모듈을 import할 수 있게 한다.
         """
 
-        from app.detection import tools as detection_tools
-
-        get_fdc_summary = getattr(detection_tools, "get_fdc_summary", None)
-        if get_fdc_summary is None or not hasattr(get_fdc_summary, "invoke"):
-            raise ToolBoundaryError("FDC_TOOL_NOT_WIRED")
-
+        from app.detection.tools import get_fdc_summary
         from app.knowledge.tools import get_equipment_context, search_documents
 
         return cls(

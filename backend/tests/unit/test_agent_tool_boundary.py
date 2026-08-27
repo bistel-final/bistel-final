@@ -226,17 +226,6 @@ def test_missing_runner_fails_before_reservation(
     assert events == []
 
 
-def test_production_boundary_fails_closed_without_the_fdc_tool(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.detection import tools as detection_tools
-
-    monkeypatch.delattr(detection_tools, "get_fdc_summary", raising=False)
-    with pytest.raises(ToolBoundaryError) as exc:
-        ToolBoundary.production()
-    assert exc.value.code == "FDC_TOOL_NOT_WIRED"
-
-
 def test_budget_comes_from_committed_tool_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     executor, events = _harness(
         monkeypatch,

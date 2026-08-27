@@ -1,12 +1,14 @@
 """`V5-C-2.1`의 실제 PostgreSQL checkpoint 및 조립 E2E.
 
-조립 E2E는 C 소유 DB 경계와 Tool 감사를 실제 PostgreSQL 16으로 검증하되, 후속 C Task의
-business port와 아직 merge되지 않은 A의 production FDC Tool은 결정론적 fixture로 둔다.
+조립 E2E는 C 소유 DB 경계와 Tool 감사를 실제 PostgreSQL 16으로 검증한다. 기본 회귀는
+결정론적 FDC fixture를 쓰고, production 조립 회귀는 A의 실제 FDC Tool만 격리 DB에 연결한
+채 후속 C Task의 business port를 fixture로 둔다.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -331,8 +333,17 @@ def _seed_runtime(engine: Any) -> None:
             connection.execute(text(f"TRUNCATE {table} CASCADE"))
         connection.execute(
             text(
-                "INSERT INTO dim_parameter (parameter_id, parameter_name, area) "
-                "VALUES ('PARAM01', 'Pressure', 'etch') ON CONFLICT DO NOTHING"
+                "INSERT INTO dim_parameter "
+                "(parameter_id, parameter_name, unit, area, target_value, "
+                " spec_lower, ctrl_lower, ctrl_upper, spec_upper, upper_only) "
+                "VALUES ('PARAM01', 'Pressure', 'psi', 'etch', 10.0, "
+                " 8.0, 9.0, 11.0, 12.0, false) "
+                "ON CONFLICT (parameter_id) DO UPDATE SET "
+                "parameter_name = EXCLUDED.parameter_name, unit = EXCLUDED.unit, "
+                "area = EXCLUDED.area, target_value = EXCLUDED.target_value, "
+                "spec_lower = EXCLUDED.spec_lower, ctrl_lower = EXCLUDED.ctrl_lower, "
+                "ctrl_upper = EXCLUDED.ctrl_upper, spec_upper = EXCLUDED.spec_upper, "
+                "upper_only = EXCLUDED.upper_only"
             )
         )
         connection.execute(
@@ -347,6 +358,26 @@ def _seed_runtime(engine: Any) -> None:
         )
         connection.execute(
             text(
+                "INSERT INTO summary_data "
+                "(lot_hist_id, area, equipment, chamber, parameter, recipe, lot, "
+                " wafer, step_no, step_seq, value_mean, value_std, value_min, "
+                " value_max, point_cnt) VALUES "
+                "('LH-REP', 'etch', 'EQP01', 'EQP01-PM1', 'PARAM01', "
+                " 'RECIPE01', 'LOT001', 1, 1, 1, 10.0, 0.5, 9.5, 10.5, 6)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO evaluation "
+                "(lot_hist_id, area, equipment, chamber, parameter, recipe, lot, "
+                " wafer, step_no, step_seq, point_cnt, ooc_point_cnt, "
+                " oos_point_cnt, alarm_type) VALUES "
+                "('LH-REP', 'etch', 'EQP01', 'EQP01-PM1', 'PARAM01', "
+                " 'RECIPE01', 'LOT001', 1, 1, 1, 6, 0, 0, 'IN')"
+            )
+        )
+        connection.execute(
+            text(
                 "INSERT INTO trace_alarm_history "
                 "(alarm_id, occurred_at, area, equipment, chamber, parameter, "
                 " recipe, lot, wafer, step_no) VALUES "
@@ -357,7 +388,12 @@ def _seed_runtime(engine: Any) -> None:
         )
 
 
-def _dependencies(engine: Any, ports: _AssemblyPorts) -> AgentGraphDependencies:
+def _dependencies(
+    engine: Any,
+    ports: _AssemblyPorts,
+    *,
+    fdc_summary: Callable[[dict[str, Any]], Any] | None = None,
+) -> AgentGraphDependencies:
     equipment = EquipmentContextToolResult(
         ok=True,
         chamber_id="EQP01-PM1",
@@ -368,7 +404,7 @@ def _dependencies(engine: Any, ports: _AssemblyPorts) -> AgentGraphDependencies:
         graph_revision="rev-1",
     )
     boundary = ToolBoundary(
-        fdc_summary=lambda payload: _fdc_result(),
+        fdc_summary=fdc_summary or (lambda payload: _fdc_result()),
         equipment_context=lambda payload: equipment,
         document_search=lambda payload: DocumentSearchToolResult(ok=True, hits=[]),
     )
@@ -517,3 +553,77 @@ def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(
     assert state["tool_budget"].used == 2
     assert state["action_decision"].action is ActionCode.MONITORING
     assert audit_count == 2
+
+
+def test_production_boundary_binds_the_actual_fdc_structured_tool() -> None:
+    """무거운 Detection import를 container 묶음에만 둔다."""
+
+    from app.detection.tools import get_fdc_summary
+
+    boundary = ToolBoundary.production()
+    assert boundary.fdc_summary.__self__ is get_fdc_summary
+
+
+def test_production_fdc_tool_runs_in_the_real_graph_against_postgres(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """production 경계의 실제 FDC Tool만 격리 DB에 태운 조립 회귀."""
+
+    from app.detection import tools as detection_tools
+
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    monkeypatch.setattr(detection_tools, "get_readonly_engine", lambda: engine)
+
+    production = ToolBoundary.production()
+    graph = build_agent_graph(
+        _dependencies(
+            engine,
+            _AssemblyPorts(),
+            fdc_summary=production.fdc_summary,
+        )
+    )
+    state = graph.invoke(
+        {
+            "requested_alarm": AlarmRef(
+                source=AlarmSource.TRACE,
+                alarm_id="TA-01",
+            ),
+            "autonomy_level": 2,
+        }
+    )
+
+    with engine.connect() as connection:
+        run_status = connection.execute(
+            text("SELECT status FROM agent_run")
+        ).scalar_one()
+        calls = connection.execute(
+            text(
+                "SELECT tool_name, output, status, error_msg "
+                "FROM agent_tool_call ORDER BY call_seq"
+            )
+        ).all()
+
+    fdc_call = calls[0]
+    assert run_status == RunStatus.COMPLETED.value
+    assert [row.tool_name for row in calls] == [
+        "get_fdc_summary",
+        "search_documents",
+    ]
+    assert fdc_call.status == "SUCCESS" and fdc_call.error_msg is None
+    assert fdc_call.output["wafer"] == {
+        "lot_hist_id": "LH-REP",
+        "lot_id": "LOT001",
+        "wafer_no": 1,
+        "chamber_id": "EQP01-PM1",
+        "equipment_id": "EQP01",
+        "step_id": "CT-PHOTO",
+        "recipe_id": "RECIPE01",
+    }
+    assert fdc_call.output["parameters"][0]["parameter_id"] == "PARAM01"
+    assert fdc_call.output["parameters"][0]["point_cnt"] == 6
+    # 로컬에 versioned model artifact가 있으면 signal이 채워질 수 있다. 이 E2E는
+    # nullable score 값이 아니라 실제 summary Tool 배선과 action 비의존을 고정한다.
+    assert "anomaly" in fdc_call.output
+    assert state["action_decision"].action is ActionCode.MONITORING
