@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 57.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 61.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
-| C Agent/HITL | 방대혁 | 42.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
+| C Agent/HITL | 방대혁 | 48.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **163.0h** | P2 도전 과제 제외 |
+| **합계** | | **174.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 118.5h / P1 44.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 둘이다.
+우선순위별 공수는 **P0 127.5h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 95건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 다섯이다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -70,6 +70,15 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
   여기에 profile manifest 발급 script 신규 작성, 공용 3 DB read-only 검증, active manifest
   bundle 원자 교체가 더해진다. 쪼개면 "epoch은 바뀌었는데 manifest는 구 inventory"인
   중간 상태가 저장소에 남는다.
+- `V5-CM-3.5` **4.0h** — 공용 3 DB의 profile별 5-role exact ACL, core→checkpoint
+  successor, 실제 login container 검증과 Backend app credential 전환을 한 보안 Gate로
+  닫는다. DB별 transaction·승인·marker는 분리하되 중간 상태를 완료로 선언하지 않는다.
+- `V5-C-2.1` **6.5h** — State 20개 계약, Tool 예약·종료 감사와 soft deadline,
+  canonical 14 node·Level 1/2 분기·실 PostgreSQL checkpoint 왕복을 한 실행 골격으로 닫고,
+  A production Tool merge 뒤의 실제 Tool 조립 E2E만 같은 Task의 production Gate로 남긴다.
+- `V5-C-2.2` **4.0h** — DB 직렬화 기반 총·Tool별·전송 예약 예산, checkpoint 재개와
+  동시 예약 경합, worker queue 포화 분류, sentinel 보존 정책을 한 실행 경계로 닫고
+  hard timeout 미적용 구간을 `V5-CM-4.8` 후속 Gate에 연결한다.
 
 ---
 
@@ -108,7 +117,7 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-3.2 | P0 | Agent Runtime migration. 완료: runtime 2개에만 설계 §3.4의 9 table을 생성한다. `action_history=0` guard, evaluation 적용 거부, legacy FK 0건, 부분 고유 인덱스를 포함한다 | FR-C-04~09 | V5-CM-3.1, V5-CM-1.8 | 2.0h |
 | V5-CM-3.3 | P0 | action/severity pair guard. 완료: 명명 CHECK로 반쪽 NULL 행을 차단한다. 배포 후 16조합 중 정상 4조합만 수락됨을 실제 INSERT·rollback으로 증명한다 | FR-C-03, FR-C-07 | V5-CM-3.2 | 1.0h |
 | V5-CM-3.4 | P0 | Checkpoint 초기화. 완료: runtime 2개에만 `PostgresSaver.setup()`을 one-shot 실행한다. 앱 startup의 `.setup()` 호출 0회, 재실행 시 catalog·migration version·행 수 무변경, thread 재개 smoke를 확인한다 | FR-C-04 | V5-CM-3.3 | 1.5h |
-| V5-CM-3.5 | P0 | 최소권한 role. 완료: profile별 app/readonly/logger/delivery 허용·거부 matrix를 적용하고 생성 SQL을 writer 계정으로 실행하지 않는다. `V5-B-1.1`이 만든 `document`·`document_chunk`의 role별 explicit GRANT도 이 Task가 적용한다(구현리뷰 18차 필수 1). `PUBLIC` 권한 0건을 확인한다 | NFR-01, FR-D-03 | V5-CM-3.2 | 1.5h |
+| V5-CM-3.5 | P0 | 최소권한 role. 완료: final profile manifest와 `role_core → role_checkpointed` stage별 exact inventory에 대해 app/readonly/evaluation/logger/delivery 5-role 허용·거부 matrix를 적용한다. 생성 Text2SQL은 readonly만 실행하고 Runtime app은 owner fallback 없이 `kosa_app`만 사용한다. `document`·`document_chunk`, 합성 label column, Runtime·audit·checkpoint·query-log sequence를 명시 ACL로 고정하며 signed HTTP n8n delivery role은 NOLOGIN·deny-all이다. database/schema/relation/sequence의 `PUBLIC` data-access 권한 0건과 같은 stage no-op을 확인한다 | NFR-01, NFR-02, NFR-05, NFR-19, FR-D-03 | V5-CM-3.3, V5-CM-3.4 | 4.0h |
 
 ### V5-CM-4. 공통 계약과 통합
 
@@ -124,6 +133,7 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·n8n은 학원 공용 외부 서비스로 환경변수 연결하고 팀 compose에는 Backend·Frontend·Kafka·MES Mock consumer만 둔다. `/api` proxy·명시 CORS Origin·고정 image tag를 적용하며 DB/Neo4j/n8n 컨테이너와 reference `00_load.sh` 호출은 0건이다 | FR-I-04, FR-I-06, NFR-02, NFR-12, NFR-15 | V5-CM-4.3, V5-C-4.2 | 1.5h |
 | V5-CM-4.6 | P1 | liveness·readiness·복구. 완료: `/health`는 process 생존만 반환하고 `/health/ready`는 병렬 timeout으로 PostgreSQL epoch/schema/role·reference marker, Neo4j 44/85 marker/fingerprint, RAG 3문서·chunk·vector1024·검색 smoke, n8n, Kafka metadata·`fdc.actions`·`fdc.actions.result`를 검사한다. 미준비는 sanitized 503이고 process는 종료하지 않는다 | FR-I-05, NFR-02, NFR-16 | V5-CM-4.5, V5-CM-2.7, V5-B-1.4, V5-C-4.2, V5-C-4.5 | 2.0h |
 | V5-CM-4.7 | P0 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 Runtime 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·RAG·checkpoint schema를 보존하며 다른 DB 변경 0건을 증명한다 | NFR-14, NFR-18 | V5-CM-3.4 | 1.5h |
+| V5-CM-4.8 | P1 | Tool hard timeout·sentinel 복구 재평가. 완료: `get_equipment_context`의 Neo4j transaction timeout과 `search_documents`·`get_fdc_summary` DB 구간의 PostgreSQL statement timeout을 실제 집행하고 8초 뒤 작업 종료 postcondition을 증명한다. in-process embedding·model 구간은 process 격리 도입 또는 soft 유지와 NFR-03 부분 미충족 기록 중 하나를 결정한다. hard 종료가 증명된 구간에 한해 sentinel 시간 기반 자동 회수를 재평가하고, Tool별 hard/soft 판정·잔여 한계를 남긴다 | NFR-03 | V5-C-2.2 | 2.0h |
 
 ### V5-CM-5. 최종 통합 gate
 
@@ -131,9 +141,9 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 |---|---|---|---|---|---:|
 | V5-CM-5.1 | P1 | 실제 API·산출물 sync gate. 완료: 필수 public 11개 + internal delivery 1개 + health 2개, **합계 14개**의 route/OpenAPI/contract를 baseline과 대조하고 동일 Method+Path 중복 0을 확인한다. 구현된 선택 확장만 같은 비교 집합에 넣고 deferred 확장은 OpenAPI를 요구하지 않는다. API Markdown·CSV·PDF를 같은 schema에서 재생성해 비교 집합의 path·request·response·status diff 0을 기록한다 | FR-I-01, FR-I-07, NFR-10~11 | V5-CM-4.4, V5-CM-4.4-3, V5-A-3.2, V5-B-2.3, V5-B-3.3, V5-C-4.4, V5-C-5.1, V5-D-1.2, V5-CM-4.6 | 2.0h |
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
-| V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다 | NFR-02, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7 | 2.0h |
+| V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
-**Common 합계: 55.0h**
+**Common 합계: 61.5h**
 
 ---
 
@@ -197,9 +207,9 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-1.1 | P0 | incident 해석. 완료: source-aware `AlarmRef`를 `(lot_id, chamber_id)`로 묶고 대표 알람을 `occurred_at ASC, source priority, alarm_id ASC`로 결정한다 | FR-C-01 | V5-A-1.5, V5-C-0.1 | 2.0h |
 | V5-C-1.2 | P0 | 실제 routing 결합. 완료: `lot_history` LOT/WAFER routing과 B `GraphService`·`get_equipment_context`의 Process Step 인접을 결합한다. public graph API를 내부 Tool 대신 호출하지 않으며 불일치는 `route_consistency=false`로 보존한다 | FR-C-10 | V5-C-1.1, V5-B-3.2 | 2.0h |
 | V5-C-1.3 | P0 | 중복 실행 방지. 완료: 동일 incident 동시 요청에서 활성 run 1개만 만들고 처리 완료 incident는 재선택하지 않는다 | FR-C-09, FR-C-14 | V5-C-1.1 | 1.5h |
-| V5-C-2.1 | P0 | LangGraph Level 1·2 골격. 완료: load_incident→A/B Tool 수집→가설→규칙 조치→저장→delivery/HITL→finalize를 같은 State·Tool로 구성하고 설정만으로 고정 흐름/조건 분기를 전환한다. fixture에서 완료율·호출·지연 비교를 기록한다 | FR-C-02 | V5-C-1.2, V5-A-3.2-1, V5-B-2.2, V5-B-3.2 | 2.0h |
-| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다 | FR-C-08, NFR-03 | V5-C-2.1 | 2.0h |
-| V5-C-2.3 | P0 | 원인 가설. 완료: `FOC\|RFM\|MFD\|TMD\|OTH` 구조화 출력과 실제 AlarmRef·chunk·relation 근거 인용을 생성한다. `NRM`과 합성 라벨·Generator FAULTS는 query·State·Tool·prompt에 넣지 않는다 | FR-C-07, FR-C-15, NFR-19 | V5-C-2.2 | 2.0h |
+| V5-C-2.1 | P0 | LangGraph Level 1·2 골격. 완료: load_incident→A/B Tool 수집→가설→규칙 조치→저장→delivery/HITL→finalize를 같은 State·Tool로 구성하고 설정만으로 고정 흐름/조건 분기를 전환한다. fixture에서 Level별 완료와 `agent_tool_call` 기반 호출 수 차이를 고정한다 | FR-C-02 | V5-C-1.2, V5-A-3.2-1, V5-B-2.2, V5-B-3.2 | 6.5h |
+| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다. 읽기 Tool은 caller 대기 soft 8초를 적용하고 worker 포화·queue 대기를 실제 Tool timeout과 별도 code로 구분한다. hard 상한의 실제 집행·종료 검증은 `V5-CM-4.8`에 귀속한다. finalize 실패 예약 sentinel은 자동 회수·삭제·차감하지 않고 row를 보존해 예산에 계속 포함하며, hard 종료가 확보된 구간의 회수 가능성만 `V5-CM-4.8`에서 재평가한다 | FR-C-08, NFR-03 | V5-C-2.1 | 4.0h |
+| V5-C-2.3 | P0 | 원인 가설. 완료: `FOC\|RFM\|MFD\|TMD\|OTH` 구조화 출력과 실제 AlarmRef·chunk·relation 근거 인용을 생성하고 실제 LLM input/output token·model·prompt version을 run·prediction에 기록한다. `NRM`과 합성 라벨·Generator FAULTS는 query·State·Tool·prompt에 넣지 않는다 | FR-C-07, FR-C-15, NFR-19 | V5-C-2.2 | 2.0h |
 | V5-C-3.1 | P0 | `decide_action`. 완료: SUMMARY OOC-only → MONITORING, TRACE OOS → WARNING, strict R03 → EQP_HOLD의 3단계 순수 규칙 함수를 만든다. LLM·score·metrology를 입력에서 제외한다 | FR-C-03 | V5-C-2.3 | 1.5h |
 | V5-C-3.2 | P0 | action 생성 transaction. 완료: `action_history`·link·approval·delivery를 한 트랜잭션에서 만들고 incident당 유효 action 1건을 보장한다 | FR-C-14 | V5-C-3.1 | 2.0h |
 | V5-C-3.3 | P0 | HITL 승인. 완료: EQP_HOLD에서 그래프를 중단하고 승인·반려 후 동일 thread를 재개한다. 조건부 갱신으로 중복 결정을 409로 막는다 | FR-C-04, FR-C-05 | V5-C-3.2, V5-C-0.2 | 2.0h |
@@ -209,14 +219,14 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-4.4 | P0 | write-back callback. 완료: `POST /internal/actions/{action_id}/delivery`가 timestamp·HMAC 서명·300초 replay window를 검증하고 channel별 상태를 갱신한다 | FR-C-06 | V5-C-4.3 | 1.5h |
 | V5-C-4.5 | P0 | Kafka MES Mock. 완료: 승인된 EQP_HOLD만 n8n Kafka Producer로 `fdc.actions`에 발행하고, MES Mock consumer 결과를 `fdc.actions.result` → write-back으로 반영한다. 승인 전 발행 0건·반려 시 발행 0건을 음성 테스트로 고정한다 | FR-C-06, FR-C-12 | V5-C-4.4 | 2.0h |
 | V5-C-4.6 | P0 | 채널 멱등성. 완료: EMAIL·MES_MOCK 각각 `(action_id, channel)` 외부 효과 최대 1회, 동일 hash 재수신 동일 결과, 다른 hash 409, 응답 유실 `UNKNOWN`·자동 재발송 0회를 n8n·Kafka 경로에서 검증한다 | FR-C-06, NFR-20 | V5-C-4.4, V5-C-4.5 | 1.5h |
-| V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
+| V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 예약은 `AuditedToolExecutor`의 공용 예산 guard를 경유하고 `reserve_tool_call()`을 직접 호출하지 않는다. graph node는 공용 nonterminal Tool 수집 경계를 경유하며 예산 차단으로 run을 FAILED 처리하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
 | V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`이며 Chat은 A/B Tool만 사용한다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 2.0h |
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고 D가 소유한 감사 subview를 탭에 조립한다. `api.audit()` 구현을 중복하지 않으며 Loading·Error·Empty·Success를 검증한다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1, V5-D-1.3 | 2.0h |
-| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`의 incident 12개에서 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 중복 실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증한다 | FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-CM-4.7 | 2.0h |
+| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`의 incident 12개에서 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 중복 실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-CM-4.7 | 2.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**C 합계: 42.0h** (P2 2.0h 제외)
+**C 합계: 48.5h** (P2 2.0h 제외)
 
 ---
 
@@ -264,7 +274,8 @@ Task 수는 94건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 11 V5-CM-4.4-1~4.7  5화면 shell·shared client·compose·readiness·E2E reset
 12 V5-CM-5.1        실제 API/OpenAPI와 MD·CSV·PDF sync gate
 13 V5-CM-5.2        React+FastAPI+3DB+Neo4j+RAG+n8n+Kafka 통합 E2E gate
-14 V5-CM-5.3        비기능·기존 backup/restore·승인 증적 확인 gate
+14 V5-CM-4.8        Tool hard timeout·sentinel 복구 재평가
+15 V5-CM-5.3        비기능·기존 backup/restore·승인·Tool timeout 증적 확인 gate
 
    V5-CM-1.7       구 bootstrap·skip 제거. **CM-1.8 뒤에 한다** — CM-1.8이
                    `bootstrap_base_schema.BASE_COLUMNS`를 base final type source로 쓰므로

@@ -46,6 +46,7 @@ from sqlalchemy.exc import (
     OperationalError,
     SQLAlchemyError,
 )
+from sqlalchemy.sql.elements import TextClause
 
 from app.common.audit import (
     AuditContractError,
@@ -82,6 +83,7 @@ __all__ = [
     "PredictionRow",
     "HumanReviewRow",
     "RUNTIME_REVIEW_LABEL_SOURCES",
+    "execute_read_all",
     "translate_db_error",
     "create_agent_run",
     "get_agent_run",
@@ -94,6 +96,7 @@ __all__ = [
     "insert_human_prediction_review",
     "list_human_prediction_reviews",
     "RunActionRow",
+    "ToolBudgetCounts",
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
@@ -106,6 +109,7 @@ __all__ = [
     "finalize_tool_call",
     "list_tool_calls",
     "count_tool_calls",
+    "count_tool_calls_for_budget",
     "create_approval_request",
     "get_approval_request",
     "insert_action_delivery",
@@ -251,13 +255,29 @@ def translate_db_error(error: SQLAlchemyError) -> AgentRepositoryError:
 
     같은 판단을 `require_active_transaction()`에 대해 이미 했다(구현리뷰 권고 1).
 
-    **범위를 정확히 적는다.** 지금 이것을 쓰는 것은 `run_guard_repository` 하나이고,
-    먼저 merge된 `incident_repository`·`routing_repository`는 여전히 `_translate()`를
-    직접 부른다. 두 파일을 함께 바꾸면 그 Task들의 diff를 다시 여는 셈이라 이번 범위에
-    넣지 않았다. **신규 외부 Repository는 이 seam을 쓰고 기존 2곳은 후속 정리다.**
+    `V5-C-2.1`부터 `run_guard_repository`·`incident_repository`·
+    `routing_repository`가 모두 이 public seam을 쓴다. 신규 외부 Repository도 private
+    `_translate()`를 import하지 않는다.
     """
 
     return _translate(error)
+
+
+def execute_read_all(
+    connection: Connection,
+    statement: TextClause,
+    params: Mapping[str, Any],
+) -> Sequence[Row[Any]]:
+    """읽기 statement를 실행하고 DB 오류를 공용 계층으로 옮긴다.
+
+    transaction·재시도 정책은 소유하지 않는다. caller가 제공한 connection과 snapshot에서
+    한 statement를 실행하는 얇은 public seam이다.
+    """
+
+    try:
+        return connection.execute(statement, params).all()
+    except SQLAlchemyError as exc:
+        raise translate_db_error(exc) from exc
 
 
 def _translate(error: SQLAlchemyError) -> AgentRepositoryError:
@@ -1296,6 +1316,15 @@ class ToolCallRow:
     error_msg: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ToolBudgetCounts:
+    """run row lock 아래에서 읽은 Tool 호출 시도 집계."""
+
+    total: int
+    by_tool: Mapping[str, int]
+    pending_reservations: int
+
+
 #: 예약 row가 쓰는 sentinel.
 #:
 #: `002`의 status CHECK는 `SUCCESS·ERROR·TIMEOUT` 3값뿐이라 `STARTED`가 없다. 그래서
@@ -1369,6 +1398,23 @@ _SELECT_TOOL_CALLS = text(
 
 _COUNT_TOOL_CALLS = text(
     "SELECT count(*) AS total FROM agent_tool_call WHERE agent_run_id = :run_id"
+)
+
+_COUNT_TOOL_CALLS_FOR_BUDGET = text(
+    """
+    SELECT tool_name,
+           count(*) AS call_count,
+           count(*) FILTER (
+               WHERE status = :reserved_status
+                 AND error_msg = :reserved_error
+                 AND output IS NULL
+                 AND latency_ms IS NULL
+           ) AS pending_count
+    FROM agent_tool_call
+    WHERE agent_run_id = :run_id
+    GROUP BY tool_name
+    ORDER BY tool_name
+    """
 )
 
 
@@ -1514,7 +1560,8 @@ def list_tool_calls(connection: Connection, agent_run_id: str) -> list[ToolCallR
 def count_tool_calls(connection: Connection, agent_run_id: str) -> int:
     """총 호출 **시도** 수. 예약만 된 것도 센다.
 
-    예산 8회 정책은 `V5-C-2.2`가 이 값 위에 구현한다. 이 계층은 세기만 한다.
+    `V5-C-2.1`은 이 값으로 State의 DB-derived `ToolBudget` snapshot을 만들고,
+    예산 8회 정책은 `V5-C-2.2`가 그 위에 구현한다. 이 계층은 세기만 한다.
     """
 
     try:
@@ -1523,6 +1570,45 @@ def count_tool_calls(connection: Connection, agent_run_id: str) -> int:
         )
     except SQLAlchemyError as exc:
         raise _translate(exc) from exc
+
+
+def count_tool_calls_for_budget(
+    connection: Connection,
+    agent_run_id: str,
+) -> ToolBudgetCounts:
+    """run을 잠근 뒤 총·Tool별·미종료 예약 수를 한 snapshot으로 읽는다.
+
+    caller는 이 함수와 :func:`reserve_tool_call`을 같은 transaction에서 호출한다.
+    이 계층은 정책을 판정하지 않으며 sentinel도 일반 호출 시도처럼 집계한다.
+    """
+
+    _require_transaction(connection)
+    try:
+        locked = connection.execute(
+            _LOCK_RUN,
+            {"run_id": agent_run_id},
+        ).one_or_none()
+        if locked is None:
+            raise RepositoryNotFound("RUN_NOT_FOUND")
+        rows = connection.execute(
+            _COUNT_TOOL_CALLS_FOR_BUDGET,
+            {
+                "run_id": agent_run_id,
+                "reserved_status": ToolCallStatus.ERROR.value,
+                "reserved_error": RESERVED_ERROR_MSG,
+            },
+        ).all()
+    except AgentRepositoryError:
+        raise
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+
+    by_tool = {str(row.tool_name): int(row.call_count) for row in rows}
+    return ToolBudgetCounts(
+        total=sum(by_tool.values()),
+        by_tool=by_tool,
+        pending_reservations=sum(int(row.pending_count) for row in rows),
+    )
 
 
 # ---------------------------------------------------------------------------

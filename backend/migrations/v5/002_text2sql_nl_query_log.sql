@@ -8,9 +8,9 @@
 --   - kosa_query_logger: INSERT + id 시퀀스 (기록 전용, SELECT 없음 — 위조·삭제 차단)
 --   - kosa_readonly   : SELECT (GET /analytics/history 조회 전용)
 --
--- 만들지 않는 것: 계정(role). role 은 cluster 전역 객체라 V4
--- `backend/migrations/002_analytics_roles.sql`(비밀번호 치환 절차 포함)이 계속
--- 소유한다. 계정이 없으면 아래 가드가 실행을 중단시킨다.
+-- 만들지 않는 것: 계정(role). role은 cluster 전역 객체라 V5-CM-3.5의
+-- `apply_postgres_role_matrix.py`가 소유한다. 계정이 없으면 아래 가드가
+-- 실행을 중단시킨다.
 --
 -- 적용은 `psql -v ON_ERROR_STOP=1 --single-transaction -f`로 한다. 파일 안에
 -- BEGIN/COMMIT을 두지 않는다.
@@ -27,11 +27,11 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kosa_query_logger') THEN
         RAISE EXCEPTION
-            'kosa_query_logger 계정이 없다. backend/migrations/002_analytics_roles.sql 을 먼저 적용하라.';
+            'kosa_query_logger 계정이 없다. V5-CM-3.5 role core를 먼저 적용하라.';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kosa_readonly') THEN
         RAISE EXCEPTION
-            'kosa_readonly 계정이 없다. backend/migrations/002_analytics_roles.sql 을 먼저 적용하라.';
+            'kosa_readonly 계정이 없다. V5-CM-3.5 role core를 먼저 적용하라.';
     END IF;
 END
 $$;

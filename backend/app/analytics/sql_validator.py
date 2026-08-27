@@ -7,7 +7,7 @@ LLM 이 생성한 SQL 을 실행 전에 검증한다. 계정 권한(kosa_readonl
 방어 6종
     1. 쓰기·DDL 차단 — 단일 SELECT 문만 허용. CTE 내부·SELECT INTO 포함
     2. 다중 문장 차단 — 문장은 정확히 1개
-    3. 비허용 객체 차단 — base 9 + reference 6 allowlist. 스코프 해석 기반
+    3. 비허용 객체 차단 — base 9 + 조회 reference 4 allowlist. 스코프 해석 기반
     4. 위험 함수 차단 — pg_sleep, pg_read_file, dblink 등
     5. 시스템 카탈로그 차단 — pg_catalog·information_schema, 무스키마 pg_* 포함
     6. 없는 컬럼 차단 — bootstrap manifest 의 컬럼 정의 기반
@@ -58,8 +58,10 @@ RUNTIME_MANIFEST_PATH = (
 _DIALECT = "postgres"
 _MAX_ROWS = 500
 
-#: Text2SQL 이 조회할 수 있는 객체. base 9 table + reference 6종.
-#: 감사로그(audit_log)·runtime 계열(agent_run 등)은 여기 없다 — 전용 API 소관.
+#: Text2SQL 이 조회할 수 있는 객체. base 9 table + 조회 reference 4종.
+#: 감사로그(audit_log)·질의 이력(nl_query_log)·runtime 계열(agent_run 등)은
+#: 여기 없다 — 모두 전용 API 소관이다. 특히 nl_query_log는 evaluation-only
+#: writer/read-history 계약이라 Runtime readonly ACL과도 일치시키지 않는다.
 ALLOWED_OBJECTS: frozenset[str] = frozenset(
     {
         # base 9
@@ -72,10 +74,9 @@ ALLOWED_OBJECTS: frozenset[str] = frozenset(
         "summary_alarm_history",
         "metrology",
         "action_history",
-        # reference 6 (001_reference_extensions.sql)
+        # 조회 reference 4 (001_reference_extensions.sql)
         "r03_alarm_history",
         "v_alarm_event",
-        "nl_query_log",
         "document",
         "document_chunk",
     }

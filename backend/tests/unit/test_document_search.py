@@ -36,7 +36,7 @@ class FakeRepository:
         self.arguments = (query_vector, top_k, model_code)
         return [
             {
-                "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+                "chunk_id": "DOC-SPEC-ET7500:cs2:0001",
                 "document_id": "DOC-SPEC-ET7500",
                 "title": "ET Guide",
                 "section": "적용 범위",
@@ -60,7 +60,7 @@ def test_service_embeds_query_and_returns_document_hits(monkeypatch: Any) -> Non
     assert repository.arguments == ([0.1, 0.2], 4, "ET-7500")
     assert hits == [
         ToolDocumentHit(
-            chunk_id="DOC-SPEC-ET7500:cs1:0001",
+            chunk_id="DOC-SPEC-ET7500:cs2:0001",
             document_id="DOC-SPEC-ET7500",
             title="ET Guide",
             section="적용 범위",
@@ -238,7 +238,7 @@ def test_documents_search_api_returns_bare_array_with_doc_id_alias(
             assert (query, top_k, model_code) == ("check", 4, "ET-7500")
             return [
                 ToolDocumentHit(
-                    chunk_id="DOC-SPEC-ET7500:cs1:0001",
+                    chunk_id="DOC-SPEC-ET7500:cs2:0001",
                     document_id="DOC-SPEC-ET7500",
                     title="ET Guide",
                     section="적용 범위",
@@ -257,7 +257,7 @@ def test_documents_search_api_returns_bare_array_with_doc_id_alias(
 
     assert [hit.model_dump() for hit in response] == [
         {
-            "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+            "chunk_id": "DOC-SPEC-ET7500:cs2:0001",
             "document_id": "DOC-SPEC-ET7500",
             "doc_id": "DOC-SPEC-ET7500",
             "title": "ET Guide",
@@ -302,7 +302,7 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
             assert (query, top_k, model_code) == ("check", 4, "ET-7500")
             return [
                 ToolDocumentHit(
-                    chunk_id="DOC-SPEC-ET7500:cs1:0001",
+                    chunk_id="DOC-SPEC-ET7500:cs2:0001",
                     document_id="DOC-SPEC-ET7500",
                     title="ET Guide",
                     score=0.82,
@@ -325,7 +325,7 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
     assert response.status_code == 200
     assert response.json() == [
         {
-            "chunk_id": "DOC-SPEC-ET7500:cs1:0001",
+            "chunk_id": "DOC-SPEC-ET7500:cs2:0001",
             "document_id": "DOC-SPEC-ET7500",
             "doc_id": "DOC-SPEC-ET7500",
             "title": "ET Guide",
@@ -394,7 +394,7 @@ def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) ->
             assert (query, top_k, model_code) == ("check", 4, "ET-7500")
             return [
                 ToolDocumentHit(
-                    chunk_id="DOC-SPEC-ET7500:cs1:0001",
+                    chunk_id="DOC-SPEC-ET7500:cs2:0001",
                     document_id="DOC-SPEC-ET7500",
                     title="ET Guide",
                     score=0.82,

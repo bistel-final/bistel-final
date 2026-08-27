@@ -211,6 +211,10 @@ def test_the_same_alarm_id_in_two_sources_resolves_to_its_own_owner(db: Any) -> 
         (TRACE, "A-001"): "LOT001W001",
         (SUMMARY, "A-001"): "LOT001W002",
     }
+    assert snapshot.lot_hist_id_of_member == {
+        (TRACE, "A-001"): "LH-W1",
+        (SUMMARY, "A-001"): "LH-W2",
+    }
 
 
 def test_several_alarms_on_one_wafer_share_a_single_route(db: Any) -> None:
@@ -221,6 +225,7 @@ def test_several_alarms_on_one_wafer_share_a_single_route(db: Any) -> None:
 
     snapshot = _fetch(db, _ref(TRACE, "TA-01"), _ref(SUMMARY, "SA-01"))
     assert set(snapshot.wafer_of_member.values()) == {"LOT001W001"}
+    assert set(snapshot.lot_hist_id_of_member.values()) == {"LH-W1"}
     assert [s.lot_hist_id for s in snapshot.steps] == ["LH-W1"]
 
 

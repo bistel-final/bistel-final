@@ -143,6 +143,7 @@ class GraphRouteEvidence:
 
     chamber_id: str
     equipment_id: str | None
+    model_code: str | None
     process_step_id: str | None
     upstream_process_step_ids: tuple[str, ...]
     downstream_process_step_ids: tuple[str, ...]
@@ -415,6 +416,7 @@ def combine_route(
         GraphRouteEvidence(
             chamber_id=chamber,
             equipment_id=compact[chamber].equipment_id,
+            model_code=compact[chamber].model_code,
             process_step_id=compact[chamber].process_step_id,
             upstream_process_step_ids=tuple(compact[chamber].upstream_process_step_ids),
             downstream_process_step_ids=tuple(
@@ -475,6 +477,11 @@ def _assert_bound(incident: ResolvedIncident, snapshot: RouteSnapshot) -> None:
         raise RepositoryContractError(_INCIDENT_MISMATCH)
     if set(snapshot.member_keys) != set(snapshot.wafer_of_member):
         # provenance와 mapping key가 어긋나면 lookup이 raw KeyError로 나간다.
+        raise RepositoryContractError(_INCIDENT_MISMATCH)
+    if set(snapshot.member_keys) != set(snapshot.lot_hist_id_of_member):
+        # RouteSnapshot.__post_init__은 mapping을 불변으로만 만들고 key 정합성은
+        # 판정하지 않는다. 실제 incident까지 가진 이 결합 경계에서 wafer mapping과
+        # 같은 계약으로 대조한다.
         raise RepositoryContractError(_INCIDENT_MISMATCH)
     mapped = set(snapshot.wafer_of_member.values())
     walked = {step.wafer_id for step in snapshot.steps}

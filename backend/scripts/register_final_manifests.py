@@ -100,7 +100,7 @@ def _rag_marker_contract() -> dict[str, Any]:
         "status": "COMMITTED",
         "profile": "runtime",
         "document_count": len(rag.CANONICAL_DOCUMENT_IDS),
-        "chunk_count": 25,
+        "chunk_count": candidates.RUNTIME_RAG_ROWS["document_chunk"],
         "null_embedding_count": 0,
         "dimension": rag.EMBEDDING_DIMENSION,
         "document_ids": list(rag.CANONICAL_DOCUMENT_IDS),

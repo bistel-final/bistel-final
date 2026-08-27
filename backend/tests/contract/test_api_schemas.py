@@ -366,7 +366,7 @@ class TestKnowledgeSchemas:
 
     def test_document_search_hit_exposes_doc_id_compat_alias(self) -> None:
         response = DocumentHit(
-            chunk_id="DOC-SPEC-ET7500:cs1:0001",
+            chunk_id="DOC-SPEC-ET7500:cs2:0001",
             document_id="DOC-SPEC-ET7500",
             doc_id="DOC-SPEC-ET7500",
             title="ET Guide",

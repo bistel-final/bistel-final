@@ -5,7 +5,7 @@ sql_validator(V4-D-2.2) 를 통과한 normalized_sql 만 받는다. 원문 SQL �
 결과다.
 
 방어 위치
-- 1차: 계정 권한 (kosa_readonly, 002_analytics_roles.sql)
+- 1차: 계정 권한 (kosa_readonly, V5-CM-3.5 role matrix)
 - 2차: sql_validator
 - 3차: 이 모듈의 세션 설정 — statement_timeout · transaction read only
 

@@ -171,8 +171,10 @@ generate_analysis_plan(question)
 
 Tool 결과는 `ok`, `reason`, domain payload만 반환한다. `latency_ms`·호출 status는 공통 wrapper가
 `agent_tool_call`에 호출당 한 번 기록하며 Tool JSON에 넣지 않는다. 실패 reason은
-`NOT_FOUND:|TIMEOUT:|MODEL_NOT_READY:|LLM_NOT_READY:|DEPENDENCY_ERROR:|POLICY_REJECTED:|IDEMPOTENCY_CONFLICT:`
-일곱 prefix만 허용하고 실패 payload는 null 또는 빈 목록이다.
+`NOT_FOUND:|TIMEOUT:|MODEL_NOT_READY:|LLM_NOT_READY:|GRAPH_SHAPE_ERROR:|DEPENDENCY_ERROR:|POLICY_REJECTED:|IDEMPOTENCY_CONFLICT:`
+여덟 prefix만 허용하고 실패 payload는 null 또는 빈 목록이다. `GRAPH_SHAPE_ERROR:`는 graph
+연결은 됐으나 반환 형상이 계약과 다른 경우이고, `DEPENDENCY_ERROR:`는 조회 자체가 실패한
+경우다. 이 목록은 HTTP 오류 code(§2.7)와 별개 계약이다.
 
 ---
 
@@ -388,7 +390,7 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   {
     "doc_id": "DOC-SPEC-PH9000",
     "document_id": "DOC-SPEC-PH9000",
-    "chunk_id": "DOC-SPEC-PH9000:cs1:<4-digit-seq>",
+    "chunk_id": "DOC-SPEC-PH9000:cs2:<4-digit-seq>",
     "title": "PH-9000 Photo Scanner 장비 스펙 및 운전 기준",
     "section": "4.2 Focus Offset (`PH_FOCUS`)",
     "score": 0.87,
@@ -403,9 +405,9 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 - corrected RAG source는 원문 YAML의 `DOC-SPEC-PH9000`, `DOC-SPEC-ET7500`,
   `DOC-TROUBLE-FDC`를 canonical `document_id`로 그대로 승계한다. `chunk_id`는
   `<document_id>:<chunk_schema_version>:<4자리 순번>` 형식으로 결정론적으로 생성하며 최초
-  `chunk_schema_version`은 `cs1`이다. 같은 원문·분할 규칙·순번에서는 재적재해도 바뀌지
+  `chunk_schema_version`은 `cs2`다. 같은 원문·분할 규칙·순번에서는 재적재해도 바뀌지
   않는다.
-- 예시의 `DOC-SPEC-PH9000:cs1:<4-digit-seq>`는 순번을 생략한 문서 표기용 placeholder다.
+- 예시의 `DOC-SPEC-PH9000:cs2:<4-digit-seq>`는 순번을 생략한 문서 표기용 placeholder다.
   실제 응답은 적재 검증 artifact에 기록된 결정론적 chunk ID를 사용하고 placeholder 문자열을
   반환하지 않는다.
 - 안정 정렬: `score DESC, document_id ASC, chunk_id ASC`.
@@ -632,11 +634,11 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   "evidence_items": [
     {
       "type": "DOCUMENT",
-      "source_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
+      "source_id": "DOC-TROUBLE-FDC:cs2:<4-digit-seq>",
       "title": "FDC 이상 유형 진단 및 조치 가이드",
       "excerpt": "RFM 관련 점검 근거 ...",
       "document_id": "DOC-TROUBLE-FDC",
-      "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
+      "chunk_id": "DOC-TROUBLE-FDC:cs2:<4-digit-seq>",
       "section": "3.2 RFM — RF Mismatch (RF 정합 불량)"
     }
   ],
@@ -644,7 +646,7 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   "evidence": {
     "doc_id": "DOC-TROUBLE-FDC",
     "document_id": "DOC-TROUBLE-FDC",
-    "chunk_id": "DOC-TROUBLE-FDC:cs1:<4-digit-seq>",
+    "chunk_id": "DOC-TROUBLE-FDC:cs2:<4-digit-seq>",
     "section": "3.2 RFM — RF Mismatch (RF 정합 불량)"
   },
   "limit": "Pilot scope ..."
@@ -933,7 +935,7 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 - Neo4j 44 nodes / 85 relationships success marker·fingerprint
 - runtime `kosa_agent`의 RAG `document`·`document_chunk` schema, canonical document ID
   `DOC-SPEC-PH9000|DOC-SPEC-ET7500|DOC-TROUBLE-FDC`, source·corrected SHA-256,
-  `cs1` contract hash, 고정 model revision·weights hash, COMMITTED marker와 live DB fingerprint,
+  `cs2` contract hash, 고정 model revision·weights hash, COMMITTED marker와 live DB fingerprint,
   chunk 1건 이상/문서, NULL embedding 0건, vector dimension 1024, 지정 검색 smoke 3건
 - n8n readiness
 - Kafka metadata와 `fdc.actions`·`fdc.actions.result` topic 접근

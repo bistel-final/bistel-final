@@ -143,6 +143,107 @@ jobs:
           backend/tests/unit/test_transition_orchestration.py
           -m windows_contract
 
+  # 저장소 test 파일을 하나씩 지명하는 기존 workflow에서 47개 unit test가 조용히
+  # 빠져 있었다. Docker를 쓰지 않는 빠른 묶음이므로 7분대 container job과 병렬로
+  # 실행해 wall clock을 늘리지 않는다. registration 회귀가 이후의 새 누락도 막는다.
+  backend-unit-contracts:
+    name: Backend unit contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused unit dependencies
+        run: >-
+          python -m pip install
+          pytest==8.3.4
+          SQLAlchemy==2.0.36
+          psycopg[binary]==3.2.3
+          python-dotenv==1.0.1
+          neo4j==5.26.0
+          langgraph==0.2.53
+          langgraph-checkpoint-postgres==2.0.9
+          psycopg-pool==3.3.1
+          sqlglot==26.0.1
+          fastapi==0.115.6
+          httpx==0.28.1
+          pgvector==0.3.6
+
+      # 기존 미등록 47파일 + 등록 가드 1파일이다. container/network 전용 1개와
+      # scikit-learn 미설치 1개는 가드 내부 allowlist에 소유 이유를 남겼다.
+      - name: Prove the previously unregistered unit contracts
+        working-directory: backend
+        env:
+          # `app.common.config`가 import 시점에 요구하는 8종이다. 값은 접속용이 아니라
+          # collection을 통과시키기 위한 더미다 — 이 묶음은 DB·Neo4j·n8n에 붙지 않는다.
+          # 없으면 `RuntimeError: 필수 환경변수가 없습니다`로 collection 단계에서 죽는다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_runtime_migration.py
+          tests/unit/test_alarm_event_contract.py
+          tests/unit/test_analysis_plan_tool.py
+          tests/unit/test_apply_agent_runtime.py
+          tests/unit/test_apply_rag_schema.py
+          tests/unit/test_audit_read.py
+          tests/unit/test_base_schema_sql.py
+          tests/unit/test_bootstrap_base_schema.py
+          tests/unit/test_bootstrap_neo4j_graph.py
+          tests/unit/test_build_source_manifest_v4.py
+          tests/unit/test_chart_resolution.py
+          tests/unit/test_ci_test_registration.py
+          tests/unit/test_common_audit.py
+          tests/unit/test_common_boundary_adapters.py
+          tests/unit/test_common_ids_enums.py
+          tests/unit/test_document_contract.py
+          tests/unit/test_document_search.py
+          tests/unit/test_final_profile_manifests.py
+          tests/unit/test_generator_reproduction.py
+          tests/unit/test_graph_context.py
+          tests/unit/test_groupby_lint.py
+          tests/unit/test_intake_final_zip.py
+          tests/unit/test_issue_final_epoch.py
+          tests/unit/test_evaluate_rag_search.py
+          tests/unit/test_load_rag_documents.py
+          tests/unit/test_manifest_override.py
+          tests/unit/test_master_cypher.py
+          tests/unit/test_mutation_runtime.py
+          tests/unit/test_nl_query_log_contract.py
+          tests/unit/test_non_empty_id.py
+          tests/unit/test_plan_refinement.py
+          tests/unit/test_prefetch_embedding_model.py
+          tests/unit/test_preflight.py
+          tests/unit/test_query_log.py
+          tests/unit/test_rebuild_runner.py
+          tests/unit/test_reference_extensions.py
+          tests/unit/test_register_final_manifests.py
+          tests/unit/test_rehearsal_profile_loader.py
+          tests/unit/test_rehearsal_profile_verifier.py
+          tests/unit/test_rehearsal_schema.py
+          tests/unit/test_rehearse_recovery_cli.py
+          tests/unit/test_rehearse_schema.py
+          tests/unit/test_retired_pipelines.py
+          tests/unit/test_schema_cache.py
+          tests/unit/test_schema_lock.py
+          tests/unit/test_source_manifest_artifact.py
+          tests/unit/test_source_manifest_v4.py
+          tests/unit/test_value_normalization.py
+          tests/unit/test_verify_migrations.py
+          -rs --no-header
+
   schema-rehearsal-container:
     name: Schema rehearsal container
     runs-on: ubuntu-latest
@@ -161,9 +262,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `pgvector`도 vector 연산을 하려는 것이 아니다. `app.main`이
+      # `knowledge/document_search.py`를 거치고 그 module 최상단이
+      # `from pgvector.psycopg import register_vector`라, 없으면 `V5-CM-3.5`의
+      # `tests/test_health.py`가 collection에서 죽는다. `sentence_transformers`는
+      # 함수 안 지연 import라 필요 없다.
+      #
       # `neo4j`는 Bolt에 붙기 위한 것이 **아니다.** `verify_bootstrap_state`가
       # module 최상단에서 `neo4j.exceptions`를 import하므로, full verifier를 부르는
       # `V5-CM-3.3` 회귀가 이것 없이는 collection 단계에서 죽는다.
+      #
+      # `numpy`·`scikit-learn`·`joblib`은 학습을 돌리기 위한 것이 아니다.
+      # `V5-C-2.1` production 조립 회귀가 실제 `get_fdc_summary`를 import하고,
+      # 그 runtime service가 Detection model·artifact loader를 import하므로 필요하다.
       - name: Install focused rehearsal dependencies
         run: >-
           python -m pip install
@@ -175,6 +286,13 @@ jobs:
           langgraph==0.2.53
           langgraph-checkpoint-postgres==2.0.9
           psycopg-pool==3.3.1
+          sqlglot==26.0.1
+          fastapi==0.115.6
+          httpx==0.28.1
+          pgvector==0.3.6
+          numpy==2.1.3
+          scikit-learn==1.5.2
+          joblib==1.4.2
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
@@ -244,6 +362,52 @@ jobs:
         run: >-
           python -m pytest -q
           tests/unit/test_checkpoint_backup.py
+          -rs --no-header
+
+      # V5-CM-3.5 PostgreSQL 최소권한 role matrix.
+      #
+      # 이 workflow는 파일을 하나씩 지명하므로 신규 회귀를 적지 않으면 CI에서 실행되지
+      # 않는다. 단위 회귀는 exact ACL·marker·snapshot 계약과, Runtime에서 권한을 회수한
+      # `nl_query_log`가 Text2SQL 정책에서도 거부되는지를 함께 고정한다.
+      - name: Prove the PostgreSQL role matrix contract
+        working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          APP_DB_USER: kosa_app
+          APP_DATABASE_URL: ""
+          APP_DB_PASSWORD: ""
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+        run: >-
+          python -m pytest -q
+          tests/unit/test_postgres_role_matrix.py
+          tests/unit/test_sql_validator.py
+          tests/unit/test_config_validation.py
+          tests/unit/test_db_pool.py
+          tests/unit/test_wbs_dependencies.py
+          tests/test_health.py
+          tests/contract/test_tool_contracts.py
+          tests/contract/test_alarm_ref.py
+          tests/contract/test_api_schemas.py
+          tests/contract/test_error_contract.py
+          -rs --no-header
+
+      # Docker를 자동 기동하면 로컬 전체 pytest가 개발자 모르게 무거워진다. 그래서 test의
+      # opt-in gate는 유지하되, 전용 CI step은 변수를 명시해 skip이 아니라 실제 3 DB ×
+      # 5 role password-login·42501 음성 회귀를 수행한다.
+      - name: Prove the PostgreSQL role matrix against real databases
+        working-directory: backend
+        env:
+          RUN_POSTGRES_ROLE_MATRIX_CONTAINER: "1"
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_postgres_role_matrix_container.py
           -rs --no-header
 
       # V5-CM-3.4가 바꾼 계약의 단위 회귀. container가 필요 없다.
@@ -348,6 +512,51 @@ jobs:
         run: >-
           python -m pytest -q
           tests/unit/test_agent_routing.py
+          -rs --no-header
+
+      # V5-C-2.1 LangGraph Level 1·2 골격. State 20 channel·Tool 감사 wrapper·
+      # 14 canonical node와 fail-closed 분기는 공용 서비스 없이 결정론적으로 검증한다.
+      - name: Prove the LangGraph state, Tool, and topology contracts
+        working-directory: backend
+        env:
+          # `app.common.config`가 import 시점에 요구하는 8종이다. 값은 접속용이 아니라
+          # collection을 통과시키기 위한 더미다 — 이 묶음은 DB·Neo4j·n8n에 붙지 않는다.
+          # 없으면 `RuntimeError: 필수 환경변수가 없습니다`로 collection 단계에서 죽는다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+        run: >-
+          python -m pytest -q
+          tests/unit/test_agent_state.py
+          tests/unit/test_agent_tool_boundary.py
+          tests/unit/test_agent_tool_budget.py
+          tests/unit/test_agent_graph.py
+          -rs --no-header
+
+      # 실제 PostgreSQL 16에서 checkpoint 직렬화와 C 소유 incident·routing·Tool 감사·
+      # run 종료 조립을 검증한다. 별도 회귀는 production FDC Tool만 격리 DB에 연결하고
+      # 후속 business port를 fixture로 유지한다.
+      - name: Prove LangGraph checkpoint and assembly on PostgreSQL
+        working-directory: backend
+        env:
+          # 이 묶음도 `app.common.config`를 import한다 — 옮겨 온 production 배선 회귀가
+          # Detection service를 끌어오기 때문이다. 위 unit step과 같은 더미 8종을 준다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_graph_container.py
           -rs --no-header
 
       # V5-C-1.3 중복 실행 방지.

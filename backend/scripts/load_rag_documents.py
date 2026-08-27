@@ -35,6 +35,15 @@ from db_target import (
     validate_url_components,
 )
 from master_cypher import canonical_sha256
+from rag_chunk_contract import (
+    CHUNK_CONTRACT_SHA256,
+    CHUNK_ID_FORMAT,
+    CHUNK_SCHEMA_VERSION,
+    FALLBACK_SECTION_TITLE,
+    H2_HEADING_REGEX,
+    H3_HEADING_REGEX,
+    MAX_CHARS,
+)
 from sqlalchemy import create_engine
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -53,11 +62,6 @@ REQUIRED_SOURCE_FILES = (
     "SPEC_PH-9000_PhotoScanner.md",
     "TROUBLE_FDC_FaultGuide.md",
 )
-CHUNK_SCHEMA_VERSION = "cs1"
-CHUNK_ID_FORMAT = "<document_id>:cs1:<seq:04d>"
-CHUNK_CONTRACT_SHA256 = (
-    "22efd8e95c31a4620a81bb99f5d119a8be0514d2dd4476c1c74441400845f4ec"
-)
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 EMBEDDING_DIMENSION = 1024
@@ -66,9 +70,8 @@ SEARCH_SMOKE_CASES = (
     ("ET-7500 Dry Etcher 적용 범위", "ET-7500", "DOC-SPEC-ET7500"),
     ("연속 3 WAFER OOS 승인 조치", "PH-9000", "DOC-TROUBLE-FDC"),
 )
-HEADING_PATTERN = re.compile(r"^#{2,3}\s+(.+?)\s*$", re.MULTILINE)
-MIN_CHARS = 120
-MAX_CHARS = 1200
+H2_HEADING_PATTERN = re.compile(H2_HEADING_REGEX, re.MULTILINE)
+H3_HEADING_PATTERN = re.compile(H3_HEADING_REGEX, re.MULTILINE)
 
 
 class RagLoadError(RuntimeError):
@@ -206,21 +209,40 @@ def load_corrected_documents(source_dir: Path) -> tuple[RagDocument, ...]:
 
 
 def _iter_sections(content: str) -> Iterable[tuple[str, str]]:
-    matches = list(HEADING_PATTERN.finditer(content))
-    if not matches:
-        yield "머리말", content.strip()
+    h2_matches = list(H2_HEADING_PATTERN.finditer(content))
+    if not h2_matches:
+        if content.strip():
+            yield FALLBACK_SECTION_TITLE, content.strip()
         return
 
-    preamble = content[: matches[0].start()].strip()
-    if preamble:
-        yield "머리말", preamble
-    for index, match in enumerate(matches):
-        section_title = match.group(1).strip()
-        start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-        section_body = content[start:end].strip()
-        if section_body:
-            yield section_title, section_body
+    preamble = content[: h2_matches[0].start()].strip()
+    for h2_index, h2_match in enumerate(h2_matches):
+        h2_title = h2_match.group(1).strip()
+        h2_start = h2_match.end()
+        h2_end = (
+            h2_matches[h2_index + 1].start()
+            if h2_index + 1 < len(h2_matches)
+            else len(content)
+        )
+        h3_matches = list(H3_HEADING_PATTERN.finditer(content, h2_start, h2_end))
+
+        h2_body_end = h3_matches[0].start() if h3_matches else h2_end
+        h2_body = content[h2_start:h2_body_end].strip()
+        if h2_index == 0 and preamble:
+            h2_body = f"{preamble}\n\n{h2_body}".strip()
+        if h2_body:
+            yield h2_title, h2_body
+
+        for h3_index, h3_match in enumerate(h3_matches):
+            h3_start = h3_match.end()
+            h3_end = (
+                h3_matches[h3_index + 1].start()
+                if h3_index + 1 < len(h3_matches)
+                else h2_end
+            )
+            h3_body = content[h3_start:h3_end].strip()
+            if h3_body:
+                yield f"{h2_title} > {h3_match.group(1).strip()}", h3_body
 
 
 def _split_long_section(section_title: str, content: str) -> list[tuple[str, str]]:
@@ -248,26 +270,13 @@ def _split_long_section(section_title: str, content: str) -> list[tuple[str, str
     ]
 
 
-def _merge_short_pieces(pieces: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
-    merged: list[tuple[str, str]] = []
-    for section_title, content in pieces:
-        if len(content) < MIN_CHARS and merged:
-            previous_title, previous_content = merged[-1]
-            merged[-1] = (previous_title, f"{previous_content}\n\n{content}")
-        else:
-            merged.append((section_title, content))
-    return merged
-
-
 def chunk_document(document: RagDocument) -> tuple[RagChunk, ...]:
     pieces: list[tuple[str, str]] = []
     for section_title, section_content in _iter_sections(document.content):
         pieces.extend(_split_long_section(section_title, section_content))
 
     chunks: list[RagChunk] = []
-    for sequence, (section_title, content) in enumerate(
-        _merge_short_pieces(pieces), start=1
-    ):
+    for sequence, (section_title, content) in enumerate(pieces, start=1):
         chunk_id = f"{document.document_id}:{CHUNK_SCHEMA_VERSION}:{sequence:04d}"
         chunks.append(
             RagChunk(

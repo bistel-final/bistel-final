@@ -13,10 +13,10 @@
     base 9 table: dim_parameter, lot_history, fdc_trace, summary_data, evaluation,
                   trace_alarm_history, summary_alarm_history, metrology, action_history
 
-    reference 6종 (001_reference_extensions.sql — PR #48 로 main 병합됨):
-        r03_alarm_history, v_alarm_event, nl_query_log,
-        document, document_chunk
-    GREEN_REFERENCE_CASES 가 이 6종의 허용을 검증한다.
+    조회 reference 4종 (001_reference_extensions.sql — PR #48 로 main 병합됨):
+        r03_alarm_history, v_alarm_event, document, document_chunk
+    GREEN_REFERENCE_CASES 가 이 4종의 허용을 검증한다. nl_query_log는
+    evaluation-only 전용 이력 API 소관이므로 일반 Text2SQL에서 거부한다.
 
 케이스 소비 방식
     GREEN_CASES / RED_CASES / ALL_CASES는 모듈 상수로 노출한다.
@@ -180,7 +180,7 @@ GREEN_CASES: tuple[SqlCase, ...] = (
 
 
 # --------------------------------------------------------------------------
-# GREEN — reference 6종 (001_reference_extensions.sql, PR #48)
+# GREEN — 조회 reference 4종 (001_reference_extensions.sql, PR #48)
 #
 # validator 가 이 필수 객체를 거부하면 안 된다. 컬럼명은 DDL 실제 정의를 따른다.
 # --------------------------------------------------------------------------
@@ -205,16 +205,6 @@ GREEN_REFERENCE_CASES: tuple[SqlCase, ...] = (
         ),
         expect_valid=True,
         note="뷰도 허용 대상이다. TRACE/SUMMARY/R03 통합 조회(FR-A-06).",
-    ),
-    SqlCase(
-        case_id="G13_nl_query_log",
-        category="GREEN_REFERENCE",
-        sql=(
-            "SELECT outcome, COUNT(*) AS cnt, AVG(latency_ms) AS avg_latency "
-            "FROM nl_query_log WHERE is_valid GROUP BY outcome"
-        ),
-        expect_valid=True,
-        note="FR-D-05 Text2SQL 실행 결과 집계. 이력 패널이 쓴다.",
     ),
     SqlCase(
         case_id="G15_document_join_chunk",
@@ -361,6 +351,14 @@ RED_NOT_ALLOWED_CASES: tuple[SqlCase, ...] = (
         False,
         ("허용",),
         note="감사로그는 전용 API(GET /audit-logs)로만 조회한다. FR-D-07.",
+    ),
+    SqlCase(
+        "R41_nl_query_log",
+        "RED_NOT_ALLOWED",
+        "SELECT outcome, COUNT(*) FROM nl_query_log GROUP BY outcome",
+        False,
+        ("허용",),
+        note="질의 이력은 evaluation-only 전용 API로만 조회한다. Runtime ACL 0과 정렬.",
     ),
     SqlCase(
         "R16_legacy_fdc_alarm",
@@ -643,7 +641,7 @@ def test_green_case_is_valid(case: SqlCase) -> None:
 @requires_validator
 @pytest.mark.parametrize("case", GREEN_REFERENCE_CASES, ids=_ids(GREEN_REFERENCE_CASES))
 def test_reference_object_is_allowed(case: SqlCase) -> None:
-    """reference 6종(001_reference_extensions.sql)은 allowlist에 포함돼야 한다.
+    """조회 reference 4종은 allowlist에 포함돼야 한다.
 
     이 케이스가 없으면 validator가 필수 객체를 전부 거부해도 통과한다.
     """
