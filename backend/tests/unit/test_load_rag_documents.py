@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 import sys
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -12,6 +15,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import load_rag_documents as loader  # noqa: E402
+import rag_chunk_contract as chunk_contract  # noqa: E402
 
 
 class _Result:
@@ -93,9 +97,33 @@ def test_h3_chunks_keep_parent_h2_context_without_short_piece_merge() -> None:
 
 def test_chunk_contract_uses_cs2_title_hierarchy_rules() -> None:
     assert loader.CHUNK_SCHEMA_VERSION == "cs2"
-    assert loader.CHUNK_CONTRACT_SHA256 == (
-        "1498123916cb73f5c9df8906f1ba6a9c2ed0736db9b5d3de7eb583653bb1e61e"
+    assert loader.CHUNK_CONTRACT_SHA256 == chunk_contract.CHUNK_CONTRACT_SHA256
+
+
+def test_design_document_chunk_contract_matches_loader_contract() -> None:
+    design_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "specifications"
+        / "시스템설계서_v2_1_작업본.md"
     )
+    design = design_path.read_text(encoding="utf-8")
+    json_match = re.search(
+        r"hash 입력 JSON은 다음 한 줄과 정확히 같다\.\s*```json\s*(\{.+?\})\s*```",
+        design,
+        re.DOTALL,
+    )
+    hash_match = re.search(r"`([0-9a-f]{64})`다\. 규칙이 하나라도", design)
+
+    assert json_match is not None
+    assert hash_match is not None
+    declared_contract = json.loads(json_match.group(1))
+    declared_json = chunk_contract.canonical_contract_json(declared_contract)
+    declared_hash = hashlib.sha256(declared_json.encode("utf-8")).hexdigest()
+
+    assert declared_contract == chunk_contract.CHUNK_CONTRACT
+    assert declared_hash == hash_match.group(1)
+    assert declared_hash == loader.CHUNK_CONTRACT_SHA256
 
 
 def test_target_allowlist_excludes_evaluation_database() -> None:

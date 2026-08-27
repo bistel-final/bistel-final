@@ -35,6 +35,15 @@ from db_target import (
     validate_url_components,
 )
 from master_cypher import canonical_sha256
+from rag_chunk_contract import (
+    CHUNK_CONTRACT_SHA256,
+    CHUNK_ID_FORMAT,
+    CHUNK_SCHEMA_VERSION,
+    FALLBACK_SECTION_TITLE,
+    H2_HEADING_REGEX,
+    H3_HEADING_REGEX,
+    MAX_CHARS,
+)
 from sqlalchemy import create_engine
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -53,11 +62,6 @@ REQUIRED_SOURCE_FILES = (
     "SPEC_PH-9000_PhotoScanner.md",
     "TROUBLE_FDC_FaultGuide.md",
 )
-CHUNK_SCHEMA_VERSION = "cs2"
-CHUNK_ID_FORMAT = "<document_id>:cs2:<seq:04d>"
-CHUNK_CONTRACT_SHA256 = (
-    "1498123916cb73f5c9df8906f1ba6a9c2ed0736db9b5d3de7eb583653bb1e61e"
-)
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 EMBEDDING_DIMENSION = 1024
@@ -66,9 +70,8 @@ SEARCH_SMOKE_CASES = (
     ("ET-7500 Dry Etcher 적용 범위", "ET-7500", "DOC-SPEC-ET7500"),
     ("연속 3 WAFER OOS 승인 조치", "PH-9000", "DOC-TROUBLE-FDC"),
 )
-H2_HEADING_PATTERN = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-H3_HEADING_PATTERN = re.compile(r"^###\s+(.+?)\s*$", re.MULTILINE)
-MAX_CHARS = 1000
+H2_HEADING_PATTERN = re.compile(H2_HEADING_REGEX, re.MULTILINE)
+H3_HEADING_PATTERN = re.compile(H3_HEADING_REGEX, re.MULTILINE)
 
 
 class RagLoadError(RuntimeError):
@@ -209,7 +212,7 @@ def _iter_sections(content: str) -> Iterable[tuple[str, str]]:
     h2_matches = list(H2_HEADING_PATTERN.finditer(content))
     if not h2_matches:
         if content.strip():
-            yield "문서 안내", content.strip()
+            yield FALLBACK_SECTION_TITLE, content.strip()
         return
 
     preamble = content[: h2_matches[0].start()].strip()

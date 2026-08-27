@@ -58,8 +58,7 @@ def load_questionset(path: Path) -> dict[str, Any]:
         "audience",
         "query",
         "model_code",
-        "expected_document_ids",
-        "expected_sections",
+        "expected_targets",
     }
     ids: set[str] = set()
     for index, question in enumerate(questions, start=1):
@@ -77,8 +76,18 @@ def load_questionset(path: Path) -> dict[str, Any]:
             raise RagEvaluationError(f"{question['id']}: query는 비어 있을 수 없습니다")
         if question["model_code"] is not None and not isinstance(question["model_code"], str):
             raise RagEvaluationError(f"{question['id']}: model_code는 문자열 또는 null이어야 합니다")
-        if not question["expected_document_ids"] or not question["expected_sections"]:
-            raise RagEvaluationError(f"{question['id']}: 정답 문서와 절이 필요합니다")
+        targets = question["expected_targets"]
+        if not isinstance(targets, list) or not targets:
+            raise RagEvaluationError(f"{question['id']}: expected_targets는 비어 있지 않은 배열이어야 합니다")
+        for target in targets:
+            if not isinstance(target, dict) or set(target) != {"document_id", "section"}:
+                raise RagEvaluationError(
+                    f"{question['id']}: 각 expected_target은 document_id와 section만 가져야 합니다"
+                )
+            if not all(isinstance(target[field], str) and target[field] for field in target):
+                raise RagEvaluationError(
+                    f"{question['id']}: expected_target의 document_id와 section은 비어 있을 수 없습니다"
+                )
 
     minimum = int(criteria.get("minimum_question_count", 0))
     if len(questions) < minimum:
@@ -88,11 +97,26 @@ def load_questionset(path: Path) -> dict[str, Any]:
     return payload
 
 
-def is_relevant(hit: Any, question: dict[str, Any]) -> bool:
-    document_ok = hit.document_id in question["expected_document_ids"]
+def is_relevant(hit: Any, target: dict[str, str]) -> bool:
+    document_ok = hit.document_id == target["document_id"]
     section = hit.section or ""
-    section_ok = any(expected in section for expected in question["expected_sections"])
+    section_ok = target["section"] in section
     return document_ok and section_ok
+
+
+def evaluate_hits(hits: list[Any], targets: list[dict[str, str]]) -> tuple[int | None, float]:
+    matched_targets: set[int] = set()
+    first_relevant_rank: int | None = None
+    for index, hit in enumerate(hits, start=1):
+        matched_at_rank = [
+            target_index
+            for target_index, target in enumerate(targets)
+            if is_relevant(hit, target)
+        ]
+        if matched_at_rank and first_relevant_rank is None:
+            first_relevant_rank = index
+        matched_targets.update(matched_at_rank)
+    return first_relevant_rank, len(matched_targets) / len(targets)
 
 
 def summarize(results: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
@@ -126,23 +150,19 @@ def evaluate(questionset: dict[str, Any]) -> dict[str, Any]:
                 top_k=top_k,
                 model_code=question["model_code"],
             )
-            first_relevant_rank = next(
-                (index for index, hit in enumerate(hits, start=1) if is_relevant(hit, question)),
-                None,
-            )
+            first_relevant_rank, recall_at_k = evaluate_hits(hits, question["expected_targets"])
             results.append(
                 {
                     "id": question["id"],
                     "audience": question["audience"],
                     "query": question["query"],
                     "model_code": question["model_code"],
-                    "expected_document_ids": question["expected_document_ids"],
-                    "expected_sections": question["expected_sections"],
+                    "expected_targets": question["expected_targets"],
                     "top_k": top_k,
                     "first_relevant_rank": first_relevant_rank,
-                    "recall_at_k": int(first_relevant_rank is not None),
+                    "recall_at_k": recall_at_k,
                     "reciprocal_rank": 1.0 / first_relevant_rank if first_relevant_rank else 0.0,
-                    "passed": first_relevant_rank is not None,
+                    "passed": recall_at_k == 1.0,
                     "hits": [hit.model_dump() for hit in hits],
                 }
             )
@@ -151,6 +171,20 @@ def evaluate(questionset: dict[str, Any]) -> dict[str, Any]:
 
     summary = summarize(results)
     overall = summary["overall"]
+    warning_thresholds = criteria.get("group_warning_thresholds", {})
+    group_warnings = [
+        {
+            "group": name,
+            "recall_at_k": metrics["recall_at_k"],
+            "mrr": metrics["mrr"],
+        }
+        for name, metrics in summary.items()
+        if name != "overall"
+        and (
+            metrics["recall_at_k"] < float(warning_thresholds.get("recall_at_k", 0.0))
+            or metrics["mrr"] < float(warning_thresholds.get("mrr", 0.0))
+        )
+    ]
     passed = (
         overall["question_count"] >= int(criteria["minimum_question_count"])
         and overall["recall_at_k"] >= float(criteria["recall_at_k_threshold"])
@@ -162,6 +196,7 @@ def evaluate(questionset: dict[str, Any]) -> dict[str, Any]:
         "executed_at": datetime.now(UTC).isoformat(),
         "grading_criteria": criteria,
         "summary": summary,
+        "group_warnings": group_warnings,
         "passed": passed,
         "results": results,
     }
