@@ -23,6 +23,7 @@ from app.agent.graph import (
     build_agent_graph,
 )
 from app.agent.incident import ResolvedIncident
+from app.agent.repository import RepositoryConflict
 from app.agent.routing import (
     GraphBoundary,
     GraphRouteEvidence,
@@ -268,6 +269,7 @@ def _build(
     finish_error: Exception | None = None,
     interrupt_after: tuple[str, ...] | None = None,
     lot_hist_id_of_member: dict[tuple[AlarmSource, str], str] | None = None,
+    transaction_entry_error: Exception | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -277,6 +279,8 @@ def _build(
     @contextmanager
     def transactions() -> Any:
         transaction_events.append("begin")
+        if transaction_entry_error is not None:
+            raise transaction_entry_error
         yield object()
         transaction_events.append("commit")
 
@@ -611,6 +615,59 @@ def test_fail_run_persistence_error_never_escapes_or_hides_the_root_cause(
     assert state["terminal_error"].code == "STATE_CONTRACT_ERROR"
     assert state["errors"][-1].node == "fail_run"
     assert state["errors"][-1].code == "NODE_EXECUTION_ERROR"
+    assert "secret" not in repr(state)
+
+
+def test_entry_transaction_failure_is_sanitized_before_run_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, tools, _, finishes, transactions = _build(
+        monkeypatch,
+        ports=_Ports(),
+        transaction_entry_error=RuntimeError("postgresql://user:secret@db"),
+    )
+
+    with pytest.raises(AgentGraphInputError) as exc:
+        _invoke(graph)
+
+    assert exc.value.code == "NODE_EXECUTION_ERROR"
+    assert "secret" not in repr(exc.value)
+    assert tools.calls == []
+    assert finishes == []
+    assert transactions == ["begin"]
+
+
+def test_completed_run_is_not_overwritten_when_commit_ack_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, _, _, finishes, _ = _build(monkeypatch, ports=_Ports())
+    stored_status = RunStatus.RUNNING
+
+    def finish_after_ack_loss(
+        connection: Any,
+        run_id: str,
+        status: RunStatus,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal stored_status
+        finishes.append((status.value, kwargs))
+        if status is RunStatus.COMPLETED:
+            stored_status = RunStatus.COMPLETED
+            raise RuntimeError("commit ack lost: postgresql://secret")
+        assert stored_status is RunStatus.COMPLETED
+        raise RepositoryConflict("RUN_NOT_ACTIVE")
+
+    monkeypatch.setattr(subject, "finish_agent_run", finish_after_ack_loss)
+
+    state = _invoke(graph)
+
+    assert stored_status is RunStatus.COMPLETED
+    assert [status for status, _ in finishes] == [
+        RunStatus.COMPLETED.value,
+        RunStatus.FAILED.value,
+    ]
+    assert state["terminal_error"].code == "NODE_EXECUTION_ERROR"
+    assert state["errors"][-1].code == "RUN_NOT_ACTIVE"
     assert "secret" not in repr(state)
 
 

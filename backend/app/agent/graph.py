@@ -206,6 +206,22 @@ def _safe_node(
     return wrapped
 
 
+def _entry_node(
+    fn: Callable[[AgentGraphState], dict[str, Any]],
+) -> Callable[[AgentGraphState], dict[str, Any]]:
+    """입력 오류만 그대로 두고 run 생성 전 의존성 예외는 sanitize한다."""
+
+    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+        try:
+            return fn(state)
+        except AgentGraphInputError:
+            raise
+        except Exception as exc:
+            raise AgentGraphInputError(_classify_exception(exc)) from None
+
+    return wrapped
+
+
 def _route_or_fail(target: str) -> Callable[[AgentGraphState], str]:
     def route(state: AgentGraphState) -> str:
         return "fail_run" if state.get("terminal_error") is not None else target
@@ -540,7 +556,7 @@ def build_agent_graph(
         return {"terminal_error": error, "errors": errors}
 
     graph = StateGraph(AgentGraphState, input=AgentGraphInput)
-    graph.add_node("load_incident", load_incident)
+    graph.add_node("load_incident", _entry_node(load_incident))
     implementations = {
         "collect_fdc": collect_fdc,
         "collect_equipment": collect_equipment,
