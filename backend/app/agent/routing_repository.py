@@ -26,12 +26,11 @@ from typing import Any, Final
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Row
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.agent.repository import (
     RepositoryContractError,
     RepositoryNotFound,
-    _translate,
+    execute_read_all,
 )
 from app.common.enums import AlarmSource
 from app.common.schemas import AlarmRef
@@ -68,9 +67,10 @@ class RouteSnapshot:
     incident에 붙여도 결합이 성공한다 — 오류보다 위험한 "일관된 성공 모양"이 나온다
     (구현리뷰 4차 필수 1).
 
-    `wafer_of_member`는 **읽기 전용 view**다. `frozen=True`는 속성 재대입만 막고 안쪽
-    `dict`의 변경은 막지 못한다. 실제로 초판에서는 `snapshot.wafer_of_member.clear()`가
-    성공했고, 그 뒤 결합이 sanitized 오류가 아니라 raw `KeyError`로 나갔다.
+    member mapping 두 개는 모두 **읽기 전용 view**다. `frozen=True`는 속성
+    재대입만 막고 안쪽 `dict`의 변경은 막지 못한다. 실제로 초판에서는
+    `snapshot.wafer_of_member.clear()`가 성공했고, 그 뒤 결합이 sanitized
+    오류가 아니라 raw `KeyError`로 나갔다.
 
     **provenance도 같은 이유로 값 자체를 담는다.** 참조를 담으면 그 객체를 통해 계약이
     깨진다 — tuple로 감싸는 것만으로는 부족하다.
@@ -88,6 +88,8 @@ class RouteSnapshot:
     member_keys: tuple[tuple[AlarmSource, str], ...]
     #: `(source, alarm_id)` → owner WAFER. 읽기 전용이다.
     wafer_of_member: Mapping[tuple[AlarmSource, str], str]
+    #: `(source, alarm_id)` → 해당 alarm의 `lot_hist_id`. 읽기 전용이다.
+    lot_hist_id_of_member: Mapping[tuple[AlarmSource, str], str]
     steps: tuple[RouteStep, ...]
 
     def __post_init__(self) -> None:
@@ -99,6 +101,11 @@ class RouteSnapshot:
 
         object.__setattr__(
             self, "wafer_of_member", MappingProxyType(dict(self.wafer_of_member))
+        )
+        object.__setattr__(
+            self,
+            "lot_hist_id_of_member",
+            MappingProxyType(dict(self.lot_hist_id_of_member)),
         )
 
 
@@ -191,6 +198,7 @@ _SNAPSHOT = text(
         r.source            AS member_source,
         r.alarm_id          AS member_alarm_id,
         r.owner_wafer_id    AS wafer_id,
+        r.lot_hist_id       AS member_lot_hist_id,
         NULL::varchar(20)   AS lot_hist_id,
         NULL::varchar(20)   AS lot_id,
         NULL::smallint      AS wafer_no,
@@ -211,7 +219,9 @@ _SNAPSHOT = text(
         s.wafer_missing_count, s.duplicate_count,
         NULL::varchar(10)   AS member_source,
         NULL::varchar(24)   AS member_alarm_id,
-        h.wafer_id, h.lot_hist_id, h.lot_id, h.wafer_no,
+        h.wafer_id,
+        NULL::varchar(20)   AS member_lot_hist_id,
+        h.lot_hist_id, h.lot_id, h.wafer_no,
         h.step_id, h.area_id, h.equipment_id, h.chamber_id, h.recipe_id,
         h.track_in_at, h.track_out_at
     FROM lot_history AS h
@@ -243,8 +253,9 @@ def fetch_route_snapshot(
     if len(sources) != len(alarm_ids):  # pragma: no cover - 위에서 함께 만든다
         raise RepositoryContractError(_EMPTY_MEMBERS)
 
-    rows = _execute(
+    rows = execute_read_all(
         connection,
+        _SNAPSHOT,
         {
             "sources": sources,
             "alarm_ids": alarm_ids,
@@ -267,8 +278,13 @@ def fetch_route_snapshot(
     if int(head.wafer_missing_count) > 0:
         raise RepositoryContractError(_WAFER_ID_MISSING)
 
-    mapping = {
+    wafer_mapping = {
         (AlarmSource(row.member_source), row.member_alarm_id): row.wafer_id
+        for row in rows
+        if row.row_kind == "member"
+    }
+    lot_hist_mapping = {
+        (AlarmSource(row.member_source), row.member_alarm_id): row.member_lot_hist_id
         for row in rows
         if row.row_kind == "member"
     }
@@ -284,7 +300,8 @@ def fetch_route_snapshot(
             (AlarmSource(alarm.source), alarm.alarm_id) for alarm in member_alarms
         ),
         # `__post_init__`이 읽기 전용으로 감싼다.
-        wafer_of_member=mapping,
+        wafer_of_member=wafer_mapping,
+        lot_hist_id_of_member=lot_hist_mapping,
         steps=steps,
     )
 
@@ -315,12 +332,3 @@ def _step(row: Row[Any]) -> RouteStep:
         track_in_at=row.track_in_at,
         track_out_at=row.track_out_at,
     )
-
-
-def _execute(connection: Connection, params: dict[str, Any]) -> Sequence[Row[Any]]:
-    """driver 오류를 **C-0.1과 같은 계층으로** 옮긴다. 재시도하지 않는다."""
-
-    try:
-        return connection.execute(_SNAPSHOT, params).all()
-    except SQLAlchemyError as exc:
-        raise _translate(exc) from exc

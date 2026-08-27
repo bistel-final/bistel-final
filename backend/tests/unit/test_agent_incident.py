@@ -382,11 +382,7 @@ class TestTheModulesAreReadOnly:
 
 
 class TestErrorTranslationIsBorrowedNotCopied:
-    """`_translate()`는 C-0.1의 **private 심볼**이다(계획리뷰 2차 권장 2).
-
-    `__all__`에 없으므로 이 의존은 어떤 공개 계약으로도 보호되지 않는다. 여기서
-    고정해 두면 C-0.1이 그 함수를 바꿀 때 이 회귀가 red로 알려 준다.
-    """
+    """C-0.1의 public read·오류 seam을 재사용하고 분류를 복제하지 않는다."""
 
     class _Orig(Exception):
         def __init__(self, sqlstate: str) -> None:
@@ -446,19 +442,19 @@ class TestErrorTranslationIsBorrowedNotCopied:
         """분류만 보존한다. 재시도 정책은 caller 소관이다.
 
         문자열로 `retry`를 찾으면 `RepositoryRetryable`이라는 **이름**에 걸린다. 그건
-        재시도가 아니라 분류다. 그래서 구조를 본다 — execute 지점이 하나이고 그것을
-        감싼 loop이 없어야 한다.
+        재시도가 아니라 분류다. 그래서 구조를 본다 — 공용 read seam 호출이 하나이고
+        그것을 감싼 loop이 없어야 한다.
         """
 
         source = Path(inc_repo.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
-        executes = [
+        reads = [
             node
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
-            and getattr(node.func, "attr", None) == "execute"
+            and getattr(node.func, "id", None) == "execute_read_all"
         ]
-        assert len(executes) == 1, "execute 지점이 하나여야 한다"
+        assert len(reads) == 1, "공용 read seam 호출 지점이 하나여야 한다"
 
         for loop in [
             node
@@ -469,9 +465,9 @@ class TestErrorTranslationIsBorrowedNotCopied:
                 call
                 for call in ast.walk(loop)
                 if isinstance(call, ast.Call)
-                and getattr(call.func, "attr", None) == "execute"
+                and getattr(call.func, "id", None) == "execute_read_all"
             ]
-            assert nested == [], "execute가 loop 안에 있다"
+            assert nested == [], "공용 read seam 호출이 loop 안에 있다"
 
         for forbidden in ("sleep", "backoff"):
             assert forbidden not in source.lower(), forbidden
