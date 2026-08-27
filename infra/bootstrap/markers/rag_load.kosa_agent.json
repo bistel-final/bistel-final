@@ -11,24 +11,24 @@
     "DOC-TROUBLE-FDC"
   ],
   "source_sha256_by_document": {
-    "DOC-SPEC-ET7500": "7af096565eee62c9460cf69eb0b5a359cb5a77794e2d25d9352d019d5de5cc18",
-    "DOC-SPEC-PH9000": "b8c431776e6a9dbe7b4685440ae5abbe161011db375c1012b0086386217e6bcc",
-    "DOC-TROUBLE-FDC": "88e4dd45c402b96727aeb1f83dd1ee44d1a7bb0f900575ac76ca97e333d07a1e"
+    "DOC-SPEC-ET7500": "04983f46a1e0b2f7d583acf75da8bce19e0a84d73450faab6725455d40c2a9e3",
+    "DOC-SPEC-PH9000": "eca781a7bdbbc10f21d068e471cd84e6db49cb81483da5c7715b812fd77b4f56",
+    "DOC-TROUBLE-FDC": "e07e36160328954ebb93f39db3152e6faf2dd9e57914820da3841c7196446763"
   },
   "corrected_sha256_by_document": {
-    "DOC-SPEC-ET7500": "7af096565eee62c9460cf69eb0b5a359cb5a77794e2d25d9352d019d5de5cc18",
-    "DOC-SPEC-PH9000": "b8c431776e6a9dbe7b4685440ae5abbe161011db375c1012b0086386217e6bcc",
-    "DOC-TROUBLE-FDC": "88e4dd45c402b96727aeb1f83dd1ee44d1a7bb0f900575ac76ca97e333d07a1e"
+    "DOC-SPEC-ET7500": "04983f46a1e0b2f7d583acf75da8bce19e0a84d73450faab6725455d40c2a9e3",
+    "DOC-SPEC-PH9000": "eca781a7bdbbc10f21d068e471cd84e6db49cb81483da5c7715b812fd77b4f56",
+    "DOC-TROUBLE-FDC": "e07e36160328954ebb93f39db3152e6faf2dd9e57914820da3841c7196446763"
   },
-  "chunk_schema_version": "cs1",
-  "chunk_contract_sha256": "22efd8e95c31a4620a81bb99f5d119a8be0514d2dd4476c1c74441400845f4ec",
+  "chunk_schema_version": "cs2",
+  "chunk_contract_sha256": "1498123916cb73f5c9df8906f1ba6a9c2ed0736db9b5d3de7eb583653bb1e61e",
   "embedding_model": "BAAI/bge-m3",
   "embedding_model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
   "dimension": 1024,
   "document_count": 3,
-  "chunk_count": 25,
+  "chunk_count": 33,
   "null_embedding_count": 0,
-  "live_db_fingerprint_sha256": "04a34329fc2e0c6f322b1cb260babae3beb742e8e8121b270b33280a7f604041",
+  "live_db_fingerprint_sha256": "8112c4be027409606c97612ac50a00ed378368b1dc53775b2264e2a4ce97ad63",
   "search_smoke": [
     {
       "query": "PH-9000 Photo Scanner 적용 범위",
@@ -67,5 +67,5 @@
       "passed": true
     }
   ],
-  "recorded_at": "2026-08-20T07:38:24.967057+00:00"
+  "recorded_at": "2026-08-27T03:25:14.116693+00:00"
 }
