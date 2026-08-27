@@ -28,8 +28,14 @@ import register_final_manifests as registrar  # noqa: E402
 import verify_bootstrap_state as verifier  # noqa: E402
 
 GOOD_RAG: dict[str, dict[str, Any]] = {
-    "document": {"row_count": 3, "content_hash": "a" * 64},
-    "document_chunk": {"row_count": 25, "content_hash": "b" * 64},
+    "document": {
+        "row_count": candidates.RUNTIME_RAG_ROWS["document"],
+        "content_hash": "a" * 64,
+    },
+    "document_chunk": {
+        "row_count": candidates.RUNTIME_RAG_ROWS["document_chunk"],
+        "content_hash": "b" * 64,
+    },
 }
 
 
@@ -1166,7 +1172,10 @@ class TestCandidateLiveAcceptance:
             "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
         )
         assert trimmed["tables"]["document"]["row_count"] == 3
-        assert trimmed["tables"]["document_chunk"]["row_count"] == 25
+        assert (
+            trimmed["tables"]["document_chunk"]["row_count"]
+            == registrar.RUNTIME_RAG_ROWS["document_chunk"]
+        )
 
     def test_the_chunk_hash_is_not_the_marker_fingerprint(
         self, markers: dict[str, Path], live: dict[str, Any]
@@ -1183,7 +1192,10 @@ class TestCandidateLiveAcceptance:
         )
 
         assert provenance["document"]["row_count"] == 3
-        assert provenance["document_chunk"]["row_count"] == 25
+        assert (
+            provenance["document_chunk"]["row_count"]
+            == registrar.RUNTIME_RAG_ROWS["document_chunk"]
+        )
         assert (
             provenance["document"]["content_hash"]
             != provenance["document_chunk"]["content_hash"]
@@ -1440,7 +1452,10 @@ class TestProductionProvenance:
         )
 
         assert provenance["document"]["row_count"] == 3
-        assert provenance["document_chunk"]["row_count"] == 25
+        assert (
+            provenance["document_chunk"]["row_count"]
+            == registrar.RUNTIME_RAG_ROWS["document_chunk"]
+        )
         for entry in provenance.values():
             assert manifest_v3.HEX_SHA256_PATTERN.fullmatch(entry["content_hash"])
 
@@ -1577,10 +1592,10 @@ class TestProductionProvenance:
 
         readers = _rag_readers()
         readers["kosa_agent_e2e"] = _RagConnection(
-            {"document": 3, "document_chunk": 25}
+            dict(registrar.RUNTIME_RAG_ROWS)
         )
         readers["kosa_agent"] = _RagConnection(
-            {"document": 3, "document_chunk": 25}, offset=1
+            dict(registrar.RUNTIME_RAG_ROWS), offset=1
         )
 
         with pytest.raises(registrar.RegistrarError, match="RAG 내용"):

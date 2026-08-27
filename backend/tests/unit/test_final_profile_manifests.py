@@ -25,8 +25,14 @@ import manifest_v3  # noqa: E402
 
 #: provenance Gate를 통과했다고 가정한 Runtime RAG 입력.
 GOOD_RAG: dict[str, dict[str, Any]] = {
-    "document": {"row_count": 3, "content_hash": "a" * 64},
-    "document_chunk": {"row_count": 25, "content_hash": "b" * 64},
+    "document": {
+        "row_count": builder.RUNTIME_RAG_ROWS["document"],
+        "content_hash": "a" * 64,
+    },
+    "document_chunk": {
+        "row_count": builder.RUNTIME_RAG_ROWS["document_chunk"],
+        "content_hash": "b" * 64,
+    },
 }
 
 
@@ -198,7 +204,7 @@ class TestTablePolicy:
         entry = _candidate("runtime", source)["tables"]["document_chunk"]
 
         assert entry["verification_policy"] == "immutable_content"
-        assert entry["row_count"] == 25
+        assert entry["row_count"] == builder.RUNTIME_RAG_ROWS["document_chunk"]
 
     def test_runtime_only_tables_start_empty(self, source: dict[str, Any]) -> None:
         tables = _candidate("runtime", source)["tables"]
@@ -281,7 +287,7 @@ class TestRuntimeRagProvenance:
             )
 
     def test_the_expected_rows_match_the_loaded_corpus(self) -> None:
-        assert dict(builder.RUNTIME_RAG_ROWS) == {"document": 3, "document_chunk": 25}
+        assert dict(builder.RUNTIME_RAG_ROWS) == {"document": 3, "document_chunk": 35}
 
 
 # ---------------------------------------------------------------------------
