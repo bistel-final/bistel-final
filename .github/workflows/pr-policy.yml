@@ -541,6 +541,17 @@ jobs:
       # 후속 business port를 fixture로 유지한다.
       - name: Prove LangGraph checkpoint and assembly on PostgreSQL
         working-directory: backend
+        env:
+          # 이 묶음도 `app.common.config`를 import한다 — 옮겨 온 production 배선 회귀가
+          # Detection service를 끌어오기 때문이다. 위 unit step과 같은 더미 8종을 준다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_graph_container.py
