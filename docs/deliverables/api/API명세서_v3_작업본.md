@@ -171,8 +171,10 @@ generate_analysis_plan(question)
 
 Tool 결과는 `ok`, `reason`, domain payload만 반환한다. `latency_ms`·호출 status는 공통 wrapper가
 `agent_tool_call`에 호출당 한 번 기록하며 Tool JSON에 넣지 않는다. 실패 reason은
-`NOT_FOUND:|TIMEOUT:|MODEL_NOT_READY:|LLM_NOT_READY:|DEPENDENCY_ERROR:|POLICY_REJECTED:|IDEMPOTENCY_CONFLICT:`
-일곱 prefix만 허용하고 실패 payload는 null 또는 빈 목록이다.
+`NOT_FOUND:|TIMEOUT:|MODEL_NOT_READY:|LLM_NOT_READY:|GRAPH_SHAPE_ERROR:|DEPENDENCY_ERROR:|POLICY_REJECTED:|IDEMPOTENCY_CONFLICT:`
+여덟 prefix만 허용하고 실패 payload는 null 또는 빈 목록이다. `GRAPH_SHAPE_ERROR:`는 graph
+연결은 됐으나 반환 형상이 계약과 다른 경우이고, `DEPENDENCY_ERROR:`는 조회 자체가 실패한
+경우다. 이 목록은 HTTP 오류 code(§2.7)와 별개 계약이다.
 
 ---
 

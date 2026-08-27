@@ -1,3 +1,7 @@
+import re
+import unicodedata
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -817,7 +821,13 @@ class TestToolEnvelopeExactness:
             AnalysisPlanToolResult(ok=False, reason="TIMEOUT: x", latency_ms=12)
 
     def test_reason_prefixes_match_the_api_contract(self) -> None:
-        """API v3 §2의 reason prefix 목록과 exact하게 같다."""
+        """정본 3종(요구사항 §6·설계 §8·API v3 §2.8)과 exact하게 같다.
+
+        이 목록만 여기 적어 두면 문서와 조용히 갈린다. 실제로 갈렸었다 —
+        `V5-B-3.2`(#136)가 `GRAPH_SHAPE_ERROR:`를 코드에만 넣어 문서 3종은
+        일곱 종인 채로 남았고, 이 docstring은 "API v3 §2와 exact하다"고
+        **거짓을 주장하고 있었다.** 아래 문서 대조 회귀가 그 재발을 막는다.
+        """
 
         from app.common.tool_contracts import REASON_PREFIXES
 
@@ -831,6 +841,71 @@ class TestToolEnvelopeExactness:
             "POLICY_REJECTED:",
             "IDEMPOTENCY_CONFLICT:",
         )
+
+    def test_reason_prefixes_match_every_canonical_document(self) -> None:
+        """정본 문서 3종의 **allowlist 구간만** 읽어 Common과 exact 대조한다.
+
+        파일 전체에서 토큰을 찾으면 안 된다. 본문 설명이 prefix 이름을 언급하기만
+        해도 통과해 버린다 — 초판이 정확히 그랬고 문서에서 prefix를 지우는 변이가
+        green으로 나왔다. 그래서 문서별 anchor로 **열거 구간을 잘라** 대조한다.
+
+        anchor가 안 맞으면 KeyError로 즉시 실패한다. 문서 구조가 바뀌면 조용히
+        skip되는 대신 드러나야 한다(`V5-C-2.1` 계획 T10).
+        """
+
+        repository_root = Path(__file__).resolve().parents[3]
+        # (라벨, 경로, allowlist 구간 anchor, 개수 표기)
+        sources = (
+            (
+                "요구사항 §6",
+                "docs/specifications/요구사항정의서_v2_1_작업본.md",
+                r"실패 `reason` 접두어 allowlist는(.*?)(?P<count>[가-힣]+) 종뿐이다",
+            ),
+            (
+                "설계 §8",
+                "docs/specifications/시스템설계서_v2_1_작업본.md",
+                r"허용 reason prefix는 아래 (?P<count>[가-힣]+) 종뿐이다"
+                r".*?```text\n(.*?)```",
+            ),
+            (
+                "API v3 §2.8",
+                "docs/deliverables/api/API명세서_v3_작업본.md",
+                r"실패 reason은\n(.*?)\n(?P<count>[가-힣]+) prefix만 허용",
+            ),
+        )
+        token = re.compile(r"\b[A-Z][A-Z0-9_]*:")
+        expected = set(REASON_PREFIXES)
+        # 개수 한글 표기도 함께 본다. 토큰만 맞추면 "여덟 종"이 "일곱 종"인 채 남는다.
+        numeral = {7: "일곱", 8: "여덟", 9: "아홉"}[len(REASON_PREFIXES)]
+
+        for label, relative, anchor in sources:
+            path = repository_root
+            for component in Path(relative).parts:
+                expected_component = unicodedata.normalize("NFC", component)
+                matches = [
+                    child
+                    for child in path.iterdir()
+                    if unicodedata.normalize("NFC", child.name) == expected_component
+                ]
+                assert len(matches) == 1, (
+                    f"{label}: NFC/NFD 정규화 기준 문서 경로를 찾지 못했거나 "
+                    f"중복이다: {relative}"
+                )
+                path = matches[0]
+            text = path.read_text(encoding="utf-8")
+            match = re.search(anchor, text, re.DOTALL)
+            assert match is not None, f"{label}: allowlist 구간 anchor를 찾지 못했다"
+
+            listed = set(token.findall(match.group(0)))
+            assert listed == expected, (
+                f"{label} allowlist가 Common과 다르다 "
+                f"(문서에만: {sorted(listed - expected)} / "
+                f"Common에만: {sorted(expected - listed)})"
+            )
+            assert match.group("count") == numeral, (
+                f"{label} 개수 표기가 {match.group('count')}인데 "
+                f"실제 prefix는 {len(REASON_PREFIXES)}종이다"
+            )
 
     def test_an_unlisted_reason_prefix_is_refused(self) -> None:
         from app.common.tool_contracts import AnalysisPlanToolResult
