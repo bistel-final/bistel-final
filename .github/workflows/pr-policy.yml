@@ -216,6 +216,7 @@ jobs:
           tests/unit/test_groupby_lint.py
           tests/unit/test_intake_final_zip.py
           tests/unit/test_issue_final_epoch.py
+          tests/unit/test_evaluate_rag_search.py
           tests/unit/test_load_rag_documents.py
           tests/unit/test_manifest_override.py
           tests/unit/test_master_cypher.py
