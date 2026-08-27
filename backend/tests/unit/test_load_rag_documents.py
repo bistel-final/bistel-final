@@ -59,7 +59,7 @@ def test_corrected_documents_are_loaded_from_canonical_source_dir() -> None:
         "DOC-SPEC-PH9000",
         "DOC-TROUBLE-FDC",
     ]
-    assert len(corpus.chunks) == 33
+    assert len(corpus.chunks) == 35
     assert all(chunk.chunk_id.startswith(chunk.doc_id + ":cs2:") for chunk in corpus.chunks)
     assert all("corpus_revision" not in chunk.metadata_json for chunk in corpus.chunks)
 
