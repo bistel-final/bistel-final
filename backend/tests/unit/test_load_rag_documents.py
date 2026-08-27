@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 import sys
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -12,6 +15,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import load_rag_documents as loader  # noqa: E402
+import rag_chunk_contract as chunk_contract  # noqa: E402
 
 
 class _Result:
@@ -55,8 +59,8 @@ def test_corrected_documents_are_loaded_from_canonical_source_dir() -> None:
         "DOC-SPEC-PH9000",
         "DOC-TROUBLE-FDC",
     ]
-    assert len(corpus.chunks) >= 3
-    assert all(chunk.chunk_id.startswith(chunk.doc_id + ":cs1:") for chunk in corpus.chunks)
+    assert len(corpus.chunks) == 35
+    assert all(chunk.chunk_id.startswith(chunk.doc_id + ":cs2:") for chunk in corpus.chunks)
     assert all("corpus_revision" not in chunk.metadata_json for chunk in corpus.chunks)
 
 
@@ -70,12 +74,56 @@ def test_chunk_ids_are_deterministic_and_title_is_embedding_only() -> None:
         for document in corpus.documents
     }
 
-    assert first_by_doc["DOC-SPEC-ET7500"].chunk_id == "DOC-SPEC-ET7500:cs1:0001"
-    assert first_by_doc["DOC-SPEC-PH9000"].chunk_id == "DOC-SPEC-PH9000:cs1:0001"
-    assert first_by_doc["DOC-TROUBLE-FDC"].chunk_id == "DOC-TROUBLE-FDC:cs1:0001"
+    assert first_by_doc["DOC-SPEC-ET7500"].chunk_id == "DOC-SPEC-ET7500:cs2:0001"
+    assert first_by_doc["DOC-SPEC-PH9000"].chunk_id == "DOC-SPEC-PH9000:cs2:0001"
+    assert first_by_doc["DOC-TROUBLE-FDC"].chunk_id == "DOC-TROUBLE-FDC:cs2:0001"
     assert first_by_doc["DOC-SPEC-ET7500"].content.strip()
     assert "ET-7500 Dry Etcher" not in first_by_doc["DOC-SPEC-ET7500"].content
     assert "ET-7500 Dry Etcher" in first_by_doc["DOC-SPEC-ET7500"].embedding_input
+
+
+def test_h3_chunks_keep_parent_h2_context_without_short_piece_merge() -> None:
+    corpus = loader.prepare_corpus(loader.DEFAULT_CORRECTED_RAG_DIR)
+    et_chunks = [chunk for chunk in corpus.chunks if chunk.doc_id == "DOC-SPEC-ET7500"]
+
+    reflected_power = next(
+        chunk for chunk in et_chunks if "4.2 Reflected Power" in chunk.section_title
+    )
+    assert reflected_power.section_title == (
+        "4. 파라미터별 상세 > 4.2 Reflected Power (`ET_REFL`)"
+    )
+    assert "4.1 Chamber Pressure" not in reflected_power.content
+
+
+def test_chunk_contract_uses_cs2_title_hierarchy_rules() -> None:
+    assert loader.CHUNK_SCHEMA_VERSION == "cs2"
+    assert loader.CHUNK_CONTRACT_SHA256 == chunk_contract.CHUNK_CONTRACT_SHA256
+
+
+def test_design_document_chunk_contract_matches_loader_contract() -> None:
+    design_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "specifications"
+        / "시스템설계서_v2_1_작업본.md"
+    )
+    design = design_path.read_text(encoding="utf-8")
+    json_match = re.search(
+        r"hash 입력 JSON은 다음 한 줄과 정확히 같다\.\s*```json\s*(\{.+?\})\s*```",
+        design,
+        re.DOTALL,
+    )
+    hash_match = re.search(r"`([0-9a-f]{64})`다\. 규칙이 하나라도", design)
+
+    assert json_match is not None
+    assert hash_match is not None
+    declared_contract = json.loads(json_match.group(1))
+    declared_json = chunk_contract.canonical_contract_json(declared_contract)
+    declared_hash = hashlib.sha256(declared_json.encode("utf-8")).hexdigest()
+
+    assert declared_contract == chunk_contract.CHUNK_CONTRACT
+    assert declared_hash == hash_match.group(1)
+    assert declared_hash == loader.CHUNK_CONTRACT_SHA256
 
 
 def test_target_allowlist_excludes_evaluation_database() -> None:

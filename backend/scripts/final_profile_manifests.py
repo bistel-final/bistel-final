@@ -61,7 +61,7 @@ RUNTIME_ONLY_TABLES: tuple[str, ...] = tuple(
 
 #: `V5-B-1.3` 적재 결과. **source CSV가 없어 provenance Gate가 필요하다**(§3.4).
 RUNTIME_RAG_ROWS: Mapping[str, int] = MappingProxyType(
-    {"document": 3, "document_chunk": 25}
+    {"document": 3, "document_chunk": 35}
 )
 
 #: candidate에 **content hash로 들어가는** RAG table. `document`는 `schema_only`라
