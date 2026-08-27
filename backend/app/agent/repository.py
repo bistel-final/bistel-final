@@ -96,6 +96,7 @@ __all__ = [
     "insert_human_prediction_review",
     "list_human_prediction_reviews",
     "RunActionRow",
+    "ToolBudgetCounts",
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
@@ -108,6 +109,7 @@ __all__ = [
     "finalize_tool_call",
     "list_tool_calls",
     "count_tool_calls",
+    "count_tool_calls_for_budget",
     "create_approval_request",
     "get_approval_request",
     "insert_action_delivery",
@@ -1314,6 +1316,15 @@ class ToolCallRow:
     error_msg: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ToolBudgetCounts:
+    """run row lock 아래에서 읽은 Tool 호출 시도 집계."""
+
+    total: int
+    by_tool: Mapping[str, int]
+    pending_reservations: int
+
+
 #: 예약 row가 쓰는 sentinel.
 #:
 #: `002`의 status CHECK는 `SUCCESS·ERROR·TIMEOUT` 3값뿐이라 `STARTED`가 없다. 그래서
@@ -1387,6 +1398,23 @@ _SELECT_TOOL_CALLS = text(
 
 _COUNT_TOOL_CALLS = text(
     "SELECT count(*) AS total FROM agent_tool_call WHERE agent_run_id = :run_id"
+)
+
+_COUNT_TOOL_CALLS_FOR_BUDGET = text(
+    """
+    SELECT tool_name,
+           count(*) AS call_count,
+           count(*) FILTER (
+               WHERE status = :reserved_status
+                 AND error_msg = :reserved_error
+                 AND output IS NULL
+                 AND latency_ms IS NULL
+           ) AS pending_count
+    FROM agent_tool_call
+    WHERE agent_run_id = :run_id
+    GROUP BY tool_name
+    ORDER BY tool_name
+    """
 )
 
 
@@ -1542,6 +1570,45 @@ def count_tool_calls(connection: Connection, agent_run_id: str) -> int:
         )
     except SQLAlchemyError as exc:
         raise _translate(exc) from exc
+
+
+def count_tool_calls_for_budget(
+    connection: Connection,
+    agent_run_id: str,
+) -> ToolBudgetCounts:
+    """run을 잠근 뒤 총·Tool별·미종료 예약 수를 한 snapshot으로 읽는다.
+
+    caller는 이 함수와 :func:`reserve_tool_call`을 같은 transaction에서 호출한다.
+    이 계층은 정책을 판정하지 않으며 sentinel도 일반 호출 시도처럼 집계한다.
+    """
+
+    _require_transaction(connection)
+    try:
+        locked = connection.execute(
+            _LOCK_RUN,
+            {"run_id": agent_run_id},
+        ).one_or_none()
+        if locked is None:
+            raise RepositoryNotFound("RUN_NOT_FOUND")
+        rows = connection.execute(
+            _COUNT_TOOL_CALLS_FOR_BUDGET,
+            {
+                "run_id": agent_run_id,
+                "reserved_status": ToolCallStatus.ERROR.value,
+                "reserved_error": RESERVED_ERROR_MSG,
+            },
+        ).all()
+    except AgentRepositoryError:
+        raise
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+
+    by_tool = {str(row.tool_name): int(row.call_count) for row in rows}
+    return ToolBudgetCounts(
+        total=sum(by_tool.values()),
+        by_tool=by_tool,
+        pending_reservations=sum(int(row.pending_count) for row in rows),
+    )
 
 
 # ---------------------------------------------------------------------------

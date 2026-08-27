@@ -1,4 +1,4 @@
-"""읽기 Tool 호출·감사·soft deadline 경계 (`V5-C-2.1`).
+"""읽기 Tool 호출·감사·예산·soft deadline 경계 (`V5-C-2.1`, `V5-C-2.2`).
 
 호출 한 번은 ``reserve commit → 외부 호출 → finalize commit`` 순서다. 동기 Tool은
 실행 중인 thread를 강제 중단할 수 없으므로 여기서 보장하는 것은 caller의 대기 상한과
@@ -8,26 +8,31 @@ TIMEOUT 기록까지다. executor의 수명과 worker 회수는 주입한 쪽이
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from time import monotonic
-from typing import Any, Protocol, TypeVar
+from typing import Any, Final, Protocol, TypeVar
 
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
 from app.agent.repository import (
     RESERVED_TOOL_OUTPUT_KEYS,
-    count_tool_calls,
+    ToolBudgetCounts,
+    ToolCallRow,
+    count_tool_calls_for_budget,
     finalize_tool_call,
     reserve_tool_call,
 )
 from app.agent.state import ToolBudget
+from app.common.config import AGENT_MAX_RETRY, AGENT_MAX_TOOL_CALLS
 from app.common.enums import ToolCallStatus
 from app.common.tool_contracts import (
+    AGENT_TOOL_NAMES,
     REASON_PREFIXES,
     DocumentSearchToolInput,
     DocumentSearchToolResult,
@@ -40,10 +45,25 @@ from app.common.tool_contracts import (
 
 ResultT = TypeVar("ResultT", bound=ToolResult)
 logger = logging.getLogger(__name__)
+SEND_ACTION_BUDGET: Final = 2
 
 
 class ToolDeadlineExceeded(TimeoutError):
     """soft deadline 초과. 예외 문자열·URI·SQL을 담지 않는다."""
+
+
+class ToolRunnerSaturated(TimeoutError):
+    """deadline 안에 worker를 얻지 못해 queued 호출을 취소했다."""
+
+
+class ToolBudgetBlocked(RuntimeError):
+    """예약 전 예산 정책 차단. 원문 입력·DB 상세를 예외 문자열에 넣지 않는다."""
+
+    def __init__(self, code: str, counts: ToolBudgetCounts) -> None:
+        super().__init__(code)
+        self.code = code
+        self.counts = counts
+        self.budget = _budget_snapshot(counts)
 
 
 class ToolBoundaryError(RuntimeError):
@@ -82,7 +102,13 @@ class ThreadDeadlineRunner:
     ) -> Any:
         if seconds <= 0:
             raise ValueError("deadline seconds는 0보다 커야 합니다")
-        future = self._executor.submit(fn, payload)
+        started = threading.Event()
+
+        def invoke(value: dict[str, Any]) -> Any:
+            started.set()
+            return fn(value)
+
+        future = self._executor.submit(invoke, payload)
         try:
             return future.result(timeout=seconds)
         except FuturesTimeout as exc:
@@ -92,8 +118,8 @@ class ThreadDeadlineRunner:
             # 구분하면 wrapper timeout을 Tool 예외로 오분류한다.
             if future.done() and isinstance(future.exception(), FuturesTimeout):
                 raise
-            # 실행 전이면 취소되고, 이미 실행 중이면 best effort로 끝난다.
-            future.cancel()
+            if not started.is_set() and future.cancel():
+                raise ToolRunnerSaturated from exc
             raise ToolDeadlineExceeded from exc
 
 
@@ -173,11 +199,33 @@ class AuditedToolExecutor:
         )
 
     def budget(self, agent_run_id: str) -> ToolBudget:
-        """실제 예약 행 수를 단일 기준으로 읽는다."""
+        """실제 예약 행의 상세 snapshot을 단일 기준으로 읽는다."""
 
         with self.transactions() as connection:
-            used = count_tool_calls(connection, agent_run_id)
-        return ToolBudget(used=used)
+            counts = count_tool_calls_for_budget(connection, agent_run_id)
+        return _budget_snapshot(counts)
+
+    def _reserve_within_budget(
+        self,
+        *,
+        agent_run_id: str,
+        tool_name: str,
+        request: Mapping[str, Any] | None,
+    ) -> ToolCallRow:
+        """예산 판정과 예약을 같은 run lock·transaction 안에서 수행한다."""
+
+        if tool_name not in AGENT_TOOL_NAMES:
+            raise ToolBoundaryError("TOOL_NAME_INVALID")
+        with self.transactions() as connection:
+            counts = count_tool_calls_for_budget(connection, agent_run_id)
+            if code := _budget_block_code(counts, tool_name):
+                raise ToolBudgetBlocked(code, counts)
+            return reserve_tool_call(
+                connection,
+                agent_run_id=agent_run_id,
+                tool_name=tool_name,
+                input=request,
+            )
 
     def _invoke(
         self,
@@ -192,13 +240,11 @@ class AuditedToolExecutor:
             raise ToolBoundaryError("RUNNER_NOT_WIRED")
 
         # UoW 1. context가 성공적으로 빠져나오면 commit된 뒤에만 Tool을 부른다.
-        with self.transactions() as connection:
-            reserved = reserve_tool_call(
-                connection,
-                agent_run_id=agent_run_id,
-                tool_name=tool_name,
-                input=request,
-            )
+        reserved = self._reserve_within_budget(
+            agent_run_id=agent_run_id,
+            tool_name=tool_name,
+            request=request,
+        )
 
         started_at = self.clock()
         status = ToolCallStatus.ERROR
@@ -213,6 +259,11 @@ class AuditedToolExecutor:
             )
             result = result_type.model_validate(raw)
             status, output, error_code = _classify_result(result)
+        except ToolRunnerSaturated:
+            result = None
+            status = ToolCallStatus.TIMEOUT
+            output = None
+            error_code = "TOOL_RUNNER_SATURATED"
         except ToolDeadlineExceeded:
             result = None
             status = ToolCallStatus.TIMEOUT
@@ -249,7 +300,8 @@ class AuditedToolExecutor:
                 )
         except Exception:
             # finalize 오류가 Tool의 원 분류를 raw 예외로 덮지 않게 prior_code를
-            # 구조화해 보존한다. 예약 sentinel 복구는 V5-C-2.2가 맡는다.
+            # 구조화해 보존한다. C-2.2는 sentinel을 보존·계속 집계하며,
+            # 시간 기반 자동 회수의 안전성은 CM-4.8에서 재평가한다.
             logger.error(
                 "tool-call finalization failed (prior_code=%s)",
                 error_code,
@@ -286,12 +338,44 @@ def _classify_result(
     return status, safe_payload, prefix.removesuffix(":")
 
 
+def _budget_snapshot(counts: ToolBudgetCounts) -> ToolBudget:
+    """Repository 집계를 checkpoint-safe 상세 State로 바꾼다."""
+
+    return ToolBudget(
+        used=counts.total,
+        by_tool=dict(counts.by_tool),
+        send_budget=SEND_ACTION_BUDGET,
+        send_used=counts.by_tool.get("send_action", 0),
+        pending_reservations=counts.pending_reservations,
+    )
+
+
+def _budget_block_code(counts: ToolBudgetCounts, tool_name: str) -> str | None:
+    """고정 우선순위로 다음 예약의 차단 code를 결정한다."""
+
+    send_used = counts.by_tool.get("send_action", 0)
+    non_send_used = counts.total - send_used
+    if counts.total >= AGENT_MAX_TOOL_CALLS:
+        return "TOOL_BUDGET_EXHAUSTED"
+    if tool_name == "send_action" and send_used >= SEND_ACTION_BUDGET:
+        return "TOOL_SEND_ACTION_LIMIT"
+    if tool_name != "send_action" and non_send_used >= (
+        AGENT_MAX_TOOL_CALLS - SEND_ACTION_BUDGET
+    ):
+        return "TOOL_BUDGET_RESERVED"
+    if counts.by_tool.get(tool_name, 0) >= AGENT_MAX_RETRY + 1:
+        return "TOOL_RETRY_EXHAUSTED"
+    return None
+
+
 __all__ = [
     "AuditedToolExecutor",
     "DeadlineRunner",
     "ThreadDeadlineRunner",
     "ToolBoundary",
     "ToolBoundaryError",
+    "ToolBudgetBlocked",
     "ToolDeadlineExceeded",
+    "ToolRunnerSaturated",
     "TransactionFactory",
 ]

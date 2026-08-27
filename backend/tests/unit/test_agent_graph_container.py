@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 from uuid import uuid4
 
@@ -35,6 +37,7 @@ from app.agent.graph import (  # noqa: E402
     AgentGraphDependencies,
     build_agent_graph,
 )
+from app.agent.repository import reserve_tool_call  # noqa: E402
 from app.agent.routing import GraphBoundary  # noqa: E402
 from app.agent.run_guard import start_incident_run  # noqa: E402
 from app.agent.state import (  # noqa: E402
@@ -42,8 +45,13 @@ from app.agent.state import (  # noqa: E402
     DeliveryPlan,
     Hypothesis,
     PersistResult,
+    ToolBudget,
 )
-from app.agent.tools import AuditedToolExecutor, ToolBoundary  # noqa: E402
+from app.agent.tools import (  # noqa: E402
+    AuditedToolExecutor,
+    ToolBoundary,
+    ToolBudgetBlocked,
+)
 from app.common.enums import (  # noqa: E402
     ActionCode,
     AlarmSource,
@@ -58,6 +66,7 @@ from app.common.enums import (  # noqa: E402
 from app.common.schemas import AlarmRef  # noqa: E402
 from app.common.tool_contracts import (  # noqa: E402
     AnomalySignal,
+    DocumentSearchToolInput,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
@@ -420,6 +429,50 @@ def _dependencies(
     )
 
 
+def _start_runtime_run(engine: Any) -> str:
+    with engine.begin() as connection:
+        started = start_incident_run(
+            connection,
+            AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01"),
+            autonomy_level=2,
+        )
+    return started.run.agent_run_id
+
+
+def _seed_reserved_calls(engine: Any, run_id: str, names: tuple[str, ...]) -> None:
+    for index, name in enumerate(names, start=1):
+        with engine.begin() as connection:
+            reserve_tool_call(
+                connection,
+                agent_run_id=run_id,
+                tool_name=name,
+                input={"fixture": index},
+            )
+
+
+def _race_budget_reservation(
+    executor: AuditedToolExecutor,
+    run_id: str,
+    tool_name: str,
+) -> list[str]:
+    barrier = Barrier(2)
+
+    def attempt(index: int) -> str:
+        barrier.wait()
+        try:
+            executor._reserve_within_budget(
+                agent_run_id=run_id,
+                tool_name=tool_name,
+                request={"candidate": index},
+            )
+        except ToolBudgetBlocked as exc:
+            return exc.code
+        return "RESERVED"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        return sorted(pool.map(attempt, (1, 2)))
+
+
 @contextmanager
 def _checkpoint_connection(endpoint: Any) -> Any:
     with psycopg.connect(
@@ -477,6 +530,7 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
     assert interrupted["terminal_error"] is None
     assert "autonomy_level" in interrupted
     assert Decision(checkpoint["approval_decision"]) is Decision.APPROVE
+    assert ToolBudget.model_validate(checkpoint["tool_budget"]).used == 2
     assert first_ports.calls[-2:] == ["approval_email", "hitl_interrupt"]
     with engine.connect() as connection:
         assert (
@@ -486,6 +540,21 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
             ).scalar_one()
             == RunStatus.RUNNING.value
         )
+
+    fresh_tools = _dependencies(engine, _AssemblyPorts()).tools
+    for index in range(3):
+        result = fresh_tools.document_search(
+            checkpoint["run_id"],
+            DocumentSearchToolInput(query=f"resume-{index}"),
+        )
+        assert result is not None and result.ok
+    with pytest.raises(ToolBudgetBlocked) as blocked:
+        fresh_tools.document_search(
+            checkpoint["run_id"],
+            DocumentSearchToolInput(query="resume-blocked"),
+        )
+    assert blocked.value.code == "TOOL_RETRY_EXHAUSTED"
+    assert blocked.value.budget.used == 5
 
     second_ports = _HoldAssemblyPorts()
     with _checkpoint_connection(endpoint) as connection:
@@ -506,9 +575,79 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
 
     assert second_ports.calls == ["publish_mes", "writeback_result"]
     assert resumed["action_decision"].action is ActionCode.EQP_HOLD
+    # checkpoint 표시는 중단 시점 값이고, 집행은 위 새 executor가 DB 5건으로 막았다.
+    assert resumed["tool_budget"].used == 2
     assert "approval_decision" not in resumed
     assert run.status == RunStatus.COMPLETED.value
     assert run.latency_ms is not None and run.latency_ms >= 0
+
+
+def test_concurrent_last_total_slot_is_reserved_exactly_once(
+    runtime: tuple[Any, Any],
+) -> None:
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    run_id = _start_runtime_run(engine)
+    _seed_reserved_calls(
+        engine,
+        run_id,
+        (
+            "get_fdc_summary",
+            "get_fdc_summary",
+            "get_equipment_context",
+            "get_equipment_context",
+            "search_documents",
+            "search_documents",
+            "send_action",
+        ),
+    )
+
+    outcomes = _race_budget_reservation(
+        _dependencies(engine, _AssemblyPorts()).tools,
+        run_id,
+        "send_action",
+    )
+
+    with engine.connect() as connection:
+        total = connection.execute(
+            text("SELECT count(*) FROM agent_tool_call WHERE agent_run_id = :run_id"),
+            {"run_id": run_id},
+        ).scalar_one()
+    assert outcomes == ["RESERVED", "TOOL_BUDGET_EXHAUSTED"]
+    assert total == 8
+
+
+def test_concurrent_last_non_send_slot_is_reserved_exactly_once(
+    runtime: tuple[Any, Any],
+) -> None:
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    run_id = _start_runtime_run(engine)
+    _seed_reserved_calls(
+        engine,
+        run_id,
+        (
+            "get_fdc_summary",
+            "get_fdc_summary",
+            "get_equipment_context",
+            "get_equipment_context",
+            "search_documents",
+        ),
+    )
+
+    outcomes = _race_budget_reservation(
+        _dependencies(engine, _AssemblyPorts()).tools,
+        run_id,
+        "search_documents",
+    )
+
+    with engine.connect() as connection:
+        total = connection.execute(
+            text("SELECT count(*) FROM agent_tool_call WHERE agent_run_id = :run_id"),
+            {"run_id": run_id},
+        ).scalar_one()
+    assert outcomes == ["RESERVED", "TOOL_BUDGET_RESERVED"]
+    assert total == 6
 
 
 def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(

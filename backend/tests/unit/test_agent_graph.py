@@ -23,7 +23,7 @@ from app.agent.graph import (
     build_agent_graph,
 )
 from app.agent.incident import ResolvedIncident
-from app.agent.repository import RepositoryConflict
+from app.agent.repository import RepositoryConflict, ToolBudgetCounts
 from app.agent.routing import (
     GraphBoundary,
     GraphRouteEvidence,
@@ -38,6 +38,7 @@ from app.agent.state import (
     PersistResult,
     ToolBudget,
 )
+from app.agent.tools import ToolBudgetBlocked
 from app.common.enums import (
     ActionCode,
     AlarmSource,
@@ -158,6 +159,23 @@ class _FakeTools:
     def document_search(self, run_id: str, request: Any) -> DocumentSearchToolResult:
         self.calls.append(("documents", request))
         return DocumentSearchToolResult(ok=True, hits=[])
+
+
+class _BudgetBlockedTools(_FakeTools):
+    def fdc_summary(self, run_id: str, request: Any) -> FdcSummaryToolResult:
+        self.calls.append(("fdc-blocked", request))
+        raise ToolBudgetBlocked(
+            "TOOL_BUDGET_EXHAUSTED",
+            ToolBudgetCounts(
+                total=8,
+                by_tool={
+                    "get_fdc_summary": 3,
+                    "get_equipment_context": 3,
+                    "send_action": 2,
+                },
+                pending_reservations=1,
+            ),
+        )
 
 
 @dataclass
@@ -545,6 +563,24 @@ def test_failed_read_tools_do_not_skip_document_search(
     assert [name for name, _ in tools.calls] == ["fdc", "equipment", "documents"]
     assert [error.code for error in state["errors"]] == ["TIMEOUT", "DEPENDENCY_ERROR"]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
+
+
+def test_budget_block_is_nonterminal_and_reaches_completed_run_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = _BudgetBlockedTools()
+    graph, _, _, finishes, _ = _build(monkeypatch, tools=tools, ports=_Ports())
+    state = _invoke(graph)
+
+    assert "terminal_error" not in state
+    assert state["fdc_evidence"] is None
+    assert [error.code for error in state["errors"]] == ["TOOL_BUDGET_EXHAUSTED"]
+    assert finishes[0][1]["evidence"]["error_codes"] == ["TOOL_BUDGET_EXHAUSTED"]
+    assert [name for name, _ in tools.calls] == [
+        "fdc-blocked",
+        "equipment",
+        "documents",
+    ]
 
 
 def test_document_query_contains_only_existing_identifiers(
