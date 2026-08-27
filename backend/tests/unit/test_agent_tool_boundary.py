@@ -12,12 +12,14 @@ from typing import Any
 import pytest
 
 from app.agent import tools as subject
+from app.agent.repository import ToolBudgetCounts
 from app.agent.tools import (
     AuditedToolExecutor,
     ThreadDeadlineRunner,
     ToolBoundary,
     ToolBoundaryError,
     ToolDeadlineExceeded,
+    ToolRunnerSaturated,
 )
 from app.common.enums import ToolCallStatus
 from app.common.tool_contracts import DocumentSearchToolInput
@@ -70,6 +72,15 @@ def _harness(
 
     monkeypatch.setattr(subject, "reserve_tool_call", reserve)
     monkeypatch.setattr(subject, "finalize_tool_call", finalize)
+    monkeypatch.setattr(
+        subject,
+        "count_tool_calls_for_budget",
+        lambda _connection, _run_id: ToolBudgetCounts(
+            total=0,
+            by_tool={},
+            pending_reservations=0,
+        ),
+    )
     return (
         AuditedToolExecutor(
             transactions=transactions,
@@ -265,9 +276,20 @@ def test_budget_comes_from_committed_tool_rows(monkeypatch: pytest.MonkeyPatch) 
         monkeypatch,
         document=lambda payload: {"ok": True, "hits": []},
     )
-    monkeypatch.setattr(subject, "count_tool_calls", lambda connection, run_id: 3)
+    monkeypatch.setattr(
+        subject,
+        "count_tool_calls_for_budget",
+        lambda _connection, _run_id: ToolBudgetCounts(
+            total=3,
+            by_tool={"get_fdc_summary": 1, "search_documents": 2},
+            pending_reservations=1,
+        ),
+    )
     budget = executor.budget("RUN-1")
     assert budget.used == 3
+    assert budget.by_tool == {"get_fdc_summary": 1, "search_documents": 2}
+    assert budget.send_used == 0
+    assert budget.pending_reservations == 1
     assert budget.source == "DB"
     assert [name for name, _ in events] == ["begin", "commit"]
 
@@ -300,6 +322,58 @@ def test_a_tool_raised_timeout_is_not_mistaken_for_the_wrapper_deadline() -> Non
         assert not isinstance(exc.value, ToolDeadlineExceeded)
     finally:
         pool.shutdown(wait=True)
+
+
+def test_queued_call_is_distinct_from_an_execution_deadline() -> None:
+    release = threading.Event()
+    occupied = threading.Event()
+    pool = ThreadPoolExecutor(max_workers=1)
+    pool.submit(lambda: (occupied.set(), release.wait(30)))
+    assert occupied.wait(1)
+    runner = ThreadDeadlineRunner(pool)
+    try:
+        with pytest.raises(ToolRunnerSaturated):
+            runner.call(lambda payload: "never", {}, seconds=0.03)
+    finally:
+        release.set()
+        pool.shutdown(wait=True)
+
+
+def test_cancel_race_is_conservatively_an_execution_deadline() -> None:
+    class _RacingFuture:
+        def result(self, timeout: float) -> Any:
+            raise TimeoutError
+
+        def done(self) -> bool:
+            return False
+
+        def cancel(self) -> bool:
+            return False
+
+    class _RacingExecutor:
+        def submit(self, fn: Any, payload: dict[str, Any]) -> Any:
+            return _RacingFuture()
+
+    runner = ThreadDeadlineRunner(_RacingExecutor())
+    with pytest.raises(ToolDeadlineExceeded):
+        runner.call(lambda payload: "raced", {}, seconds=0.03)
+
+
+def test_raw_tool_timeout_keeps_the_existing_invocation_error_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: (_ for _ in ()).throw(TimeoutError("raw detail")),
+    )
+    assert (
+        executor.document_search("RUN-1", DocumentSearchToolInput(query="raw-timeout"))
+        is None
+    )
+    finalized = _finalized(events)
+    assert finalized["status"] is ToolCallStatus.ERROR
+    assert finalized["error_msg"] == "TOOL_INVOCATION_ERROR"
+    assert "raw detail" not in repr(finalized)
 
 
 def test_late_worker_completion_does_not_call_finalize_again(

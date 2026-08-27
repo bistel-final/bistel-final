@@ -313,7 +313,47 @@ def test_agent_error_cannot_contain_exception_text() -> None:
         AgentError(code="postgres://secret", node="collect_fdc", terminal=True)
 
 
-def test_tool_budget_is_db_derived_and_bounded() -> None:
-    assert ToolBudget(used=1).source == "DB"
+def test_legacy_tool_budget_keeps_unknown_detail_instead_of_inventing_counts() -> None:
+    budget = ToolBudget.model_validate({"max_calls": 8, "used": 3, "source": "DB"})
+    assert budget.source == "DB"
+    assert budget.by_tool is None
+    assert budget.send_used is None
+    assert budget.pending_reservations is None
+
+
+def test_detailed_tool_budget_enforces_only_snapshot_structure() -> None:
+    budget = ToolBudget(
+        used=9,
+        by_tool={"get_fdc_summary": 7, "send_action": 2},
+        send_used=2,
+        pending_reservations=1,
+    )
+    assert budget.used == 9  # 정책 초과 관측값도 State로 표현한다.
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"by_tool": {"get_fdc_summary": 2}, "send_used": 0},
+        {
+            "by_tool": {"unknown_tool": 1},
+            "send_used": 0,
+            "pending_reservations": 0,
+        },
+        {
+            "by_tool": {"send_action": 1},
+            "send_used": 0,
+            "pending_reservations": 0,
+        },
+        {
+            "by_tool": {"get_fdc_summary": 1},
+            "send_used": 0,
+            "pending_reservations": 2,
+        },
+    ],
+)
+def test_tool_budget_rejects_incomplete_or_inconsistent_detail(
+    overrides: dict[str, object],
+) -> None:
     with pytest.raises(ValidationError):
-        ToolBudget(max_calls=1, used=2)
+        ToolBudget(used=1, **overrides)
