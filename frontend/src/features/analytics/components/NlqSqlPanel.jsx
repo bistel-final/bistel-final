@@ -23,6 +23,7 @@ function NlqSqlPanel({
   onStartEdit,
   onCancelEdit,
   onReverify,
+  onRunEdited,
   checks,
   valid,
   reason,
@@ -74,13 +75,19 @@ function NlqSqlPanel({
             </Badge>
           )}
           {editing ? (
-            <div className="mt-auto flex gap-2">
-              <Button sm onClick={onReverify} className="flex-1">
-                재검증
+            <div className="mt-auto flex flex-col gap-2">
+              {/* 실행은 passthrough 경로(검증 포함) — 결과·이력까지 갱신된다 */}
+              <Button sm onClick={onRunEdited}>
+                검증 후 실행
               </Button>
-              <Button sm variant="outline" onClick={onCancelEdit} className="flex-1">
-                취소
-              </Button>
+              <div className="flex gap-2">
+                <Button sm variant="outline" onClick={onReverify} className="flex-1">
+                  재검증만
+                </Button>
+                <Button sm variant="outline" onClick={onCancelEdit} className="flex-1">
+                  취소
+                </Button>
+              </div>
             </div>
           ) : (
             <Button sm variant="outline" onClick={onStartEdit} className="mt-auto">

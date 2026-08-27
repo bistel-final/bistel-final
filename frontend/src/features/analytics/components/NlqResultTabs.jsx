@@ -94,6 +94,12 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
 
       {tab === 'table' && (
         <div className="flex flex-col gap-3 px-5 pb-5">
+          {rows.length === 0 && (
+            <div className="rounded-lg border border-line bg-soft px-4 py-3.5 text-xs text-g1">
+              조건에 맞는 데이터가 없습니다 (0행) — 질의는 정상 실행되었습니다.
+              필터 값이 실제 데이터에 존재하는지(예: 값이 다른 테이블 소속일 수 있음) 확인해 보세요.
+            </div>
+          )}
           <table className="w-full border-collapse">
             <thead>
               <tr>

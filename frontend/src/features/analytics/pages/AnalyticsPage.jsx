@@ -153,6 +153,13 @@ function AnalyticsPage() {
     verify(sqlText, true)
   }
 
+  // 수정 SQL 을 passthrough 경로로 실행 — 검증(6종)을 포함해 결과·이력까지 갱신된다.
+  // 검증 실패 SQL 은 서버가 POLICY_REJECTED 로 거부하므로 안전 경로는 동일하다.
+  const runEdited = () => {
+    setEditing(false)
+    ask(sqlText)
+  }
+
   const cancelEdit = () => {
     setEditing(false)
     if (def) setSqlText(def.generated_sql ?? '')
@@ -232,6 +239,7 @@ function AnalyticsPage() {
             onStartEdit={() => setEditing(true)}
             onCancelEdit={cancelEdit}
             onReverify={reverify}
+            onRunEdited={runEdited}
             checks={validation?.checks}
             valid={validation?.valid}
             reason={validation?.reason}
