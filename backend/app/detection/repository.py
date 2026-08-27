@@ -174,7 +174,8 @@ def fetch_parameter_limits(connection: Connection) -> dict[str, ParameterLimit]:
 
     # dim_parameter는 8행뿐이라 WHERE 없이 전체를 읽는다.
     query = """
-        SELECT parameter_id, spec_lower, ctrl_lower, ctrl_upper, spec_upper, upper_only
+        SELECT parameter_id, spec_lower, ctrl_lower, ctrl_upper, spec_upper,
+               upper_only, target_value AS target
         FROM dim_parameter
     """
     rows = connection.execute(text(query)).mappings().all()
@@ -191,6 +192,7 @@ def fetch_parameter_limits(connection: Connection) -> dict[str, ParameterLimit]:
             ctrl_upper=_as_float_or_none(row["ctrl_upper"]),
             spec_upper=_as_float_or_none(row["spec_upper"]),
             upper_only=bool(row["upper_only"]),
+            target=_as_float_or_none(row["target"]),
         )
         for row in rows
     }

@@ -14,7 +14,7 @@ import logging
 
 from langchain_core.tools import tool
 
-from app.common.db import readonly_engine
+from app.common.db import get_readonly_engine
 from app.common.tool_contracts import FdcSummaryToolResult, fail
 from app.detection.service import FdcSummaryService
 
@@ -33,7 +33,7 @@ def get_fdc_summary(lot_hist_id: str) -> FdcSummaryToolResult:
     """
 
     try:
-        with readonly_engine.connect() as connection:
+        with get_readonly_engine().connect() as connection:
             result = FdcSummaryService(connection).get_fdc_summary(lot_hist_id)
     except TimeoutError as exc:
         return fail(FdcSummaryToolResult, f"TIMEOUT: {exc}")

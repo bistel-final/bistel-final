@@ -1026,6 +1026,9 @@ def _build_anomaly_signal(
             ctrl_upper=row.ctrl_upper,
             spec_upper=row.spec_upper,
             upper_only=row.upper_only,
+            # 리뷰 V5-A-3.2-1 필수 2: parameters[].target(응답에 노출되는 값)과
+            # anomaly.score의 계산 근거가 서로 다른 중심을 쓰던 불일치를 없앤다.
+            target=row.target,
         )
         group_features.append(
             anomaly_model.build_group_feature(
