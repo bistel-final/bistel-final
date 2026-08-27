@@ -38,16 +38,31 @@ verify_*() 함수들은 절대 예외를 던지며 중간에 멈추지 않는다
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+from sqlalchemy.engine import Connection
+
 from app.common.enums import AlarmType
+from app.common.tool_contracts import (
+    AnomalySignal,
+    FdcSummaryToolResult,
+    ParameterSummaryItem,
+    WaferContext,
+)
+from app.detection import model as anomaly_model
 from app.detection import repository, rules
+from app.detection.model_artifact import LoadedModel, load_latest_model
 from app.detection.summarize import (
     GroupKey,
+    ParameterLimit,
     evaluate_groups,
     summarize_groups,
 )
-from sqlalchemy.engine import Connection
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "SummaryMismatch",
@@ -70,6 +85,7 @@ __all__ = [
     "IncidentReferenceMismatch",
     "IncidentVerificationResult",
     "verify_incident_aggregation",
+    "FdcSummaryService",
 ]
 
 
@@ -954,3 +970,208 @@ def verify_incident_aggregation(connection: Connection) -> IncidentVerificationR
         reference_actions=reference_actions,
         mismatches=mismatches,
     )
+
+
+# ---------------------------------------------------------------------
+# get_fdc_summary(lot_hist_id) Tool 서비스 (V5-A-3.2-1)
+#
+# 위쪽 절들(V5-A-1.1~1.5)은 전부 "batch 재계산·대조·집계" 흐름이다. 이 절은
+# "Agent Tool이 단건으로 부르는" 별도 흐름이라 아래에 분리해 둔다. repository.py
+# 쪽에서도 이 절 전용 함수(fetch_wafer_lot_context·fetch_wafer_parameter_rows)를
+# 같은 이유로 파일 맨 끝에 분리해 뒀다.
+# ---------------------------------------------------------------------
+def _build_anomaly_signal(
+    loaded: LoadedModel,
+    lot_hist_id: str,
+    lot_id: str,
+    parameter_rows: list[repository.WaferParameterRow],
+) -> AnomalySignal | None:
+    """단일 wafer의 parameter row들을 학습 때와 같은 채점 파이프라인으로 채점한다.
+
+    `model.py`의 학습 함수(`build_group_feature` -> `aggregate_wafer_features`
+    -> `apply_normalizer` -> `raw_anomaly_scores` -> `scale_scores` ->
+    `to_anomaly_signal`)를 "wafer 1장짜리 채점"에 그대로 재사용한다 — 학습과
+    운영 채점이 서로 다른 계산을 쓰면 "재현 가능한 score"라는 완료 기준이
+    깨진다(model.py 모듈 docstring 원칙과 동일).
+
+    `value_mean`이 없는(NULL) parameter 행은 건너뛴다 — `build_group_feature`가
+    `value_mean: float`(nullable 아님)을 받기 때문이다. 그렇게 걸러진 뒤
+    group_features가 하나도 안 남으면(이 wafer의 모든 parameter가 결측이면)
+    채점을 포기하고 None을 반환한다 — 참여 신호가 전혀 없는 벡터를 억지로
+    채점해봐야 의미가 없다.
+
+    이 함수는 예외를 흡수하지 않는다 — 호출자(`FdcSummaryService.
+    _try_build_anomaly_signal`)가 모든 실패를 `anomaly=None`으로 바꾼다.
+    """
+
+    expected_point_counts = {
+        (parameter_id, step): cnt
+        for parameter_id, step, cnt in loaded.manifest.expected_point_counts
+    }
+
+    group_features = []
+    for row in parameter_rows:
+        if row.value_mean is None:
+            continue
+
+        key = GroupKey(
+            lot_hist_id=lot_hist_id,
+            parameter_id=row.parameter_id,
+            recipe_step_no=row.recipe_step_no,
+        )
+        limit = ParameterLimit(
+            parameter_id=row.parameter_id,
+            spec_lower=row.spec_lower,
+            ctrl_lower=row.ctrl_lower,
+            ctrl_upper=row.ctrl_upper,
+            spec_upper=row.spec_upper,
+            upper_only=row.upper_only,
+            # 리뷰 V5-A-3.2-1 필수 2: parameters[].target(응답에 노출되는 값)과
+            # anomaly.score의 계산 근거가 서로 다른 중심을 쓰던 불일치를 없앤다.
+            target=row.target,
+        )
+        group_features.append(
+            anomaly_model.build_group_feature(
+                key=key,
+                lot_id=lot_id,
+                value_mean=row.value_mean,
+                value_std=row.value_std,
+                point_cnt=row.point_cnt,
+                ooc_point_cnt=row.ooc_point_cnt,
+                oos_point_cnt=row.oos_point_cnt,
+                limit=limit,
+                expected_point_cnt=expected_point_counts.get(
+                    (row.parameter_id, row.recipe_step_no), 0
+                ),
+            )
+        )
+
+    if not group_features:
+        return None
+
+    vectors = anomaly_model.aggregate_wafer_features(
+        group_features, loaded.manifest.feature_names
+    )
+    vector = next((v for v in vectors if v.lot_hist_id == lot_hist_id), None)
+    if vector is None:
+        return None
+
+    matrix = np.array([vector.values])
+    normalized = anomaly_model.apply_normalizer(matrix, loaded.manifest.normalizer)
+    raw_scores = anomaly_model.raw_anomaly_scores(loaded.forest, normalized)
+    scaled_scores = anomaly_model.scale_scores(raw_scores, loaded.manifest.scaling)
+    return anomaly_model.to_anomaly_signal(float(scaled_scores[0]), loaded.manifest)
+
+
+class FdcSummaryService:
+    """`get_fdc_summary(lot_hist_id)` Tool 전용 서비스 (V5-A-3.2-1).
+
+    `GET /trace`(V5-A-3.2, 화면용 boundary projection)와는 반환 모양(bare
+    list 화면 응답 vs 단건 `ok`·`reason` Tool 계약)과 실패 처리(HTTP 404 vs
+    `NOT_FOUND:` reason)가 달라 같은 서비스를 공유하지 않는다.
+
+    Fault 정답(`lot_history.fault_code`)과 조치 권고(`action_history`)는 이
+    클래스가 호출하는 두 repository 함수 어디에서도 SELECT하지 않는다 — 이
+    클래스는 그 두 함수가 돌려준 값을 조립만 한다(NFR-19, 설계서 v2.1 8절).
+    """
+
+    def __init__(
+        self,
+        connection: Connection,
+        *,
+        model_loader: Callable[[], LoadedModel | None] = load_latest_model,
+    ) -> None:
+        self._connection = connection
+        self._model_loader = model_loader
+
+    def get_fdc_summary(self, lot_hist_id: str) -> FdcSummaryToolResult | None:
+        """단일 `lot_hist_id`의 summary·evaluation·5선과 선택적 anomaly evidence.
+
+        wafer 자체가 없거나(lot_history에 없음) parameter 행이 0건이면(그
+        `lot_hist_id`가 summary_data·evaluation에 없음) None을 반환한다 —
+        호출자(tools.py)가 이를 `NOT_FOUND:`로 번역한다. 이 Tool이 반환해야
+        하는 필수 payload(`wafer`·`parameters`)를 완성할 수 없다는 점에서 두
+        경우를 구분할 필요가 없다.
+        """
+
+        lot_row = repository.fetch_wafer_lot_context(self._connection, lot_hist_id)
+        if lot_row is None:
+            return None
+
+        parameter_rows = repository.fetch_wafer_parameter_rows(
+            self._connection, lot_hist_id
+        )
+        if not parameter_rows:
+            return None
+
+        wafer = WaferContext(
+            lot_hist_id=lot_row.lot_hist_id,
+            lot_id=lot_row.lot_id,
+            wafer_no=lot_row.wafer_no,
+            chamber_id=lot_row.chamber_id,
+            equipment_id=lot_row.equipment_id,
+            step_id=lot_row.step_id,
+            recipe_id=lot_row.recipe_id,
+        )
+        parameters = [
+            ParameterSummaryItem(
+                parameter_id=row.parameter_id,
+                parameter_name=row.parameter_name,
+                unit=row.unit,
+                recipe_step_no=row.recipe_step_no,
+                # 물리 schema에 step 이름 컬럼이 없다(WaferParameterRow docstring).
+                recipe_step_name=None,
+                value_mean=row.value_mean,
+                value_std=row.value_std,
+                value_min=row.value_min,
+                value_max=row.value_max,
+                point_cnt=row.point_cnt,
+                ooc_point_cnt=row.ooc_point_cnt,
+                oos_point_cnt=row.oos_point_cnt,
+                spec_lower=row.spec_lower,
+                ctrl_lower=row.ctrl_lower,
+                target=row.target,
+                ctrl_upper=row.ctrl_upper,
+                spec_upper=row.spec_upper,
+                alarm_type=row.alarm_type,
+            )
+            for row in parameter_rows
+        ]
+
+        anomaly = self._try_build_anomaly_signal(lot_row, parameter_rows)
+
+        return FdcSummaryToolResult(
+            ok=True,
+            wafer=wafer,
+            parameters=parameters,
+            anomaly=anomaly,
+        )
+
+    def _try_build_anomaly_signal(
+        self,
+        lot_row: repository.WaferLotContextRow,
+        parameter_rows: list[repository.WaferParameterRow],
+    ) -> AnomalySignal | None:
+        """model artifact 로딩·채점 전체를 감싸 실패를 `None`으로 흡수한다.
+
+        artifact가 없는 것(`model_loader`가 None)뿐 아니라, 있어도 채점
+        도중 어떤 이유로든 실패하면 Tool 전체를 실패시키지 않고 조용히
+        `anomaly=None`으로 넘어간다 — summary·evaluation 조회는 이미
+        성공했으므로 그 값만으로도 이 Tool의 완료 기준(fault label·조치
+        권고를 제외한 summary 제공)은 충족된다.
+        """
+
+        try:
+            loaded = self._model_loader()
+            if loaded is None:
+                return None
+            return _build_anomaly_signal(
+                loaded, lot_row.lot_hist_id, lot_row.lot_id, parameter_rows
+            )
+        except Exception:
+            logger.exception(
+                "get_fdc_summary anomaly scoring 실패 — score 없이 계속한다 "
+                "(lot_hist_id=%s)",
+                lot_row.lot_hist_id,
+            )
+            return None

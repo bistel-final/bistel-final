@@ -87,6 +87,12 @@ class ParameterLimit:
     ctrl_upper: float | None  # UCL (관리 상한, Upper Control Limit)
     spec_upper: float | None  # USL (규격 상한, Upper Spec Limit)
     upper_only: bool          # True면 하한선(LSL/LCL)은 아예 검사 대상에서 제외
+    # dim_parameter.target_value. V5-A-3.2-1 리뷰(필수 2)에서 이 컬럼이 처음부터
+    # 존재했음이 확인됐다 — 이 dataclass가 애초에 "이 표에는 target 컬럼이
+    # 없다"는 잘못된 전제로 만들어졌던 필드다(model.py 모듈 docstring 옛 "결정
+    # 근거" 참고). None이면 model.py의 _center()가 (USL+LSL)/2로 대체한다 —
+    # 하위 호출부 호환을 위해 기본값을 None으로 둔다.
+    target: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -98,15 +98,19 @@ test_repository_fetch_functions_never_touch_labels`가 repository.py의 조회 S
 score를 그 입력에 절대 넣지 않는다는 계약 테스트를 V5-A-2.2에서 추가해야 한다.
 
 [결정 근거 — 팀 재검토 시 여기부터 본다]
-  - MODEL_VERSION="if-v1": 이 파일의 feature·hyperparameter 조합 첫 버전. 아래
+  - MODEL_VERSION="if-v2": target 우선 center로 바꾸며 올렸다(아래 항목).
+    "if-v1"은 spec 중앙((USL+LSL)/2)만으로 center를 계산하던 첫 버전이다.
     상수·feature 정의를 바꾸면 이전 결과와 구분하기 위해 반드시 값을 올린다.
   - RANDOM_SEED=20260818: epoch 날짜(`fdc_final_20260818`)를 그대로 썼다. split·
     IsolationForest 양쪽에 이 값 하나만 흘려써서 "같은 seed = 같은 seed"를 보장한다.
     (seed는 "무작위처럼 보이지만 사실은 정해진 순서로 나오는 난수"를 만들 때 쓰는
     시작값이다 — 같은 seed를 쓰면 "무작위" 선택도 매번 똑같이 재현된다.)
-  - center·spec_range를 dim_parameter의 spec_upper·spec_lower만으로 계산한다 —
-    이 표에는 target 컬럼이 없다(schemas.py의 ParameterLimits도 동일). target이
-    별도로 확보되면 _center를 target 우선으로 바꾸고 MODEL_VERSION을 올린다.
+  - center를 dim_parameter.target_value 우선으로 계산한다 — "이 표에는 target
+    컬럼이 없다"는 예전 전제(if-v1)는 사실이 아니었다: V5-A-3.2-1 Tool 리뷰
+    (필수 2)가 CM 등록 manifest에 target_value가 처음부터 있었음을 확인했다.
+    target이 없는 parameter만 예전처럼 spec 상·하한의 정중앙((USL+LSL)/2)으로
+    대체한다(ParameterLimit.target·_center() 참고). spec_range 계산은 바뀌지
+    않는다(여전히 USL-LSL).
   - expected_point_cnt(=coverage 분모)를 상수로 고정하지 않고
     `compute_expected_point_counts`로 데이터에서 직접 구한다 — parameter·step마다
     seq_no 개수가 실제로 몇 개인지 이 모듈만으로는(DB 접근 없이는) 단정할 근거가
@@ -155,7 +159,7 @@ __all__ = [
 # "이 모델 버전을 정의하는 값" 그 자체이기 때문이다. 값이 바뀌면 그건 설정
 # 변경이 아니라 새 모델(MODEL_VERSION이 달라짐)이 나온 것이다.
 # ---------------------------------------------------------------------
-MODEL_VERSION = "if-v1"
+MODEL_VERSION = "if-v2"
 SCORE_METHOD = "isolation_forest_path_length"
 RANDOM_SEED = 20260818
 TRAIN_LOT_RATIO = 0.8  # LOT의 80%는 학습에, 20%는 "본 적 없는 데이터" 검증용으로 뺀다
@@ -403,10 +407,18 @@ def compute_spec_range(limit: ParameterLimit) -> float:
 
 
 def _center(limit: ParameterLimit) -> float:
-    """ "정상적으로 기대되는 중심값"을 구한다. dim_parameter에는 target(목표값)
-    컬럼이 없으므로, 규격 상·하한의 정중앙((USL+LSL)/2)을 대신 쓴다.
-    `upper_only=True`이거나 한쪽 한계가 없으면 상한값 자체를 중심으로 본다.
+    """ "정상적으로 기대되는 중심값"을 구한다.
+
+    `dim_parameter.target_value`(=`limit.target`)가 있으면 그 값을 그대로
+    center로 쓴다 — target이 "이 parameter가 원래 맞춰야 하는 값" 그 자체이기
+    때문에, 규격 상·하한의 기하학적 중앙보다 더 정확한 근거다(V5-A-3.2-1 Tool
+    리뷰 필수 2, MODEL_VERSION="if-v2"). target이 없으면(if-v1 시절 전제였던
+    상황) 규격 상·하한의 정중앙((USL+LSL)/2)을 대신 쓴다. `upper_only=True`
+    이거나 한쪽 한계가 없으면 — target도 없을 때 — 상한값 자체를 중심으로
+    본다.
     """
+    if limit.target is not None:
+        return limit.target
     if limit.upper_only or limit.spec_lower is None or limit.spec_upper is None:
         return limit.spec_upper or 0.0
     return (limit.spec_upper + limit.spec_lower) / 2
