@@ -1,6 +1,9 @@
 # Environment
 .env
 .env.*
+# 편집기·Finder 가 만드는 사본(".env 2", ".env copy")은 위 두 규칙에 걸리지 않는다.
+# 공개 저장소라 한 번의 `git add -A` 로 자격증명이 나간다.
+.env[ ]*
 !.env.example
 .venv/
 venv/

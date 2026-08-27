@@ -534,6 +534,7 @@ jobs:
           python -m pytest -q
           tests/unit/test_agent_state.py
           tests/unit/test_agent_tool_boundary.py
+          tests/unit/test_agent_tool_budget.py
           tests/unit/test_agent_graph.py
           -rs --no-header
 

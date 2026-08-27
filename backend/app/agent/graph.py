@@ -40,7 +40,12 @@ from app.agent.state import (
     PersistResult,
     ToolBudget,
 )
-from app.agent.tools import AuditedToolExecutor, ToolBoundaryError, TransactionFactory
+from app.agent.tools import (
+    AuditedToolExecutor,
+    ToolBoundaryError,
+    ToolBudgetBlocked,
+    TransactionFactory,
+)
 from app.common.enums import ActionCode, AlarmSource, Decision, RunStatus
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -189,6 +194,30 @@ def _append_nonterminal_error(
     return (*existing, AgentError(code=code, node=node, terminal=False))
 
 
+def _collect_tool_result(
+    state: AgentGraphState,
+    *,
+    node: str,
+    invoke: Callable[[], ToolResult | None],
+    budget: Callable[[], ToolBudget],
+) -> tuple[ToolResult | None, ToolBudget, tuple[AgentError, ...]]:
+    """예산 차단만 nonterminal exact code로 바꾸고 나머지는 상위 안전 경계에 둔다."""
+
+    try:
+        result = invoke()
+    except ToolBudgetBlocked as exc:
+        errors = (
+            *state.get("errors", ()),
+            AgentError(code=exc.code, node=node, terminal=False),
+        )
+        return None, exc.budget, errors
+    return (
+        result,
+        budget(),
+        _append_nonterminal_error(state, result=result, node=node),
+    )
+
+
 def _safe_node(
     name: str,
     fn: Callable[[AgentGraphState], dict[str, Any]],
@@ -196,6 +225,15 @@ def _safe_node(
     def wrapped(state: AgentGraphState) -> dict[str, Any]:
         try:
             return fn(state)
+        except ToolBudgetBlocked as exc:
+            # 예산 차단은 호출 위치와 무관하게 Tool을 실행하지 않았다는 뜻이다.
+            # 각 node의 공용 수집 helper가 놓친 미래 send_action 경로도 terminal로
+            # 바꾸지 않는 최후의 안전 경계다.
+            error = AgentError(code=exc.code, node=name, terminal=False)
+            return {
+                "tool_budget": exc.budget,
+                "errors": (*state.get("errors", ()), error),
+            }
         except Exception as exc:
             error = _terminal(exc, name)
             return {
@@ -361,30 +399,36 @@ def build_agent_graph(
         return base
 
     def collect_fdc(state: AgentGraphState) -> dict[str, Any]:
-        result = dependencies.tools.fdc_summary(
-            state["run_id"],
-            FdcSummaryToolInput(lot_hist_id=state["fdc_lot_hist_id"]),
+        result, tool_budget, errors = _collect_tool_result(
+            state,
+            node="collect_fdc",
+            invoke=lambda: dependencies.tools.fdc_summary(
+                state["run_id"],
+                FdcSummaryToolInput(lot_hist_id=state["fdc_lot_hist_id"]),
+            ),
+            budget=lambda: dependencies.tools.budget(state["run_id"]),
         )
         return {
             "fdc_evidence": result,
             "optional_anomaly_evidence": None if result is None else result.anomaly,
-            "tool_budget": dependencies.tools.budget(state["run_id"]),
-            "errors": _append_nonterminal_error(
-                state, result=result, node="collect_fdc"
-            ),
+            "tool_budget": tool_budget,
+            "errors": errors,
         }
 
     def collect_equipment(state: AgentGraphState) -> dict[str, Any]:
-        result = dependencies.tools.equipment_context(
-            state["run_id"],
-            EquipmentContextToolInput(chamber_id=state["chamber_id"]),
+        result, tool_budget, errors = _collect_tool_result(
+            state,
+            node="collect_equipment",
+            invoke=lambda: dependencies.tools.equipment_context(
+                state["run_id"],
+                EquipmentContextToolInput(chamber_id=state["chamber_id"]),
+            ),
+            budget=lambda: dependencies.tools.budget(state["run_id"]),
         )
         return {
             "graph_evidence": result,
-            "tool_budget": dependencies.tools.budget(state["run_id"]),
-            "errors": _append_nonterminal_error(
-                state, result=result, node="collect_equipment"
-            ),
+            "tool_budget": tool_budget,
+            "errors": errors,
         }
 
     def collect_documents(state: AgentGraphState) -> dict[str, Any]:
@@ -401,19 +445,22 @@ def build_agent_graph(
                 None,
             )
             model_code = None if route_graph is None else route_graph.model_code
-        result = dependencies.tools.document_search(
-            state["run_id"],
-            DocumentSearchToolInput(
-                query=_document_query(state),
-                model_code=model_code,
+        result, tool_budget, errors = _collect_tool_result(
+            state,
+            node="collect_documents",
+            invoke=lambda: dependencies.tools.document_search(
+                state["run_id"],
+                DocumentSearchToolInput(
+                    query=_document_query(state),
+                    model_code=model_code,
+                ),
             ),
+            budget=lambda: dependencies.tools.budget(state["run_id"]),
         )
         return {
             "document_evidence": result,
-            "tool_budget": dependencies.tools.budget(state["run_id"]),
-            "errors": _append_nonterminal_error(
-                state, result=result, node="collect_documents"
-            ),
+            "tool_budget": tool_budget,
+            "errors": errors,
         }
 
     def generate_hypothesis(state: AgentGraphState) -> dict[str, Any]:
@@ -492,9 +539,16 @@ def build_agent_graph(
         }
 
     def finalize(state: AgentGraphState) -> dict[str, Any]:
-        # 검증이 COMMITTED 전이어야 한다.
-        completed = CompletedAgentState.model_validate(_canonical_payload(state))
         with dependencies.transactions() as connection:
+            # 재개 뒤 Tool node가 없어도 완료 State는 checkpoint의 stale 표시값이 아니라
+            # 같은 terminal transaction에서 읽은 DB 정본으로 확정한다.
+            payload = _canonical_payload(state)
+            payload["tool_budget"] = dependencies.tools.budget_from_connection(
+                connection,
+                state["run_id"],
+            )
+            # 검증이 COMMITTED 전이어야 한다.
+            completed = CompletedAgentState.model_validate(payload)
             latency_ms = run_latency_ms(connection, completed.run_id)
             finish_agent_run(
                 connection,

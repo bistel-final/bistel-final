@@ -29,6 +29,7 @@ from app.common.enums import (
 from app.common.ids import NonEmptyId
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
+    AGENT_TOOL_NAMES,
     AnomalySignal,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
@@ -122,12 +123,39 @@ class ToolBudget(StateModel):
 
     max_calls: int = Field(default=AGENT_MAX_TOOL_CALLS, ge=1)
     used: int = Field(ge=0)
+    by_tool: Mapping[str, int] | None = None
+    send_budget: int = Field(default=2, ge=0)
+    send_used: int | None = Field(default=None, ge=0)
+    pending_reservations: int | None = Field(default=None, ge=0)
     source: Literal["DB"] = "DB"
 
     @model_validator(mode="after")
-    def _within_budget(self) -> ToolBudget:
-        if self.used > self.max_calls:
-            raise ValueError("사용한 Tool 호출 수가 예산을 초과했습니다")
+    def _consistent_snapshot(self) -> ToolBudget:
+        """legacy 요약과 신규 상세 snapshot을 구분해 구조만 검증한다."""
+
+        if self.send_budget > self.max_calls:
+            raise ValueError("전송 예약량이 전체 Tool 예산보다 클 수 없습니다")
+        if self.by_tool is None:
+            if self.send_used is not None or self.pending_reservations is not None:
+                raise ValueError(
+                    "legacy Tool 예산에는 상세 집계를 일부만 넣을 수 없습니다"
+                )
+            return self
+
+        if self.send_used is None or self.pending_reservations is None:
+            raise ValueError("상세 Tool 예산에는 전송·미종료 집계가 필요합니다")
+        if any(name not in AGENT_TOOL_NAMES for name in self.by_tool):
+            raise ValueError("Tool 예산에 등록되지 않은 Tool 이름이 있습니다")
+        if any(
+            not isinstance(count, int) or count < 0 for count in self.by_tool.values()
+        ):
+            raise ValueError("Tool별 호출 수는 0 이상의 정수여야 합니다")
+        if sum(self.by_tool.values()) != self.used:
+            raise ValueError("Tool별 호출 수 합계가 전체 호출 수와 다릅니다")
+        if self.send_used != self.by_tool.get("send_action", 0):
+            raise ValueError("send_action 호출 수가 Tool별 집계와 다릅니다")
+        if self.pending_reservations > self.used:
+            raise ValueError("미종료 예약 수가 전체 호출 수보다 클 수 없습니다")
         return self
 
 

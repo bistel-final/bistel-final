@@ -78,7 +78,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (125.5, 44.5, 170.0, 59.5)
+    assert (p0, p1, total, common) == (127.5, 46.5, 174.0, 61.5)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -149,6 +149,16 @@ def test_no_p0_task_waits_on_a_p1_task(rows: dict[str, TaskRow]) -> None:
         if rows.get(predecessor, ("", []))[0] == "P1"
     ]
     assert not inverted
+
+
+def test_tool_hard_timeout_followup_reaches_the_final_gate(
+    rows: dict[str, TaskRow],
+) -> None:
+    """C-2.2의 NFR-03 후속을 생략해도 최종 Gate가 닫히는 구멍을 막는다."""
+
+    assert rows["V5-CM-4.8"][0] == "P1"
+    assert rows["V5-CM-4.8"][1] == ["V5-C-2.2"]
+    assert "V5-CM-4.8" in rows["V5-CM-5.3"][1]
 
 
 #: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.3 → CM-3.4 → CM-3.5`
