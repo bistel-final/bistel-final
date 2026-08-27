@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import MarkdownContent from '../../../shared/components/MarkdownContent.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
 import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
@@ -121,7 +122,7 @@ function DocumentsPage() {
                         {h.score.toFixed(2)}
                       </span>
                     </div>
-                    {h.content && <div className="mt-2 text-[12.5px] leading-[1.7] text-g1">{h.content}</div>}
+                    <MarkdownContent content={h.content} className="mt-2 text-[12.5px] text-g1" />
                     {h.model_code && <div className="mt-2 font-mono text-[10.5px] text-faint">모델 {h.model_code}</div>}
                   </Card>
                 ))}

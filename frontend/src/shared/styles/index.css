@@ -82,6 +82,80 @@
   }
 }
 
+@layer components {
+  .markdown-content {
+    line-height: 1.7;
+  }
+
+  .markdown-content > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-content > :last-child {
+    margin-bottom: 0;
+  }
+
+  .markdown-content p,
+  .markdown-content ul,
+  .markdown-content ol,
+  .markdown-content pre,
+  .markdown-content table {
+    margin: 0.5rem 0;
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    padding-left: 1.25rem;
+  }
+
+  .markdown-content ul {
+    list-style: disc;
+  }
+
+  .markdown-content ol {
+    list-style: decimal;
+  }
+
+  .markdown-content code {
+    border-radius: 0.25rem;
+    background: #f1f5f9;
+    padding: 0.1rem 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .markdown-content pre {
+    overflow-x: auto;
+    border-radius: 0.375rem;
+    background: #f1f5f9;
+    padding: 0.625rem;
+  }
+
+  .markdown-content pre code {
+    padding: 0;
+  }
+
+  .markdown-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    border: 1px solid #e2e8f0;
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .markdown-content th {
+    background: #f8fafc;
+    font-weight: 700;
+  }
+}
+
 @keyframes om-pulse {
   0%,
   100% {
