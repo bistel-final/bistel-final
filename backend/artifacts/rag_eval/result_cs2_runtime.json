@@ -1,11 +1,15 @@
 {
-  "questionset_id": "rag-cs2-search-eval-v1",
+  "questionset_id": "rag-cs2-search-eval-v2",
   "chunk_schema_version": "cs2",
-  "executed_at": "2026-08-27T03:44:21.801578+00:00",
+  "executed_at": "2026-08-27T06:45:09.148338+00:00",
   "grading_criteria": {
     "minimum_question_count": 12,
     "recall_at_k_threshold": 0.8,
     "mrr_threshold": 0.7,
+    "group_warning_thresholds": {
+      "recall_at_k": 0.8,
+      "mrr": 0.7
+    },
     "top_k": 4
   },
   "summary": {
@@ -40,6 +44,7 @@
       "mrr": 0.75
     }
   },
+  "group_warnings": [],
   "passed": true,
   "results": [
     {
@@ -47,15 +52,15 @@
       "audience": "user",
       "query": "같은 챔버에서 이상이 반복되면 어떤 조치를 해야 하나요?",
       "model_code": null,
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "5. 업무 조치 기준"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "5. 업무 조치 기준"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 3,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 0.3333333333333333,
       "passed": true,
       "hits": [
@@ -82,8 +87,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "5. 업무 조치 기준",
-          "score": 0.6560148196224818,
-          "content": "| 관측 상황 | 권고 조치 | 설명 |\n|---|---|---|\n| 평균 추세가 관리 범위를 벗어남 | `MONITORING` | 조건 변화와 다음 생산 결과를 관찰한다. |\n| 측정값이 허용 규격을 벗어남 | `WARNING` | 담당자에게 알리고 설비·챔버 점검을 진행한다. |\n| 같은 챔버·같은 항목의 이상이 연속 3개 웨이퍼에 발생 | `EQP_HOLD` | 설비 투입 보류를 검토하며 사람의 승인이 필요하다. |\n\n`EQP_HOLD`는 강한 조치이므로 승인 전에는 설비 보류 절차를 확정하지 않는다. 이상 유형, 계측 결과, 챔버 비교는 점검 범위를 정하는 데 사용하며 조치 기준을 임의로 바꾸는 근거로 사용하지 않는다.",
+          "score": 0.6464846326853229,
+          "content": "| 관측 상황 | 권고 조치 | 설명 |\n|---|---|---|\n| 평균 추세가 관리 범위를 벗어남 | `MONITORING` | 조건 변화와 다음 생산 결과를 관찰한다. |\n| 측정값이 허용 규격을 벗어남 | `WARNING` | 담당자에게 알리고 설비·챔버 점검을 진행한다. |\n| 같은 챔버·동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | `EQP_HOLD` | 설비 투입 보류를 검토하며 사람의 승인이 필요하다. |\n\n`EQP_HOLD`는 강한 조치이므로 승인 전에는 설비 보류 절차를 확정하지 않는다. 이상 유형, 계측 결과, 챔버 비교는 점검 범위를 정하는 데 사용하며 조치 기준을 임의로 바꾸는 근거로 사용하지 않는다.",
           "model_code": "COMMON"
         },
         {
@@ -102,15 +107,15 @@
       "audience": "user",
       "query": "식각 결과 이상이 이전 포토 공정 영향인지 어떻게 확인하나요?",
       "model_code": null,
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "4. 상류 공정 영향 확인"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "4. 상류 공정 영향 확인"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -128,8 +133,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.5775686582116556,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 같은 항목의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.5781359844844339,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         },
         {
@@ -157,15 +162,15 @@
       "audience": "agent",
       "query": "ET_CF4 이상에 대응하는 고정 Fault 후보를 확인한다.",
       "model_code": null,
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.3 MFD"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.3 MFD"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 2,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 0.5,
       "passed": true,
       "hits": [
@@ -212,15 +217,15 @@
       "audience": "agent",
       "query": "PH_DOSE, PH_PEB, PH_DEV 또는 ET_PRES 이상에서 Fault 유형을 단정할 수 있는지 확인한다.",
       "model_code": null,
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -256,8 +261,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.6441319029095358,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 같은 항목의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.6435852859267434,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         }
       ]
@@ -267,15 +272,15 @@
       "audience": "user",
       "query": "포토 공정에서 포커스 값이 기준을 벗어나면 무엇을 확인해야 하나요?",
       "model_code": "PH-9000",
-      "expected_document_ids": [
-        "DOC-SPEC-PH9000"
-      ],
-      "expected_sections": [
-        "4. 파라미터별 상세 > 4.2 Focus Offset"
+      "expected_targets": [
+        {
+          "document_id": "DOC-SPEC-PH9000",
+          "section": "4. 파라미터별 상세 > 4.2 Focus Offset"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -302,8 +307,8 @@
           "document_id": "DOC-TROUBLE-FDC",
           "title": "FDC 이상 유형 진단 및 조치 가이드",
           "section": "1. 이상 상태 이해하기",
-          "score": 0.6191671121616992,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 같은 항목의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
+          "score": 0.6193977963565478,
+          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 동일한 파라미터·공정 단계의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
           "model_code": "COMMON"
         },
         {
@@ -322,15 +327,15 @@
       "audience": "user",
       "query": "노광량이 달라졌을 때 현장에서 우선 확인할 항목은 무엇인가요?",
       "model_code": "PH-9000",
-      "expected_document_ids": [
-        "DOC-SPEC-PH9000"
-      ],
-      "expected_sections": [
-        "4. 파라미터별 상세 > 4.1 Exposure Dose"
+      "expected_targets": [
+        {
+          "document_id": "DOC-SPEC-PH9000",
+          "section": "4. 파라미터별 상세 > 4.1 Exposure Dose"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -377,15 +382,15 @@
       "audience": "agent",
       "query": "PH_FOCUS 이상에 대응하는 고정 Fault 후보를 확인한다.",
       "model_code": "PH-9000",
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.1 FOC"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.1 FOC"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -432,15 +437,15 @@
       "audience": "agent",
       "query": "PH_PEB 이상만으로 특정 Fault 후보를 단정할 수 있는지 확인한다.",
       "model_code": "PH-9000",
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.5 고정 유형이 없는 이상"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -487,15 +492,15 @@
       "audience": "user",
       "query": "식각 장비에서 반사파가 높아지면 어떤 상태를 점검해야 하나요?",
       "model_code": "ET-7500",
-      "expected_document_ids": [
-        "DOC-SPEC-ET7500"
-      ],
-      "expected_sections": [
-        "4. 파라미터별 상세 > 4.2 Reflected Power"
+      "expected_targets": [
+        {
+          "document_id": "DOC-SPEC-ET7500",
+          "section": "4. 파라미터별 상세 > 4.2 Reflected Power"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 2,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 0.5,
       "passed": true,
       "hits": [
@@ -542,15 +547,15 @@
       "audience": "user",
       "query": "CF4 유량 이상은 무엇과 관련될 수 있나요?",
       "model_code": "ET-7500",
-      "expected_document_ids": [
-        "DOC-SPEC-ET7500"
-      ],
-      "expected_sections": [
-        "4. 파라미터별 상세 > 4.3 CF4 Flow"
+      "expected_targets": [
+        {
+          "document_id": "DOC-SPEC-ET7500",
+          "section": "4. 파라미터별 상세 > 4.3 CF4 Flow"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 2,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 0.5,
       "passed": true,
       "hits": [
@@ -597,15 +602,15 @@
       "audience": "agent",
       "query": "ET_REFL 이상에 대응하는 고정 Fault 후보와 점검 방향을 확인한다.",
       "model_code": "ET-7500",
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.2 RFM"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.2 RFM"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
@@ -637,13 +642,13 @@
           "model_code": "ET-7500"
         },
         {
-          "chunk_id": "DOC-TROUBLE-FDC:cs2:0001",
-          "document_id": "DOC-TROUBLE-FDC",
-          "title": "FDC 이상 유형 진단 및 조치 가이드",
-          "section": "1. 이상 상태 이해하기",
-          "score": 0.6039807312523022,
-          "content": "PHOTO와 ETCH 공정에서 발생한 이상을 이해하고 점검 범위를 정하기 위한 안내 문서다. 실제 설비 제어와 최종 조치는 정해진 승인 절차에 따른다.\n\n| 상태 | 의미 | 우선 확인 사항 |\n|---|---|---|\n| 정상 범위 | 측정값과 공정 추세가 안정적임 | 정기 점검 유지 |\n| 관리 범위 이탈 | 평균 추세가 평소 관리 범위를 벗어남 | 공정 조건과 최근 변화 확인 |\n| 규격 이탈 | 측정값이 허용 범위를 벗어남 | 설비 상태와 해당 웨이퍼 즉시 확인 |\n| 반복 이상 | 같은 챔버에서 같은 항목의 이상이 연속 3개 웨이퍼에 발생 | 챔버 집중 점검 및 승인 절차 검토 |\n\n반사파(`ET_REFL`)는 낮을수록 바람직한 항목이므로, 높아지는 방향을 중점적으로 관리한다.",
-          "model_code": "COMMON"
+          "chunk_id": "DOC-SPEC-ET7500:cs2:0005",
+          "document_id": "DOC-SPEC-ET7500",
+          "title": "ET-7500 Dry Etcher 장비 스펙 및 운전 기준",
+          "section": "4. 파라미터별 상세 > 4.2 Reflected Power (`ET_REFL`)",
+          "score": 0.6032901283156719,
+          "content": "반사파는 플라즈마에 전달되지 않고 되돌아오는 전력이다. 값이 높아지면 실효 전력이 줄어 식각량 부족으로 이어질 수 있다. `ET_REFL` 이상은 `RFM` 후보로 우선 검토하고, 정합기 튜닝 이탈, 챔버 내벽 폴리머 누적, 상부 전극 소모를 점검한다.",
+          "model_code": "ET-7500"
         }
       ]
     },
@@ -652,15 +657,15 @@
       "audience": "agent",
       "query": "ET_ESC 이상에 대응하는 고정 Fault 후보를 확인한다.",
       "model_code": "ET-7500",
-      "expected_document_ids": [
-        "DOC-TROUBLE-FDC"
-      ],
-      "expected_sections": [
-        "3. 대표 이상 유형별 진단 > 3.4 TMD"
+      "expected_targets": [
+        {
+          "document_id": "DOC-TROUBLE-FDC",
+          "section": "3. 대표 이상 유형별 진단 > 3.4 TMD"
+        }
       ],
       "top_k": 4,
       "first_relevant_rank": 1,
-      "recall_at_k": 1,
+      "recall_at_k": 1.0,
       "reciprocal_rank": 1.0,
       "passed": true,
       "hits": [
