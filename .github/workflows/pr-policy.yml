@@ -535,6 +535,9 @@ jobs:
           tests/unit/test_agent_state.py
           tests/unit/test_agent_tool_boundary.py
           tests/unit/test_agent_tool_budget.py
+          tests/unit/test_common_llm.py
+          tests/unit/test_agent_prompts.py
+          tests/unit/test_agent_hypothesis.py
           tests/unit/test_agent_graph.py
           -rs --no-header
 

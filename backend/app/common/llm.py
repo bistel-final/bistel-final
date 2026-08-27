@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -45,6 +47,43 @@ class LlmTimeoutError(RuntimeError):
 
 class LlmDependencyError(RuntimeError):
     """LLM 서버가 오류를 반환했거나 응답을 해석할 수 없다."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        usage: LlmResponseUsage | None = None,
+    ) -> None:
+        super().__init__(message)
+        self._usage = usage
+
+    @property
+    def usage_or_none(self) -> LlmResponseUsage | None:
+        """응답에서 검증을 마친 실제 usage가 있으면 반환한다."""
+
+        return self._usage
+
+
+_INT32_MAX = 2_147_483_647
+
+
+@dataclass(frozen=True, slots=True)
+class ChatCompletion:
+    """provider가 실제로 반환한 모델·token을 포함한 응답."""
+
+    content: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class LlmResponseUsage:
+    """본문 검증 실패 시에도 보존할 provider 실제 model·token."""
+
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
 
 
 #: 재시도 대상 status — rate limit 과 서버 일시 오류만. 그 외 4xx 는 재시도 무의미.
@@ -85,13 +124,8 @@ def _resolve_endpoint() -> tuple[str, str]:
     return base_url.rstrip("/"), api_key
 
 
-def chat(messages: list[dict[str, str]]) -> str:
-    """chat completions 한 번을 호출해 첫 응답 텍스트를 반환한다.
-
-    messages: [{"role": "system"|"user"|"assistant", "content": "..."}]
-    실패는 전부 이 모듈의 예외 3종으로 정규화된다. 원문 예외·URL·key 는
-    메시지에 싣지 않는다.
-    """
+def _request(messages: list[dict[str, str]]) -> dict[str, Any]:
+    """OpenAI 호환 응답 JSON을 받는 공통 HTTP 경계."""
     base_url, api_key = _resolve_endpoint()
 
     max_retries = _retry_max()
@@ -133,11 +167,79 @@ def chat(messages: list[dict[str, str]]) -> str:
         )
 
     try:
-        content = response.json()["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise LlmDependencyError("LLM 응답 형식을 해석할 수 없다.") from exc
+    if not isinstance(payload, dict):
+        raise LlmDependencyError("LLM 응답 형식을 해석할 수 없다.")
+    return payload
+
+
+def _content(payload: dict[str, Any]) -> str:
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
         raise LlmDependencyError("LLM 응답 형식을 해석할 수 없다.") from exc
 
     if not isinstance(content, str) or not content.strip():
         raise LlmDependencyError("LLM 응답이 비어 있다.")
-
     return content
+
+
+def _usage_token(usage: object, field: str) -> int:
+    if not isinstance(usage, dict):
+        raise LlmDependencyError("LLM usage 형식을 해석할 수 없다.")
+    value = usage.get(field)
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > _INT32_MAX
+    ):
+        raise LlmDependencyError("LLM usage 형식을 해석할 수 없다.")
+    return value
+
+
+def chat_with_usage(messages: list[dict[str, str]]) -> ChatCompletion:
+    """응답 본문과 provider 실제 model·usage를 엄격하게 반환한다."""
+
+    payload = _request(messages)
+    model = payload.get("model")
+    if not isinstance(model, str) or not model.strip() or len(model.strip()) > 64:
+        raise LlmDependencyError("LLM model 형식을 해석할 수 없다.")
+    prompt_tokens = _usage_token(payload.get("usage"), "prompt_tokens")
+    completion_tokens = _usage_token(payload.get("usage"), "completion_tokens")
+    if not 0 < prompt_tokens + completion_tokens <= _INT32_MAX:
+        raise LlmDependencyError("LLM usage 합계가 허용 범위를 넘었다.")
+    usage = LlmResponseUsage(
+        model=model.strip(),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+    try:
+        content = _content(payload)
+    except LlmDependencyError as exc:
+        raise LlmDependencyError(str(exc), usage=usage) from exc
+    return ChatCompletion(
+        content=content,
+        model=usage.model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+
+
+def chat(messages: list[dict[str, str]]) -> str:
+    """기존 public 계약: 첫 응답 텍스트만 반환한다."""
+
+    return _content(_request(messages))
+
+
+__all__ = [
+    "ChatCompletion",
+    "LlmDependencyError",
+    "LlmNotReadyError",
+    "LlmResponseUsage",
+    "LlmTimeoutError",
+    "chat",
+    "chat_with_usage",
+]

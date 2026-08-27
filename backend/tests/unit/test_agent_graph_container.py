@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,7 @@ from app.agent.graph import (  # noqa: E402
     AgentGraphDependencies,
     build_agent_graph,
 )
+from app.agent.hypothesis import production_port  # noqa: E402
 from app.agent.repository import reserve_tool_call  # noqa: E402
 from app.agent.routing import GraphBoundary  # noqa: E402
 from app.agent.run_guard import start_incident_run  # noqa: E402
@@ -44,6 +46,8 @@ from app.agent.state import (  # noqa: E402
     ActionDecision,
     DeliveryPlan,
     Hypothesis,
+    HypothesisOutcome,
+    LlmUsage,
     PersistResult,
     ToolBudget,
 )
@@ -63,6 +67,7 @@ from app.common.enums import (  # noqa: E402
     Severity,
     ThresholdValidationStatus,
 )
+from app.common.llm import ChatCompletion  # noqa: E402
 from app.common.schemas import AlarmRef  # noqa: E402
 from app.common.tool_contracts import (  # noqa: E402
     AnomalySignal,
@@ -179,13 +184,25 @@ class _AssemblyPorts:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def generate_hypothesis(self, *_args: Any) -> Hypothesis:
+    def generate_hypothesis(self, *_args: Any) -> HypothesisOutcome:
         self.calls.append("generate_hypothesis")
-        return Hypothesis(
-            predicted_fault_code=FaultHypothesis.OTH,
-            confidence=0.5,
-            cause_summary="fixture",
-            uncertainty="",
+        return HypothesisOutcome(
+            hypothesis=Hypothesis(
+                predicted_fault_code=FaultHypothesis.OTH,
+                confidence=0.5,
+                cause_summary="fixture",
+                supporting_alarms=(
+                    AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01"),
+                ),
+                supporting_relation_ids=("REL-PART",),
+                uncertainty="",
+            ),
+            llm_usage=LlmUsage(
+                model="fixture-model",
+                prompt_version=graph_module.PROMPT_VERSION,
+                input_tokens=10,
+                output_tokens=5,
+            ),
         )
 
     def decide_action(self, _route: Any) -> ActionDecision:
@@ -686,7 +703,7 @@ def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(
         ).scalar_one()
 
     assert run.status == RunStatus.COMPLETED.value
-    assert (run.input_tokens, run.output_tokens) == (None, None)
+    assert (run.input_tokens, run.output_tokens) == (10, 5)
     assert run.latency_ms is not None and run.latency_ms >= 0
     assert [row.tool_name for row in calls] == ["get_fdc_summary", "search_documents"]
     assert all(row.status == "SUCCESS" and row.error_msg is None for row in calls)
@@ -695,7 +712,7 @@ def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(
     assert state["route"].route_consistency is True
     assert state["tool_budget"].used == 2
     assert state["action_decision"].action is ActionCode.MONITORING
-    assert audit_count == 2
+    assert audit_count == 3
 
 
 def test_production_boundary_binds_the_actual_fdc_structured_tool() -> None:
@@ -770,3 +787,68 @@ def test_production_fdc_tool_runs_in_the_real_graph_against_postgres(
     # nullable score 값이 아니라 실제 summary Tool 배선과 action 비의존을 고정한다.
     assert "anomaly" in fdc_call.output
     assert state["action_decision"].action is ActionCode.MONITORING
+
+
+def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLM HTTP 경계만 mock하고 실제 adapter·graph·PostgreSQL을 결합한다."""
+
+    from app.agent import hypothesis as hypothesis_module
+
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    content = json.dumps(
+        {
+            "predicted_fault_code": "OTH",
+            "confidence": 0.6,
+            "cause_summary": "pressure pattern",
+            "supporting_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+            "supporting_chunk_ids": [],
+            "supporting_relation_ids": ["REL-PART"],
+            "uncertainty": "limited history",
+        }
+    )
+    monkeypatch.setattr(
+        hypothesis_module.llm,
+        "chat_with_usage",
+        lambda messages: ChatCompletion(
+            content=content,
+            model="provider-actual-model",
+            prompt_tokens=31,
+            completion_tokens=12,
+        ),
+    )
+    ports = _AssemblyPorts()
+    ports.generate_hypothesis = production_port()  # type: ignore[method-assign]
+    graph = build_agent_graph(_dependencies(engine, ports))
+
+    state = graph.invoke(
+        {
+            "requested_alarm": AlarmRef(
+                source=AlarmSource.TRACE,
+                alarm_id="TA-01",
+            ),
+            "autonomy_level": 2,
+        }
+    )
+
+    with engine.connect() as connection:
+        run = connection.execute(
+            text(
+                "SELECT status, llm_model, prompt_version, input_tokens, "
+                "output_tokens FROM agent_run"
+            )
+        ).one()
+        prediction = connection.execute(
+            text("SELECT llm_model, prompt_version, evidence " "FROM agent_prediction")
+        ).one()
+    assert run.status == RunStatus.COMPLETED.value
+    assert run.llm_model == prediction.llm_model == "provider-actual-model"
+    assert (
+        run.prompt_version == prediction.prompt_version == graph_module.PROMPT_VERSION
+    )
+    assert (run.input_tokens, run.output_tokens) == (31, 12)
+    assert prediction.evidence["schema_version"] == "agent-evidence-v1"
+    assert state["hypothesis"].supporting_relation_ids == ("REL-PART",)

@@ -16,11 +16,19 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
 from app.agent.checkpoint import AgentCheckpointError
+from app.agent.hypothesis import HypothesisGenerationError
+from app.agent.prompts import PROMPT_VERSION
 from app.agent.repository import (
     AgentRepositoryError,
+    PredictionRow,
+    RepositoryConflict,
     RepositoryContractError,
     finish_agent_run,
     get_agent_run,
+    get_prediction_or_none,
+    insert_prediction,
+    lock_agent_run,
+    record_run_llm_usage,
 )
 from app.agent.routing import (
     GraphBoundary,
@@ -37,6 +45,7 @@ from app.agent.state import (
     CompletedAgentState,
     DeliveryPlan,
     Hypothesis,
+    HypothesisOutcome,
     PersistResult,
     ToolBudget,
 )
@@ -158,6 +167,8 @@ def _classify_exception(exc: Exception) -> str:
     """예외 타입·sanitized 속성만 본다. ``str(exc)``는 읽지 않는다."""
 
     if isinstance(exc, AgentRepositoryError):
+        return exc.code
+    if isinstance(exc, HypothesisGenerationError):
         return exc.code
     if isinstance(exc, AgentCheckpointError):
         return exc.reason_code
@@ -281,6 +292,56 @@ def _required_state_id(state: AgentGraphState, name: str) -> str:
     return value
 
 
+def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
+    """DB prediction과 compact evidence를 canonical Hypothesis로 복원한다."""
+
+    evidence = row.evidence
+    if evidence.get("schema_version") != "agent-evidence-v1":
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+    try:
+        return Hypothesis(
+            predicted_fault_code=row.predicted_fault_code,
+            confidence=row.confidence,
+            cause_summary=row.cause_summary,
+            supporting_alarms=tuple(
+                AlarmRef.model_validate(item)
+                for item in evidence.get("supporting_alarms", ())
+            ),
+            supporting_chunk_ids=tuple(evidence.get("supporting_chunk_ids", ())),
+            supporting_relation_ids=tuple(evidence.get("supporting_relation_ids", ())),
+            uncertainty=evidence.get("uncertainty", ""),
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryConflict("PREDICTION_CONFLICT") from exc
+
+
+def _prediction_evidence(hypothesis: Hypothesis) -> dict[str, Any]:
+    return {
+        "schema_version": "agent-evidence-v1",
+        "supporting_alarms": [
+            alarm.model_dump(mode="json") for alarm in hypothesis.supporting_alarms
+        ],
+        "supporting_chunk_ids": list(hypothesis.supporting_chunk_ids),
+        "supporting_relation_ids": list(hypothesis.supporting_relation_ids),
+        "uncertainty": hypothesis.uncertainty,
+    }
+
+
+def _assert_prediction_provenance(
+    row: PredictionRow,
+    *,
+    run_model: str | None,
+    run_prompt_version: str | None,
+    expected_model: str | None = None,
+) -> None:
+    if row.prompt_version != PROMPT_VERSION or run_prompt_version != PROMPT_VERSION:
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+    if run_model != row.llm_model:
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+    if expected_model is not None and row.llm_model != expected_model:
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+
+
 def _document_query(state: AgentGraphState) -> str:
     """가설·label 없이 이미 수집된 식별자만으로 검색문을 만든다."""
 
@@ -348,6 +409,7 @@ def build_agent_graph(
                 connection,
                 requested,
                 autonomy_level=level,
+                prompt_version=PROMPT_VERSION,
             )
             bound = read_route_snapshot(connection, started.incident)
             representative = started.incident.representative_alarm
@@ -380,6 +442,7 @@ def build_agent_graph(
             "autonomy_level": level,
             "terminal_error": None,
             "approval_decision": None,
+            "pending_llm_usage": None,
         }
         if fdc_lot_hist_id is None:
             error = _terminal(
@@ -464,8 +527,27 @@ def build_agent_graph(
         }
 
     def generate_hypothesis(state: AgentGraphState) -> dict[str, Any]:
-        return {
-            "hypothesis": Hypothesis.model_validate(
+        run_id = _required_state_id(state, "run_id")
+
+        # checkpoint 재개 전 이미 commit된 prediction이 있으면 LLM을 다시
+        # 호출하지 않는다. provenance 불일치는 재사용하지 않는다.
+        with dependencies.transactions() as connection:
+            stored = get_prediction_or_none(connection, run_id)
+            if stored is not None:
+                run = get_agent_run(connection, run_id)
+                _assert_prediction_provenance(
+                    stored,
+                    run_model=run.llm_model,
+                    run_prompt_version=run.prompt_version,
+                )
+                return {
+                    "hypothesis": _prediction_hypothesis(stored),
+                    "pending_llm_usage": None,
+                }
+
+        outcome: HypothesisOutcome | None = None
+        try:
+            outcome = HypothesisOutcome.model_validate(
                 ports.generate_hypothesis(
                     state.get("fdc_evidence"),
                     state.get("graph_evidence"),
@@ -473,7 +555,60 @@ def build_agent_graph(
                     state["route"],
                 )
             )
-        }
+        except HypothesisGenerationError as exc:
+            error = _terminal(exc, "generate_hypothesis")
+            return {
+                "terminal_error": error,
+                "errors": (*state.get("errors", ()), error),
+                "pending_llm_usage": exc.usage_or_none,
+            }
+
+        try:
+            with dependencies.transactions() as connection:
+                run = lock_agent_run(connection, run_id)
+                stored = get_prediction_or_none(connection, run_id)
+                if stored is None:
+                    if run.prompt_version != PROMPT_VERSION:
+                        raise RepositoryConflict("PREDICTION_CONFLICT")
+                    if (
+                        run.llm_model is not None
+                        and run.llm_model != outcome.llm_usage.model
+                    ):
+                        raise RepositoryConflict("PREDICTION_CONFLICT")
+                    stored = insert_prediction(
+                        connection,
+                        agent_run_id=run_id,
+                        predicted_fault_code=outcome.hypothesis.predicted_fault_code,
+                        confidence=outcome.hypothesis.confidence,
+                        cause_summary=outcome.hypothesis.cause_summary,
+                        evidence=_prediction_evidence(outcome.hypothesis),
+                        llm_model=outcome.llm_usage.model,
+                        prompt_version=outcome.llm_usage.prompt_version,
+                    )
+                else:
+                    _assert_prediction_provenance(
+                        stored,
+                        run_model=run.llm_model,
+                        run_prompt_version=run.prompt_version,
+                        expected_model=outcome.llm_usage.model,
+                    )
+                record_run_llm_usage(
+                    connection,
+                    run_id,
+                    llm_model=outcome.llm_usage.model,
+                    prompt_version=outcome.llm_usage.prompt_version,
+                    input_tokens=outcome.llm_usage.input_tokens,
+                    output_tokens=outcome.llm_usage.output_tokens,
+                )
+                hypothesis = _prediction_hypothesis(stored)
+        except AgentRepositoryError as exc:
+            error = _terminal(exc, "generate_hypothesis")
+            return {
+                "terminal_error": error,
+                "errors": (*state.get("errors", ()), error),
+                "pending_llm_usage": outcome.llm_usage,
+            }
+        return {"hypothesis": hypothesis, "pending_llm_usage": None}
 
     def decide_action(state: AgentGraphState) -> dict[str, Any]:
         return {
@@ -586,6 +721,16 @@ def build_agent_graph(
             }
         try:
             with dependencies.transactions() as connection:
+                pending_usage = state.get("pending_llm_usage")
+                if pending_usage is not None:
+                    record_run_llm_usage(
+                        connection,
+                        run_id,
+                        llm_model=pending_usage.model,
+                        prompt_version=pending_usage.prompt_version,
+                        input_tokens=pending_usage.input_tokens,
+                        output_tokens=pending_usage.output_tokens,
+                    )
                 latency_ms = run_latency_ms(connection, run_id)
                 finish_agent_run(
                     connection,
