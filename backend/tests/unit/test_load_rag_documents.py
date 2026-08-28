@@ -346,6 +346,34 @@ def test_same_corpus_live_state_is_noop_candidate() -> None:
     assert verification.chunk_count == len(corpus.chunks)
 
 
+def test_noop_artifact_records_skipped_db_write(tmp_path: Path) -> None:
+    corpus = loader.prepare_corpus(loader.DEFAULT_CORRECTED_RAG_DIR)
+    target = loader.BootstrapTarget(
+        "db.example.internal",
+        5432,
+        "bootstrap_ddl",
+        "hidden",
+        "kosa_text2sql",
+        "evaluation",
+    )
+    verification = loader.PostLoadVerification(
+        document_count=3,
+        chunk_count=len(corpus.chunks),
+        null_embedding_count=0,
+        live_db_fingerprint_sha256="f" * 64,
+        search_smoke=({"query": "q", "passed": True},),
+    )
+
+    path = loader.save_noop_artifact(target, corpus, verification, root=tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["artifact_type"] == "rag_idempotent_noop"
+    assert payload["status"] == "PASS"
+    assert payload["db_write"] == "skipped"
+    assert payload["before_fingerprint"] == payload["after_fingerprint"]
+    assert payload["database"] == "kosa_text2sql"
+
+
 def test_embedding_dimension_is_checked() -> None:
     corpus = loader.prepare_corpus(loader.DEFAULT_CORRECTED_RAG_DIR)
 
@@ -432,5 +460,9 @@ def test_marker_records_committed_load_without_revision_aliases() -> None:
     assert marker["status"] == "COMMITTED"
     assert marker["document_ids"] == list(loader.CANONICAL_DOCUMENT_IDS)
     assert marker["dimension"] == 1024
+    assert marker["source_sha256_by_document"] == loader.SOURCE_SHA256_BY_DOCUMENT
+    assert marker["corrected_sha256_by_document"] != marker["source_sha256_by_document"]
+    assert marker["correction_reason_by_document"] == loader.CORRECTION_REASON_BY_DOCUMENT
+    assert marker["embedding_weights_sha256"] == loader.EMBEDDING_WEIGHTS_SHA256
     assert "corpus_revision" not in str(marker)
     assert "graph_revision" not in str(marker)

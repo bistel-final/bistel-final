@@ -108,6 +108,7 @@ def _rag_marker_contract() -> dict[str, Any]:
         "chunk_contract_sha256": rag.CHUNK_CONTRACT_SHA256,
         "embedding_model": rag.EMBEDDING_MODEL,
         "embedding_model_revision": rag.EMBEDDING_MODEL_REVISION,
+        "embedding_weights_sha256": rag.EMBEDDING_WEIGHTS_SHA256,
         "schema_sha256": _schema_digest(),
     }
 
@@ -138,6 +139,7 @@ RAG_CROSS_DATABASE_FIELDS: tuple[str, ...] = (
     "chunk_schema_version",
     "embedding_model",
     "embedding_model_revision",
+    "embedding_weights_sha256",
     "schema_sha256",
     "live_db_fingerprint_sha256",
 )
@@ -164,12 +166,14 @@ RAG_MARKER_KEYS: frozenset[str] = frozenset(
         "chunk_count",
         "chunk_schema_version",
         "corrected_sha256_by_document",
+        "correction_reason_by_document",
         "database",
         "dimension",
         "document_count",
         "document_ids",
         "embedding_model",
         "embedding_model_revision",
+        "embedding_weights_sha256",
         "format_version",
         "live_db_fingerprint_sha256",
         "null_embedding_count",
@@ -229,12 +233,7 @@ def runtime_rag_provenance(
 
 
 def _assert_corrected_sources(marker: Mapping[str, Any]) -> None:
-    """marker의 corrected hash가 저장소 RAG 원본과 일치하는지 본다.
-
-    marker v1은 loader 구현상 `source_sha256_by_document`에도 corrected hash를
-    복제한다. **그것을 원본 hash로 오해하지 않는다** — provenance 보강은 `V5-B-1.4`
-    소유이며 CM-1.8은 marker schema를 고치지 않는다(계획 §3.4-2).
-    """
+    """marker의 source/corrected provenance가 각각의 정본과 일치하는지 본다."""
 
     corrected = marker.get("corrected_sha256_by_document")
     if not isinstance(corrected, dict) or not corrected:
@@ -252,13 +251,10 @@ def _assert_corrected_sources(marker: Mapping[str, Any]) -> None:
     if actual != dict(corrected):
         raise RegistrarError("RAG corrected hash가 저장소 원본과 다릅니다")
 
-    # **marker v1의 source map 계약**(구현리뷰 13차 필수 2).
-    #
-    # loader가 source map에도 corrected digest를 복제한다. 그것을 원본 ZIP provenance로
-    # 해석하지 않는 것과, 값을 아예 검증하지 않는 것은 다르다. v1에서는 두 map이 같아야
-    # 하며 원본/corrected 분리는 `V5-B-1.4`가 version을 올려 수행한다.
-    if marker.get("source_sha256_by_document") != dict(corrected):
-        raise RegistrarError("RAG marker v1의 source map이 corrected와 다릅니다")
+    if marker.get("source_sha256_by_document") != rag.SOURCE_SHA256_BY_DOCUMENT:
+        raise RegistrarError("RAG marker source hash가 CM-1.3 원본 manifest와 다릅니다")
+    if marker.get("correction_reason_by_document") != rag.CORRECTION_REASON_BY_DOCUMENT:
+        raise RegistrarError("RAG marker 정정 사유가 계약과 다릅니다")
 
 
 def _measure_runtime_rag(

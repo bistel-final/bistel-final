@@ -11,19 +11,25 @@
     "DOC-TROUBLE-FDC"
   ],
   "source_sha256_by_document": {
-    "DOC-SPEC-ET7500": "04983f46a1e0b2f7d583acf75da8bce19e0a84d73450faab6725455d40c2a9e3",
-    "DOC-SPEC-PH9000": "eca781a7bdbbc10f21d068e471cd84e6db49cb81483da5c7715b812fd77b4f56",
-    "DOC-TROUBLE-FDC": "6241e642428f2945e00a8db4979efba87c056007e00c036b169b122a74775ca8"
+    "DOC-SPEC-ET7500": "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f",
+    "DOC-SPEC-PH9000": "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a",
+    "DOC-TROUBLE-FDC": "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289"
   },
   "corrected_sha256_by_document": {
     "DOC-SPEC-ET7500": "04983f46a1e0b2f7d583acf75da8bce19e0a84d73450faab6725455d40c2a9e3",
     "DOC-SPEC-PH9000": "eca781a7bdbbc10f21d068e471cd84e6db49cb81483da5c7715b812fd77b4f56",
     "DOC-TROUBLE-FDC": "6241e642428f2945e00a8db4979efba87c056007e00c036b169b122a74775ca8"
   },
+  "correction_reason_by_document": {
+    "DOC-SPEC-ET7500": "원본 RAG의 머리말과 메타성 안내가 검색 chunk 본문에 섞여 문서 검색 품질을 떨어뜨렸으므로, 최종 FDC 계약에 맞는 본문 중심 corrected source를 적재한다.",
+    "DOC-SPEC-PH9000": "원본 RAG의 머리말과 메타성 안내가 검색 chunk 본문에 섞여 문서 검색 품질을 떨어뜨렸으므로, 최종 FDC 계약에 맞는 본문 중심 corrected source를 적재한다.",
+    "DOC-TROUBLE-FDC": "원본 RAG의 머리말과 메타성 안내가 검색 chunk 본문에 섞여 문서 검색 품질을 떨어뜨렸으므로, 최종 FDC 계약에 맞는 본문 중심 corrected source를 적재한다."
+  },
   "chunk_schema_version": "cs2",
   "chunk_contract_sha256": "1b6571df8a8c3fdcd4de8f7f7184340273184ea72b14b3dbc1ee6e1b8c7f266b",
   "embedding_model": "BAAI/bge-m3",
   "embedding_model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "embedding_weights_sha256": "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38",
   "dimension": 1024,
   "document_count": 3,
   "chunk_count": 35,
@@ -67,5 +73,5 @@
       "passed": true
     }
   ],
-  "recorded_at": "2026-08-27T07:03:10.545301+00:00"
+  "recorded_at": "2026-08-28T13:50:01.009383+00:00"
 }

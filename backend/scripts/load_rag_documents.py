@@ -50,6 +50,7 @@ from sqlalchemy import create_engine
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CORRECTED_RAG_DIR = REPOSITORY_ROOT / "docs" / "knowledge" / "rag-corrected"
 MARKER_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "markers"
+NOOP_ARTIFACT_ROOT = REPOSITORY_ROOT / "backend" / "artifacts" / "rag_noop"
 SCHEMA_PATH = (
     REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
 )
@@ -67,7 +68,28 @@ REQUIRED_SOURCE_FILES = (
 )
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
+EMBEDDING_WEIGHTS_SHA256 = (
+    "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38"
+)
 EMBEDDING_DIMENSION = 1024
+SOURCE_SHA256_BY_DOCUMENT = {
+    "DOC-SPEC-ET7500": (
+        "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f"
+    ),
+    "DOC-SPEC-PH9000": (
+        "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a"
+    ),
+    "DOC-TROUBLE-FDC": (
+        "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289"
+    ),
+}
+CORRECTION_REASON_BY_DOCUMENT = {
+    document_id: (
+        "원본 RAG의 머리말과 메타성 안내가 검색 chunk 본문에 섞여 문서 검색 품질을 "
+        "떨어뜨렸으므로, 최종 FDC 계약에 맞는 본문 중심 corrected source를 적재한다."
+    )
+    for document_id in SOURCE_SHA256_BY_DOCUMENT
+}
 SEARCH_SMOKE_CASES = (
     ("PH-9000 Photo Scanner 적용 범위", "PH-9000", "DOC-SPEC-PH9000"),
     ("ET-7500 Dry Etcher 적용 범위", "ET-7500", "DOC-SPEC-ET7500"),
@@ -702,7 +724,7 @@ def build_marker(
     corpus: PreparedRagCorpus,
     verification: PostLoadVerification,
 ) -> dict[str, Any]:
-    source_sha256_by_document = {
+    corrected_sha256_by_document = {
         document.document_id: document.corrected_sha256 for document in corpus.documents
     }
     marker = {
@@ -713,12 +735,14 @@ def build_marker(
         "profile": target.profile,
         "schema_sha256": _sha256_file(SCHEMA_PATH),
         "document_ids": list(CANONICAL_DOCUMENT_IDS),
-        "source_sha256_by_document": source_sha256_by_document,
-        "corrected_sha256_by_document": source_sha256_by_document,
+        "source_sha256_by_document": SOURCE_SHA256_BY_DOCUMENT,
+        "corrected_sha256_by_document": corrected_sha256_by_document,
+        "correction_reason_by_document": CORRECTION_REASON_BY_DOCUMENT,
         "chunk_schema_version": CHUNK_SCHEMA_VERSION,
         "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
         "embedding_model": EMBEDDING_MODEL,
         "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+        "embedding_weights_sha256": EMBEDDING_WEIGHTS_SHA256,
         "dimension": EMBEDDING_DIMENSION,
         "document_count": verification.document_count,
         "chunk_count": verification.chunk_count,
@@ -750,7 +774,49 @@ def _is_same_corpus_already_loaded(
     return verify_live_load(connection, corpus, encode=encode)
 
 
-def run_load(*, database: str, source_dir: Path) -> int:
+def save_noop_artifact(
+    target: BootstrapTarget,
+    corpus: PreparedRagCorpus,
+    verification: PostLoadVerification,
+    *,
+    root: Path = NOOP_ARTIFACT_ROOT,
+) -> Path:
+    artifact = {
+        "format_version": 1,
+        "artifact_type": "rag_idempotent_noop",
+        "task_id": "V5-B-1.4",
+        "status": "PASS",
+        "database": target.database,
+        "profile": target.profile,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "document_ids": list(CANONICAL_DOCUMENT_IDS),
+        "document_count": verification.document_count,
+        "chunk_count": verification.chunk_count,
+        "null_embedding_count": verification.null_embedding_count,
+        "before_fingerprint": verification.live_db_fingerprint_sha256,
+        "after_fingerprint": verification.live_db_fingerprint_sha256,
+        "db_write": "skipped",
+        "source_sha256_by_document": SOURCE_SHA256_BY_DOCUMENT,
+        "corrected_sha256_by_document": {
+            document.document_id: document.corrected_sha256
+            for document in corpus.documents
+        },
+        "correction_reason_by_document": CORRECTION_REASON_BY_DOCUMENT,
+        "chunk_schema_version": CHUNK_SCHEMA_VERSION,
+        "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
+        "embedding_model": EMBEDDING_MODEL,
+        "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+        "embedding_weights_sha256": EMBEDDING_WEIGHTS_SHA256,
+        "dimension": EMBEDDING_DIMENSION,
+        "search_smoke": list(verification.search_smoke),
+    }
+    manifest_v3.scan_for_sensitive_values(artifact)
+    path = root / f"rag_noop.{target.database}.json"
+    manifest_v3.atomic_save_json(path, artifact)
+    return path
+
+
+def run_load(*, database: str, source_dir: Path, noop_only: bool = False) -> int:
     load_dotenv(REPOSITORY_ROOT / ".env")
     target = validate_rag_target(database)
     corpus = prepare_corpus(source_dir)
@@ -773,7 +839,13 @@ def run_load(*, database: str, source_dir: Path) -> int:
                     build_marker(target, corpus, verification),
                     database=database,
                 )
+                if noop_only:
+                    save_noop_artifact(target, corpus, verification)
                 return 0
+            if noop_only:
+                raise RagLoadError(
+                    "live RAG fingerprint가 corrected corpus와 달라 no-op으로 검증할 수 없습니다"
+                )
 
         with engine.connect() as connection:
             with connection.begin():
@@ -810,6 +882,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=Path,
         help="검증된 corrected RAG 3종이 들어 있는 명시 경로.",
     )
+    parser.add_argument(
+        "--noop-only",
+        action="store_true",
+        help="이미 같은 corpus인 경우만 통과하고 DB write 경로는 실행하지 않는다.",
+    )
     args = parser.parse_args(argv)
     if args.database != args.confirm_target:
         raise RagLoadError("--confirm-target과 --database가 다릅니다")
@@ -818,7 +895,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    inserted = run_load(database=args.database, source_dir=args.source_dir)
+    inserted = run_load(
+        database=args.database,
+        source_dir=args.source_dir,
+        noop_only=args.noop_only,
+    )
     print(f"loaded_rag_rows={inserted}")
     return 0
 

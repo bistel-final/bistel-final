@@ -1,15 +1,22 @@
 {
   "format_version": 1,
-  "artifact_type": "rag_load_marker",
-  "status": "COMMITTED",
+  "artifact_type": "rag_idempotent_noop",
+  "task_id": "V5-B-1.4",
+  "status": "PASS",
   "database": "kosa_text2sql",
   "profile": "evaluation",
-  "schema_sha256": "ca01122ba432dd95c212400ce5b34837098690942ed0b8a77d7cafb35f60ec49",
+  "checked_at": "2026-08-28T13:50:48.841714+00:00",
   "document_ids": [
     "DOC-SPEC-ET7500",
     "DOC-SPEC-PH9000",
     "DOC-TROUBLE-FDC"
   ],
+  "document_count": 3,
+  "chunk_count": 35,
+  "null_embedding_count": 0,
+  "before_fingerprint": "f60bff5880f1232a2c1db06dbb8d723951693cad6a846e02a246ca22b4e384df",
+  "after_fingerprint": "f60bff5880f1232a2c1db06dbb8d723951693cad6a846e02a246ca22b4e384df",
+  "db_write": "skipped",
   "source_sha256_by_document": {
     "DOC-SPEC-ET7500": "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f",
     "DOC-SPEC-PH9000": "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a",
@@ -31,10 +38,6 @@
   "embedding_model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
   "embedding_weights_sha256": "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38",
   "dimension": 1024,
-  "document_count": 3,
-  "chunk_count": 35,
-  "null_embedding_count": 0,
-  "live_db_fingerprint_sha256": "f60bff5880f1232a2c1db06dbb8d723951693cad6a846e02a246ca22b4e384df",
   "search_smoke": [
     {
       "query": "PH-9000 Photo Scanner 적용 범위",
@@ -72,6 +75,5 @@
       ],
       "passed": true
     }
-  ],
-  "recorded_at": "2026-08-28T13:50:48.835028+00:00"
+  ]
 }
