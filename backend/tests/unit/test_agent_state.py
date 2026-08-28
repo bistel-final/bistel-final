@@ -133,6 +133,7 @@ def _completed(**overrides: object) -> dict[str, object]:
             severity=Severity.LOW,
             requires_approval=False,
             matched_rule="SUMMARY_OOC_ONLY",
+            policy_version="ACTION-POLICY-V1",
         ),
         "action_id": "ACT-1",
         "approval_id": None,
@@ -164,8 +165,36 @@ def test_action_decision_exactly_matches_the_rule_table(
         severity=severity,
         requires_approval=approval,
         matched_rule=rule,
+        policy_version="ACTION-POLICY-V1",
     )
     assert decision.action is RULE_TO_ACTION[rule]
+
+
+def test_action_policy_version_survives_json_round_trip() -> None:
+    decision = ActionDecision(
+        action=ActionCode.WARNING,
+        severity=Severity.MEDIUM,
+        requires_approval=False,
+        matched_rule="TRACE_OOS",
+        policy_version="ACTION-POLICY-V1",
+    )
+
+    restored = ActionDecision.model_validate_json(decision.model_dump_json())
+
+    assert restored == decision
+    assert restored.policy_version == "ACTION-POLICY-V1"
+
+
+@pytest.mark.parametrize("version", ["", "random", "ACTION-POLICY-V999"])
+def test_action_policy_version_rejects_unknown_values(version: str) -> None:
+    with pytest.raises(ValidationError):
+        ActionDecision(
+            action=ActionCode.WARNING,
+            severity=Severity.MEDIUM,
+            requires_approval=False,
+            matched_rule="TRACE_OOS",
+            policy_version=version,
+        )
 
 
 def test_a_rule_cannot_be_paired_with_another_action() -> None:
@@ -175,6 +204,7 @@ def test_a_rule_cannot_be_paired_with_another_action() -> None:
             severity=Severity.LOW,
             requires_approval=False,
             matched_rule="R03_PRESENT",
+            policy_version="ACTION-POLICY-V1",
         )
 
 
@@ -185,6 +215,7 @@ def test_no_action_has_no_severity_or_approval() -> None:
             severity=Severity.LOW,
             requires_approval=False,
             matched_rule="NO_ALARM",
+            policy_version="ACTION-POLICY-V1",
         )
 
 
@@ -194,6 +225,7 @@ def test_persist_result_uses_common_delivery_order_and_initial_status() -> None:
         severity=Severity.HIGH,
         requires_approval=True,
         matched_rule="R03_PRESENT",
+        policy_version="ACTION-POLICY-V1",
     )
     result = PersistResult(
         action_id="ACT-1",
@@ -212,6 +244,7 @@ def test_no_action_rejects_any_persist_result() -> None:
         severity=None,
         requires_approval=False,
         matched_rule="NO_ALARM",
+        policy_version="ACTION-POLICY-V1",
     )
     with pytest.raises(ValueError):
         PersistResult(action_id="ACT-1").assert_matches(decision)

@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.agent import decision as decision_module
 from app.agent import graph as subject
 from app.agent import incident_repository, routing_repository
 from app.agent.graph import (
@@ -207,6 +208,7 @@ class _Ports:
 
     def __post_init__(self) -> None:
         self.calls: list[str] = []
+        self.persisted_decisions: list[ActionDecision] = []
 
     def generate_hypothesis(self, fdc: Any, graph: Any, docs: Any, route: Any) -> Any:
         self.calls.append("generate_hypothesis")
@@ -250,10 +252,12 @@ class _Ports:
             severity=severity,
             requires_approval=approval,
             matched_rule=rule,
+            policy_version="ACTION-POLICY-V1",
         )
 
     def persist_action(self, run_id: str, decision: ActionDecision) -> PersistResult:
         self.calls.append("persist_action")
+        self.persisted_decisions.append(decision)
         if decision.action is ActionCode.EQP_HOLD:
             return PersistResult(
                 action_id="ACT-1",
@@ -313,6 +317,12 @@ class _Ports:
                 status=DeliveryStatus.CANCELED,
             ),
         )
+
+
+class _ProductionDecisionPorts(_Ports):
+    def decide_action(self, route: ResolvedIncidentRoute) -> ActionDecision:
+        self.calls.append("decide_action")
+        return decision_module.production_port()(route)
 
 
 def _build(
@@ -562,6 +572,26 @@ def test_level_one_warning_calls_all_read_tools_and_email(
         "approval_decision",
         "pending_llm_usage",
     } & set(state)
+
+
+def test_production_decision_reaches_persist_port_with_exact_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ports = _ProductionDecisionPorts()
+    expected = decision_module.decide_action(_route())
+    graph, _, _, finishes, _ = _build(monkeypatch, ports=ports)
+
+    state = _invoke(graph)
+
+    assert len(ports.persisted_decisions) == 1
+    assert ports.persisted_decisions[0].model_dump(mode="json") == (
+        expected.model_dump(mode="json")
+    )
+    assert state["action_decision"].model_dump(mode="json") == (
+        expected.model_dump(mode="json")
+    )
+    assert ports.persisted_decisions[0].policy_version == "ACTION-POLICY-V1"
+    assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
 
 def test_level_two_skips_only_redundant_equipment_context_and_keeps_model_filter(

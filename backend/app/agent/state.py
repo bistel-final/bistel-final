@@ -37,6 +37,7 @@ from app.common.tool_contracts import (
 )
 
 MatchedRule = Literal["R03_PRESENT", "TRACE_OOS", "SUMMARY_OOC_ONLY", "NO_ALARM"]
+ActionPolicyVersion = Literal["ACTION-POLICY-V1"]
 
 RULE_TO_ACTION: Final[Mapping[MatchedRule, ActionCode | None]] = {
     "R03_PRESENT": ActionCode.EQP_HOLD,
@@ -123,6 +124,7 @@ class ActionDecision(StateModel):
     severity: Severity | None
     requires_approval: bool
     matched_rule: MatchedRule
+    policy_version: ActionPolicyVersion
 
     @model_validator(mode="after")
     def _exact_match(self) -> ActionDecision:
@@ -386,6 +388,7 @@ __all__ = [
     "INITIAL_STATUS",
     "RULE_TO_ACTION",
     "ActionDecision",
+    "ActionPolicyVersion",
     "AgentError",
     "AgentGraphInput",
     "AgentGraphState",
