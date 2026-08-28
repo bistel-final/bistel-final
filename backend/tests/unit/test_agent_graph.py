@@ -22,8 +22,14 @@ from app.agent.graph import (
     AgentGraphInputError,
     build_agent_graph,
 )
+from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.incident import ResolvedIncident
-from app.agent.repository import RepositoryConflict, ToolBudgetCounts
+from app.agent.repository import (
+    PredictionRow,
+    RepositoryConflict,
+    RepositoryContractError,
+    ToolBudgetCounts,
+)
 from app.agent.routing import (
     GraphBoundary,
     GraphRouteEvidence,
@@ -35,6 +41,8 @@ from app.agent.state import (
     ActionDecision,
     DeliveryPlan,
     Hypothesis,
+    HypothesisOutcome,
+    LlmUsage,
     PersistResult,
     ToolBudget,
 )
@@ -142,6 +150,8 @@ class _FakeTools:
         self.calls: list[tuple[str, Any]] = []
         self.budget_connections: list[Any] = []
         self.finish_connections: list[Any] = []
+        self.usage_connections: list[Any] = []
+        self.llm_usage: list[tuple[int, int]] = []
         self._fdc_ok = fdc_ok
         self._equipment_ok = equipment_ok
 
@@ -193,18 +203,37 @@ class _Ports:
     action: ActionCode | None = ActionCode.WARNING
     decision: Decision = Decision.APPROVE
     invalid_citation: bool = False
+    generation_error: bool = False
 
     def __post_init__(self) -> None:
         self.calls: list[str] = []
 
     def generate_hypothesis(self, fdc: Any, graph: Any, docs: Any, route: Any) -> Any:
         self.calls.append("generate_hypothesis")
-        return Hypothesis(
-            predicted_fault_code=FaultHypothesis.OTH,
-            confidence=0.5,
-            cause_summary="fixture",
-            supporting_chunk_ids=("MISSING",) if self.invalid_citation else (),
-            uncertainty="",
+        if self.generation_error:
+            raise HypothesisGenerationError(
+                "LLM_TIMEOUT",
+                usage=LlmUsage(
+                    model="fixture-model",
+                    prompt_version=subject.PROMPT_VERSION,
+                    input_tokens=10,
+                    output_tokens=5,
+                ),
+            )
+        return HypothesisOutcome(
+            hypothesis=Hypothesis(
+                predicted_fault_code=FaultHypothesis.OTH,
+                confidence=0.5,
+                cause_summary="fixture",
+                supporting_chunk_ids=("MISSING",) if self.invalid_citation else (),
+                uncertainty="",
+            ),
+            llm_usage=LlmUsage(
+                model="fixture-model",
+                prompt_version=subject.PROMPT_VERSION,
+                input_tokens=10,
+                output_tokens=5,
+            ),
         )
 
     def decide_action(self, route: Any) -> ActionDecision:
@@ -298,6 +327,9 @@ def _build(
     interrupt_after: tuple[str, ...] | None = None,
     lot_hist_id_of_member: dict[tuple[AlarmSource, str], str] | None = None,
     transaction_entry_error: Exception | None = None,
+    usage_record_error_once: Exception | None = None,
+    usage_record_error_always: Exception | None = None,
+    existing_prediction: PredictionRow | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -316,6 +348,14 @@ def _build(
         agent_run_id="RUN-1",
         thread_id=str(uuid4()),
         retry_of_run_id=None,
+        status=RunStatus.RUNNING,
+        llm_model=(
+            None if existing_prediction is None else existing_prediction.llm_model
+        ),
+        prompt_version=subject.PROMPT_VERSION,
+        input_tokens=None if existing_prediction is None else 10,
+        output_tokens=None if existing_prediction is None else 5,
+        started_at=RUN_STARTED_AT,
     )
     started = SimpleNamespace(run=run, incident=_incident())
     snapshot = RouteSnapshot(
@@ -354,12 +394,73 @@ def _build(
             raise finish_error
         return SimpleNamespace()
 
+    prediction: PredictionRow | None = existing_prediction
+    usage_record_calls = 0
+
     def get_run(connection: Any, run_id: str) -> Any:
         transaction_events.append("get_run")
-        return SimpleNamespace(started_at=RUN_STARTED_AT)
+        return run
+
+    def get_prediction(_connection: Any, _run_id: str) -> PredictionRow | None:
+        return prediction
+
+    def lock_run(_connection: Any, _run_id: str) -> Any:
+        return run
+
+    def insert(
+        _connection: Any,
+        *,
+        agent_run_id: str,
+        predicted_fault_code: FaultHypothesis,
+        confidence: float,
+        cause_summary: str,
+        evidence: dict[str, Any],
+        llm_model: str,
+        prompt_version: str,
+        **_kwargs: Any,
+    ) -> PredictionRow:
+        nonlocal prediction
+        prediction = PredictionRow(
+            agent_run_id=agent_run_id,
+            predicted_fault_code=predicted_fault_code,
+            confidence=confidence,
+            cause_summary=cause_summary,
+            evidence=evidence,
+            llm_model=llm_model,
+            prompt_version=prompt_version,
+            created_at=RUN_STARTED_AT,
+        )
+        return prediction
+
+    def record_usage(
+        connection: Any,
+        _run_id: str,
+        *,
+        llm_model: str,
+        prompt_version: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Any:
+        nonlocal usage_record_calls
+        usage_record_calls += 1
+        tool_set.usage_connections.append(connection)
+        if usage_record_error_always is not None:
+            raise usage_record_error_always
+        if usage_record_calls == 1 and usage_record_error_once is not None:
+            raise usage_record_error_once
+        run.llm_model = llm_model
+        run.prompt_version = prompt_version
+        run.input_tokens = (run.input_tokens or 0) + input_tokens
+        run.output_tokens = (run.output_tokens or 0) + output_tokens
+        tool_set.llm_usage.append((input_tokens, output_tokens))
+        return run
 
     monkeypatch.setattr(subject, "finish_agent_run", finish)
     monkeypatch.setattr(subject, "get_agent_run", get_run)
+    monkeypatch.setattr(subject, "get_prediction_or_none", get_prediction)
+    monkeypatch.setattr(subject, "lock_agent_run", lock_run)
+    monkeypatch.setattr(subject, "insert_prediction", insert)
+    monkeypatch.setattr(subject, "record_run_llm_usage", record_usage)
     graph = build_agent_graph(
         AgentGraphDependencies(
             transactions=transactions,
@@ -453,11 +554,13 @@ def test_level_one_warning_calls_all_read_tools_and_email(
     assert state["action_id"] == "ACT-1"
     assert state["tool_budget"].used == 3
     assert set(state) == set(subject.CompletedAgentState.model_fields)
+    assert tools.llm_usage == [(10, 5)]
     assert not {
         "autonomy_level",
         "terminal_error",
         "fdc_lot_hist_id",
         "approval_decision",
+        "pending_llm_usage",
     } & set(state)
 
 
@@ -741,13 +844,109 @@ def test_completed_run_is_not_overwritten_when_commit_ack_is_lost(
 def test_finalize_contract_failure_never_commits_completed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, _, _, finishes, _ = _build(
+    graph, tools, _, finishes, _ = _build(
         monkeypatch,
         ports=_Ports(invalid_citation=True),
     )
     state = _invoke(graph)
     assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
     assert state["terminal_error"].code == "STATE_CONTRACT_ERROR"
+    assert tools.llm_usage == [(10, 5)], "downstream 실패가 token을 재가산했다"
+
+
+def test_generation_failure_usage_is_recorded_once_in_failed_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, tools, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(generation_error=True),
+    )
+    state = _invoke(graph)
+    assert state["terminal_error"].code == "LLM_TIMEOUT"
+    assert state["pending_llm_usage"].input_tokens == 10
+    assert tools.llm_usage == [(10, 5)]
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+
+
+def test_post_llm_save_failure_moves_usage_to_failed_uow_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, tools, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(),
+        usage_record_error_once=RepositoryConflict("SAVE_CONFLICT"),
+    )
+    state = _invoke(graph)
+    assert state["terminal_error"].code == "SAVE_CONFLICT"
+    assert state["pending_llm_usage"].output_tokens == 5
+    assert tools.llm_usage == [(10, 5)]
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+
+
+@pytest.mark.parametrize(
+    ("usage_error", "expected_code"),
+    [
+        (RepositoryConflict("PREDICTION_CONFLICT"), "PREDICTION_CONFLICT"),
+        (RepositoryContractError("RUN_TOKEN_OVERFLOW"), "RUN_TOKEN_OVERFLOW"),
+    ],
+)
+def test_failed_usage_record_never_blocks_failed_terminal_transition(
+    monkeypatch: pytest.MonkeyPatch,
+    usage_error: Exception,
+    expected_code: str,
+) -> None:
+    graph, tools, _, finishes, transactions = _build(
+        monkeypatch,
+        ports=_Ports(),
+        usage_record_error_always=usage_error,
+    )
+
+    state = _invoke(graph)
+
+    assert state["terminal_error"].code == expected_code
+    assert [(item.code, item.node) for item in state["errors"]][-2:] == [
+        (expected_code, "generate_hypothesis"),
+        (expected_code, "fail_run"),
+    ]
+    assert [status for status, _ in finishes] == [RunStatus.FAILED.value]
+    assert len(tools.usage_connections) == 2
+    assert all(
+        tools.finish_connections[0] is not connection
+        for connection in tools.usage_connections
+    )
+    assert transactions[-3:] == ["get_run", "finish", "commit"]
+
+
+def test_sequential_replay_restores_prediction_without_llm_or_token_readd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    existing = PredictionRow(
+        agent_run_id="RUN-1",
+        predicted_fault_code=FaultHypothesis.OTH,
+        confidence=0.5,
+        cause_summary="stored",
+        evidence={
+            "schema_version": "agent-evidence-v1",
+            "supporting_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+            "supporting_chunk_ids": [],
+            "supporting_relation_ids": [],
+            "uncertainty": "",
+        },
+        llm_model="fixture-model",
+        prompt_version=subject.PROMPT_VERSION,
+        created_at=RUN_STARTED_AT,
+    )
+    ports = _Ports()
+    graph, tools, _, finishes, _ = _build(
+        monkeypatch,
+        ports=ports,
+        existing_prediction=existing,
+    )
+    state = _invoke(graph)
+    assert "generate_hypothesis" not in ports.calls
+    assert state["hypothesis"].cause_summary == "stored"
+    assert tools.llm_usage == []
+    assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
 
 def test_unwired_ports_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:

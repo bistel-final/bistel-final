@@ -121,7 +121,13 @@ def _completed(**overrides: object) -> dict[str, object]:
         "optional_anomaly_evidence": None,
         "graph_evidence": None,
         "document_evidence": DocumentSearchToolResult(ok=True, hits=[]),
-        "hypothesis": None,
+        "hypothesis": Hypothesis(
+            predicted_fault_code=FaultHypothesis.OTH,
+            confidence=0.5,
+            cause_summary="fixture",
+            supporting_alarms=(ALARM,),
+            uncertainty="",
+        ),
         "action_decision": ActionDecision(
             action=ActionCode.MONITORING,
             severity=Severity.LOW,

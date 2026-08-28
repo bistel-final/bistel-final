@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 
 import psycopg
@@ -617,6 +619,152 @@ def test_evidence_and_metrics_round_trip(engine: Any) -> None:
         reloaded = repo.get_agent_run(connection, run.agent_run_id)
     assert reloaded.evidence == evidence
     assert reloaded.latency_ms == 8700
+
+
+def test_run_llm_usage_adds_actual_cost_and_refuses_provenance_change(
+    engine: Any,
+) -> None:
+    with engine.begin() as connection:
+        run = repo.create_agent_run(
+            connection,
+            _command(prompt_version="agent-hypothesis-v1"),
+        )
+    with engine.begin() as connection:
+        repo.record_run_llm_usage(
+            connection,
+            run.agent_run_id,
+            llm_model="actual-model",
+            prompt_version="agent-hypothesis-v1",
+            input_tokens=10,
+            output_tokens=4,
+        )
+        updated = repo.record_run_llm_usage(
+            connection,
+            run.agent_run_id,
+            llm_model="actual-model",
+            prompt_version="agent-hypothesis-v1",
+            input_tokens=20,
+            output_tokens=8,
+        )
+    assert (updated.input_tokens, updated.output_tokens) == (30, 12)
+    assert updated.llm_model == "actual-model"
+
+    with pytest.raises(repo.RepositoryConflict) as exc:
+        with engine.begin() as connection:
+            repo.record_run_llm_usage(
+                connection,
+                run.agent_run_id,
+                llm_model="different-model",
+                prompt_version="agent-hypothesis-v1",
+                input_tokens=1,
+                output_tokens=1,
+            )
+    assert exc.value.code == "PREDICTION_CONFLICT"
+
+    with engine.connect() as connection:
+        unchanged = repo.get_agent_run(connection, run.agent_run_id)
+    assert (unchanged.input_tokens, unchanged.output_tokens) == (30, 12)
+
+
+def test_run_llm_usage_aggregate_overflow_and_terminal_run_are_rejected(
+    engine: Any,
+) -> None:
+    with engine.begin() as connection:
+        run = repo.create_agent_run(
+            connection,
+            _command(prompt_version="agent-hypothesis-v1"),
+        )
+        connection.execute(
+            text(
+                "UPDATE agent_run SET llm_model='actual-model', "
+                "input_tokens=2147483647, output_tokens=0 "
+                "WHERE agent_run_id=:run_id"
+            ),
+            {"run_id": run.agent_run_id},
+        )
+    with pytest.raises(repo.RepositoryContractError) as overflow:
+        with engine.begin() as connection:
+            repo.record_run_llm_usage(
+                connection,
+                run.agent_run_id,
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+                input_tokens=0,
+                output_tokens=1,
+            )
+    assert overflow.value.code == "RUN_TOKEN_OVERFLOW"
+
+    with engine.begin() as connection:
+        repo.finish_agent_run(connection, run.agent_run_id, RunStatus.FAILED)
+    with pytest.raises(repo.RepositoryConflict) as terminal:
+        with engine.begin() as connection:
+            repo.record_run_llm_usage(
+                connection,
+                run.agent_run_id,
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+                input_tokens=0,
+                output_tokens=0,
+            )
+    assert terminal.value.code == "RUN_NOT_ACTIVE"
+
+
+def test_concurrent_hypothesis_save_keeps_one_prediction_and_both_usage_costs(
+    engine: Any,
+) -> None:
+    with engine.begin() as connection:
+        run = repo.create_agent_run(
+            connection,
+            _command(prompt_version="agent-hypothesis-v1"),
+        )
+    barrier = Barrier(2)
+
+    def save() -> None:
+        barrier.wait(timeout=10)
+        with engine.begin() as connection:
+            current = repo.lock_agent_run(connection, run.agent_run_id)
+            prediction = repo.get_prediction_or_none(connection, run.agent_run_id)
+            if prediction is None:
+                repo.insert_prediction(
+                    connection,
+                    agent_run_id=run.agent_run_id,
+                    predicted_fault_code=FaultHypothesis.OTH,
+                    confidence=0.5,
+                    cause_summary="fixture",
+                    evidence={
+                        "schema_version": "agent-evidence-v1",
+                        "supporting_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+                        "supporting_chunk_ids": [],
+                        "supporting_relation_ids": [],
+                        "uncertainty": "",
+                    },
+                    llm_model="actual-model",
+                    prompt_version="agent-hypothesis-v1",
+                )
+            else:
+                assert current.llm_model == prediction.llm_model
+            repo.record_run_llm_usage(
+                connection,
+                run.agent_run_id,
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+                input_tokens=10,
+                output_tokens=5,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(save) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=20)
+
+    with engine.connect() as connection:
+        prediction_count = connection.execute(
+            text("SELECT count(*) FROM agent_prediction " "WHERE agent_run_id=:run_id"),
+            {"run_id": run.agent_run_id},
+        ).scalar_one()
+        stored = repo.get_agent_run(connection, run.agent_run_id)
+    assert prediction_count == 1
+    assert (stored.input_tokens, stored.output_tokens) == (20, 10)
 
 
 def test_a_rolled_back_finish_preserves_the_previous_values(engine: Any) -> None:

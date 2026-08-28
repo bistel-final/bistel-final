@@ -87,12 +87,15 @@ __all__ = [
     "translate_db_error",
     "create_agent_run",
     "get_agent_run",
+    "lock_agent_run",
+    "record_run_llm_usage",
     "find_active_run",
     "list_run_alarms",
     "set_run_action",
     "finish_agent_run",
     "insert_prediction",
     "get_prediction",
+    "get_prediction_or_none",
     "insert_human_prediction_review",
     "list_human_prediction_reviews",
     "RunActionRow",
@@ -188,6 +191,7 @@ CONFLICT_CODES: Final[Mapping[str, str]] = {
     "agent_run_action_pkey": "RUN_ACTION_ALREADY_LINKED",
     "action_delivery_pkey": "DELIVERY_ALREADY_EXISTS",
     "agent_run_alarm_pkey": "ALARM_ALREADY_LINKED",
+    "agent_prediction_pkey": "PREDICTION_ALREADY_EXISTS",
 }
 
 
@@ -713,6 +717,103 @@ def get_agent_run(connection: Connection, agent_run_id: str) -> AgentRunRow:
     return _run_row(row)
 
 
+_SELECT_RUN_FOR_UPDATE = text(
+    f"SELECT {_RUN_COLUMNS} FROM agent_run WHERE agent_run_id = :run_id FOR UPDATE"
+)
+
+
+def lock_agent_run(connection: Connection, agent_run_id: str) -> AgentRunRow:
+    """run row를 현 transaction 안에서 잠그고 반환한다."""
+
+    _require_transaction(connection)
+    row = _fetch_one(
+        connection,
+        _SELECT_RUN_FOR_UPDATE,
+        {"run_id": agent_run_id},
+        "RUN_NOT_FOUND",
+    )
+    return _run_row(row)
+
+
+_UPDATE_RUN_LLM_USAGE = text(
+    f"""
+    UPDATE agent_run
+    SET llm_model = :llm_model, prompt_version = :prompt_version,
+        input_tokens = :input_tokens, output_tokens = :output_tokens
+    WHERE agent_run_id = :run_id AND status = ANY(:active)
+    RETURNING {_RUN_COLUMNS}
+    """
+)
+
+
+def _token_count(value: object, field: str) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > 2_147_483_647
+    ):
+        raise RepositoryContractError(f"INVALID_{field.upper()}")
+    return value
+
+
+def record_run_llm_usage(
+    connection: Connection,
+    agent_run_id: str,
+    *,
+    llm_model: str,
+    prompt_version: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> AgentRunRow:
+    """실제 LLM usage를 활성 run에 더한다.
+
+    동일 run의 경쟁 writer를 ``FOR UPDATE``로 직렬화하며, model·prompt
+    provenance가 다른 값으로 조용히 덮어쓰이지 않게 한다.
+    """
+
+    _require_transaction(connection)
+    llm_model = _require_text(llm_model, "llm_model")
+    prompt_version = _require_text(prompt_version, "prompt_version")
+    input_tokens = _token_count(input_tokens, "input_tokens")
+    output_tokens = _token_count(output_tokens, "output_tokens")
+
+    current = lock_agent_run(connection, agent_run_id)
+    if current.status not in {RunStatus.RUNNING, RunStatus.WAITING_APPROVAL}:
+        raise RepositoryConflict("RUN_NOT_ACTIVE")
+    if current.llm_model is not None and current.llm_model != llm_model:
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+    if current.prompt_version is not None and current.prompt_version != prompt_version:
+        raise RepositoryConflict("PREDICTION_CONFLICT")
+
+    total_input = (current.input_tokens or 0) + input_tokens
+    total_output = (current.output_tokens or 0) + output_tokens
+    if (
+        total_input > 2_147_483_647
+        or total_output > 2_147_483_647
+        or total_input + total_output > 2_147_483_647
+    ):
+        raise RepositoryContractError("RUN_TOKEN_OVERFLOW")
+
+    try:
+        row = connection.execute(
+            _UPDATE_RUN_LLM_USAGE,
+            {
+                "run_id": agent_run_id,
+                "active": list(ACTIVE_RUN_STATUSES),
+                "llm_model": llm_model,
+                "prompt_version": prompt_version,
+                "input_tokens": total_input,
+                "output_tokens": total_output,
+            },
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        raise RepositoryConflict("RUN_NOT_ACTIVE")
+    return _run_row(row)
+
+
 def find_active_run(
     connection: Connection, *, lot_id: str, chamber_id: str
 ) -> AgentRunRow | None:
@@ -969,6 +1070,20 @@ def get_prediction(connection: Connection, agent_run_id: str) -> PredictionRow:
         "PREDICTION_NOT_FOUND",
     )
     return _prediction_row(row)
+
+
+def get_prediction_or_none(
+    connection: Connection, agent_run_id: str
+) -> PredictionRow | None:
+    """예측이 없는 정상 상태를 ``None``으로 반환한다."""
+
+    try:
+        row = connection.execute(
+            _SELECT_PREDICTION, {"run_id": agent_run_id}
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    return None if row is None else _prediction_row(row)
 
 
 _REVIEW_COLUMNS = """

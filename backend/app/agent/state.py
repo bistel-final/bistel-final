@@ -1,7 +1,7 @@
 """LangGraph 실행 State와 내부 node port 계약 (`V5-C-2.1`).
 
 공개 API DTO가 아니다. 그래프가 끝나기 직전에 :class:`CompletedAgentState`로 20개
-canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 네 channel은 출력에서
+canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 다섯 channel은 출력에서
 제거한다. ID·Enum·Tool payload는 ``app.common``의 정본을 그대로 재사용한다.
 """
 
@@ -61,6 +61,31 @@ class StateModel(BaseModel):
     )
 
 
+class LlmUsage(StateModel):
+    """실제 provider 응답에서 온 run 적재 단위."""
+
+    model: str = Field(min_length=1, max_length=64)
+    prompt_version: str = Field(min_length=1, max_length=40)
+    input_tokens: int = Field(ge=0, le=2_147_483_647, strict=True)
+    output_tokens: int = Field(ge=0, le=2_147_483_647, strict=True)
+
+    @model_validator(mode="after")
+    def _int32_total(self) -> LlmUsage:
+        if self.input_tokens + self.output_tokens > 2_147_483_647:
+            raise ValueError("LLM token 합계가 integer 범위를 넘었습니다")
+        return self
+
+    def plus(self, other: LlmUsage) -> LlmUsage:
+        if self.model != other.model or self.prompt_version != other.prompt_version:
+            raise ValueError("LLM usage provenance가 다릅니다")
+        return LlmUsage(
+            model=self.model,
+            prompt_version=self.prompt_version,
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+        )
+
+
 class Hypothesis(StateModel):
     """LLM이 만든 가설과 그 가설이 실제로 인용한 근거 ID."""
 
@@ -82,6 +107,13 @@ class Hypothesis(StateModel):
         if any(len(values) != len(set(values)) for values in collections):
             raise ValueError("가설 근거 ID를 중복할 수 없습니다")
         return self
+
+
+class HypothesisOutcome(StateModel):
+    """가설과 그 가설을 만드는 데 소비한 실제 LLM usage."""
+
+    hypothesis: Hypothesis
+    llm_usage: LlmUsage
 
 
 class ActionDecision(StateModel):
@@ -216,11 +248,12 @@ class AgentGraphState(TypedDict, total=False):
     deliveries: tuple[DeliveryPlan, ...]
     tool_budget: ToolBudget
     errors: tuple[AgentError, ...]
-    # internal 4
+    # internal 5
     autonomy_level: int
     terminal_error: AgentError | None
     fdc_lot_hist_id: str
     approval_decision: Decision | None
+    pending_llm_usage: LlmUsage | None
 
 
 class CompletedAgentState(StateModel):
@@ -293,6 +326,8 @@ class CompletedAgentState(StateModel):
             if channels != resolve_delivery_channels(self.action_decision.action):
                 raise ValueError("delivery channel 순서·집합이 결정과 다릅니다")
 
+        if self.hypothesis is None:
+            raise ValueError("완료 State에는 원인 가설이 필요합니다")
         self._validate_hypothesis_citations()
         if any(error.terminal for error in self.errors):
             raise ValueError("성공 State에 terminal error를 넣을 수 없습니다")
@@ -335,7 +370,7 @@ class AgentNodePorts(Protocol):
             DocumentSearchToolResult | None,
             ResolvedIncidentRoute,
         ],
-        Hypothesis,
+        HypothesisOutcome,
     ]
     decide_action: Callable[[ResolvedIncidentRoute], ActionDecision]
     persist_action: Callable[[NonEmptyId, ActionDecision], PersistResult]
@@ -358,6 +393,8 @@ __all__ = [
     "CompletedAgentState",
     "DeliveryPlan",
     "Hypothesis",
+    "HypothesisOutcome",
+    "LlmUsage",
     "PersistResult",
     "ToolBudget",
 ]

@@ -170,6 +170,7 @@ class TestRepositoryDoesNotOwnTransactions:
             ("insert_prediction", {}),
             ("insert_human_prediction_review", {}),
             ("finish_agent_run", {}),
+            ("record_run_llm_usage", {}),
         ],
     )
     def test_write_requires_an_active_transaction(
@@ -200,11 +201,50 @@ class TestRepositoryDoesNotOwnTransactions:
                 "agent_run_id": "RUN-1",
                 "status": RunStatus.COMPLETED,
             },
+            "record_run_llm_usage": {
+                "agent_run_id": "RUN-1",
+                "llm_model": "m",
+                "prompt_version": "v",
+                "input_tokens": 1,
+                "output_tokens": 1,
+            },
         }[call]
         with pytest.raises(repo.RepositoryContractError) as exc:
             getattr(repo, call)(connection, **{**arguments, **kwargs})
         assert exc.value.code == "NO_ACTIVE_TRANSACTION"
         assert connection.statements == []
+
+
+class TestRunLlmUsageContract:
+    @pytest.mark.parametrize(
+        ("field", "value", "code"),
+        [
+            ("input_tokens", True, "INVALID_INPUT_TOKENS"),
+            ("input_tokens", -1, "INVALID_INPUT_TOKENS"),
+            ("output_tokens", 2_147_483_648, "INVALID_OUTPUT_TOKENS"),
+            ("llm_model", "M" * 65, "LLM_MODEL_TOO_LONG"),
+            ("prompt_version", "P" * 41, "PROMPT_VERSION_TOO_LONG"),
+        ],
+    )
+    def test_invalid_usage_is_refused_before_sql(
+        self, field: str, value: object, code: str
+    ) -> None:
+        connection = _Connection()
+        arguments: dict[str, object] = {
+            "llm_model": "m",
+            "prompt_version": "v",
+            "input_tokens": 1,
+            "output_tokens": 1,
+        }
+        arguments[field] = value
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.record_run_llm_usage(connection, "RUN-1", **arguments)  # type: ignore[arg-type]
+        assert exc.value.code == code
+        assert connection.statements == []
+
+    def test_usage_update_locks_the_run(self) -> None:
+        statement = str(repo._SELECT_RUN_FOR_UPDATE)
+        assert "FOR UPDATE" in statement
 
 
 # --- run 생성 입력과 불변 ---------------------------------------------------
