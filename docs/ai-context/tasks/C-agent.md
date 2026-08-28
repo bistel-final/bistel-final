@@ -47,7 +47,7 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-3.1 | P0 | `decide_action`. 완료: SUMMARY OOC-only → MONITORING, TRACE OOS → WARNING, strict R03 → EQP_HOLD의 3단계 순수 규칙 함수를 만든다. LLM·score·metrology를 입력에서 제외한다 | FR-C-03 | V5-C-2.3 | 2.0h |
 | V5-C-3.2 | P0 | action 생성 transaction. 완료: incident advisory lock→run row lock 아래 `action_history`·CREATED/REUSED link·approval·delivery와 policy provenance를 한 트랜잭션에서 만들고 incident당 유효 action 1건을 보장한다. `request_hash`는 stable identity의 raw 64 hex이며 같은 run 재호출과 자동 조치의 FAILED retry를 멱등 처리한다. EQP_HOLD는 approval의 상태·소유 run을 검증하며 새 run에 기존 approval을 재사용하지 않는다 | FR-C-14 | V5-C-3.1 | 4.0h |
 | V5-C-3.3 | P0 | HITL 승인. 완료: EQP_HOLD bundle과 `WAITING_APPROVAL`을 같은 transaction에 저장하고 승인요청 email node 뒤 durable checkpoint에서 중단한다. 승인·action·MES delivery·감사를 한 조건부 UoW로 결정하며 session advisory lock 아래 동일 thread를 재개한다. DB↔checkpoint crash window는 같은 run catch-up으로 복구하고 checkpoint 상실은 fail-closed한다 | FR-C-04, FR-C-05 | V5-C-3.2, V5-C-0.2 | 4.0h |
-| V5-C-3.4 | P0 | HITL checkpoint 상실 재수화. 완료: `WAITING_APPROVAL` run과 action bundle은 존재하지만 checkpoint가 없을 때 DB run·provenance·prediction·bundle에서 State를 재구성해 `hitl_interrupt` 앞으로 명시 복원한다. `start_incident_run`·외부 Tool·LLM 호출 0회를 증명하고 복원 불가 상태는 sanitized fail-closed로 남긴다 | FR-C-04, FR-C-14 | V5-C-3.3 | 1.5h |
+| V5-C-3.4 | P0 | HITL checkpoint 상실 재수화. 완료: `persist_action` 직전 State snapshot을 EQP_HOLD bundle·`WAITING_APPROVAL`과 같은 transaction에 저장한다. checkpoint가 없을 때 DB run·snapshot provenance·prediction·bundle을 결속 검증해 `approval_email` 앞에 복원하고 기존 catch-up으로 `hitl_interrupt` 앞에서 중단한다. `start_incident_run`·외부 Tool·LLM·새 action 호출 0회, write 불확실 postcondition과 복원 불가 상태의 sanitized fail-closed를 증명한다 | FR-C-04, FR-C-14 | V5-C-3.3 | 4.5h |
 | V5-C-4.1 | P0 | n8n workflow 제작. 완료: delivery·write-back용 `WF2-notify-email`·`WF3-mes-hold`·`WF4-result-writeback` JSON 3종만 `deploy/n8n/`에 둔다. 실행 시작은 source-aware `POST /agent/runs`가 소유하며 source-less `WF1-alarm-to-agent`는 만들지 않는다. raw body HMAC·timestamp 검증, `request_hash` 멱등성, Kafka key=`action_id`, channel=`MES_MOCK` 계약을 workflow fixture로 고정하고 secret·credential은 포함하지 않는다 | FR-C-12, NFR-02, NFR-20 | V5-C-3.3 | 2.0h |
 | V5-C-4.2 | P0 | **공용 n8n import·연결**. 완료: workflow 3종을 학원 공용 n8n에 import하고 credential·webhook URL은 공용 환경에서 주입한다. Backend callback·SMTP·Kafka 연결 smoke와 workflow 활성 상태를 검증하며 팀 compose의 n8n 컨테이너는 0건이다 | FR-C-12, FR-I-04, NFR-02 | V5-C-4.1 | 1.0h |
 | V5-C-4.3 | P0 | SMTP delivery. 완료: WARNING 이메일 1회, EQP_HOLD 승인요청 이메일 1회를 서명 webhook으로 발송하고 실패·timeout을 기록한다 | FR-C-06, FR-C-12 | V5-C-4.2 | 2.0h |
@@ -61,7 +61,7 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**P0·P1 23 Task / 56.5h** · **P2 별도 1 Task / 2.0h**
+**P0·P1 23 Task / 59.5h** · **P2 별도 1 Task / 2.0h**
 
 ---
 
@@ -143,6 +143,11 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
   뒤에서 중단한다. DB↔checkpoint crash window는 같은 run/thread catch-up으로 수렴한다.
   checkpoint 자체가 없으면 C-3.3은 `CHECKPOINT_MISSING`으로 상태 변경 없이 막고,
   `V5-C-3.4`가 DB 정본 기반 재수화를 구현한다.
+- C-3.4가 PENDING checkpoint를 재수화하면 `approval_email` node부터 다시 실행하므로 승인요청
+  메일이 재발송될 수 있다. 두 메일은 동일한 `approval_id`를 가리키며 어느 메일에서 승인·반려해도
+  같은 요청에 적용되고, 새 approval·action을 만들지 않는다.
+- `rehydration_snapshot`의 실제 데이터 JSONB 크기는 12개 incident를 쓰는 `V5-C-6.1`에서
+  `pg_column_size`로 기록한다. 단일 wafer 격리 fixture만으로 임의 상한을 정하지 않는다.
 - Tool 예산은 총 8회이며 interrupt 전후 누적값을 checkpoint와 DB에서 복원한다. DB의
   `agent_run` row lock 아래 총·Tool별 호출 수를 다시 집계한 뒤 같은 transaction에서 예약한다.
 - `send_action` 2회를 위해 읽기 Tool은 합계 6회까지만 예약한다. 동일 Tool은 최초 호출을 포함해

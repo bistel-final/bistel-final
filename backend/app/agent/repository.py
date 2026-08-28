@@ -96,6 +96,9 @@ __all__ = [
     "set_run_action",
     "finish_agent_run",
     "merge_run_action_provenance",
+    "ACTION_PROVENANCE_KEY",
+    "ACTION_PROVENANCE_SCHEMA",
+    "REHYDRATION_SNAPSHOT_KEY",
     "insert_prediction",
     "get_prediction",
     "get_prediction_or_none",
@@ -897,6 +900,7 @@ def set_run_action(
 
 ACTION_PROVENANCE_SCHEMA: Final = "action-provenance-v1"
 ACTION_PROVENANCE_KEY: Final = "action_provenance"
+REHYDRATION_SNAPSHOT_KEY: Final = "rehydration_snapshot"
 
 _UPDATE_RUN_EVIDENCE = text(
     f"""
@@ -913,6 +917,7 @@ def merge_run_action_provenance(
     *,
     action_policy_version: str | None = None,
     member_alarms: Sequence[AlarmRef] | None = None,
+    rehydration_snapshot: Mapping[str, Any] | None = None,
     terminal_evidence: Mapping[str, Any] | None = None,
 ) -> AgentRunRow:
     """action provenance와 terminal evidence를 기존 JSON에 손실 없이 합친다.
@@ -925,8 +930,10 @@ def merge_run_action_provenance(
     _require_transaction(connection)
     if (action_policy_version is None) != (member_alarms is None):
         raise RepositoryContractError("ACTION_PROVENANCE_INCOMPLETE")
-    if terminal_evidence is not None and ACTION_PROVENANCE_KEY in terminal_evidence:
-        raise RepositoryContractError("ACTION_PROVENANCE_RESERVED")
+    if terminal_evidence is not None:
+        reserved = {ACTION_PROVENANCE_KEY, REHYDRATION_SNAPSHOT_KEY}
+        if reserved.intersection(terminal_evidence):
+            raise RepositoryContractError("ACTION_PROVENANCE_RESERVED")
 
     current = lock_agent_run(connection, agent_run_id)
     if current.status not in {RunStatus.RUNNING, RunStatus.WAITING_APPROVAL}:
@@ -949,6 +956,15 @@ def merge_run_action_provenance(
         if existing is not None and existing != provenance:
             raise RepositoryConflict("ACTION_PROVENANCE_MISMATCH")
         merged[ACTION_PROVENANCE_KEY] = provenance
+
+    if rehydration_snapshot is not None:
+        # 전용 DTO 검증은 C-3.4 service가 쓰기 전에 수행한다. Repository는 JSON
+        # identity를 멱등하게 합치되, 같은 run의 snapshot 교체는 허용하지 않는다.
+        snapshot = dict(rehydration_snapshot)
+        existing_snapshot = merged.get(REHYDRATION_SNAPSHOT_KEY)
+        if existing_snapshot is not None and existing_snapshot != snapshot:
+            raise RepositoryConflict("REHYDRATE_SNAPSHOT_CONFLICT")
+        merged[REHYDRATION_SNAPSHOT_KEY] = snapshot
 
     if terminal_evidence is not None:
         merged.update(dict(terminal_evidence))

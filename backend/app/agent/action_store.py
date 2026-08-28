@@ -12,8 +12,15 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Final
 
+from app.agent.rehydration import (
+    RehydrationError,
+    RehydrationSeed,
+    RehydrationSnapshot,
+    load_snapshot,
+)
 from app.agent.repository import (
     ActionBundle,
+    AgentRunRow,
     RepositoryConflict,
     RepositoryContractError,
     begin_approval_wait,
@@ -132,6 +139,9 @@ def _validate_bundle(
             raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
     if approval_required and bundle.approval_agent_run_id != agent_run_id:
         raise RepositoryConflict("ACTION_APPROVAL_RUN_MISMATCH")
+    # 같은 run의 terminal approval replay도 **생성 당시 delivery plan**을 재구성한다.
+    # 현재 delivery 상태를 투영하면 persist 직전 snapshot과의 멱등 비교가 깨진다. 실제
+    # terminal 상태는 resume/delivery read 경계가 별도로 검증한다.
     result = _result(
         action_id=bundle.action_id,
         approval_id=bundle.approval_id,
@@ -161,18 +171,26 @@ def _reason_for(decision: ActionDecision) -> str:
 
 def production_port(
     transactions: TransactionFactory,
-) -> Callable[[NonEmptyId, ActionDecision], PersistResult]:
+) -> Callable[[NonEmptyId, ActionDecision, RehydrationSeed | None], PersistResult]:
     """매 호출마다 짧은 transaction 하나로 action bundle을 생성·재사용한다."""
 
     def persist_action(
         agent_run_id: NonEmptyId,
         decision: ActionDecision,
+        rehydration_seed: RehydrationSeed | None = None,
     ) -> PersistResult:
         resolved = ActionDecision.model_validate(decision)
         action = resolved.action
         if action is None:
             # public callable 경계다. DB transaction과 ID 발급 전에 거부한다.
             raise RepositoryContractError("ACTION_REQUIRED")
+        if action is ActionCode.EQP_HOLD and rehydration_seed is None:
+            raise RepositoryContractError("REHYDRATION_SEED_REQUIRED")
+        seed = (
+            None
+            if rehydration_seed is None
+            else RehydrationSeed.model_validate(rehydration_seed)
+        )
 
         with transactions() as connection:
             snapshot = get_agent_run(connection, agent_run_id)
@@ -201,6 +219,9 @@ def production_port(
                 status=locked.status,
                 has_current_link=current is not None,
             )
+            member_alarms = tuple(list_run_alarms(connection, agent_run_id))
+            if not member_alarms:
+                raise RepositoryContractError("EMPTY_ACTION_MEMBER_ALARMS")
 
             if current is not None:
                 if (
@@ -212,7 +233,7 @@ def production_port(
                     raise RepositoryConflict("ACTION_BUNDLE_INVALID")
                 if locked.action is not action:
                     raise RepositoryConflict("ACTION_DECISION_MISMATCH")
-                return _validate_bundle(
+                result = _validate_bundle(
                     get_action_bundle(connection, current.action_id),
                     agent_run_id=agent_run_id,
                     decision=resolved,
@@ -220,10 +241,22 @@ def production_port(
                     # 재사용한다. 아래 타 run REUSED 경로는 계속 PENDING만 허용한다.
                     allow_terminal_approval=True,
                 )
-
-            member_alarms = tuple(list_run_alarms(connection, agent_run_id))
-            if not member_alarms:
-                raise RepositoryContractError("EMPTY_ACTION_MEMBER_ALARMS")
+                if action is ActionCode.EQP_HOLD:
+                    if seed is None:  # pragma: no cover - public guard가 먼저 막는다
+                        raise RepositoryContractError("REHYDRATION_SEED_REQUIRED")
+                    expected = _rehydration_snapshot(
+                        seed,
+                        result,
+                        locked=locked,
+                        member_alarms=member_alarms,
+                    )
+                    try:
+                        stored = load_snapshot(locked.evidence)
+                    except RehydrationError as exc:
+                        raise RepositoryConflict(exc.code) from exc
+                    if stored != expected:
+                        raise RepositoryConflict("REHYDRATE_SNAPSHOT_CONFLICT")
+                return result
 
             if existing is not None:
                 result = _validate_bundle(
@@ -246,6 +279,13 @@ def production_port(
                     agent_run_id,
                     action_policy_version=resolved.policy_version,
                     member_alarms=member_alarms,
+                    rehydration_snapshot=_snapshot_payload(
+                        action=action,
+                        seed=seed,
+                        result=result,
+                        locked=locked,
+                        member_alarms=member_alarms,
+                    ),
                 )
                 return result
 
@@ -296,12 +336,26 @@ def production_port(
                     ),
                 )
 
+            result = _result(
+                action_id=action_id,
+                approval_id=approval_id,
+                channels=channels,
+            )
+            result.assert_matches(resolved)
+            rehydration_snapshot = _snapshot_payload(
+                action=action,
+                seed=seed,
+                result=result,
+                locked=locked,
+                member_alarms=member_alarms,
+            )
             set_run_action(connection, agent_run_id, action)
             merge_run_action_provenance(
                 connection,
                 agent_run_id,
                 action_policy_version=resolved.policy_version,
                 member_alarms=member_alarms,
+                rehydration_snapshot=rehydration_snapshot,
             )
             if approval_id is not None:
                 # action bundle과 WAITING 전이는 반드시 같은 commit이다. email node에서
@@ -311,15 +365,59 @@ def production_port(
                     agent_run_id=agent_run_id,
                     approval_id=approval_id,
                 )
-            result = _result(
-                action_id=action_id,
-                approval_id=approval_id,
-                channels=channels,
-            )
-            result.assert_matches(resolved)
             return result
 
     return persist_action
+
+
+def _rehydration_snapshot(
+    seed: RehydrationSeed,
+    result: PersistResult,
+    *,
+    locked: AgentRunRow,
+    member_alarms: tuple[AlarmRef, ...],
+) -> RehydrationSnapshot:
+    """EQP_HOLD snapshot을 DB run/member identity와 결속한다."""
+
+    incident = seed.route.incident
+    if (
+        incident.lot_id != locked.lot_id
+        or incident.chamber_id != locked.chamber_id
+        or incident.requested_alarm != locked.requested_alarm
+        or incident.representative_alarm != locked.representative_alarm
+        or {item.to_token() for item in incident.member_alarms}
+        != {item.to_token() for item in member_alarms}
+    ):
+        raise RepositoryConflict("REHYDRATE_SNAPSHOT_IDENTITY_MISMATCH")
+    try:
+        return RehydrationSnapshot.from_seed(
+            seed,
+            action_id=result.action_id,
+            approval_id=result.approval_id,
+            deliveries=result.deliveries,
+        )
+    except RehydrationError as exc:
+        raise RepositoryConflict(exc.code) from exc
+
+
+def _snapshot_payload(
+    *,
+    action: ActionCode,
+    seed: RehydrationSeed | None,
+    result: PersistResult,
+    locked: AgentRunRow,
+    member_alarms: tuple[AlarmRef, ...],
+) -> Mapping[str, object] | None:
+    if action is not ActionCode.EQP_HOLD:
+        return None
+    if seed is None:  # pragma: no cover - public guard가 먼저 막는다
+        raise RepositoryContractError("REHYDRATION_SEED_REQUIRED")
+    return _rehydration_snapshot(
+        seed,
+        result,
+        locked=locked,
+        member_alarms=member_alarms,
+    ).as_evidence()
 
 
 __all__ = ["DELIVERY_REQUEST_SCHEMA", "production_port"]

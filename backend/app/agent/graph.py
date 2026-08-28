@@ -23,6 +23,7 @@ from app.agent.approval_store import (
 from app.agent.checkpoint import AgentCheckpointError
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.prompts import PROMPT_VERSION
+from app.agent.rehydration import RehydrationSeed
 from app.agent.repository import (
     AgentRepositoryError,
     PredictionRow,
@@ -696,7 +697,11 @@ def build_agent_graph(
         if decision is None:
             raise ValueError("ACTION_DECISION_MISSING")
         result = PersistResult.model_validate(
-            ports.persist_action(state["run_id"], decision)
+            ports.persist_action(
+                state["run_id"],
+                decision,
+                RehydrationSeed.from_state(state),
+            )
         )
         result.assert_matches(decision)
         return {

@@ -10,12 +10,15 @@ from typing import Any
 import pytest
 
 from app.agent import action_store as subject
+from app.agent.incident import ResolvedIncident
+from app.agent.rehydration import RehydrationSeed, RehydrationSnapshot
 from app.agent.repository import (
     ActionBundle,
     RepositoryConflict,
     RepositoryContractError,
 )
-from app.agent.state import ActionDecision
+from app.agent.routing import ResolvedIncidentRoute
+from app.agent.state import ActionDecision, DeliveryPlan, ToolBudget
 from app.common.enums import (
     ActionCode,
     ActionLinkRole,
@@ -29,6 +32,31 @@ from app.common.enums import (
 from app.common.schemas import AlarmRef
 
 ALARM = AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01")
+
+
+def _seed() -> RehydrationSeed:
+    return RehydrationSeed(
+        route=ResolvedIncidentRoute(
+            incident=ResolvedIncident(
+                lot_id="LOT-1",
+                chamber_id="EQP01-PM1",
+                requested_alarm=ALARM,
+                representative_alarm=ALARM,
+                member_alarms=(ALARM,),
+            ),
+            wafer_routes=(),
+            graph_evidence=(),
+            route_consistency=True,
+            mismatches=(),
+        ),
+        fdc_evidence=None,
+        optional_anomaly_evidence=None,
+        graph_evidence=None,
+        document_evidence=None,
+        errors=(),
+        tool_budget=ToolBudget(used=0),
+        fdc_lot_hist_id="LH-1",
+    )
 
 
 def _decision(action: ActionCode | None) -> ActionDecision:
@@ -78,7 +106,25 @@ def _wire(
         representative_alarm=ALARM,
         status=status,
         action=action,
+        requested_alarm=ALARM,
+        evidence=None,
     )
+    if action is ActionCode.EQP_HOLD and bundle is not None:
+        plans = tuple(
+            DeliveryPlan(
+                channel=channel,
+                status=subject.INITIAL_STATUS[channel],
+            )
+            for channel in resolve_delivery_channels(ActionCode.EQP_HOLD)
+        )
+        run.evidence = {
+            "rehydration_snapshot": RehydrationSnapshot.from_seed(
+                _seed(),
+                action_id=bundle.action_id,
+                approval_id=bundle.approval_id,
+                deliveries=plans,
+            ).as_evidence()
+        }
     state = SimpleNamespace(
         calls=calls,
         writes=writes,
@@ -203,7 +249,11 @@ def test_new_action_builds_the_exact_policy_bundle(
 ) -> None:
     port, state = _wire(monkeypatch)
 
-    result = port("RUN-1", _decision(action))
+    result = port(
+        "RUN-1",
+        _decision(action),
+        _seed() if action is ActionCode.EQP_HOLD else None,
+    )
 
     assert [name for name, _ in state.writes] == expected_writes
     assert tuple(item.channel for item in result.deliveries) == channels
@@ -326,7 +376,7 @@ def test_reuse_refuses_a_different_action_decision(
     )
 
     with pytest.raises(RepositoryConflict) as exc:
-        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+        port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
 
     assert exc.value.code == "ACTION_DECISION_MISMATCH"
     assert state.writes == []
@@ -349,7 +399,7 @@ def test_waiting_run_without_a_link_is_rejected(
 ) -> None:
     port, state = _wire(monkeypatch, status=RunStatus.WAITING_APPROVAL)
     with pytest.raises(RepositoryConflict) as exc:
-        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+        port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
     assert exc.value.code == "RUN_STATE_INVALID"
     assert state.writes == []
 
@@ -432,12 +482,38 @@ def test_reuse_compares_delivery_channels_as_an_order_independent_set(
         bundle=bundle,
     )
 
-    result = port("RUN-1", _decision(ActionCode.EQP_HOLD))
+    result = port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
 
     assert tuple(item.channel for item in result.deliveries) == (
         DeliveryChannel.EMAIL,
         DeliveryChannel.MES_MOCK,
     )
+    assert state.writes == []
+
+
+def test_same_run_replay_rejects_a_different_rehydration_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = SimpleNamespace(
+        action_id="ACT-existing",
+        lot_id="LOT-1",
+        chamber_id="EQP01-PM1",
+    )
+    bundle = _bundle("ACT-existing", ActionCode.EQP_HOLD)
+    port, state = _wire(
+        monkeypatch,
+        status=RunStatus.WAITING_APPROVAL,
+        action=ActionCode.EQP_HOLD,
+        current=created,
+        existing=created,
+        bundle=bundle,
+    )
+    state.run.evidence["rehydration_snapshot"]["fdc_lot_hist_id"] = "LH-other"
+
+    with pytest.raises(RepositoryConflict) as caught:
+        port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
+
+    assert caught.value.code == "REHYDRATE_SNAPSHOT_CONFLICT"
     assert state.writes == []
 
 
@@ -465,7 +541,7 @@ def test_retry_refuses_a_terminal_approval(
     port, state = _wire(monkeypatch, existing=created, bundle=bundle)
 
     with pytest.raises(RepositoryConflict) as exc:
-        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+        port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
 
     assert exc.value.code == "ACTION_APPROVAL_NOT_PENDING"
     assert state.writes == []
@@ -490,7 +566,7 @@ def test_retry_refuses_a_pending_approval_owned_by_the_failed_run(
     port, state = _wire(monkeypatch, existing=created, bundle=bundle)
 
     with pytest.raises(RepositoryConflict) as exc:
-        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+        port("RUN-1", _decision(ActionCode.EQP_HOLD), _seed())
 
     assert exc.value.code == "ACTION_APPROVAL_RUN_MISMATCH"
     assert state.writes == []

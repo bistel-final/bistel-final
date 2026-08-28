@@ -571,6 +571,7 @@ jobs:
           tests/unit/test_agent_decision.py
           tests/unit/test_agent_action_store.py
           tests/unit/test_agent_approval_store.py
+          tests/unit/test_agent_rehydration.py
           tests/unit/test_agent_graph.py
           -rs --no-header
 
@@ -594,6 +595,7 @@ jobs:
           python -m pytest -q -m container
           tests/unit/test_agent_approval_store_container.py
           tests/unit/test_agent_graph_container.py
+          tests/unit/test_agent_rehydration_container.py
           tests/unit/test_agent_resume_lock_container.py
           -rs --no-header
 

@@ -8,7 +8,7 @@ canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 �
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Final, Literal, Protocol, TypedDict
+from typing import TYPE_CHECKING, Final, Literal, Protocol, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -35,6 +35,9 @@ from app.common.tool_contracts import (
     EquipmentContextToolResult,
     FdcSummaryToolResult,
 )
+
+if TYPE_CHECKING:
+    from app.agent.rehydration import RehydrationSeed
 
 MatchedRule = Literal["R03_PRESENT", "TRACE_OOS", "SUMMARY_OOC_ONLY", "NO_ALARM"]
 ActionPolicyVersion = Literal["ACTION-POLICY-V1"]
@@ -377,7 +380,9 @@ class AgentNodePorts(Protocol):
         HypothesisOutcome,
     ]
     decide_action: Callable[[ResolvedIncidentRoute], ActionDecision]
-    persist_action: Callable[[NonEmptyId, ActionDecision], PersistResult]
+    persist_action: Callable[
+        [NonEmptyId, ActionDecision, RehydrationSeed], PersistResult
+    ]
     notify_email: Callable[[NonEmptyId], None]
     approval_email: Callable[[NonEmptyId, NonEmptyId, NonEmptyId], None]
     # checkpoint가 node 실행 전 죽으면 같은 port가 다시 호출된다. 따라서 이 port는

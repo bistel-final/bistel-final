@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
@@ -42,8 +42,10 @@ from app.agent.graph import (  # noqa: E402
     build_agent_graph,
 )
 from app.agent.hypothesis import production_port  # noqa: E402
+from app.agent.incident import ResolvedIncident  # noqa: E402
+from app.agent.rehydration import RehydrationSeed  # noqa: E402
 from app.agent.repository import reserve_tool_call  # noqa: E402
-from app.agent.routing import GraphBoundary  # noqa: E402
+from app.agent.routing import GraphBoundary, ResolvedIncidentRoute  # noqa: E402
 from app.agent.run_guard import start_incident_run  # noqa: E402
 from app.agent.state import (  # noqa: E402
     ActionDecision,
@@ -114,8 +116,8 @@ _WAFER_ALTER = "\n".join(
 )
 
 
-@pytest.fixture(scope="module")
-def runtime() -> tuple[Any, Any]:
+@contextmanager
+def _runtime_context() -> Iterator[tuple[Any, Any]]:
     """base 9 + V5 Runtime + checkpoint를 한 PostgreSQL 16에 세운다."""
 
     with postgres.one_off_postgres(database=TARGET_DATABASE) as endpoint:
@@ -143,6 +145,14 @@ def runtime() -> tuple[Any, Any]:
             yield endpoint, engine
         finally:
             engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def runtime() -> Iterator[tuple[Any, Any]]:
+    """pytest와 일반 helper가 같은 격리 PostgreSQL lifecycle을 사용한다."""
+
+    with _runtime_context() as resources:
+        yield resources
 
 
 def _fdc_result(*, lot_hist_id: str = "LH-REP") -> FdcSummaryToolResult:
@@ -220,7 +230,9 @@ class _AssemblyPorts:
             policy_version="ACTION-POLICY-V1",
         )
 
-    def persist_action(self, _run_id: str, _decision: ActionDecision) -> PersistResult:
+    def persist_action(
+        self, _run_id: str, _decision: ActionDecision, _rehydration_seed: Any
+    ) -> PersistResult:
         self.calls.append("persist_action")
         return PersistResult(action_id="ACT-FIXTURE")
 
@@ -265,7 +277,9 @@ class _HoldAssemblyPorts(_AssemblyPorts):
             policy_version="ACTION-POLICY-V1",
         )
 
-    def persist_action(self, _run_id: str, _decision: ActionDecision) -> PersistResult:
+    def persist_action(
+        self, _run_id: str, _decision: ActionDecision, _rehydration_seed: Any
+    ) -> PersistResult:
         self.calls.append("persist_action")
         return PersistResult(
             action_id="ACT-FIXTURE",
@@ -431,6 +445,7 @@ def _dependencies(
     ports: _AssemblyPorts,
     *,
     fdc_summary: Callable[[dict[str, Any]], Any] | None = None,
+    document_search: Callable[[dict[str, Any]], Any] | None = None,
 ) -> AgentGraphDependencies:
     equipment = EquipmentContextToolResult(
         ok=True,
@@ -444,7 +459,8 @@ def _dependencies(
     boundary = ToolBoundary(
         fdc_summary=fdc_summary or (lambda payload: _fdc_result()),
         equipment_context=lambda payload: equipment,
-        document_search=lambda payload: DocumentSearchToolResult(ok=True, hits=[]),
+        document_search=document_search
+        or (lambda payload: DocumentSearchToolResult(ok=True, hits=[])),
     )
     return AgentGraphDependencies(
         transactions=engine.begin,
@@ -466,6 +482,31 @@ def _start_runtime_run(engine: Any) -> str:
             autonomy_level=2,
         )
     return started.run.agent_run_id
+
+
+def _minimal_rehydration_seed() -> RehydrationSeed:
+    return RehydrationSeed(
+        route=ResolvedIncidentRoute(
+            incident=ResolvedIncident(
+                lot_id="LOT001",
+                chamber_id="EQP01-PM1",
+                requested_alarm=ALARM,
+                representative_alarm=ALARM,
+                member_alarms=(ALARM,),
+            ),
+            wafer_routes=(),
+            graph_evidence=(),
+            route_consistency=True,
+            mismatches=(),
+        ),
+        fdc_evidence=None,
+        optional_anomaly_evidence=None,
+        graph_evidence=None,
+        document_evidence=None,
+        errors=(),
+        tool_budget=ToolBudget(used=0),
+        fdc_lot_hist_id="LH-REP",
+    )
 
 
 def _seed_reserved_calls(engine: Any, run_id: str, names: tuple[str, ...]) -> None:
@@ -809,7 +850,11 @@ def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
 
     run_id = checkpoint.values["run_id"]
     decision = ActionDecision.model_validate(checkpoint.values["action_decision"])
-    bundle = action_store_module.production_port(engine.begin)(run_id, decision)
+    bundle = action_store_module.production_port(engine.begin)(
+        run_id,
+        decision,
+        RehydrationSeed.from_state(checkpoint.values),
+    )
     assert bundle.approval_id is not None
     approval_store_module.decision_port(engine.begin)(
         bundle.approval_id,
@@ -854,7 +899,7 @@ def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
         )
 
 
-def test_recovery_without_a_checkpoint_is_fail_closed(
+def test_recovery_without_prediction_is_fail_closed_before_checkpoint_write(
     runtime: tuple[Any, Any],
 ) -> None:
     endpoint, engine = runtime
@@ -868,6 +913,7 @@ def test_recovery_without_a_checkpoint_is_fail_closed(
             requires_approval=True,
             matched_rule="R03_PRESENT",
         ),
+        _minimal_rehydration_seed(),
     )
     ports = _HoldAssemblyPorts()
     with _checkpoint_connection(endpoint) as connection:
@@ -884,7 +930,7 @@ def test_recovery_without_a_checkpoint_is_fail_closed(
                 engine.connect,
                 run_id,
             )
-    assert caught.value.code == "CHECKPOINT_MISSING"
+    assert caught.value.code == "REHYDRATE_PREDICTION_MISMATCH"
     with engine.connect() as connection:
         row = connection.execute(
             text(
@@ -1326,7 +1372,11 @@ def test_middle_failure_rolls_back_action_bundle_run_and_approval_audit(
         ).scalar_one()
 
     with pytest.raises(repo.RepositoryContractError) as exc:
-        action_store_module.production_port(engine.begin)(run_id, decision)
+        action_store_module.production_port(engine.begin)(
+            run_id,
+            decision,
+            _minimal_rehydration_seed(),
+        )
 
     with engine.connect() as connection:
         counts = {
@@ -1360,7 +1410,10 @@ def test_middle_failure_rolls_back_action_bundle_run_and_approval_audit(
     }
     assert audit_after == audit_before
     assert run.action is None and run.severity is None
-    assert not run.evidence or "action_provenance" not in run.evidence
+    assert not run.evidence or not {
+        "action_provenance",
+        "rehydration_snapshot",
+    }.intersection(run.evidence)
 
 
 def test_production_action_port_persists_hold_bundle_before_interrupt(
@@ -1441,6 +1494,14 @@ def test_production_action_port_persists_hold_bundle_before_interrupt(
         "action_policy_version": "ACTION-POLICY-V1",
         "member_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
     }
+    snapshot = run.evidence["rehydration_snapshot"]
+    assert snapshot["schema_version"] == "rehydration-snapshot-v1"
+    assert snapshot["action_id"] == state["action_id"]
+    assert snapshot["approval_id"] == state["approval_id"]
+    assert [item["channel"] for item in snapshot["deliveries"]] == [
+        DeliveryChannel.EMAIL.value,
+        DeliveryChannel.MES_MOCK.value,
+    ]
 
 
 def test_production_boundary_binds_the_actual_fdc_structured_tool() -> None:
