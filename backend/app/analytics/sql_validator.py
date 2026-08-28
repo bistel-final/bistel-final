@@ -506,9 +506,11 @@ def validate_sql(sql: str) -> ValidationResult:
                 continue
             columns = known_columns.get(target)
             if columns is not None and col_name not in columns:
+                available = ", ".join(sorted(columns))
                 return _fail(
                     "column_allowlist",
-                    f"존재하지 않는 컬럼이다: {target}.{col_name}",
+                    f"존재하지 않는 컬럼이다: {target}.{col_name}."
+                    f" {target} 의 사용 가능 컬럼: {available}",
                     passed,
                 )
         else:
@@ -524,9 +526,16 @@ def validate_sql(sql: str) -> ValidationResult:
                 and len(candidates) == len(physical_names)
                 and all(col_name not in columns for columns in candidates)
             ):
+                # 재생성 피드백이 정답 후보를 알도록 테이블별 컬럼을 첨부한다
+                detail = "; ".join(
+                    f"{name}({', '.join(sorted(known_columns[name]))})"
+                    for name in sorted(physical_names)
+                    if name in known_columns
+                )
                 return _fail(
                     "column_allowlist",
-                    f"존재하지 않는 컬럼이다: {col_name}",
+                    f"존재하지 않는 컬럼이다: {col_name}."
+                    f" 사용 가능 컬럼 — {detail}",
                     passed,
                 )
     passed.add("column_allowlist")

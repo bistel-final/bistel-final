@@ -18,10 +18,13 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 import sqlglot
+from sqlalchemy import text
 from sqlglot import expressions as exp
 
+from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.sql_validator import ALLOWED_OBJECTS, _manifest_columns
 from app.common import llm
 from app.common.enums import ChartType
@@ -38,6 +41,45 @@ _EXCLUDED_COLUMN_PREFIXES: tuple[str, ...] = ("ground_truth",)
 
 _SQL_FENCE_RE = re.compile(r"```(?:sql)?\s*(.+?)```", re.IGNORECASE | re.DOTALL)
 
+#: 값 도메인 힌트 대상 — 코드값 소속 혼동이 실측된 저카디널리티 컬럼만.
+#: (CD_AEI 사례: 값은 metrology.measure_type 소속인데 LLM 이
+#:  summary_data.parameter 로 오귀속 — 이름만으로는 판단 불가)
+_VALUE_DOMAIN_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("summary_data", "parameter"),
+    ("metrology", "measure_type"),
+    ("fdc_trace", "parameter_id"),
+)
+#: 이보다 값이 많으면 저카디널리티가 아니다 — 힌트 생략.
+_VALUE_DOMAIN_MAX = 24
+
+
+@lru_cache(maxsize=1)
+def _value_domains() -> dict[tuple[str, str], tuple[str, ...]]:
+    """대상 컬럼의 실제 값 목록을 부팅 후 1회 조회해 캐시한다.
+
+    힌트일 뿐이므로 fail-open — DB 미가용이어도 Tool 은 동작한다
+    (값 검증이 아니라 생성 정확도 개선 장치다). 테이블·컬럼명은
+    상수 목록에서만 온다 — 외부 입력이 아니다.
+    """
+    domains: dict[tuple[str, str], tuple[str, ...]] = {}
+    try:
+        engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+        with engine.connect() as connection:
+            for table, column in _VALUE_DOMAIN_COLUMNS:
+                rows = connection.execute(
+                    text(
+                        f"SELECT DISTINCT {column} FROM {table}"  # noqa: S608
+                        f" WHERE {column} IS NOT NULL ORDER BY {column}"
+                        f" LIMIT {_VALUE_DOMAIN_MAX + 1}"
+                    )
+                ).scalars()
+                values = tuple(str(v) for v in rows)
+                if 0 < len(values) <= _VALUE_DOMAIN_MAX:
+                    domains[(table, column)] = values
+    except Exception:
+        return {}
+    return domains
+
 
 def _schema_context() -> str:
     """allowlist 객체 + manifest 컬럼으로 프롬프트용 스키마 요약을 만든다.
@@ -46,6 +88,7 @@ def _schema_context() -> str:
     Tool 은 동작한다 — 컬럼 검증은 validator 의 몫이고 여기는 힌트일 뿐이다.
     """
     columns = _manifest_columns() or {}
+    domains = _value_domains()
     lines: list[str] = []
     for name in sorted(ALLOWED_OBJECTS):
         table_columns = [
@@ -57,6 +100,10 @@ def _schema_context() -> str:
             lines.append(f"- {name}({', '.join(table_columns)})")
         else:
             lines.append(f"- {name}")
+        # 값 도메인 병기 — 코드값의 소속 테이블을 LLM 이 알고 시작한다
+        for (table, column), values in domains.items():
+            if table == name:
+                lines.append(f"  · {column} 값 목록: {', '.join(values)}")
     return "\n".join(lines)
 
 
@@ -69,6 +116,8 @@ _SYSTEM_PROMPT = """당신은 반도체 FDC 데이터의 PostgreSQL Text2SQL 변
    그래프로 보여 달라는 시각화 요청은 데이터 조회다 — 거부하지 않는다.
 2. 단일 SELECT 문 하나만 작성한다. 쓰기·DDL·다중 문장 금지.
 3. 아래 목록의 테이블·컬럼만 사용한다. 목록에 없는 것을 지어내지 않는다.
+   값 목록이 표기된 컬럼의 등호 비교에는 그 목록의 값만 쓴다 —
+   찾는 값이 목록에 없으면 그 값이 속한 다른 테이블을 찾는다.
 4. '~별'(예: 챔버별, 파라미터별)·'각 ~마다'·'~ 단위로' 표현은 그룹별
    집계를 의미한다 — 해당 컬럼을 SELECT 에 포함하고 그 컬럼으로 GROUP BY 한다.
 5. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
