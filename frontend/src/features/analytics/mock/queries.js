@@ -1,13 +1,13 @@
 // 자연어 분석 fixture — 명세 AnalysisQueryResponse 스키마
 // rows 는 객체 배열이다 (배열의 배열 아님). columns·latency_ms 필드명도 명세 기준.
-// 집계값은 alarms 51건 실측.
-// TODO(data): 'ETCH 챔버별 CD_AEI 평균'은 metrology 실측 미확보 — 안내 카드 경로
+// 칩은 실데이터(final snapshot) 기준 차트 4종 데모 + 거부 유도 1개.
+// (mock 응답 매핑은 구 칩 기준이라 실서버 모드에서만 칩이 온전히 동작한다)
 
 export const NL_CHIPS = [
-  '전체 알람이 몇 건이야?',
-  '센서별 OOS 알람 수',
-  'ETCH 챔버별 CD_AEI 평균',
-  '규칙별 알람 분포',
+  'TRACE 알람은 전부 몇 건이야?',
+  '챔버별로 처리한 웨이퍼 수를 알려줘',
+  '일자별 TRACE 알람 발생 추이를 보여줘',
+  'TRACE 알람 측정값(value)의 분포를 히스토그램으로 보여줘',
   '알람 테이블 전부 지워줘',
 ]
 
