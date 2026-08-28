@@ -46,7 +46,8 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-2.3 | P0 | 원인 가설. 완료: `FOC\|RFM\|MFD\|TMD\|OTH` 구조화 출력과 실제 AlarmRef·chunk·relation 근거 인용을 생성하고 실제 LLM input/output token·model·prompt version을 run·prediction에 기록한다. `NRM`과 합성 라벨·Generator FAULTS는 query·State·Tool·prompt에 넣지 않는다 | FR-C-07, FR-C-15, NFR-19 | V5-C-2.2 | 4.0h |
 | V5-C-3.1 | P0 | `decide_action`. 완료: SUMMARY OOC-only → MONITORING, TRACE OOS → WARNING, strict R03 → EQP_HOLD의 3단계 순수 규칙 함수를 만든다. LLM·score·metrology를 입력에서 제외한다 | FR-C-03 | V5-C-2.3 | 2.0h |
 | V5-C-3.2 | P0 | action 생성 transaction. 완료: incident advisory lock→run row lock 아래 `action_history`·CREATED/REUSED link·approval·delivery와 policy provenance를 한 트랜잭션에서 만들고 incident당 유효 action 1건을 보장한다. `request_hash`는 stable identity의 raw 64 hex이며 같은 run 재호출과 자동 조치의 FAILED retry를 멱등 처리한다. EQP_HOLD는 approval의 상태·소유 run을 검증하며 새 run에 기존 approval을 재사용하지 않는다 | FR-C-14 | V5-C-3.1 | 4.0h |
-| V5-C-3.3 | P0 | HITL 승인. 완료: EQP_HOLD에서 그래프를 중단하고 승인·반려 후 동일 thread를 재개한다. 조건부 갱신으로 중복 결정을 409로 막는다 | FR-C-04, FR-C-05 | V5-C-3.2, V5-C-0.2 | 2.0h |
+| V5-C-3.3 | P0 | HITL 승인. 완료: EQP_HOLD bundle과 `WAITING_APPROVAL`을 같은 transaction에 저장하고 승인요청 email node 뒤 durable checkpoint에서 중단한다. 승인·action·MES delivery·감사를 한 조건부 UoW로 결정하며 session advisory lock 아래 동일 thread를 재개한다. DB↔checkpoint crash window는 같은 run catch-up으로 복구하고 checkpoint 상실은 fail-closed한다 | FR-C-04, FR-C-05 | V5-C-3.2, V5-C-0.2 | 4.0h |
+| V5-C-3.4 | P0 | HITL checkpoint 상실 재수화. 완료: `WAITING_APPROVAL` run과 action bundle은 존재하지만 checkpoint가 없을 때 DB run·provenance·prediction·bundle에서 State를 재구성해 `hitl_interrupt` 앞으로 명시 복원한다. `start_incident_run`·외부 Tool·LLM 호출 0회를 증명하고 복원 불가 상태는 sanitized fail-closed로 남긴다 | FR-C-04, FR-C-14 | V5-C-3.3 | 1.5h |
 | V5-C-4.1 | P0 | n8n workflow 제작. 완료: delivery·write-back용 `WF2-notify-email`·`WF3-mes-hold`·`WF4-result-writeback` JSON 3종만 `deploy/n8n/`에 둔다. 실행 시작은 source-aware `POST /agent/runs`가 소유하며 source-less `WF1-alarm-to-agent`는 만들지 않는다. raw body HMAC·timestamp 검증, `request_hash` 멱등성, Kafka key=`action_id`, channel=`MES_MOCK` 계약을 workflow fixture로 고정하고 secret·credential은 포함하지 않는다 | FR-C-12, NFR-02, NFR-20 | V5-C-3.3 | 2.0h |
 | V5-C-4.2 | P0 | **공용 n8n import·연결**. 완료: workflow 3종을 학원 공용 n8n에 import하고 credential·webhook URL은 공용 환경에서 주입한다. Backend callback·SMTP·Kafka 연결 smoke와 workflow 활성 상태를 검증하며 팀 compose의 n8n 컨테이너는 0건이다 | FR-C-12, FR-I-04, NFR-02 | V5-C-4.1 | 1.0h |
 | V5-C-4.3 | P0 | SMTP delivery. 완료: WARNING 이메일 1회, EQP_HOLD 승인요청 이메일 1회를 서명 webhook으로 발송하고 실패·timeout을 기록한다 | FR-C-06, FR-C-12 | V5-C-4.2 | 2.0h |
@@ -56,11 +57,11 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 예약은 `AuditedToolExecutor`의 공용 예산 guard를 경유하고 `reserve_tool_call()`을 직접 호출하지 않는다. graph node는 공용 nonterminal Tool 수집 경계를 경유하며 예산 차단으로 run을 FAILED 처리하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
 | V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`이며 Chat은 A/B Tool만 사용한다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 2.0h |
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고 D가 소유한 감사 subview를 탭에 조립한다. `api.audit()` 구현을 중복하지 않으며 Loading·Error·Empty·Success를 검증한다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1, V5-D-1.3 | 2.0h |
-| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`의 incident 12개에서 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 중복 실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-CM-4.7 | 2.0h |
+| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`의 incident 12개에서 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 중복 실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-3.4, V5-CM-4.7 | 2.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**P0·P1 22 Task / 53.0h** · **P2 별도 1 Task / 2.0h**
+**P0·P1 23 Task / 56.5h** · **P2 별도 1 Task / 2.0h**
 
 ---
 
@@ -81,7 +82,8 @@ golden flow 12 incident   → MONITORING 5 / WARNING 4 / EQP_HOLD 3
   retry는 새 run을 만들되 기존 action을 `REUSED`로 연결한다. EQP_HOLD의 기존 approval은
   PENDING이어도 이전 run 소유이므로 새 run에서 재사용하지 않는다. terminal approval은
   `ACTION_APPROVAL_NOT_PENDING`, PENDING의 소유 run 불일치는 `ACTION_APPROVAL_RUN_MISMATCH`로
-  거부하며 복구는 C-3.3의 동일 run/thread 재개가 소유한다.
+  거부한다. checkpoint가 보존된 복구는 C-3.3의 동일 run/thread catch-up이, checkpoint
+  자체가 사라진 재수화는 C-3.4가 소유한다.
 
 ### V5-C-3.2 policy provenance 인계
 
@@ -132,8 +134,12 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
 - checkpoint 기준 절은 **시스템설계서 §12 동시성·Checkpoint·복구**다. §13이 아니다.
 - `thread_id`는 `agent_run_id`와 독립인 UUID다. interrupt 전에 action·approval·Tool budget을
   commit하고 동일 thread로 재개한다.
-- `V5-C-5.1` 실행자는 같은 run/thread의 동시 invoke를 막는다. 그 전 저장
-  경쟁은 prediction 1행을 유지하되 실제로 소비한 각 usage를 run에 가산한다.
+- `V5-C-3.3` resume service가 PostgreSQL session advisory lock으로 같은 run/thread의
+  동시 invoke를 막는다. `V5-C-5.1`은 이 서비스를 조립하며 별도 mutex를 재구현하지 않는다.
+- action bundle과 `WAITING_APPROVAL`은 같은 transaction에 commit하고 승인요청 email node
+  뒤에서 중단한다. DB↔checkpoint crash window는 같은 run/thread catch-up으로 수렴한다.
+  checkpoint 자체가 없으면 C-3.3은 `CHECKPOINT_MISSING`으로 상태 변경 없이 막고,
+  `V5-C-3.4`가 DB 정본 기반 재수화를 구현한다.
 - Tool 예산은 총 8회이며 interrupt 전후 누적값을 checkpoint와 DB에서 복원한다. DB의
   `agent_run` row lock 아래 총·Tool별 호출 수를 다시 집계한 뒤 같은 transaction에서 예약한다.
 - `send_action` 2회를 위해 읽기 Tool은 합계 6회까지만 예약한다. 동일 Tool은 최초 호출을 포함해

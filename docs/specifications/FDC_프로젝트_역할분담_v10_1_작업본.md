@@ -285,6 +285,8 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - LangGraph가 PostgreSQL·Neo4j·RAG·계측 근거를 모아 원인 가설을 생성하게 한다.
 - LLM 출력 `predicted_fault_code`를 공개 합성 정답과 분리한다.
 - 3단계 규칙으로 action을 결정하고 EQP_HOLD만 사람 승인을 요구한다.
+- EQP_HOLD action bundle과 `WAITING_APPROVAL`을 같은 transaction에 저장하고 durable
+  checkpoint에서 중단한다. 승인 결정·동일 thread 재개·checkpoint crash-window 복구도 C가 소유한다.
 - n8n SMTP 이메일과 Kafka MES Mock을 별도 delivery로 관리한다.
 - n8n workflow 3종을 직접 제작해 `deploy/n8n/`에 커밋한다. 최종 패키지에는 import 가능한
   JSON이 없고 `docs/07_n8n_워크플로_제작가이드.md` §8이 제작·커밋을 지정한다.
@@ -299,6 +301,10 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 - WARNING: 승인 없이 n8n SMTP 이메일
 - EQP_HOLD: 승인요청 이메일 후 WAITING, `APPROVED`일 때만 Kafka `fdc.actions` 발행,
   `REJECTED`이면 Kafka 발행 없음
+- approval·action·MES delivery·감사는 같은 조건부 transaction에서 결정하며, 같은 thread의
+  재개는 PostgreSQL session advisory lock으로 한 실행자만 허용한다.
+- DB 상태는 있으나 checkpoint가 사라진 경우 C-3.3은 상태 변경 없이 fail-closed하고,
+  C-3.4가 DB 정본 기반 State 재수화를 소유한다.
 - Backend worker는 승인 트랜잭션에서 Kafka를 직접 발행하지 않고 서명된 n8n webhook을 호출하며,
   n8n Kafka Producer가 `fdc.actions`에 발행한다.
 - 이메일 성공과 Kafka 성공은 서로 독립된 channel delivery 상태와 멱등성 키를 갖는다.

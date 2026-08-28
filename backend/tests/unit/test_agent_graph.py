@@ -12,10 +12,12 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent import decision as decision_module
 from app.agent import graph as subject
 from app.agent import incident_repository, routing_repository
+from app.agent.approval_store import EmailTransportError, HitlDeliveryError
 from app.agent.graph import (
     CANONICAL_NODES,
     INTERNAL_NODES,
@@ -325,6 +327,17 @@ class _ProductionDecisionPorts(_Ports):
         return decision_module.production_port()(route)
 
 
+class _EmailFailurePorts(_Ports):
+    def __init__(self, error: Exception) -> None:
+        super().__init__(action=ActionCode.EQP_HOLD)
+        self.error: Exception | None = error
+
+    def approval_email(self, action_id: str, approval_id: str) -> None:
+        self.calls.append("approval_email")
+        if self.error is not None:
+            raise self.error
+
+
 def _build(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -341,6 +354,7 @@ def _build(
     usage_record_error_always: Exception | None = None,
     existing_prediction: PredictionRow | None = None,
     run_evidence: dict[str, Any] | None = None,
+    durable_interrupt: bool = True,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -497,13 +511,17 @@ def _build(
             ports=ports,
             now=(lambda: RUN_STARTED_AT) if now is None else now,
         ),
+        checkpointer=(MemorySaver() if interrupt_after and durable_interrupt else None),
         interrupt_after=interrupt_after,
     )
     return graph, tool_set, ports, finish_events, transaction_events
 
 
 def _invoke(graph: Any, level: int = 1) -> dict[str, Any]:
-    return graph.invoke({"requested_alarm": ALARM, "autonomy_level": level})
+    return graph.invoke(
+        {"requested_alarm": ALARM, "autonomy_level": level},
+        config={"configurable": {"thread_id": "11111111-2222-3333-4444-555555555555"}},
+    )
 
 
 @pytest.mark.parametrize("module", [incident_repository, routing_repository])
@@ -643,24 +661,75 @@ def test_level_one_and_two_compare_completion_and_actual_tool_call_counts(
     assert [status for status, _ in finishes_two] == [RunStatus.COMPLETED.value]
 
 
-def test_interrupt_result_keeps_internal_channels_for_resume_detection(
+def test_approval_email_interrupt_keeps_internal_channels_for_resume_detection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, _, ports, finishes, _ = _build(
         monkeypatch,
         ports=_Ports(action=ActionCode.EQP_HOLD, decision=Decision.APPROVE),
-        interrupt_after=("hitl_interrupt",),
+        interrupt_after=("approval_email",),
     )
 
     state = _invoke(graph)
 
-    assert ports is not None and ports.calls[-2:] == [
-        "approval_email",
-        "hitl_interrupt",
-    ]
-    assert state["approval_decision"] is Decision.APPROVE
+    assert ports is not None and ports.calls[-1:] == ["approval_email"]
+    assert ports.calls.count("hitl_interrupt") == 0
+    assert state["approval_decision"] is None
     assert state["terminal_error"] is None
     assert "autonomy_level" in state
+    assert finishes == []
+
+
+def test_hitl_interrupt_configuration_requires_a_checkpointer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="HITL_CHECKPOINTER_REQUIRED"):
+        _build(
+            monkeypatch,
+            ports=_Ports(action=ActionCode.EQP_HOLD),
+            interrupt_after=("approval_email",),
+            durable_interrupt=False,
+        )
+
+
+def test_typed_approval_email_failure_is_nonterminal_and_still_interrupts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ports = _EmailFailurePorts(EmailTransportError("EMAIL_TIMEOUT"))
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=ports,
+        interrupt_after=("approval_email",),
+    )
+    state = _invoke(graph)
+    assert [error.code for error in state["errors"]][-1:] == ["EMAIL_TIMEOUT"]
+    assert state["errors"][-1].terminal is False
+    assert state["terminal_error"] is None
+    assert finishes == []
+
+
+def test_untyped_approval_email_failure_preserves_retry_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ports = _EmailFailurePorts(RuntimeError("raw fixture message"))
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=ports,
+        interrupt_after=("approval_email",),
+    )
+    config = {"configurable": {"thread_id": "11111111-2222-3333-4444-555555555555"}}
+    with pytest.raises(HitlDeliveryError) as caught:
+        _invoke(graph)
+    assert caught.value.code == "NODE_EXECUTION_ERROR"
+    snapshot = graph.get_state(config)
+    assert snapshot.next == ("approval_email",)
+    assert snapshot.values.get("terminal_error") is None
+
+    ports.error = None
+    graph.invoke(None, config=config)
+    resumed = graph.get_state(config)
+    assert resumed.next == ("hitl_interrupt",)
+    assert ports.calls.count("approval_email") == 2
     assert finishes == []
 
 
