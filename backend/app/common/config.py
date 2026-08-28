@@ -59,6 +59,18 @@ if APP_DB_USER != "kosa_app":
 READONLY_USER = get_env("READONLY_USER")
 READONLY_PASSWORD = get_env("READONLY_PASSWORD")
 
+# 합성 라벨(fault_code) 평가 전용 계정 (V5-A-2.3, V5-CM-3.5 role matrix
+# ManagedRole.EVALUATION). kosa_readonly는 evaluation profile(kosa_text2sql)에
+# 붙어도 lot_history.fault_code column 자체에 권한이 없다 — 오직
+# kosa_evaluation만 그 컬럼을 읽을 수 있다(시스템설계서 v2.1 2.6: "runtime
+# role은 fault_code를 제외한 명시 column projection만 사용한다"). 평가
+# DSN은 선택이다 — API 기동·학습에는 필요 없고, holdout 평가 실행
+# 시점에만 있으면 된다(app.common.db.get_evaluation_engine 참고). READONLY_*
+# 와 달리 get_env가 아니라 os.getenv를 쓰는 이유도 APP_DB_PASSWORD와 같다
+# — credential 부재를 import 실패가 아니라 첫 사용 실패로 미룬다.
+EVALUATION_DB_USER = os.getenv("EVALUATION_DB_USER", "kosa_evaluation").strip()
+EVALUATION_DB_PASSWORD = os.getenv("EVALUATION_DB_PASSWORD", "").strip() or None
+
 # Neo4j
 NEO4J_USER = get_env("NEO4J_USER")
 NEO4J_PASSWORD = get_env("NEO4J_PASSWORD")

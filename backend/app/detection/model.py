@@ -92,10 +92,15 @@ test_repository_fetch_functions_never_touch_labels`가 repository.py의 조회 S
 텍스트를 정적으로 검사해 이를 다시 한 번 고정한다(2차 방어선 — 소스 코드 자체를
 읽어서 금지 테이블 이름이 등장하는지 본다).
 
-[V5-A-2.2 예고] score는 action_decision·incident·승인 게이트에 전달되지 않는다.
-이 모듈은 그 경계를 스스로 강제하지 않는다 — ActionPolicy는 아직 이 저장소에
-구현되지 않았고(V5-A-2.2/V5-C 영역), 구현되는 즉시 호출부(service.py/tools.py)가
-score를 그 입력에 절대 넣지 않는다는 계약 테스트를 V5-A-2.2에서 추가해야 한다.
+[V5-A-2.2 완료] score는 action_decision·incident·승인 게이트에 전달되지 않는다.
+이 모듈은 그 경계를 스스로 강제하지 않는다 — 대신
+`tests/contract/test_score_boundary.py`가 저장소 전체에서 AnomalySignal·
+anomaly_score를 참조하는 파일을 allowlist로 고정하고, A의 규칙 처리 함수
+(rules.py·service.py의 verify_*·R03 파생·적재·incident 집계)가 애초에 score를
+인자로 받을 수 없는 시그니처임을 확인한다("score 없이도 규칙 처리가 동일하다"를
+"실행해서 비교"가 아니라 "애초에 입력받을 수 없다"로 고정). `ActionPolicy`
+(V5-C 영역, `app/agent/decision.py`)는 이 저장소에 아직 구현되지 않았으므로 그
+관련 검사는 지금은 skip 상태이고, 채워지는 즉시 자동으로 실제 검사로 전환된다.
 
 [결정 근거 — 팀 재검토 시 여기부터 본다]
   - MODEL_VERSION="if-v2": target 우선 center로 바꾸며 올렸다(아래 항목).

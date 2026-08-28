@@ -267,6 +267,12 @@ _LEAKAGE_CHECKED_FUNCTIONS = (
     repository.fetch_reference_evaluation,
     repository.fetch_parameter_limits,
     repository.fetch_lot_history_rows,
+    # V5-A-2.3에서 추가: get_fdc_summary(V5-A-3.2-1) 전용 단건 조회 두 개도
+    # 원래 이 목록에 있었어야 한다 — anomaly score 채점 경로가 실제로 호출하는
+    # 함수인데도 처음 이 테스트를 작성할 때 누락됐다. Runtime repository
+    # 전체가 라벨을 안 본다는 것이 이 테스트의 계약이므로 빠짐없이 검사한다.
+    repository.fetch_wafer_lot_context,
+    repository.fetch_wafer_parameter_rows,
 )
 
 
@@ -459,20 +465,9 @@ def test_reproducible_scores_end_to_end() -> None:
     assert threshold_a == threshold_b
 
 
-_TODO_ACTION_BOUNDARY = (
-    "TODO(팀): ActionPolicy가 이 저장소에 아직 구현되지 않았다(V5-A-2.2/V5-C 영역). "
-    "구현되는 즉시 그 decide() 시그니처에 score가 없음을 계약 테스트로 고정한다."
-)
-
-
-@pytest.mark.skip(reason=_TODO_ACTION_BOUNDARY)
-def test_score_not_passed_to_action_policy() -> None:
-    """[아직 작성 불가] score가 ActionPolicy.decide()의 입력에 절대 들어가지
-    않는다는 것을 고정하려는 테스트의 자리표시자(placeholder)다.
-
-    `@pytest.mark.skip`이 붙어 있으면 pytest는 이 테스트를 "실패"가 아니라
-    "건너뜀(SKIPPED)"으로 표시한다 — 실행은 안 하지만 존재를 잊지 않도록
-    남겨두는 용도다. `ActionPolicy`라는 클래스 자체가 이 저장소에 아직 없어서
-    (V5-A-2.2/V5-C 영역에서 구현 예정) 지금은 무엇을 검사할지조차 정할 수
-    없다. 그 클래스가 생기는 즉시 이 자리에 실제 검증 코드를 채워야 한다.
-    """
+# V5-A-2.2 score 경계 고정: 이 자리에 있던 skip placeholder
+# (test_score_not_passed_to_action_policy)는 `tests/contract/
+# test_score_boundary.py`로 옮겨 구현했다. 그 파일의
+# `test_future_action_policy_has_no_score_parameter`가 `app/agent/decision.py`
+# (ActionPolicy, V5-C 영역)가 비어 있는 동안은 자동으로 skip되고, 채워지는
+# 즉시 실제 시그니처 검사로 전환된다. 이 파일에서 중복 구현하지 않는다.

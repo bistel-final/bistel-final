@@ -38,7 +38,7 @@ role 수준에서도 보장할 수 있어(설령 코드에 실수로 INSERT문�
 [이 파일 안에서 함수들이 서로를 부르는 순서]
   main()
     ├─ _parse_args()         커맨드라인 옵션(--dry-run 등) 해석
-    ├─ engine.connect()      DB 커넥션 열기 (POSTGRES_USER 계정)
+    ├─ get_readonly_engine().connect()   DB 커넥션 열기 (kosa_readonly 계정)
     ├─ (커넥션에 SET TRANSACTION READ ONLY 실행 — 쓰기 방지)
     ├─ train(connection)
     │    ├─ fetch_joined_rows(connection)   DB 4개 테이블을 읽어 짝지은 행 목록
@@ -86,7 +86,7 @@ from sqlalchemy.engine import Connection
 # 되게 만들어주는 장치라고 보면 된다.)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.common.db import engine  # noqa: E402
+from app.common.db import get_readonly_engine  # noqa: E402
 from app.detection import model as anomaly_model  # noqa: E402
 from app.detection.repository import (  # noqa: E402
     fetch_lot_history_rows,
@@ -393,14 +393,13 @@ def main() -> int:
 
     # `with ... as connection:` 블록을 벗어나는 순간 커넥션이 자동으로 반납된다
     # (직접 close()를 호출하지 않아도 된다) — 파이썬의 컨텍스트 매니저 관례다.
-    with engine.connect() as connection:
-        # 코드 리뷰 권고4: engine이 쓰기 권한이 있는 계정(kosa)이라도, 이
-        # 트랜잭션 안에서는 DB 자체가 쓰기 문을 거부하게 만든다. 이 스크립트가
-        # 실제로 SELECT만 한다는 사실과 무관하게, "실수로 쓰기 코드가 섞여도
-        # 실행 시점에 막힌다"는 안전장치를 되찾기 위해서다 — readonly_engine을
-        # 못 쓰는 상황에서의 대체 수단이다(계정 자체의 권한 제한만큼 강하지는
-        # 않다 — 트랜잭션이 끝나면 이 제한도 끝나므로, 다음 커넥션·다음 실행이
-        # 자동으로 보호되는 건 아니다).
+    with get_readonly_engine().connect() as connection:
+        # 코드 리뷰 권고4: kosa_readonly 계정 자체가 쓰기 권한이 없는
+        # role이지만, 이 트랜잭션 안에서도 DB 자체가 쓰기 문을 거부하게
+        # 만든다 — 계정 권한 제한과 별개로 "실수로 쓰기 코드가 섞여도 실행
+        # 시점에 막힌다"는 안전장치를 이중으로 두기 위해서다(defense in
+        # depth). `app/detection/tools.py`의 운영 Tool(get_fdc_summary)이
+        # 여는 것과 완전히 같은 연결 경로다.
         connection.execute(text("SET TRANSACTION READ ONLY"))
         manifest, forest, report = train(connection)
 
