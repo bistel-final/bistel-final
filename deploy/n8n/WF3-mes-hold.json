@@ -1,0 +1,316 @@
+{
+  "name": "WF3-mes-hold",
+  "active": false,
+  "nodes": [
+    {
+      "id": "03000000-0000-4000-8000-000000000001",
+      "name": "MES Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fdc-mes-hold",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000002",
+      "name": "Verify MES Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json && item.json.headers && typeof item.json.headers === 'object' ? item.json.headers : {};\nconst getHeader = (name) => {\n  const wanted = name.toLowerCase();\n  for (const [key, value] of Object.entries(headers)) {\n    if (key.toLowerCase() === wanted) return Array.isArray(value) ? value[0] : value;\n  }\n  return undefined;\n};\nconst timestampText = String(getHeader('x-delivery-timestamp') ?? '');\nconst signature = String(getHeader('x-delivery-signature') ?? '');\nconst secret = String($env.N8N_WEBHOOK_SECRET ?? '').trim();\nconst encoded = item.binary && item.binary.data && item.binary.data.data;\nconst base64 = typeof encoded === 'string' ? encoded : '';\nlet raw = null;\nif (base64 && /^[A-Za-z0-9+/]*={0,2}$/.test(base64) && base64.length % 4 === 0) {\n  const candidate = Buffer.from(base64, 'base64');\n  if (candidate.toString('base64') === base64) raw = candidate;\n}\nconst timestamp = /^-?\\d+$/.test(timestampText) ? Number(timestampText) : Number.NaN;\nconst now = Math.floor(Date.now() / 1000);\nlet authOk = false;\nif (secret && raw && Number.isSafeInteger(timestamp) && Math.abs(now - timestamp) <= 300 && /^sha256=[0-9a-f]{64}$/.test(signature)) {\n  const expected = crypto.createHmac('sha256', secret).update(`${timestampText}.`).update(raw).digest();\n  const supplied = Buffer.from(signature.slice(7), 'hex');\n  authOk = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);\n}\nlet body = null;\nlet bodyOk = false;\nif (authOk) {\n  try {\n    const text = new TextDecoder('utf-8', { fatal: true }).decode(raw);\n    const parsed = JSON.parse(text);\n    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {\n      body = parsed;\n      bodyOk = true;\n    }\n  } catch {}\n}\nreturn [{ json: { auth_ok: authOk, body_ok: bodyOk, body } }];"
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000003",
+      "name": "MES Authenticated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, 0],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "03000000-0000-4000-8000-000000000103",
+              "leftValue": "={{ $json.auth_ok }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000004",
+      "name": "Validate MES Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, -100],
+      "parameters": {
+        "jsCode": "const envelope = $input.first().json || {};\nconst payload = envelope.body;\nconst nonBlank = (value) => typeof value === 'string' && value.trim().length > 0;\nconst offsetIso = (value) => nonBlank(value) && /(Z|[+-]\\d{2}:\\d{2})$/.test(value) && Number.isFinite(Date.parse(value));\nconst exactKeys = ['action_code', 'action_id', 'chamber_id', 'command', 'decided_at', 'decided_by', 'equipment_id', 'event_id', 'occurred_at', 'request_hash', 'schema'];\nconst keysOk = payload && typeof payload === 'object' && !Array.isArray(payload) && Object.keys(payload).sort().join('\\u0000') === exactKeys.join('\\u0000');\nconst schemaOk = envelope.body_ok === true && keysOk && payload.schema === 'mes-hold-request-v1' && nonBlank(payload.event_id) && nonBlank(payload.action_id) && payload.action_code === 'EQP_HOLD' && nonBlank(payload.equipment_id) && nonBlank(payload.chamber_id) && payload.command === 'HOLD' && nonBlank(payload.decided_by) && offsetIso(payload.decided_at) && /^([0-9a-f]{64})$/.test(payload.request_hash) && offsetIso(payload.occurred_at);\nreturn [{ json: { schema_ok: schemaOk, payload: schemaOk ? payload : null } }];"
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000005",
+      "name": "MES Payload Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, -100],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "03000000-0000-4000-8000-000000000105",
+              "leftValue": "={{ $json.schema_ok }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000006",
+      "name": "Prepare Kafka Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, -180],
+      "parameters": {
+        "jsCode": "const payload = $input.first().json.payload;\nreturn [{ json: payload }];"
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000007",
+      "name": "Publish MES Hold",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1320, -180],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "topic": "fdc.actions",
+        "sendInputData": true,
+        "jsonParameters": false,
+        "useSchemaRegistry": false,
+        "useKey": true,
+        "key": "={{ $json.action_id }}",
+        "options": {
+          "acks": true,
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000008",
+      "name": "Build Kafka Failure Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, -80],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst payload = $('Prepare Kafka Event').first().json;\nconst secret = String($env.N8N_WEBHOOK_SECRET ?? '').trim();\nconst rawBaseUrl = String($env.BACKEND_BASE_URL ?? '').trim();\nlet baseUrl = null;\ntry {\n  const parsed = new URL(rawBaseUrl);\n  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) baseUrl = rawBaseUrl.replace(/\\/+$/, '');\n} catch {}\nif (!secret || !baseUrl) return [{ json: { config_ok: false } }];\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst callback = {\n  event_id: `WF3:${payload.action_id}:MES_MOCK:${payload.request_hash}:FAILED`,\n  channel: 'MES_MOCK',\n  status: 'FAILED',\n  provider_message_id: null,\n  request_hash: payload.request_hash,\n  completed_at: new Date().toISOString(),\n  error_code: 'KAFKA_PUBLISH_FAILED'\n};\nconst callbackRawBody = JSON.stringify(callback);\nconst signature = `sha256=${crypto.createHmac('sha256', secret).update(`${timestamp}.${callbackRawBody}`, 'utf8').digest('hex')}`;\nreturn [{ json: { config_ok: true, callback_raw_body: callbackRawBody, callback_url: `${baseUrl}/internal/actions/${encodeURIComponent(payload.action_id)}/delivery`, callback_timestamp: timestamp, callback_signature: signature } }];"
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000009",
+      "name": "Kafka Failure Callback Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1760, -80],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "03000000-0000-4000-8000-000000000109",
+              "leftValue": "={{ $json.config_ok }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000010",
+      "name": "Post Kafka Failure Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, -160],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-Delivery-Timestamp", "value": "={{ $json.callback_timestamp }}"},
+            {"name": "X-Delivery-Signature", "value": "={{ $json.callback_signature }}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callback_raw_body }}",
+        "options": {
+          "response": {"response": {"fullResponse": true, "neverError": true}},
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000011",
+      "name": "Classify Kafka Failure Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, -160],
+      "parameters": {
+        "jsCode": "const result = $input.first().json || {};\nconst statusCode = Number(result.statusCode);\nconst callbackOk = Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 300;\nreturn [{ json: { callback_ok: callbackOk, status_code: Number.isInteger(statusCode) ? statusCode : null } }];"
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000012",
+      "name": "Kafka Failure Callback Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2420, -160],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "03000000-0000-4000-8000-000000000112",
+              "leftValue": "={{ $json.callback_ok }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000013",
+      "name": "Respond MES Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1540, -280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": {"responseCode": 200}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000014",
+      "name": "Respond MES Failure Recorded",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2640, -240],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": {"responseCode": 200}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000015",
+      "name": "Respond MES Callback Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2640, -80],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"CALLBACK_FAILED\"}",
+        "options": {"responseCode": 502}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000016",
+      "name": "Respond MES Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 140],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"UNAUTHORIZED\"}",
+        "options": {"responseCode": 401}
+      }
+    },
+    {
+      "id": "03000000-0000-4000-8000-000000000017",
+      "name": "Respond MES Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 40],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"INVALID_PAYLOAD\"}",
+        "options": {"responseCode": 422}
+      }
+    }
+  ],
+  "connections": {
+    "MES Webhook": {"main": [[{"node": "Verify MES Auth", "type": "main", "index": 0}]]},
+    "Verify MES Auth": {"main": [[{"node": "MES Authenticated", "type": "main", "index": 0}]]},
+    "MES Authenticated": {
+      "main": [
+        [{"node": "Validate MES Payload", "type": "main", "index": 0}],
+        [{"node": "Respond MES Unauthorized", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate MES Payload": {"main": [[{"node": "MES Payload Valid", "type": "main", "index": 0}]]},
+    "MES Payload Valid": {
+      "main": [
+        [{"node": "Prepare Kafka Event", "type": "main", "index": 0}],
+        [{"node": "Respond MES Invalid", "type": "main", "index": 0}]
+      ]
+    },
+    "Prepare Kafka Event": {"main": [[{"node": "Publish MES Hold", "type": "main", "index": 0}]]},
+    "Publish MES Hold": {
+      "main": [
+        [{"node": "Respond MES Accepted", "type": "main", "index": 0}],
+        [{"node": "Build Kafka Failure Callback", "type": "main", "index": 0}]
+      ]
+    },
+    "Build Kafka Failure Callback": {"main": [[{"node": "Kafka Failure Callback Configured", "type": "main", "index": 0}]]},
+    "Kafka Failure Callback Configured": {
+      "main": [
+        [{"node": "Post Kafka Failure Callback", "type": "main", "index": 0}],
+        [{"node": "Respond MES Callback Failed", "type": "main", "index": 0}]
+      ]
+    },
+    "Post Kafka Failure Callback": {
+      "main": [
+        [{"node": "Classify Kafka Failure Callback", "type": "main", "index": 0}],
+        [{"node": "Classify Kafka Failure Callback", "type": "main", "index": 0}]
+      ]
+    },
+    "Classify Kafka Failure Callback": {"main": [[{"node": "Kafka Failure Callback Succeeded", "type": "main", "index": 0}]]},
+    "Kafka Failure Callback Succeeded": {
+      "main": [
+        [{"node": "Respond MES Failure Recorded", "type": "main", "index": 0}],
+        [{"node": "Respond MES Callback Failed", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "name": "WF4-result-writeback",
+  "active": false,
+  "nodes": [
+    {
+      "id": "04000000-0000-4000-8000-000000000001",
+      "name": "MES Result Trigger",
+      "type": "n8n-nodes-base.kafkaTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 0],
+      "parameters": {
+        "topic": "fdc.actions.result",
+        "groupId": "kosa-fdc-wf4-writeback",
+        "resolveOffset": "onSuccess",
+        "options": {
+          "batchSize": 1,
+          "eachBatchAutoResolve": false,
+          "errorRetryDelay": 5000,
+          "fromBeginning": false,
+          "jsonParseMessage": true,
+          "onlyMessage": false,
+          "partitionsConsumedConcurrently": 1,
+          "returnHeaders": false
+        }
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000002",
+      "name": "Validate MES Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "const record = $input.first().json || {};\nconst nonBlank = (value) => typeof value === 'string' && value.trim().length > 0;\nlet payload = record.message;\nif (typeof payload === 'string') {\n  try { payload = JSON.parse(payload); } catch { payload = null; }\n}\nconst exactKeys = ['action_id', 'error_code', 'request_hash', 'status'];\nconst keysOk = payload && typeof payload === 'object' && !Array.isArray(payload) && Object.keys(payload).sort().join('\\u0000') === exactKeys.join('\\u0000');\nconst statusOk = payload && (payload.status === 'SENT' || payload.status === 'FAILED');\nconst errorOk = payload && (payload.status === 'SENT' ? payload.error_code === null : nonBlank(payload.error_code));\nconst metadataOk = record.topic === 'fdc.actions.result' && Number.isInteger(record.partition) && record.partition >= 0 && nonBlank(String(record.offset ?? '')) && /^\\d+$/.test(String(record.offset)) && nonBlank(record.key);\nconst identityOk = payload && nonBlank(payload.action_id) && record.key === payload.action_id && /^([0-9a-f]{64})$/.test(payload.request_hash);\nconst valid = keysOk && statusOk && errorOk && metadataOk && identityOk;\nlet reasonCode = null;\nif (!keysOk || !statusOk || !errorOk) reasonCode = 'RESULT_PAYLOAD_INVALID';\nelse if (!metadataOk) reasonCode = 'RESULT_METADATA_INVALID';\nelse if (!identityOk) reasonCode = 'RESULT_IDENTITY_MISMATCH';\nreturn [{ json: { valid, payload: valid ? payload : null, metadata: { topic: record.topic ?? null, partition: Number.isInteger(record.partition) ? record.partition : null, offset: nonBlank(String(record.offset ?? '')) ? String(record.offset) : null }, evidence: { action_id: payload && nonBlank(payload.action_id) ? payload.action_id : null, request_hash: payload && /^([0-9a-f]{64})$/.test(payload.request_hash) ? payload.request_hash : null, reason_code: reasonCode } } }];"
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000003",
+      "name": "MES Result Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [480, 0],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "04000000-0000-4000-8000-000000000103",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000004",
+      "name": "Discard Invalid Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 120],
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nreturn [{ json: { discarded: true, action_id: item.evidence?.action_id ?? null, request_hash: item.evidence?.request_hash ?? null, topic: item.metadata?.topic ?? null, partition: item.metadata?.partition ?? null, offset: item.metadata?.offset ?? null, reason_code: item.evidence?.reason_code ?? 'RESULT_PAYLOAD_INVALID' } }];"
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000005",
+      "name": "Build Result Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, -100],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first().json;\nconst payload = item.payload;\nconst metadata = item.metadata;\nconst secret = String($env.N8N_WEBHOOK_SECRET ?? '').trim();\nconst rawBaseUrl = String($env.BACKEND_BASE_URL ?? '').trim();\nlet baseUrl = null;\ntry {\n  const parsed = new URL(rawBaseUrl);\n  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) baseUrl = rawBaseUrl.replace(/\\/+$/, '');\n} catch {}\nif (!secret || !baseUrl) return [{ json: { config_ok: false } }];\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst callback = {\n  event_id: `WF4:${payload.action_id}:MES_MOCK:${payload.request_hash}:${payload.status}`,\n  channel: 'MES_MOCK',\n  status: payload.status,\n  provider_message_id: payload.status === 'SENT' ? `kafka:${metadata.topic}:${metadata.partition}:${metadata.offset}` : null,\n  request_hash: payload.request_hash,\n  completed_at: new Date().toISOString(),\n  error_code: payload.status === 'SENT' ? null : 'MES_MOCK_FAILED'\n};\nconst callbackRawBody = JSON.stringify(callback);\nconst signature = `sha256=${crypto.createHmac('sha256', secret).update(`${timestamp}.${callbackRawBody}`, 'utf8').digest('hex')}`;\nreturn [{ json: { config_ok: true, callback_raw_body: callbackRawBody, callback_url: `${baseUrl}/internal/actions/${encodeURIComponent(payload.action_id)}/delivery`, callback_timestamp: timestamp, callback_signature: signature } }];"
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000006",
+      "name": "Result Callback Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [960, -100],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "04000000-0000-4000-8000-000000000106",
+              "leftValue": "={{ $json.config_ok }}",
+              "rightValue": "",
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000007",
+      "name": "Fail Result Callback Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 20],
+      "parameters": {
+        "jsCode": "throw new Error('CALLBACK_CONFIG_MISSING');"
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000008",
+      "name": "Post Result Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, -180],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-Delivery-Timestamp", "value": "={{ $json.callback_timestamp }}"},
+            {"name": "X-Delivery-Signature", "value": "={{ $json.callback_signature }}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callback_raw_body }}",
+        "options": {
+          "response": {"response": {"fullResponse": true, "neverError": true}},
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "04000000-0000-4000-8000-000000000009",
+      "name": "Classify Result Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, -180],
+      "parameters": {
+        "jsCode": "const result = $input.first().json || {};\nconst statusCode = Number(result.statusCode);\nif (Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 300) return [{ json: { callback_ok: true, status_code: statusCode } }];\nif (statusCode === 401) throw new Error('CALLBACK_UNAUTHORIZED');\nif (Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500) throw new Error(`CALLBACK_REJECTED_${statusCode}`);\nthrow new Error(`CALLBACK_FAILED_${Number.isInteger(statusCode) ? statusCode : 'TRANSPORT'}`);"
+      }
+    }
+  ],
+  "connections": {
+    "MES Result Trigger": {"main": [[{"node": "Validate MES Result", "type": "main", "index": 0}]]},
+    "Validate MES Result": {"main": [[{"node": "MES Result Valid", "type": "main", "index": 0}]]},
+    "MES Result Valid": {
+      "main": [
+        [{"node": "Build Result Callback", "type": "main", "index": 0}],
+        [{"node": "Discard Invalid Result", "type": "main", "index": 0}]
+      ]
+    },
+    "Build Result Callback": {"main": [[{"node": "Result Callback Configured", "type": "main", "index": 0}]]},
+    "Result Callback Configured": {
+      "main": [
+        [{"node": "Post Result Callback", "type": "main", "index": 0}],
+        [{"node": "Fail Result Callback Configuration", "type": "main", "index": 0}]
+      ]
+    },
+    "Post Result Callback": {
+      "main": [
+        [{"node": "Classify Result Callback", "type": "main", "index": 0}],
+        [{"node": "Classify Result Callback", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
