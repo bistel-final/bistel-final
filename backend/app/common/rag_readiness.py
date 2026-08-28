@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import unicodedata
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from sqlalchemy.engine import Connection
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 MARKER_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "markers"
+PACKAGED_MARKER_ROOT = Path(__file__).resolve().parent / "rag_markers"
 
 CANONICAL_DOCUMENT_IDS = (
     "DOC-SPEC-ET7500",
@@ -76,12 +80,28 @@ class RagReadinessError(RuntimeError):
     """RAG marker와 live DB 상태가 readiness 계약을 만족하지 않는다."""
 
 
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+def _canonical_json(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return unicodedata.normalize("NFC", value)
+        return _canonical_json(parsed)
+    if isinstance(value, Mapping):
+        return {str(key): _canonical_json(item) for key, item in sorted(value.items())}
+    if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
+        return [_canonical_json(item) for item in value]
+    return value
 
 
 def _canonical_sha256(value: Any) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+    canonical = json.dumps(
+        _canonical_json(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _mapping_rows(result: Any) -> list[dict[str, Any]]:
@@ -93,8 +113,17 @@ def _current_database(connection: Connection) -> str:
     return str(row["database"])
 
 
+def _marker_root() -> Path:
+    override = os.getenv("RAG_MARKER_ROOT", "").strip()
+    if override:
+        return Path(override)
+    if MARKER_ROOT.exists():
+        return MARKER_ROOT
+    return PACKAGED_MARKER_ROOT
+
+
 def marker_path(database: str) -> Path:
-    return MARKER_ROOT / f"rag_load.{database}.json"
+    return _marker_root() / f"rag_load.{database}.json"
 
 
 def load_marker(database: str) -> dict[str, Any]:
@@ -132,7 +161,7 @@ def validate_marker(marker: Mapping[str, Any], *, database: str) -> None:
     smoke = marker.get("search_smoke")
     if not isinstance(smoke, list) or len(smoke) != 3:
         raise RagReadinessError("RAG 검색 smoke marker가 3건이 아닙니다")
-    if any(item.get("passed") is not True for item in smoke if isinstance(item, dict)):
+    if any(not isinstance(item, Mapping) or item.get("passed") is not True for item in smoke):
         raise RagReadinessError("RAG 검색 smoke marker에 실패가 있습니다")
 
 
