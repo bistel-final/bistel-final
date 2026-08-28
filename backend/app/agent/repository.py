@@ -2184,12 +2184,16 @@ class ActionBundle:
     action_id: str
     action_code: ActionCode
     approval_id: str | None
+    approval_status: ApprovalStatus | None
+    approval_agent_run_id: str | None
     delivery_channels: tuple[DeliveryChannel, ...]
 
 
 _SELECT_ACTION_BUNDLE = text(
     """
-    SELECT h.action_id, h.action_code, p.approval_id
+    SELECT h.action_id, h.action_code, p.approval_id,
+           p.status AS approval_status,
+           p.agent_run_id AS approval_agent_run_id
     FROM action_history AS h
     LEFT JOIN approval_request AS p ON p.action_id = h.action_id
     WHERE h.action_id = :action_id
@@ -2209,6 +2213,9 @@ def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
     )
     try:
         action_code = ActionCode(row.action_code)
+        approval_status = (
+            None if row.approval_status is None else ApprovalStatus(row.approval_status)
+        )
     except ValueError as exc:
         raise RepositoryContractError("ACTION_BUNDLE_INVALID") from exc
     deliveries = list_action_deliveries(connection, action_id)
@@ -2216,5 +2223,7 @@ def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
         action_id=row.action_id,
         action_code=action_code,
         approval_id=row.approval_id,
+        approval_status=approval_status,
+        approval_agent_run_id=row.approval_agent_run_id,
         delivery_channels=tuple(item.channel for item in deliveries),
     )

@@ -807,9 +807,14 @@ def test_failed_retry_reuses_the_created_action_on_postgres(
     assert len(rows) == 2
 
 
-def test_middle_failure_rolls_back_action_bundle_and_approval_audit(
+@pytest.mark.parametrize(
+    "failure_point",
+    ["approval", "first_delivery", "run_action", "provenance"],
+)
+def test_middle_failure_rolls_back_action_bundle_run_and_approval_audit(
     runtime: tuple[Any, Any],
     monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
 ) -> None:
     _endpoint, engine = runtime
     _seed_runtime(engine)
@@ -820,17 +825,25 @@ def test_middle_failure_rolls_back_action_bundle_and_approval_audit(
         requires_approval=True,
         matched_rule="R03_PRESENT",
     )
-    original = action_store_module.create_approval_request
+    target_by_point = {
+        "approval": "create_approval_request",
+        "first_delivery": "insert_action_delivery",
+        "run_action": "set_run_action",
+        "provenance": "merge_run_action_provenance",
+    }
+    target = target_by_point[failure_point]
+    original = getattr(action_store_module, target)
+    calls = 0
 
-    def fail_after_approval(*args: Any, **kwargs: Any) -> Any:
-        original(*args, **kwargs)
-        raise repo.RepositoryContractError("INJECTED_FAILURE")
+    def fail_after_write(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        result = original(*args, **kwargs)
+        calls += 1
+        if failure_point != "first_delivery" or calls == 1:
+            raise repo.RepositoryContractError("INJECTED_FAILURE")
+        return result
 
-    monkeypatch.setattr(
-        action_store_module,
-        "create_approval_request",
-        fail_after_approval,
-    )
+    monkeypatch.setattr(action_store_module, target, fail_after_write)
     with engine.connect() as connection:
         audit_before = connection.execute(
             text("SELECT count(*) FROM audit_log")
@@ -854,6 +867,13 @@ def test_middle_failure_rolls_back_action_bundle_and_approval_audit(
         audit_after = connection.execute(
             text("SELECT count(*) FROM audit_log")
         ).scalar_one()
+        run = connection.execute(
+            text(
+                "SELECT action, severity, evidence FROM agent_run "
+                "WHERE agent_run_id = :run_id"
+            ),
+            {"run_id": run_id},
+        ).one()
 
     assert exc.value.code == "INJECTED_FAILURE"
     assert counts == {
@@ -863,6 +883,8 @@ def test_middle_failure_rolls_back_action_bundle_and_approval_audit(
         "action_delivery": 0,
     }
     assert audit_after == audit_before
+    assert run.action is None and run.severity is None
+    assert not run.evidence or "action_provenance" not in run.evidence
 
 
 def test_production_action_port_persists_hold_bundle_before_interrupt(

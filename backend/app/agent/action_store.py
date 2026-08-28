@@ -40,6 +40,7 @@ from app.agent.tools import TransactionFactory
 from app.common.enums import (
     ActionCode,
     ActionLinkRole,
+    ApprovalStatus,
     DeliveryChannel,
     RunStatus,
     requires_approval,
@@ -86,13 +87,14 @@ def _request_hash(
 
 
 def _result(
-    bundle: ActionBundle,
     *,
+    action_id: str,
+    approval_id: str | None,
     channels: tuple[DeliveryChannel, ...],
 ) -> PersistResult:
     return PersistResult(
-        action_id=bundle.action_id,
-        approval_id=bundle.approval_id,
+        action_id=action_id,
+        approval_id=approval_id,
         deliveries=tuple(
             DeliveryPlan(channel=channel, status=INITIAL_STATUS[channel])
             for channel in channels
@@ -103,20 +105,32 @@ def _result(
 def _validate_bundle(
     bundle: ActionBundle,
     *,
+    agent_run_id: str,
     decision: ActionDecision,
 ) -> PersistResult:
     action = decision.action
     if action is None:
         raise RepositoryContractError("ACTION_REQUIRED")
     expected_channels = resolve_delivery_channels(action)
+    approval_required = requires_approval(action)
     if (
         bundle.action_code is not action
-        or (bundle.approval_id is not None) != requires_approval(action)
+        or (bundle.approval_id is not None) != approval_required
+        or (bundle.approval_status is not None) != approval_required
+        or (bundle.approval_agent_run_id is not None) != approval_required
         or len(bundle.delivery_channels) != len(set(bundle.delivery_channels))
         or set(bundle.delivery_channels) != set(expected_channels)
     ):
         raise RepositoryConflict("ACTION_DECISION_MISMATCH")
-    result = _result(bundle, channels=expected_channels)
+    if approval_required and bundle.approval_status is not ApprovalStatus.PENDING:
+        raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
+    if approval_required and bundle.approval_agent_run_id != agent_run_id:
+        raise RepositoryConflict("ACTION_APPROVAL_RUN_MISMATCH")
+    result = _result(
+        action_id=bundle.action_id,
+        approval_id=bundle.approval_id,
+        channels=expected_channels,
+    )
     result.assert_matches(decision)
     return result
 
@@ -130,6 +144,13 @@ def _require_active_shape(
         raise RepositoryConflict("RUN_NOT_ACTIVE")
     if status is RunStatus.WAITING_APPROVAL and not has_current_link:
         raise RepositoryConflict("RUN_STATE_INVALID")
+
+
+def _reason_for(decision: ActionDecision) -> str:
+    reason = REASONS.get(decision.matched_rule)
+    if reason is None:
+        raise RepositoryContractError("ACTION_REASON_NOT_FOUND")
+    return reason
 
 
 def production_port(
@@ -155,6 +176,9 @@ def production_port(
                 chamber_id=snapshot.chamber_id,
             )
             locked = lock_agent_run(connection, agent_run_id)
+            # 현재 application writer는 incident key를 바꾸지 않지만 DB column 자체는
+            # UPDATE 가능하다. 외부 writer나 후속 기능이 lock 대기 중 바꾸면 새 key를
+            # 잠그지 않은 채 계속하지 않고 transaction을 중단한다.
             if (locked.lot_id, locked.chamber_id) != (
                 snapshot.lot_id,
                 snapshot.chamber_id,
@@ -184,6 +208,7 @@ def production_port(
                     raise RepositoryConflict("ACTION_DECISION_MISMATCH")
                 return _validate_bundle(
                     get_action_bundle(connection, current.action_id),
+                    agent_run_id=agent_run_id,
                     decision=resolved,
                 )
 
@@ -194,6 +219,7 @@ def production_port(
             if existing is not None:
                 result = _validate_bundle(
                     get_action_bundle(connection, existing.action_id),
+                    agent_run_id=agent_run_id,
                     decision=resolved,
                 )
                 link_run_action(
@@ -214,6 +240,7 @@ def production_port(
                 )
                 return result
 
+            reason = _reason_for(resolved)
             action_id = new_action_id()
             created_at = datetime.now(UTC)
             insert_action_history(
@@ -222,7 +249,7 @@ def production_port(
                 lot_id=locked.lot_id,
                 chamber_id=locked.chamber_id,
                 action_code=action,
-                reason=REASONS[resolved.matched_rule],
+                reason=reason,
                 created_at=created_at,
             )
             link_run_action(
@@ -267,13 +294,10 @@ def production_port(
                 action_policy_version=resolved.policy_version,
                 member_alarms=member_alarms,
             )
-            result = PersistResult(
+            result = _result(
                 action_id=action_id,
                 approval_id=approval_id,
-                deliveries=tuple(
-                    DeliveryPlan(channel=channel, status=INITIAL_STATUS[channel])
-                    for channel in channels
-                ),
+                channels=channels,
             )
             result.assert_matches(resolved)
             return result

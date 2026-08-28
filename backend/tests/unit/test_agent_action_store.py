@@ -20,6 +20,7 @@ from app.common.enums import (
     ActionCode,
     ActionLinkRole,
     AlarmSource,
+    ApprovalStatus,
     DeliveryChannel,
     RunStatus,
     Severity,
@@ -51,6 +52,10 @@ def _bundle(action_id: str, action: ActionCode) -> ActionBundle:
         action_id=action_id,
         action_code=action,
         approval_id="APR-existing" if action is ActionCode.EQP_HOLD else None,
+        approval_status=(
+            ApprovalStatus.PENDING if action is ActionCode.EQP_HOLD else None
+        ),
+        approval_agent_run_id="RUN-1" if action is ActionCode.EQP_HOLD else None,
         delivery_channels=resolve_delivery_channels(action),
     )
 
@@ -226,6 +231,21 @@ def test_incident_lock_always_precedes_the_run_row_lock(
     assert names.index("lock_incident") < names.index("lock_agent_run")
 
 
+def test_incident_change_while_waiting_for_the_lock_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    port, state = _wire(monkeypatch)
+    snapshot = SimpleNamespace(lot_id="LOT-before", chamber_id="CH-before")
+    monkeypatch.setattr(subject, "get_agent_run", lambda *_a: snapshot)
+
+    with pytest.raises(RepositoryConflict) as exc:
+        port("RUN-1", _decision(ActionCode.MONITORING))
+
+    assert exc.value.code == "RUN_INCIDENT_CHANGED"
+    assert state.writes == []
+    assert ("lock_incident", ("LOT-before", "CH-before")) in state.calls
+
+
 @pytest.mark.parametrize("status", [RunStatus.RUNNING, RunStatus.WAITING_APPROVAL])
 def test_same_run_replay_is_read_only_and_idempotent(
     monkeypatch: pytest.MonkeyPatch,
@@ -265,10 +285,10 @@ def test_failed_retry_links_the_existing_action_without_new_rows(
     port, state = _wire(
         monkeypatch,
         existing=created,
-        bundle=_bundle("ACT-existing", ActionCode.EQP_HOLD),
+        bundle=_bundle("ACT-existing", ActionCode.WARNING),
     )
 
-    result = port("RUN-1", _decision(ActionCode.EQP_HOLD))
+    result = port("RUN-1", _decision(ActionCode.WARNING))
 
     assert result.action_id == "ACT-existing"
     assert [name for name, _ in state.writes] == [
@@ -345,12 +365,16 @@ def test_request_hash_is_raw_deterministic_lowercase_hex() -> None:
             action_id="ACT-existing",
             action_code=ActionCode.WARNING,
             approval_id="APR-wrong",
+            approval_status=ApprovalStatus.PENDING,
+            approval_agent_run_id="RUN-1",
             delivery_channels=(DeliveryChannel.EMAIL,),
         ),
         ActionBundle(
             action_id="ACT-existing",
             action_code=ActionCode.WARNING,
             approval_id=None,
+            approval_status=None,
+            approval_agent_run_id=None,
             delivery_channels=(),
         ),
     ],
@@ -383,9 +407,18 @@ def test_reuse_compares_delivery_channels_as_an_order_independent_set(
         action_id="ACT-existing",
         action_code=ActionCode.EQP_HOLD,
         approval_id="APR-existing",
+        approval_status=ApprovalStatus.PENDING,
+        approval_agent_run_id="RUN-1",
         delivery_channels=(DeliveryChannel.MES_MOCK, DeliveryChannel.EMAIL),
     )
-    port, state = _wire(monkeypatch, existing=created, bundle=bundle)
+    port, state = _wire(
+        monkeypatch,
+        status=RunStatus.WAITING_APPROVAL,
+        action=ActionCode.EQP_HOLD,
+        current=created,
+        existing=created,
+        bundle=bundle,
+    )
 
     result = port("RUN-1", _decision(ActionCode.EQP_HOLD))
 
@@ -393,8 +426,72 @@ def test_reuse_compares_delivery_channels_as_an_order_independent_set(
         DeliveryChannel.EMAIL,
         DeliveryChannel.MES_MOCK,
     )
-    assert [name for name, _ in state.writes] == [
-        "link",
-        "set_run_action",
-        "provenance",
-    ]
+    assert state.writes == []
+
+
+@pytest.mark.parametrize(
+    "approval_status",
+    [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED, ApprovalStatus.EXPIRED],
+)
+def test_retry_refuses_a_terminal_approval(
+    monkeypatch: pytest.MonkeyPatch,
+    approval_status: ApprovalStatus,
+) -> None:
+    created = SimpleNamespace(
+        action_id="ACT-existing",
+        lot_id="LOT-1",
+        chamber_id="EQP01-PM1",
+    )
+    bundle = ActionBundle(
+        action_id="ACT-existing",
+        action_code=ActionCode.EQP_HOLD,
+        approval_id="APR-existing",
+        approval_status=approval_status,
+        approval_agent_run_id="RUN-1",
+        delivery_channels=(DeliveryChannel.EMAIL, DeliveryChannel.MES_MOCK),
+    )
+    port, state = _wire(monkeypatch, existing=created, bundle=bundle)
+
+    with pytest.raises(RepositoryConflict) as exc:
+        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+
+    assert exc.value.code == "ACTION_APPROVAL_NOT_PENDING"
+    assert state.writes == []
+
+
+def test_retry_refuses_a_pending_approval_owned_by_the_failed_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = SimpleNamespace(
+        action_id="ACT-existing",
+        lot_id="LOT-1",
+        chamber_id="EQP01-PM1",
+    )
+    bundle = ActionBundle(
+        action_id="ACT-existing",
+        action_code=ActionCode.EQP_HOLD,
+        approval_id="APR-existing",
+        approval_status=ApprovalStatus.PENDING,
+        approval_agent_run_id="RUN-failed",
+        delivery_channels=(DeliveryChannel.EMAIL, DeliveryChannel.MES_MOCK),
+    )
+    port, state = _wire(monkeypatch, existing=created, bundle=bundle)
+
+    with pytest.raises(RepositoryConflict) as exc:
+        port("RUN-1", _decision(ActionCode.EQP_HOLD))
+
+    assert exc.value.code == "ACTION_APPROVAL_RUN_MISMATCH"
+    assert state.writes == []
+
+
+def test_missing_reason_is_a_sanitized_contract_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    port, state = _wire(monkeypatch)
+    monkeypatch.setattr(subject, "REASONS", {})
+
+    with pytest.raises(RepositoryContractError) as exc:
+        port("RUN-1", _decision(ActionCode.WARNING))
+
+    assert exc.value.code == "ACTION_REASON_NOT_FOUND"
+    assert state.writes == []

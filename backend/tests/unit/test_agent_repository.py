@@ -904,6 +904,8 @@ class TestActionPersistenceSeams:
             "mes_at",
         ):
             assert column in sql
+        # base action_history에는 생성 run column이 없다. 생성 provenance 정본은
+        # agent_run_action의 단일 CREATED link다.
         assert "created_by_agent_run_id" not in sql
 
     def test_bundle_projection_reads_only_identity_fields(
@@ -913,6 +915,8 @@ class TestActionPersistenceSeams:
             action_id="ACT-1",
             action_code="WARNING",
             approval_id=None,
+            approval_status=None,
+            approval_agent_run_id=None,
         )
         deliveries = [
             SimpleNamespace(channel=DeliveryChannel.EMAIL),
@@ -926,8 +930,21 @@ class TestActionPersistenceSeams:
             action_id="ACT-1",
             action_code=ActionCode.WARNING,
             approval_id=None,
+            approval_status=None,
+            approval_agent_run_id=None,
             delivery_channels=(DeliveryChannel.EMAIL,),
         )
+        assert "p.status AS approval_status" in " ".join(
+            str(repo._SELECT_ACTION_BUNDLE).split()
+        )
+
+    def test_approval_request_is_unique_per_action_in_the_migration(self) -> None:
+        migration = (
+            Path(repo.__file__).resolve().parents[2]
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        assert "action_id varchar(20) NOT NULL UNIQUE" in migration
 
     def test_terminal_merge_preserves_action_provenance(
         self, monkeypatch: pytest.MonkeyPatch

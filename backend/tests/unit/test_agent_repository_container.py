@@ -498,6 +498,8 @@ def test_action_bundle_repository_seams_round_trip_on_postgres(engine: Any) -> N
         action_id=ACTION_ID,
         action_code=ActionCode.WARNING,
         approval_id=None,
+        approval_status=None,
+        approval_agent_run_id=None,
         delivery_channels=(DeliveryChannel.EMAIL,),
     )
 
