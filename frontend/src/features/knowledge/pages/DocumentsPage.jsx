@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
-import MarkdownContent from '../../../shared/components/MarkdownContent.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
+import DocumentDetailDrawer from '../components/DocumentDetailDrawer.jsx'
+import DocumentSearchResultCard from '../components/DocumentSearchResultCard.jsx'
 import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
 
 const ALL_MODELS = '전체'
@@ -37,15 +38,6 @@ function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
-  const detailBodyRef = useRef(null)
-  const selectedChunkRef = useRef(null)
-
-  useEffect(() => {
-    if (!detailOpen || !documentDetail || !detailBodyRef.current || !selectedChunkRef.current) return
-    const body = detailBodyRef.current
-    const target = selectedChunkRef.current
-    body.scrollTop = target.offsetTop - body.clientHeight / 2 + target.clientHeight / 2
-  }, [detailOpen, documentDetail, selectedHit])
 
   const run = (query) => {
     const q = query.trim()
@@ -170,43 +162,12 @@ function DocumentsPage() {
                   <span className="ml-2 font-mono text-[11px] text-faint">model {result.model_code}</span>
                 </div>
                 {result.hits.map((h) => (
-                  <div
+                  <DocumentSearchResultCard
                     key={h.chunk_id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openDocument(h)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        openDocument(h)
-                      }
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <Card
-                      className={`px-5 py-4 transition hover:border-blue hover:bg-tint-blue ${
-                        selectedHit?.chunk_id === h.chunk_id ? 'border-blue bg-row-sel' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[13.5px] font-extrabold text-ink">{h.section ?? h.title}</span>
-                        <span className="flex flex-none items-center gap-2 font-mono text-[11px] font-bold text-blue">
-                          {h.document_id}
-                          <span className="text-g2">·</span>
-                          {h.score.toFixed(2)}
-                        </span>
-                      </div>
-                      <MarkdownContent content={h.content} className="mt-2 text-[12.5px] text-g1" />
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        {h.model_code ? (
-                          <div className="font-mono text-[10.5px] text-faint">모델 {h.model_code}</div>
-                        ) : (
-                          <div />
-                        )}
-                        <div className="text-[11px] font-bold text-blue">상세 보기 ›</div>
-                      </div>
-                    </Card>
-                  </div>
+                    hit={h}
+                    selected={selectedHit?.chunk_id === h.chunk_id}
+                    onOpen={openDocument}
+                  />
                 ))}
               </div>
             )}
@@ -240,81 +201,15 @@ function DocumentsPage() {
         </div>
       </div>
 
-      <aside
-        className={`absolute bottom-0 right-0 top-16 z-20 flex w-[840px] max-w-[calc(100%-296px)] flex-col border-l border-line bg-white shadow-2xl transition-transform duration-200 ease-out ${
-          detailOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-        aria-hidden={!detailOpen}
-      >
-        <div className="flex flex-none items-start justify-between gap-4 border-b border-line px-5 py-4">
-          <div className="min-w-0">
-            <div className="text-[16px] font-extrabold text-ink">{documentDetail?.title ?? selectedHit?.title ?? '문서 상세'}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-g2">
-              {selectedHit?.document_id && <span>{selectedHit.document_id}</span>}
-              {documentDetail?.model_code && (
-                <span className="rounded bg-tint-blue px-2 py-0.5 font-bold text-blue">{documentDetail.model_code}</span>
-              )}
-              {documentDetail?.doc_type && (
-                <span className="rounded bg-soft px-2 py-0.5 font-bold text-g1">{documentDetail.doc_type}</span>
-              )}
-              {documentDetail?.version && <span>{documentDetail.version}</span>}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={closeDocument}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[18px] text-g2 hover:bg-soft hover:text-ink"
-            aria-label="문서 상세 닫기"
-          >
-            ×
-          </button>
-        </div>
-
-        <div ref={detailBodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {detailLoading ? (
-            <DashedCard className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-              <div className="text-[13px] font-extrabold text-ink">문서 내용을 불러오는 중…</div>
-              <div className="text-[12px] text-g1">선택한 검색 결과의 전체 청크를 조회하고 있습니다.</div>
-            </DashedCard>
-          ) : detailError ? (
-            <ErrorState title="문서 상세를 불러오지 못했습니다" detail={detailError} onRetry={() => selectedHit && openDocument(selectedHit)} />
-          ) : !documentDetail ? (
-            <DashedCard className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-              <div className="text-[13px] font-extrabold text-ink">문서를 선택해 주세요</div>
-            </DashedCard>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {documentDetail.chunks.map((chunk) => {
-                const selected = chunk.chunk_id === selectedHit?.chunk_id
-                return (
-                  <section
-                    key={chunk.chunk_id}
-                    ref={selected ? selectedChunkRef : null}
-                    className={`rounded-xl border p-4 ${
-                      selected ? 'border-blue bg-tint-blue shadow-sm' : 'border-line bg-white'
-                    }`}
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-mono text-[10.5px] font-bold text-g2">chunk {chunk.chunk_seq}</div>
-                        {chunk.section_title && (
-                          <div className="mt-0.5 truncate text-[13px] font-extrabold text-ink" title={chunk.section_title}>
-                            {chunk.section_title}
-                          </div>
-                        )}
-                      </div>
-                      {selected && (
-                        <span className="flex-none rounded-full bg-blue px-2.5 py-1 text-[10px] font-bold text-white">선택 청크</span>
-                      )}
-                    </div>
-                    <MarkdownContent content={chunk.content} className="text-[12.5px] text-g1" />
-                  </section>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </aside>
+      <DocumentDetailDrawer
+        open={detailOpen}
+        hit={selectedHit}
+        detail={documentDetail}
+        loading={detailLoading}
+        error={detailError}
+        onClose={closeDocument}
+        onRetry={() => selectedHit && openDocument(selectedHit)}
+      />
     </div>
   )
 }
