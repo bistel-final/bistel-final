@@ -9,8 +9,12 @@ from app.common.tool_contracts import (
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.embedding import embed_query
 from app.knowledge.graph_query import GraphQueryRepository
-from app.knowledge.repository import ChamberGraphRepository
-from app.knowledge.schemas import ChamberRelationResponse
+from app.knowledge.repository import ChamberGraphRepository, DocumentRepository
+from app.knowledge.schemas import (
+    ChamberRelationResponse,
+    DocumentChunkItem,
+    DocumentDetailResponse,
+)
 
 
 # ==================
@@ -40,6 +44,36 @@ class DocumentSearchService:
             model_code=normalized_model_code,
         )
         return [DocumentHit.model_validate(row) for row in rows]
+
+
+class DocumentService:
+    """Knowledge 문서 상세 조회 서비스."""
+
+    def __init__(self, repository: DocumentRepository) -> None:
+        self._repository = repository
+
+    def get_document(self, document_id: str) -> DocumentDetailResponse | None:
+        document = self._repository.get_document_meta(document_id)
+        if document is None:
+            return None
+        chunks = self._repository.list_document_chunks(document_id)
+        return DocumentDetailResponse(
+            document_id=str(document["doc_id"]),
+            title=str(document["title"]),
+            doc_type=document["doc_type"],
+            model_code=document["model_code"],
+            source_path=document["source_path"],
+            version=document["version"],
+            chunks=[
+                DocumentChunkItem(
+                    chunk_id=str(chunk["chunk_id"]),
+                    chunk_seq=int(chunk["chunk_seq"]),
+                    section_title=chunk["section_title"],
+                    content=str(chunk["content"]),
+                )
+                for chunk in chunks
+            ],
+        )
 
 
 class GraphService:

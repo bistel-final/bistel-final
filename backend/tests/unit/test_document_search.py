@@ -15,10 +15,16 @@ from app.common.tool_contracts import DocumentHit as ToolDocumentHit
 from app.knowledge import embedding
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.exceptions import EmbeddingModelNotReadyError
+from app.knowledge.repository import DocumentRepository
+from app.knowledge.router import get_document as get_document_api
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.router import search_documents as search_documents_api
-from app.knowledge.schemas import DocumentSearchRequest
-from app.knowledge.service import DocumentSearchService
+from app.knowledge.schemas import (
+    DocumentChunkItem,
+    DocumentDetailResponse,
+    DocumentSearchRequest,
+)
+from app.knowledge.service import DocumentSearchService, DocumentService
 from app.knowledge.tools import search_documents as search_documents_tool
 
 
@@ -217,6 +223,203 @@ def test_repository_search_without_model_code_searches_all_documents(
     assert connection.closed is True
 
 
+def test_document_repository_get_document_meta_returns_document_row() -> None:
+    captured: dict[str, object] = {}
+
+    class FakeMappingResult:
+        def __init__(self, rows: list[dict[str, object]]) -> None:
+            self.rows = rows
+
+        def mappings(self) -> FakeMappingResult:
+            return self
+
+        def first(self) -> dict[str, object] | None:
+            return self.rows[0] if self.rows else None
+
+        def all(self) -> list[dict[str, object]]:
+            return self.rows
+
+    class FakeConnection:
+        closed = False
+
+        def execute(
+            self,
+            sql: object,
+            params: dict[str, object],
+        ) -> FakeMappingResult:
+            captured["sql"] = sub(r"\s+", " ", str(sql))
+            captured["params"] = params
+            return FakeMappingResult(
+                [
+                    {
+                        "doc_id": "DOC-SPEC-PH9000",
+                        "title": "PH Guide",
+                        "doc_type": "SPEC",
+                        "model_code": "PH-9000",
+                        "source_path": "docs/knowledge/rag-corrected/ph.md",
+                        "version": "v1",
+                    },
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
+
+    document = DocumentRepository(engine).get_document_meta("DOC-SPEC-PH9000")
+
+    assert document == {
+        "doc_id": "DOC-SPEC-PH9000",
+        "title": "PH Guide",
+        "doc_type": "SPEC",
+        "model_code": "PH-9000",
+        "source_path": "docs/knowledge/rag-corrected/ph.md",
+        "version": "v1",
+    }
+    assert "FROM document" in str(captured["sql"])
+    assert captured["params"] == {"document_id": "DOC-SPEC-PH9000"}
+    assert connection.closed is True
+
+
+def test_document_repository_list_document_chunks_orders_by_sequence() -> None:
+    captured: dict[str, object] = {}
+
+    class FakeMappingResult:
+        def __init__(self, rows: list[dict[str, object]]) -> None:
+            self.rows = rows
+
+        def mappings(self) -> FakeMappingResult:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return self.rows
+
+    class FakeConnection:
+        closed = False
+
+        def execute(
+            self,
+            sql: object,
+            params: dict[str, object],
+        ) -> FakeMappingResult:
+            captured["sql"] = sub(r"\s+", " ", str(sql))
+            captured["params"] = params
+            return FakeMappingResult(
+                [
+                    {
+                        "chunk_id": "DOC-SPEC-PH9000:cs2:0001",
+                        "chunk_seq": 1,
+                        "section_title": "1. 개요",
+                        "content": "overview",
+                    },
+                    {
+                        "chunk_id": "DOC-SPEC-PH9000:cs2:0002",
+                        "chunk_seq": 2,
+                        "section_title": "2. 기준",
+                        "content": "limits",
+                    },
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
+
+    chunks = DocumentRepository(engine).list_document_chunks("DOC-SPEC-PH9000")
+
+    assert chunks == [
+        {
+            "chunk_id": "DOC-SPEC-PH9000:cs2:0001",
+            "chunk_seq": 1,
+            "section_title": "1. 개요",
+            "content": "overview",
+        },
+        {
+            "chunk_id": "DOC-SPEC-PH9000:cs2:0002",
+            "chunk_seq": 2,
+            "section_title": "2. 기준",
+            "content": "limits",
+        },
+    ]
+    assert "ORDER BY chunk_seq ASC, chunk_id ASC" in str(captured["sql"])
+    assert captured["params"] == {"document_id": "DOC-SPEC-PH9000"}
+    assert connection.closed is True
+
+
+def test_document_repository_get_document_meta_returns_none() -> None:
+    class FakeMappingResult:
+        def mappings(self) -> FakeMappingResult:
+            return self
+
+        def first(self) -> None:
+            return None
+
+    class FakeConnection:
+        closed = False
+
+        def execute(self, sql: object, params: dict[str, object]) -> FakeMappingResult:
+            return FakeMappingResult()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
+
+    assert DocumentRepository(engine).get_document_meta("missing") is None
+    assert connection.closed is True
+
+
+def test_document_service_builds_detail_response_with_chunk_items() -> None:
+    class FakeRepository:
+        def get_document_meta(self, document_id: str) -> dict[str, object]:
+            assert document_id == "DOC-SPEC-PH9000"
+            return {
+                "doc_id": "DOC-SPEC-PH9000",
+                "title": "PH Guide",
+                "doc_type": "SPEC",
+                "model_code": "PH-9000",
+                "source_path": "docs/knowledge/rag-corrected/ph.md",
+                "version": "v1",
+            }
+
+        def list_document_chunks(self, document_id: str) -> list[dict[str, object]]:
+            assert document_id == "DOC-SPEC-PH9000"
+            return [
+                {
+                    "chunk_id": "DOC-SPEC-PH9000:cs2:0001",
+                    "chunk_seq": 1,
+                    "section_title": "1. 개요",
+                    "content": "overview",
+                }
+            ]
+
+    document = DocumentService(FakeRepository()).get_document("DOC-SPEC-PH9000")
+
+    assert document is not None
+    assert document == DocumentDetailResponse(
+        document_id="DOC-SPEC-PH9000",
+        title="PH Guide",
+        doc_type="SPEC",
+        model_code="PH-9000",
+        source_path="docs/knowledge/rag-corrected/ph.md",
+        version="v1",
+        chunks=[
+            DocumentChunkItem(
+                chunk_id="DOC-SPEC-PH9000:cs2:0001",
+                chunk_seq=1,
+                section_title="1. 개요",
+                content="overview",
+            )
+        ],
+    )
+    assert isinstance(document.chunks[0], DocumentChunkItem)
+
+
 def test_documents_search_api_returns_bare_array_with_doc_id_alias(
     monkeypatch: Any,
 ) -> None:
@@ -373,6 +576,70 @@ def test_documents_search_http_returns_model_not_ready(
         "message": "임베딩 모델이 준비되지 않았습니다.",
         "details": {},
     }
+
+
+def test_get_document_api_returns_document_detail(monkeypatch: Any) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_document(self, document_id: str) -> DocumentDetailResponse:
+            assert document_id == "DOC-SPEC-PH9000"
+            return DocumentDetailResponse(
+                document_id="DOC-SPEC-PH9000",
+                title="PH Guide",
+                doc_type="SPEC",
+                model_code="PH-9000",
+                source_path="docs/knowledge/rag-corrected/ph.md",
+                version="v1",
+                chunks=[
+                    {
+                        "chunk_id": "DOC-SPEC-PH9000:cs2:0001",
+                        "chunk_seq": 1,
+                        "section_title": "1. 개요",
+                        "content": "overview",
+                    }
+                ],
+            )
+
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.router.DocumentService", FakeService)
+
+    response = get_document_api("DOC-SPEC-PH9000")
+
+    assert response.document_id == "DOC-SPEC-PH9000"
+    assert response.chunks[0].chunk_id == "DOC-SPEC-PH9000:cs2:0001"
+
+
+def test_get_document_http_returns_404_for_missing_document(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_document(self, document_id: str) -> None:
+            assert document_id == "missing"
+            return None
+
+    app = FastAPI()
+    app.include_router(knowledge_router)
+
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.router.DocumentService", FakeService)
+
+    response = TestClient(app).get("/documents/missing")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "document not found"}
 
 
 def test_search_documents_tool_returns_common_tool_contract(monkeypatch: Any) -> None:

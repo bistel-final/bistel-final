@@ -1,27 +1,54 @@
-import { useState } from 'react'
-import { searchDocuments } from '../../../shared/api/knowledge.js'
+import { useRef, useState } from 'react'
+import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
-import MarkdownContent from '../../../shared/components/MarkdownContent.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
+import DocumentDetailDrawer from '../components/DocumentDetailDrawer.jsx'
+import DocumentSearchResultCard from '../components/DocumentSearchResultCard.jsx'
 import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
 
 const ALL_MODELS = '전체'
+const HISTORY_KEY = 'bistel.documents.searchHistory'
+const MAX_HISTORY = 8
+
+function loadSearchHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, MAX_HISTORY) : []
+  } catch {
+    return []
+  }
+}
+
+function saveSearchHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+}
 
 // 문서 검색 — 라이트 시안 4번
-// 좌 280px: 추천 질의 + 검색 기록(세션 state) / 우측: 결과 카드 / 하단: 입력 + [검색]
+// 좌 280px: 추천 질의 + 검색 기록(localStorage) / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
+  const documentRequestRef = useRef(0)
   const [input, setInput] = useState('')
   const [result, setResult] = useState(null) // { query, hits }
   const [modelCode, setModelCode] = useState(ALL_MODELS)
-  const [history, setHistory] = useState([])
+  const [history, setHistory] = useState(loadSearchHistory)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [selectedHit, setSelectedHit] = useState(null)
+  const [documentDetail, setDocumentDetail] = useState(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState(null)
 
   const run = (query) => {
     const q = query.trim()
     if (!q || loading) return
     setLoading(true)
+    documentRequestRef.current += 1
+    setDetailOpen(false)
+    setSelectedHit(null)
+    setDocumentDetail(null)
+    setDetailError(null)
     searchDocuments({
       query: q,
       model_code: modelCode === ALL_MODELS ? undefined : modelCode,
@@ -29,12 +56,42 @@ function DocumentsPage() {
     })
       .then((res) => {
         setResult({ ...res, model_code: modelCode })
-        setHistory((prev) => [q, ...prev.filter((h) => h !== q)].slice(0, 8))
+        setHistory((prev) => {
+          const next = [q, ...prev.filter((h) => h !== q)].slice(0, MAX_HISTORY)
+          saveSearchHistory(next)
+          return next
+        })
         setInput('')
         setError(null)
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
+  }
+
+  const openDocument = (hit) => {
+    const requestToken = ++documentRequestRef.current
+    setSelectedHit(hit)
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setDetailError(null)
+    getDocument(hit.document_id)
+      .then((detail) => {
+        if (documentRequestRef.current !== requestToken) return
+        setDocumentDetail(detail)
+      })
+      .catch((e) => {
+        if (documentRequestRef.current !== requestToken) return
+        setDocumentDetail(null)
+        setDetailError(e.message)
+      })
+      .finally(() => {
+        if (documentRequestRef.current !== requestToken) return
+        setDetailLoading(false)
+      })
+  }
+
+  const closeDocument = () => {
+    setDetailOpen(false)
   }
 
   if (error)
@@ -48,7 +105,7 @@ function DocumentsPage() {
     )
 
   return (
-    <div className="flex h-[calc(100vh-72px)] animate-[om-fadein_.3s_ease-out] flex-col">
+    <div className="relative flex h-[calc(100vh-72px)] overflow-hidden animate-[om-fadein_.3s_ease-out] flex-col">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">문서 검색</div>
         <div className="text-[11.5px] text-g2">설비 SPEC · Fault 가이드 RAG 검색</div>
@@ -113,18 +170,12 @@ function DocumentsPage() {
                   <span className="ml-2 font-mono text-[11px] text-faint">model {result.model_code}</span>
                 </div>
                 {result.hits.map((h) => (
-                  <Card key={h.chunk_id} className="px-5 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[13.5px] font-extrabold text-ink">{h.section ?? h.title}</span>
-                      <span className="flex flex-none items-center gap-2 font-mono text-[11px] font-bold text-blue">
-                        {h.document_id}
-                        <span className="text-g2">·</span>
-                        {h.score.toFixed(2)}
-                      </span>
-                    </div>
-                    <MarkdownContent content={h.content} className="mt-2 text-[12.5px] text-g1" />
-                    {h.model_code && <div className="mt-2 font-mono text-[10.5px] text-faint">모델 {h.model_code}</div>}
-                  </Card>
+                  <DocumentSearchResultCard
+                    key={h.chunk_id}
+                    hit={h}
+                    selected={selectedHit?.chunk_id === h.chunk_id}
+                    onOpen={openDocument}
+                  />
                 ))}
               </div>
             )}
@@ -157,6 +208,16 @@ function DocumentsPage() {
           </div>
         </div>
       </div>
+
+      <DocumentDetailDrawer
+        open={detailOpen}
+        hit={selectedHit}
+        detail={documentDetail}
+        loading={detailLoading}
+        error={detailError}
+        onClose={closeDocument}
+        onRetry={() => selectedHit && openDocument(selectedHit)}
+      />
     </div>
   )
 }
