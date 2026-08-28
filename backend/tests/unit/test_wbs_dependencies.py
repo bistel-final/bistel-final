@@ -78,7 +78,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (130.0, 46.5, 176.5, 61.5)
+    assert (p0, p1, total, common) == (135.5, 46.5, 182.0, 61.5)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"

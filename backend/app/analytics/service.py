@@ -142,6 +142,24 @@ def _needs_group_by_hint(question: str, sql: str) -> bool:
     return not _has_group_by(sql)
 
 
+def _has_string_equality_filter(sql: str) -> bool:
+    """문자열 리터럴 등호 비교가 있는지 본다 (0행 재시도 조건).
+
+    0행의 흔한 원인이 코드값 오귀속(값이 다른 테이블 소속)이며,
+    그 경우 SQL 에는 반드시 문자열 등호 필터가 있다. 숫자 비교나
+    필터 없는 0행(정당한 빈 결과)은 재시도하지 않는다.
+    """
+    try:
+        statement = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return False
+    for eq in statement.find_all(exp.EQ):
+        for side in (eq.this, eq.expression):
+            if isinstance(side, exp.Literal) and side.is_string:
+                return True
+    return False
+
+
 def _generate_plan(question: str) -> AnalysisPlanToolResult:
     """계획 생성. SQL 원문은 passthrough, 자연어는 LLM Tool 을 탄다."""
     stripped = question.strip()
@@ -324,6 +342,37 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
             latency_ms=_elapsed_ms(),
             nl_query_log_id=None,
         )
+
+    # ── 3.5 0행 재시도 — 문자열 필터 오귀속(값의 소속 테이블 혼동) 보정 ─
+    # 재생성본이 검증을 통과하고 실제 행을 반환할 때만 채택 — 아니면
+    # 원 결과(0행)를 그대로 낸다 (정당한 빈 결과일 수 있다).
+    if (
+        execution.row_count == 0
+        and not _is_sql_passthrough(question)
+        and _has_string_equality_filter(validation.normalized_sql)
+    ):
+        retried = generate_analysis_plan(
+            AnalysisPlanToolInput(question=question.strip()),
+            retry_feedback=(
+                f"직전 SQL: {validation.normalized_sql}\n"
+                "실행 결과가 0행이었다. 등호 필터의 값이 이 테이블에 존재하지"
+                " 않을 수 있다. 스키마의 값 목록을 참고해 값이 실제로 속한"
+                " 테이블·컬럼으로 다시 작성하라."
+            ),
+        )
+        if retried.ok:
+            retried_validation = validate_sql(retried.sql or "")
+            if retried_validation.valid and retried_validation.normalized_sql:
+                try:
+                    retried_execution: QueryExecution | None = execute_validated_select(
+                        engine, retried_validation.normalized_sql
+                    )
+                except QueryExecutionError:
+                    retried_execution = None
+                if retried_execution is not None and retried_execution.row_count > 0:
+                    plan = retried
+                    validation = retried_validation
+                    execution = retried_execution
 
     # ── 4. 성공 ────────────────────────────────────────────────────────
     return AnalysisQueryResponse(
