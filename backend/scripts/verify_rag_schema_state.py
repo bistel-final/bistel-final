@@ -168,9 +168,7 @@ def _column_types(connection: Any) -> dict[str, dict[str, str]]:
             (sorted(EXPECTED_RAG_COLUMN_TYPES),),
         )
     ):
-        actual[str(row["table_name"])][str(row["column_name"])] = str(
-            row["data_type"]
-        )
+        actual[str(row["table_name"])][str(row["column_name"])] = str(row["data_type"])
     return actual
 
 
@@ -312,9 +310,7 @@ def validate_rag_target(database: str) -> BootstrapTarget:
 
 def build_report(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     status = (
-        "PASS"
-        if all(result.get("status") == "PASS" for result in results)
-        else "FAIL"
+        "PASS" if all(result.get("status") == "PASS" for result in results) else "FAIL"
     )
     return {
         "format_version": 1,

@@ -4,8 +4,8 @@ import hashlib
 import json
 import os
 import unicodedata
-from pathlib import Path
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.engine import Connection
@@ -109,7 +109,11 @@ def _mapping_rows(result: Any) -> list[dict[str, Any]]:
 
 
 def _current_database(connection: Connection) -> str:
-    row = connection.exec_driver_sql("SELECT current_database() AS database").mappings().one()
+    row = (
+        connection.exec_driver_sql("SELECT current_database() AS database")
+        .mappings()
+        .one()
+    )
     return str(row["database"])
 
 
@@ -161,7 +165,10 @@ def validate_marker(marker: Mapping[str, Any], *, database: str) -> None:
     smoke = marker.get("search_smoke")
     if not isinstance(smoke, list) or len(smoke) != 3:
         raise RagReadinessError("RAG 검색 smoke marker가 3건이 아닙니다")
-    if any(not isinstance(item, Mapping) or item.get("passed") is not True for item in smoke):
+    if any(
+        not isinstance(item, Mapping) or item.get("passed") is not True
+        for item in smoke
+    ):
         raise RagReadinessError("RAG 검색 smoke marker에 실패가 있습니다")
 
 
@@ -206,7 +213,11 @@ def verify_live_state(connection: Connection, marker: Mapping[str, Any]) -> None
     document_ids = marker["document_ids"]
     document_count = int(
         connection.exec_driver_sql(
-            "SELECT count(*) AS value FROM document WHERE doc_id = ANY (%(document_ids)s)",
+            """
+            SELECT count(*) AS value
+              FROM document
+             WHERE doc_id = ANY (%(document_ids)s)
+            """,
             {"document_ids": document_ids},
         )
         .mappings()
@@ -243,7 +254,10 @@ def verify_live_state(connection: Connection, marker: Mapping[str, Any]) -> None
         raise RagReadinessError("RAG chunk 수가 marker와 다릅니다")
     if broken_embeddings != 0:
         raise RagReadinessError("RAG embedding NULL 또는 dimension 오류가 있습니다")
-    if live_fingerprint(connection, document_ids) != marker["live_db_fingerprint_sha256"]:
+    if (
+        live_fingerprint(connection, document_ids)
+        != marker["live_db_fingerprint_sha256"]
+    ):
         raise RagReadinessError("RAG live fingerprint가 marker와 다릅니다")
 
 

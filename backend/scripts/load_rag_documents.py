@@ -844,7 +844,8 @@ def run_load(*, database: str, source_dir: Path, noop_only: bool = False) -> int
                 return 0
             if noop_only:
                 raise RagLoadError(
-                    "live RAG fingerprint가 corrected corpus와 달라 no-op으로 검증할 수 없습니다"
+                    "live RAG fingerprint가 corrected corpus와 달라 "
+                    "no-op으로 검증할 수 없습니다"
                 )
 
         with engine.connect() as connection:

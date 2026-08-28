@@ -181,8 +181,7 @@ def test_corrected_documents_are_loaded_from_canonical_source_dir() -> None:
     ]
     assert len(corpus.chunks) == 35
     assert all(
-        chunk.chunk_id.startswith(chunk.doc_id + ":cs2:")
-        for chunk in corpus.chunks
+        chunk.chunk_id.startswith(chunk.doc_id + ":cs2:") for chunk in corpus.chunks
     )
     assert all("corpus_revision" not in chunk.metadata_json for chunk in corpus.chunks)
 
@@ -462,7 +461,9 @@ def test_marker_records_committed_load_without_revision_aliases() -> None:
     assert marker["dimension"] == 1024
     assert marker["source_sha256_by_document"] == loader.SOURCE_SHA256_BY_DOCUMENT
     assert marker["corrected_sha256_by_document"] != marker["source_sha256_by_document"]
-    assert marker["correction_reason_by_document"] == loader.CORRECTION_REASON_BY_DOCUMENT
+    assert (
+        marker["correction_reason_by_document"] == loader.CORRECTION_REASON_BY_DOCUMENT
+    )
     assert marker["embedding_weights_sha256"] == loader.EMBEDDING_WEIGHTS_SHA256
     assert "corpus_revision" not in str(marker)
     assert "graph_revision" not in str(marker)

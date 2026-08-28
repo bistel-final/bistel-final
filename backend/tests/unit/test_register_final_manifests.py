@@ -1591,9 +1591,7 @@ class TestProductionProvenance:
         """**두 DB 내용이 다르면 어느 쪽도 정답이 아니다**(계획 §3.4 Gate 4)."""
 
         readers = _rag_readers()
-        readers["kosa_agent_e2e"] = _RagConnection(
-            dict(registrar.RUNTIME_RAG_ROWS)
-        )
+        readers["kosa_agent_e2e"] = _RagConnection(dict(registrar.RUNTIME_RAG_ROWS))
         readers["kosa_agent"] = _RagConnection(
             dict(registrar.RUNTIME_RAG_ROWS), offset=1
         )
@@ -1694,8 +1692,13 @@ class TestProductionProvenance:
         for path in markers.values():
             payload = json.loads(path.read_text(encoding="utf-8"))
             assert payload["source_sha256_by_document"] == rag.SOURCE_SHA256_BY_DOCUMENT
-            assert payload["corrected_sha256_by_document"] != rag.SOURCE_SHA256_BY_DOCUMENT
-            assert payload["correction_reason_by_document"] == rag.CORRECTION_REASON_BY_DOCUMENT
+            assert (
+                payload["corrected_sha256_by_document"] != rag.SOURCE_SHA256_BY_DOCUMENT
+            )
+            assert (
+                payload["correction_reason_by_document"]
+                == rag.CORRECTION_REASON_BY_DOCUMENT
+            )
             assert payload["format_version"] == 1
 
     def test_the_contract_comes_from_the_loader_constants(self) -> None:

@@ -129,9 +129,7 @@ def test_every_schema_target_parses() -> None:
     """allowlist에 있는 target은 CLI가 전부 받는다."""
 
     for database in sorted(runner.ALLOWED_RAG_DATABASES):
-        args = runner.parse_args(
-            ["--database", database, "--confirm-target", database]
-        )
+        args = runner.parse_args(["--database", database, "--confirm-target", database])
         assert args.database == database
 
 

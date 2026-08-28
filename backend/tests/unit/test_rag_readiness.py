@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402,I001
+
 import json
 import sys
 from pathlib import Path
@@ -21,7 +23,7 @@ class _Rows:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows = rows
 
-    def mappings(self) -> "_Rows":
+    def mappings(self) -> _Rows:
         return self
 
     def all(self) -> list[dict[str, Any]]:
@@ -125,11 +127,7 @@ class _CorpusConnection:
         if normalized.startswith("SELECT chunk_id, doc_id"):
             return _Rows(
                 sorted(
-                    [
-                        chunk
-                        for chunk in self.chunks
-                        if chunk["doc_id"] in document_ids
-                    ],
+                    [chunk for chunk in self.chunks if chunk["doc_id"] in document_ids],
                     key=lambda item: (
                         item["doc_id"],
                         item["chunk_seq"],
@@ -156,7 +154,9 @@ class _CorpusConnection:
                 [
                     {
                         "value": sum(
-                            1 for chunk in self.chunks if chunk["doc_id"] in document_ids
+                            1
+                            for chunk in self.chunks
+                            if chunk["doc_id"] in document_ids
                         )
                     }
                 ]
@@ -252,10 +252,13 @@ def test_rag_readiness_accepts_loader_committed_marker(
     )
     monkeypatch.setattr(rag_readiness, "MARKER_ROOT", tmp_path)
 
-    assert rag_readiness.live_fingerprint(
-        connection,
-        marker["document_ids"],
-    ) == marker["live_db_fingerprint_sha256"]
+    assert (
+        rag_readiness.live_fingerprint(
+            connection,
+            marker["document_ids"],
+        )
+        == marker["live_db_fingerprint_sha256"]
+    )
     rag_readiness.verify_rag_readiness(connection)
 
 
@@ -287,9 +290,9 @@ def test_packaged_rag_markers_match_repository_markers() -> None:
     source_root = repository_root / "infra" / "bootstrap" / "markers"
     for database in RUNTIME_DATABASES:
         filename = f"rag_load.{database}.json"
-        assert (
-            rag_readiness.PACKAGED_MARKER_ROOT / filename
-        ).read_bytes() == (source_root / filename).read_bytes()
+        assert (rag_readiness.PACKAGED_MARKER_ROOT / filename).read_bytes() == (
+            source_root / filename
+        ).read_bytes()
 
 
 def test_packaged_marker_root_is_used_when_repository_marker_root_is_absent(
