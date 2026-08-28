@@ -1,0 +1,264 @@
+{
+  "artifact_type": "rag_schema_validation",
+  "checked_at": "2026-08-28T07:33:43.700232+00:00",
+  "databases": [
+    {
+      "actual_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "checks": {
+        "adopted_tables_present": {
+          "document": true,
+          "document_chunk": true
+        },
+        "column_types_match": true,
+        "constraint_and_default_contract": true,
+        "duplicate_rag_object_count": 0,
+        "legacy_document_corpus_absent": true,
+        "public_privilege_count": 0,
+        "vector_extension_present": true
+      },
+      "constraint_default_result": "PASS",
+      "database": "kosa_agent",
+      "duplicate_rag_objects": [],
+      "existing_rag_tables": [
+        "document",
+        "document_chunk"
+      ],
+      "expected_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "expected_constraints": {
+        "document": {
+          "document_doc_type_check": "CHECK (((doc_type)::text = ANY ((ARRAY['SPEC'::character varying, 'MANUAL'::character varying, 'TROUBLESHOOT'::character varying])::text[])))",
+          "document_pkey": "PRIMARY KEY (doc_id)"
+        },
+        "document_chunk": {
+          "document_chunk_doc_id_chunk_seq_key": "UNIQUE (doc_id, chunk_seq)",
+          "document_chunk_doc_id_fkey": "FOREIGN KEY (doc_id) REFERENCES document(doc_id) ON DELETE CASCADE",
+          "document_chunk_pkey": "PRIMARY KEY (chunk_id)"
+        }
+      },
+      "expected_defaults": {
+        "document": {
+          "created_at": "now()"
+        }
+      },
+      "profile": "runtime",
+      "public_privileges": [],
+      "status": "PASS",
+      "vector_extension_versions": [
+        "0.8.6"
+      ]
+    },
+    {
+      "actual_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "checks": {
+        "adopted_tables_present": {
+          "document": true,
+          "document_chunk": true
+        },
+        "column_types_match": true,
+        "constraint_and_default_contract": true,
+        "duplicate_rag_object_count": 0,
+        "legacy_document_corpus_absent": true,
+        "public_privilege_count": 0,
+        "vector_extension_present": true
+      },
+      "constraint_default_result": "PASS",
+      "database": "kosa_agent_e2e",
+      "duplicate_rag_objects": [],
+      "existing_rag_tables": [
+        "document",
+        "document_chunk"
+      ],
+      "expected_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "expected_constraints": {
+        "document": {
+          "document_doc_type_check": "CHECK (((doc_type)::text = ANY ((ARRAY['SPEC'::character varying, 'MANUAL'::character varying, 'TROUBLESHOOT'::character varying])::text[])))",
+          "document_pkey": "PRIMARY KEY (doc_id)"
+        },
+        "document_chunk": {
+          "document_chunk_doc_id_chunk_seq_key": "UNIQUE (doc_id, chunk_seq)",
+          "document_chunk_doc_id_fkey": "FOREIGN KEY (doc_id) REFERENCES document(doc_id) ON DELETE CASCADE",
+          "document_chunk_pkey": "PRIMARY KEY (chunk_id)"
+        }
+      },
+      "expected_defaults": {
+        "document": {
+          "created_at": "now()"
+        }
+      },
+      "profile": "runtime",
+      "public_privileges": [],
+      "status": "PASS",
+      "vector_extension_versions": [
+        "0.8.6"
+      ]
+    },
+    {
+      "actual_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "checks": {
+        "adopted_tables_present": {
+          "document": true,
+          "document_chunk": true
+        },
+        "column_types_match": true,
+        "constraint_and_default_contract": true,
+        "duplicate_rag_object_count": 0,
+        "legacy_document_corpus_absent": true,
+        "public_privilege_count": 0,
+        "vector_extension_present": true
+      },
+      "constraint_default_result": "PASS",
+      "database": "kosa_text2sql",
+      "duplicate_rag_objects": [],
+      "existing_rag_tables": [
+        "document",
+        "document_chunk"
+      ],
+      "expected_column_types": {
+        "document": {
+          "created_at": "timestamp without time zone",
+          "doc_id": "character varying(30)",
+          "doc_type": "character varying(20)",
+          "model_code": "character varying(20)",
+          "source_path": "character varying(300)",
+          "title": "character varying(200)",
+          "version": "character varying(20)"
+        },
+        "document_chunk": {
+          "chunk_id": "character varying(40)",
+          "chunk_seq": "integer",
+          "content": "text",
+          "doc_id": "character varying(30)",
+          "embedding": "vector(1024)",
+          "metadata_json": "jsonb",
+          "section_title": "character varying(200)",
+          "token_cnt": "integer"
+        }
+      },
+      "expected_constraints": {
+        "document": {
+          "document_doc_type_check": "CHECK (((doc_type)::text = ANY ((ARRAY['SPEC'::character varying, 'MANUAL'::character varying, 'TROUBLESHOOT'::character varying])::text[])))",
+          "document_pkey": "PRIMARY KEY (doc_id)"
+        },
+        "document_chunk": {
+          "document_chunk_doc_id_chunk_seq_key": "UNIQUE (doc_id, chunk_seq)",
+          "document_chunk_doc_id_fkey": "FOREIGN KEY (doc_id) REFERENCES document(doc_id) ON DELETE CASCADE",
+          "document_chunk_pkey": "PRIMARY KEY (chunk_id)"
+        }
+      },
+      "expected_defaults": {
+        "document": {
+          "created_at": "now()"
+        }
+      },
+      "profile": "evaluation",
+      "public_privileges": [],
+      "status": "PASS",
+      "vector_extension_versions": [
+        "0.8.6"
+      ]
+    }
+  ],
+  "format_version": 1,
+  "status": "PASS",
+  "task_id": "V5-B-1.1"
+}
