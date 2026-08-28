@@ -11,18 +11,25 @@ import hashlib
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any, Final, Protocol
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.agent.checkpoint import build_thread_config, normalize_thread_id
+from app.agent.rehydration import (
+    REHYDRATION_AUDIT_KEY,
+    REHYDRATION_SNAPSHOT_SCHEMA,
+    RehydrationError,
+    build_rehydrated_state,
+    canonical_payload,
+)
 from app.agent.repository import (
     AgentRepositoryError,
     ApprovalDecisionRow,
     RepositoryConflict,
     decide_approval,
-    find_run_action,
     get_agent_run,
     get_approval_request,
     list_action_deliveries,
@@ -273,8 +280,10 @@ def _checkpoint(
     snapshot = graph.get_state(config)
     values = dict(getattr(snapshot, "values", {}) or {})
     next_nodes = tuple(getattr(snapshot, "next", ()) or ())
-    if not values or not next_nodes:
+    if not values:
         raise HitlResumeError("CHECKPOINT_MISSING")
+    if not next_nodes:
+        raise HitlResumeError("CHECKPOINT_PHASE_INVALID")
     stored_thread = values.get("thread_id")
     if stored_thread != thread_id:
         raise HitlResumeError("CHECKPOINT_THREAD_MISMATCH")
@@ -301,6 +310,33 @@ def _record_delivery_error(
             exc.code,
         )
         return
+
+
+def _record_rehydration_success(
+    transactions: TransactionFactory,
+    run_id: str,
+) -> None:
+    """checkpoint postcondition 뒤의 비차단 운영 증적."""
+
+    try:
+        with transactions() as connection:
+            merge_run_action_provenance(
+                connection,
+                run_id,
+                terminal_evidence={
+                    REHYDRATION_AUDIT_KEY: {
+                        "schema_version": REHYDRATION_SNAPSHOT_SCHEMA,
+                        "rehydrated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
+            )
+    except AgentRepositoryError as exc:
+        logger.error(
+            "HITL rehydration evidence persistence failed (code=%s)",
+            exc.code,
+        )
+    except Exception:  # noqa: BLE001 - best-effort 감사가 복구 성공을 뒤집지 않는다
+        logger.error("HITL rehydration evidence persistence unavailable")
 
 
 def _invoke(
@@ -389,6 +425,59 @@ def _resume_locked(
     return _invoke(graph, config, transactions, run_id)
 
 
+def _rehydrate_locked(
+    graph: Any,
+    transactions: TransactionFactory,
+    *,
+    run_id: str,
+    thread_id: str,
+) -> None:
+    """mutex 안에서 checkpoint를 쓰고 semantic postcondition을 확인한다."""
+
+    config = build_thread_config(thread_id)
+    with transactions() as connection:
+        try:
+            payload = build_rehydrated_state(connection, run_id)
+        except RehydrationError as exc:
+            raise HitlResumeError(exc.code) from exc
+    expected = canonical_payload(payload)
+
+    write_error: Exception | None = None
+    try:
+        graph.update_state(config, payload, as_node="persist_action")
+    except Exception as exc:  # noqa: BLE001 - 응답 유실 여부는 postcheck가 판정한다
+        write_error = exc
+
+    try:
+        snapshot = graph.get_state(config)
+    except Exception as exc:  # noqa: BLE001 - checkpoint driver 원문을 노출하지 않는다
+        raise HitlResumeError("REHYDRATE_WRITE_UNCERTAIN") from exc
+    values = dict(getattr(snapshot, "values", {}) or {})
+    next_nodes = tuple(getattr(snapshot, "next", ()) or ())
+    if not values:
+        error = HitlResumeError("REHYDRATE_WRITE_UNCERTAIN")
+        if write_error is not None:
+            raise error from write_error
+        raise error
+    try:
+        verified = (
+            values.get("thread_id") == thread_id
+            and values.get("run_id") == run_id
+            and values.get("approval_id") == payload["approval_id"]
+            and values.get("terminal_error") is None
+            and next_nodes == ("approval_email",)
+            and canonical_payload(values) == expected
+        )
+    except RehydrationError as exc:
+        raise HitlResumeError("REHYDRATE_CHECKPOINT_UNVERIFIED") from exc
+    if not verified:
+        error = HitlResumeError("REHYDRATE_CHECKPOINT_UNVERIFIED")
+        if write_error is not None:
+            raise error from write_error
+        raise error
+    _record_rehydration_success(transactions, run_id)
+
+
 def resume_after_approval(
     graph: Any,
     transactions: TransactionFactory,
@@ -418,12 +507,30 @@ def recover_hitl_run(
 
     with transactions() as connection:
         run = get_agent_run(connection, run_id)
-        # bundle 유무를 읽어 checkpoint 상실 시에도 어떤 복구도 시작하지 않는다.
-        _ = find_run_action(connection, run_id)
     if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
         raise HitlResumeError("RUN_NOT_ACTIVE")
     canonical = normalize_thread_id(run.thread_id)
     with _resume_mutex(resume_connections, canonical):
+        # mutex 대기 중 status·checkpoint가 바뀔 수 있으므로 둘 다 다시 읽는다.
+        with transactions() as connection:
+            locked_view = get_agent_run(connection, run_id)
+        if locked_view.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+            raise HitlResumeError("RUN_NOT_ACTIVE")
+        config = build_thread_config(canonical)
+        snapshot = graph.get_state(config)
+        values = dict(getattr(snapshot, "values", {}) or {})
+        next_nodes = tuple(getattr(snapshot, "next", ()) or ())
+        if values and not next_nodes:
+            raise HitlResumeError("CHECKPOINT_PHASE_INVALID")
+        if not values:
+            if locked_view.status is not RunStatus.WAITING_APPROVAL:
+                raise HitlResumeError("REHYDRATE_RUN_NOT_WAITING")
+            _rehydrate_locked(
+                graph,
+                transactions,
+                run_id=run_id,
+                thread_id=canonical,
+            )
         return _resume_locked(
             graph,
             transactions,

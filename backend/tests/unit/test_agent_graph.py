@@ -261,7 +261,9 @@ class _Ports:
             policy_version="ACTION-POLICY-V1",
         )
 
-    def persist_action(self, run_id: str, decision: ActionDecision) -> PersistResult:
+    def persist_action(
+        self, run_id: str, decision: ActionDecision, _rehydration_seed: Any
+    ) -> PersistResult:
         self.calls.append("persist_action")
         self.persisted_decisions.append(decision)
         if decision.action is ActionCode.EQP_HOLD:

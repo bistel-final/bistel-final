@@ -21,7 +21,10 @@ import rehearsal_postgres as postgres  # noqa: E402
 
 from app.agent import action_store, approval_store  # noqa: E402
 from app.agent import repository as repo  # noqa: E402
-from app.agent.state import ActionDecision  # noqa: E402
+from app.agent.incident import ResolvedIncident  # noqa: E402
+from app.agent.rehydration import RehydrationSeed  # noqa: E402
+from app.agent.routing import ResolvedIncidentRoute  # noqa: E402
+from app.agent.state import ActionDecision, ToolBudget  # noqa: E402
 from app.common.audit import AuditContractError  # noqa: E402
 from app.common.enums import (  # noqa: E402
     ActionCode,
@@ -86,6 +89,31 @@ def _hold() -> ActionDecision:
     )
 
 
+def _seed(lot_id: str, chamber_id: str) -> RehydrationSeed:
+    return RehydrationSeed(
+        route=ResolvedIncidentRoute(
+            incident=ResolvedIncident(
+                lot_id=lot_id,
+                chamber_id=chamber_id,
+                requested_alarm=ALARM,
+                representative_alarm=ALARM,
+                member_alarms=(ALARM,),
+            ),
+            wafer_routes=(),
+            graph_evidence=(),
+            route_consistency=True,
+            mismatches=(),
+        ),
+        fdc_evidence=None,
+        optional_anomaly_evidence=None,
+        graph_evidence=None,
+        document_evidence=None,
+        errors=(),
+        tool_budget=ToolBudget(used=0),
+        fdc_lot_hist_id="LH-HITL",
+    )
+
+
 def _create_waiting_bundle(
     engine: Any,
     *,
@@ -105,7 +133,11 @@ def _create_waiting_bundle(
                 member_alarms=(ALARM,),
             ),
         )
-    result = action_store.production_port(engine.begin)(run.agent_run_id, _hold())
+    result = action_store.production_port(engine.begin)(
+        run.agent_run_id,
+        _hold(),
+        _seed(lot_id, chamber_id),
+    )
     assert result.approval_id is not None
     return run.agent_run_id, result.action_id, result.approval_id
 
@@ -353,7 +385,11 @@ def test_same_run_terminal_bundle_replays_but_another_run_cannot_reuse_it(
         Decision.REJECT,
         "operator",
     )
-    replay = action_store.production_port(engine.begin)(run_id, _hold())
+    replay = action_store.production_port(engine.begin)(
+        run_id,
+        _hold(),
+        _seed("LOT-HITL", "EQP01-PM1"),
+    )
     assert replay.action_id == action_id
 
     with engine.begin() as connection:
@@ -372,5 +408,9 @@ def test_same_run_terminal_bundle_replays_but_another_run_cannot_reuse_it(
             ),
         )
     with pytest.raises(repo.RepositoryConflict) as caught:
-        action_store.production_port(engine.begin)(retry.agent_run_id, _hold())
+        action_store.production_port(engine.begin)(
+            retry.agent_run_id,
+            _hold(),
+            _seed("LOT-HITL", "EQP01-PM1"),
+        )
     assert caught.value.code == "ACTION_APPROVAL_NOT_PENDING"
