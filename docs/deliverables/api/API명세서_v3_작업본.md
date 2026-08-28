@@ -883,7 +883,7 @@ accepted status는 `RUNNING`이다. run을 `RUNNING`으로 저장한 뒤 202를 
   "channel": "MES_MOCK",
   "status": "SENT",
   "provider_message_id": "kafka:fdc.actions.result:0:42",
-  "request_hash": "sha256:...",
+  "request_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "completed_at": "2026-08-04T07:02:00+09:00",
   "error_code": null
 }
@@ -891,8 +891,8 @@ accepted status는 `RUNNING`이다. run을 `RUNNING`으로 저장한 뒤 202를 
 
 `channel`은 내부 Enum `EMAIL|MES_MOCK`, callback `status`는 `SENT|FAILED`다. 같은
 `SENT`는 non-empty `provider_message_id`와 null `error_code`, `FAILED`는 non-empty
-`error_code`와 nullable `provider_message_id`를 요구한다. `request_hash`는
-`sha256:<64-lowercase-hex>`, `completed_at`은 offset을 포함한 date-time이다. 같은
+`error_code`와 nullable `provider_message_id`를 요구한다. `request_hash`는 접두사 없는
+`64-lowercase-hex`, `completed_at`은 offset을 포함한 date-time이다. 같은
 `action_id`·channel·request_hash의 재수신은 외부 효과나 감사로그를 중복 생성하지 않고 200과
 같은 `DeliveryResult`를 반환한다. 같은 action/channel의 다른 hash나 터미널 상태 변경은 409,
 서명 실패는 401, 대상 없음은 404, 형식 오류는 422, 저장소 장애는 503이다.
@@ -904,7 +904,7 @@ accepted status는 `RUNNING`이다. run을 `RUNNING`으로 저장한 뒤 202를 
   "action_id": "ACT-000003",
   "channel": "MES_MOCK",
   "status": "SENT",
-  "request_hash": "sha256:...",
+  "request_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "provider_message_id": "kafka:fdc.actions.result:0:42",
   "completed_at": "2026-08-04T07:02:00+09:00",
   "error_code": null,

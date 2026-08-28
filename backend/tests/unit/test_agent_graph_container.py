@@ -32,8 +32,10 @@ for candidate in (BACKEND_ROOT, BACKEND_ROOT / "scripts"):
 import postgres_transition as transition  # noqa: E402
 import rehearsal_postgres as postgres  # noqa: E402
 
+from app.agent import action_store as action_store_module  # noqa: E402
 from app.agent import checkpoint as ck  # noqa: E402
 from app.agent import graph as graph_module  # noqa: E402
+from app.agent import repository as repo  # noqa: E402
 from app.agent.graph import (  # noqa: E402
     AgentGraphDependencies,
     build_agent_graph,
@@ -715,6 +717,215 @@ def test_real_incident_run_route_and_tool_audit_complete_with_fake_ports(
     assert state["tool_budget"].used == 2
     assert state["action_decision"].action is ActionCode.MONITORING
     assert audit_count == 3
+
+
+def test_concurrent_same_run_persists_one_action_without_reused_link(
+    runtime: tuple[Any, Any],
+) -> None:
+    """같은 RUNNING run의 두 호출은 advisory→row lock 아래 멱등 반환한다."""
+
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    run_id = _start_runtime_run(engine)
+    decision = ActionDecision(
+        action=ActionCode.WARNING,
+        severity=Severity.MEDIUM,
+        requires_approval=False,
+        matched_rule="TRACE_OOS",
+    )
+    persist = action_store_module.production_port(engine.begin)
+    barrier = Barrier(2)
+
+    def attempt(_index: int) -> PersistResult:
+        barrier.wait()
+        return persist(run_id, decision)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, (1, 2)))
+
+    with engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "SELECT "
+                "(SELECT count(*) FROM action_history) AS actions, "
+                "(SELECT count(*) FROM agent_run_action) AS links, "
+                "(SELECT count(*) FROM agent_run_action "
+                " WHERE link_role='REUSED') AS reused, "
+                "(SELECT count(*) FROM action_delivery) AS deliveries"
+            )
+        ).one()
+
+    assert results[0] == results[1]
+    assert (counts.actions, counts.links, counts.reused, counts.deliveries) == (
+        1,
+        1,
+        0,
+        1,
+    )
+
+
+def test_failed_retry_reuses_the_created_action_on_postgres(
+    runtime: tuple[Any, Any],
+) -> None:
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    first_run_id = _start_runtime_run(engine)
+    decision = ActionDecision(
+        action=ActionCode.WARNING,
+        severity=Severity.MEDIUM,
+        requires_approval=False,
+        matched_rule="TRACE_OOS",
+    )
+    persist = action_store_module.production_port(engine.begin)
+    first = persist(first_run_id, decision)
+
+    with engine.begin() as connection:
+        current = repo.get_agent_run(connection, first_run_id)
+        repo.finish_agent_run(
+            connection,
+            first_run_id,
+            RunStatus.FAILED,
+            evidence=current.evidence,
+        )
+    retry_run_id = _start_runtime_run(engine)
+    second = persist(retry_run_id, decision)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT agent_run_id, action_id, link_role FROM agent_run_action "
+                "ORDER BY linked_at, agent_run_id"
+            )
+        ).all()
+        action_count = connection.execute(
+            text("SELECT count(*) FROM action_history")
+        ).scalar_one()
+
+    assert first.action_id == second.action_id
+    assert action_count == 1
+    assert {row.link_role for row in rows} == {"CREATED", "REUSED"}
+    assert len(rows) == 2
+
+
+def test_middle_failure_rolls_back_action_bundle_and_approval_audit(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    run_id = _start_runtime_run(engine)
+    decision = ActionDecision(
+        action=ActionCode.EQP_HOLD,
+        severity=Severity.HIGH,
+        requires_approval=True,
+        matched_rule="R03_PRESENT",
+    )
+    original = action_store_module.create_approval_request
+
+    def fail_after_approval(*args: Any, **kwargs: Any) -> Any:
+        original(*args, **kwargs)
+        raise repo.RepositoryContractError("INJECTED_FAILURE")
+
+    monkeypatch.setattr(
+        action_store_module,
+        "create_approval_request",
+        fail_after_approval,
+    )
+    with engine.connect() as connection:
+        audit_before = connection.execute(
+            text("SELECT count(*) FROM audit_log")
+        ).scalar_one()
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        action_store_module.production_port(engine.begin)(run_id, decision)
+
+    with engine.connect() as connection:
+        counts = {
+            table: connection.execute(
+                text(f"SELECT count(*) FROM {table}")
+            ).scalar_one()
+            for table in (
+                "action_history",
+                "agent_run_action",
+                "approval_request",
+                "action_delivery",
+            )
+        }
+        audit_after = connection.execute(
+            text("SELECT count(*) FROM audit_log")
+        ).scalar_one()
+
+    assert exc.value.code == "INJECTED_FAILURE"
+    assert counts == {
+        "action_history": 0,
+        "agent_run_action": 0,
+        "approval_request": 0,
+        "action_delivery": 0,
+    }
+    assert audit_after == audit_before
+
+
+def test_production_action_port_persists_hold_bundle_before_interrupt(
+    runtime: tuple[Any, Any],
+) -> None:
+    """후속 delivery port는 fixture로 두고 실제 action 저장 port만 graph에 태운다."""
+
+    _endpoint, engine = runtime
+    _seed_runtime(engine)
+    ports = _HoldAssemblyPorts()
+    ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
+    graph = build_agent_graph(
+        _dependencies(engine, ports),
+        interrupt_after=("hitl_interrupt",),
+    )
+
+    state = graph.invoke(
+        {
+            "requested_alarm": AlarmRef(
+                source=AlarmSource.TRACE,
+                alarm_id="TA-01",
+            ),
+            "autonomy_level": 2,
+        }
+    )
+
+    with engine.connect() as connection:
+        action = connection.execute(
+            text("SELECT action_code, approval_status, reason " "FROM action_history")
+        ).one()
+        approval = connection.execute(
+            text("SELECT approval_id, status FROM approval_request")
+        ).one()
+        deliveries = connection.execute(
+            text(
+                "SELECT channel, status, request_hash FROM action_delivery "
+                "ORDER BY channel"
+            )
+        ).all()
+        run = connection.execute(
+            text("SELECT status, action, severity, evidence FROM agent_run")
+        ).one()
+
+    assert action.action_code == ActionCode.EQP_HOLD.value
+    assert action.approval_status == "PENDING"
+    assert "{" not in action.reason and "ACTION-POLICY" not in action.reason
+    assert state["approval_id"] == approval.approval_id
+    assert approval.status == "PENDING"
+    assert [(row.channel, row.status) for row in deliveries] == [
+        (DeliveryChannel.EMAIL.value, DeliveryStatus.WAITING.value),
+        (DeliveryChannel.MES_MOCK.value, DeliveryStatus.BLOCKED.value),
+    ]
+    assert all(len(row.request_hash) == 64 for row in deliveries)
+    assert run.status == RunStatus.RUNNING.value
+    assert (run.action, run.severity) == (
+        ActionCode.EQP_HOLD.value,
+        Severity.HIGH.value,
+    )
+    assert run.evidence["action_provenance"] == {
+        "schema": "action-provenance-v1",
+        "action_policy_version": "ACTION-POLICY-V1",
+        "member_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+    }
 
 
 def test_production_boundary_binds_the_actual_fdc_structured_tool() -> None:

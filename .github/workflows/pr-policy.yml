@@ -540,6 +540,7 @@ jobs:
           tests/unit/test_agent_prompts.py
           tests/unit/test_agent_hypothesis.py
           tests/unit/test_agent_decision.py
+          tests/unit/test_agent_action_store.py
           tests/unit/test_agent_graph.py
           -rs --no-header
 

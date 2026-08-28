@@ -66,6 +66,7 @@ from app.common.enums import (
     RunStatus,
     Severity,
     ToolCallStatus,
+    requires_approval,
     resolve_severity,
 )
 from app.common.ids import new_agent_run_id, new_approval_id, new_tool_call_id
@@ -93,12 +94,15 @@ __all__ = [
     "list_run_alarms",
     "set_run_action",
     "finish_agent_run",
+    "merge_run_action_provenance",
     "insert_prediction",
     "get_prediction",
     "get_prediction_or_none",
     "insert_human_prediction_review",
     "list_human_prediction_reviews",
     "RunActionRow",
+    "ActionHistoryRow",
+    "ActionBundle",
     "ToolBudgetCounts",
     "ToolCallRow",
     "ApprovalRequestRow",
@@ -107,7 +111,10 @@ __all__ = [
     "RESERVED_ERROR_MSG",
     "link_run_action",
     "get_run_action",
+    "find_run_action",
     "find_created_action",
+    "insert_action_history",
+    "get_action_bundle",
     "reserve_tool_call",
     "finalize_tool_call",
     "list_tool_calls",
@@ -322,6 +329,7 @@ COLUMN_LIMITS: Final[Mapping[str, int]] = {
     "retry_of_run_id": 20,
     "llm_model": 64,
     "prompt_version": 40,
+    "action_policy_version": 40,
     "reviewer": 40,
     "disposition": 16,
     "label_source": 16,
@@ -878,6 +886,81 @@ def set_run_action(
     return updated
 
 
+ACTION_PROVENANCE_SCHEMA: Final = "action-provenance-v1"
+ACTION_PROVENANCE_KEY: Final = "action_provenance"
+
+_UPDATE_RUN_EVIDENCE = text(
+    f"""
+    UPDATE agent_run SET evidence = CAST(:evidence AS jsonb)
+    WHERE agent_run_id = :run_id AND status = ANY(:active)
+    RETURNING {_RUN_COLUMNS}
+    """
+)
+
+
+def merge_run_action_provenance(
+    connection: Connection,
+    agent_run_id: str,
+    *,
+    action_policy_version: str | None = None,
+    member_alarms: Sequence[AlarmRef] | None = None,
+    terminal_evidence: Mapping[str, Any] | None = None,
+) -> AgentRunRow:
+    """action provenance와 terminal evidence를 기존 JSON에 손실 없이 합친다.
+
+    action 생성 시에는 policy version과 AlarmRef snapshot을 함께 받고, graph 종료
+    시에는 ``terminal_evidence``만 받아 이미 저장된 provenance를 보존한다. 기존
+    provenance와 다른 값을 같은 run에 다시 쓰는 요청은 조용히 교체하지 않는다.
+    """
+
+    _require_transaction(connection)
+    if (action_policy_version is None) != (member_alarms is None):
+        raise RepositoryContractError("ACTION_PROVENANCE_INCOMPLETE")
+    if terminal_evidence is not None and ACTION_PROVENANCE_KEY in terminal_evidence:
+        raise RepositoryContractError("ACTION_PROVENANCE_RESERVED")
+
+    current = lock_agent_run(connection, agent_run_id)
+    if current.status not in {RunStatus.RUNNING, RunStatus.WAITING_APPROVAL}:
+        raise RepositoryConflict("RUN_NOT_ACTIVE")
+    merged: dict[str, Any] = dict(current.evidence or {})
+
+    if action_policy_version is not None and member_alarms is not None:
+        version = _require_text(action_policy_version, "action_policy_version")
+        if not member_alarms:
+            raise RepositoryContractError("EMPTY_ACTION_MEMBER_ALARMS")
+        tokens = [alarm.to_token() for alarm in member_alarms]
+        if len(tokens) != len(set(tokens)):
+            raise RepositoryContractError("DUPLICATE_ACTION_MEMBER_ALARMS")
+        provenance = {
+            "schema": ACTION_PROVENANCE_SCHEMA,
+            "action_policy_version": version,
+            "member_alarms": [alarm.model_dump(mode="json") for alarm in member_alarms],
+        }
+        existing = merged.get(ACTION_PROVENANCE_KEY)
+        if existing is not None and existing != provenance:
+            raise RepositoryConflict("ACTION_PROVENANCE_MISMATCH")
+        merged[ACTION_PROVENANCE_KEY] = provenance
+
+    if terminal_evidence is not None:
+        merged.update(dict(terminal_evidence))
+
+    evidence_json = _json_payload(merged, "evidence")
+    try:
+        row = connection.execute(
+            _UPDATE_RUN_EVIDENCE,
+            {
+                "run_id": agent_run_id,
+                "active": list(ACTIVE_RUN_STATUSES),
+                "evidence": evidence_json,
+            },
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        raise RepositoryConflict("RUN_NOT_ACTIVE")
+    return _run_row(row)
+
+
 #: `finish_agent_run()`이 받을 수 있는 terminal 상태와 그 감사 event.
 TERMINAL_EVENTS: Final[Mapping[RunStatus, AuditEvent]] = {
     RunStatus.COMPLETED: AuditEvent.AGENT_RUN_COMPLETED,
@@ -1285,6 +1368,113 @@ def _write(connection: Connection, action: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# action_history — Runtime action 생성 projection
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ActionHistoryRow:
+    action_id: str
+    lot_id: str
+    chamber_id: str
+    action_code: ActionCode
+    reason: str
+    approval_required: bool
+    approval_status: ApprovalStatus
+    approved_by: str | None
+    approved_at: datetime | None
+    created_at: datetime
+
+
+_ACTION_HISTORY_COLUMNS = """
+    action_id, lot_id, chamber_id, action_code, reason,
+    approval_required, approval_status, approved_by, approved_at, created_at
+"""
+
+_INSERT_ACTION_HISTORY = text(
+    f"""
+    INSERT INTO action_history (
+        action_id, lot_id, recipe_step_name, equipment_id, chamber_id,
+        trigger_alarm_lot_hist_id, action_code, reason,
+        approval_required, approval_status, approved_by, approved_at,
+        notify_status, notify_at, mes_status, mes_at, created_at
+    ) VALUES (
+        :action_id, :lot_id, NULL, NULL, :chamber_id,
+        NULL, :action_code, :reason,
+        :approval_required, :approval_status, :approved_by, :approved_at,
+        NULL, NULL, NULL, NULL, :created_at
+    )
+    RETURNING {_ACTION_HISTORY_COLUMNS}
+    """
+)
+
+
+def _action_history_row(row: Row[Any]) -> ActionHistoryRow:
+    required = str(row.approval_required).strip()
+    if required not in {"Y", "N"}:
+        raise RepositoryContractError("ACTION_APPROVAL_FLAG_INVALID")
+    try:
+        action = ActionCode(row.action_code)
+        status = ApprovalStatus(row.approval_status)
+    except ValueError as exc:
+        raise RepositoryContractError("ACTION_HISTORY_CONTRACT_INVALID") from exc
+    return ActionHistoryRow(
+        action_id=row.action_id,
+        lot_id=row.lot_id,
+        chamber_id=row.chamber_id,
+        action_code=action,
+        reason=row.reason,
+        approval_required=required == "Y",
+        approval_status=status,
+        approved_by=row.approved_by,
+        approved_at=row.approved_at,
+        created_at=row.created_at,
+    )
+
+
+def insert_action_history(
+    connection: Connection,
+    *,
+    action_id: str,
+    lot_id: str,
+    chamber_id: str,
+    action_code: ActionCode,
+    reason: str,
+    created_at: datetime,
+) -> ActionHistoryRow:
+    """규칙 결정 한 건을 base ``action_history`` projection으로 저장한다."""
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    lot_id = _require_text(lot_id, "lot_id")
+    chamber_id = _require_text(chamber_id, "chamber_id")
+    reason = _require_text(reason, "reason")
+    try:
+        action = ActionCode(action_code)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_ACTION_CODE") from exc
+    approval_required = requires_approval(action)
+    status = ApprovalStatus.PENDING if approval_required else ApprovalStatus.AUTO
+    row = _insert_one(
+        connection,
+        _INSERT_ACTION_HISTORY,
+        {
+            "action_id": action_id,
+            "lot_id": lot_id,
+            "chamber_id": chamber_id,
+            "action_code": action.value,
+            "reason": reason,
+            "approval_required": "Y" if approval_required else "N",
+            "approval_status": status.value,
+            "approved_by": None if approval_required else "system",
+            "approved_at": None if approval_required else created_at,
+            "created_at": created_at,
+        },
+    )
+    return _action_history_row(row)
+
+
+# ---------------------------------------------------------------------------
 # agent_run_action — action은 만들지 않고 **link만** 한다
 # ---------------------------------------------------------------------------
 
@@ -1387,6 +1577,18 @@ def get_run_action(connection: Connection, agent_run_id: str) -> RunActionRow:
         "RUN_ACTION_NOT_FOUND",
     )
     return _run_action_row(row)
+
+
+def find_run_action(connection: Connection, agent_run_id: str) -> RunActionRow | None:
+    """run의 action link를 찾는다. 멱등 판정을 위해 없음은 ``None``이다."""
+
+    try:
+        row = connection.execute(
+            _SELECT_RUN_ACTION, {"run_id": agent_run_id}
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    return None if row is None else _run_action_row(row)
 
 
 def find_created_action(
@@ -1973,3 +2175,46 @@ def list_action_deliveries(
 ) -> list[ActionDeliveryRow]:
     rows = _fetch_all(connection, _SELECT_DELIVERIES, {"action_id": action_id})
     return [_delivery_row(row) for row in rows]
+
+
+@dataclass(frozen=True, slots=True)
+class ActionBundle:
+    """멱등 재사용 판정에 필요한 action 저장 bundle의 최소 projection."""
+
+    action_id: str
+    action_code: ActionCode
+    approval_id: str | None
+    delivery_channels: tuple[DeliveryChannel, ...]
+
+
+_SELECT_ACTION_BUNDLE = text(
+    """
+    SELECT h.action_id, h.action_code, p.approval_id
+    FROM action_history AS h
+    LEFT JOIN approval_request AS p ON p.action_id = h.action_id
+    WHERE h.action_id = :action_id
+    """
+)
+
+
+def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
+    """action·approval·delivery identity를 한 snapshot에서 읽는다."""
+
+    action_id = _require_text(action_id, "action_id")
+    row = _fetch_one(
+        connection,
+        _SELECT_ACTION_BUNDLE,
+        {"action_id": action_id},
+        "ACTION_NOT_FOUND",
+    )
+    try:
+        action_code = ActionCode(row.action_code)
+    except ValueError as exc:
+        raise RepositoryContractError("ACTION_BUNDLE_INVALID") from exc
+    deliveries = list_action_deliveries(connection, action_id)
+    return ActionBundle(
+        action_id=row.action_id,
+        action_code=action_code,
+        approval_id=row.approval_id,
+        delivery_channels=tuple(item.channel for item in deliveries),
+    )

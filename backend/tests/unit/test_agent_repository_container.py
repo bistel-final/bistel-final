@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Barrier
 from typing import Any
@@ -454,6 +455,121 @@ def test_the_named_check_refuses_a_broken_pair(
                 {"a": action, "s": severity, "run": run.agent_run_id},
             )
     assert repo._constraint_name(exc.value) == "ck_agent_run_action_severity_pair"
+
+
+def test_action_bundle_repository_seams_round_trip_on_postgres(engine: Any) -> None:
+    """C-3.2의 action·optional link·bundle seam을 실제 schema에서 확인한다."""
+
+    with engine.begin() as connection:
+        run = repo.create_agent_run(connection, _command())
+        assert repo.find_run_action(connection, run.agent_run_id) is None
+        action = repo.insert_action_history(
+            connection,
+            action_id=ACTION_ID,
+            lot_id=run.lot_id,
+            chamber_id=run.chamber_id,
+            action_code=ActionCode.WARNING,
+            reason="TRACE OOS 알람이 존재해 경고 조치를 생성했습니다.",
+            created_at=datetime.now(UTC),
+        )
+        repo.link_run_action(
+            connection,
+            agent_run_id=run.agent_run_id,
+            action_id=action.action_id,
+            link_role=ActionLinkRole.CREATED,
+            lot_id=run.lot_id,
+            chamber_id=run.chamber_id,
+            trigger_alarm=run.representative_alarm,
+        )
+        repo.insert_action_delivery(
+            connection,
+            action_id=action.action_id,
+            channel=DeliveryChannel.EMAIL,
+            status=DeliveryStatus.WAITING,
+            request_hash="a" * 64,
+        )
+        linked = repo.find_run_action(connection, run.agent_run_id)
+        bundle = repo.get_action_bundle(connection, action.action_id)
+
+    assert linked is not None and linked.action_id == ACTION_ID
+    assert action.approval_status is ApprovalStatus.AUTO
+    assert action.approved_by == "system"
+    assert bundle == repo.ActionBundle(
+        action_id=ACTION_ID,
+        action_code=ActionCode.WARNING,
+        approval_id=None,
+        delivery_channels=(DeliveryChannel.EMAIL,),
+    )
+
+
+def test_action_provenance_merge_survives_terminal_fields(engine: Any) -> None:
+    with engine.begin() as connection:
+        run = repo.create_agent_run(connection, _command())
+        repo.merge_run_action_provenance(
+            connection,
+            run.agent_run_id,
+            action_policy_version="ACTION-POLICY-V1",
+            member_alarms=(run.requested_alarm,),
+        )
+
+    with engine.begin() as connection:
+        merged = repo.merge_run_action_provenance(
+            connection,
+            run.agent_run_id,
+            terminal_evidence={"code": "FIXTURE"},
+        )
+
+    assert merged.evidence == {
+        "action_provenance": {
+            "schema": "action-provenance-v1",
+            "action_policy_version": "ACTION-POLICY-V1",
+            "member_alarms": [{"source": AlarmSource.TRACE.value, "alarm_id": "TA-01"}],
+        },
+        "code": "FIXTURE",
+    }
+
+
+@pytest.mark.parametrize("terminal", [RunStatus.COMPLETED, RunStatus.FAILED])
+def test_action_provenance_merge_refuses_a_terminal_run(
+    engine: Any,
+    terminal: RunStatus,
+) -> None:
+    provenance = {
+        "schema": "action-provenance-v1",
+        "action_policy_version": "ACTION-POLICY-V1",
+        "member_alarms": [{"source": AlarmSource.TRACE.value, "alarm_id": "TA-01"}],
+    }
+    with engine.begin() as connection:
+        run = repo.create_agent_run(connection, _command())
+        repo.merge_run_action_provenance(
+            connection,
+            run.agent_run_id,
+            action_policy_version="ACTION-POLICY-V1",
+            member_alarms=(run.requested_alarm,),
+        )
+        repo.finish_agent_run(
+            connection,
+            run.agent_run_id,
+            terminal,
+            evidence={"action_provenance": provenance, "code": "TERMINAL"},
+        )
+
+    with pytest.raises(repo.RepositoryConflict) as exc:
+        with engine.begin() as connection:
+            repo.merge_run_action_provenance(
+                connection,
+                run.agent_run_id,
+                terminal_evidence={"code": "LATE_WRITE"},
+            )
+
+    with engine.connect() as connection:
+        stored = repo.get_agent_run(connection, run.agent_run_id)
+
+    assert exc.value.code == "RUN_NOT_ACTIVE"
+    assert stored.evidence == {
+        "action_provenance": provenance,
+        "code": "TERMINAL",
+    }
 
 
 # --- 상태 전이 --------------------------------------------------------------
