@@ -136,6 +136,9 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
   commit하고 동일 thread로 재개한다.
 - `V5-C-3.3` resume service가 PostgreSQL session advisory lock으로 같은 run/thread의
   동시 invoke를 막는다. `V5-C-5.1`은 이 서비스를 조립하며 별도 mutex를 재구현하지 않는다.
+- `hitl_interrupt` port는 terminal 승인 상태를 `Decision`으로 변환하는 **순수 read**다.
+  node 성공 checkpoint 전에 process가 죽으면 재호출되므로 DB 쓰기·메일·Kafka 등 외부
+  효과를 절대 추가하지 않는다.
 - action bundle과 `WAITING_APPROVAL`은 같은 transaction에 commit하고 승인요청 email node
   뒤에서 중단한다. DB↔checkpoint crash window는 같은 run/thread catch-up으로 수렴한다.
   checkpoint 자체가 없으면 C-3.3은 `CHECKPOINT_MISSING`으로 상태 변경 없이 막고,
@@ -149,6 +152,9 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
   그 hard/soft 판정·종료 postcondition·잔여 미충족을 인용한다.
 - 승인 전·반려 시 `fdc.actions` 발행은 0건이다. 승인된 EQP_HOLD만 n8n Kafka Producer가
   발행하고 `fdc.actions.result`를 write-back한다.
+- `action_history.approved_by`는 자동 조치에서 `system`, 사람 승인에서 승인자 ID이며
+  PENDING·REJECTED에는 `NULL`이다. 승인 상태와 함께 해석하고 이 값만으로 반려 여부를
+  추론하지 않는다.
 - EMAIL·MES_MOCK은 `(action_id, channel)`별 외부 효과 최대 1회다. 동일 hash는 같은 결과,
   다른 hash는 409, 응답 유실은 `UNKNOWN`이며 자동 재발송하지 않는다.
 - n8n JSON은 delivery·write-back 3종만 `deploy/n8n/`에 두고 secret·credential을 포함하지

@@ -123,7 +123,7 @@ def test_physical_owner_termination_releases_the_session_lock(
                 "SELECT pg_terminate_backend(%s)", (pid_holder[0],)
             ).fetchone()[0]
         terminated.set()
-        assert future.result() == "RESUME_LOCK_LEAKED"
+        assert future.result() == "RESUME_LOCK_RELEASE_UNCERTAIN"
 
     # terminated physical session이 들던 advisory lock은 server가 해제했다.
     with subject._resume_mutex(engine.connect, THREAD_ID):

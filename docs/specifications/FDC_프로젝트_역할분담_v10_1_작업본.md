@@ -303,6 +303,10 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
   `REJECTED`이면 Kafka 발행 없음
 - approval·action·MES delivery·감사는 같은 조건부 transaction에서 결정하며, 같은 thread의
   재개는 PostgreSQL session advisory lock으로 한 실행자만 허용한다.
+- `hitl_interrupt`는 terminal 승인 상태를 읽어 내부 Decision으로 바꾸는 순수 read이며,
+  checkpoint 전 crash 재호출에 안전하도록 DB 쓰기·외부 효과를 금지한다.
+- `approved_by`는 자동 조치의 `system`, 사람 승인자의 ID, PENDING·REJECTED의 `NULL`을
+  승인 상태와 함께 해석한다.
 - DB 상태는 있으나 checkpoint가 사라진 경우 C-3.3은 상태 변경 없이 fail-closed하고,
   C-3.4가 DB 정본 기반 State 재수화를 소유한다.
 - Backend worker는 승인 트랜잭션에서 Kafka를 직접 발행하지 않고 서명된 n8n webhook을 호출하며,

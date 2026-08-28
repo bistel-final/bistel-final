@@ -17,7 +17,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.agent import decision as decision_module
 from app.agent import graph as subject
 from app.agent import incident_repository, routing_repository
-from app.agent.approval_store import EmailTransportError, HitlDeliveryError
+from app.agent.approval_store import (
+    EmailTransportError,
+    HitlDeliveryError,
+    HitlResumeError,
+)
 from app.agent.graph import (
     CANONICAL_NODES,
     INTERNAL_NODES,
@@ -290,7 +294,12 @@ class _Ports:
     def notify_email(self, action_id: str) -> None:
         self.calls.append("notify_email")
 
-    def approval_email(self, action_id: str, approval_id: str) -> None:
+    def approval_email(
+        self,
+        run_id: str,
+        action_id: str,
+        approval_id: str,
+    ) -> None:
         self.calls.append("approval_email")
 
     def hitl_interrupt(self, approval_id: str) -> Decision:
@@ -332,10 +341,24 @@ class _EmailFailurePorts(_Ports):
         super().__init__(action=ActionCode.EQP_HOLD)
         self.error: Exception | None = error
 
-    def approval_email(self, action_id: str, approval_id: str) -> None:
+    def approval_email(
+        self,
+        run_id: str,
+        action_id: str,
+        approval_id: str,
+    ) -> None:
         self.calls.append("approval_email")
         if self.error is not None:
             raise self.error
+
+
+class _PendingHitlPorts(_Ports):
+    def __init__(self) -> None:
+        super().__init__(action=ActionCode.EQP_HOLD)
+
+    def hitl_interrupt(self, approval_id: str) -> Decision:
+        self.calls.append("hitl_interrupt")
+        raise RepositoryConflict("APPROVAL_STILL_PENDING")
 
 
 def _build(
@@ -730,6 +753,27 @@ def test_untyped_approval_email_failure_preserves_retry_checkpoint(
     resumed = graph.get_state(config)
     assert resumed.next == ("hitl_interrupt",)
     assert ports.calls.count("approval_email") == 2
+    assert finishes == []
+
+
+def test_pending_hitl_direct_invoke_preserves_checkpoint_without_failed_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ports = _PendingHitlPorts()
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=ports,
+        interrupt_after=("approval_email",),
+    )
+    config = {"configurable": {"thread_id": "11111111-2222-3333-4444-555555555555"}}
+    _invoke(graph)
+
+    with pytest.raises(HitlResumeError) as caught:
+        graph.invoke(None, config=config)
+    assert caught.value.code == "APPROVAL_STILL_PENDING"
+    snapshot = graph.get_state(config)
+    assert snapshot.next == ("hitl_interrupt",)
+    assert snapshot.values.get("terminal_error") is None
     assert finishes == []
 
 

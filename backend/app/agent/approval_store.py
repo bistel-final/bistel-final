@@ -8,6 +8,7 @@ invoke 동안 업무 transaction이나 row lock을 잡지 않는다.
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, Final, Protocol
@@ -32,9 +33,12 @@ from app.agent.state import DeliveryPlan
 from app.agent.tools import TransactionFactory
 from app.common.enums import ApprovalStatus, Decision, RunStatus
 
+# 저장소의 기존 two-int namespace `VCM2`(0x56434D32)·`BFSB`(0x42465342)와
+# 겹치지 않는다. incident lock은 단일 bigint signature라 key space도 다르다.
 RESUME_LOCK_NAMESPACE: Final = 0x5643_3333  # "VC33"
 _TRY_RESUME_LOCK = text("SELECT pg_try_advisory_lock(:namespace, :key) AS acquired")
 _UNLOCK_RESUME = text("SELECT pg_advisory_unlock(:namespace, :key) AS released")
+logger = logging.getLogger(__name__)
 
 
 class ResumeLockConnectionFactory(Protocol):
@@ -92,7 +96,11 @@ def decision_port(
 def hitl_decision_port(
     transactions: TransactionFactory,
 ) -> Callable[[str], Decision]:
-    """checkpoint 재개 node가 DB의 terminal 승인만 읽게 한다."""
+    """checkpoint 재개 node가 DB의 terminal 승인만 읽게 하는 순수-read port.
+
+    checkpoint는 node 성공 뒤에 전진하므로 실행 중 crash 시 재호출될 수 있다. 이 port는
+    DB 쓰기나 외부 효과를 절대 추가하지 않는다.
+    """
 
     def read(approval_id: str) -> Decision:
         with transactions() as connection:
@@ -127,17 +135,17 @@ def cancel_mes_port(
 def approval_email_port(
     transactions: TransactionFactory,
     sender: Callable[[str, str], None],
-) -> Callable[[str, str], None]:
+) -> Callable[[str, str, str], None]:
     """terminal 결정 뒤의 늦은 승인요청 email을 보내지 않는다.
 
     상태 조회 transaction은 sender 호출 전에 끝난다. 네트워크 I/O 동안 DB lock을
     보유하지 않는다. EMAIL 외부효과 멱등성 자체는 C-4.3~4.6이 완성한다.
     """
 
-    def send(action_id: str, approval_id: str) -> None:
+    def send(agent_run_id: str, action_id: str, approval_id: str) -> None:
         with transactions() as connection:
             approval = get_approval_request(connection, approval_id)
-        if approval.action_id != action_id:
+        if approval.agent_run_id != agent_run_id or approval.action_id != action_id:
             raise RepositoryConflict("APPROVAL_IDENTITY_MISMATCH")
         if approval.status is not ApprovalStatus.PENDING:
             return
@@ -161,6 +169,12 @@ def is_approval_interrupted(graph: Any, thread_id: str) -> bool:
 
 
 def _resume_lock_key(thread_id: str) -> int:
+    """UUID를 32bit key로 축약한다.
+
+    충돌은 서로 다른 thread를 불필요하게 직렬화할 뿐 동시 실행을 허용하지 않는다.
+    즉 드문 충돌도 안전한 과다 차단 방향이다.
+    """
+
     canonical = normalize_thread_id(thread_id)
     raw = int.from_bytes(hashlib.sha256(canonical.encode("ascii")).digest()[:4], "big")
     return raw if raw < 2**31 else raw - 2**32
@@ -183,7 +197,7 @@ def _invalidate(connection: Any) -> None:
             return
         except Exception:  # noqa: BLE001 - sanitized 오류만 반환한다
             pass
-    raise HitlResumeError("RESUME_LOCK_LEAKED")
+    raise HitlResumeError("RESUME_CONNECTION_DISCARD_FAILED")
 
 
 @contextmanager
@@ -208,8 +222,8 @@ def _resume_mutex(
             # session을 pool로 돌려보내지 않는다.
             try:
                 _invalidate(raw)
-            except HitlResumeError:
-                pass
+            except HitlResumeError as discard_error:
+                raise discard_error from exc
             raise HitlResumeError("RESUME_LOCK_UNAVAILABLE") from exc
         if not acquired:
             raise HitlResumeError("RESUME_ALREADY_RUNNING")
@@ -228,14 +242,28 @@ def _resume_mutex(
                     ).scalar_one()
                 )
             except Exception as exc:
-                _invalidate(connection)
+                try:
+                    _invalidate(connection)
+                except HitlResumeError:
+                    if body_error is None:
+                        raise
+                    logger.error(
+                        "resume lock connection discard failed after body error"
+                    )
                 if body_error is None:
-                    raise HitlResumeError("RESUME_LOCK_LEAKED") from exc
+                    raise HitlResumeError("RESUME_LOCK_RELEASE_UNCERTAIN") from exc
             else:
                 if not released:
-                    _invalidate(connection)
+                    try:
+                        _invalidate(connection)
+                    except HitlResumeError:
+                        if body_error is None:
+                            raise
+                        logger.error(
+                            "resume lock connection discard failed after body error"
+                        )
                     if body_error is None:
-                        raise HitlResumeError("RESUME_LOCK_LEAKED")
+                        raise HitlResumeError("RESUME_LOCK_RELEASE_UNCERTAIN")
 
 
 def _checkpoint(
@@ -267,7 +295,11 @@ def _record_delivery_error(
                 run_id,
                 terminal_evidence={"hitl_delivery_error": code},
             )
-    except AgentRepositoryError:
+    except AgentRepositoryError as exc:
+        logger.error(
+            "HITL delivery evidence persistence failed (code=%s)",
+            exc.code,
+        )
         return
 
 

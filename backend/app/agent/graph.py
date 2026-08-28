@@ -15,7 +15,11 @@ from typing import Any, Final
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from app.agent.approval_store import EmailTransportError, HitlDeliveryError
+from app.agent.approval_store import (
+    EmailTransportError,
+    HitlDeliveryError,
+    HitlResumeError,
+)
 from app.agent.checkpoint import AgentCheckpointError
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.prompts import PROMPT_VERSION
@@ -272,6 +276,28 @@ def _approval_email_node(
             # `_safe_node→fail_run→END`로 보내면 WAITING DB는 남아도 checkpoint가
             # terminal이 된다. 원문 없이 재상승해 직전 성공 checkpoint에서 재시도한다.
             raise HitlDeliveryError(_classify_exception(exc)) from None
+
+    return wrapped
+
+
+def _hitl_interrupt_node(
+    fn: Callable[[AgentGraphState], dict[str, Any]],
+) -> Callable[[AgentGraphState], dict[str, Any]]:
+    """pending 오진입은 run을 죽이지 않고 같은 checkpoint에 남긴다."""
+
+    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+        try:
+            return fn(state)
+        except RepositoryConflict as exc:
+            if exc.code == "APPROVAL_STILL_PENDING":
+                raise HitlResumeError(exc.code) from None
+            error = _terminal(exc, "hitl_interrupt")
+        except Exception as exc:
+            error = _terminal(exc, "hitl_interrupt")
+        return {
+            "terminal_error": error,
+            "errors": (*state.get("errors", ()), error),
+        }
 
     return wrapped
 
@@ -685,6 +711,7 @@ def build_agent_graph(
 
     def approval_email(state: AgentGraphState) -> dict[str, Any]:
         ports.approval_email(
+            _required_state_id(state, "run_id"),
             _required_state_id(state, "action_id"),
             _required_state_id(state, "approval_id"),
         )
@@ -850,6 +877,8 @@ def build_agent_graph(
     for name, implementation in implementations.items():
         if name == "approval_email":
             graph.add_node(name, _approval_email_node(implementation))
+        elif name == "hitl_interrupt":
+            graph.add_node(name, _hitl_interrupt_node(implementation))
         else:
             graph.add_node(name, _safe_node(name, implementation))
     graph.add_node("fail_run", fail_run)

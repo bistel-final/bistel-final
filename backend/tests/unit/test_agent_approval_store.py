@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import logging
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -19,6 +22,7 @@ from app.common.enums import (
 )
 
 THREAD_ID = "11111111-2222-3333-4444-555555555555"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 @contextmanager
@@ -98,6 +102,7 @@ def test_late_approval_email_is_skipped(
         subject,
         "get_approval_request",
         lambda *_args: SimpleNamespace(
+            agent_run_id="RUN-1",
             action_id="ACT-1",
             status=status,
         ),
@@ -106,7 +111,7 @@ def test_late_approval_email_is_skipped(
         _transactions,
         lambda action_id, approval_id: calls.append((action_id, approval_id)),
     )
-    port("ACT-1", "APR-1")
+    port("RUN-1", "ACT-1", "APR-1")
     assert calls == []
 
 
@@ -118,6 +123,7 @@ def test_pending_approval_email_calls_the_sender_once(
         subject,
         "get_approval_request",
         lambda *_args: SimpleNamespace(
+            agent_run_id="RUN-1",
             action_id="ACT-1",
             status=ApprovalStatus.PENDING,
         ),
@@ -126,8 +132,39 @@ def test_pending_approval_email_calls_the_sender_once(
         _transactions,
         lambda action_id, approval_id: calls.append((action_id, approval_id)),
     )
-    port("ACT-1", "APR-1")
+    port("RUN-1", "ACT-1", "APR-1")
     assert calls == [("ACT-1", "APR-1")]
+
+
+@pytest.mark.parametrize(
+    ("run_id", "action_id"),
+    [("RUN-OTHER", "ACT-1"), ("RUN-1", "ACT-OTHER")],
+)
+def test_approval_email_rejects_state_identity_mismatch_before_sender(
+    monkeypatch: pytest.MonkeyPatch,
+    run_id: str,
+    action_id: str,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        subject,
+        "get_approval_request",
+        lambda *_args: SimpleNamespace(
+            agent_run_id="RUN-1",
+            action_id="ACT-1",
+            status=ApprovalStatus.PENDING,
+        ),
+    )
+    port = subject.approval_email_port(
+        _transactions,
+        lambda resolved_action, approval_id: calls.append(
+            (resolved_action, approval_id)
+        ),
+    )
+    with pytest.raises(RepositoryConflict) as caught:
+        port(run_id, action_id, "APR-1")
+    assert caught.value.code == "APPROVAL_IDENTITY_MISMATCH"
+    assert calls == []
 
 
 class _Scalar:
@@ -170,6 +207,14 @@ class _LockConnection:
         self.invalidated = True
 
 
+class _UndiscardableLockConnection(_LockConnection):
+    def invalidate(self) -> None:
+        raise RuntimeError("fixture invalidate error")
+
+    def detach(self) -> None:
+        raise RuntimeError("fixture detach error")
+
+
 def _factory(connection: _LockConnection) -> Any:
     @contextmanager
     def open_connection() -> Any:
@@ -201,8 +246,61 @@ def test_resume_mutex_invalidates_an_uncertain_unlock(release_error: bool) -> No
     with pytest.raises(subject.HitlResumeError) as caught:
         with subject._resume_mutex(_factory(connection), THREAD_ID):
             pass
-    assert caught.value.code == "RESUME_LOCK_LEAKED"
+    assert caught.value.code == "RESUME_LOCK_RELEASE_UNCERTAIN"
     assert connection.invalidated is True
+
+
+def test_resume_mutex_distinguishes_connection_discard_failure() -> None:
+    connection = _UndiscardableLockConnection(release=False)
+    with pytest.raises(subject.HitlResumeError) as caught:
+        with subject._resume_mutex(_factory(connection), THREAD_ID):
+            pass
+    assert caught.value.code == "RESUME_CONNECTION_DISCARD_FAILED"
+
+
+def test_resume_namespace_is_distinct_from_existing_two_part_namespaces() -> None:
+    def integer_constant(path: Path, name: str) -> int:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == name
+                    for target in node.targets
+                )
+            ) or (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == name
+            ):
+                return int(ast.literal_eval(node.value))
+        raise AssertionError(f"{path.name}에서 {name}을 찾지 못했습니다")
+
+    existing = {
+        integer_constant(
+            BACKEND_ROOT / "scripts" / "postgres_transition.py",
+            "ADVISORY_LOCK_NAMESPACE",
+        ),
+        integer_constant(
+            BACKEND_ROOT / "scripts" / "schema_lock.py",
+            "POSTGRES_SCHEMA_MUTATION_LOCK_NAMESPACE",
+        ),
+    }
+    assert subject.RESUME_LOCK_NAMESPACE not in existing
+
+
+def test_delivery_evidence_failure_is_logged_with_sanitized_code(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise RepositoryConflict("EVIDENCE_WRITE_CONFLICT")
+
+    monkeypatch.setattr(subject, "merge_run_action_provenance", fail)
+    with caplog.at_level(logging.ERROR, logger=subject.__name__):
+        subject._record_delivery_error(_transactions, "RUN-1", "EMAIL_FAILURE")
+    assert "EVIDENCE_WRITE_CONFLICT" in caplog.text
+    assert "EMAIL_FAILURE" not in caplog.text
 
 
 def test_interrupted_predicate_requires_phase_approval_and_no_terminal_error() -> None:

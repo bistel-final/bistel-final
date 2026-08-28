@@ -379,7 +379,9 @@ class AgentNodePorts(Protocol):
     decide_action: Callable[[ResolvedIncidentRoute], ActionDecision]
     persist_action: Callable[[NonEmptyId, ActionDecision], PersistResult]
     notify_email: Callable[[NonEmptyId], None]
-    approval_email: Callable[[NonEmptyId, NonEmptyId], None]
+    approval_email: Callable[[NonEmptyId, NonEmptyId, NonEmptyId], None]
+    # checkpoint가 node 실행 전 죽으면 같은 port가 다시 호출된다. 따라서 이 port는
+    # 승인 상태를 읽어 Decision으로 변환하는 것 외의 쓰기·외부 효과를 가져서는 안 된다.
     hitl_interrupt: Callable[[NonEmptyId], Decision]
     publish_mes: Callable[[NonEmptyId], None]
     writeback_result: Callable[[NonEmptyId], tuple[DeliveryPlan, ...]]

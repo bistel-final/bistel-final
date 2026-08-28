@@ -228,7 +228,12 @@ class _AssemblyPorts:
         self.calls.append("notify_email")
         return None
 
-    def approval_email(self, _action_id: str, _approval_id: str) -> None:
+    def approval_email(
+        self,
+        _run_id: str,
+        _action_id: str,
+        _approval_id: str,
+    ) -> None:
         self.calls.append("approval_email")
         return None
 
@@ -965,6 +970,104 @@ def test_recovery_continues_after_resume_cas_committed_before_invoke(
             run_id,
         )
 
+    assert Decision(recovered["approval_decision"]) is Decision.APPROVE
+    assert ports.calls == ["publish_mes", "writeback_result"]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.COMPLETED.value
+        )
+
+
+def test_hitl_read_can_repeat_after_a_crash_before_node_checkpoint(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    first_ports = _HoldAssemblyPorts()
+    first_ports.persist_action = action_store_module.production_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, first_ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        interrupted = first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+
+    run_id = interrupted["run_id"]
+    approval_id = interrupted["approval_id"]
+    approval_store_module.decision_port(engine.begin)(
+        approval_id,
+        Decision.APPROVE,
+        "operator",
+    )
+    with engine.begin() as connection:
+        repo.resume_from_approval(
+            connection,
+            agent_run_id=run_id,
+            approval_id=approval_id,
+        )
+
+    read_decision = approval_store_module.hitl_decision_port(engine.begin)
+    read_calls = 0
+
+    def crash_after_read(resolved_approval_id: str) -> Decision:
+        nonlocal read_calls
+        decision = read_decision(resolved_approval_id)
+        read_calls += 1
+        if read_calls == 1:
+            # DB read는 끝났지만 LangGraph가 node 성공 checkpoint를 쓰기 전 죽는다.
+            raise SystemExit("simulated process crash")
+        return decision
+
+    ports = _HoldAssemblyPorts()
+    ports.hitl_interrupt = crash_after_read  # type: ignore[method-assign]
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        with pytest.raises(SystemExit, match="simulated process crash"):
+            approval_store_module.recover_hitl_run(
+                recovered_graph,
+                engine.begin,
+                engine.connect,
+                run_id,
+            )
+        after_crash = recovered_graph.get_state(config)
+        assert after_crash.next == ("hitl_interrupt",)
+
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert read_calls == 2
     assert Decision(recovered["approval_decision"]) is Decision.APPROVE
     assert ports.calls == ["publish_mes", "writeback_result"]
     with engine.connect() as connection:
