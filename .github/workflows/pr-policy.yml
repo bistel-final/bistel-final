@@ -266,6 +266,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # V5-C-4.1의 n8n Code node는 Node.js 표준 crypto·Buffer·URL을 사용한다.
+      # 공용 n8n에 접속하지 않고 repository JSON에서 코드를 추출해 실행하므로,
+      # workflow import/runtime 호환성은 후속 V5-C-4.2 Gate에 남긴다.
+      - name: Set up Node.js for n8n workflow contracts
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       # `pgvector`도 vector 연산을 하려는 것이 아니다. `app.main`이
       # `knowledge/document_search.py`를 거치고 그 module 최상단이
       # `from pgvector.psycopg import register_vector`라, 없으면 `V5-CM-3.5`의
@@ -573,6 +581,15 @@ jobs:
           tests/unit/test_agent_approval_store.py
           tests/unit/test_agent_rehydration.py
           tests/unit/test_agent_graph.py
+          -rs --no-header
+
+      # V5-C-4.1 n8n workflow repository 계약. JSON graph·exact schema·HMAC·callback
+      # 분기와 변이 감도를 Node 22에서 검증하며 SMTP·Kafka·Backend에는 접속하지 않는다.
+      - name: Prove the n8n workflow repository contracts
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_n8n_workflows.py
           -rs --no-header
 
       # 실제 PostgreSQL 16에서 checkpoint 직렬화와 C 소유 incident·routing·Tool 감사·

@@ -1,0 +1,359 @@
+{
+  "name": "WF2-notify-email",
+  "active": false,
+  "nodes": [
+    {
+      "id": "02000000-0000-4000-8000-000000000001",
+      "name": "Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fdc-notify-email",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000002",
+      "name": "Verify Email Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json && item.json.headers && typeof item.json.headers === 'object' ? item.json.headers : {};\nconst getHeader = (name) => {\n  const wanted = name.toLowerCase();\n  for (const [key, value] of Object.entries(headers)) {\n    if (key.toLowerCase() === wanted) return Array.isArray(value) ? value[0] : value;\n  }\n  return undefined;\n};\nconst timestampText = String(getHeader('x-delivery-timestamp') ?? '');\nconst signature = String(getHeader('x-delivery-signature') ?? '');\nconst secret = String($env.N8N_WEBHOOK_SECRET ?? '').trim();\nconst encoded = item.binary && item.binary.data && item.binary.data.data;\nconst base64 = typeof encoded === 'string' ? encoded : '';\nlet raw = null;\nif (base64 && /^[A-Za-z0-9+/]*={0,2}$/.test(base64) && base64.length % 4 === 0) {\n  const candidate = Buffer.from(base64, 'base64');\n  if (candidate.toString('base64') === base64) raw = candidate;\n}\nconst timestamp = /^-?\\d+$/.test(timestampText) ? Number(timestampText) : Number.NaN;\nconst now = Math.floor(Date.now() / 1000);\nlet authOk = false;\nif (secret && raw && Number.isSafeInteger(timestamp) && Math.abs(now - timestamp) <= 300 && /^sha256=[0-9a-f]{64}$/.test(signature)) {\n  const expected = crypto.createHmac('sha256', secret).update(`${timestampText}.`).update(raw).digest();\n  const supplied = Buffer.from(signature.slice(7), 'hex');\n  authOk = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);\n}\nlet body = null;\nlet bodyOk = false;\nif (authOk) {\n  try {\n    const text = new TextDecoder('utf-8', { fatal: true }).decode(raw);\n    const parsed = JSON.parse(text);\n    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {\n      body = parsed;\n      bodyOk = true;\n    }\n  } catch {}\n}\nreturn [{ json: { auth_ok: authOk, body_ok: bodyOk, body } }];"
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000003",
+      "name": "Email Authenticated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "02000000-0000-4000-8000-000000000103",
+              "leftValue": "={{ $json.auth_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000004",
+      "name": "Validate Email Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, -100],
+      "parameters": {
+        "jsCode": "const envelope = $input.first().json || {};\nconst payload = envelope.body;\nconst nonBlank = (value) => typeof value === 'string' && value.trim().length > 0;\nconst emailAddress = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst exactKeys = ['action_code', 'action_id', 'approval_id', 'chamber_id', 'channel', 'email_kind', 'lot_id', 'recipients', 'request_hash', 'schema', 'summary'];\nconst keysOk = payload && typeof payload === 'object' && !Array.isArray(payload) && Object.keys(payload).sort().join('\\u0000') === exactKeys.join('\\u0000');\nconst combinationOk = payload && ((payload.action_code === 'WARNING' && payload.email_kind === 'WARNING_NOTIFY') || (payload.action_code === 'EQP_HOLD' && payload.email_kind === 'APPROVAL_REQUEST'));\nconst approvalOk = payload && (payload.email_kind === 'APPROVAL_REQUEST' ? nonBlank(payload.approval_id) : payload.approval_id === null);\nconst recipientsOk = payload && Array.isArray(payload.recipients) && payload.recipients.length > 0 && payload.recipients.every((value) => nonBlank(value) && emailAddress.test(value));\nconst summaryOk = payload && nonBlank(payload.summary) && payload.summary.length <= 2000 && !/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/.test(payload.summary);\nconst schemaOk = envelope.body_ok === true && keysOk && payload.schema === 'email-request-v1' && nonBlank(payload.action_id) && payload.channel === 'EMAIL' && combinationOk && /^([0-9a-f]{64})$/.test(payload.request_hash) && recipientsOk && nonBlank(payload.lot_id) && nonBlank(payload.chamber_id) && summaryOk && approvalOk;\nreturn [{ json: { schema_ok: schemaOk, payload: schemaOk ? payload : null } }];"
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000005",
+      "name": "Email Payload Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, -100],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "02000000-0000-4000-8000-000000000105",
+              "leftValue": "={{ $json.schema_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000006",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1100, -180],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "fromEmail": "FDC Agent <no-reply@example.invalid>",
+        "toEmail": "={{ $json.payload.recipients.join(',') }}",
+        "subject": "={{ $json.payload.email_kind === 'APPROVAL_REQUEST' ? '[FDC] EQP HOLD 승인 요청' : '[FDC] 공정 이상 경고' }}",
+        "emailFormat": "text",
+        "text": "={{ $json.payload.summary }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000007",
+      "name": "Build Email Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, -180],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst payload = $('Validate Email Payload').first().json.payload;\nconst result = $input.first().json || {};\nconst providerId = typeof result.messageId === 'string' && result.messageId.trim() ? result.messageId.trim() : null;\nconst sendFailed = Object.prototype.hasOwnProperty.call(result, 'error');\nconst status = !sendFailed && providerId ? 'SENT' : 'FAILED';\nconst errorCode = status === 'SENT' ? null : (sendFailed ? 'SMTP_SEND_FAILED' : 'SMTP_MESSAGE_ID_MISSING');\nconst secret = String($env.N8N_WEBHOOK_SECRET ?? '').trim();\nconst rawBaseUrl = String($env.BACKEND_BASE_URL ?? '').trim();\nlet baseUrl = null;\ntry {\n  const parsed = new URL(rawBaseUrl);\n  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) baseUrl = rawBaseUrl.replace(/\\/+$/, '');\n} catch {}\nif (!secret || !baseUrl) return [{ json: { config_ok: false } }];\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst callback = {\n  event_id: `WF2:${payload.action_id}:EMAIL:${payload.request_hash}:${status}`,\n  channel: 'EMAIL',\n  status,\n  provider_message_id: providerId,\n  request_hash: payload.request_hash,\n  completed_at: new Date().toISOString(),\n  error_code: errorCode\n};\nconst callbackRawBody = JSON.stringify(callback);\nconst signature = `sha256=${crypto.createHmac('sha256', secret).update(`${timestamp}.${callbackRawBody}`, 'utf8').digest('hex')}`;\nreturn [{ json: { config_ok: true, callback_raw_body: callbackRawBody, callback_url: `${baseUrl}/internal/actions/${encodeURIComponent(payload.action_id)}/delivery`, callback_timestamp: timestamp, callback_signature: signature } }];"
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000008",
+      "name": "Email Callback Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1540, -180],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "02000000-0000-4000-8000-000000000108",
+              "leftValue": "={{ $json.config_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000009",
+      "name": "Post Email Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, -260],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Delivery-Timestamp",
+              "value": "={{ $json.callback_timestamp }}"
+            },
+            {
+              "name": "X-Delivery-Signature",
+              "value": "={{ $json.callback_signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callback_raw_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000010",
+      "name": "Classify Email Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, -260],
+      "parameters": {
+        "jsCode": "const result = $input.first().json || {};\nconst statusCode = Number(result.statusCode);\nconst callbackOk = Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 300;\nreturn [{ json: { callback_ok: callbackOk, status_code: Number.isInteger(statusCode) ? statusCode : null } }];"
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000011",
+      "name": "Email Callback Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2200, -260],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "02000000-0000-4000-8000-000000000111",
+              "leftValue": "={{ $json.callback_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000012",
+      "name": "Respond Email Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2420, -340],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000013",
+      "name": "Respond Email Callback Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2420, -180],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"CALLBACK_FAILED\"}",
+        "options": {
+          "responseCode": 502
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000014",
+      "name": "Respond Email Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 140],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"UNAUTHORIZED\"}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "02000000-0000-4000-8000-000000000015",
+      "name": "Respond Email Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 40],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"INVALID_PAYLOAD\"}",
+        "options": {
+          "responseCode": 422
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Email Webhook": {
+      "main": [[{"node": "Verify Email Auth", "type": "main", "index": 0}]]
+    },
+    "Verify Email Auth": {
+      "main": [[{"node": "Email Authenticated", "type": "main", "index": 0}]]
+    },
+    "Email Authenticated": {
+      "main": [
+        [{"node": "Validate Email Payload", "type": "main", "index": 0}],
+        [{"node": "Respond Email Unauthorized", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate Email Payload": {
+      "main": [[{"node": "Email Payload Valid", "type": "main", "index": 0}]]
+    },
+    "Email Payload Valid": {
+      "main": [
+        [{"node": "Send Email", "type": "main", "index": 0}],
+        [{"node": "Respond Email Invalid", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [{"node": "Build Email Callback", "type": "main", "index": 0}],
+        [{"node": "Build Email Callback", "type": "main", "index": 0}]
+      ]
+    },
+    "Build Email Callback": {
+      "main": [[{"node": "Email Callback Configured", "type": "main", "index": 0}]]
+    },
+    "Email Callback Configured": {
+      "main": [
+        [{"node": "Post Email Callback", "type": "main", "index": 0}],
+        [{"node": "Respond Email Callback Failed", "type": "main", "index": 0}]
+      ]
+    },
+    "Post Email Callback": {
+      "main": [
+        [{"node": "Classify Email Callback", "type": "main", "index": 0}],
+        [{"node": "Classify Email Callback", "type": "main", "index": 0}]
+      ]
+    },
+    "Classify Email Callback": {
+      "main": [[{"node": "Email Callback Succeeded", "type": "main", "index": 0}]]
+    },
+    "Email Callback Succeeded": {
+      "main": [
+        [{"node": "Respond Email Accepted", "type": "main", "index": 0}],
+        [{"node": "Respond Email Callback Failed", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
