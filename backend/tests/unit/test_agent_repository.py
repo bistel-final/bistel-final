@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -167,6 +168,8 @@ class TestRepositoryDoesNotOwnTransactions:
         [
             ("create_agent_run", {}),
             ("set_run_action", {}),
+            ("insert_action_history", {}),
+            ("merge_run_action_provenance", {}),
             ("insert_prediction", {}),
             ("insert_human_prediction_review", {}),
             ("finish_agent_run", {}),
@@ -182,6 +185,15 @@ class TestRepositoryDoesNotOwnTransactions:
         arguments: dict[str, dict[str, Any]] = {
             "create_agent_run": {"command": _command()},
             "set_run_action": {"agent_run_id": "RUN-1", "action": None},
+            "insert_action_history": {
+                "action_id": "ACT-1",
+                "lot_id": "LOT-1",
+                "chamber_id": "CH-1",
+                "action_code": ActionCode.WARNING,
+                "reason": "TRACE OOS",
+                "created_at": SimpleNamespace(),
+            },
+            "merge_run_action_provenance": {"agent_run_id": "RUN-1"},
             "insert_prediction": {
                 "agent_run_id": "RUN-1",
                 "predicted_fault_code": FaultHypothesis.FOC,
@@ -418,6 +430,7 @@ class TestSqlAndErrorContract:
                     "_TOOL_CALL_COLUMNS",
                     "_APPROVAL_COLUMNS",
                     "_DELIVERY_COLUMNS",
+                    "_ACTION_HISTORY_COLUMNS",
                 }
                 continue
             assert isinstance(argument, ast.Constant)
@@ -876,6 +889,187 @@ class TestDeliveryInitialContract:
         assert "request_hash ~ '^[0-9a-f]{64}$'" in migration
         assert repo._HEX64.fullmatch("a" * 64)
         assert not repo._HEX64.fullmatch("A" * 64)
+
+
+class TestActionPersistenceSeams:
+    def test_action_insert_explicitly_nulls_legacy_delivery_columns(self) -> None:
+        sql = " ".join(str(repo._INSERT_ACTION_HISTORY).split())
+        for column in (
+            "recipe_step_name",
+            "equipment_id",
+            "trigger_alarm_lot_hist_id",
+            "notify_status",
+            "notify_at",
+            "mes_status",
+            "mes_at",
+        ):
+            assert column in sql
+        # base action_history에는 생성 run column이 없다. 생성 provenance 정본은
+        # agent_run_action의 단일 CREATED link다.
+        assert "created_by_agent_run_id" not in sql
+
+    def test_bundle_projection_reads_only_identity_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        row = SimpleNamespace(
+            action_id="ACT-1",
+            action_code="WARNING",
+            approval_id=None,
+            approval_status=None,
+            approval_agent_run_id=None,
+        )
+        deliveries = [
+            SimpleNamespace(channel=DeliveryChannel.EMAIL),
+        ]
+        monkeypatch.setattr(repo, "_fetch_one", lambda *_a, **_k: row)
+        monkeypatch.setattr(repo, "list_action_deliveries", lambda *_a: deliveries)
+
+        bundle = repo.get_action_bundle(_Connection(), "ACT-1")
+
+        assert bundle == repo.ActionBundle(
+            action_id="ACT-1",
+            action_code=ActionCode.WARNING,
+            approval_id=None,
+            approval_status=None,
+            approval_agent_run_id=None,
+            delivery_channels=(DeliveryChannel.EMAIL,),
+        )
+        assert "p.status AS approval_status" in " ".join(
+            str(repo._SELECT_ACTION_BUNDLE).split()
+        )
+
+    def test_approval_request_is_unique_per_action_in_the_migration(self) -> None:
+        migration = (
+            Path(repo.__file__).resolve().parents[2]
+            / "migrations"
+            / "002_agent_runtime_clean.sql"
+        ).read_text(encoding="utf-8")
+        assert "action_id varchar(20) NOT NULL UNIQUE" in migration
+
+    def test_terminal_merge_preserves_action_provenance(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provenance = {
+            "schema": repo.ACTION_PROVENANCE_SCHEMA,
+            "action_policy_version": "ACTION-POLICY-V1",
+            "member_alarms": [{"source": AlarmSource.TRACE.value, "alarm_id": "TA-01"}],
+        }
+        current = SimpleNamespace(
+            status=RunStatus.RUNNING,
+            evidence={repo.ACTION_PROVENANCE_KEY: provenance},
+        )
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(repo, "lock_agent_run", lambda *_a: current)
+
+        class CapturingConnection(_Connection):
+            def execute(self, statement: Any, params: Any = None) -> Any:
+                self.statements.append(statement)
+                captured.update(params)
+                return SimpleNamespace(one_or_none=lambda: SimpleNamespace(evidence={}))
+
+        monkeypatch.setattr(repo, "_run_row", lambda row: row)
+
+        repo.merge_run_action_provenance(
+            CapturingConnection(),
+            "RUN-1",
+            terminal_evidence={"code": "FAILED"},
+        )
+
+        payload = json.loads(captured["evidence"])
+        assert payload[repo.ACTION_PROVENANCE_KEY] == provenance
+        assert payload["code"] == "FAILED"
+
+    def test_policy_version_error_names_its_own_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            repo,
+            "lock_agent_run",
+            lambda *_a: SimpleNamespace(status=RunStatus.RUNNING, evidence={}),
+        )
+
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.merge_run_action_provenance(
+                _Connection(),
+                "RUN-1",
+                action_policy_version="V" * 41,
+                member_alarms=[_ref("TA-01")],
+            )
+
+        assert exc.value.code == "ACTION_POLICY_VERSION_TOO_LONG"
+
+    def test_action_insert_sanitizes_an_invalid_action_code(self) -> None:
+        connection = _Connection()
+
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.insert_action_history(
+                connection,
+                action_id="ACT-1",
+                lot_id="LOT-1",
+                chamber_id="EQP01-PM1",
+                action_code="NOT_AN_ACTION",  # type: ignore[arg-type]
+                reason="reason",
+                created_at=SimpleNamespace(),
+            )
+
+        assert exc.value.code == "INVALID_ACTION_CODE"
+        assert connection.statements == []
+
+    def test_provenance_cannot_be_replaced_with_a_different_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        existing = {
+            "schema": repo.ACTION_PROVENANCE_SCHEMA,
+            "action_policy_version": "ACTION-POLICY-V1",
+            "member_alarms": [{"source": AlarmSource.TRACE.value, "alarm_id": "TA-01"}],
+        }
+        connection = _Connection()
+        monkeypatch.setattr(
+            repo,
+            "lock_agent_run",
+            lambda *_a: SimpleNamespace(
+                status=RunStatus.RUNNING,
+                evidence={repo.ACTION_PROVENANCE_KEY: existing},
+            ),
+        )
+
+        with pytest.raises(repo.RepositoryConflict) as exc:
+            repo.merge_run_action_provenance(
+                connection,
+                "RUN-1",
+                action_policy_version="ACTION-POLICY-V1",
+                member_alarms=[_ref("TA-02")],
+            )
+
+        assert exc.value.code == "ACTION_PROVENANCE_MISMATCH"
+        assert connection.statements == []
+
+    @pytest.mark.parametrize("status", [RunStatus.COMPLETED, RunStatus.FAILED])
+    def test_provenance_merge_rejects_terminal_runs_before_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        status: RunStatus,
+    ) -> None:
+        connection = _Connection()
+        monkeypatch.setattr(
+            repo,
+            "lock_agent_run",
+            lambda *_a: SimpleNamespace(status=status, evidence={}),
+        )
+
+        with pytest.raises(repo.RepositoryConflict) as exc:
+            repo.merge_run_action_provenance(
+                connection,
+                "RUN-1",
+                terminal_evidence={"code": "LATE_WRITE"},
+            )
+
+        assert exc.value.code == "RUN_NOT_ACTIVE"
+        assert connection.statements == []
+
+    def test_provenance_update_sql_keeps_the_active_status_guard(self) -> None:
+        sql = " ".join(str(repo._UPDATE_RUN_EVIDENCE).split())
+        assert "status = ANY(:active)" in sql
 
 
 class TestBundleTwoConflictCoverage:

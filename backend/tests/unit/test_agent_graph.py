@@ -340,6 +340,7 @@ def _build(
     usage_record_error_once: Exception | None = None,
     usage_record_error_always: Exception | None = None,
     existing_prediction: PredictionRow | None = None,
+    run_evidence: dict[str, Any] | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -365,6 +366,7 @@ def _build(
         prompt_version=subject.PROMPT_VERSION,
         input_tokens=None if existing_prediction is None else 10,
         output_tokens=None if existing_prediction is None else 5,
+        evidence=dict(run_evidence or {}),
         started_at=RUN_STARTED_AT,
     )
     started = SimpleNamespace(run=run, incident=_incident())
@@ -471,6 +473,22 @@ def _build(
     monkeypatch.setattr(subject, "lock_agent_run", lock_run)
     monkeypatch.setattr(subject, "insert_prediction", insert)
     monkeypatch.setattr(subject, "record_run_llm_usage", record_usage)
+
+    def merge_provenance(
+        _connection: Any,
+        _run_id: str,
+        *,
+        terminal_evidence: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> Any:
+        run.evidence = {**run.evidence, **(terminal_evidence or {})}
+        return run
+
+    monkeypatch.setattr(
+        subject,
+        "merge_run_action_provenance",
+        merge_provenance,
+    )
     graph = build_agent_graph(
         AgentGraphDependencies(
             transactions=transactions,
@@ -653,6 +671,60 @@ def test_latency_reads_started_at_inside_the_terminal_transaction(
     _invoke(graph)
     assert transactions[-4:] == ["begin", "get_run", "finish", "commit"]
     assert tools.budget_connections[-1] is tools.finish_connections[-1]
+
+
+def test_finalize_preserves_action_provenance_in_terminal_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provenance = {
+        "schema": "action-provenance-v1",
+        "action_policy_version": "ACTION-POLICY-V1",
+        "member_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+    }
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(),
+        run_evidence={"action_provenance": provenance},
+    )
+
+    _invoke(graph)
+
+    evidence = finishes[0][1]["evidence"]
+    assert evidence["action_provenance"] == provenance
+    assert evidence["route_consistency"] is True
+
+
+def test_failed_finish_paths_share_one_provenance_preserving_helper() -> None:
+    tree = ast.parse(inspect.getsource(subject.build_agent_graph))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "_finish_failed"
+    ]
+    assert len(calls) == 2
+
+
+def test_failed_finish_preserves_existing_action_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provenance = {
+        "schema": "action-provenance-v1",
+        "action_policy_version": "ACTION-POLICY-V1",
+        "member_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
+    }
+    graph, _, _, finishes, _ = _build(
+        monkeypatch,
+        ports=_Ports(generation_error=True),
+        run_evidence={"action_provenance": provenance},
+    )
+
+    _invoke(graph)
+
+    assert finishes[0][0] == RunStatus.FAILED.value
+    evidence = finishes[0][1]["evidence"]
+    assert evidence["action_provenance"] == provenance
+    assert evidence["code"] == "LLM_TIMEOUT"
 
 
 @pytest.mark.parametrize("route", [_route(consistent=False), _route(covered=False)])
