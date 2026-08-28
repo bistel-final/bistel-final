@@ -80,6 +80,9 @@ _SCORE_REFERENCE_ALLOWLIST = frozenset(
         "detection/schemas.py",
         # "evidence" 필드로만 받는 쪽(2번 테스트가 그 필드 이름 자체를 확인한다).
         "agent/state.py",
+        # C-3.4 재수화 — State snapshot의 optional_anomaly_evidence 채널을
+        # AnomalySignal 그대로 저장·복원한다. score를 만들거나 바꾸지 않는다.
+        "agent/rehydration.py",
     }
 )
 
