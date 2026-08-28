@@ -245,7 +245,6 @@ jobs:
           tests/unit/test_source_manifest_v4.py
           tests/unit/test_value_normalization.py
           tests/unit/test_verify_migrations.py
-          tests/contract/test_score_boundary.py
           tests/contract/test_detection_label_isolation.py
           -rs --no-header
 
@@ -299,15 +298,29 @@ jobs:
           scikit-learn==1.5.2
           joblib==1.4.2
 
-      # V5-A-3.2-1 `get_fdc_summary` Tool. 위 numpy·scikit-learn·joblib을
-      # 설치한 바로 그 이유다 — `app.detection.model`(IsolationForest)을
-      # import하는 유일한 unit test라 `backend-unit-contracts` job(그 셋이
-      # 없다)에는 등록할 수 없다. DB·model artifact는 전부 fake/monkeypatch라
-      # `-m container`도, 실제 container도 필요 없다.
-      - name: Prove the FDC summary Tool contract
+      # V5-A-2.1·V5-A-2.2·V5-A-3.2-1. 위 numpy·scikit-learn·joblib을 설치한
+      # 바로 그 이유다 — 셋 다 `app.detection.model`(IsolationForest)을 직접
+      # 또는 간접(`model_artifact`·`tools`)으로 import해서 `backend-unit-
+      # contracts` job(그 셋이 없다)에는 등록할 수 없다. `test_fdc_summary_
+      # tool.py`만 `app.common.config`까지 끌어오므로 아래 8종 dummy
+      # 환경변수도 필요하다(그 job의 LangGraph step과 같은 이유·같은 값).
+      # DB·model artifact는 전부 fake/monkeypatch라 `-m container`도, 실제
+      # container도 필요 없다.
+      - name: Prove the detection model and FDC summary contracts
         working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
         run: >-
           python -m pytest -q
+          tests/unit/test_detection_model.py
+          tests/contract/test_score_boundary.py
           tests/unit/test_fdc_summary_tool.py
           -rs --no-header
 
