@@ -11,7 +11,7 @@ DB를 열지 않는다. 얇은 read 함수가 catalog를 `TargetInventory`로 �
 
 - **교체**: base 9 데이터 + `wafer` 4종 type + `v_alarm_event`
 - **보존**: RAG 3종 + 현행 Runtime/D 구조 + sequence. 삭제·변경 0
-- **legacy handoff**: `kosa_text2sql`의 `document_corpus` 계열. 표시만 하고 B에 넘긴다
+- **RAG**: B가 세 DB의 `document`·`document_chunk`를 같은 정본으로 적재·검증한다
 """
 
 from __future__ import annotations
@@ -147,15 +147,12 @@ B_SCHEMA_TARGETS: frozenset[str] = frozenset(
     {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
 )
 
-#: B가 `V5-B-1.3`으로 **실제 적재한** target.
+#: B가 `V5-B-1.3`/`V5-B-1.4`로 **실제 적재한** target.
 #: `load_rag_documents.ALLOWED_RAG_DATABASES`와 같아야 하고
-#: `infra/bootstrap/markers/rag_load.*.json`도 이 둘뿐이다.
-#:
-#: **`B_SCHEMA_TARGETS`와 같다고 보면 안 된다.** 적재하지 않은 target에는 B의
-#: fingerprint 산식을 돌릴 근거가 없다. 이름만 같은 table에 돌리면 컬럼이 달라
-#: `UndefinedColumn`으로 죽는다 — Gate 0 §2.3이 "세 DB의 RAG 형상이 서로 다르다"고
-#: 적어 둔 그대로다. marker가 있는 target에만 적용한다.
-B_LOADED_RAG_TARGETS: frozenset[str] = frozenset({"kosa_agent", "kosa_agent_e2e"})
+#: `infra/bootstrap/markers/rag_load.*.json`도 이 셋이어야 한다.
+B_LOADED_RAG_TARGETS: frozenset[str] = frozenset(
+    {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
+)
 
 #: Gate 0 실측. 전부 이 저장소의 커밋된 migration이 만든 현행 설계 구조다
 #: (`001_reference_extensions.sql` PR #48 · `002_agent_runtime_clean.sql` PR #58).
@@ -188,33 +185,11 @@ PRESERVED_SEQUENCES_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType
     }
 )
 
-#: `V5-B-1.1`이 "채택하지 않는다"고 한 legacy 객체. 2.6은 보존만 하고 B가 정리한다.
-#:
-#: ## `document_corpus`를 뺀 이유
-#:
-#: 이 목록은 셋을 한 덩어리로 묶고 있었지만 **최종 기준에서의 지위가 다르다.**
-#:
-#: - `document`·`document_chunk` — `evaluation.evaluation_reference` manifest에
-#:   `bootstrap_empty` 0행으로 **등록돼 있다.** 즉 evaluation에서도 "존재하되 비어
-#:   있어야" 하는 최종 table이다. 여기서 빼면 `check_relation_set()`이 정상 DB를
-#:   거부한다.
-#: - `document_corpus` — 최종 manifest 세 개 **어디에도 없다.** 구 epoch
-#:   `kosa_0813`에만 있고, `apply_rag_schema`는 이것을 `DROP`하며
-#:   `verify_rag_schema()`는 잔존을 거부한다. B의 정리가 끝난 결과로 live에서
-#:   사라졌고, 낡은 것은 DB가 아니라 이 기대값이었다(`V5-CM-3.4` 묶음 2 준비).
-#:
-#: 이 값을 바꾸면 `preserved_projection_sha256`·`target_fingerprint`가 바뀐다.
-#: PostgreSQL transition 증적(approval·receipt·marker)이 아직 하나도 발급되지 않은
-#: 시점에 고쳤다 — 뒤로 미루면 그 증적들에 낡은 fingerprint가 박힌다.
-LEGACY_HANDOFF_TABLES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {"kosa_text2sql": ("document", "document_chunk")}
-)
-#: `ux_document_corpus_active`는 `document_corpus`에 딸린 index였다. table이
-#: 사라졌으므로 index도 함께 없다(live 확인). 구조는 남기고 목록만 비운다 —
-#: 다른 target이 생길 수 있다.
-LEGACY_HANDOFF_INDEXES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {"kosa_text2sql": ()}
-)
+#: `V5-B-1.4` 이후 RAG 2종은 세 DB 모두 B 관리 대상이다.
+#: legacy handoff table은 남기지 않는다.
+LEGACY_HANDOFF_TABLES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType({})
+#: `V5-B-1.4` 이후 handoff index도 남기지 않는다.
+LEGACY_HANDOFF_INDEXES_BY_TARGET: Mapping[str, tuple[str, ...]] = MappingProxyType({})
 LEGACY_HANDOFF_LABEL = "LEGACY_HANDOFF_B"
 
 #: base 9를 참조하는 외부 FK. profile마다 다르다 — `kosa_text2sql`에는
@@ -1226,17 +1201,12 @@ def check_relation_set(inventory: TargetInventory) -> None:
 
 
 def check_rag_presence(inventory: TargetInventory) -> None:
-    """RAG 형상을 본다. **B가 적재한 target과 아닌 target의 기준이 다르다.**
+    """RAG 형상을 본다.
 
     `vector` extension은 세 DB 모두에 있어야 한다(Gate 0 §2.3 실측).
 
-    B 관리 target(`B_LOADED_RAG_TARGETS`)은 RAG 2종이 **전체 존재하고 행이 있어야**
-    한다. 부분 상태는 drift다(계획 §4.2).
-
-    `kosa_text2sql`의 같은 이름 table은 구 epoch 잔재이며 B가 "지워도 된다"고 한
-    대상이다(2026-08-22 확인). 2.6은 **지우지 않고 legacy handoff로 보존만** 하고,
-    전체 존재도 행 수도 요구하지 않는다 — B가 먼저 정리해도 2.6이 drift로 오판하지
-    않게 한다. 실제 정리는 B 소유다.
+    B 관리 target(`B_LOADED_RAG_TARGETS`)인 세 DB는 RAG 2종이 **전체 존재하고
+    행이 있어야** 한다. 부분 상태는 drift다(계획 §4.2, `V5-B-1.4`).
     """
 
     if RAG_EXTENSION not in inventory.extensions:
