@@ -231,21 +231,11 @@ def test_preserved_projection_counts_match_gate0() -> None:
     assert len(transition.PRESERVED_TABLES_BY_PROFILE["evaluation"]) == 2
     assert len(transition.PRESERVED_SEQUENCES_BY_PROFILE["runtime"]) == 3
     assert len(transition.PRESERVED_SEQUENCES_BY_PROFILE["evaluation"]) == 1
-    # `kosa_text2sql`의 RAG 2종은 구 epoch(PR #48) 형상이라 B 관리 대상이 아니다.
-    # B가 "지워도 된다"고 했지만 2.6은 보존만 하고 넘긴다(2026-08-22 확인).
-    #
-    # `document_corpus`는 뺐다. 최종 manifest 셋 **어디에도 없고** B의 정리로 live에서
-    # 사라졌다. 반면 `document`·`document_chunk`는
-    # `evaluation.evaluation_reference`에
-    # `bootstrap_empty` 0행으로 등록돼 있으므로 **남아야 한다**
-    # (`V5-CM-3.4` 묶음 2 준비).
-    assert transition.LEGACY_HANDOFF_TABLES_BY_TARGET["kosa_text2sql"] == (
-        "document",
-        "document_chunk",
-    )
+    # `V5-B-1.4` 이후 `kosa_text2sql`도 B 관리 RAG 적재 대상이므로 handoff가 없다.
+    assert transition.LEGACY_HANDOFF_TABLES_BY_TARGET == {}
     assert "kosa_agent" not in transition.LEGACY_HANDOFF_TABLES_BY_TARGET
     assert transition.B_LOADED_RAG_TARGETS == frozenset(
-        {"kosa_agent", "kosa_agent_e2e"}
+        {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
     )
 
 
@@ -385,14 +375,28 @@ def test_unexpected_view_or_relation_is_refused() -> None:
 
 
 def test_handoff_table_belongs_only_to_text2sql() -> None:
-    """`document_corpus`는 evaluation target에서만 허용된다."""
+    """`document_corpus`는 어느 target에서도 허용되지 않는다."""
 
     assert transition.classify_target(_inventory("kosa_text2sql")) is (
         transition.BaseState.BASE_LEGACY_EPOCH
     )
+    for database in transition.ORDERED_TARGETS:
+        with pytest.raises(transition.TransitionError):
+            transition.classify_target(
+                _inventory(database, extra_tables=("document_corpus",))
+            )
+
+
+def test_text2sql_is_b_managed_rag_target() -> None:
+    """`V5-B-1.4` 이후 evaluation DB도 RAG 행과 fingerprint 보존 대상이다."""
+
+    with pytest.raises(transition.TransitionError) as caught:
+        transition.check_rag_presence(_inventory("kosa_text2sql", rag_rows=0))
+    assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
+
     with pytest.raises(transition.TransitionError):
         transition.classify_target(
-            _inventory("kosa_agent", extra_tables=("document_corpus",))
+            _inventory("kosa_text2sql", drop_tables=("document",))
         )
 
 
@@ -639,9 +643,11 @@ def test_handoff_index_is_named_in_the_projection() -> None:
     projection = transition.preserved_projection(_inventory("kosa_text2sql"))
     handoff = projection[transition.LEGACY_HANDOFF_LABEL]
     assert set(handoff["indexes"]) == set(
-        transition.LEGACY_HANDOFF_INDEXES_BY_TARGET["kosa_text2sql"]
+        transition.LEGACY_HANDOFF_INDEXES_BY_TARGET.get("kosa_text2sql", ())
     )
-    assert set(handoff["tables"]) == {"document", "document_chunk"}
+    assert set(handoff["tables"]) == set(
+        transition.LEGACY_HANDOFF_TABLES_BY_TARGET.get("kosa_text2sql", ())
+    )
     assert "document_corpus" not in handoff["tables"]
 
     # runtime target에는 handoff가 없다.
@@ -650,11 +656,7 @@ def test_handoff_index_is_named_in_the_projection() -> None:
 
 
 def test_handoff_index_drift_changes_the_projection() -> None:
-    """handoff table의 index가 사라지면 projection hash가 바뀐다.
-
-    주체를 `document_corpus`에서 **live에 실제로 있는** `document_chunk`로 옮겼다.
-    없어진 table로 검증하면 fixture만 통과하고 계약은 증명되지 않는다.
-    """
+    """B 관리 RAG table의 index가 사라지면 projection hash가 바뀐다."""
 
     base = _inventory("kosa_text2sql")
     stripped = {k: dict(v) for k, v in base.indexes.items()}
@@ -991,36 +993,25 @@ def test_restore_comparison_ignores_constraints() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 공용 preflight 실패 — kosa_text2sql의 구 epoch RAG (2026-08-22)
+# 공용 preflight 실패 방지 — B RAG 대상과 transition 대상 정렬
 # ---------------------------------------------------------------------------
 
 
 def test_b_managed_rag_targets_match_the_rag_load_allowlist() -> None:
     """2.6의 목록이 **적재** 목록과 갈리면 한쪽은 반드시 틀린다.
 
-    2.6이 세 DB 전부에 B의 fingerprint 산식을 돌려 공용 preflight가
-    `UndefinedColumn`으로 죽었다. 그 산식은 B가 **실제 적재한** target에만 돈다.
-
-    schema 적용 대상과는 다르다 — `test_schema_targets_are_wider_than_load_targets`
-    참조.
+    `V5-B-1.4` 이후 세 DB 모두 B가 실제 적재한 target이므로 transition도 같은
+    fingerprint 산식을 세 DB에 적용해야 한다.
     """
 
     import load_rag_documents
 
     assert transition.B_LOADED_RAG_TARGETS == load_rag_documents.ALLOWED_RAG_DATABASES
-    # 전환 대상 셋 중 하나는 B 관리 밖이다. 그 하나가 이번 사고의 원인이다.
-    assert set(transition.ORDERED_TARGETS) - transition.B_LOADED_RAG_TARGETS == {
-        "kosa_text2sql"
-    }
+    assert set(transition.ORDERED_TARGETS) == transition.B_LOADED_RAG_TARGETS
 
 
-def test_schema_targets_are_wider_than_load_targets() -> None:
-    """**schema 3 DB ≠ 적재 2 DB.** 두 집합을 같다고 강제하면 안 된다.
-
-    `kosa_text2sql`의 RAG 3 table은 구 epoch 형상이라 `V5-CM-1.8`이 요구하는
-    evaluation inventory 13을 만들 수 없다. 그래서 schema runner는 그 DB를 받는다.
-    하지만 거기에는 문서를 적재하지 않으므로 marker·fingerprint 대상은 아니다.
-    """
+def test_schema_targets_match_load_targets_after_b_1_4() -> None:
+    """`V5-B-1.4` 이후 schema·load 대상은 모두 세 DB다."""
 
     import apply_rag_schema
     import load_rag_documents
@@ -1029,12 +1020,8 @@ def test_schema_targets_are_wider_than_load_targets() -> None:
     load_targets = load_rag_documents.ALLOWED_RAG_DATABASES
 
     assert schema_targets == {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
-    assert load_targets == {"kosa_agent", "kosa_agent_e2e"}
-    # 적재 대상은 schema 대상의 부분집합이다 — 반대는 성립하지 않는다.
-    assert load_targets < schema_targets
-    assert schema_targets - load_targets == {"kosa_text2sql"}
-    # 적재하지 않는 target에 B의 fingerprint 산식을 돌리면 안 된다.
-    assert "kosa_text2sql" not in transition.B_LOADED_RAG_TARGETS
+    assert load_targets == schema_targets
+    assert transition.B_LOADED_RAG_TARGETS == schema_targets
 
 
 #: 실제 호출 여부는 real PostgreSQL이 있는 격리 E2E에서 본다
@@ -1048,7 +1035,7 @@ def test_schema_targets_are_wider_than_load_targets() -> None:
     [
         ("kosa_agent_e2e", True),
         ("kosa_agent", True),
-        ("kosa_text2sql", False),
+        ("kosa_text2sql", True),
     ],
 )
 def test_rag_row_requirement_applies_only_to_b_managed_targets(
@@ -1056,13 +1043,7 @@ def test_rag_row_requirement_applies_only_to_b_managed_targets(
 ) -> None:
     """행 수·전체 존재 요구는 **B가 적재한 target에만** 적용된다.
 
-    `kosa_text2sql`의 같은 이름 table은 구 epoch(PR #48) 형상이고 행이 0이다. 거기에
-    "행 > 0"을 요구하면 전환 자체가 시작되지 않는다.
-
-    **이것은 "없어도 된다"가 아니다.** `expected_relations()`가 그 두 table을 legacy
-    handoff에 포함하므로 full `check_relation_set()`은 여전히 **존재를 요구한다**. B가
-    `V5-B-1.1`로 같은 이름의 새 schema를 교체하기 전까지 legacy 3종은 그대로 있어야 한다
-    (구현리뷰 21차 편집 1).
+    `V5-B-1.4` 이후 `kosa_text2sql`도 같은 RAG 정본을 갖는다.
     """
 
     intact = _inventory(database)
@@ -1082,15 +1063,9 @@ def test_rag_row_requirement_applies_only_to_b_managed_targets(
     assert caught.value.reason_code == "RAG_PRESERVATION_FAILED"
 
 
-def test_relation_set_still_requires_the_legacy_rag_tables_on_text2sql() -> None:
-    """행 요구를 뺐다고 **존재까지** 허용한 것은 아니다.
+def test_relation_set_requires_b_managed_rag_tables_on_text2sql() -> None:
+    """evaluation DB도 RAG table 존재가 transition 계약이다."""
 
-    두 계약이 갈리면 "없어도 통과"로 오해해 B가 지운 뒤 drift를 못 잡는다.
-    """
-
-    assert set(transition.RAG_TABLES) <= set(
-        transition.LEGACY_HANDOFF_TABLES_BY_TARGET["kosa_text2sql"]
-    )
     tables, _sequences = transition.expected_relations(_inventory("kosa_text2sql"))
     assert set(transition.RAG_TABLES) <= tables
 

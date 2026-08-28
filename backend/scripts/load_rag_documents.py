@@ -4,9 +4,11 @@ This is a small adapter around the mentor-provided RAG loading contract.  It
 keeps only the parts that belong to B Knowledge:
 
 * corrected RAG source files are explicit input;
-* only ``kosa_agent`` and ``kosa_agent_e2e`` can be targeted;
+* only ``kosa_agent``, ``kosa_agent_e2e``, and ``kosa_text2sql`` can be targeted;
 * canonical document IDs and deterministic chunk IDs are used;
-* only the three canonical documents are replaced in one transaction.
+* only the three canonical documents are replaced in one transaction;
+* if the live RAG fingerprint already matches the corrected corpus, the DB write
+  is skipped.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 import manifest_v3
-from dotenv import load_dotenv
 from db_target import (
     BootstrapTarget,
     TargetValidationError,
@@ -34,10 +35,10 @@ from db_target import (
     validate_connected_identity,
     validate_url_components,
 )
+from dotenv import load_dotenv
 from master_cypher import canonical_sha256
 from rag_chunk_contract import (
     CHUNK_CONTRACT_SHA256,
-    CHUNK_ID_FORMAT,
     CHUNK_SCHEMA_VERSION,
     FALLBACK_SECTION_TITLE,
     H2_HEADING_REGEX,
@@ -49,9 +50,11 @@ from sqlalchemy import create_engine
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CORRECTED_RAG_DIR = REPOSITORY_ROOT / "docs" / "knowledge" / "rag-corrected"
 MARKER_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "markers"
-SCHEMA_PATH = REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
+SCHEMA_PATH = (
+    REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
+)
 
-ALLOWED_RAG_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e"})
+ALLOWED_RAG_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"})
 CANONICAL_DOCUMENT_IDS = (
     "DOC-SPEC-ET7500",
     "DOC-SPEC-PH9000",
@@ -143,7 +146,9 @@ def _parse_front_matter(path: Path) -> tuple[dict[str, str], str, str]:
     try:
         _, front_matter, body = text.split("---\n", 2)
     except ValueError as exc:
-        raise RagLoadError(f"{path.name}: YAML front matter가 닫히지 않았습니다") from exc
+        raise RagLoadError(
+            f"{path.name}: YAML front matter가 닫히지 않았습니다"
+        ) from exc
 
     metadata: dict[str, str] = {}
     for line in front_matter.splitlines():
@@ -188,7 +193,9 @@ def load_corrected_documents(source_dir: Path) -> tuple[RagDocument, ...]:
             raise RagLoadError(f"{filename}: canonical doc_id가 아닙니다: {doc_id}")
         doc_type = _require_metadata(metadata, "doc_type", filename=filename)
         if doc_type not in {"SPEC", "MANUAL", "TROUBLESHOOT"}:
-            raise RagLoadError(f"{filename}: doc_type이 DB CHECK와 다릅니다: {doc_type}")
+            raise RagLoadError(
+                f"{filename}: doc_type이 DB CHECK와 다릅니다: {doc_type}"
+            )
         documents.append(
             RagDocument(
                 document_id=doc_id,
@@ -304,13 +311,17 @@ def chunk_document(document: RagDocument) -> tuple[RagChunk, ...]:
 
 def prepare_corpus(source_dir: Path) -> PreparedRagCorpus:
     documents = load_corrected_documents(source_dir)
-    chunks = tuple(chunk for document in documents for chunk in chunk_document(document))
+    chunks = tuple(
+        chunk for document in documents for chunk in chunk_document(document)
+    )
     return PreparedRagCorpus(documents=documents, chunks=chunks)
 
 
 def validate_rag_target(database: str) -> BootstrapTarget:
     if database not in ALLOWED_RAG_DATABASES:
-        raise TargetValidationError("RAG 적재는 kosa_agent, kosa_agent_e2e만 허용합니다")
+        raise TargetValidationError(
+            "RAG 적재는 kosa_agent, kosa_agent_e2e, kosa_text2sql만 허용합니다"
+        )
     return load_bootstrap_target(database)
 
 
@@ -387,7 +398,8 @@ def load_corpus(
         INSERT INTO document
             (doc_id, title, doc_type, model_code, source_path, version)
         VALUES
-            (%(doc_id)s, %(title)s, %(doc_type)s, %(model_code)s, %(source_path)s, %(version)s)
+            (%(doc_id)s, %(title)s, %(doc_type)s, %(model_code)s,
+             %(source_path)s, %(version)s)
         """,
         [
             {
@@ -404,7 +416,8 @@ def load_corpus(
     connection.exec_driver_sql(
         """
         INSERT INTO document_chunk
-            (chunk_id, doc_id, chunk_seq, section_title, content, token_cnt, embedding, metadata_json)
+            (chunk_id, doc_id, chunk_seq, section_title, content, token_cnt,
+             embedding, metadata_json)
         VALUES
             (%(chunk_id)s, %(doc_id)s, %(chunk_seq)s, %(section_title)s, %(content)s,
              %(token_cnt)s, %(embedding)s::vector, %(metadata_json)s::jsonb)
@@ -456,7 +469,9 @@ def _validate_embedding_environment() -> None:
         raise RagLoadError(f"EMBEDDING_DIM은 {EMBEDDING_DIMENSION}이어야 합니다")
 
 
-def _load_sentence_transformer_encoder() -> Callable[[Sequence[str]], Sequence[Sequence[float]]]:
+def _load_sentence_transformer_encoder() -> (
+    Callable[[Sequence[str]], Sequence[Sequence[float]]]
+):
     _validate_embedding_environment()
     cache_dir = _embedding_cache_dir()
     try:
@@ -509,7 +524,8 @@ def _live_fingerprint(connection: Any, document_ids: Sequence[str]) -> str:
     chunks = _mapping_rows(
         connection.exec_driver_sql(
             """
-            SELECT chunk_id, doc_id, chunk_seq, section_title, content, token_cnt, metadata_json
+            SELECT chunk_id, doc_id, chunk_seq, section_title, content, token_cnt,
+                   metadata_json
               FROM document_chunk
              WHERE doc_id = ANY (%(document_ids)s)
              ORDER BY doc_id, chunk_seq, chunk_id
@@ -521,6 +537,50 @@ def _live_fingerprint(connection: Any, document_ids: Sequence[str]) -> str:
         {
             "documents": [_canonical_json(dict(row)) for row in documents],
             "chunks": [_canonical_json(dict(row)) for row in chunks],
+            "chunk_schema_version": CHUNK_SCHEMA_VERSION,
+            "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+            "embedding_dimension": EMBEDDING_DIMENSION,
+        }
+    )
+
+
+def _corpus_fingerprint(corpus: PreparedRagCorpus) -> str:
+    return canonical_sha256(
+        {
+            "documents": [
+                _canonical_json(
+                    {
+                        "doc_id": document.document_id,
+                        "title": document.title,
+                        "doc_type": document.doc_type,
+                        "model_code": document.model_code,
+                        "source_path": document.source_path,
+                        "version": document.version,
+                    }
+                )
+                for document in sorted(
+                    corpus.documents, key=lambda item: item.document_id
+                )
+            ],
+            "chunks": [
+                _canonical_json(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "doc_id": chunk.doc_id,
+                        "chunk_seq": chunk.chunk_seq,
+                        "section_title": chunk.section_title,
+                        "content": chunk.content,
+                        "token_cnt": chunk.token_cnt,
+                        "metadata_json": chunk.metadata_json,
+                    }
+                )
+                for chunk in sorted(
+                    corpus.chunks,
+                    key=lambda item: (item.doc_id, item.chunk_seq, item.chunk_id),
+                )
+            ],
             "chunk_schema_version": CHUNK_SCHEMA_VERSION,
             "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
             "embedding_model": EMBEDDING_MODEL,
@@ -556,7 +616,9 @@ def _search_smoke(
         rows = _mapping_rows(
             connection.exec_driver_sql(
                 """
-                SELECT d.doc_id, c.chunk_id, 1 - (c.embedding <=> %(embedding)s::vector) AS score
+                SELECT d.doc_id,
+                       c.chunk_id,
+                       1 - (c.embedding <=> %(embedding)s::vector) AS score
                   FROM document_chunk c
                   JOIN document d ON d.doc_id = c.doc_id
                  WHERE (%(model_code)s::varchar IS NULL
@@ -602,7 +664,11 @@ def verify_live_load(
     )
     chunk_count = _scalar_count(
         connection,
-        "SELECT count(*) AS value FROM document_chunk WHERE doc_id = ANY (%(document_ids)s)",
+        """
+        SELECT count(*) AS value
+          FROM document_chunk
+         WHERE doc_id = ANY (%(document_ids)s)
+        """,
         parameters,
     )
     null_embedding_count = _scalar_count(
@@ -665,9 +731,23 @@ def build_marker(
     return marker
 
 
-def save_marker(marker: Mapping[str, Any], *, database: str, root: Path = MARKER_ROOT) -> None:
+def save_marker(
+    marker: Mapping[str, Any], *, database: str, root: Path = MARKER_ROOT
+) -> None:
     path = marker_path(database, root=root)
     manifest_v3.atomic_save_json(path, marker)
+
+
+def _is_same_corpus_already_loaded(
+    connection: Any,
+    corpus: PreparedRagCorpus,
+    *,
+    encode: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+) -> PostLoadVerification | None:
+    document_ids = tuple(document.document_id for document in corpus.documents)
+    if _live_fingerprint(connection, document_ids) != _corpus_fingerprint(corpus):
+        return None
+    return verify_live_load(connection, corpus, encode=encode)
 
 
 def run_load(*, database: str, source_dir: Path) -> int:
@@ -679,6 +759,22 @@ def run_load(*, database: str, source_dir: Path) -> int:
     validate_url_components(url, target)
     engine = create_engine(url)
     try:
+        with engine.connect() as connection:
+            validate_connected_identity(connection, target)
+            set_and_validate_public_search_path(connection)
+            preflight_schema(connection)
+            verification = _is_same_corpus_already_loaded(
+                connection,
+                corpus,
+                encode=encode,
+            )
+            if verification is not None:
+                save_marker(
+                    build_marker(target, corpus, verification),
+                    database=database,
+                )
+                return 0
+
         with engine.connect() as connection:
             with connection.begin():
                 validate_connected_identity(connection, target)
@@ -700,7 +796,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--database",
         required=True,
         choices=sorted(ALLOWED_RAG_DATABASES),
-        help="RAG 적재 대상 DB. 기본값과 평가 DB는 허용하지 않는다.",
+        help="RAG 적재 대상 DB. 명시한 세 DB만 허용한다.",
     )
     parser.add_argument(
         "--confirm-target",
