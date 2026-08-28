@@ -16,6 +16,7 @@ from app.agent.repository import (
     ActionBundle,
     RepositoryConflict,
     RepositoryContractError,
+    begin_approval_wait,
     create_approval_request,
     find_created_action,
     find_run_action,
@@ -107,6 +108,7 @@ def _validate_bundle(
     *,
     agent_run_id: str,
     decision: ActionDecision,
+    allow_terminal_approval: bool = False,
 ) -> PersistResult:
     action = decision.action
     if action is None:
@@ -122,8 +124,12 @@ def _validate_bundle(
         or set(bundle.delivery_channels) != set(expected_channels)
     ):
         raise RepositoryConflict("ACTION_DECISION_MISMATCH")
-    if approval_required and bundle.approval_status is not ApprovalStatus.PENDING:
-        raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
+    if approval_required:
+        allowed_statuses = {ApprovalStatus.PENDING}
+        if allow_terminal_approval:
+            allowed_statuses.update({ApprovalStatus.APPROVED, ApprovalStatus.REJECTED})
+        if bundle.approval_status not in allowed_statuses:
+            raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
     if approval_required and bundle.approval_agent_run_id != agent_run_id:
         raise RepositoryConflict("ACTION_APPROVAL_RUN_MISMATCH")
     result = _result(
@@ -210,6 +216,9 @@ def production_port(
                     get_action_bundle(connection, current.action_id),
                     agent_run_id=agent_run_id,
                     decision=resolved,
+                    # 같은 run/thread의 checkpoint replay만 terminal 결정을
+                    # 재사용한다. 아래 타 run REUSED 경로는 계속 PENDING만 허용한다.
+                    allow_terminal_approval=True,
                 )
 
             member_alarms = tuple(list_run_alarms(connection, agent_run_id))
@@ -294,6 +303,14 @@ def production_port(
                 action_policy_version=resolved.policy_version,
                 member_alarms=member_alarms,
             )
+            if approval_id is not None:
+                # action bundle과 WAITING 전이는 반드시 같은 commit이다. email node에서
+                # 전이하면 commit↔checkpoint crash 창에 RUNNING+PENDING 고아가 생긴다.
+                begin_approval_wait(
+                    connection,
+                    agent_run_id=agent_run_id,
+                    approval_id=approval_id,
+                )
             result = _result(
                 action_id=action_id,
                 approval_id=approval_id,
