@@ -146,12 +146,23 @@ def _wire(
         writes.append(("provenance", kwargs))
         return run
 
+    def begin_wait(_connection: Any, *, agent_run_id: str, approval_id: str) -> Any:
+        writes.append(
+            (
+                "begin_approval_wait",
+                {"agent_run_id": agent_run_id, "approval_id": approval_id},
+            )
+        )
+        run.status = RunStatus.WAITING_APPROVAL
+        return run
+
     monkeypatch.setattr(subject, "insert_action_history", insert_history)
     monkeypatch.setattr(subject, "link_run_action", link)
     monkeypatch.setattr(subject, "create_approval_request", approval)
     monkeypatch.setattr(subject, "insert_action_delivery", delivery)
     monkeypatch.setattr(subject, "set_run_action", set_action)
     monkeypatch.setattr(subject, "merge_run_action_provenance", merge)
+    monkeypatch.setattr(subject, "begin_approval_wait", begin_wait)
     return subject.production_port(transactions), state
 
 
@@ -178,6 +189,7 @@ def _wire(
                 "delivery",
                 "set_run_action",
                 "provenance",
+                "begin_approval_wait",
             ],
             (DeliveryChannel.EMAIL, DeliveryChannel.MES_MOCK),
         ),

@@ -15,6 +15,11 @@ from typing import Any, Final
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
+from app.agent.approval_store import (
+    EmailTransportError,
+    HitlDeliveryError,
+    HitlResumeError,
+)
 from app.agent.checkpoint import AgentCheckpointError
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.prompts import PROMPT_VERSION
@@ -256,6 +261,47 @@ def _safe_node(
     return wrapped
 
 
+def _approval_email_node(
+    fn: Callable[[AgentGraphState], dict[str, Any]],
+) -> Callable[[AgentGraphState], dict[str, Any]]:
+    """email transport만 nonterminal로 기록하고 나머지는 checkpoint 앞에 남긴다."""
+
+    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+        try:
+            return fn(state)
+        except EmailTransportError as exc:
+            error = AgentError(code=exc.code, node="approval_email", terminal=False)
+            return {"errors": (*state.get("errors", ()), error)}
+        except Exception as exc:
+            # `_safe_node→fail_run→END`로 보내면 WAITING DB는 남아도 checkpoint가
+            # terminal이 된다. 원문 없이 재상승해 직전 성공 checkpoint에서 재시도한다.
+            raise HitlDeliveryError(_classify_exception(exc)) from None
+
+    return wrapped
+
+
+def _hitl_interrupt_node(
+    fn: Callable[[AgentGraphState], dict[str, Any]],
+) -> Callable[[AgentGraphState], dict[str, Any]]:
+    """pending 오진입은 run을 죽이지 않고 같은 checkpoint에 남긴다."""
+
+    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+        try:
+            return fn(state)
+        except RepositoryConflict as exc:
+            if exc.code == "APPROVAL_STILL_PENDING":
+                raise HitlResumeError(exc.code) from None
+            error = _terminal(exc, "hitl_interrupt")
+        except Exception as exc:
+            error = _terminal(exc, "hitl_interrupt")
+        return {
+            "terminal_error": error,
+            "errors": (*state.get("errors", ()), error),
+        }
+
+    return wrapped
+
+
 def _entry_node(
     fn: Callable[[AgentGraphState], dict[str, Any]],
 ) -> Callable[[AgentGraphState], dict[str, Any]]:
@@ -376,6 +422,11 @@ def build_agent_graph(
     interrupt_after: tuple[str, ...] | None = None,
 ) -> Any:
     """canonical 14 node와 내부 ``fail_run`` 하나를 조립한다."""
+
+    if interrupt_after and checkpointer is None:
+        raise ValueError("HITL_CHECKPOINTER_REQUIRED")
+    if interrupt_after and dependencies.ports is None:
+        raise ValueError("HITL_PORTS_REQUIRED")
 
     ports: AgentNodePorts = (  # type: ignore[assignment]
         dependencies.ports if dependencies.ports is not None else _UnwiredPorts()
@@ -660,6 +711,7 @@ def build_agent_graph(
 
     def approval_email(state: AgentGraphState) -> dict[str, Any]:
         ports.approval_email(
+            _required_state_id(state, "run_id"),
             _required_state_id(state, "action_id"),
             _required_state_id(state, "approval_id"),
         )
@@ -823,7 +875,12 @@ def build_agent_graph(
         "finalize": finalize,
     }
     for name, implementation in implementations.items():
-        graph.add_node(name, _safe_node(name, implementation))
+        if name == "approval_email":
+            graph.add_node(name, _approval_email_node(implementation))
+        elif name == "hitl_interrupt":
+            graph.add_node(name, _hitl_interrupt_node(implementation))
+        else:
+            graph.add_node(name, _safe_node(name, implementation))
     graph.add_node("fail_run", fail_run)
 
     graph.add_edge(START, "load_incident")

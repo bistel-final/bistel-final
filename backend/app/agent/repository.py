@@ -60,6 +60,7 @@ from app.common.enums import (
     ActorType,
     AlarmSource,
     ApprovalStatus,
+    Decision,
     DeliveryChannel,
     DeliveryStatus,
     FaultHypothesis,
@@ -107,6 +108,7 @@ __all__ = [
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
+    "ApprovalDecisionRow",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
     "link_run_action",
@@ -114,6 +116,7 @@ __all__ = [
     "find_run_action",
     "find_created_action",
     "insert_action_history",
+    "get_action_history",
     "get_action_bundle",
     "reserve_tool_call",
     "finalize_tool_call",
@@ -122,6 +125,9 @@ __all__ = [
     "count_tool_calls_for_budget",
     "create_approval_request",
     "get_approval_request",
+    "begin_approval_wait",
+    "resume_from_approval",
+    "decide_approval",
     "insert_action_delivery",
     "get_action_delivery",
     "list_action_deliveries",
@@ -335,10 +341,13 @@ COLUMN_LIMITS: Final[Mapping[str, int]] = {
     "label_source": 16,
     "cause_summary": 0,  # text — 상한 없음. 공백만 금지한다.
     "action_id": 20,
+    "approval_id": 20,
     "tool_name": 40,
     "request_hash": 64,
     "provider_message_id": 0,  # text
     "error_msg": 0,  # text
+    "decided_by": 40,
+    "decision_comment": 1000,
 }
 
 
@@ -1328,6 +1337,7 @@ def _run_audit_record(
     actor_type: ActorType,
     actor_id: str | None,
     after: dict[str, Any],
+    before: dict[str, Any] | None = None,
 ) -> AuditRecord:
     """감사 record를 **업무 DML 전에** 만든다.
 
@@ -1344,6 +1354,7 @@ def _run_audit_record(
             actor_type=actor_type,
             entity_id=entity_id,
             actor_id=actor_id,
+            before=before,
             after=after,
         )
     except (AuditContractError, ValueError) as exc:
@@ -1408,6 +1419,10 @@ _INSERT_ACTION_HISTORY = text(
     """
 )
 
+_SELECT_ACTION_HISTORY = text(
+    f"SELECT {_ACTION_HISTORY_COLUMNS} FROM action_history WHERE action_id = :action_id"
+)
+
 
 def _action_history_row(row: Row[Any]) -> ActionHistoryRow:
     required = str(row.approval_required).strip()
@@ -1470,6 +1485,18 @@ def insert_action_history(
             "approved_at": None if approval_required else created_at,
             "created_at": created_at,
         },
+    )
+    return _action_history_row(row)
+
+
+def get_action_history(connection: Connection, action_id: str) -> ActionHistoryRow:
+    """승인 identity 검증에 필요한 action projection을 읽는다."""
+
+    row = _fetch_one(
+        connection,
+        _SELECT_ACTION_HISTORY,
+        {"action_id": _require_text(action_id, "action_id")},
+        "ACTION_NOT_FOUND",
     )
     return _action_history_row(row)
 
@@ -2033,6 +2060,287 @@ def get_approval_request(
         "APPROVAL_NOT_FOUND",
     )
     return _approval_row(row)
+
+
+_UPDATE_RUN_WAITING_APPROVAL = text(
+    f"""
+    UPDATE agent_run
+    SET status = :waiting
+    WHERE agent_run_id = :run_id AND status = :running
+    RETURNING {_RUN_COLUMNS}
+    """
+)
+
+_UPDATE_RUN_RESUMED = text(
+    f"""
+    UPDATE agent_run
+    SET status = :running
+    WHERE agent_run_id = :run_id AND status = :waiting
+    RETURNING {_RUN_COLUMNS}
+    """
+)
+
+_UPDATE_APPROVAL_DECISION = text(
+    f"""
+    UPDATE approval_request
+    SET status = :status, decided_by = :decided_by,
+        decided_at = clock_timestamp(), decision_comment = :decision_comment
+    WHERE approval_id = :approval_id AND status = :pending
+    RETURNING {_APPROVAL_COLUMNS}
+    """
+)
+
+_UPDATE_ACTION_APPROVAL = text(
+    f"""
+    UPDATE action_history
+    SET approval_status = :status,
+        approved_by = :approved_by,
+        approved_at = :approved_at
+    WHERE action_id = :action_id
+      AND approval_required = 'Y'
+      AND approval_status = :pending
+    RETURNING {_ACTION_HISTORY_COLUMNS}
+    """
+)
+
+_UPDATE_MES_DECISION = text(
+    """
+    UPDATE action_delivery
+    SET status = :status
+    WHERE action_id = :action_id AND channel = :channel
+      AND status = :blocked
+    RETURNING action_id, channel, status, request_hash, attempt_count,
+              provider_message_id, started_at, completed_at, last_error, result
+    """
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalDecisionRow:
+    """한 승인 결정 transaction이 확정한 세 projection."""
+
+    approval: ApprovalRequestRow
+    action: ActionHistoryRow
+    mes_delivery: ActionDeliveryRow
+
+
+def _require_created_hold_bundle(
+    connection: Connection,
+    *,
+    approval: ApprovalRequestRow,
+    run: AgentRunRow,
+) -> tuple[RunActionRow, ActionHistoryRow]:
+    """approval→run→CREATED action identity와 EQP_HOLD 계약을 결속한다."""
+
+    try:
+        link = get_run_action(connection, run.agent_run_id)
+        action = get_action_history(connection, approval.action_id)
+    except RepositoryNotFound as exc:
+        raise RepositoryConflict("APPROVAL_IDENTITY_MISMATCH") from exc
+    if (
+        approval.agent_run_id != run.agent_run_id
+        or link.link_role is not ActionLinkRole.CREATED
+        or link.action_id != approval.action_id
+        or action.action_id != approval.action_id
+        or action.action_code is not ActionCode.EQP_HOLD
+        or not action.approval_required
+        or run.action is not ActionCode.EQP_HOLD
+    ):
+        raise RepositoryConflict("APPROVAL_IDENTITY_MISMATCH")
+    return link, action
+
+
+def begin_approval_wait(
+    connection: Connection,
+    *,
+    agent_run_id: str,
+    approval_id: str,
+) -> AgentRunRow:
+    """결속된 EQP_HOLD bundle과 run을 같은 UoW에서 WAITING으로 만든다.
+
+    이미 WAITING인 같은 bundle은 replay-safe no-op이다. 그 밖의 상태나 결속 실패는
+    조용히 성공시키지 않는다.
+    """
+
+    _require_transaction(connection)
+    run = lock_agent_run(connection, agent_run_id)
+    approval = get_approval_request(connection, approval_id)
+    _require_created_hold_bundle(connection, approval=approval, run=run)
+    if approval.status is not ApprovalStatus.PENDING:
+        raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
+    if run.status is RunStatus.WAITING_APPROVAL:
+        return run
+    if run.status is not RunStatus.RUNNING:
+        raise RepositoryConflict("RUN_STATE_INVALID")
+    try:
+        row = connection.execute(
+            _UPDATE_RUN_WAITING_APPROVAL,
+            {
+                "run_id": agent_run_id,
+                "running": RunStatus.RUNNING.value,
+                "waiting": RunStatus.WAITING_APPROVAL.value,
+            },
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        raise RepositoryConflict("RUN_STATE_INVALID")
+    return _run_row(row)
+
+
+def resume_from_approval(
+    connection: Connection,
+    *,
+    agent_run_id: str,
+    approval_id: str,
+) -> AgentRunRow:
+    """terminal 승인과 결속된 WAITING run만 RUNNING으로 CAS한다."""
+
+    _require_transaction(connection)
+    run = lock_agent_run(connection, agent_run_id)
+    approval = get_approval_request(connection, approval_id)
+    _require_created_hold_bundle(connection, approval=approval, run=run)
+    if run.status is not RunStatus.WAITING_APPROVAL:
+        raise RepositoryConflict("RUN_NOT_WAITING_APPROVAL")
+    if approval.status is ApprovalStatus.PENDING:
+        raise RepositoryConflict("APPROVAL_STILL_PENDING")
+    if approval.status not in {ApprovalStatus.APPROVED, ApprovalStatus.REJECTED}:
+        raise RepositoryConflict("APPROVAL_NOT_RESUMABLE")
+    try:
+        row = connection.execute(
+            _UPDATE_RUN_RESUMED,
+            {
+                "run_id": agent_run_id,
+                "running": RunStatus.RUNNING.value,
+                "waiting": RunStatus.WAITING_APPROVAL.value,
+            },
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        raise RepositoryConflict("RUN_NOT_WAITING_APPROVAL")
+    return _run_row(row)
+
+
+def decide_approval(
+    connection: Connection,
+    *,
+    approval_id: str,
+    decision: Decision,
+    decided_by: str,
+    decision_comment: str | None = None,
+) -> ApprovalDecisionRow:
+    """승인·action·MES projection과 감사를 한 caller transaction에서 확정한다."""
+
+    _require_transaction(connection)
+    approval_id = _require_text(approval_id, "approval_id")
+    actor_id = _require_text(decided_by, "decided_by")
+    comment = _optional_text(decision_comment, "decision_comment")
+    try:
+        resolved = Decision(decision)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_APPROVAL_DECISION") from exc
+    target = (
+        ApprovalStatus.APPROVED
+        if resolved is Decision.APPROVE
+        else ApprovalStatus.REJECTED
+    )
+    mes_status = (
+        DeliveryStatus.WAITING
+        if resolved is Decision.APPROVE
+        else DeliveryStatus.CANCELED
+    )
+
+    # identity를 찾은 뒤 그 approval이 가리키는 run을 잠근다. 경쟁 결정은 같은
+    # run lock에서 직렬화되며, lock 획득 뒤 approval을 반드시 다시 읽는다.
+    identity = get_approval_request(connection, approval_id)
+    run = lock_agent_run(connection, identity.agent_run_id)
+    approval = get_approval_request(connection, approval_id)
+    _link, action = _require_created_hold_bundle(connection, approval=approval, run=run)
+    if approval.status is not ApprovalStatus.PENDING:
+        raise RepositoryConflict("APPROVAL_NOT_PENDING")
+    if run.status is not RunStatus.WAITING_APPROVAL:
+        raise RepositoryConflict("RUN_NOT_WAITING_APPROVAL")
+    if action.approval_status is not ApprovalStatus.PENDING:
+        raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
+
+    # actor/entity 길이와 payload shape를 첫 DML 전에 검증한다. decided_at만 DB가
+    # 발급한 뒤 model_copy로 채운다.
+    audit = _run_audit_record(
+        AuditEvent.APPROVAL_DECIDED,
+        entity_id=approval.approval_id,
+        actor_type=ActorType.HUMAN,
+        actor_id=actor_id,
+        before={"status": ApprovalStatus.PENDING.value},
+        after={
+            "status": target.value,
+            "approval_id": approval.approval_id,
+            "action_id": approval.action_id,
+            "agent_run_id": approval.agent_run_id,
+        },
+    )
+
+    def _run() -> ApprovalDecisionRow:
+        approval_row = connection.execute(
+            _UPDATE_APPROVAL_DECISION,
+            {
+                "approval_id": approval.approval_id,
+                "pending": ApprovalStatus.PENDING.value,
+                "status": target.value,
+                "decided_by": actor_id,
+                "decision_comment": comment,
+            },
+        ).one_or_none()
+        if approval_row is None:
+            raise RepositoryConflict("APPROVAL_NOT_PENDING")
+        decided = _approval_row(approval_row)
+
+        action_row = connection.execute(
+            _UPDATE_ACTION_APPROVAL,
+            {
+                "action_id": approval.action_id,
+                "pending": ApprovalStatus.PENDING.value,
+                "status": target.value,
+                "approved_by": actor_id if resolved is Decision.APPROVE else None,
+                "approved_at": (
+                    decided.decided_at if resolved is Decision.APPROVE else None
+                ),
+            },
+        ).one_or_none()
+        if action_row is None:
+            raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
+
+        delivery_row = connection.execute(
+            _UPDATE_MES_DECISION,
+            {
+                "action_id": approval.action_id,
+                "channel": DeliveryChannel.MES_MOCK.value,
+                "blocked": DeliveryStatus.BLOCKED.value,
+                "status": mes_status.value,
+            },
+        ).one_or_none()
+        if delivery_row is None:
+            raise RepositoryConflict("MES_DELIVERY_NOT_BLOCKED")
+
+        decided_at = decided.decided_at
+        if decided_at is None:  # DB RETURNING 계약 위반
+            raise RepositoryContractError("DECIDED_AT_MISSING")
+        record = audit.model_copy(
+            update={
+                "after": {
+                    **(audit.after or {}),
+                    "decided_at": decided_at.isoformat(),
+                }
+            }
+        )
+        append_audit_log(connection, record)
+        return ApprovalDecisionRow(
+            approval=decided,
+            action=_action_history_row(action_row),
+            mes_delivery=_delivery_row(delivery_row),
+        )
+
+    return _write(connection, _run)
 
 
 @dataclass(frozen=True, slots=True)

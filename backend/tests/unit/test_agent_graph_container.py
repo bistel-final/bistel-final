@@ -33,6 +33,7 @@ import postgres_transition as transition  # noqa: E402
 import rehearsal_postgres as postgres  # noqa: E402
 
 from app.agent import action_store as action_store_module  # noqa: E402
+from app.agent import approval_store as approval_store_module  # noqa: E402
 from app.agent import checkpoint as ck  # noqa: E402
 from app.agent import graph as graph_module  # noqa: E402
 from app.agent import repository as repo  # noqa: E402
@@ -61,6 +62,7 @@ from app.agent.tools import (  # noqa: E402
 from app.common.enums import (  # noqa: E402
     ActionCode,
     AlarmSource,
+    ApprovalStatus,
     Decision,
     DeliveryChannel,
     DeliveryStatus,
@@ -103,6 +105,7 @@ SQL_003 = (
     REPOSITORY_ROOT / "backend" / "migrations" / ("003_agent_run_severity_pair.sql")
 )
 T0 = datetime(2026, 8, 1, 10, 0, 0)
+ALARM = AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01")
 
 _WAFER_ALTER = "\n".join(
     f"ALTER TABLE {table} ALTER COLUMN wafer TYPE varchar(24) "
@@ -225,7 +228,12 @@ class _AssemblyPorts:
         self.calls.append("notify_email")
         return None
 
-    def approval_email(self, _action_id: str, _approval_id: str) -> None:
+    def approval_email(
+        self,
+        _run_id: str,
+        _action_id: str,
+        _approval_id: str,
+    ) -> None:
         self.calls.append("approval_email")
         return None
 
@@ -528,12 +536,15 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
     monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
     config = ck.build_thread_config(thread_id)
     first_ports = _HoldAssemblyPorts()
+    first_ports.persist_action = action_store_module.production_port(  # type: ignore[method-assign]
+        engine.begin
+    )
     with _checkpoint_connection(endpoint) as connection:
         PostgresSaver(connection).setup()
         first_graph = build_agent_graph(
             _dependencies(engine, first_ports),
             checkpointer=ck.build_postgres_saver(connection),
-            interrupt_after=("hitl_interrupt",),
+            interrupt_after=("approval_email",),
         )
         interrupted = first_graph.invoke(
             {
@@ -547,20 +558,27 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
         )
         checkpoint = first_graph.get_state(config).values
 
-    assert Decision(interrupted["approval_decision"]) is Decision.APPROVE
+    assert interrupted["approval_decision"] is None
     assert interrupted["terminal_error"] is None
     assert "autonomy_level" in interrupted
-    assert Decision(checkpoint["approval_decision"]) is Decision.APPROVE
+    assert checkpoint.get("approval_decision") is None
     assert ToolBudget.model_validate(checkpoint["tool_budget"]).used == 2
-    assert first_ports.calls[-2:] == ["approval_email", "hitl_interrupt"]
+    assert first_ports.calls[-1:] == ["approval_email"]
+    assert first_ports.calls.count("hitl_interrupt") == 0
     with engine.connect() as connection:
         assert (
             connection.execute(
                 text("SELECT status FROM agent_run WHERE thread_id = :thread_id"),
                 {"thread_id": thread_id},
             ).scalar_one()
-            == RunStatus.RUNNING.value
+            == RunStatus.WAITING_APPROVAL.value
         )
+
+    approval_store_module.decision_port(engine.begin)(
+        interrupted["approval_id"],
+        Decision.APPROVE,
+        "operator",
+    )
 
     fresh_tools = _dependencies(engine, _AssemblyPorts()).tools
     for index in range(3):
@@ -578,12 +596,21 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
     assert blocked.value.budget.used == 5
 
     second_ports = _HoldAssemblyPorts()
+    second_ports.hitl_interrupt = approval_store_module.hitl_decision_port(  # type: ignore[method-assign]
+        engine.begin
+    )
     with _checkpoint_connection(endpoint) as connection:
         resumed_graph = build_agent_graph(
             _dependencies(engine, second_ports),
             checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
         )
-        resumed = resumed_graph.invoke(None, config=config)
+        resumed = approval_store_module.resume_after_approval(
+            resumed_graph,
+            engine.begin,
+            engine.connect,
+            thread_id,
+        )
 
     with engine.connect() as connection:
         run = connection.execute(
@@ -599,9 +626,458 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
     # 중단 checkpoint는 2건이지만 완료 State는 terminal transaction에서
     # DB 5건을 다시 읽는다.
     assert resumed["tool_budget"].used == 5
-    assert "approval_decision" not in resumed
+    assert Decision(resumed["approval_decision"]) is Decision.APPROVE
     assert run.status == RunStatus.COMPLETED.value
     assert run.latency_ms is not None and run.latency_ms >= 0
+
+
+def test_recovery_catches_up_a_pre_persist_crash_without_a_new_run(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, _HoldAssemblyPorts()),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("decide_action",),
+        )
+        first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+        before = first.get_state(config)
+
+    assert before.next == ("persist_action",)
+    run_id = before.values["run_id"]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.RUNNING.value
+        )
+        assert (
+            connection.execute(text("SELECT count(*) FROM action_history")).scalar_one()
+            == 0
+        )
+
+    ports = _HoldAssemblyPorts()
+    ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert recovered["run_id"] == run_id
+    assert recovered["thread_id"] == thread_id
+    assert ports.calls.count("approval_email") == 1
+    assert ports.calls.count("hitl_interrupt") == 0
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT status, (SELECT count(*) FROM action_history) AS actions "
+                "FROM agent_run WHERE agent_run_id = :id"
+            ),
+            {"id": run_id},
+        ).one()
+    assert (row.status, row.actions) == (RunStatus.WAITING_APPROVAL.value, 1)
+
+
+def test_recovery_catches_up_an_approval_email_checkpoint(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    first_ports = _HoldAssemblyPorts()
+    first_ports.persist_action = action_store_module.production_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, first_ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("persist_action",),
+        )
+        first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+        checkpoint = first.get_state(config)
+
+    assert checkpoint.next == ("approval_email",)
+    run_id = checkpoint.values["run_id"]
+    email_calls: list[tuple[str, str]] = []
+    ports = _HoldAssemblyPorts()
+    ports.approval_email = approval_store_module.approval_email_port(  # type: ignore[method-assign]
+        engine.begin,
+        lambda action_id, approval_id: email_calls.append((action_id, approval_id)),
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert recovered["run_id"] == run_id
+    assert len(email_calls) == 1
+    assert ports.calls.count("hitl_interrupt") == 0
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.WAITING_APPROVAL.value
+        )
+
+
+def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, _HoldAssemblyPorts()),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("decide_action",),
+        )
+        first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+        checkpoint = first.get_state(config)
+
+    run_id = checkpoint.values["run_id"]
+    decision = ActionDecision.model_validate(checkpoint.values["action_decision"])
+    bundle = action_store_module.production_port(engine.begin)(run_id, decision)
+    assert bundle.approval_id is not None
+    approval_store_module.decision_port(engine.begin)(
+        bundle.approval_id,
+        Decision.APPROVE,
+        "operator",
+    )
+
+    email_calls: list[tuple[str, str]] = []
+    ports = _HoldAssemblyPorts()
+    ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
+    ports.approval_email = approval_store_module.approval_email_port(  # type: ignore[method-assign]
+        engine.begin,
+        lambda action_id, approval_id: email_calls.append((action_id, approval_id)),
+    )
+    ports.hitl_interrupt = approval_store_module.hitl_decision_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert recovered["run_id"] == run_id
+    assert Decision(recovered["approval_decision"]) is Decision.APPROVE
+    assert email_calls == []
+    assert ports.calls == ["publish_mes", "writeback_result"]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.COMPLETED.value
+        )
+
+
+def test_recovery_without_a_checkpoint_is_fail_closed(
+    runtime: tuple[Any, Any],
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    run_id = _start_runtime_run(engine)
+    bundle = action_store_module.production_port(engine.begin)(
+        run_id,
+        ActionDecision(
+            action=ActionCode.EQP_HOLD,
+            severity=Severity.HIGH,
+            requires_approval=True,
+            matched_rule="R03_PRESENT",
+        ),
+    )
+    ports = _HoldAssemblyPorts()
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        with pytest.raises(approval_store_module.HitlResumeError) as caught:
+            approval_store_module.recover_hitl_run(
+                graph,
+                engine.begin,
+                engine.connect,
+                run_id,
+            )
+    assert caught.value.code == "CHECKPOINT_MISSING"
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT r.status, p.status AS approval_status, "
+                "(SELECT count(*) FROM action_history) AS actions "
+                "FROM agent_run r JOIN approval_request p "
+                "ON p.agent_run_id = r.agent_run_id "
+                "WHERE r.agent_run_id = :id"
+            ),
+            {"id": run_id},
+        ).one()
+    assert bundle.approval_id is not None
+    assert (row.status, row.approval_status, row.actions) == (
+        RunStatus.WAITING_APPROVAL.value,
+        ApprovalStatus.PENDING.value,
+        1,
+    )
+
+
+def test_recovery_continues_after_resume_cas_committed_before_invoke(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    first_ports = _HoldAssemblyPorts()
+    first_ports.persist_action = action_store_module.production_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, first_ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        interrupted = first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+
+    run_id = interrupted["run_id"]
+    approval_id = interrupted["approval_id"]
+    approval_store_module.decision_port(engine.begin)(
+        approval_id,
+        Decision.APPROVE,
+        "operator",
+    )
+    # 첫 소유자가 여기까지 commit하고 graph.invoke 전에 죽은 상황을 재현한다.
+    with engine.begin() as connection:
+        repo.resume_from_approval(
+            connection,
+            agent_run_id=run_id,
+            approval_id=approval_id,
+        )
+
+    ports = _HoldAssemblyPorts()
+    ports.hitl_interrupt = approval_store_module.hitl_decision_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert Decision(recovered["approval_decision"]) is Decision.APPROVE
+    assert ports.calls == ["publish_mes", "writeback_result"]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.COMPLETED.value
+        )
+
+
+def test_hitl_read_can_repeat_after_a_crash_before_node_checkpoint(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
+    config = ck.build_thread_config(thread_id)
+    first_ports = _HoldAssemblyPorts()
+    first_ports.persist_action = action_store_module.production_port(  # type: ignore[method-assign]
+        engine.begin
+    )
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        first = build_agent_graph(
+            _dependencies(engine, first_ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        interrupted = first.invoke(
+            {"requested_alarm": ALARM, "autonomy_level": 2},
+            config=config,
+        )
+
+    run_id = interrupted["run_id"]
+    approval_id = interrupted["approval_id"]
+    approval_store_module.decision_port(engine.begin)(
+        approval_id,
+        Decision.APPROVE,
+        "operator",
+    )
+    with engine.begin() as connection:
+        repo.resume_from_approval(
+            connection,
+            agent_run_id=run_id,
+            approval_id=approval_id,
+        )
+
+    read_decision = approval_store_module.hitl_decision_port(engine.begin)
+    read_calls = 0
+
+    def crash_after_read(resolved_approval_id: str) -> Decision:
+        nonlocal read_calls
+        decision = read_decision(resolved_approval_id)
+        read_calls += 1
+        if read_calls == 1:
+            # DB read는 끝났지만 LangGraph가 node 성공 checkpoint를 쓰기 전 죽는다.
+            raise SystemExit("simulated process crash")
+        return decision
+
+    ports = _HoldAssemblyPorts()
+    ports.hitl_interrupt = crash_after_read  # type: ignore[method-assign]
+    with _checkpoint_connection(endpoint) as connection:
+        recovered_graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("approval_email",),
+        )
+        with pytest.raises(SystemExit, match="simulated process crash"):
+            approval_store_module.recover_hitl_run(
+                recovered_graph,
+                engine.begin,
+                engine.connect,
+                run_id,
+            )
+        after_crash = recovered_graph.get_state(config)
+        assert after_crash.next == ("hitl_interrupt",)
+
+        recovered = approval_store_module.recover_hitl_run(
+            recovered_graph,
+            engine.begin,
+            engine.connect,
+            run_id,
+        )
+
+    assert read_calls == 2
+    assert Decision(recovered["approval_decision"]) is Decision.APPROVE
+    assert ports.calls == ["publish_mes", "writeback_result"]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT status FROM agent_run WHERE agent_run_id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+            == RunStatus.COMPLETED.value
+        )
 
 
 def test_concurrent_last_total_slot_is_reserved_exactly_once(
@@ -889,27 +1365,43 @@ def test_middle_failure_rolls_back_action_bundle_run_and_approval_audit(
 
 def test_production_action_port_persists_hold_bundle_before_interrupt(
     runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """후속 delivery port는 fixture로 두고 실제 action 저장 port만 graph에 태운다."""
 
-    _endpoint, engine = runtime
+    endpoint, engine = runtime
     _seed_runtime(engine)
+    thread_id = str(uuid4())
+
+    def fixed_start(connection: Any, requested_alarm: AlarmRef, **kwargs: Any) -> Any:
+        return start_incident_run(
+            connection,
+            requested_alarm,
+            thread_id_factory=lambda: thread_id,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(graph_module, "start_incident_run", fixed_start)
     ports = _HoldAssemblyPorts()
     ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
-    graph = build_agent_graph(
-        _dependencies(engine, ports),
-        interrupt_after=("hitl_interrupt",),
-    )
+    with _checkpoint_connection(endpoint) as checkpoint_connection:
+        PostgresSaver(checkpoint_connection).setup()
+        graph = build_agent_graph(
+            _dependencies(engine, ports),
+            checkpointer=ck.build_postgres_saver(checkpoint_connection),
+            interrupt_after=("approval_email",),
+        )
 
-    state = graph.invoke(
-        {
-            "requested_alarm": AlarmRef(
-                source=AlarmSource.TRACE,
-                alarm_id="TA-01",
-            ),
-            "autonomy_level": 2,
-        }
-    )
+        state = graph.invoke(
+            {
+                "requested_alarm": AlarmRef(
+                    source=AlarmSource.TRACE,
+                    alarm_id="TA-01",
+                ),
+                "autonomy_level": 2,
+            },
+            config=ck.build_thread_config(thread_id),
+        )
 
     with engine.connect() as connection:
         action = connection.execute(
@@ -938,7 +1430,8 @@ def test_production_action_port_persists_hold_bundle_before_interrupt(
         (DeliveryChannel.MES_MOCK.value, DeliveryStatus.BLOCKED.value),
     ]
     assert all(len(row.request_hash) == 64 for row in deliveries)
-    assert run.status == RunStatus.RUNNING.value
+    assert run.status == RunStatus.WAITING_APPROVAL.value
+    assert ports.calls.count("hitl_interrupt") == 0
     assert (run.action, run.severity) == (
         ActionCode.EQP_HOLD.value,
         Severity.HIGH.value,

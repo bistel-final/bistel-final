@@ -541,6 +541,7 @@ jobs:
           tests/unit/test_agent_hypothesis.py
           tests/unit/test_agent_decision.py
           tests/unit/test_agent_action_store.py
+          tests/unit/test_agent_approval_store.py
           tests/unit/test_agent_graph.py
           -rs --no-header
 
@@ -562,7 +563,9 @@ jobs:
           N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
         run: >-
           python -m pytest -q -m container
+          tests/unit/test_agent_approval_store_container.py
           tests/unit/test_agent_graph_container.py
+          tests/unit/test_agent_resume_lock_container.py
           -rs --no-header
 
       # V5-C-1.3 중복 실행 방지.
