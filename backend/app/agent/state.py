@@ -37,6 +37,7 @@ from app.common.tool_contracts import (
 )
 
 MatchedRule = Literal["R03_PRESENT", "TRACE_OOS", "SUMMARY_OOC_ONLY", "NO_ALARM"]
+ActionPolicyVersion = Literal["ACTION-POLICY-V1"]
 
 RULE_TO_ACTION: Final[Mapping[MatchedRule, ActionCode | None]] = {
     "R03_PRESENT": ActionCode.EQP_HOLD,
@@ -123,6 +124,9 @@ class ActionDecision(StateModel):
     severity: Severity | None
     requires_approval: bool
     matched_rule: MatchedRule
+    # V1 배포 전에 저장된 checkpoint에는 이 key가 없다. 당시 조치 규칙도 V1과
+    # 같으므로 누락값만 V1로 복원하고, 명시된 미지원 version은 Literal이 거부한다.
+    policy_version: ActionPolicyVersion = "ACTION-POLICY-V1"
 
     @model_validator(mode="after")
     def _exact_match(self) -> ActionDecision:
@@ -386,6 +390,7 @@ __all__ = [
     "INITIAL_STATUS",
     "RULE_TO_ACTION",
     "ActionDecision",
+    "ActionPolicyVersion",
     "AgentError",
     "AgentGraphInput",
     "AgentGraphState",

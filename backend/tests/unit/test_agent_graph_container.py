@@ -212,6 +212,7 @@ class _AssemblyPorts:
             severity=Severity.LOW,
             requires_approval=False,
             matched_rule="SUMMARY_OOC_ONLY",
+            policy_version="ACTION-POLICY-V1",
         )
 
     def persist_action(self, _run_id: str, _decision: ActionDecision) -> PersistResult:
@@ -251,6 +252,7 @@ class _HoldAssemblyPorts(_AssemblyPorts):
             severity=Severity.HIGH,
             requires_approval=True,
             matched_rule="R03_PRESENT",
+            policy_version="ACTION-POLICY-V1",
         )
 
     def persist_action(self, _run_id: str, _decision: ActionDecision) -> PersistResult:
