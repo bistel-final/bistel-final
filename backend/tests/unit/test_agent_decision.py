@@ -294,6 +294,9 @@ def test_route_access_is_exactly_member_alarm_sources() -> None:
 
 
 # Source provenance (REFERENCE_NOT_GOLD — 채점 정답 아님):
+# 아래 hash와 case는 출처를 설명하는 checked-in 선언이며 이 unit test가 원본 ZIP·CSV를
+# 읽거나 hash를 대조하지는 않는다. 실제 데이터 12 incident와 5/4/3 분포 검증은
+# V5-C-6.1 golden flow E2E가 소유한다.
 # project.zip sha256:
 # e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3
 # action_history.csv sha256:
@@ -303,7 +306,7 @@ def test_route_access_is_exactly_member_alarm_sources() -> None:
 # summary_alarm_history.csv sha256:
 # cf16301cb5f03f0213fdb816f4ad15b935c0c6c7e6ed6ef20f63eb30c8121d88
 # R03 3건은 raw ZIP column이 아니라 strict R03 파생 결과다.
-REFERENCE_CASES = (
+REFERENCE_SOURCE_CASES = (
     ("LOT002", "EQP05-PM2", (AlarmSource.SUMMARY,), ActionCode.MONITORING),
     ("LOT004", "EQP01-PM2", (AlarmSource.SUMMARY,), ActionCode.MONITORING),
     ("LOT007", "EQP04-PM1", (AlarmSource.SUMMARY,), ActionCode.MONITORING),
@@ -354,8 +357,10 @@ REFERENCE_CASES = (
 )
 
 
-def test_final_reference_cases_reproduce_the_five_four_three_distribution() -> None:
-    keys = [(lot_id, chamber_id) for lot_id, chamber_id, *_ in REFERENCE_CASES]
+def test_reference_source_combinations_map_to_the_expected_actions() -> None:
+    """Checked-in source 조합의 규칙 mapping만 검증한다."""
+
+    keys = [(lot_id, chamber_id) for lot_id, chamber_id, *_ in REFERENCE_SOURCE_CASES]
     decisions = [
         subject.decide_action(
             _route(
@@ -366,10 +371,10 @@ def test_final_reference_cases_reproduce_the_five_four_three_distribution() -> N
             )
         ).action
         for index, (lot_id, chamber_id, sources, _expected) in enumerate(
-            REFERENCE_CASES
+            REFERENCE_SOURCE_CASES
         )
     ]
-    expected = [case[3] for case in REFERENCE_CASES]
+    expected = [case[3] for case in REFERENCE_SOURCE_CASES]
 
     assert len(keys) == len(set(keys)) == 12
     assert decisions == expected

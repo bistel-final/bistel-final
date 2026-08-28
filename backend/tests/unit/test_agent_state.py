@@ -185,6 +185,16 @@ def test_action_policy_version_survives_json_round_trip() -> None:
     assert restored.policy_version == "ACTION-POLICY-V1"
 
 
+def test_legacy_checkpoint_without_policy_version_defaults_to_v1() -> None:
+    restored = ActionDecision.model_validate_json(
+        '{"action":"WARNING","severity":"MEDIUM",'
+        '"requires_approval":false,"matched_rule":"TRACE_OOS"}'
+    )
+
+    assert restored.policy_version == "ACTION-POLICY-V1"
+    assert restored.model_dump(mode="json")["policy_version"] == "ACTION-POLICY-V1"
+
+
 @pytest.mark.parametrize("version", ["", "random", "ACTION-POLICY-V999"])
 def test_action_policy_version_rejects_unknown_values(version: str) -> None:
     with pytest.raises(ValidationError):
