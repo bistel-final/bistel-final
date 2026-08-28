@@ -207,7 +207,9 @@ jobs:
           tests/unit/test_ci_test_registration.py
           tests/unit/test_common_audit.py
           tests/unit/test_common_boundary_adapters.py
+          tests/unit/test_common_db_evaluation.py
           tests/unit/test_common_ids_enums.py
+          tests/unit/test_detection_evaluation.py
           tests/unit/test_document_contract.py
           tests/unit/test_document_search.py
           tests/unit/test_final_profile_manifests.py
@@ -243,6 +245,8 @@ jobs:
           tests/unit/test_source_manifest_v4.py
           tests/unit/test_value_normalization.py
           tests/unit/test_verify_migrations.py
+          tests/contract/test_score_boundary.py
+          tests/contract/test_detection_label_isolation.py
           -rs --no-header
 
   schema-rehearsal-container:
@@ -294,6 +298,18 @@ jobs:
           numpy==2.1.3
           scikit-learn==1.5.2
           joblib==1.4.2
+
+      # V5-A-3.2-1 `get_fdc_summary` Tool. 위 numpy·scikit-learn·joblib을
+      # 설치한 바로 그 이유다 — `app.detection.model`(IsolationForest)을
+      # import하는 유일한 unit test라 `backend-unit-contracts` job(그 셋이
+      # 없다)에는 등록할 수 없다. DB·model artifact는 전부 fake/monkeypatch라
+      # `-m container`도, 실제 container도 필요 없다.
+      - name: Prove the FDC summary Tool contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_fdc_summary_tool.py
+          -rs --no-header
 
       - name: Rehearse schema and prove rollback cleanup
         working-directory: backend
