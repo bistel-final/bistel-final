@@ -12,9 +12,6 @@ PR_POLICY = REPOSITORY_ROOT / ".github" / "workflows" / "pr-policy.yml"
 # CI에 직접 등록하지 않은 예외는 소유자와 이유를 반드시 남긴다. 예외 파일을 등록하거나
 # 삭제하면 stale allowlist 검증이 실패하므로 이 목록도 함께 정리해야 한다.
 UNREGISTERED_ALLOWLIST = {
-    "tests/unit/test_detection_model.py": (
-        "V5-A-2.1 소유이며 focused CI에 scikit-learn 의존성이 아직 없다."
-    ),
     "tests/unit/test_rehearsal_image_manifest.py": (
         "Docker registry manifest 조회가 필요한 container/network 전용 계약이다."
     ),
