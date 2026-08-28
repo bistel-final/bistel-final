@@ -592,6 +592,7 @@ jobs:
         run: >-
           python -m pytest -q
           tests/unit/test_n8n_workflows.py
+          tests/unit/test_n8n_runtime_manifest.py
           -rs --no-header
 
       # 실제 PostgreSQL 16에서 checkpoint 직렬화와 C 소유 incident·routing·Tool 감사·

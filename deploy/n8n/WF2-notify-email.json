@@ -4,6 +4,7 @@
   "nodes": [
     {
       "id": "02000000-0000-4000-8000-000000000001",
+      "webhookId": "9c8970ad-0b74-4f67-8b63-21d5ee63ec02",
       "name": "Email Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,

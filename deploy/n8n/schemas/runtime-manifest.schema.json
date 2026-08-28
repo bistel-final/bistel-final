@@ -1,0 +1,234 @@
+{
+  "$defs": {
+    "ExternalRunner": {
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/RunnerImagePin"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "image"
+      ],
+      "title": "ExternalRunner",
+      "type": "object"
+    },
+    "InternalRunner": {
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "title": "Image",
+          "type": "null"
+        },
+        "mode": {
+          "const": "internal",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "image"
+      ],
+      "title": "InternalRunner",
+      "type": "object"
+    },
+    "N8nImagePin": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_list_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifest List Digest",
+          "type": "string"
+        },
+        "platform_digests": {
+          "$ref": "#/$defs/PlatformDigests"
+        },
+        "repository": {
+          "const": "n8nio/n8n",
+          "title": "Repository",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "version",
+        "manifest_list_digest",
+        "platform_digests"
+      ],
+      "title": "N8nImagePin",
+      "type": "object"
+    },
+    "PlatformDigests": {
+      "additionalProperties": false,
+      "properties": {
+        "linux/amd64": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linux/Amd64",
+          "type": "string"
+        },
+        "linux/arm64": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linux/Arm64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "title": "PlatformDigests",
+      "type": "object"
+    },
+    "RunnerImagePin": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_list_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifest List Digest",
+          "type": "string"
+        },
+        "platform_digests": {
+          "$ref": "#/$defs/PlatformDigests"
+        },
+        "repository": {
+          "const": "n8nio/runners",
+          "title": "Repository",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "version",
+        "manifest_list_digest",
+        "platform_digests"
+      ],
+      "title": "RunnerImagePin",
+      "type": "object"
+    },
+    "RuntimeTopology": {
+      "additionalProperties": false,
+      "properties": {
+        "database_type": {
+          "enum": [
+            "sqlite",
+            "postgresdb"
+          ],
+          "title": "Database Type",
+          "type": "string"
+        },
+        "execution_mode": {
+          "enum": [
+            "regular",
+            "queue"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "main_worker": {
+          "enum": [
+            "single",
+            "separated"
+          ],
+          "title": "Main Worker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "database_type",
+        "execution_mode",
+        "main_worker"
+      ],
+      "title": "RuntimeTopology",
+      "type": "object"
+    },
+    "WorkflowSourceHashes": {
+      "additionalProperties": false,
+      "properties": {
+        "WF2-notify-email.json": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Wf2-Notify-Email.Json",
+          "type": "string"
+        },
+        "WF3-mes-hold.json": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Wf3-Mes-Hold.Json",
+          "type": "string"
+        },
+        "WF4-result-writeback.json": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Wf4-Result-Writeback.Json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "WF2-notify-email.json",
+        "WF3-mes-hold.json",
+        "WF4-result-writeback.json"
+      ],
+      "title": "WorkflowSourceHashes",
+      "type": "object"
+    }
+  },
+  "$id": "https://bistel-fdc.local/schemas/n8n-runtime-manifest-v1.json",
+  "additionalProperties": false,
+  "properties": {
+    "format_version": {
+      "const": 1,
+      "title": "Format Version",
+      "type": "integer"
+    },
+    "n8n": {
+      "$ref": "#/$defs/N8nImagePin"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeTopology"
+    },
+    "task_runner": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/ExternalRunner",
+          "internal": "#/$defs/InternalRunner"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InternalRunner"
+        },
+        {
+          "$ref": "#/$defs/ExternalRunner"
+        }
+      ],
+      "title": "Task Runner"
+    },
+    "workflow_source_sha256": {
+      "$ref": "#/$defs/WorkflowSourceHashes"
+    }
+  },
+  "required": [
+    "format_version",
+    "n8n",
+    "runtime",
+    "task_runner",
+    "workflow_source_sha256"
+  ],
+  "title": "RuntimeManifest",
+  "type": "object"
+}
