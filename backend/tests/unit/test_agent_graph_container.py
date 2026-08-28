@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
@@ -116,8 +116,8 @@ _WAFER_ALTER = "\n".join(
 )
 
 
-@pytest.fixture(scope="module")
-def runtime() -> tuple[Any, Any]:
+@contextmanager
+def _runtime_context() -> Iterator[tuple[Any, Any]]:
     """base 9 + V5 Runtime + checkpoint를 한 PostgreSQL 16에 세운다."""
 
     with postgres.one_off_postgres(database=TARGET_DATABASE) as endpoint:
@@ -145,6 +145,14 @@ def runtime() -> tuple[Any, Any]:
             yield endpoint, engine
         finally:
             engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def runtime() -> Iterator[tuple[Any, Any]]:
+    """pytest와 일반 helper가 같은 격리 PostgreSQL lifecycle을 사용한다."""
+
+    with _runtime_context() as resources:
+        yield resources
 
 
 def _fdc_result(*, lot_hist_id: str = "LH-REP") -> FdcSummaryToolResult:

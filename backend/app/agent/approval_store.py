@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
@@ -320,14 +320,12 @@ def _record_rehydration_success(
 
     try:
         with transactions() as connection:
+            current = get_agent_run(connection, run_id)
             merge_run_action_provenance(
                 connection,
                 run_id,
                 terminal_evidence={
-                    REHYDRATION_AUDIT_KEY: {
-                        "schema_version": REHYDRATION_SNAPSHOT_SCHEMA,
-                        "rehydrated_at": datetime.now(UTC).isoformat(),
-                    }
+                    REHYDRATION_AUDIT_KEY: _append_rehydration_audit(current.evidence)
                 },
             )
     except AgentRepositoryError as exc:
@@ -337,6 +335,38 @@ def _record_rehydration_success(
         )
     except Exception:  # noqa: BLE001 - best-effort 감사가 복구 성공을 뒤집지 않는다
         logger.error("HITL rehydration evidence persistence unavailable")
+
+
+def _append_rehydration_audit(
+    evidence: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """같은 run을 여러 번 복구해도 최초 시각을 잃지 않는 append-only projection."""
+
+    raw = None if evidence is None else evidence.get(REHYDRATION_AUDIT_KEY)
+    events: list[dict[str, str]] = []
+    if raw is not None:
+        if not isinstance(raw, Mapping):
+            raise ValueError("invalid rehydration audit")
+        raw_events = raw.get("events")
+        legacy_timestamp = raw.get("rehydrated_at")
+        if raw.get("schema_version") != REHYDRATION_SNAPSHOT_SCHEMA:
+            raise ValueError("invalid rehydration audit schema")
+        if raw_events is None and isinstance(legacy_timestamp, str):
+            events.append({"rehydrated_at": legacy_timestamp})
+        elif isinstance(raw_events, list) and all(
+            isinstance(item, Mapping) and isinstance(item.get("rehydrated_at"), str)
+            for item in raw_events
+        ):
+            events.extend(
+                {"rehydrated_at": str(item["rehydrated_at"])} for item in raw_events
+            )
+        else:
+            raise ValueError("invalid rehydration audit events")
+    events.append({"rehydrated_at": datetime.now(UTC).isoformat()})
+    return {
+        "schema_version": REHYDRATION_SNAPSHOT_SCHEMA,
+        "events": events,
+    }
 
 
 def _invoke(

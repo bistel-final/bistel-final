@@ -20,6 +20,7 @@ from app.agent.rehydration import (
 )
 from app.agent.repository import (
     ActionBundle,
+    AgentRunRow,
     RepositoryConflict,
     RepositoryContractError,
     begin_approval_wait,
@@ -138,6 +139,9 @@ def _validate_bundle(
             raise RepositoryConflict("ACTION_APPROVAL_NOT_PENDING")
     if approval_required and bundle.approval_agent_run_id != agent_run_id:
         raise RepositoryConflict("ACTION_APPROVAL_RUN_MISMATCH")
+    # 같은 run의 terminal approval replay도 **생성 당시 delivery plan**을 재구성한다.
+    # 현재 delivery 상태를 투영하면 persist 직전 snapshot과의 멱등 비교가 깨진다. 실제
+    # terminal 상태는 resume/delivery read 경계가 별도로 검증한다.
     result = _result(
         action_id=bundle.action_id,
         approval_id=bundle.approval_id,
@@ -370,18 +374,17 @@ def _rehydration_snapshot(
     seed: RehydrationSeed,
     result: PersistResult,
     *,
-    locked: object,
+    locked: AgentRunRow,
     member_alarms: tuple[AlarmRef, ...],
 ) -> RehydrationSnapshot:
     """EQP_HOLD snapshot을 DB run/member identity와 결속한다."""
 
     incident = seed.route.incident
     if (
-        incident.lot_id != getattr(locked, "lot_id", None)
-        or incident.chamber_id != getattr(locked, "chamber_id", None)
-        or incident.requested_alarm != getattr(locked, "requested_alarm", None)
-        or incident.representative_alarm
-        != getattr(locked, "representative_alarm", None)
+        incident.lot_id != locked.lot_id
+        or incident.chamber_id != locked.chamber_id
+        or incident.requested_alarm != locked.requested_alarm
+        or incident.representative_alarm != locked.representative_alarm
         or {item.to_token() for item in incident.member_alarms}
         != {item.to_token() for item in member_alarms}
     ):
@@ -402,7 +405,7 @@ def _snapshot_payload(
     action: ActionCode,
     seed: RehydrationSeed | None,
     result: PersistResult,
-    locked: object,
+    locked: AgentRunRow,
     member_alarms: tuple[AlarmRef, ...],
 ) -> Mapping[str, object] | None:
     if action is not ActionCode.EQP_HOLD:

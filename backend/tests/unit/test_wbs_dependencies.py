@@ -113,6 +113,35 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
         assert phrase in cm_3_5[3]
 
 
+def test_effort_exception_prose_matches_the_task_rows() -> None:
+    """2h 초과 Task를 추가하고 예외 서술을 빠뜨리는 회귀를 막는다(PR #196 필수 1)."""
+
+    text = WBS.read_text(encoding="utf-8")
+    exception_section = re.search(
+        r"예외가 (?P<count_word>[가-힣]+) 개다\.\n\n"
+        r"(?P<items>(?:- `V5-[\s\S]*?))\n\n---",
+        text,
+    )
+    assert exception_section is not None
+    listed = {
+        task_id: float(hours)
+        for task_id, hours in re.findall(
+            r"^- `(V5-[^`]+)` \*\*([0-9.]+)h\*\*",
+            exception_section["items"],
+            re.MULTILINE,
+        )
+    }
+    actual = {
+        row[1]: float(row[-2].removesuffix("h"))
+        for row in _task_fields()
+        if float(row[-2].removesuffix("h")) > 2.0
+    }
+
+    assert exception_section["count_word"] == "열"
+    assert len(listed) == 10
+    assert listed == actual
+
+
 def test_the_dependency_graph_has_no_cycle(rows: dict[str, TaskRow]) -> None:
     """**순환이 있으면 어느 Task도 선행을 만족시키지 못한다**(구현리뷰 18차 필수 1)."""
 

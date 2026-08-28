@@ -488,6 +488,27 @@ def test_checkpoint_write_ack_loss_is_reclassified_by_exact_postcondition(
     assert recorded == ["RUN-1"]
 
 
+def test_rehydration_audit_appends_repeated_recovery_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = SimpleNamespace(evidence=None)
+
+    def merge(*_args: Any, terminal_evidence: dict[str, Any], **_kwargs: Any) -> None:
+        run.evidence = {**(run.evidence or {}), **terminal_evidence}
+
+    monkeypatch.setattr(approval_store, "get_agent_run", lambda *_a: run)
+    monkeypatch.setattr(approval_store, "merge_run_action_provenance", merge)
+
+    approval_store._record_rehydration_success(_transactions, "RUN-1")
+    first_timestamp = run.evidence[subject.REHYDRATION_AUDIT_KEY]["events"][0]
+    approval_store._record_rehydration_success(_transactions, "RUN-1")
+
+    audit = run.evidence[subject.REHYDRATION_AUDIT_KEY]
+    assert audit["schema_version"] == subject.REHYDRATION_SNAPSHOT_SCHEMA
+    assert len(audit["events"]) == 2
+    assert audit["events"][0] == first_timestamp
+
+
 def test_active_terminal_checkpoint_is_drift_not_rehydration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -61,7 +61,7 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | **합계** | | **185.0h** | P2 도전 과제 제외 |
 
 우선순위별 공수는 **P0 138.5h / P1 46.5h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 여덟이다.
+Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 열 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -73,6 +73,8 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-CM-3.5` **4.0h** — 공용 3 DB의 profile별 5-role exact ACL, core→checkpoint
   successor, 실제 login container 검증과 Backend app credential 전환을 한 보안 Gate로
   닫는다. DB별 transaction·승인·marker는 분리하되 중간 상태를 완료로 선언하지 않는다.
+- `V5-C-0.1` **4.0h** — Runtime 9-table Repository, ID·상태 전이, action/severity pair와
+  append-only 감사를 실제 PostgreSQL 저장·동시성 경계까지 한 기반 구현으로 닫는다.
 - `V5-C-2.1` **6.5h** — State 20개 계약, Tool 예약·종료 감사와 soft deadline,
   canonical 14 node·Level 1/2 분기·실 PostgreSQL checkpoint 왕복을 한 실행 골격으로 닫고,
   A production Tool merge 뒤의 실제 Tool 조립 E2E만 같은 Task의 production Gate로 남긴다.
@@ -89,6 +91,9 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-C-3.3` **4.0h** — approval·action·delivery 결정 UoW, durable checkpoint 중단,
   session advisory resume lock과 DB↔checkpoint crash-window 복구를 실제 PostgreSQL
   동시성·물리 session 종료 회귀까지 한 HITL 경계로 닫는다.
+- `V5-C-3.4` **4.5h** — State snapshot 저장·DB 정본 결속·checkpoint 재수화 postcondition을
+  한 복구 경계로 닫고, write acknowledgement 유실과 복원 불가 상태의 fail-closed를 실제
+  PostgreSQL 회귀까지 증명한다.
 
 ---
 

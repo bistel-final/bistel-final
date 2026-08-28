@@ -143,6 +143,11 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
   뒤에서 중단한다. DB↔checkpoint crash window는 같은 run/thread catch-up으로 수렴한다.
   checkpoint 자체가 없으면 C-3.3은 `CHECKPOINT_MISSING`으로 상태 변경 없이 막고,
   `V5-C-3.4`가 DB 정본 기반 재수화를 구현한다.
+- C-3.4가 PENDING checkpoint를 재수화하면 `approval_email` node부터 다시 실행하므로 승인요청
+  메일이 재발송될 수 있다. 두 메일은 동일한 `approval_id`를 가리키며 어느 메일에서 승인·반려해도
+  같은 요청에 적용되고, 새 approval·action을 만들지 않는다.
+- `rehydration_snapshot`의 실제 데이터 JSONB 크기는 12개 incident를 쓰는 `V5-C-6.1`에서
+  `pg_column_size`로 기록한다. 단일 wafer 격리 fixture만으로 임의 상한을 정하지 않는다.
 - Tool 예산은 총 8회이며 interrupt 전후 누적값을 checkpoint와 DB에서 복원한다. DB의
   `agent_run` row lock 아래 총·Tool별 호출 수를 다시 집계한 뒤 같은 transaction에서 예약한다.
 - `send_action` 2회를 위해 읽기 Tool은 합계 6회까지만 예약한다. 동일 Tool은 최초 호출을 포함해

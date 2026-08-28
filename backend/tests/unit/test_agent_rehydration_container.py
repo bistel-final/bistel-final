@@ -29,7 +29,8 @@ pytestmark = pytest.mark.container
 def rehydration_runtime() -> Iterator[tuple[Any, Any]]:
     """기존 조립 fixture의 DB 형상을 별도 module fixture로 재사용한다."""
 
-    yield from graph_container.runtime.__wrapped__()
+    with graph_container._runtime_context() as resources:
+        yield resources
 
 
 class _CountingGraph:
@@ -298,9 +299,9 @@ def test_missing_checkpoint_is_rehydrated_from_the_persisted_snapshot(
         ).one()
     assert (row.tool_calls, row.actions) == (2, 1)
     assert row.status == expected_status
-    assert row.evidence["checkpoint_rehydration"]["schema_version"] == (
-        "rehydration-snapshot-v1"
-    )
+    audit = row.evidence["checkpoint_rehydration"]
+    assert audit["schema_version"] == "rehydration-snapshot-v1"
+    assert len(audit["events"]) == 1
     if citation_kind == "chunk":
         assert recovered["hypothesis"].supporting_chunk_ids == ("CHUNK-1",)
     else:

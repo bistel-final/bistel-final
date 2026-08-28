@@ -22,6 +22,7 @@ from app.agent.repository import (
     ACTION_PROVENANCE_SCHEMA,
     REHYDRATION_SNAPSHOT_KEY,
     AgentRunRow,
+    PredictionRow,
     count_tool_calls,
     find_run_action,
     get_action_bundle,
@@ -296,7 +297,7 @@ def load_snapshot(evidence: Mapping[str, Any] | None) -> RehydrationSnapshot:
         raise RehydrationError("REHYDRATE_SNAPSHOT_MISSING") from exc
 
 
-def prediction_to_hypothesis(row: Any) -> Hypothesis:
+def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
     evidence = row.evidence
     if evidence.get("schema_version") != "agent-evidence-v1":
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH")
