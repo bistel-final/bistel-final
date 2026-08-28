@@ -14,6 +14,7 @@ from app.common.config import CORS_ORIGINS
 from app.common.db import dispose_engines, get_app_engine, get_readonly_engine
 from app.common.exceptions import AppError, ErrorCode, ErrorResponse
 from app.common.neo4j import close_neo4j_driver, get_neo4j_driver
+from app.common.rag_readiness import verify_rag_readiness
 from app.detection.router import router as detection_router
 from app.knowledge.router import router as knowledge_router
 
@@ -140,6 +141,13 @@ def readiness() -> dict[str, object]:
         services["postgres"] = "available"
     except Exception:
         services["postgres"] = "unavailable"
+
+    try:
+        with get_app_engine().connect() as connection:
+            verify_rag_readiness(connection)
+        services["rag"] = "available"
+    except Exception:
+        services["rag"] = "unavailable"
 
     try:
         with get_readonly_engine().connect() as connection:
