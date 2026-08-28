@@ -64,7 +64,7 @@ class DocumentHit(ApiModel):
 
 # ==================
 # 문서 RAG 상세 조회
-# 현재 구현 범위 밖이며 GET /documents/{document_id} 계약용 DTO다.
+# GET /documents/{document_id} 계약용 DTO다.
 # ==================
 class DocumentChunkItem(ApiModel):
     chunk_id: NonEmptyId

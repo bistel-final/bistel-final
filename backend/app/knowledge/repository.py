@@ -6,6 +6,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+
 from app.common.neo4j import get_neo4j_driver
 from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_revision import (
@@ -27,6 +30,53 @@ class ChamberGraphProjection:
     nodes: list[dict[str, Any]]
     relationships: list[dict[str, Any]]
     graph_revision: str
+
+
+class DocumentRepository:
+    """RAG 문서 메타데이터와 청크 본문을 조회한다."""
+
+    DOCUMENT_DETAIL_QUERY = text(
+        """
+        SELECT doc_id, title, doc_type, model_code, source_path, version
+          FROM document
+         WHERE doc_id = :document_id
+        """
+    )
+    DOCUMENT_CHUNKS_QUERY = text(
+        """
+        SELECT chunk_id, chunk_seq, section_title, content
+          FROM document_chunk
+         WHERE doc_id = :document_id
+         ORDER BY chunk_seq ASC, chunk_id ASC
+        """
+    )
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def get_document_meta(self, document_id: str) -> Mapping[str, Any] | None:
+        params = {"document_id": document_id}
+        connection = self._engine.connect()
+        try:
+            return (
+                connection.execute(self.DOCUMENT_DETAIL_QUERY, params)
+                .mappings()
+                .first()
+            )
+        finally:
+            connection.close()
+
+    def list_document_chunks(self, document_id: str) -> list[Mapping[str, Any]]:
+        params = {"document_id": document_id}
+        connection = self._engine.connect()
+        try:
+            return list(
+                connection.execute(self.DOCUMENT_CHUNKS_QUERY, params)
+                .mappings()
+                .all()
+            )
+        finally:
+            connection.close()
 
 
 class ChamberGraphRepository:
