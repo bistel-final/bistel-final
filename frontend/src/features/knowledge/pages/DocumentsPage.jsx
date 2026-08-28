@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -27,6 +27,7 @@ function saveSearchHistory(history) {
 // 문서 검색 — 라이트 시안 4번
 // 좌 280px: 추천 질의 + 검색 기록(localStorage) / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
+  const documentRequestRef = useRef(0)
   const [input, setInput] = useState('')
   const [result, setResult] = useState(null) // { query, hits }
   const [modelCode, setModelCode] = useState(ALL_MODELS)
@@ -43,6 +44,7 @@ function DocumentsPage() {
     const q = query.trim()
     if (!q || loading) return
     setLoading(true)
+    documentRequestRef.current += 1
     setDetailOpen(false)
     setSelectedHit(null)
     setDocumentDetail(null)
@@ -67,19 +69,25 @@ function DocumentsPage() {
   }
 
   const openDocument = (hit) => {
+    const requestToken = ++documentRequestRef.current
     setSelectedHit(hit)
     setDetailOpen(true)
     setDetailLoading(true)
     setDetailError(null)
     getDocument(hit.document_id)
       .then((detail) => {
+        if (documentRequestRef.current !== requestToken) return
         setDocumentDetail(detail)
       })
       .catch((e) => {
+        if (documentRequestRef.current !== requestToken) return
         setDocumentDetail(null)
         setDetailError(e.message)
       })
-      .finally(() => setDetailLoading(false))
+      .finally(() => {
+        if (documentRequestRef.current !== requestToken) return
+        setDetailLoading(false)
+      })
   }
 
   const closeDocument = () => {
