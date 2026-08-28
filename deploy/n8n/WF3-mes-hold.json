@@ -211,7 +211,7 @@
       "position": [1540, -280],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\"ok\":true}",
+        "responseBody": "={\"ok\":true,\"published\":true}",
         "options": {"responseCode": 200}
       }
     },
@@ -223,7 +223,7 @@
       "position": [2640, -240],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\"ok\":true}",
+        "responseBody": "={\"ok\":true,\"published\":false}",
         "options": {"responseCode": 200}
       }
     },

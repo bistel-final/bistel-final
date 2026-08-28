@@ -361,6 +361,15 @@ def _contract_errors(workflows: dict[str, dict[str, Any]]) -> list[str]:
     send_email = email_nodes.get("Send Email", {})
     if send_email.get("onError") != "continueErrorOutput":
         errors.append("email:error-output")
+    if (
+        send_email.get("parameters", {}).get("fromEmail")
+        != "FDC Agent <no-reply@example.invalid>"
+    ):
+        errors.append("email:sender-placeholder")
+    if r"const emailAddress = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;" not in _code(
+        email, "Validate Email Payload"
+    ):
+        errors.append("email:recipient-format")
     if _targets(email, "Send Email", 0) != ["Build Email Callback"] or _targets(
         email, "Send Email", 1
     ) != ["Build Email Callback"]:
@@ -390,14 +399,29 @@ def _contract_errors(workflows: dict[str, dict[str, Any]]) -> list[str]:
         errors.append("mes:422")
     producer = mes_nodes.get("Publish MES Hold", {})
     producer_parameters = producer.get("parameters", {})
+    producer_options = producer_parameters.get("options", {})
     if (
         producer.get("onError") != "continueErrorOutput"
         or producer_parameters.get("topic") != "fdc.actions"
         or producer_parameters.get("useKey") is not True
         or producer_parameters.get("key") != "={{ $json.action_id }}"
         or producer_parameters.get("sendInputData") is not True
+        or producer_options.get("acks") is not True
+        or producer_options.get("timeout") != 10000
     ):
         errors.append("mes:kafka-producer")
+    accepted_response = mes_nodes.get("Respond MES Accepted", {}).get("parameters", {})
+    failure_recorded_response = mes_nodes.get("Respond MES Failure Recorded", {}).get(
+        "parameters", {}
+    )
+    if (
+        accepted_response.get("responseBody") != '={"ok":true,"published":true}'
+        or accepted_response.get("options", {}).get("responseCode") != 200
+        or failure_recorded_response.get("responseBody")
+        != '={"ok":true,"published":false}'
+        or failure_recorded_response.get("options", {}).get("responseCode") != 200
+    ):
+        errors.append("mes:response-semantics")
     if _targets(mes, "Publish MES Hold", 0) != ["Respond MES Accepted"]:
         errors.append("mes:success-without-callback")
     if _targets(mes, "Publish MES Hold", 1) != ["Build Kafka Failure Callback"]:
@@ -537,8 +561,21 @@ def test_r06_email_effect_and_callback_terminals_are_explicit() -> None:
 
 def test_r07_mes_success_has_no_sent_callback_and_failure_does() -> None:
     workflow = _load_workflows()["WF3-mes-hold.json"]
+    nodes = _nodes(workflow)
     assert _targets(workflow, "Publish MES Hold", 0) == ["Respond MES Accepted"]
     assert _targets(workflow, "Publish MES Hold", 1) == ["Build Kafka Failure Callback"]
+    assert nodes["Publish MES Hold"]["parameters"]["options"] == {
+        "acks": True,
+        "timeout": 10000,
+    }
+    assert (
+        nodes["Respond MES Accepted"]["parameters"]["responseBody"]
+        == '={"ok":true,"published":true}'
+    )
+    assert (
+        nodes["Respond MES Failure Recorded"]["parameters"]["responseBody"]
+        == '={"ok":true,"published":false}'
+    )
     assert "callback" not in _code(workflow, "Prepare Kafka Event").lower()
 
 
@@ -551,6 +588,12 @@ def test_r08_no_credentials_or_unapproved_environment_references() -> None:
     for workflow in workflows.values():
         assert workflow["active"] is False
         assert workflow["settings"] == EXPECTED_SETTINGS
+    assert (
+        _nodes(workflows["WF2-notify-email.json"])["Send Email"]["parameters"][
+            "fromEmail"
+        ]
+        == "FDC Agent <no-reply@example.invalid>"
+    )
 
 
 def test_r09_result_offsets_resolve_only_on_success_with_retry_delay() -> None:
@@ -560,6 +603,7 @@ def test_r09_result_offsets_resolve_only_on_success_with_retry_delay() -> None:
     assert trigger["parameters"]["resolveOffset"] == "onSuccess"
     assert "resolveOffset" not in trigger["parameters"]["options"]
     assert trigger["parameters"]["options"]["errorRetryDelay"] == 5000
+    assert trigger["parameters"]["options"]["eachBatchAutoResolve"] is False
     classifier = _code(workflow, "Classify Result Callback")
     assert "throw new Error('CALLBACK_UNAUTHORIZED')" in classifier
     assert "throw new Error(`CALLBACK_REJECTED_${statusCode}`)" in classifier
@@ -752,6 +796,10 @@ def test_j05_callback_signature_matches_the_exact_unicode_raw_body() -> None:
     [
         lambda payload: payload.update(request_hash="A" * 64),
         lambda payload: payload.update(recipients=[]),
+        lambda payload: payload.update(recipients=["not-an-email"]),
+        lambda payload: payload.update(
+            recipients=["operator@example.invalid\nBcc:attacker@example.invalid"]
+        ),
         lambda payload: payload.update(approval_id="unexpected"),
         lambda payload: payload.update(channel="MES_MOCK"),
         lambda payload: payload.update(email_kind="APPROVAL_REQUEST"),
@@ -1068,6 +1116,10 @@ MUTATIONS = (
     "resolve-offset-nested",
     "group-id-blank",
     "kafka-key-disabled",
+    "kafka-acks-disabled",
+    "mes-response-undifferentiated",
+    "real-smtp-sender",
+    "recipient-format-check-removed",
 )
 
 
@@ -1144,6 +1196,23 @@ def _mutate(workflows: dict[str, dict[str, Any]], mutation: str) -> None:
         result_nodes["MES Result Trigger"]["parameters"]["groupId"] = ""
     elif mutation == "kafka-key-disabled":
         mes_nodes["Publish MES Hold"]["parameters"]["useKey"] = False
+    elif mutation == "kafka-acks-disabled":
+        mes_nodes["Publish MES Hold"]["parameters"]["options"]["acks"] = False
+    elif mutation == "mes-response-undifferentiated":
+        mes_nodes["Respond MES Accepted"]["parameters"]["responseBody"] = '={"ok":true}'
+        mes_nodes["Respond MES Failure Recorded"]["parameters"]["responseBody"] = (
+            '={"ok":true}'
+        )
+    elif mutation == "real-smtp-sender":
+        email_nodes["Send Email"]["parameters"]["fromEmail"] = (
+            "FDC Agent <fdc@example.com>"
+        )
+    elif mutation == "recipient-format-check-removed":
+        code = _code(email, "Validate Email Payload")
+        email_nodes["Validate Email Payload"]["parameters"]["jsCode"] = code.replace(
+            r"const emailAddress = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;",
+            "const emailAddress = /^.*$/;",
+        )
     else:  # pragma: no cover - the parametrized allowlist owns all mutation names
         raise AssertionError(f"unknown mutation: {mutation}")
 
