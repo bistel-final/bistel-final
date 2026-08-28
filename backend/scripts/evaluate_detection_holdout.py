@@ -30,16 +30,50 @@
      -> evaluation.artifact_to_json_dict()의 결과를 JSON으로 저장한다.
 ~~~
 
-## held-out LOT을 어떻게 다시 찾는가
+## 두 물리 DB의 dataset epoch 정합성 (코드 리뷰 필수 1)
+
+예측은 `get_readonly_engine()`(kosa_readonly, fdc_final DB)의 `lot_history`에서
+만들고, 라벨은 `get_evaluation_engine()`(kosa_evaluation, kosa_text2sql DB)의
+`lot_history.fault_code`에서 읽어 `lot_hist_id`로 join한다. 이 join은 두 DB가
+같은 dataset epoch(현재 `fdc_final_20260818`)의 사본이라는 전제 위에 있는데,
+스크립트 어디에도 이 전제를 확인하는 코드가 없었다. 공용 서버에서 한쪽 DB만
+재적재되는 사고는 가상이 아니다 — Neo4j에서 실제로 있었던 일이고, CM-3.5
+마커가 DB별 `row_fingerprint_sha256`을 남기는 이유도 이것이다. epoch이 갈린
+상태에서 id 체계가 우연히 유지되면 틀린 라벨과 조용히 join되고, 결과
+artifact는 "재현 가능"한 얼굴로 잘못된 confusion metric을 기록한다.
+
+그래서 예측을 만들기 전에 두 connection에서 같은 기준값(`lot_history` 행 수 +
+`lot_hist_id` min/max)을 읽어 비교하고, 불일치하면 즉시 실패한다
+(`_verify_dataset_epoch_alignment`). 완전한 증명은 아니다 — 행 수·min/max까지
+우연히 같은 재적재는 이론상 가능하며, 그런 경우까지 잡으려면 CM-3.5 마커의
+`row_fingerprint_sha256` 재계산이 필요하다. 지금은 가장 흔한 사고(한쪽만
+재적재됨)를 값싼 쿼리 두 줄로 잡는 첫 방어선이다.
+
+## held-out LOT을 어떻게 다시 찾는가 (코드 리뷰 필수 2)
 
 `ModelManifest`는 어느 LOT이 test였는지 literal 목록으로 저장하지 않는다
 (`train_lot_count`·`test_lot_count` 정수만 저장한다 — `model.py`의
 `ModelManifest` docstring 참고). 대신 `model.split_lots`를 학습 때와 같은
 `manifest.random_seed`로 다시 호출해 결정론적으로 재구성한다
 (`split_lots`의 재현성은 `tests/unit/test_detection_model.py::
-test_reproducible_scores_end_to_end`가 이미 고정하고 있다). 재구성한
-test LOT 수가 manifest에 저장된 `test_lot_count`와 다르면(학습 이후
-`lot_history`가 바뀐 경우) 조용히 다른 holdout을 평가하지 않고 즉시 실패한다.
+test_reproducible_scores_end_to_end`가 이미 고정하고 있다).
+
+**이 guard가 실제로 잡는 것은 개수 변화뿐이다.** 재구성한 held-out LOT
+**개수**가 manifest에 저장된 `test_lot_count`와 다르면(학습 이후
+`lot_history`가 바뀐 경우) 즉시 실패한다 — 하지만 LOT **구성**이 바뀌어도
+총수가 그대로면(예: LOT007이 빠지고 LOT013이 새로 들어와도 12개 그대로)
+개수만 보는 이 guard는 감지하지 못하고, 학습 때와 다른 LOT을 같은 이름의
+holdout으로 평가해버린다. 그래서 재구성 시점의 train+test lot_id 정렬
+목록의 SHA-256(`reconstructed_lot_id_hash`)을 함께 계산해 result artifact의
+`split_manifest`에 남긴다 — 지금 당장 "몰래 통과"를 막지는 못해도, 이번
+실행이 실제로 어떤 LOT들을 재구성했는지 사후 감사는 가능해진다. 다음
+model_version부터 학습 시점에 이 hash를 manifest 자체에 저장해 재구성 시
+대조하면, 이 guard가 LOT 구성 변경까지 실제로 강제할 수 있게 된다.
+
+`fetch_lot_history_rows`는 `ORDER BY` 없이 `lot_history`를 읽지만(순서가
+DB 조회마다 달라질 수 있다), 재구성 결과는 그래도 순서에 안정적이다 —
+`split_lots`가 내부에서 `sorted(set(lot_ids))` 후에 셔플하므로(`model.py`
+참고), 입력 목록의 순서가 아니라 lot_id 집합 자체만 결과를 결정한다.
 
 ## 같은 revision 재튜닝 금지 (WBS V5-A-2.4)
 
@@ -49,6 +83,12 @@ test LOT 수가 manifest에 저장된 `test_lot_count`와 다르면(학습 이�
 `train_anomaly_score_model.py`로 `model_version`을 올려 새 candidate를 학습해야
 한다 — 같은 revision을 결과가 마음에 들 때까지 반복 평가하는 것 자체가
 여기서 금지하려는 "재튜닝"이다.
+
+**`--dry-run`이 막지 못하는 것(코드 리뷰 권고 5)**: 이 검사는 파일 저장만
+막는다 — `--dry-run`을 반복 실행해 콘솔에 찍히는 metric을 훔쳐보고 마음에
+들 때만 `--dry-run` 없이 다시 실행해 저장하는 사용까지는 막지 못한다. 이건
+사람의 규율 문제라 코드로 완전히 막을 수 없다 — 그래서 `--dry-run` 실행의
+마지막 출력 줄에 경고를 남긴다.
 
 사용 예 (backend/ 에서, `READONLY_PASSWORD`·`EVALUATION_DB_PASSWORD` 필요 —
 각각 kosa_readonly·kosa_evaluation role):
@@ -64,6 +104,7 @@ test LOT 수가 manifest에 저장된 `test_lot_count`와 다르면(학습 이�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import UTC, datetime
@@ -83,11 +124,76 @@ from app.detection.service import FdcSummaryService  # noqa: E402
 RESULT_DIR = BACKEND_ROOT / "artifacts" / "detection_eval"
 
 
+def _fetch_lot_history_epoch_fingerprint(
+    connection,
+) -> tuple[int, str | None, str | None]:
+    """`lot_history`의 행 수 + `lot_hist_id` min/max를 dataset epoch 정합성
+    확인용 기준값으로 읽는다.
+
+    COUNT/MIN/MAX만 쓰고 `fault_code` 등 라벨 column은 전혀 건드리지 않으므로,
+    column 단위 권한이 서로 다른 두 role(kosa_readonly, kosa_evaluation)
+    양쪽에서 안전하게 실행된다(`app/common/db.py`의 role 경계 참고).
+    """
+
+    row = connection.execute(
+        text(
+            "SELECT COUNT(*) AS cnt, MIN(lot_hist_id) AS min_id, "
+            "MAX(lot_hist_id) AS max_id FROM lot_history"
+        )
+    ).one()
+    return row.cnt, row.min_id, row.max_id
+
+
+def _verify_dataset_epoch_alignment(readonly_connection, evaluation_connection) -> None:
+    """예측을 만드는 fdc_final(kosa_readonly)과 라벨을 읽는 kosa_text2sql
+    (kosa_evaluation)이 같은 dataset epoch의 사본인지 확인한다(코드 리뷰
+    필수 1 — 모듈 docstring "두 물리 DB의 dataset epoch 정합성" 참고).
+
+    `lot_history` 행 수 + `lot_hist_id` min/max가 다르면 두 DB가 서로 다른
+    세대라는 뜻이므로, 예측을 만들기도 전에 즉시 실패한다 — `_reconstruct_
+    test_lot_hist_ids`가 개수 불일치에서 즉시 실패하는 것과 같은 방식이다.
+    """
+
+    readonly_fingerprint = _fetch_lot_history_epoch_fingerprint(readonly_connection)
+    evaluation_fingerprint = _fetch_lot_history_epoch_fingerprint(evaluation_connection)
+    if readonly_fingerprint != evaluation_fingerprint:
+        r_count, r_min, r_max = readonly_fingerprint
+        e_count, e_min, e_max = evaluation_fingerprint
+        raise RuntimeError(
+            "dataset epoch 정합성 검증 실패 — get_readonly_engine()(fdc_final)과 "
+            "get_evaluation_engine()(kosa_text2sql)의 lot_history가 서로 다른 "
+            "세대로 보인다 "
+            f"(fdc_final: count={r_count} min={r_min} max={r_max}, "
+            f"kosa_text2sql: count={e_count} min={e_min} max={e_max}). "
+            "두 DB가 같은 dataset epoch의 사본인지 확인한 뒤 다시 실행한다."
+        )
+
+
+def _hash_lot_id_list(train_lots: list[str], test_lots: list[str]) -> str:
+    """재구성한 train+test lot_id 정렬 목록의 canonical SHA-256(코드 리뷰
+    필수 2).
+
+    `freeze_predictions`(evaluation.py)와 같은 canonical-JSON 패턴을 쓴다 —
+    key 오름차순·UTF-8·공백 없는 JSON. "재구성한 held-out LOT **개수**만
+    같으면 통과"하는 지금 guard의 약점(LOT 구성이 바뀌어도 총수가 그대로면
+    감지하지 못한다)을 완전히 막지는 못하지만, 이 값을 result artifact에
+    남겨두면 최소한 사후 감사는 가능하다.
+    """
+
+    payload = {"train": sorted(train_lots), "test": sorted(test_lots)}
+    serialized = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(serialized).hexdigest()}"
+
+
 def _reconstruct_test_lot_hist_ids(
     connection, manifest: anomaly_model.ModelManifest
-) -> list[str]:
+) -> tuple[list[str], str]:
     """학습 때와 같은 seed로 held-out LOT을 재구성해 그 LOT에 속한
-    `lot_hist_id` 목록을 돌려준다.
+    `lot_hist_id` 목록과, 재구성한 train+test lot_id 목록의 감사용 hash를
+    돌려준다(코드 리뷰 필수 2 — 모듈 docstring "held-out LOT을 어떻게 다시
+    찾는가" 참고).
 
     `fetch_lot_history_rows`는 `fault_code`를 SELECT하지 않는 Runtime
     repository 함수다(`tests/unit/test_detection_model.py::
@@ -97,9 +203,7 @@ def _reconstruct_test_lot_hist_ids(
 
     rows = fetch_lot_history_rows(connection)
     lot_ids = [row.lot_id for row in rows]
-    _train_lots, test_lots = anomaly_model.split_lots(
-        lot_ids, seed=manifest.random_seed
-    )
+    train_lots, test_lots = anomaly_model.split_lots(lot_ids, seed=manifest.random_seed)
     if len(test_lots) != manifest.test_lot_count:
         raise RuntimeError(
             "재구성한 held-out LOT 수가 manifest와 다르다 "
@@ -109,8 +213,12 @@ def _reconstruct_test_lot_hist_ids(
             "평가를 중단한다."
         )
 
+    reconstructed_lot_id_hash = _hash_lot_id_list(train_lots, test_lots)
     test_lots_set = set(test_lots)
-    return sorted(row.lot_hist_id for row in rows if row.lot_id in test_lots_set)
+    test_lot_hist_ids = sorted(
+        row.lot_hist_id for row in rows if row.lot_id in test_lots_set
+    )
+    return test_lot_hist_ids, reconstructed_lot_id_hash
 
 
 def _predict_holdout(
@@ -167,9 +275,7 @@ def _fetch_labels(
     lot_hist_ids = [record.lot_hist_id for record in frozen.records]
     with get_evaluation_engine().connect() as connection:
         connection.execute(text("SET TRANSACTION READ ONLY"))
-        rows = evaluation_loader.fetch_synthetic_fault_labels(
-            connection, lot_hist_ids
-        )
+        rows = evaluation_loader.fetch_synthetic_fault_labels(connection, lot_hist_ids)
     return [
         evaluation.FaultLabelRow(
             lot_hist_id=row.lot_hist_id, lot_id=row.lot_id, fault_code=row.fault_code
@@ -252,7 +358,16 @@ def main() -> int:
     # 같은 패턴이라 모듈 top-level 상수로는 존재하지 않는다).
     with get_readonly_engine().connect() as connection:
         connection.execute(text("SET TRANSACTION READ ONLY"))
-        test_lot_hist_ids = _reconstruct_test_lot_hist_ids(
+
+        # dataset epoch 정합성 확인(코드 리뷰 필수 1) — fault_code·metrology는
+        # 절대 읽지 않는다. COUNT(*)/MIN/MAX만 쓰는 이 확인용 connection은
+        # 순서 계약(라벨은 predict_fn 이후에만 읽는다)과 무관하다 — 라벨을
+        # 읽는 게 아니라 두 DB가 같은 세대인지만 확인한다.
+        with get_evaluation_engine().connect() as epoch_check_connection:
+            epoch_check_connection.execute(text("SET TRANSACTION READ ONLY"))
+            _verify_dataset_epoch_alignment(connection, epoch_check_connection)
+
+        test_lot_hist_ids, reconstructed_lot_id_hash = _reconstruct_test_lot_hist_ids(
             connection, loaded.manifest
         )
 
@@ -281,6 +396,7 @@ def main() -> int:
         "test_lot_count": loaded.manifest.test_lot_count,
         "held_out_wafer_count": len(test_lot_hist_ids),
         "scored_wafer_count": artifact.metric.metrology_coverage_denominator,
+        "reconstructed_lot_id_hash": reconstructed_lot_id_hash,
     }
     payload["feature_names"] = list(loaded.manifest.feature_names)
 
@@ -294,6 +410,10 @@ def main() -> int:
     )
     print(f"precision={artifact.metric.precision} recall={artifact.metric.recall}")
     print(
+        f"predicted_anomaly_count={artifact.metric.predicted_anomaly_count}"
+        f"/{artifact.fault_label_distribution.holdout_wafer_count} (holdout 전체 기준)"
+    )
+    print(
         "fault_label_distribution="
         f"{dict(artifact.fault_label_distribution.counts)} "
         f"(labeled {artifact.fault_label_distribution.labeled_wafer_count}/"
@@ -301,12 +421,18 @@ def main() -> int:
     )
 
     if args.dry_run:
-        print("[evaluate_detection_holdout] --dry-run — 저장하지 않음")
+        print(
+            "[evaluate_detection_holdout] --dry-run — 저장하지 않음. 경고: 이 "
+            "출력의 수치를 근거로 같은 데이터로 재학습·재튜닝한 뒤 다시 평가하면 "
+            "같은 revision 재튜닝 금지(WBS V5-A-2.4)를 위반하는 것과 같은 "
+            "효과를 낸다 — dry-run 반복 관찰 자체가 그 규율을 코드로 막을 수는 "
+            "없다(모듈 docstring 참고)."
+        )
         return 0
 
     args.result_dir.mkdir(parents=True, exist_ok=True)
     result_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"[evaluate_detection_holdout] 저장 완료: {result_path}")
     return 0

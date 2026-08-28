@@ -42,6 +42,7 @@ docstring의 "[V5-A-2.2 예고]" 참고).
 
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
 from pathlib import Path
@@ -58,18 +59,23 @@ _SCORE_MARKERS = ("AnomalySignal", "anomaly_score")
 # score(AnomalySignal)가 등장해도 되는 유일한 파일들. 새로 만들면 여기부터
 # 검토한다 — 늘리는 것 자체가 잘못은 아니지만, "왜 이 파일이 score를 알아야
 # 하는가"에 답할 수 있어야 한다.
+#
+# `common/config.py`·`detection/model_artifact.py`는 예전(substring 기반)
+# 검사에서는 이 목록에 있었다 — 둘 다 실제 코드가 아니라 주석·docstring에서만
+# "AnomalySignal"/"anomaly_score"를 언급했기 때문이다(config.py: "환경변수
+# threshold는 model manifest의 AnomalySignal로만 주입한다"는 주석 한 줄;
+# model_artifact.py: `train_anomaly_score_model.py` 스크립트 이름을 설명하며
+# "anomaly_score"라는 글자가 우연히 포함됐을 뿐). AST 식별자 검사(아래
+# `_score_marker_references`)로 바꾸면 둘 다 실제로는 참조하지 않는다는 게
+# 드러나므로 이 목록에서 뺐다(코드 리뷰 필수 4).
 _SCORE_REFERENCE_ALLOWLIST = frozenset(
     {
         # AnomalySignal 정의 자체.
         "common/tool_contracts.py",
-        # config 주석이 "환경변수 threshold는 model manifest의 AnomalySignal로만
-        # 주입한다"를 설명하며 타입 이름을 언급한다(MODEL_SIGNAL_ENABLED 근거).
-        "common/config.py",
-        # score를 만드는 쪽(A 소유) — model.py가 계산·변환, model_artifact.py가
-        # artifact 로딩, service.py의 FdcSummaryService가 조립, schemas.py의
-        # TraceCatalogResponse.anomaly가 화면 adapter다.
+        # score를 만드는 쪽(A 소유) — model.py가 계산·변환, service.py의
+        # FdcSummaryService가 조립, schemas.py의 TraceCatalogResponse.anomaly가
+        # 화면 adapter다.
         "detection/model.py",
-        "detection/model_artifact.py",
         "detection/service.py",
         "detection/schemas.py",
         # "evidence" 필드로만 받는 쪽(2번 테스트가 그 필드 이름 자체를 확인한다).
@@ -86,16 +92,63 @@ def _iter_app_py_files() -> list[Path]:
     ]
 
 
+def _score_marker_references(path: Path) -> set[str]:
+    """`path`에서 `_SCORE_MARKERS`가 실제 코드 식별자로 등장하는지 AST로
+    판정한다(코드 리뷰 필수 4).
+
+    import 대상(module 경로·이름), 실제로 쓰이는 이름(`Name`)·속성 접근
+    (`Attribute.attr`)·정의(`ClassDef`/`FunctionDef` 이름)·인자 이름만
+    identifier로 인정한다. 문자열 리터럴(docstring 포함)은 `ast.Constant`로만
+    나타나고 위 노드 종류가 전혀 아니므로 자동으로 제외된다 — "코드가 실제로
+    이 이름을 참조하는지"와 "산문이 이 이름을 언급하는지"가 AST 레벨에서
+    구조적으로 분리된다. 예전 substring 검사(`marker in text`)는 이 둘을
+    구분하지 못해 `config.py`가 주석 한 줄 때문에 allowlist에 들어가 있었다.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.update(
+                    part for part in alias.name.split(".") if part in _SCORE_MARKERS
+                )
+                if alias.asname in _SCORE_MARKERS:
+                    found.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in _SCORE_MARKERS:
+                    found.add(alias.name)
+                if alias.asname in _SCORE_MARKERS:
+                    found.add(alias.asname)
+        elif isinstance(node, ast.Name):
+            if node.id in _SCORE_MARKERS:
+                found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _SCORE_MARKERS:
+                found.add(node.attr)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            if node.name in _SCORE_MARKERS:
+                found.add(node.name)
+        elif isinstance(node, ast.arg):
+            if node.arg in _SCORE_MARKERS:
+                found.add(node.arg)
+    return found
+
+
 def test_score_reference_allowlist_is_exhaustive() -> None:
     """저장소 전체에서 AnomalySignal·anomaly_score를 참조하는 파일이
     allowlist와 정확히 일치하는지 확인한다 — 늘어나도, 줄어들어도 이 테스트가
     깨진다(허용 목록이 실제와 항상 같은 뜻을 유지하도록).
+
+    "참조"는 AST 식별자 등장(`_score_marker_references`)만 센다(코드 리뷰
+    필수 4) — 주석·docstring에서 이 이름을 언급하는 것만으로는 이 테스트가
+    반응하지 않는다.
     """
 
     referencing: set[str] = set()
     for path in _iter_app_py_files():
-        text = path.read_text(encoding="utf-8")
-        if any(marker in text for marker in _SCORE_MARKERS):
+        if _score_marker_references(path):
             referencing.add(str(path.relative_to(APP_ROOT)).replace("\\", "/"))
 
     unexpected = referencing - _SCORE_REFERENCE_ALLOWLIST

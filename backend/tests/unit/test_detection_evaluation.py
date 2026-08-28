@@ -149,6 +149,37 @@ def test_compute_confusion_metrics_empty_metrology_yields_zero_coverage() -> Non
     assert metric.recall is None
 
 
+def test_compute_confusion_metrics_predicted_anomaly_count_covers_full_holdout() -> (
+    None
+):
+    """코드 리뷰 권고 3: recall이 낮게 나온 이유가 "threshold가 너무 높아
+    아무것도 안 잡는 모델"인지 "metrology와 겹친 표본이 우연히 다 음성이었을
+    뿐"인지 구분하려면, metrology 교집합 밖의 양성 판정까지 세야 한다.
+    """
+
+    predictions = [
+        _pred("H1", score=0.9, is_anomaly=True),
+        _pred("H2", score=0.95, is_anomaly=True),
+        _pred("H3", score=0.1, is_anomaly=False),
+    ]
+    # H2는 metrology 표본(48/600) 밖이다 — 그래도 양성 판정은 세야 한다.
+    metrology = [evaluation.MetrologyRow(lot_hist_id="H1", alarm_result="PASS")]
+
+    metric = evaluation.compute_confusion_metrics(predictions, metrology)
+
+    assert metric.predicted_anomaly_count == 2
+    assert metric.metrology_coverage_numerator == 1
+    assert metric.metrology_coverage_denominator == 3
+
+
+def test_compute_confusion_metrics_predicted_anomaly_count_zero_case() -> None:
+    predictions = [_pred("H1", score=0.1, is_anomaly=False)]
+
+    metric = evaluation.compute_confusion_metrics(predictions, [])
+
+    assert metric.predicted_anomaly_count == 0
+
+
 # ---------------------------------------------------------------------
 # compute_fault_label_distribution
 # ---------------------------------------------------------------------
@@ -199,9 +230,7 @@ def test_compute_fault_label_distribution_handles_missing_labels() -> None:
 # ---------------------------------------------------------------------
 # run_holdout_evaluation — 순서 강제
 # ---------------------------------------------------------------------
-def test_run_holdout_evaluation_reads_labels_only_after_freezing_predictions() -> (
-    None
-):
+def test_run_holdout_evaluation_reads_labels_only_after_freezing_predictions() -> None:
     """설계서 14.4 "prediction을 고정하기 전 label table을 읽으면 평가
     runner가 실패한다"를 fake I/O 호출 순서로 검증한다.
     """
@@ -305,9 +334,7 @@ def test_artifact_to_json_dict_is_json_serializable_and_round_trips_metric() -> 
             _pred("H2", score=0.1, is_anomaly=False),
         ],
         fetch_labels_fn=lambda frozen: [
-            evaluation.FaultLabelRow(
-                lot_hist_id="H1", lot_id="LOT-1", fault_code="FOC"
-            )
+            evaluation.FaultLabelRow(lot_hist_id="H1", lot_id="LOT-1", fault_code="FOC")
         ],
         fetch_metrology_fn=lambda frozen: [
             evaluation.MetrologyRow(lot_hist_id="H1", alarm_result="FAIL")
@@ -321,7 +348,10 @@ def test_artifact_to_json_dict_is_json_serializable_and_round_trips_metric() -> 
 
     assert reloaded["model_version"] == "if-v1"
     assert reloaded["metric"]["true_positive"] == 1
+    assert reloaded["metric"]["predicted_anomaly_count"] == 1
     assert reloaded["fault_label_distribution"]["counts"] == [
         {"fault_code": "FOC", "count": 1}
     ]
     assert reloaded["production_ground_truth_available"] is False
+    assert "NRM" in reloaded["fault_label_vocabulary_note"]
+    assert "FOC" in reloaded["fault_label_vocabulary_note"]

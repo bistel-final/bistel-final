@@ -17,6 +17,7 @@ threshold·Tool·API에 사용하지 않음을 allowlist·query·payload 테스�
 
 from __future__ import annotations
 
+import ast
 import inspect
 from pathlib import Path
 
@@ -37,12 +38,43 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 _EVALUATION_LOADER_IMPORT_ALLOWLIST: frozenset[str] = frozenset()
 
 
+def _imports_evaluation_loader(path: Path) -> bool:
+    """`path`가 `evaluation_loader` 모듈을 실제로 import하는지 AST로
+    판정한다(코드 리뷰 필수 4).
+
+    `ast.Import`/`ast.ImportFrom` 노드만 본다 — 주석·docstring의 문자열은
+    AST에서 애초에 Import 노드로 나타나지 않으므로, "evaluation_loader"라는
+    단어가 산문(docstring)에 등장해도 이 함수는 그것을 보지 않는다. 예전
+    substring 검사(`"evaluation_loader" in text`)는 그 산문까지 걸려서
+    `evaluation.py`가 이 모듈을 이름으로 설명하지 못하게 만들었다 — 계약
+    테스트가 문서의 표현력을 깎는 상태였다.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if "evaluation_loader" in alias.name.split("."):
+                    return True
+        elif isinstance(node, ast.ImportFrom):
+            module_parts = (node.module or "").split(".")
+            if "evaluation_loader" in module_parts:
+                return True
+            if any(alias.name == "evaluation_loader" for alias in node.names):
+                return True
+    return False
+
+
 def test_nothing_in_app_imports_evaluation_loader_except_the_allowlist() -> None:
-    """`evaluation_loader`를 참조하는 `app/` 파일이 allowlist와 정확히
-    일치하는지 확인한다. 지금은 allowlist가 비어 있으므로 사실상 "아무도
-    import하지 않는다"를 고정한다 — model.py·service.py·tools.py·router.py
-    같은 Runtime 경로가 실수로라도 이 loader를 끌어오면 이 테스트가 즉시
-    깨진다.
+    """`evaluation_loader`를 실제로 import하는 `app/` 파일이 allowlist와
+    정확히 일치하는지 확인한다. 지금은 allowlist가 비어 있으므로 사실상
+    "아무도 import하지 않는다"를 고정한다 — model.py·service.py·tools.py·
+    router.py 같은 Runtime 경로가 실수로라도 이 loader를 끌어오면 이 테스트가
+    즉시 깨진다.
+
+    import 문(AST `Import`/`ImportFrom` 노드)만 검사한다(코드 리뷰 필수 4) —
+    `evaluation.py`의 docstring처럼 이 모듈을 이름으로 설명하는 산문은 이
+    테스트를 건드리지 않는다.
     """
 
     loader_path = Path(evaluation_loader.__file__).resolve()
@@ -50,12 +82,11 @@ def test_nothing_in_app_imports_evaluation_loader_except_the_allowlist() -> None
     for path in sorted(APP_ROOT.rglob("*.py")):
         if "__pycache__" in path.parts or path.resolve() == loader_path:
             continue
-        text = path.read_text(encoding="utf-8")
-        if "evaluation_loader" in text:
+        if _imports_evaluation_loader(path):
             referencing.add(str(path.relative_to(APP_ROOT)).replace("\\", "/"))
 
     assert referencing == _EVALUATION_LOADER_IMPORT_ALLOWLIST, (
-        "evaluation_loader를 참조하는 파일이 allowlist와 다릅니다: "
+        "evaluation_loader를 import하는 파일이 allowlist와 다릅니다: "
         f"{sorted(referencing)}"
     )
 
@@ -91,9 +122,9 @@ def test_detection_api_schemas_have_no_label_field() -> None:
         checked += 1
         for field_name in model.model_fields:
             lowered = field_name.lower()
-            assert "fault" not in lowered and "label" not in lowered, (
-                f"{model.__qualname__}.{field_name}가 라벨 성격의 필드입니다"
-            )
+            assert (
+                "fault" not in lowered and "label" not in lowered
+            ), f"{model.__qualname__}.{field_name}가 라벨 성격의 필드입니다"
 
     assert checked > 0
 
@@ -106,6 +137,6 @@ def test_fdc_summary_tool_result_has_no_label_field() -> None:
 
     for field_name in tool_contracts.FdcSummaryToolResult.model_fields:
         lowered = field_name.lower()
-        assert "fault" not in lowered and "label" not in lowered, (
-            f"FdcSummaryToolResult.{field_name}가 라벨 성격의 필드입니다"
-        )
+        assert (
+            "fault" not in lowered and "label" not in lowered
+        ), f"FdcSummaryToolResult.{field_name}가 라벨 성격의 필드입니다"

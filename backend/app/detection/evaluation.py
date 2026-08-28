@@ -22,8 +22,8 @@
 
 ## 평가 전용 라벨 조회 모듈과의 경계
 
-이 모듈은 V5-A-2.3의 평가 전용 라벨 조회 모듈(`app/detection/` 아래, DB에서
-`fault_code`·`metrology.alarm_result`를 직접 읽는 그 모듈)을 import하지
+이 모듈은 V5-A-2.3의 평가 전용 라벨 조회 모듈(`app/detection/evaluation_loader.py`,
+DB에서 `fault_code`·`metrology.alarm_result`를 직접 읽는 모듈)을 import하지
 않는다 — 그 모듈을 import해도 되는 곳은 아직 아무 데도 없다는 계약을
 `tests/contract/test_detection_label_isolation.py`의 import allowlist
 테스트가 고정하고 있고, 이 파일이 새 참조자가 되면 그 테스트가 깨진다.
@@ -66,6 +66,7 @@ __all__ = [
     "PRODUCTION_GROUND_TRUTH_AVAILABLE",
     "METROLOGY_COVERAGE_NOTE",
     "PRODUCTION_PERFORMANCE_DISCLAIMER",
+    "FAULT_LABEL_VOCABULARY_NOTE",
     "PredictionRecord",
     "FrozenPredictions",
     "FaultLabelRow",
@@ -105,6 +106,21 @@ PRODUCTION_PERFORMANCE_DISCLAIMER = (
     "이 metric은 Generator가 주입한 공개 합성 라벨/metrology 기반이며 "
     "실제 생산 공정(production) 성능을 나타내지 않는다"
     "(production_ground_truth_available=false)."
+)
+
+# fault_label_distribution의 raw fault_code가 무엇을 뜻하는지 적어두는
+# 각주다(코드 리뷰 권고 3) — 이 파일이 생성한 artifact가 리뷰·제출 문서에
+# 그대로 첨부될 수 있어, "NRM이 뭐냐"는 질문에 artifact 자신이 답할 수
+# 있어야 한다. 정의 근거는 기준표(docs/ai-context/02-domain-rules.md 6절,
+# README.md 배포 표본 분포)다 — 이 모듈이 그 문서를 import하지는 않으므로
+# 문구가 갈라지지 않도록 값을 바꿀 때는 두 곳을 함께 확인한다.
+FAULT_LABEL_VOCABULARY_NOTE = (
+    "fault_code 어휘: FOC=Focus Excursion(포커스 이탈, 주 센서 PH_FOCUS) / "
+    "RFM=RF Mismatch(RF 정합 불량, 주 센서 ET_REFL) / "
+    "MFD=MFC Flow Drift(가스 유량 이탈, 주 센서 ET_CF4) / "
+    "TMD=ESC Temperature(척 온도 이상, 주 센서 ET_ESC) / "
+    "OTH=그 외 결함(미분류) / NRM=정상(Normal, 결함 없음). "
+    "5-class 분류 도메인은 FOC|RFM|MFD|TMD|OTH이며 NRM은 고장 가설이 아니다."
 )
 
 _METROLOGY_FAIL_RESULT = "FAIL"
@@ -214,6 +230,12 @@ class HoldoutMetric:
     없는 wafer(48/600 표본 밖)는 이 metric 계산에서 제외한다 —
     `metrology_coverage_numerator`/`_denominator`가 그 제외 비율을 그대로
     보여준다(설계서 4.5 "전체 데이터로 외삽하지 않는다").
+
+    `predicted_anomaly_count`(코드 리뷰 권고 3)만은 예외다 — metrology 교집합이
+    아니라 holdout **전체**(`predictions` 그대로) 기준으로 `is_anomaly=True`인
+    건수를 센다. 이게 없으면 recall이 낮게 나왔을 때 "threshold가 너무 높아
+    아무것도 안 잡는 모델"인지 "metrology와 겹친 표본이 우연히 다 음성이었을
+    뿐"인지 이 artifact만으로 구분할 수 없다.
     """
 
     true_positive: int
@@ -226,6 +248,7 @@ class HoldoutMetric:
     metrology_coverage_denominator: int
     metrology_pass_count: int
     metrology_fail_count: int
+    predicted_anomaly_count: int
 
 
 def compute_confusion_metrics(
@@ -238,9 +261,13 @@ def compute_confusion_metrics(
     `precision`·`recall`은 분모가 0이면(예: 이번 holdout이 우연히 metrology
     표본과 전혀 겹치지 않으면) `None`을 반환한다 — 0으로 나누는 대신 "계산할
     수 없다"는 사실 자체를 그대로 드러낸다.
+
+    `predicted_anomaly_count`는 metrology 교집합과 무관하게 `predictions`
+    전체에서 센다(`HoldoutMetric.predicted_anomaly_count` docstring 참고).
     """
 
     metrology_by_id = {row.lot_hist_id: row for row in metrology}
+    predicted_anomaly_count = sum(1 for p in predictions if p.is_anomaly)
 
     true_positive = false_positive = true_negative = false_negative = 0
     pass_count = fail_count = 0
@@ -286,6 +313,7 @@ def compute_confusion_metrics(
         metrology_coverage_denominator=len(predictions),
         metrology_pass_count=pass_count,
         metrology_fail_count=fail_count,
+        predicted_anomaly_count=predicted_anomaly_count,
     )
 
 
@@ -349,6 +377,7 @@ class HoldoutArtifact:
     production_ground_truth_available: bool = PRODUCTION_GROUND_TRUTH_AVAILABLE
     metrology_coverage_note: str = METROLOGY_COVERAGE_NOTE
     production_performance_disclaimer: str = PRODUCTION_PERFORMANCE_DISCLAIMER
+    fault_label_vocabulary_note: str = FAULT_LABEL_VOCABULARY_NOTE
 
 
 def run_holdout_evaluation(
@@ -397,6 +426,7 @@ def artifact_to_json_dict(artifact: HoldoutArtifact) -> dict:
         "prediction_hash": artifact.prediction_hash,
         "generated_at": artifact.generated_at,
         "label_source": artifact.label_source,
+        "fault_label_vocabulary_note": artifact.fault_label_vocabulary_note,
         "usage_scope": artifact.usage_scope,
         "public_fault_ground_truth_available": (
             artifact.public_fault_ground_truth_available
@@ -423,6 +453,7 @@ def artifact_to_json_dict(artifact: HoldoutArtifact) -> dict:
             ),
             "metrology_pass_count": artifact.metric.metrology_pass_count,
             "metrology_fail_count": artifact.metric.metrology_fail_count,
+            "predicted_anomaly_count": artifact.metric.predicted_anomaly_count,
         },
         "fault_label_distribution": {
             "counts": [
