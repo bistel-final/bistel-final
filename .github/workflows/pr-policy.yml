@@ -238,6 +238,7 @@ jobs:
           tests/unit/test_retired_pipelines.py
           tests/unit/test_schema_cache.py
           tests/unit/test_schema_lock.py
+          tests/unit/test_self_correction_hints.py
           tests/unit/test_source_manifest_artifact.py
           tests/unit/test_source_manifest_v4.py
           tests/unit/test_value_normalization.py
