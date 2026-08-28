@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# ruff: noqa: E402,I001
-
 import json
 import sys
 from pathlib import Path
@@ -9,11 +7,12 @@ from typing import Any
 
 import pytest
 
+from app.common import rag_readiness
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from app.common import rag_readiness
 import load_rag_documents as loader  # noqa: E402
 
 RUNTIME_DATABASES = ("kosa_agent", "kosa_agent_e2e", "kosa_text2sql")
