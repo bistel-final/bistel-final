@@ -12,6 +12,8 @@
 2. [`final-zip-intake.json`](final-zip-intake.json) — 최종 ZIP·선택 artifact intake 증빙
 3. [`dataset-epoch.json`](dataset-epoch.json) — 현행 epoch 식별자
 4. [WBS v5](../../docs/planning/Task분해_WBS_v5_작업본.md)의 `V5-CM-1.*`~`V5-CM-3.*`
+5. [`E2E_RESET_RUNBOOK.md`](E2E_RESET_RUNBOOK.md) — `kosa_agent_e2e` 시나리오 초기화·
+   receipt chain·`OUTCOME_UNKNOWN` 운영 절차
 
 `source-manifest-v4.json`과 후속 marker·report는 해당 V5 Task의 생성기와 검증을 통과한 뒤에만
 실행 근거가 된다. 파일이 존재한다는 사실만으로 생성 완료나 공용 적용 완료를 뜻하지 않는다.
