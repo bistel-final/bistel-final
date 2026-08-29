@@ -183,7 +183,7 @@ def _marker(database: str = "kosa_agent") -> dict[str, Any]:
         "format_version": 1,
         "live_db_fingerprint_sha256": "",
         "null_embedding_count": 0,
-        "profile": "runtime",
+        "profile": rag_readiness.DATABASE_PROFILE[database],
         "recorded_at": "2026-08-28T00:00:00+00:00",
         "schema_sha256": "b" * 64,
         "search_smoke": [
@@ -282,6 +282,40 @@ def test_rag_readiness_rejects_non_mapping_search_smoke() -> None:
 
     with pytest.raises(rag_readiness.RagReadinessError, match="검색 smoke"):
         rag_readiness.validate_marker(marker, database="kosa_agent")
+
+
+@pytest.mark.parametrize(
+    ("database", "profile"), tuple(rag_readiness.DATABASE_PROFILE.items())
+)
+def test_repository_markers_follow_database_profile_contract(
+    database: str, profile: str
+) -> None:
+    marker = rag_readiness.load_marker(database)
+
+    assert marker["profile"] == profile
+    rag_readiness.validate_marker(marker, database=database)
+
+
+@pytest.mark.parametrize("database", tuple(rag_readiness.DATABASE_PROFILE))
+def test_rag_marker_rejects_cross_profile_tampering(database: str) -> None:
+    marker = dict(rag_readiness.load_marker(database))
+    marker["profile"] = "evaluation" if marker["profile"] == "runtime" else "runtime"
+
+    with pytest.raises(rag_readiness.RagReadinessError, match="profile"):
+        rag_readiness.validate_marker(marker, database=database)
+
+
+def test_rag_marker_rejects_unknown_database_before_root_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rag_readiness,
+        "_marker_root",
+        lambda: pytest.fail("unknown database must fail before marker root access"),
+    )
+
+    with pytest.raises(rag_readiness.RagReadinessError, match="허용되지"):
+        rag_readiness.load_marker("not_allowed")
 
 
 def test_packaged_rag_markers_match_repository_markers() -> None:

@@ -247,6 +247,7 @@ jobs:
           tests/unit/test_value_normalization.py
           tests/unit/test_verify_rag_schema_state.py
           tests/unit/test_verify_migrations.py
+          tests/unit/test_verify_public_profiles.py
           tests/contract/test_detection_label_isolation.py
           -rs --no-header
 

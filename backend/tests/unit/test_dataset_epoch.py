@@ -88,10 +88,12 @@ REMAINING_MANIFESTS = {
     "runtime.runtime_checkpointed.json",
 }
 # marker를 추가하는 Task는 이 allowlist도 함께 갱신해야 한다.
-# 예정: V5-CM-2.6 묶음 3(공용 적용)이 postgres_profile.<database>.json 3종을 추가한다.
-#       묶음 1(코드·격리)에서는 marker 파일을 만들지 않으므로 지금 넣으면
-#       아래 실물 대조가 깨진다.
 REMAINING_MARKERS = {
+    # CM-2.6 공용 전환 증적. V5-CM-4.3이 외부 closure bundle 전체를 다시 검증한 뒤
+    # 원본 bytes 그대로 승격한다. live에서 재발급한 marker가 아니다.
+    "postgres_profile.kosa_agent.json",
+    "postgres_profile.kosa_agent_e2e.json",
+    "postgres_profile.kosa_text2sql.json",
     # RAG 적재 증적 (`V5-B-1.3`)
     "rag_load.kosa_agent.json",
     "rag_load.kosa_agent_e2e.json",
