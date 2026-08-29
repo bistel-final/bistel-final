@@ -297,7 +297,8 @@ def test_missing_checkpoint_is_rehydrated_from_the_persisted_snapshot(
             ),
             {"run_id": run_id},
         ).one()
-    assert (row.tool_calls, row.actions) == (2, 1)
+    # 최초 approval-email + checkpoint 재수화 뒤의 멱등 no-call도 각각 감사한다.
+    assert (row.tool_calls, row.actions) == (4, 1)
     assert row.status == expected_status
     audit = row.evidence["checkpoint_rehydration"]
     assert audit["schema_version"] == "rehydration-snapshot-v1"
@@ -401,4 +402,5 @@ def test_concurrent_rehydration_and_regular_resume_share_one_postgres_owner(
             ),
             {"run_id": run_id},
         ).one()
-    assert (counts.actions, counts.tool_calls) == (1, 2)
+    # 최초 approval-email + 재수화 replay의 send_action 감사 2건을 포함한다.
+    assert (counts.actions, counts.tool_calls) == (1, 4)

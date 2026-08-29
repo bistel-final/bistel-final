@@ -38,6 +38,7 @@ from app.common.enums import (
     FaultHypothesis,
     RunStatus,
     Severity,
+    ToolCallStatus,
 )
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -159,6 +160,23 @@ def _snapshot() -> subject.RehydrationSnapshot:
     )
 
 
+def _tool_call(
+    tool_name: str,
+    *,
+    status: ToolCallStatus = ToolCallStatus.SUCCESS,
+    error_msg: str | None = None,
+    output: dict[str, Any] | None = None,
+    latency_ms: int | None = 1,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        tool_name=tool_name,
+        status=status,
+        error_msg=error_msg,
+        output={} if output is None else output,
+        latency_ms=latency_ms,
+    )
+
+
 def _wire(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -218,7 +236,7 @@ def _wire(
         prediction=prediction,
         bundle=bundle,
         member_alarms=[ALARM],
-        tool_call_count=0,
+        tool_calls=[],
     )
     monkeypatch.setattr(subject, "get_agent_run", lambda *_a: state.run)
     monkeypatch.setattr(subject, "list_run_alarms", lambda *_a: state.member_alarms)
@@ -233,7 +251,7 @@ def _wire(
         "get_action_bundle",
         lambda *_a: state.bundle,
     )
-    monkeypatch.setattr(subject, "count_tool_calls", lambda *_a: state.tool_call_count)
+    monkeypatch.setattr(subject, "list_tool_calls", lambda *_a: state.tool_calls)
     return state
 
 
@@ -356,13 +374,60 @@ def test_fdc_input_identity_mismatch_is_fail_closed(
     assert caught.value.code == "REHYDRATE_PROVENANCE_MISMATCH"
 
 
-def test_audit_call_count_must_match_the_snapshot_budget(
+def test_non_send_tool_after_snapshot_is_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = _wire(monkeypatch)
-    state.tool_call_count = 1
+    state.tool_calls = [_tool_call("search_documents")]
     with pytest.raises(subject.RehydrationError) as caught:
         subject.build_rehydrated_state(object(), "RUN-1")
+    assert caught.value.code == "REHYDRATE_PROVENANCE_MISMATCH"
+
+
+def test_post_snapshot_send_action_audit_restores_the_current_db_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _wire(monkeypatch)
+    state.tool_calls = [_tool_call("send_action")]
+
+    payload = subject.build_rehydrated_state(object(), "RUN-1")
+
+    assert payload["tool_budget"] == ToolBudget(
+        used=1,
+        by_tool={"send_action": 1},
+        send_used=1,
+        pending_reservations=0,
+    )
+
+
+def test_post_snapshot_send_action_tail_cannot_exceed_the_send_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _wire(monkeypatch)
+    state.tool_calls = [_tool_call("send_action") for _ in range(3)]
+
+    with pytest.raises(subject.RehydrationError) as caught:
+        subject.build_rehydrated_state(object(), "RUN-1")
+
+    assert caught.value.code == "REHYDRATE_PROVENANCE_MISMATCH"
+
+
+def test_snapshot_tool_prefix_identity_is_still_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _wire(monkeypatch)
+    raw_snapshot = state.run.evidence[subject.REHYDRATION_SNAPSHOT_KEY]
+    raw_snapshot["tool_budget"] = ToolBudget(
+        used=1,
+        by_tool={"get_fdc_summary": 1},
+        send_used=0,
+        pending_reservations=0,
+    ).model_dump(mode="json")
+    state.tool_calls = [_tool_call("send_action")]
+
+    with pytest.raises(subject.RehydrationError) as caught:
+        subject.build_rehydrated_state(object(), "RUN-1")
+
     assert caught.value.code == "REHYDRATE_PROVENANCE_MISMATCH"
 
 

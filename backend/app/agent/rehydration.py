@@ -21,14 +21,15 @@ from app.agent.repository import (
     ACTION_PROVENANCE_KEY,
     ACTION_PROVENANCE_SCHEMA,
     REHYDRATION_SNAPSHOT_KEY,
+    RESERVED_ERROR_MSG,
     AgentRunRow,
     PredictionRow,
-    count_tool_calls,
     find_run_action,
     get_action_bundle,
     get_agent_run,
     get_prediction_or_none,
     list_run_alarms,
+    list_tool_calls,
 )
 from app.agent.routing import (
     GraphRouteEvidence,
@@ -47,7 +48,7 @@ from app.agent.state import (
     StateModel,
     ToolBudget,
 )
-from app.common.enums import ActionCode, RunStatus, Severity
+from app.common.enums import ActionCode, RunStatus, Severity, ToolCallStatus
 from app.common.ids import NonEmptyId
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -345,6 +346,61 @@ def _alarm_tokens(values: tuple[AlarmRef, ...] | list[AlarmRef]) -> set[str]:
     return {item.to_token() for item in values}
 
 
+def _rehydrated_tool_budget(
+    connection: Connection,
+    run_id: str,
+    snapshot: ToolBudget,
+) -> ToolBudget:
+    """persist 이후 승인-email Tool 감사만 허용해 현재 DB 예산을 복원한다.
+
+    재수화 snapshot은 계약상 ``persist_action`` 직전 값이다. C-4.6-1부터 그 뒤의
+    ``approval_email``도 audited ``send_action``이므로 checkpoint 쓰기 전에 감사 행이
+    최대 전송 예산만큼 더 존재할 수 있다. 다른 Tool tail이나 snapshot prefix 변조는
+    기존과 같이 fail-closed한다.
+    """
+
+    calls = tuple(list_tool_calls(connection, run_id))
+    if len(calls) < snapshot.used:
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+
+    prefix = calls[: snapshot.used]
+    prefix_counts: dict[str, int] = {}
+    for call in prefix:
+        prefix_counts[call.tool_name] = prefix_counts.get(call.tool_name, 0) + 1
+    if snapshot.by_tool is not None and prefix_counts != dict(snapshot.by_tool):
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+
+    tail = calls[snapshot.used :]
+    snapshot_send_used = 0 if snapshot.send_used is None else snapshot.send_used
+    remaining_send_budget = snapshot.send_budget - snapshot_send_used
+    if (
+        remaining_send_budget < 0
+        or len(tail) > remaining_send_budget
+        or any(call.tool_name != "send_action" for call in tail)
+    ):
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+
+    by_tool: dict[str, int] = {}
+    pending = 0
+    for call in calls:
+        by_tool[call.tool_name] = by_tool.get(call.tool_name, 0) + 1
+        if (
+            call.status is ToolCallStatus.ERROR
+            and call.error_msg == RESERVED_ERROR_MSG
+            and call.output is None
+            and call.latency_ms is None
+        ):
+            pending += 1
+    return ToolBudget(
+        max_calls=snapshot.max_calls,
+        used=len(calls),
+        by_tool=by_tool,
+        send_budget=snapshot.send_budget,
+        send_used=by_tool.get("send_action", 0),
+        pending_reservations=pending,
+    )
+
+
 def build_rehydrated_state(
     connection: Connection,
     run_id: str,
@@ -416,8 +472,11 @@ def build_rehydrated_state(
         != tuple(item.channel for item in snapshot.deliveries)
     ):
         raise RehydrationError("REHYDRATE_BUNDLE_MISMATCH")
-    if count_tool_calls(connection, run_id) != snapshot.tool_budget.used:
-        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+    tool_budget = _rehydrated_tool_budget(
+        connection,
+        run_id,
+        snapshot.tool_budget,
+    )
 
     payload: dict[str, Any] = {
         "run_id": run.agent_run_id,
@@ -440,7 +499,7 @@ def build_rehydrated_state(
         "action_id": snapshot.action_id,
         "approval_id": snapshot.approval_id,
         "deliveries": snapshot.deliveries,
-        "tool_budget": snapshot.tool_budget,
+        "tool_budget": tool_budget,
         "errors": snapshot.errors,
         "autonomy_level": run.autonomy_level,
         "terminal_error": None,
