@@ -4,6 +4,11 @@
 while the default command also requires and validates
 ``deploy/n8n/runtime-manifest.json``. Public inventory values must never be guessed or
 represented as placeholders.
+
+Registry digests are independently reproducible with
+``docker buildx imagetools inspect n8nio/n8n:2.32.7``. When the pinned Pydantic version
+is upgraded, regenerate the byte-exact tracked schema with ``--write-schema`` and review
+the schema diff before committing it.
 """
 
 from __future__ import annotations
@@ -80,6 +85,7 @@ class N8nImagePin(StrictModel):
 
 
 class RuntimeTopology(StrictModel):
+    attestation: Literal["local-rehearsal", "shared-host"]
     database_type: Literal["sqlite", "postgresdb"]
     execution_mode: Literal["regular", "queue"]
     main_worker: Literal["single", "separated"]
@@ -163,6 +169,32 @@ def validate_running_image(
         raise RuntimeManifestError("running n8n platform is not allowlisted")
     if digest != platform_digests[platform]:
         raise RuntimeManifestError("running n8n child digest does not match the pin")
+
+
+def validate_shared_host_runtime(
+    manifest: RuntimeManifest,
+    *,
+    database_type: str,
+    execution_mode: str,
+    main_worker: str,
+    platform: str,
+    digest: str,
+) -> None:
+    """Public apply Gate: tracked values must be shared-host measurements."""
+
+    if manifest.runtime.attestation != "shared-host":
+        raise RuntimeManifestError("runtime manifest is not shared-host attested")
+    observed = (database_type, execution_mode, main_worker)
+    expected = (
+        manifest.runtime.database_type,
+        manifest.runtime.execution_mode,
+        manifest.runtime.main_worker,
+    )
+    if observed != expected:
+        raise RuntimeManifestError(
+            "shared-host runtime topology does not match the pin"
+        )
+    validate_running_image(manifest, platform=platform, digest=digest)
 
 
 class RuntimeManifestError(RuntimeError):

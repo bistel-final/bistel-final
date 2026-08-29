@@ -10,6 +10,7 @@
     }
   },
   "runtime": {
+    "attestation": "local-rehearsal",
     "database_type": "sqlite",
     "execution_mode": "regular",
     "main_worker": "single"

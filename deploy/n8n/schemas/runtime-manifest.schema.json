@@ -125,6 +125,14 @@
     "RuntimeTopology": {
       "additionalProperties": false,
       "properties": {
+        "attestation": {
+          "enum": [
+            "local-rehearsal",
+            "shared-host"
+          ],
+          "title": "Attestation",
+          "type": "string"
+        },
         "database_type": {
           "enum": [
             "sqlite",
@@ -151,6 +159,7 @@
         }
       },
       "required": [
+        "attestation",
         "database_type",
         "execution_mode",
         "main_worker"

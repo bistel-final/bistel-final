@@ -30,6 +30,7 @@ EXPECTED_FILES = {
     "WF3-mes-hold.json",
     "WF4-result-writeback.json",
 }
+EXPECTED_ROOT_ENTRIES = EXPECTED_FILES | {"runtime-manifest.json", "schemas"}
 EXPECTED_TYPES = {
     "n8n-nodes-base.webhook": 2,
     "n8n-nodes-base.code": 2,
@@ -488,6 +489,7 @@ def _contract_errors(workflows: dict[str, dict[str, Any]]) -> list[str]:
 
 def test_r01_exact_workflow_allowlist_and_no_wf1() -> None:
     workflows = _load_workflows()
+    assert {path.name for path in WORKFLOW_ROOT.iterdir()} == EXPECTED_ROOT_ENTRIES
     assert set(workflows) == EXPECTED_FILES
     assert all(not name.startswith("WF1") for name in workflows)
     assert {workflow["name"] for workflow in workflows.values()} == {

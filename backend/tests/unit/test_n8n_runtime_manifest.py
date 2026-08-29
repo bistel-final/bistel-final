@@ -45,6 +45,7 @@ def _valid_manifest(root: Path) -> dict:
             },
         },
         "runtime": {
+            "attestation": "local-rehearsal",
             "database_type": "postgresdb",
             "execution_mode": "regular",
             "main_worker": "single",
@@ -96,6 +97,7 @@ def test_valid_external_runner_manifest_passes(tmp_path: Path) -> None:
         (("n8n", "version"), "2.32"),
         (("n8n", "manifest_list_digest"), "sha256:pending"),
         (("runtime", "database_type"), "unknown"),
+        (("runtime", "attestation"), "unverified"),
         (("runtime", "execution_mode"), "pending"),
         (("runtime", "main_worker"), "unknown"),
     ],
@@ -128,6 +130,15 @@ def test_execution_mode_and_topology_mismatch_fails(
     payload["runtime"]["main_worker"] = main_worker
 
     with pytest.raises(rm.RuntimeManifestError, match="topology"):
+        rm.validate_runtime_manifest(payload, workflow_root=tmp_path)
+
+
+def test_runtime_attestation_is_required(tmp_path: Path) -> None:
+    _write_workflows(tmp_path)
+    payload = _valid_manifest(tmp_path)
+    del payload["runtime"]["attestation"]
+
+    with pytest.raises(rm.RuntimeManifestError, match="attestation"):
         rm.validate_runtime_manifest(payload, workflow_root=tmp_path)
 
 
@@ -168,6 +179,47 @@ def test_running_image_must_match_allowlisted_platform_digest(tmp_path: Path) ->
         )
     with pytest.raises(rm.RuntimeManifestError, match="platform"):
         rm.validate_running_image(manifest, platform="linux/s390x", digest=FAKE_DIGEST)
+
+
+def test_public_runtime_gate_requires_shared_host_attestation(tmp_path: Path) -> None:
+    _write_workflows(tmp_path)
+    payload = _valid_manifest(tmp_path)
+    manifest = rm.validate_runtime_manifest(payload, workflow_root=tmp_path)
+
+    with pytest.raises(rm.RuntimeManifestError, match="shared-host attested"):
+        rm.validate_shared_host_runtime(
+            manifest,
+            database_type="postgresdb",
+            execution_mode="regular",
+            main_worker="single",
+            platform="linux/amd64",
+            digest=rm.EXPECTED_N8N_PLATFORM_DIGESTS["linux/amd64"],
+        )
+
+
+def test_public_runtime_gate_compares_the_measured_tuple(tmp_path: Path) -> None:
+    _write_workflows(tmp_path)
+    payload = _valid_manifest(tmp_path)
+    payload["runtime"]["attestation"] = "shared-host"
+    manifest = rm.validate_runtime_manifest(payload, workflow_root=tmp_path)
+
+    rm.validate_shared_host_runtime(
+        manifest,
+        database_type="postgresdb",
+        execution_mode="regular",
+        main_worker="single",
+        platform="linux/amd64",
+        digest=rm.EXPECTED_N8N_PLATFORM_DIGESTS["linux/amd64"],
+    )
+    with pytest.raises(rm.RuntimeManifestError, match="topology"):
+        rm.validate_shared_host_runtime(
+            manifest,
+            database_type="sqlite",
+            execution_mode="regular",
+            main_worker="single",
+            platform="linux/amd64",
+            digest=rm.EXPECTED_N8N_PLATFORM_DIGESTS["linux/amd64"],
+        )
 
 
 def test_internal_runner_rejects_image_details(tmp_path: Path) -> None:
@@ -253,6 +305,7 @@ def test_tracked_runtime_manifest_matches_workflow_sources() -> None:
         == rm.EXPECTED_N8N_PLATFORM_DIGESTS
     )
     assert manifest.runtime.database_type == "sqlite"
+    assert manifest.runtime.attestation == "local-rehearsal"
     assert manifest.runtime.execution_mode == "regular"
     assert manifest.runtime.main_worker == "single"
     assert manifest.task_runner.mode == "internal"
