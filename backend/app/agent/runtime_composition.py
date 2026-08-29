@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any, Final, Protocol
+from typing import Any, Protocol
 
 from app.agent import action_store, ask, decision, hypothesis
 from app.agent.approval_store import (
@@ -66,12 +66,9 @@ from app.common.exceptions import (
 )
 from app.common.ids import new_thread_id
 from app.common.schemas import AlarmRef
+from app.common.tool_deadlines import READ_TOOL_CALLER_DEADLINE_SECONDS
 
 logger = logging.getLogger(__name__)
-
-# C-2.2 read Tool caller 계약이다. DB server-side statement timeout
-# (CM-4.8의 TOOL_DB_TIMEOUT_SEC)과 의미·예산을 섞지 않는다.
-READ_TOOL_CALLER_DEADLINE_SECONDS: Final[float] = 8.0
 
 
 class AgentRuntimeError(RuntimeError):

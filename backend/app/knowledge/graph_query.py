@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from neo4j import Query
+
+from app.common.config import TOOL_DB_TIMEOUT_SEC
 from app.common.neo4j import get_neo4j_driver
+from app.common.tool_timeouts import neo4j_timeout_error
 from app.knowledge.graph_revision import (
     graph_database_name,
     load_graph_revision,
@@ -43,10 +47,12 @@ RETURN
         driver_factory: Callable[[], Any] = get_neo4j_driver,
         graph_revision_loader: Callable[[], str] = lambda: load_graph_revision(),
         database: str | None = None,
+        timeout_seconds: float = TOOL_DB_TIMEOUT_SEC,
     ) -> None:
         self._driver_factory = driver_factory
         self._graph_revision_loader = graph_revision_loader
         self._database = database or graph_database_name()
+        self._timeout_seconds = timeout_seconds
 
     def get_equipment_context_payload(self, chamber_id: str) -> dict[str, Any] | None:
         driver = self._driver_factory()
@@ -54,10 +60,18 @@ RETURN
             database=self._database,
             default_access_mode="READ",
         ) as session:
-            record = session.run(
-                self.TOOL_CONTEXT_QUERY,
-                {"chamber_id": chamber_id},
-            ).single()
+            try:
+                record = session.run(
+                    Query(
+                        self.TOOL_CONTEXT_QUERY,
+                        timeout=self._timeout_seconds,
+                    ),
+                    {"chamber_id": chamber_id},
+                ).single()
+            except Exception as exc:
+                if timeout := neo4j_timeout_error(exc):
+                    raise timeout from None
+                raise
         if record is None:
             return None
 

@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 65.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 66.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 71.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **201.0h** | P2 도전 과제 제외 |
+| **합계** | | **202.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 153.0h / P1 48.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스무 개다.
+우선순위별 공수는 **P0 153.0h / P1 49.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물한 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -79,6 +79,9 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-CM-4.7` **3.0h** — E2E Runtime 13 table의 transaction reset·action provenance·
   quiescence와 crash-safe receipt chain, 다른 2 DB의 typed full fingerprint 불변을 하나의
   파괴적 작업 Gate로 묶고 격리 PostgreSQL 장애 주입까지 실증한다.
+- `V5-CM-4.8` **3.0h** — PostgreSQL·Neo4j의 server-side timeout을 세 Agent read Tool에
+  연결하고, 두 digest-pinned 격리 컨테이너의 실제 종료·세션 정리·후속 query와 exact 예외
+  사상을 검증한다. CPU soft 구간·sentinel 비회수 판정과 CM-5.3 인용표까지 한 Gate로 닫는다.
 - `V5-C-0.1` **4.0h** — Runtime 9-table Repository, ID·상태 전이, action/severity pair와
   append-only 감사를 실제 PostgreSQL 저장·동시성 경계까지 한 기반 구현으로 닫는다.
 - `V5-C-2.1` **6.5h** — State 20개 계약, Tool 예약·종료 감사와 soft deadline,
@@ -179,7 +182,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·n8n은 학원 공용 외부 서비스로 환경변수 연결하고 팀 compose에는 Backend·Frontend·Kafka·MES Mock consumer만 둔다. `/api` proxy·명시 CORS Origin·고정 image tag를 적용하며 DB/Neo4j/n8n 컨테이너와 reference `00_load.sh` 호출은 0건이다 | FR-I-04, FR-I-06, NFR-02, NFR-12, NFR-15 | V5-CM-4.3, V5-C-4.2 | 3.0h |
 | V5-CM-4.6 | P1 | liveness·readiness·복구. 완료: `/health`는 process 생존만 반환하고 `/health/ready`는 병렬 timeout으로 PostgreSQL epoch/schema/role·reference marker, Neo4j 44/85 marker/fingerprint, RAG 3문서·chunk·vector1024·검색 smoke, n8n, Kafka metadata·`fdc.actions`·`fdc.actions.result`와 consumer group `kosa-fdc-wf4-writeback` lag를 검사한다. lag가 5분 이상 0보다 크거나 다른 의존성이 미준비면 sanitized 503이고 process는 종료하지 않는다 | FR-I-05, NFR-02, NFR-16 | V5-CM-4.5, V5-CM-2.7, V5-B-1.4, V5-C-4.2, V5-C-4.5 | 2.0h |
 | V5-CM-4.7 | P0 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 Runtime 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·RAG·checkpoint schema를 보존하며 다른 DB 변경 0건을 증명한다 | NFR-14, NFR-18 | V5-CM-3.4, V5-CM-4.3 | 3.0h |
-| V5-CM-4.8 | P1 | Tool hard timeout·sentinel 복구 재평가. 완료: `get_equipment_context`의 Neo4j transaction timeout과 `search_documents`·`get_fdc_summary` DB 구간의 PostgreSQL statement timeout을 실제 집행하고 8초 뒤 작업 종료 postcondition을 증명한다. in-process embedding·model 구간은 process 격리 도입 또는 soft 유지와 NFR-03 부분 미충족 기록 중 하나를 결정한다. hard 종료가 증명된 구간에 한해 sentinel 시간 기반 자동 회수를 재평가하고, Tool별 hard/soft 판정·잔여 한계를 남긴다 | NFR-03 | V5-C-2.2 | 2.0h |
+| V5-CM-4.8 | P1 | Tool hard timeout·sentinel 복구 재평가. 완료: `get_equipment_context`의 Neo4j transaction timeout과 `search_documents`·`get_fdc_summary` DB 구간의 PostgreSQL statement timeout을 실제 집행하고 8초 뒤 작업 종료 postcondition을 증명한다. in-process embedding·model 구간은 process 격리 도입 또는 soft 유지와 NFR-03 부분 미충족 기록 중 하나를 결정한다. hard 종료가 증명된 구간에 한해 sentinel 시간 기반 자동 회수를 재평가하고, Tool별 hard/soft 판정·잔여 한계를 남긴다 | NFR-03 | V5-C-2.2 | 3.0h |
 
 ### V5-CM-5. 최종 통합 gate
 
@@ -189,7 +192,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
-**Common 합계: 65.5h**
+**Common 합계: 66.5h**
 
 ---
 

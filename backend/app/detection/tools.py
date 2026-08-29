@@ -14,8 +14,14 @@ import logging
 
 from langchain_core.tools import tool
 
+from app.common.config import TOOL_DB_TIMEOUT_SEC
 from app.common.db import get_readonly_engine
 from app.common.tool_contracts import FdcSummaryToolResult, fail
+from app.common.tool_timeouts import (
+    DependencyTimeoutError,
+    apply_postgres_statement_timeout,
+    postgres_timeout_error,
+)
 from app.detection.service import FdcSummaryService
 
 logger = logging.getLogger(__name__)
@@ -34,10 +40,18 @@ def get_fdc_summary(lot_hist_id: str) -> FdcSummaryToolResult:
 
     try:
         with get_readonly_engine().connect() as connection:
+            apply_postgres_statement_timeout(
+                connection,
+                timeout_seconds=TOOL_DB_TIMEOUT_SEC,
+            )
             result = FdcSummaryService(connection).get_fdc_summary(lot_hist_id)
+    except DependencyTimeoutError as exc:
+        return fail(FdcSummaryToolResult, f"TIMEOUT: {exc.reason_code}")
     except TimeoutError as exc:
         return fail(FdcSummaryToolResult, f"TIMEOUT: {exc}")
-    except Exception:
+    except Exception as exc:
+        if timeout := postgres_timeout_error(exc):
+            return fail(FdcSummaryToolResult, f"TIMEOUT: {timeout.reason_code}")
         logger.exception("get_fdc_summary Tool dependency error")
         return fail(
             FdcSummaryToolResult,

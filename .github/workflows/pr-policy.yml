@@ -251,6 +251,8 @@ jobs:
           tests/unit/test_source_manifest_artifact.py
           tests/unit/test_source_manifest_v4.py
           tests/unit/test_team_compose.py
+          tests/unit/test_tool_timeouts.py
+          tests/unit/test_rehearsal_neo4j.py
           tests/unit/test_value_normalization.py
           tests/unit/test_verify_rag_schema_state.py
           tests/unit/test_verify_migrations.py
@@ -473,6 +475,27 @@ jobs:
         run: >-
           python -m pytest -q -m container
           tests/unit/test_postgres_role_matrix_container.py
+          -rs --no-header
+
+      # V5-CM-4.8 Agent read Tool server hard timeout. 두 파일 모두 digest-pinned
+      # 일회성 container만 사용한다. Docker/daemon 부재는 skip하지 않고 이 job을 실패시킨다.
+      # production 5초 대신 test seam 150/200ms로 실제 취소·active 0·후속 query·LOCAL
+      # 비누출을 증명하며 공용 PostgreSQL·Neo4j에는 접속하지 않는다.
+      - name: Prove Agent read Tool hard timeout termination
+        working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_tool_timeout_postgres_container.py
+          tests/unit/test_tool_timeout_neo4j_container.py
           -rs --no-header
 
       # V5-CM-3.4가 바꾼 계약의 단위 회귀. container가 필요 없다.

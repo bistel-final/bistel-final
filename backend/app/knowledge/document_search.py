@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from pgvector.psycopg import register_vector
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+
+from app.common.config import TOOL_DB_TIMEOUT_SEC
+from app.common.tool_timeouts import (
+    apply_postgres_statement_timeout,
+    postgres_timeout_error,
+)
 
 
 def _format_vector(values: Sequence[float]) -> str:
@@ -17,8 +23,16 @@ def _format_vector(values: Sequence[float]) -> str:
 class DocumentSearchRepository:
     """runtime ``kosa_agent``의 pgvector RAG chunk를 cosine distance로 검색한다."""
 
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        timeout_seconds: float = TOOL_DB_TIMEOUT_SEC,
+        vector_registrar: Callable[[Any], None] | None = None,
+    ) -> None:
         self._engine = engine
+        self._timeout_seconds = timeout_seconds
+        self._vector_registrar = vector_registrar or register_vector
 
     def search(
         self,
@@ -59,8 +73,16 @@ class DocumentSearchRepository:
 
         connection = self._engine.connect()
         try:
-            register_vector(connection.connection.driver_connection)
+            apply_postgres_statement_timeout(
+                connection,
+                timeout_seconds=self._timeout_seconds,
+            )
+            self._vector_registrar(connection.connection.driver_connection)
             rows = connection.execute(text(sql), params).mappings().all()
+        except Exception as exc:
+            if timeout := postgres_timeout_error(exc):
+                raise timeout from None
+            raise
         finally:
             connection.close()
 
