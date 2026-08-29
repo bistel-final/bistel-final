@@ -589,6 +589,17 @@ jobs:
       # 분기와 변이 감도를 Node 22에서 검증하며 SMTP·Kafka·Backend에는 접속하지 않는다.
       - name: Prove the n8n workflow repository contracts
         working-directory: backend
+        env:
+          # email delivery unit이 `app.common.config` import 체인으로 요구하는 더미 8종.
+          # 이 step은 DB·Neo4j·n8n에 붙지 않는다 — collection 통과용 값이다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_n8n_workflows.py
