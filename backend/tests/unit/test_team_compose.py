@@ -40,6 +40,7 @@ BACKEND_ENV_KEYS = {
     "N8N_WF3_URL",
     "N8N_WEBHOOK_SECRET",
     "N8N_WEBHOOK_TIMEOUT_SEC",
+    "DELIVERY_UNKNOWN_AFTER_SEC",
     "AGENT_EMAIL_RECIPIENTS",
     "CORS_ORIGINS",
     "LLM_PROVIDER",
@@ -324,7 +325,19 @@ def test_e2e_backend_override_isolated_database_and_port_are_exact() -> None:
     backend = payload["services"]["backend"]
 
     assert backend["ports"] == ["53081:8000"]
-    assert backend["environment"] == {"POSTGRES_DB": "kosa_agent_e2e"}
+    assert backend["environment"] == {
+        "POSTGRES_DB": "kosa_agent_e2e",
+        "DELIVERY_CALLBACK_TRAIL_DIR": "${DELIVERY_CALLBACK_TRAIL_DIR:-}",
+        "DELIVERY_CALLBACK_TRAIL_RUN_ID": "${DELIVERY_CALLBACK_TRAIL_RUN_ID:-}",
+    }
+    assert backend["volumes"] == [
+        {
+            "type": "bind",
+            "source": "./trail",
+            "target": "/var/lib/bistel/delivery-trail",
+            "read_only": False,
+        }
+    ]
 
 
 def test_external_kafka_probe_uses_a_separate_network_and_negative_auth() -> None:

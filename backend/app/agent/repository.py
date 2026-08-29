@@ -35,6 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, Final
 
 from sqlalchemy import text
@@ -113,6 +114,8 @@ __all__ = [
     "ActionDeliveryRow",
     "MesDeliveryClaim",
     "DeliveryCallbackTransition",
+    "DeliveryRecoveryReason",
+    "DeliveryRecoveryResult",
     "ApprovalDecisionRow",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
@@ -141,6 +144,9 @@ __all__ = [
     "begin_mes_delivery",
     "settle_mes_webhook",
     "settle_delivery_callback",
+    "list_stale_deliveries",
+    "mark_delivery_unknown",
+    "retry_failed_delivery",
     "INITIAL_DELIVERY_PAIRS",
 ]
 
@@ -2396,6 +2402,23 @@ class DeliveryCallbackTransition:
     duplicate: bool
 
 
+class DeliveryRecoveryReason(StrEnum):
+    """운영 복구 명령이 출력해도 되는 안정적인 판정 코드."""
+
+    APPLIED = "APPLIED"
+    NO_TARGET = "NO_TARGET"
+    STILL_FRESH = "STILL_FRESH"
+    CALLBACK_WON = "CALLBACK_WON"
+    STATE_NOT_ALLOWED = "STATE_NOT_ALLOWED"
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryRecoveryResult:
+    reason: DeliveryRecoveryReason
+    delivery: ActionDeliveryRow | None
+    previous_status: DeliveryStatus | None
+
+
 _DELIVERY_COLUMNS = """
     action_id, channel, status, request_hash, attempt_count,
     provider_message_id, started_at, completed_at, last_error, result
@@ -2453,6 +2476,60 @@ _SELECT_DELIVERY_FOR_UPDATE = text(
     FROM action_delivery
     WHERE action_id = :action_id AND channel = :channel
     FOR UPDATE
+    """
+)
+
+_STALE_DELIVERY_PREDICATE = """
+    status = 'SENDING'
+    AND started_at IS NOT NULL
+    AND started_at <= clock_timestamp()
+        - make_interval(secs => CAST(:stale_after_seconds AS double precision))
+"""
+
+_SELECT_STALE_DELIVERIES = text(
+    f"""
+    SELECT {_DELIVERY_COLUMNS}
+    FROM action_delivery
+    WHERE {_STALE_DELIVERY_PREDICATE}
+    ORDER BY started_at, action_id, channel
+    """
+)
+
+_SELECT_DELIVERY_RECOVERY_FOR_UPDATE = text(
+    f"""
+    SELECT {_DELIVERY_COLUMNS},
+           ({_STALE_DELIVERY_PREDICATE}) AS is_stale
+    FROM action_delivery
+    WHERE action_id = :action_id AND channel = :channel
+    FOR UPDATE
+    """
+)
+
+_UPDATE_DELIVERY_UNKNOWN = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'UNKNOWN',
+        completed_at = clock_timestamp(),
+        last_error = 'DELIVERY_RESULT_UNKNOWN',
+        result = CAST(:result AS jsonb)
+    WHERE action_id = :action_id
+      AND channel = :channel
+      AND {_STALE_DELIVERY_PREDICATE}
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_UPDATE_FAILED_DELIVERY_FOR_RETRY = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'WAITING',
+        provider_message_id = NULL,
+        completed_at = NULL,
+        result = NULL
+    WHERE action_id = :action_id
+      AND channel = :channel
+      AND status = 'FAILED'
+    RETURNING {_DELIVERY_COLUMNS}
     """
 )
 
@@ -2641,6 +2718,151 @@ def list_action_deliveries(
 ) -> list[ActionDeliveryRow]:
     rows = _fetch_all(connection, _SELECT_DELIVERIES, {"action_id": action_id})
     return [_delivery_row(row) for row in rows]
+
+
+def _validated_stale_after_seconds(value: int) -> int:
+    if type(value) is not int or value <= 0:
+        raise RepositoryContractError("DELIVERY_STALE_AFTER_INVALID")
+    return value
+
+
+def list_stale_deliveries(
+    connection: Connection,
+    *,
+    stale_after_seconds: int,
+) -> list[ActionDeliveryRow]:
+    """DB 시각 기준으로 cutoff를 지난 ``SENDING`` delivery만 조회한다."""
+
+    stale_after_seconds = _validated_stale_after_seconds(stale_after_seconds)
+    try:
+        rows = connection.execute(
+            _SELECT_STALE_DELIVERIES,
+            {"stale_after_seconds": stale_after_seconds},
+        ).all()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    return [_delivery_row(row) for row in rows]
+
+
+def mark_delivery_unknown(
+    connection: Connection,
+    *,
+    action_id: str,
+    channel: DeliveryChannel,
+    stale_after_seconds: int,
+) -> DeliveryRecoveryResult:
+    """stale ``SENDING`` 한 건을 운영자 확인 뒤 ``UNKNOWN``으로 확정한다.
+
+    callback과 같은 row lock을 사용하고 lock 획득 뒤 DB 시각으로 cutoff를 다시
+    판정한다. 따라서 dry-run 목록은 참고값이고 이 함수의 결과가 정본이다.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    stale_after_seconds = _validated_stale_after_seconds(stale_after_seconds)
+    try:
+        resolved_channel = DeliveryChannel(channel)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_DELIVERY_CHANNEL") from exc
+    params = {
+        "action_id": action_id,
+        "channel": resolved_channel.value,
+        "stale_after_seconds": stale_after_seconds,
+    }
+    try:
+        row = connection.execute(
+            _SELECT_DELIVERY_RECOVERY_FOR_UPDATE,
+            params,
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        return DeliveryRecoveryResult(DeliveryRecoveryReason.NO_TARGET, None, None)
+
+    locked = _delivery_row(row)
+    if locked.status in {DeliveryStatus.SENT, DeliveryStatus.FAILED}:
+        return DeliveryRecoveryResult(
+            DeliveryRecoveryReason.CALLBACK_WON,
+            locked,
+            locked.status,
+        )
+    if locked.status is not DeliveryStatus.SENDING:
+        return DeliveryRecoveryResult(
+            DeliveryRecoveryReason.STATE_NOT_ALLOWED,
+            locked,
+            locked.status,
+        )
+    if not bool(row.is_stale):
+        return DeliveryRecoveryResult(
+            DeliveryRecoveryReason.STILL_FRESH,
+            locked,
+            locked.status,
+        )
+
+    transport = "N8N_WEBHOOK" if resolved_channel is DeliveryChannel.EMAIL else "KAFKA"
+    try:
+        updated_row = connection.execute(
+            _UPDATE_DELIVERY_UNKNOWN,
+            {
+                **params,
+                "result": _json_payload(
+                    {
+                        "operator_decision": "UNKNOWN_CONFIRMED",
+                        "transport": transport,
+                    },
+                    "result",
+                ),
+            },
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if updated_row is None:
+        raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+    return DeliveryRecoveryResult(
+        DeliveryRecoveryReason.APPLIED,
+        _delivery_row(updated_row),
+        DeliveryStatus.SENDING,
+    )
+
+
+def retry_failed_delivery(
+    connection: Connection,
+    *,
+    action_id: str,
+    channel: DeliveryChannel,
+) -> ActionDeliveryRow:
+    """명시적 운영 명령만 ``FAILED→WAITING``으로 되돌린다.
+
+    stable request identity와 이전 오류는 보존한다. 다음 attempt는 이 함수가 아니라
+    이후 ``begin_*_delivery`` claim이 증가시킨다.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    try:
+        resolved_channel = DeliveryChannel(channel)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_DELIVERY_CHANNEL") from exc
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_DELIVERY_FOR_UPDATE,
+            {"action_id": action_id, "channel": resolved_channel.value},
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.status is not DeliveryStatus.FAILED:
+        raise RepositoryConflict("DELIVERY_RETRY_STATE_NOT_ALLOWED")
+    try:
+        row = connection.execute(
+            _UPDATE_FAILED_DELIVERY_FOR_RETRY,
+            {"action_id": action_id, "channel": resolved_channel.value},
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if row is None:
+        raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+    return _delivery_row(row)
 
 
 def begin_email_delivery(

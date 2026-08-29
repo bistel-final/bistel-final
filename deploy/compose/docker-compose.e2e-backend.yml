@@ -4,3 +4,10 @@ services:
       - "53081:8000"
     environment:
       POSTGRES_DB: kosa_agent_e2e
+      DELIVERY_CALLBACK_TRAIL_DIR: ${DELIVERY_CALLBACK_TRAIL_DIR:-}
+      DELIVERY_CALLBACK_TRAIL_RUN_ID: ${DELIVERY_CALLBACK_TRAIL_RUN_ID:-}
+    volumes:
+      - type: bind
+        source: ./trail
+        target: /var/lib/bistel/delivery-trail
+        read_only: false

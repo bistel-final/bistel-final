@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -176,6 +177,44 @@ TOOL_EMBEDDING_TIMEOUT_SEC = get_int_env("TOOL_EMBEDDING_TIMEOUT_SEC", "15", min
 # n8n delivery webhook은 SMTP callback 왕복을 포함하므로 25초 미만을 허용하지 않는다.
 # C-4.3 EMAIL과 C-4.5 MES adapter가 같은 n8n delivery 경계를 재사용한다.
 N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "30", minimum=25)
+
+# 전송 결과를 알 수 없는 SENDING을 운영자가 UNKNOWN으로 확정할 때 쓰는 cutoff다.
+# webhook timeout보다 짧으면 아직 정상 응답을 기다리는 delivery를 미확정으로 닫을 수
+# 있으므로 import 시점에 fail-closed한다.
+DELIVERY_UNKNOWN_AFTER_SEC = get_int_env(
+    "DELIVERY_UNKNOWN_AFTER_SEC",
+    "600",
+    minimum=1,
+)
+if DELIVERY_UNKNOWN_AFTER_SEC < N8N_WEBHOOK_TIMEOUT_SEC * 2:
+    raise RuntimeError(
+        "DELIVERY_UNKNOWN_AFTER_SEC 은 N8N_WEBHOOK_TIMEOUT_SEC의 2배 이상이어야 합니다"
+    )
+
+# public controlled run에서만 켜는 callback 증적 sink. 둘 중 하나만 설정되면 증적이
+# 어느 run에 속하는지 결정할 수 없으므로 애플리케이션 import 단계에서 거부한다.
+_TRAIL_RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+DELIVERY_CALLBACK_TRAIL_DIR = (
+    os.getenv("DELIVERY_CALLBACK_TRAIL_DIR", "").strip() or None
+)
+DELIVERY_CALLBACK_TRAIL_RUN_ID = (
+    os.getenv("DELIVERY_CALLBACK_TRAIL_RUN_ID", "").strip() or None
+)
+if (DELIVERY_CALLBACK_TRAIL_DIR is None) != (DELIVERY_CALLBACK_TRAIL_RUN_ID is None):
+    raise RuntimeError(
+        "DELIVERY_CALLBACK_TRAIL_DIR 과 DELIVERY_CALLBACK_TRAIL_RUN_ID는 "
+        "함께 설정해야 합니다"
+    )
+if (
+    DELIVERY_CALLBACK_TRAIL_RUN_ID is not None
+    and _TRAIL_RUN_ID.fullmatch(DELIVERY_CALLBACK_TRAIL_RUN_ID) is None
+):
+    raise RuntimeError("DELIVERY_CALLBACK_TRAIL_RUN_ID 형식이 올바르지 않습니다")
+if (
+    DELIVERY_CALLBACK_TRAIL_DIR is not None
+    and not Path(DELIVERY_CALLBACK_TRAIL_DIR).is_absolute()
+):
+    raise RuntimeError("DELIVERY_CALLBACK_TRAIL_DIR 은 절대 경로여야 합니다")
 
 # ---------------------------------------------------------------------
 # LLM (.env.example 계약과 1:1)

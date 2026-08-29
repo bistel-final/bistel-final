@@ -167,11 +167,50 @@ class TestTimeoutAndRetryBounds:
         assert config.TOOL_DB_TIMEOUT_SEC == 5
         assert config.TOOL_EMBEDDING_TIMEOUT_SEC == 15
         assert config.N8N_WEBHOOK_TIMEOUT_SEC == 30
+        assert config.DELIVERY_UNKNOWN_AFTER_SEC == 600
 
     def test_n8n_timeout_allows_25(self, monkeypatch: pytest.MonkeyPatch) -> None:
         config = load_config(monkeypatch, N8N_WEBHOOK_TIMEOUT_SEC="25")
 
         assert config.N8N_WEBHOOK_TIMEOUT_SEC == 25
+
+    def test_unknown_cutoff_must_be_at_least_twice_webhook_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(RuntimeError, match="DELIVERY_UNKNOWN_AFTER_SEC"):
+            load_config(
+                monkeypatch,
+                N8N_WEBHOOK_TIMEOUT_SEC="30",
+                DELIVERY_UNKNOWN_AFTER_SEC="59",
+            )
+
+    @pytest.mark.parametrize(
+        ("trail_dir", "run_id"),
+        [("/tmp/trail", ""), ("", "run-1"), ("relative/trail", "run-1")],
+    )
+    def test_callback_trail_pair_and_absolute_path_are_fail_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        trail_dir: str,
+        run_id: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="DELIVERY_CALLBACK_TRAIL"):
+            load_config(
+                monkeypatch,
+                DELIVERY_CALLBACK_TRAIL_DIR=trail_dir,
+                DELIVERY_CALLBACK_TRAIL_RUN_ID=run_id,
+            )
+
+    @pytest.mark.parametrize("run_id", ["../escape", "has space", "x" * 65])
+    def test_callback_trail_run_id_is_allowlisted(
+        self, monkeypatch: pytest.MonkeyPatch, run_id: str
+    ) -> None:
+        with pytest.raises(RuntimeError, match="DELIVERY_CALLBACK_TRAIL_RUN_ID"):
+            load_config(
+                monkeypatch,
+                DELIVERY_CALLBACK_TRAIL_DIR="/tmp/trail",
+                DELIVERY_CALLBACK_TRAIL_RUN_ID=run_id,
+            )
 
     @pytest.mark.parametrize("value", ["24", "1", "0", "-1"])
     def test_n8n_timeout_rejects_below_25(

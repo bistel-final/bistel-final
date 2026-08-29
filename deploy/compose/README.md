@@ -137,6 +137,15 @@ docker compose -p bistel-team -f deploy/compose/docker-compose.team.yml \
 WF4를 재활성화하고 대상 delivery terminal 및 lag 0을 다시 확인한다. 명령 출력과 증적에는
 credential·webhook secret·payload 원문을 남기지 않는다.
 
+## C-4.6 UNKNOWN·멱등 controlled run
+
+상태 전이를 알 수 없는 delivery의 수동 확정, FAILED 명시 retry, callback trail host bind,
+EMAIL 수신 통수와 MES input/result offset·exact key, 영구 활성 전후 WF4 lag Gate는
+[`docs/troubleshooting/delivery-unknown-runbook.md`](../../docs/troubleshooting/delivery-unknown-runbook.md)를
+정본으로 따른다. `DELIVERY_CALLBACK_TRAIL_DIR`·`DELIVERY_CALLBACK_TRAIL_RUN_ID`는 controlled
+run에서만 함께 설정하고, 일반 Backend에는 설정하지 않는다. verifier가 `PASSED`하기 전에는
+WF2·WF3·WF4 영구 활성을 선언하지 않는다.
+
 ## rollback
 
 ```bash

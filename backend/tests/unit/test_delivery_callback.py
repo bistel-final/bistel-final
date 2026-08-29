@@ -188,6 +188,110 @@ def test_signed_request_reaches_exact_path_and_returns_eight_fields(
     assert reads.body_messages == 1
 
 
+def test_verified_first_duplicate_and_conflict_are_recorded_at_http_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records: list[dict[str, Any]] = []
+
+    class Trail:
+        def append(self, **values: Any) -> bool:
+            records.append(values)
+            return True
+
+    transactions = _Transactions()
+    service = subject.DeliveryCallbackService(
+        secret=SECRET,
+        transactions=transactions,
+        clock=lambda: NOW,
+        trail=Trail(),  # type: ignore[arg-type]
+    )
+    calls = 0
+
+    def settle(_connection: Any, **_kwargs: Any) -> DeliveryCallbackTransition:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+        return DeliveryCallbackTransition(delivery=_row(), duplicate=calls == 2)
+
+    monkeypatch.setattr(subject, "settle_delivery_callback", settle)
+    app.dependency_overrides[subject.get_delivery_callback_service] = lambda: service
+    raw = _raw()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            responses = [
+                client.post(
+                    f"/internal/actions/{ACTION_ID}/delivery",
+                    content=raw,
+                    headers=_headers(raw),
+                )
+                for _ in range(3)
+            ]
+    finally:
+        app.dependency_overrides.pop(subject.get_delivery_callback_service, None)
+
+    assert [response.status_code for response in responses] == [200, 200, 409]
+    assert records == [
+        {
+            "action_id": ACTION_ID,
+            "channel": DeliveryChannel.EMAIL,
+            "status": DeliveryStatus.SENT,
+            "duplicate": False,
+            "http_status": 200,
+        },
+        {
+            "action_id": ACTION_ID,
+            "channel": DeliveryChannel.EMAIL,
+            "status": DeliveryStatus.SENT,
+            "duplicate": True,
+            "http_status": 200,
+        },
+        {
+            "action_id": ACTION_ID,
+            "channel": DeliveryChannel.EMAIL,
+            "status": None,
+            "duplicate": None,
+            "http_status": 409,
+        },
+    ]
+
+
+def test_trail_write_failure_does_not_change_success_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingTrail:
+        def append(self, **_values: Any) -> bool:
+            return False
+
+    service = subject.DeliveryCallbackService(
+        secret=SECRET,
+        transactions=_Transactions(),
+        clock=lambda: NOW,
+        trail=FailingTrail(),  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(
+        subject,
+        "settle_delivery_callback",
+        lambda *_args, **_kwargs: DeliveryCallbackTransition(
+            delivery=_row(), duplicate=False
+        ),
+    )
+    app.dependency_overrides[subject.get_delivery_callback_service] = lambda: service
+    raw = _raw()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                f"/internal/actions/{ACTION_ID}/delivery",
+                content=raw,
+                headers=_headers(raw),
+            )
+    finally:
+        app.dependency_overrides.pop(subject.get_delivery_callback_service, None)
+
+    assert response.status_code == 200
+    assert response.json()["duplicate"] is False
+
+
 @pytest.mark.parametrize(
     ("headers", "expected_reads"),
     [

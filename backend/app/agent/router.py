@@ -11,6 +11,7 @@ from app.agent.delivery_callback import (
     parse_callback_body,
     validate_json_content_type,
 )
+from app.common.exceptions import IdempotencyConflictError
 
 router = APIRouter(tags=["Agent"])
 
@@ -51,7 +52,23 @@ async def write_back_delivery(
     normalized_action_id = normalize_action_id(action_id)
     validate_json_content_type(request.headers.get("content-type"))
     callback = parse_callback_body(raw)
-    return service.settle(
+    try:
+        result = service.settle(
+            action_id=normalized_action_id,
+            callback=callback,
+        )
+    except IdempotencyConflictError:
+        service.record_http_result(
+            action_id=normalized_action_id,
+            channel=callback.channel,
+            result=None,
+            http_status=409,
+        )
+        raise
+    service.record_http_result(
         action_id=normalized_action_id,
-        callback=callback,
+        channel=callback.channel,
+        result=result,
+        http_status=200,
     )
+    return result

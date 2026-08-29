@@ -81,7 +81,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (148.0, 48.0, 196.0, 64.0)
+    assert (p0, p1, total, common) == (149.5, 48.0, 197.5, 64.0)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -156,8 +156,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "열일곱"
-    assert len(listed) == 17
+    assert exception_section["count_word"] == "열여덟"
+    assert len(listed) == 18
     assert listed == actual
 
 

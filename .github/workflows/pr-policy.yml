@@ -609,6 +609,7 @@ jobs:
           tests/unit/test_n8n_runtime_manifest.py
           tests/unit/test_email_delivery.py
           tests/unit/test_delivery_callback.py
+          tests/unit/test_delivery_recovery.py
           tests/unit/test_mes_delivery.py
           tests/unit/test_send_email_smoke.py
           -rs --no-header
@@ -634,6 +635,7 @@ jobs:
           tests/unit/test_agent_approval_store_container.py
           tests/unit/test_email_delivery_container.py
           tests/unit/test_delivery_callback_container.py
+          tests/unit/test_channel_idempotency_matrix.py
           tests/unit/test_mes_delivery_container.py
           tests/unit/test_agent_graph_container.py
           tests/unit/test_agent_rehydration_container.py
