@@ -194,6 +194,7 @@ jobs:
           N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
+          tests/unit/test_api_contract_baseline.py
           tests/unit/test_agent_runtime_migration.py
           tests/unit/test_agent_ask.py
           tests/unit/test_agent_public_api.py

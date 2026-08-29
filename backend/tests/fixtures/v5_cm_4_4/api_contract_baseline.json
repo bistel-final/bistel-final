@@ -1,0 +1,2760 @@
+{
+  "components": {
+    "AgentAskCompatibilityEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "chunk_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "doc_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "document_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "section": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentAskRequest": {
+      "additional_properties": false,
+      "fields": {
+        "question": {
+          "max_length": 1000,
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentAskResponse": {
+      "additional_properties": false,
+      "fields": {
+        "answer": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "evidence": {
+          "nullable": true,
+          "ref": "AgentAskCompatibilityEvidence",
+          "required": true
+        },
+        "evidence_items": {
+          "items": {
+            "ref": "EvidenceItem"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "limit": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "predicted_fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "recommended_action": {
+          "enum": [
+            "MONITORING",
+            "WARNING",
+            "EQP_HOLD"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "ref": "ChatToolCallItem"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        }
+      },
+      "rules": [
+        "fault_code and ground_truth_fault_code are forbidden"
+      ],
+      "type": "object"
+    },
+    "AgentRunAccepted": {
+      "additional_properties": false,
+      "fields": {
+        "agent_run_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "alarm": {
+          "nullable": false,
+          "ref": "AlarmRef",
+          "required": true
+        },
+        "status": {
+          "enum": [
+            "RUNNING"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentRunCreateRequest": {
+      "additional_properties": false,
+      "fields": {
+        "alarm": {
+          "nullable": false,
+          "ref": "AlarmRef",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "AgentRunItem": {
+      "additional_properties": false,
+      "fields": {
+        "action_id": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "agent_run_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "alarm_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "alarm_source": {
+          "enum": [
+            "TRACE",
+            "SUMMARY",
+            "R03"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "approval_id": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "chamber": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "chamber_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "created_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "deliveries": {
+          "items": {
+            "ref": "PublicDeliveryItem"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "fault_color": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "fault_name": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "nullable": true,
+          "required": true,
+          "type": "integer"
+        },
+        "llm_model": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "predicted_fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "recommended_action": {
+          "enum": [
+            "MONITORING",
+            "WARNING",
+            "EQP_HOLD"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "RUNNING",
+            "WAITING_APPROVAL",
+            "COMPLETED",
+            "FAILED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "ref": "AutoToolCallItem"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AlarmEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "ALARM"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AlarmItem": {
+      "additional_properties": false,
+      "fields": {
+        "action_code": {
+          "enum": [
+            "MONITORING",
+            "WARNING",
+            "EQP_HOLD"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "alarm_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "alarm_type": {
+          "enum": [
+            "OOC",
+            "OOS"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "area": {
+          "enum": [
+            "Photo",
+            "Etch"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "chamber": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "chamber_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "cl": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "equipment": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "equipment_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "fault": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "lcl": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "lot": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "lot_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "mes": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "mes_status": {
+          "enum": [
+            "BLOCKED",
+            "WAITING",
+            "SENDING",
+            "SENT",
+            "FAILED",
+            "UNKNOWN",
+            "CANCELED"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "notify": {
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+        },
+        "notify_status": {
+          "enum": [
+            "WAITING",
+            "SENDING",
+            "SENT",
+            "FAILED",
+            "UNKNOWN"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "parameter": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "parameter_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "predicted_fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "recipe": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "recipe_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "recipe_step_no": {
+          "minimum": 1,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "rule_code": {
+          "enum": [
+            "TRACE_OOS",
+            "SUMMARY_OOC",
+            "R03_CONSEC"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "seq_no": {
+          "minimum": 0,
+          "nullable": true,
+          "required": true,
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "TRACE",
+            "SUMMARY",
+            "R03"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "statistic_type": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "step_no": {
+          "minimum": 1,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "ucl": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "value": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "wafer": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "wafer_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "source TRACE requires rule_code TRACE_OOS",
+        "source SUMMARY requires rule_code SUMMARY_OOC",
+        "source R03 requires alarm_type OOS, rule_code R03_CONSEC, and value null",
+        "compatibility aliases derive only from canonical fields"
+      ],
+      "type": "object"
+    },
+    "AlarmRef": {
+      "additional_properties": false,
+      "fields": {
+        "alarm_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "TRACE",
+            "SUMMARY",
+            "R03"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ApprovalDecisionRequest": {
+      "additional_properties": false,
+      "fields": {
+        "decided_by": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "APPROVED",
+            "REJECTED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "decision_comment": {
+          "max_length": 1000,
+          "min_length": 1,
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ApprovalItem": {
+      "additional_properties": false,
+      "fields": {
+        "action_code": {
+          "enum": [
+            "EQP_HOLD"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "action_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "agent_run_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "approval_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "approved_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "approved_by": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "chamber": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "chamber_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "decided_by": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "decision_comment": {
+          "max_length": 1000,
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "equipment": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "equipment_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "lot": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "lot_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "predicted_fault_code": {
+          "enum": [
+            "FOC",
+            "RFM",
+            "MFD",
+            "TMD",
+            "OTH"
+          ],
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "reason": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "APPROVED",
+            "REJECTED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "PENDING requires all decision fields null",
+        "APPROVED or REJECTED requires decided_by and decided_at",
+        "only EQP_HOLD actions have approvals"
+      ],
+      "type": "object"
+    },
+    "AuditLogItem": {
+      "additional_properties": false,
+      "fields": {
+        "actor": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "actor_id": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "actor_type": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "after": {
+          "additional_properties": true,
+          "nullable": true,
+          "required": true,
+          "type": "object"
+        },
+        "at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "audit_id": {
+          "minimum": 1,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "before": {
+          "additional_properties": true,
+          "nullable": true,
+          "required": true,
+          "type": "object"
+        },
+        "detail": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "entity": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "entity_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "entity_type": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "event": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "event_type": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AutoToolCallItem": {
+      "additional_properties": false,
+      "fields": {
+        "n": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "result_summary": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "s": {
+          "enum": [
+            "SUCCESS",
+            "ERROR",
+            "TIMEOUT"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "SUCCESS",
+            "ERROR",
+            "TIMEOUT"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "tool_name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ChamberGraphResponse": {
+      "additional_properties": false,
+      "fields": {
+        "context": {
+          "nullable": false,
+          "ref": "GraphContext",
+          "required": true
+        },
+        "graph_revision": {
+          "nullable": false,
+          "pattern": "^[0-9a-f]{64}$",
+          "required": true,
+          "type": "string"
+        },
+        "node_count": {
+          "minimum": 0,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "nodes": {
+          "items": {
+            "ref": "GraphNode"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "relationship_count": {
+          "minimum": 0,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "relationships": {
+          "items": {
+            "ref": "GraphRelationship"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        }
+      },
+      "rules": [
+        "node_count equals len(nodes)",
+        "relationship_count equals len(relationships)"
+      ],
+      "type": "object"
+    },
+    "ChatToolCallItem": {
+      "additional_properties": false,
+      "fields": {
+        "name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "result": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "result_summary": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "SUCCESS",
+            "ERROR",
+            "TIMEOUT"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "tool_name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DeliveryCallbackRequest": {
+      "additional_properties": false,
+      "fields": {
+        "channel": {
+          "enum": [
+            "EMAIL",
+            "MES_MOCK"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "completed_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "error_code": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "event_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "provider_message_id": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "request_hash": {
+          "max_length": 64,
+          "min_length": 64,
+          "nullable": false,
+          "pattern": "^[0-9a-f]{64}$",
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "SENT",
+            "FAILED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "SENT requires provider_message_id non-null and error_code null",
+        "FAILED requires error_code non-null and permits provider_message_id null"
+      ],
+      "type": "object"
+    },
+    "DeliveryResult": {
+      "additional_properties": false,
+      "fields": {
+        "action_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "channel": {
+          "enum": [
+            "EMAIL",
+            "MES_MOCK"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "completed_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "duplicate": {
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+        },
+        "error_code": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "provider_message_id": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "request_hash": {
+          "max_length": 64,
+          "min_length": 64,
+          "nullable": false,
+          "pattern": "^[0-9a-f]{64}$",
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "SENT",
+            "FAILED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "SENT requires provider_message_id non-null and error_code null",
+        "FAILED requires error_code non-null and permits provider_message_id null"
+      ],
+      "type": "object"
+    },
+    "DocumentEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "chunk_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "document_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "section": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "DOCUMENT"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DocumentHit": {
+      "additional_properties": false,
+      "fields": {
+        "chunk_id": {
+          "nullable": false,
+          "pattern": "^.+:cs2:[0-9]{4}$",
+          "required": true,
+          "type": "string"
+        },
+        "content": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "doc_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "document_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "model_code": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": -1,
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "section": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DocumentSearchRequest": {
+      "additional_properties": false,
+      "fields": {
+        "model_code": {
+          "min_length": 1,
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "query": {
+          "max_length": 1000,
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "top_k": {
+          "default": 4,
+          "maximum": 10,
+          "minimum": 1,
+          "nullable": false,
+          "required": false,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ErrorResponse": {
+      "additional_properties": false,
+      "fields": {
+        "code": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "details": {
+          "additional_properties": true,
+          "nullable": false,
+          "required": true,
+          "type": "object"
+        },
+        "message": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "EvidenceItem": {
+      "discriminator": "type",
+      "type": "discriminated_union",
+      "variants": {
+        "ALARM": "AlarmEvidence",
+        "DOCUMENT": "DocumentEvidence",
+        "GRAPH": "GraphEvidence",
+        "METROLOGY": "MetrologyEvidence",
+        "TRACE": "TraceEvidence"
+      }
+    },
+    "GraphContext": {
+      "additional_properties": false,
+      "fields": {
+        "adjacent_process_step_ids": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "area": {
+          "enum": [
+            "Photo",
+            "Etch"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "chamber_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "equipment_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "model_code": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "parameter_ids": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        },
+        "process_step_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "relation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": false,
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "GraphEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "graph_revision": {
+          "nullable": false,
+          "pattern": "^[0-9a-f]{64}$",
+          "required": true,
+          "type": "string"
+        },
+        "relation_id": {
+          "nullable": false,
+          "pattern": "^REL-[0-9a-f]{20}$",
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "GRAPH"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GraphNode": {
+      "additional_properties": false,
+      "fields": {
+        "business_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "label": {
+          "enum": [
+            "Area",
+            "ProcessStep",
+            "EquipmentModel",
+            "Equipment",
+            "Chamber",
+            "Parameter"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "node_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "properties": {
+          "additional_properties": true,
+          "nullable": false,
+          "required": true,
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "GraphRelationship": {
+      "additional_properties": false,
+      "fields": {
+        "from_node_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "relation_id": {
+          "nullable": false,
+          "pattern": "^REL-[0-9a-f]{20}$",
+          "required": true,
+          "type": "string"
+        },
+        "to_node_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "HealthResponse": {
+      "additional_properties": false,
+      "fields": {
+        "status": {
+          "enum": [
+            "UP"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "MetrologyEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "METROLOGY"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "metrology.alarm_result is forbidden"
+      ],
+      "type": "object"
+    },
+    "ParameterItem": {
+      "additional_properties": false,
+      "fields": {
+        "LCL": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "LSL": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "TARGET": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "UCL": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "USL": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "area": {
+          "enum": [
+            "Photo",
+            "Etch"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "ctrl_lower": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "ctrl_upper": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "parameter_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "parameter_name": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "spec_lower": {
+          "nullable": true,
+          "required": true,
+          "type": "number"
+        },
+        "spec_upper": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "target_value": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        },
+        "unit": {
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "upper_only": {
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "PublicDeliveryItem": {
+      "additional_properties": false,
+      "fields": {
+        "channel": {
+          "enum": [
+            "EMAIL",
+            "MES"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "BLOCKED",
+            "WAITING",
+            "SENDING",
+            "SENT",
+            "FAILED",
+            "UNKNOWN",
+            "CANCELED"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ReadinessCheck": {
+      "additional_properties": false,
+      "fields": {
+        "latency_ms": {
+          "minimum": 0,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "reason_code": {
+          "min_length": 1,
+          "nullable": true,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ReadinessChecks": {
+      "additional_properties": false,
+      "fields": {
+        "kafka": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        },
+        "n8n": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        },
+        "neo4j": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        },
+        "postgresql_runtime": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        },
+        "rag": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        },
+        "reference_migration": {
+          "nullable": false,
+          "ref": "ReadinessCheck",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "ReadinessResponse": {
+      "additional_properties": false,
+      "fields": {
+        "checks": {
+          "nullable": false,
+          "ref": "ReadinessChecks",
+          "required": true
+        },
+        "dataset_epoch": {
+          "enum": [
+            "fdc_final_20260818"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "READY",
+            "NOT_READY"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "rules": [
+        "all checks PASS yields status READY and HTTP 200",
+        "any check FAIL yields status NOT_READY and HTTP 503"
+      ],
+      "type": "object"
+    },
+    "TraceEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "TRACE"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TracePoint": {
+      "additional_properties": false,
+      "fields": {
+        "measured_at": {
+          "format": "date-time",
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "recipe_step_no": {
+          "minimum": 1,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "seq_no": {
+          "minimum": 0,
+          "nullable": false,
+          "required": true,
+          "type": "integer"
+        },
+        "value": {
+          "nullable": false,
+          "required": true,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "format_version": 1,
+  "operations": [
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "equipment",
+            "chamber",
+            "recipe",
+            "lot",
+            "wafer",
+            "parameter",
+            "step_no"
+          ],
+          "canonical": [
+            "equipment_id",
+            "chamber_id",
+            "recipe_id",
+            "lot_id",
+            "wafer_id",
+            "parameter_id",
+            "recipe_step_no"
+          ],
+          "component": "AlarmItem",
+          "rule": "copy each canonical identifier one-to-one"
+        },
+        {
+          "aliases": [
+            "fault"
+          ],
+          "canonical": [
+            "predicted_fault_code"
+          ],
+          "component": "AlarmItem",
+          "rule": "copy prediction when present; never read synthetic ground truth"
+        },
+        {
+          "aliases": [
+            "notify"
+          ],
+          "canonical": [
+            "notify_status"
+          ],
+          "component": "AlarmItem",
+          "rule": "true only when status is SENT"
+        },
+        {
+          "aliases": [
+            "mes"
+          ],
+          "canonical": [
+            "mes_status"
+          ],
+          "component": "AlarmItem",
+          "rule": "empty string for null; otherwise copy status"
+        }
+      ],
+      "method": "GET",
+      "owner": "A",
+      "path": "/alarms",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "area": {
+            "enum": [
+              "Photo",
+              "Etch",
+              "ALL"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "chamber": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_from": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "equipment": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "include_derived": {
+            "default": false,
+            "nullable": false,
+            "required": false,
+            "type": "boolean"
+          },
+          "parameter": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "TRACE",
+              "SUMMARY",
+              "R03"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "item_ref": "AlarmItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AlarmItem",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "occurred_at DESC",
+        "source ASC",
+        "alarm_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "A",
+      "path": "/trace",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "chamber": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "lot": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "parameter": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "wafer": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "item_ref": "TracePoint",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "TracePoint",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "measured_at ASC",
+        "recipe_step_no ASC",
+        "seq_no ASC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "name",
+            "LSL",
+            "LCL",
+            "TARGET",
+            "UCL",
+            "USL"
+          ],
+          "canonical": [
+            "parameter_name",
+            "spec_lower",
+            "ctrl_lower",
+            "target_value",
+            "ctrl_upper",
+            "spec_upper"
+          ],
+          "component": "ParameterItem",
+          "rule": "copy canonical reference values one-to-one"
+        }
+      ],
+      "method": "GET",
+      "owner": "A",
+      "path": "/parameters",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "item_ref": "ParameterItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ParameterItem",
+          "shape": "array"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "area ASC",
+        "parameter_id ASC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "doc_id"
+          ],
+          "canonical": [
+            "document_id"
+          ],
+          "component": "DocumentHit",
+          "rule": "copy canonical document ID"
+        }
+      ],
+      "method": "POST",
+      "owner": "B",
+      "path": "/documents/search",
+      "request": {
+        "body": {
+          "ref": "DocumentSearchRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "item_ref": "DocumentHit",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "DocumentHit",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "score DESC",
+        "document_id ASC",
+        "chunk_id ASC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "B",
+      "path": "/relations/chambers/{chamber_id}",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {
+          "chamber_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {
+          "label": {
+            "enum": [
+              "Area",
+              "ProcessStep",
+              "EquipmentModel",
+              "Equipment",
+              "Chamber",
+              "Parameter"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "limit": {
+            "default": 500,
+            "maximum": 1000,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "ChamberGraphResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ChamberGraphResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "nodes: label ASC, business_id ASC",
+        "relationships: type ASC, from_node_id ASC, to_node_id ASC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "n",
+            "s"
+          ],
+          "canonical": [
+            "tool_name",
+            "status"
+          ],
+          "component": "AutoToolCallItem",
+          "rule": "copy Auto Analysis tool name and status"
+        },
+        {
+          "aliases": [
+            "chamber"
+          ],
+          "canonical": [
+            "chamber_id"
+          ],
+          "component": "AgentRunItem",
+          "rule": "copy canonical chamber ID"
+        },
+        {
+          "aliases": [
+            "fault_code",
+            "fault_name",
+            "fault_color"
+          ],
+          "canonical": [
+            "predicted_fault_code"
+          ],
+          "component": "AgentRunItem",
+          "rule": "fault_code copies prediction; name/color use registered metadata or null"
+        }
+      ],
+      "method": "GET",
+      "owner": "C",
+      "path": "/agent/runs",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "date_from": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "item_ref": "AgentRunItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AgentRunItem",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "created_at DESC",
+        "agent_run_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "name",
+            "result"
+          ],
+          "canonical": [
+            "tool_name",
+            "result_summary"
+          ],
+          "component": "ChatToolCallItem",
+          "rule": "copy Chat tool name and result summary"
+        },
+        {
+          "aliases": [
+            "evidence",
+            "limit"
+          ],
+          "canonical": [
+            "evidence_items",
+            "limitations"
+          ],
+          "component": "AgentAskResponse",
+          "rule": "first DOCUMENT evidence or null; join limitations into one string"
+        },
+        {
+          "aliases": [
+            "doc_id"
+          ],
+          "canonical": [
+            "document_id"
+          ],
+          "component": "AgentAskCompatibilityEvidence",
+          "rule": "copy canonical document ID"
+        }
+      ],
+      "method": "POST",
+      "owner": "C",
+      "path": "/agent/ask",
+      "request": {
+        "body": {
+          "ref": "AgentAskRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AgentAskResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AgentAskResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "lot",
+            "equipment",
+            "chamber"
+          ],
+          "canonical": [
+            "lot_id",
+            "equipment_id",
+            "chamber_id"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy canonical identifiers one-to-one"
+        },
+        {
+          "aliases": [
+            "fault_code"
+          ],
+          "canonical": [
+            "predicted_fault_code"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy prediction; never read synthetic ground truth"
+        },
+        {
+          "aliases": [
+            "approved_by",
+            "approved_at"
+          ],
+          "canonical": [
+            "decided_by",
+            "decided_at"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy decision fields for both approved and rejected status"
+        }
+      ],
+      "method": "GET",
+      "owner": "C",
+      "path": "/approvals",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "item_ref": "ApprovalItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ApprovalItem",
+          "shape": "array"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "created_at DESC",
+        "approval_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "lot",
+            "equipment",
+            "chamber"
+          ],
+          "canonical": [
+            "lot_id",
+            "equipment_id",
+            "chamber_id"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy canonical identifiers one-to-one"
+        },
+        {
+          "aliases": [
+            "fault_code"
+          ],
+          "canonical": [
+            "predicted_fault_code"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy prediction; never read synthetic ground truth"
+        },
+        {
+          "aliases": [
+            "approved_by",
+            "approved_at"
+          ],
+          "canonical": [
+            "decided_by",
+            "decided_at"
+          ],
+          "component": "ApprovalItem",
+          "rule": "copy decision fields for both approved and rejected status"
+        }
+      ],
+      "method": "POST",
+      "owner": "C",
+      "path": "/approvals/{approval_id}/decision",
+      "request": {
+        "body": {
+          "ref": "ApprovalDecisionRequest"
+        },
+        "header": {},
+        "path": {
+          "approval_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "ApprovalItem",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ApprovalItem",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "409": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    },
+    {
+      "compatibility": [
+        {
+          "aliases": [
+            "at",
+            "actor"
+          ],
+          "canonical": [
+            "occurred_at",
+            "actor_type"
+          ],
+          "component": "AuditLogItem",
+          "rule": "copy canonical values one-to-one"
+        },
+        {
+          "aliases": [
+            "event"
+          ],
+          "canonical": [
+            "event_type"
+          ],
+          "component": "AuditLogItem",
+          "rule": "map documented approval, delivery, and hypothesis events; otherwise retain canonical"
+        },
+        {
+          "aliases": [
+            "entity"
+          ],
+          "canonical": [
+            "entity_type",
+            "entity_id"
+          ],
+          "component": "AuditLogItem",
+          "rule": "join with colon"
+        }
+      ],
+      "method": "GET",
+      "owner": "D",
+      "path": "/audit-logs",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "actor_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_from": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "entity_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "entity_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "event_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "item_ref": "AuditLogItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AuditLogItem",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "occurred_at DESC",
+        "audit_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "C",
+      "path": "/agent/runs",
+      "request": {
+        "body": {
+          "ref": "AgentRunCreateRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AgentRunAccepted",
+        "type": "object"
+      },
+      "responses": {
+        "202": {
+          "schema_ref": "AgentRunAccepted",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "409": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 202
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "C",
+      "path": "/internal/actions/{action_id}/delivery",
+      "request": {
+        "body": {
+          "ref": "DeliveryCallbackRequest"
+        },
+        "header": {
+          "X-Delivery-Signature": {
+            "nullable": false,
+            "pattern": "^sha256=[0-9a-f]{64}$",
+            "required": true,
+            "type": "string"
+          },
+          "X-Delivery-Timestamp": {
+            "minimum": 0,
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+          }
+        },
+        "path": {
+          "action_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "DeliveryResult",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "DeliveryResult",
+          "shape": "object"
+        },
+        "401": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "409": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "Common",
+      "path": "/health",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "HealthResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "HealthResponse",
+          "shape": "object"
+        },
+        "500": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "Common",
+      "path": "/health/ready",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "ReadinessResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ReadinessResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ReadinessResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    }
+  ],
+  "source": {
+    "api_csv": {
+      "path": "docs/deliverables/api/API명세서_v3_작업본.csv",
+      "role": "canonical operation inventory, success response, other statuses, and stable sort"
+    },
+    "api_markdown": {
+      "path": "docs/deliverables/api/API명세서_v3_작업본.md",
+      "role": "canonical DTO, common error, bare-array, alias, and nested semantic rules"
+    }
+  }
+}
