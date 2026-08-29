@@ -33,7 +33,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
@@ -2457,7 +2457,6 @@ _UPDATE_DELIVERY_CALLBACK = text(
     RETURNING {_DELIVERY_COLUMNS}
     """
 )
-
 _UPDATE_EMAIL_DELIVERY_FAILED = text(
     f"""
     UPDATE action_delivery
@@ -2479,6 +2478,9 @@ _UPDATE_EMAIL_DELIVERY_UNCERTAIN = text(
 #: `request_hash char(64)`는 소문자 hex다. 형식 위반은 DB가 CHECK로 막지만 그 전에
 #: 걸러야 caller 입력 오류가 driver 예외로 올라가지 않는다.
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# n8n·Kafka producer와 PostgreSQL host의 벽시계가 완전히 같다는 전제를 두지 않는다.
+_DELIVERY_CLOCK_SKEW_TOLERANCE: Final = timedelta(seconds=5)
 
 #: 생성 시점의 **정확한 (channel, status) 조합**. 설계 §7.1이 둘로 고정한다.
 #:
@@ -2696,6 +2698,10 @@ def settle_delivery_callback(
 
     A matching terminal row is returned unchanged as a duplicate.  The callback
     cannot revive pre-send or canceled rows and cannot replace a terminal result.
+    ``request_hash`` contains ``action_id`` and is compared with the locked row,
+    binding the signed body to the otherwise unsigned path identity.
+    A callback within the cross-host clock-skew tolerance is accepted and clamped
+    to ``started_at`` so the deployed monotonic timestamp CHECK remains valid.
     """
 
     _require_transaction(connection)
@@ -2741,8 +2747,10 @@ def settle_delivery_callback(
         return DeliveryCallbackTransition(delivery=locked, duplicate=True)
     if locked.status is not DeliveryStatus.SENDING:
         raise RepositoryConflict("DELIVERY_NOT_SENDING")
-    if locked.started_at is None or completed_at < locked.started_at:
+    started_at = locked.started_at
+    if started_at is None or completed_at < started_at - _DELIVERY_CLOCK_SKEW_TOLERANCE:
         raise RepositoryContractError("DELIVERY_COMPLETED_AT_INVALID")
+    stored_completed_at = max(completed_at, started_at)
 
     transport = "N8N_WEBHOOK" if resolved_channel is DeliveryChannel.EMAIL else "KAFKA"
     result_json = _json_payload(
@@ -2772,7 +2780,7 @@ def settle_delivery_callback(
                 "channel": resolved_channel.value,
                 "status": resolved_status.value,
                 "provider_message_id": provider_message_id,
-                "completed_at": completed_at,
+                "completed_at": stored_completed_at,
                 "error_code": error_code,
                 "result": result_json,
             },

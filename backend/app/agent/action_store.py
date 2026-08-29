@@ -75,6 +75,8 @@ def _request_hash(
     chamber_id: str,
     trigger_alarm: AlarmRef,
 ) -> str:
+    """Hash the stable delivery identity, including the path ``action_id``."""
+
     payload = {
         "schema": DELIVERY_REQUEST_SCHEMA,
         "action_id": action_id,

@@ -169,6 +169,48 @@ def test_terminal_callback_and_audit_commit_as_one_uow(
     assert audit.after_json == {"channel": channel.value, "transport": transport}
 
 
+@pytest.mark.parametrize(("seconds_before", "accepted"), [(4, True), (6, False)])
+def test_callback_allows_only_the_five_second_cross_host_clock_skew(
+    engine: Any,
+    seconds_before: int,
+    accepted: bool,
+) -> None:
+    started_at = _seed_sending(engine, DeliveryChannel.EMAIL)
+    completed_at = started_at - timedelta(seconds=seconds_before)
+
+    if accepted:
+        with engine.begin() as connection:
+            transition = _callback(
+                connection,
+                channel=DeliveryChannel.EMAIL,
+                status=DeliveryStatus.SENT,
+                completed_at=completed_at,
+            )
+        assert transition.delivery.completed_at == started_at
+        return
+
+    with pytest.raises(repo.RepositoryContractError) as caught:
+        with engine.begin() as connection:
+            _callback(
+                connection,
+                channel=DeliveryChannel.EMAIL,
+                status=DeliveryStatus.SENT,
+                completed_at=completed_at,
+            )
+    assert caught.value.code == "DELIVERY_COMPLETED_AT_INVALID"
+    with engine.connect() as connection:
+        stored = repo.get_action_delivery(
+            connection,
+            action_id=ACTION_ID,
+            channel=DeliveryChannel.EMAIL,
+        )
+        audit_count = connection.execute(
+            text("SELECT count(*) FROM audit_log")
+        ).scalar_one()
+    assert stored.status is DeliveryStatus.SENDING
+    assert audit_count == 0
+
+
 @pytest.mark.parametrize("status", [DeliveryStatus.SENT, DeliveryStatus.FAILED])
 def test_same_hash_terminal_replay_returns_stored_row_without_second_audit(
     engine: Any,

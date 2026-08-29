@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import Barrier
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -35,6 +36,7 @@ import rehearsal_postgres as postgres  # noqa: E402
 from app.agent import action_store as action_store_module  # noqa: E402
 from app.agent import approval_store as approval_store_module  # noqa: E402
 from app.agent import checkpoint as ck  # noqa: E402
+from app.agent import email_delivery as email_delivery_module  # noqa: E402
 from app.agent import graph as graph_module  # noqa: E402
 from app.agent import repository as repo  # noqa: E402
 from app.agent.graph import (  # noqa: E402
@@ -817,9 +819,11 @@ def test_recovery_catches_up_an_approval_email_checkpoint(
         )
 
 
+@pytest.mark.parametrize("sender_kind", ["guarded_port", "production_adapter"])
 def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
     runtime: tuple[Any, Any],
     monkeypatch: pytest.MonkeyPatch,
+    sender_kind: str,
 ) -> None:
     endpoint, engine = runtime
     _seed_runtime(engine)
@@ -863,12 +867,36 @@ def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
     )
 
     email_calls: list[tuple[str, str]] = []
+    http_calls = 0
+
+    def unexpected_post(*args: Any, **kwargs: Any) -> Any:
+        nonlocal http_calls
+        http_calls += 1
+        pytest.fail("terminal approval must not send email")
+
+    delivery_ports = email_delivery_module.production_ports(
+        SimpleNamespace(
+            N8N_WEBHOOK_URL="http://localhost:5678/webhook/fdc-notify-email",
+            N8N_WEBHOOK_TIMEOUT_SEC=30,
+            N8N_WEBHOOK_SECRET="container-secret",
+            AGENT_EMAIL_RECIPIENTS="operator@example.invalid",
+        ),
+        engine.begin,
+        http_post=unexpected_post,
+    )
     ports = _HoldAssemblyPorts()
     ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
-    ports.approval_email = approval_store_module.approval_email_port(  # type: ignore[method-assign]
-        engine.begin,
-        lambda action_id, approval_id: email_calls.append((action_id, approval_id)),
-    )
+    if sender_kind == "guarded_port":
+        ports.approval_email = approval_store_module.approval_email_port(  # type: ignore[method-assign]
+            engine.begin,
+            lambda action_id, approval_id: email_calls.append((action_id, approval_id)),
+        )
+    else:
+        ports.approval_email = (  # type: ignore[method-assign]
+            lambda _run_id, action_id, approval_id: delivery_ports.approval_sender(
+                action_id, approval_id
+            )
+        )
     ports.hitl_interrupt = approval_store_module.hitl_decision_port(  # type: ignore[method-assign]
         engine.begin
     )
@@ -888,6 +916,7 @@ def test_recovery_replays_a_terminal_bundle_and_skips_the_late_email(
     assert recovered["run_id"] == run_id
     assert Decision(recovered["approval_decision"]) is Decision.APPROVE
     assert email_calls == []
+    assert http_calls == 0
     assert ports.calls == ["publish_mes", "writeback_result"]
     with engine.connect() as connection:
         assert (

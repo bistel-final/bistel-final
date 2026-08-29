@@ -3,6 +3,8 @@
 DB claim transaction과 webhook I/O를 분리한다. HTTP 응답이 돌아오기 전에 callback이
 ``SENT|FAILED``를 확정할 수 있으므로 두 번째 transaction은 terminal DB 정본을 항상
 우선한다.
+502·timeout 뒤 ``SENDING``으로 남은 행은 이 adapter가 임의 복구하거나 재발송하지 않는다.
+고착 해소는 ``V5-C-4.6``의 ``UNKNOWN`` 운영 절차가 소유한다.
 """
 
 from __future__ import annotations
@@ -306,11 +308,11 @@ class EmailDeliveryService:
                 approval = get_approval_request(connection, approval_id)
                 if approval.action_id != action_id:
                     raise EmailDeliveryContractError("APPROVAL_IDENTITY_MISMATCH")
-                if approval.status is not ApprovalStatus.PENDING:
-                    raise EmailDeliveryContractError("APPROVAL_NOT_PENDING")
                 run_action = get_run_action(connection, approval.agent_run_id)
                 if run_action.action_id != action_id:
                     raise EmailDeliveryContractError("APPROVAL_IDENTITY_MISMATCH")
+                if approval.status is not ApprovalStatus.PENDING:
+                    return EmailDeliveryResult(action_id, EmailDeliveryOutcome.NOOP)
             raw = _raw_payload(
                 kind=kind,
                 action=action,

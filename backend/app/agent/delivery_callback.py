@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from types import ModuleType
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NoReturn
 
 from pydantic import StringConstraints, ValidationError, model_validator
 from sqlalchemy.exc import SQLAlchemyError
@@ -235,7 +235,7 @@ def _delivery_result(
         raise DependencyNotReadyError() from None
 
 
-def _raise_repository_error(error: AgentRepositoryError) -> None:
+def _raise_repository_error(error: AgentRepositoryError) -> NoReturn:
     if isinstance(error, RepositoryNotFound):
         raise NotFoundError() from None
     if isinstance(error, RepositoryConflict):
