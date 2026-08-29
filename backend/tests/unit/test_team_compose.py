@@ -13,6 +13,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.team.yml"
 TEAM_ENV_EXAMPLE = REPOSITORY_ROOT / "deploy" / "compose" / ".env.team.example"
 PREFLIGHT_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "preflight_team_env.py"
+E2E_OVERRIDE_PATH = (
+    REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.e2e-backend.yml"
+)
 
 BACKEND_ENV_KEYS = {
     "POSTGRES_HOST",
@@ -225,6 +228,9 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
     start_script = (
         REPOSITORY_ROOT / "deploy" / "compose" / "kafka" / "start_kafka.sh"
     ).read_text(encoding="utf-8")
+    offset_script = (
+        REPOSITORY_ROOT / "deploy" / "compose" / "kafka" / "manage_wf4_offsets.sh"
+    ).read_text(encoding="utf-8")
 
     assert kafka["ports"] == ["53004:9094"]
     assert environment["KAFKA_LISTENERS"] == (
@@ -256,11 +262,30 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         "kafka_client_password",
     }
     assert kafka["healthcheck"]["interval"] == "30s"
+    assert (
+        "./kafka/manage_wf4_offsets.sh:/opt/team/manage_wf4_offsets.sh:ro"
+        in kafka["volumes"]
+    )
     assert "exec /etc/kafka/docker/run" in start_script
     assert "/run/secrets/kafka_broker_password" in start_script
     assert "--if-not-exists" in script
     assert "fdc.actions fdc.actions.result" in script
     assert "kafka-console-producer" not in script
+    assert "group='kosa-fdc-wf4-writeback'" in offset_script
+    assert "topic='fdc.actions.result'" in offset_script
+    assert "WF4_DISABLED" in offset_script
+    assert "--to-offset" in offset_script
+    assert "--to-earliest" not in offset_script
+    assert "Empty|Dead" in offset_script
+    assert "retention bounds" in offset_script
+
+
+def test_e2e_backend_override_isolated_database_and_port_are_exact() -> None:
+    payload = yaml.safe_load(E2E_OVERRIDE_PATH.read_text(encoding="utf-8"))
+    backend = payload["services"]["backend"]
+
+    assert backend["ports"] == ["53081:8000"]
+    assert backend["environment"] == {"POSTGRES_DB": "kosa_agent_e2e"}
 
 
 def test_external_kafka_probe_uses_a_separate_network_and_negative_auth() -> None:

@@ -9,8 +9,6 @@ DB claim transaction과 webhook I/O를 분리한다. HTTP 응답이 돌아오기
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import re
 import time
@@ -24,6 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.agent.approval_store import EmailTransportError
+from app.agent.delivery_signing import signed_delivery_headers
 from app.agent.repository import (
     ActionDeliveryRow,
     begin_email_delivery,
@@ -243,17 +242,6 @@ def _raw_payload(
     ).encode("utf-8")
 
 
-def _headers(raw: bytes, secret: bytes, timestamp: int) -> dict[str, str]:
-    timestamp_text = str(timestamp)
-    signed = timestamp_text.encode("ascii") + b"." + raw
-    signature = hmac.new(secret, signed, hashlib.sha256).hexdigest()
-    return {
-        "content-type": "application/json",
-        "x-delivery-timestamp": timestamp_text,
-        "x-delivery-signature": f"sha256={signature}",
-    }
-
-
 class EmailDeliveryService:
     def __init__(
         self,
@@ -328,7 +316,7 @@ class EmailDeliveryService:
             return EmailDeliveryResult(action_id, EmailDeliveryOutcome.NOOP)
 
         timestamp = int(self._clock())
-        headers = _headers(raw, self._config.secret, timestamp)
+        headers = signed_delivery_headers(raw, self._config.secret, timestamp)
         status: int | None = None
         failure_code: str | None = None
         terminal_failure = False

@@ -56,12 +56,12 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | Common | 4명 공동, 통합 관리 방대혁 | 64.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
-| C Agent/HITL | 방대혁 | 66.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
+| C Agent/HITL | 방대혁 | 68.0h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **194.0h** | P2 도전 과제 제외 |
+| **합계** | | **196.0h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 146.0h / P1 48.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 열여섯 개다.
+우선순위별 공수는 **P0 148.0h / P1 48.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 열일곱 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -106,6 +106,10 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-C-4.3` **3.5h** — SMTP 발신 adapter를 설정 실물 정합(exact path·timeout 하한)·conditional
   전이 SQL·응답별 기록 matrix·smoke runner·실 PostgreSQL 회귀와 공용 실발송 2통·비활성
   증적까지 한 발신 경계로 닫는다. SENT/FAILED callback 확정은 `V5-C-4.4`가 소유한다.
+- `V5-C-4.5` **4.0h** — MES 전용 claim/settle·WF3 응답 수렴 matrix·payload provenance·
+  consumer ack-then-commit·두 consumer group 증적·offset-reset guard·격리 SASL Kafka 회귀와
+  첫 공용 실왕복(e2e 전용 Backend·복원)까지 한 Kafka 경계로 닫는다. 멱등·UNKNOWN·영구
+  활성은 `V5-C-4.6` 소유다.
 - `V5-CM-4.3` **3.0h** — 공용 3 DB 통합 검증을 기존 full verifier·role matrix·marker
   validator의 orchestration으로 조립하고, CLI 2-mode(반복 verify·일회성 promotion)·
   CM-2.6 closure digest 정본 대조·read-only 실증까지 한 검증 Gate로 닫는다.
@@ -251,7 +255,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-4.2 | P0 | **공용 n8n import·연결**. 완료: workflow 3종을 학원 공용 n8n에 import해 typeVersion·crypto/env 허용·HTTP output 형상과 credential connector를 확인하고, credential·webhook URL·승인된 SMTP sender를 공용 환경에서 주입한다. Kafka Trigger의 top-level `resolveOffset=onSuccess`·`eachBatchAutoResolve=false`·`errorRetryDelay=5000`과 Producer의 `acks=true`·`timeout=10000`이 pin 소스·import/export에서 보존되는지 확인한다. connector-level stub smoke 뒤 모두 비활성화하며 실제 SMTP·Backend callback·Kafka 왕복과 영구 활성은 `V5-C-4.3`~`4.6`이 소유한다. 팀 compose의 n8n 컨테이너는 0건이다 | FR-C-12, FR-I-04, NFR-02 | V5-C-4.1 | 3.5h |
 | V5-C-4.3 | P0 | SMTP delivery. 완료: WARNING 이메일 1회, EQP_HOLD 승인요청 이메일 1회를 서명 webhook으로 발송하고 실패·timeout을 기록한다. 동기 호출을 유지하면 Backend→n8n timeout을 workflow 최악 20초보다 큰 **25초 이상**으로 고정한다. 비동기로 바꾸면 202 acceptance와 DB delivery 조회를 정본으로 계약한다 | FR-C-06, FR-C-12 | V5-C-4.2 | 3.5h |
 | V5-C-4.4 | P0 | write-back callback. 완료: `POST /internal/actions/{action_id}/delivery`가 timestamp·HMAC 서명·300초 replay window를 검증하고 channel별 상태를 갱신한다 | FR-C-06 | V5-C-4.3 | 3.0h |
-| V5-C-4.5 | P0 | Kafka MES Mock. 완료: 승인된 EQP_HOLD만 n8n Kafka Producer로 `fdc.actions`에 발행하고, MES Mock consumer 결과를 `fdc.actions.result` → write-back으로 반영한다. 승인 전 발행 0건·반려 시 발행 0건을 음성 테스트로 고정한다. execution 저장이 꺼진 WF4 malformed discard는 직접 조회할 수 없으므로 의심 record 전후 consumer offset 비교로 처리 여부를 확인하고, callback 실패 시 미해결 offset과 broker retention 안의 offset-reset 복구 절차를 runbook으로 증명한다 | FR-C-06, FR-C-12 | V5-C-4.4 | 2.0h |
+| V5-C-4.5 | P0 | Kafka MES Mock. 완료: 승인된 EQP_HOLD만 n8n Kafka Producer로 `fdc.actions`에 발행하고, MES Mock consumer 결과를 `fdc.actions.result` → write-back으로 반영한다. 승인 전 발행 0건·반려 시 발행 0건을 음성 테스트로 고정한다. execution 저장이 꺼진 WF4 malformed discard는 직접 조회할 수 없으므로 의심 record 전후 consumer offset 비교로 처리 여부를 확인하고, callback 실패 시 미해결 offset과 broker retention 안의 offset-reset 복구 절차를 runbook으로 증명한다 | FR-C-06, FR-C-12 | V5-C-4.4 | 4.0h |
 | V5-C-4.6 | P0 | 채널 멱등성. 완료: EMAIL·MES_MOCK 각각 `(action_id, channel)` 외부 효과 최대 1회, 동일 hash 재수신 동일 결과, 다른 hash 409, 응답 유실 `UNKNOWN`·자동 재발송 0회를 n8n·Kafka 경로에서 검증한다. CM-4.6 자동 lag 감지가 준비되기 전에는 runbook의 consumer group `kosa-fdc-wf4-writeback` lag 확인을 영구 활성 직전·직후 수동 수행하며, 확인할 수 없으면 영구 활성은 BLOCKED다 | FR-C-06, NFR-20 | V5-C-4.4, V5-C-4.5 | 1.5h |
 | V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 예약은 `AuditedToolExecutor`의 공용 예산 guard를 경유하고 `reserve_tool_call()`을 직접 호출하지 않는다. graph node는 공용 nonterminal Tool 수집 경계를 경유하며 예산 차단으로 run을 FAILED 처리하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
 | V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`이며 Chat은 A/B Tool만 사용한다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 2.0h |
@@ -260,7 +264,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**C 합계: 66.0h** (P2 2.0h 제외)
+**C 합계: 68.0h** (P2 2.0h 제외)
 
 ---
 

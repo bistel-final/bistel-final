@@ -1,0 +1,53 @@
+name: bistel-mes-test
+
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    entrypoint: ["/opt/team/start_kafka.sh"]
+    ports:
+      - "39092:9094"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:39092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_OPTS: -Djava.security.auth.login.config=/tmp/kafka_server_jaas.conf
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ../../../../deploy/compose/kafka/manage_topics.sh:/opt/team/manage_topics.sh:ro
+      - ../../../../deploy/compose/kafka/start_kafka.sh:/opt/team/start_kafka.sh:ro
+    secrets:
+      - kafka_broker_user
+      - kafka_broker_password
+      - kafka_client_user
+      - kafka_client_password
+    healthcheck:
+      test: ["CMD", "/opt/team/manage_topics.sh", "health", "kafka:9092"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
+
+volumes:
+  kafka_data:
+
+secrets:
+  kafka_broker_user:
+    file: ./secrets/broker_user.txt
+  kafka_broker_password:
+    file: ./secrets/broker_password.txt
+  kafka_client_user:
+    file: ./secrets/client_user.txt
+  kafka_client_password:
+    file: ./secrets/client_password.txt

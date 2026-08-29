@@ -216,17 +216,22 @@ def _valid_email_payload() -> dict[str, Any]:
 
 
 def _valid_mes_payload() -> dict[str, Any]:
+    action_id = "ACT-0002"
+    request_hash = "b" * 64
+    event_digest = hashlib.sha256(
+        f"{action_id}\0MES_MOCK\0{request_hash}".encode()
+    ).hexdigest()
     return {
         "schema": "mes-hold-request-v1",
-        "event_id": "EVT-0001",
-        "action_id": "ACT-0002",
+        "event_id": f"MES:{event_digest}",
+        "action_id": action_id,
         "action_code": "EQP_HOLD",
         "equipment_id": "EQP01",
         "chamber_id": "CH-02",
         "command": "HOLD",
         "decided_by": "operator-1",
         "decided_at": "2026-08-28T09:00:00+09:00",
-        "request_hash": "b" * 64,
+        "request_hash": request_hash,
         "occurred_at": "2026-08-28T08:55:00+09:00",
     }
 

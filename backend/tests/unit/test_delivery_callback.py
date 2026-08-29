@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import delivery_callback as subject
-from app.agent import email_delivery
+from app.agent.delivery_signing import signed_delivery_headers
 from app.agent.repository import (
     ActionDeliveryRow,
     DeliveryCallbackTransition,
@@ -635,7 +635,7 @@ def test_real_wf2_wf3_wf4_builders_pass_verifier_and_exact_dto() -> None:
 
 def test_c43_signer_uses_the_same_hmac_algorithm() -> None:
     raw = _raw()
-    outbound = email_delivery._headers(raw, SECRET, NOW)
+    outbound = signed_delivery_headers(raw, SECRET, NOW)
     service = subject.DeliveryCallbackService(
         secret=SECRET,
         transactions=_Transactions(),
