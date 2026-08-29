@@ -92,8 +92,19 @@ class _Engine:
         yield object()
 
 
-def test_confirmed_runner_calls_exactly_two_adapters(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("warning_outcome", "approval_outcome"),
+    [
+        (EmailDeliveryOutcome.ACCEPTED, EmailDeliveryOutcome.ACCEPTED),
+        (EmailDeliveryOutcome.SENT, EmailDeliveryOutcome.SENT),
+        (EmailDeliveryOutcome.ACCEPTED, EmailDeliveryOutcome.SENT),
+    ],
+)
+def test_confirmed_runner_accepts_successful_outcomes_and_calls_two_adapters(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    warning_outcome: EmailDeliveryOutcome,
+    approval_outcome: EmailDeliveryOutcome,
 ) -> None:
     _config(monkeypatch)
     engine = _Engine()
@@ -105,7 +116,7 @@ def test_confirmed_runner_calls_exactly_two_adapters(
             calls.append(("WARNING", action_id))
             return EmailDeliveryResult(
                 action_id,
-                EmailDeliveryOutcome.ACCEPTED,
+                warning_outcome,
                 response_status=200,
             )
 
@@ -115,7 +126,7 @@ def test_confirmed_runner_calls_exactly_two_adapters(
             calls.append(("EQP_HOLD", action_id, approval_id))
             return EmailDeliveryResult(
                 action_id,
-                EmailDeliveryOutcome.ACCEPTED,
+                approval_outcome,
                 response_status=200,
             )
 
@@ -132,3 +143,7 @@ def test_confirmed_runner_calls_exactly_two_adapters(
     output = capsys.readouterr().err
     assert "one@example.com" not in output
     assert json.loads(output)["completed_calls"] == 2
+    assert json.loads(output)["outcomes"] == [
+        warning_outcome.value,
+        approval_outcome.value,
+    ]

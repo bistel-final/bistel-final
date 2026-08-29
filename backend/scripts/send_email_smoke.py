@@ -34,6 +34,7 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_CONFIRM_REQUIRED = 3
+SUCCESS_OUTCOMES = frozenset({EmailDeliveryOutcome.ACCEPTED, EmailDeliveryOutcome.SENT})
 
 
 def _emit(status: str, reason_code: str, **safe: Any) -> None:
@@ -114,14 +115,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     results = (first, second)
     if any(
-        result.response_status != 200
-        or result.outcome is not EmailDeliveryOutcome.ACCEPTED
+        result.response_status != 200 or result.outcome not in SUCCESS_OUTCOMES
         for result in results
     ):
         _emit(
             "FAILED",
             "SMOKE_RESPONSE_NOT_ACCEPTED",
             completed_calls=2,
+            outcomes=[result.outcome.value for result in results],
             response_codes=[result.response_status for result in results],
         )
         return EXIT_FAILED
@@ -129,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "PASSED",
         "EMAIL_SMOKE_PASSED",
         completed_calls=2,
+        outcomes=[result.outcome.value for result in results],
         recipient_count=1,
         response_codes=[200, 200],
     )

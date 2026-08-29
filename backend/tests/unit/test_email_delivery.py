@@ -277,17 +277,16 @@ def test_approval_summary_contains_decision_identity(
 
 
 @pytest.mark.parametrize(
-    ("approval_status", "run_action_id", "expected_code"),
+    ("approval_action_id", "run_action_id"),
     [
-        (ApprovalStatus.APPROVED, "ACT-C43000000000001", "APPROVAL_NOT_PENDING"),
-        (ApprovalStatus.PENDING, "ACT-C43000000000099", "APPROVAL_IDENTITY_MISMATCH"),
+        ("ACT-C43000000000099", "ACT-C43000000000001"),
+        ("ACT-C43000000000001", "ACT-C43000000000099"),
     ],
 )
 def test_approval_identity_fails_before_claim_and_http(
     monkeypatch: pytest.MonkeyPatch,
-    approval_status: ApprovalStatus,
+    approval_action_id: str,
     run_action_id: str,
-    expected_code: str,
 ) -> None:
     transactions = _Transactions()
     _wire(monkeypatch, transactions=transactions, action=_action(ActionCode.EQP_HOLD))
@@ -295,9 +294,9 @@ def test_approval_identity_fails_before_claim_and_http(
         email,
         "get_approval_request",
         lambda connection, approval_id: SimpleNamespace(
-            action_id="ACT-C43000000000001",
+            action_id=approval_action_id,
             agent_run_id="RUN-C43000000000001",
-            status=approval_status,
+            status=ApprovalStatus.APPROVED,
         ),
     )
     monkeypatch.setattr(
@@ -317,7 +316,43 @@ def test_approval_identity_fails_before_claim_and_http(
     ).service
     with pytest.raises(email.EmailDeliveryContractError) as exc:
         service.send_approval("ACT-C43000000000001", "APR-C43000000000001")
-    assert exc.value.code == expected_code
+    assert exc.value.code == "APPROVAL_IDENTITY_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "approval_status",
+    [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED, ApprovalStatus.EXPIRED],
+)
+def test_terminal_approval_is_noop_before_claim_and_http(
+    monkeypatch: pytest.MonkeyPatch,
+    approval_status: ApprovalStatus,
+) -> None:
+    transactions = _Transactions()
+    _wire(monkeypatch, transactions=transactions, action=_action(ActionCode.EQP_HOLD))
+    monkeypatch.setattr(
+        email,
+        "get_approval_request",
+        lambda connection, approval_id: SimpleNamespace(
+            action_id="ACT-C43000000000001",
+            agent_run_id="RUN-C43000000000001",
+            status=approval_status,
+        ),
+    )
+    monkeypatch.setattr(
+        email,
+        "begin_email_delivery",
+        lambda *args, **kwargs: pytest.fail("terminal approval must not claim"),
+    )
+    service = email.production_ports(
+        _settings(),
+        transactions,
+        http_post=lambda *args, **kwargs: pytest.fail("must not call HTTP"),
+    ).service
+
+    result = service.send_approval("ACT-C43000000000001", "APR-C43000000000001")
+
+    assert result.outcome is email.EmailDeliveryOutcome.NOOP
+    assert transactions.calls == 1
 
 
 @pytest.mark.parametrize(

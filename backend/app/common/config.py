@@ -135,6 +135,8 @@ if HITL_REQUIRED_SEVERITY != "HIGH":
 # ---------------------------------------------------------------------
 TOOL_DB_TIMEOUT_SEC = get_int_env("TOOL_DB_TIMEOUT_SEC", "5", minimum=1)
 TOOL_EMBEDDING_TIMEOUT_SEC = get_int_env("TOOL_EMBEDDING_TIMEOUT_SEC", "15", minimum=1)
+# n8n delivery webhook은 SMTP callback 왕복을 포함하므로 25초 미만을 허용하지 않는다.
+# 현재 소비자는 C-4.3 EMAIL adapter뿐이며 C-4.5 MES adapter도 같은 경계를 재사용한다.
 N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "30", minimum=25)
 
 # ---------------------------------------------------------------------
