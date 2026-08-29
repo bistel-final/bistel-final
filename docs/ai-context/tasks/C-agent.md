@@ -6,7 +6,8 @@
 > 담당: 방대혁 · 모듈 `backend/app/agent/` · `frontend/src/features/agent/` · `deploy/n8n/`
 
 LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMTP, Kafka MES Mock,
-`send_action`과 화면 3 조립을 책임진다.
+`send_action`과 화면 3 조립을 책임진다. 화면 3의 감사는 선택 run·action·approval 문맥이며,
+D의 독립 화면 7 전역 감사 조회를 대체하거나 중복 구현하지 않는다.
 
 ---
 

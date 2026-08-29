@@ -8,8 +8,8 @@
 > 갱신되기 전에는 구 PDF를 제출·구현 근거로 사용하거나
 > 아래 생성 명령을 실행하지 않는다. 이하 내용은 이전 epoch 재현 이력이다.
 
-현재 canonical 사용자 화면은 Dashboard·Alarm History·Agent·Documents·Ontology 5개다. 아래
-7·8화면 캡처 설명은 구 PDF의 재현 기록일 뿐 새 제출 범위를 뜻하지 않는다.
+현재 팀 canonical 사용자 화면은 Dashboard·Alarm History·Agent·Documents·Ontology·자연어 분석·
+감사로그 7개다. 자연어 분석의 이력·평가는 보조 탭이며 별도 8번째 화면이 아니다.
 
 `요구사항정의서.pdf`는 원본 `docs/specifications/요구사항정의서_v1_9_최종.md`을 그대로 렌더링하되,
 공정·도메인 다이어그램 2종, 실제 화면 캡처 7종, 골든 시나리오 다이어그램 1종을 끼워 넣는다.
@@ -42,7 +42,7 @@ Knowledge(`/knowledge`)는 화면 재설계가 팀 회의로 확정되기 전이
 ```bash
 cd frontend && npm run build && npx vite preview --port 4173 --strictPort &
 # Chrome headless 로 각 라우트를 2배율 전체 페이지 캡처 → 배경색 기준으로 하단 여백 정리
-# 현재 5화면용 캡처 Task가 확정되면 저장소 내 재현 가능한 스크립트와 경로를 이 문서에 기록
+# 현재 7화면용 캡처 Task가 확정되면 저장소 내 재현 가능한 스크립트와 경로를 이 문서에 기록
 ```
 
 ## 계약을 바꿨을 때

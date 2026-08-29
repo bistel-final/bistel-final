@@ -28,12 +28,14 @@ __all__ = [
     "NormalizedContract",
     "load_optional_contract",
     "load_required_contract",
+    "load_team_release_contract",
     "normalize_openapi_contract",
 ]
 
 _FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "v5_cm_4_4"
 _REQUIRED_FIXTURE = _FIXTURE_ROOT / "api_contract_baseline.json"
 _OPTIONAL_FIXTURE = _FIXTURE_ROOT / "api_contract_optional.json"
+_TEAM_RELEASE_FIXTURE = _FIXTURE_ROOT / "api_contract_team_release.json"
 
 _HTTP_METHODS = {"DELETE", "GET", "PATCH", "POST", "PUT"}
 _OWNERS = {"A", "B", "C", "D", "Common"}
@@ -120,6 +122,20 @@ _BARE_ARRAYS = {
     ("GET", "/approvals"),
     ("GET", "/audit-logs"),
 }
+_TEAM_RELEASE_OPERATION_CONTRACT: dict[OperationKey, tuple[str, int, set[int]]] = {
+    ("POST", "/analytics/query"): ("D", 200, {200, 422, 503}),
+    ("POST", "/analytics/validate"): ("D", 200, {200, 422}),
+    ("GET", "/analytics/history"): ("D", 200, {200, 422}),
+    ("GET", "/analytics/evaluations"): ("D", 200, {200, 422}),
+    ("GET", "/audit-logs/paged"): ("D", 200, {200, 422, 503}),
+}
+_TEAM_RELEASE_SUCCESS_REFS: dict[OperationKey, str] = {
+    ("POST", "/analytics/query"): "AnalysisQueryResponse",
+    ("POST", "/analytics/validate"): "SqlValidateResponse",
+    ("GET", "/analytics/history"): "NlQueryHistoryResponse",
+    ("GET", "/analytics/evaluations"): "EvaluationListResponse",
+    ("GET", "/audit-logs/paged"): "AuditLogPageResponse",
+}
 
 
 class ContractValidationError(ValueError):
@@ -143,6 +159,19 @@ def load_optional_contract(path: Path | None = None) -> ContractFixture:
     return optional
 
 
+def load_team_release_contract(path: Path | None = None) -> ContractFixture:
+    """Load the five-operation team release contract independently of routers."""
+
+    team_release = _load_contract(path or _TEAM_RELEASE_FIXTURE)
+    required = load_required_contract()
+    optional = load_optional_contract()
+    _validate_common_components(required, team_release)
+    _validate_common_components(optional, team_release)
+    _validate_common_operations(optional, team_release)
+    _validate_team_release_semantics(team_release)
+    return team_release
+
+
 def _validate_common_components(
     required: ContractFixture,
     optional: ContractFixture,
@@ -156,9 +185,25 @@ def _validate_common_components(
         if required_components[name] != optional_components[name]
     )
     if mismatched:
-        raise ContractValidationError(
-            f"required/optional 공통 component 불일치: {mismatched}"
-        )
+        raise ContractValidationError(f"공통 component 불일치: {mismatched}")
+
+
+def _validate_common_operations(
+    reference: ContractFixture,
+    candidate: ContractFixture,
+) -> None:
+    reference_operations = {
+        (item["method"], item["path"]): item for item in reference["operations"]
+    }
+    candidate_operations = {
+        (item["method"], item["path"]): item for item in candidate["operations"]
+    }
+    common = set(reference_operations) & set(candidate_operations)
+    mismatched = sorted(
+        key for key in common if reference_operations[key] != candidate_operations[key]
+    )
+    if mismatched:
+        raise ContractValidationError(f"공통 operation 불일치: {mismatched}")
 
 
 def _load_contract(path: Path) -> ContractFixture:
@@ -634,6 +679,7 @@ def _validate_required_semantics(fixture: ContractFixture) -> None:
         raise ContractValidationError(
             "AgentAsk evidence 5종 discriminator 계약이 다릅니다"
         )
+
     delivery = components["DeliveryCallbackRequest"]["fields"]
     if delivery["request_hash"].get("pattern") != "^[0-9a-f]{64}$":
         raise ContractValidationError(
@@ -703,6 +749,76 @@ def _validate_required_semantics(fixture: ContractFixture) -> None:
         "EQP_HOLD",
     ]:
         raise ContractValidationError("승인 action_code는 ActionCode 3값이어야 합니다")
+
+
+def _validate_team_release_semantics(fixture: ContractFixture) -> None:
+    operations = {
+        (item["method"], item["path"]): item for item in fixture["operations"]
+    }
+    expected = set(_TEAM_RELEASE_OPERATION_CONTRACT)
+    if set(operations) != expected:
+        missing = sorted(expected - set(operations))
+        extra = sorted(set(operations) - expected)
+        raise ContractValidationError(
+            f"팀 release operation 집합 불일치: missing={missing}, extra={extra}"
+        )
+
+    for key, (
+        owner,
+        success_status,
+        statuses,
+    ) in _TEAM_RELEASE_OPERATION_CONTRACT.items():
+        operation = operations[key]
+        if operation["owner"] != owner or operation["success_status"] != success_status:
+            raise ContractValidationError(f"팀 release owner/status 불일치: {key}")
+        if operation["response_shape"]["type"] != "object":
+            raise ContractValidationError(f"팀 release response shape 불일치: {key}")
+        expected_ref = _TEAM_RELEASE_SUCCESS_REFS[key]
+        if operation["response_shape"]["schema_ref"] != expected_ref:
+            raise ContractValidationError(f"팀 release success schema 불일치: {key}")
+        actual_statuses = {int(status) for status in operation["responses"]}
+        if actual_statuses != statuses:
+            raise ContractValidationError(f"팀 release response status 불일치: {key}")
+        for status, response in operation["responses"].items():
+            if int(status) == success_status:
+                continue
+            if response != {"shape": "object", "schema_ref": "ErrorResponse"}:
+                raise ContractValidationError(
+                    f"팀 release 오류 schema 불일치: {key} {status}"
+                )
+
+    evaluation = operations[("GET", "/analytics/evaluations")]
+    if evaluation["request"] != {
+        "body": None,
+        "header": {},
+        "path": {},
+        "query": {
+            "latest": {
+                "default": True,
+                "nullable": False,
+                "required": False,
+                "type": "boolean",
+            },
+            "page": {
+                "default": 1,
+                "minimum": 1,
+                "nullable": False,
+                "required": False,
+                "type": "integer",
+            },
+            "size": {
+                "default": 20,
+                "maximum": 100,
+                "minimum": 1,
+                "nullable": False,
+                "required": False,
+                "type": "integer",
+            },
+        },
+    }:
+        raise ContractValidationError("팀 release evaluation request 불일치")
+    if evaluation["sort"] != ["executed_at DESC", "run_id DESC"]:
+        raise ContractValidationError("팀 release evaluation sort 불일치")
 
 
 def normalize_openapi_contract(openapi: Mapping[str, Any]) -> NormalizedContract:

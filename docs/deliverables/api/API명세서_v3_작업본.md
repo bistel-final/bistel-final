@@ -10,8 +10,8 @@
 |---|---|
 | 버전 | v3 작업본 |
 | 작성일 | 2026.08.19 |
-| 기준 | 멘토님 제공 최종 `project.zip`의 실제 React 5화면, `검토질문_답변.html`, 최종 CSV·Generator |
-| 목적 | 5개 화면의 호환 필수 API 9개, Ontology 보안 필수 1개, Agent 실행 필수 1개와 선택 확장 경계를 고정 |
+| 기준 | 멘토님 제공 최종 `project.zip`의 실제 React 5화면과 팀 합의 7화면, `검토질문_답변.html`, 최종 CSV·Generator |
+| 목적 | 멘토 기준 public 필수 11개와 팀 release 필수 확장 5개의 독립 계약·수용 경계를 고정 |
 | OpenAPI 상태 | 구현·Pydantic 동기화 전 작업 계약 |
 
 ### 1.1 계약 우선순위
@@ -30,8 +30,9 @@ stale이다. 실제 `frontend/src/lib/api.js`가 노출하는 9개 wrapper를 �
 연결한다. Ontology는
 API 없이 Neo4j Browser iframe과 기본 계정을 직접 노출하므로 이를 대체하는 read-only API 1개를
 보안 필수로 추가한다. Alarm 화면의 source-aware `POST /agent/runs`는 프로젝트 실행 필수로
-추가한다. 따라서 public 필수는 11개다. Text2SQL, 상세 조회, 페이지 조회, 재시도, 평가 API는
-선택 확장으로 둔다.
+추가한다. 따라서 멘토 기준 public 필수는 11개다. 팀 최종 제품은 여기에 자연어 분석·이력·평가와
+전역 감사 화면을 더한 7개 주 navigation으로 확정했으며, 이를 위한 5개 API는 5.3의
+**팀 release 필수 확장**으로 별도 승격한다. 나머지 상세 조회·페이지 조회·재시도 API는 선택 확장이다.
 확장 기능이 필수 endpoint의 path·요청·응답 의미를 바꾸면 안 된다.
 
 ---
@@ -76,7 +77,7 @@ check를 운영자가 확인할 수 있도록 5.1의 `ReadinessResponse(status=N
 | 500 | 예상하지 못한 서버 오류. 응답·로그에 secret과 원문 prompt를 노출하지 않음 |
 | 503 | PostgreSQL·Neo4j·RAG·LLM·n8n·Kafka 의존성 오류 |
 
-선택 확장 Text2SQL을 구현할 경우 정책 거부는 요청 형식 오류가 아니다.
+팀 release Text2SQL의 정책 거부는 요청 형식 오류가 아니다.
 `POST /analytics/query`가 HTTP 200과 `is_rejected=true`를 반환하고 SQL을 실행하지 않는다.
 
 ### 2.3 공통 식별자
@@ -973,7 +974,8 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 
 ### 5.2 선택 확장 API
 
-선택 확장은 public 필수 11개 완료 후 구현한다. 성공 응답·기타 상태는 CSV와 같은 계약이다.
+이 표는 멘토 기준 public 필수 11개와 구분한 **원본 범위 분류**다. 팀은 이 중 D의 5개를
+5.3에서 release 필수로 승격한다. 성공 응답·기타 상태는 CSV와 같은 계약이다.
 
 | 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |
 |---|---|---|---|---|---|
@@ -998,7 +1000,21 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
 | D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
 
-### 5.3 확장 API 불변 조건
+### 5.3 팀 release 필수 확장 API
+
+다음 5개는 멘토 기준 분류상 확장이지만 팀의 7개 주 navigation과 최종 시연에서는 필수다.
+구현 유무와 분리된 `api_contract_team_release.json`을 기준으로 수용하며, 이 표의 정확한 집합을
+줄이거나 다른 선택 확장으로 대체하지 않는다.
+
+| 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |
+|---|---|---|---|---|---|
+| D | POST | `/analytics/query` | 자연어 Text2SQL | `AnalysisQueryResponse` | 422, 503 |
+| D | POST | `/analytics/validate` | SQL 실행 없는 검증 | `SqlValidateResponse` | 422 |
+| D | GET | `/analytics/history` | 질의 이력·재실행 원본 | `NlQueryHistoryResponse` | 422 |
+| D | GET | `/analytics/evaluations` | immutable 평가 artifact 이력 | `EvaluationListResponse` | 422 |
+| D | GET | `/audit-logs/paged` | 전역 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
+
+### 5.4 확장 API 불변 조건
 
 - `/paged`는 `PageEnvelope`만 반환한다.
 - delivery 재시도의 public channel `MES`는 내부 `MES_MOCK`으로 변환한다.
@@ -1006,14 +1022,15 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
   response channel도 `EMAIL|MES`로 projection한다.
 - `/internal`은 public frontend가 호출하지 않으며 별도 인증·secret과 allowlist를 사용한다.
 
-### 5.4 선택 Text2SQL 계약
+### 5.5 팀 release Text2SQL 계약
 
 `POST /analytics/query`는 `{ "question": "..." }`를 받고 `generated_sql`, `columns`, `rows`,
 `row_count`, `is_valid`, `is_rejected`, `reject_reason`, `visualization`, `latency_ms`,
 `nl_query_log_id`를 반환한다. question은 1..1000자이며 SQL은 allowlist 안의 단일 read-only
 SELECT만 허용한다. 정책 거부는 SQL을 실행하지 않고 HTTP 200과 `is_rejected=true`를 반환한다.
-합성 `ground_truth_fault_code`는 일반 Text2SQL allowlist에서 제외한다. 이 기능의 미구현은
-최종 5화면 E2E를 막지 않는다.
+합성 `ground_truth_fault_code`는 일반 Text2SQL allowlist에서 제외한다. 자연어 분석 화면 안의
+이력·평가는 보조 탭이며 별도 8번째 navigation으로 세지 않는다. 이 5개 중 하나라도 미구현이면
+팀의 최종 7화면 release gate를 통과하지 못한다.
 
 ---
 

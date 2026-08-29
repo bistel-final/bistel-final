@@ -6,7 +6,7 @@
 > 기준 역할분담: v10.1 작업본
 > 기준 API: v3 작업본
 > WBS: v5 작업본
-> 마지막 동기화: 2026-08-20
+> 마지막 동기화: 2026-08-29
 
 > [!CAUTION]
 > **FINAL-DOC.** 최종 데이터 기준 문서의 교차검토를 완료했다. `kosa_0813`, 요구사항·설계 v2.0 이하/
@@ -76,22 +76,26 @@ usage_scope=EVALUATION_ONLY
 
 ## 4. 화면·API 경계
 
-최종 패키지 5개 화면을 canonical 사용자 영역으로 둔다.
+멘토 최종 패키지의 core 5개 화면은 사실 기준으로 보존하고, 팀 release는 정확히 7개 주
+navigation을 canonical 사용자 영역으로 둔다.
 
 1. 알람 대시보드
 2. 알람·Trace
 3. Agent 분석(승인·실행·감사 탭)
 4. 문서 검색
 5. Ontology
+6. 자연어 분석(질의 이력·평가 보조 탭)
+7. 감사로그(전역 검색·필터·집계)
 
 필수 public 업무 API는 **11개**다. API 명세 v3의 source 호환 9개(`POST /agent/ask` 포함),
 보안 필수 `GET /relations/chambers/{chamber_id}` 1개, 실행 `POST /agent/runs` 1개로 구성한다.
 Ontology 응답은 선택 chamber의 subgraph와 화면·Agent가 함께 쓰는 context를 담는다.
 `POST /internal/actions/{action_id}/delivery`는 n8n·Kafka 결과 write-back용 필수 internal
 callback이며 Frontend 업무 API가 아니다. `/health`·`/health/ready`도 업무 API·화면 수에서
-제외한 내부 운영·진단 scope다. Text2SQL·Analytics와 기존 상세·페이지네이션·재시도·평가 API는
-필수 계약을 깨지 않는 선택 확장으로만 유지한다. 기존 8개 route family는 새 요구사항에서 명시한
-adapter 또는 확장 경로가 아니면 구현 근거가 아니다.
+제외한 내부 운영·진단 scope다. 팀 release는 `POST /analytics/query`,
+`POST /analytics/validate`, `GET /analytics/history`, `GET /analytics/evaluations`,
+`GET /audit-logs/paged` 5개를 추가 필수 계약으로 고정한다. 자연어 이력·평가는 `/analytics`
+보조 탭이고, Agent 감사는 문맥 조회·독립 감사 화면은 전역 조회로 목적을 분리한다.
 
 ## 5. 데이터·인프라 전환 상태
 

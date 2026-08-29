@@ -1,16 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { PRIMARY_MENUS } from './navigation.js'
 
 // 라이트 테마 개편 공통 셸 — 네이비 사이드바 232px sticky, 네비 7개, 상단 헤더 바 없음.
 // 트레이스 뷰어 · 조치 목록은 네비와 라우트 모두에서 제외한다 (팀 합의).
-const MENUS = [
-  { to: '/dashboard', label: '알람 대시보드' },
-  { to: '/alarms', label: '알람 히스토리' },
-  { to: '/agent-runs', label: 'Agent 분석 · 승인' },
-  { to: '/documents', label: '문서 검색' },
-  { to: '/ontology', label: '온톨로지' },
-  { to: '/analytics', label: '자연어 분석' },
-  { to: '/audit-logs', label: '감사로그' },
-]
 
 function Layout() {
   return (
@@ -26,7 +18,7 @@ function Layout() {
           </div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
-          {MENUS.map((m, i) => (
+          {PRIMARY_MENUS.map((m, i) => (
             <NavLink
               key={m.to}
               to={m.to}
