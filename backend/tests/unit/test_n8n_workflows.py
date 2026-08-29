@@ -18,6 +18,7 @@ import subprocess
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 
@@ -29,6 +30,7 @@ EXPECTED_FILES = {
     "WF3-mes-hold.json",
     "WF4-result-writeback.json",
 }
+EXPECTED_ROOT_ENTRIES = EXPECTED_FILES | {"runtime-manifest.json", "schemas"}
 EXPECTED_TYPES = {
     "n8n-nodes-base.webhook": 2,
     "n8n-nodes-base.code": 2,
@@ -44,6 +46,10 @@ EXPECTED_SETTINGS = {
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none",
     "saveManualExecutions": False,
+}
+EXPECTED_WEBHOOK_IDS = {
+    "Email": "9c8970ad-0b74-4f67-8b63-21d5ee63ec02",
+    "MES": "3563b644-54f4-4df1-94ca-c8ae1dc5ca03",
 }
 HMAC_COMPARE = (
     "authOk = supplied.length === expected.length && "
@@ -86,7 +92,7 @@ const lookup = (name) => {
 def _load_workflows() -> dict[str, dict[str, Any]]:
     return {
         path.name: json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(WORKFLOW_ROOT.glob("*.json"))
+        for path in sorted(WORKFLOW_ROOT.glob("WF*.json"))
     }
 
 
@@ -326,6 +332,7 @@ def _contract_errors(workflows: dict[str, dict[str, Any]]) -> list[str]:
             parameters.get("httpMethod") != "POST"
             or parameters.get("responseMode") != "responseNode"
             or parameters.get("options", {}).get("rawBody") is not True
+            or webhook.get("webhookId") != EXPECTED_WEBHOOK_IDS[prefix]
         ):
             errors.append(f"{prefix}:webhook")
         verify_name = f"Verify {prefix} Auth"
@@ -482,6 +489,7 @@ def _contract_errors(workflows: dict[str, dict[str, Any]]) -> list[str]:
 
 def test_r01_exact_workflow_allowlist_and_no_wf1() -> None:
     workflows = _load_workflows()
+    assert {path.name for path in WORKFLOW_ROOT.iterdir()} == EXPECTED_ROOT_ENTRIES
     assert set(workflows) == EXPECTED_FILES
     assert all(not name.startswith("WF1") for name in workflows)
     assert {workflow["name"] for workflow in workflows.values()} == {
@@ -508,17 +516,24 @@ def test_r02_every_node_is_unique_and_reachable() -> None:
 
 def test_r03_webhooks_require_raw_body_and_response_nodes() -> None:
     workflows = _load_workflows()
-    for filename, node_name, path in (
-        ("WF2-notify-email.json", "Email Webhook", "fdc-notify-email"),
-        ("WF3-mes-hold.json", "MES Webhook", "fdc-mes-hold"),
+    webhook_ids: list[str] = []
+    for filename, node_name, prefix, path in (
+        ("WF2-notify-email.json", "Email Webhook", "Email", "fdc-notify-email"),
+        ("WF3-mes-hold.json", "MES Webhook", "MES", "fdc-mes-hold"),
     ):
-        parameters = _nodes(workflows[filename])[node_name]["parameters"]
+        webhook = _nodes(workflows[filename])[node_name]
+        webhook_id = webhook["webhookId"]
+        webhook_ids.append(webhook_id)
+        assert webhook_id == EXPECTED_WEBHOOK_IDS[prefix]
+        assert UUID(webhook_id).version == 4
+        parameters = webhook["parameters"]
         assert parameters == {
             "httpMethod": "POST",
             "path": path,
             "responseMode": "responseNode",
             "options": {"rawBody": True},
         }
+    assert len(webhook_ids) == len(set(webhook_ids))
 
 
 def test_r04_authentication_precedes_schema_validation() -> None:
@@ -1120,6 +1135,7 @@ MUTATIONS = (
     "mes-response-undifferentiated",
     "real-smtp-sender",
     "recipient-format-check-removed",
+    "webhook-id-missing",
 )
 
 
@@ -1213,6 +1229,8 @@ def _mutate(workflows: dict[str, dict[str, Any]], mutation: str) -> None:
             r"const emailAddress = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;",
             "const emailAddress = /^.*$/;",
         )
+    elif mutation == "webhook-id-missing":
+        email_nodes["Email Webhook"].pop("webhookId")
     else:  # pragma: no cover - the parametrized allowlist owns all mutation names
         raise AssertionError(f"unknown mutation: {mutation}")
 

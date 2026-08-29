@@ -4,6 +4,7 @@
   "nodes": [
     {
       "id": "03000000-0000-4000-8000-000000000001",
+      "webhookId": "3563b644-54f4-4df1-94ca-c8ae1dc5ca03",
       "name": "MES Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,

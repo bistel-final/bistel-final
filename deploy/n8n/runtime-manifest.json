@@ -1,0 +1,27 @@
+{
+  "format_version": 1,
+  "n8n": {
+    "repository": "n8nio/n8n",
+    "version": "2.32.7",
+    "manifest_list_digest": "sha256:882b126a8ddd0646e7d17ec47630e7704615e4647f3363471859fddc3f8946e2",
+    "platform_digests": {
+      "linux/amd64": "sha256:60dac72c8a23a3ad0921fb9e8e4cd8a67981b4377ea2caca7c672bed6c0c6886",
+      "linux/arm64": "sha256:baeb79dee61c89e9e4369a3b124b4cc66d88bf3250bc5e8d6f7dd00a6546077c"
+    }
+  },
+  "runtime": {
+    "attestation": "local-rehearsal",
+    "database_type": "sqlite",
+    "execution_mode": "regular",
+    "main_worker": "single"
+  },
+  "task_runner": {
+    "mode": "internal",
+    "image": null
+  },
+  "workflow_source_sha256": {
+    "WF2-notify-email.json": "sha256:1c1204b0ffaee036af16e7db1862b4d7cc7eeebf05faa4ad7cfa62c3eb9b025e",
+    "WF3-mes-hold.json": "sha256:79b05d294b93a2d19cbc3d2de3d905e3f6cde90d48f5ba01707e42504b7341d6",
+    "WF4-result-writeback.json": "sha256:cce3bb35c82718aeeea55178827c58179cca263c52095c19316a7f2a1967513e"
+  }
+}
