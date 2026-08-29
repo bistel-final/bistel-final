@@ -29,6 +29,11 @@ EMBEDDING_WEIGHTS_SHA256 = (
     "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38"
 )
 EMBEDDING_DIMENSION = 1024
+DATABASE_PROFILE = {
+    "kosa_agent": "runtime",
+    "kosa_agent_e2e": "runtime",
+    "kosa_text2sql": "evaluation",
+}
 SOURCE_SHA256_BY_DOCUMENT = {
     "DOC-SPEC-ET7500": (
         "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f"
@@ -127,6 +132,8 @@ def _marker_root() -> Path:
 
 
 def marker_path(database: str) -> Path:
+    if database not in DATABASE_PROFILE:
+        raise RagReadinessError("RAG marker database가 허용되지 않았습니다")
     return _marker_root() / f"rag_load.{database}.json"
 
 
@@ -141,12 +148,16 @@ def load_marker(database: str) -> dict[str, Any]:
 
 
 def validate_marker(marker: Mapping[str, Any], *, database: str) -> None:
+    try:
+        profile = DATABASE_PROFILE[database]
+    except KeyError as exc:
+        raise RagReadinessError("RAG marker database가 허용되지 않았습니다") from exc
     expected = {
         "artifact_type": "rag_load_marker",
         "format_version": 1,
         "status": "COMMITTED",
         "database": database,
-        "profile": "runtime",
+        "profile": profile,
         "document_ids": list(CANONICAL_DOCUMENT_IDS),
         "source_sha256_by_document": SOURCE_SHA256_BY_DOCUMENT,
         "correction_reason_by_document": CORRECTION_REASON_BY_DOCUMENT,
