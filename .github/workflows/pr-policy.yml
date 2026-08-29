@@ -143,9 +143,9 @@ jobs:
           backend/tests/unit/test_transition_orchestration.py
           -m windows_contract
 
-  # 저장소 test 파일을 하나씩 지명하는 기존 workflow에서 47개 unit test가 조용히
-  # 빠져 있었다. Docker를 쓰지 않는 빠른 묶음이므로 7분대 container job과 병렬로
-  # 실행해 wall clock을 늘리지 않는다. registration 회귀가 이후의 새 누락도 막는다.
+  # 저장소 test 파일을 하나씩 지명하는 기존 workflow에서 빠졌던 unit contract를
+  # 별도 수집한다. Docker를 쓰지 않는 빠른 묶음이므로 container job과 병렬로 실행하고,
+  # registration 회귀가 이후의 새 누락도 막는다.
   backend-unit-contracts:
     name: Backend unit contracts
     runs-on: ubuntu-latest
@@ -174,9 +174,10 @@ jobs:
           fastapi==0.115.6
           httpx==0.28.1
           pgvector==0.3.6
+          PyYAML==6.0.2
 
-      # 기존 미등록 47파일 + 등록 가드 1파일이다. container/network 전용 1개와
-      # scikit-learn 미설치 1개는 가드 내부 allowlist에 소유 이유를 남겼다.
+      # 기존 미등록 묶음·등록 가드·새 contract를 함께 고정한다. container/network 전용과
+      # 선택 의존성 미설치 항목은 가드 내부 allowlist에 소유 이유를 남긴다.
       - name: Prove the previously unregistered unit contracts
         working-directory: backend
         env:
@@ -244,6 +245,7 @@ jobs:
           tests/unit/test_self_correction_hints.py
           tests/unit/test_source_manifest_artifact.py
           tests/unit/test_source_manifest_v4.py
+          tests/unit/test_team_compose.py
           tests/unit/test_value_normalization.py
           tests/unit/test_verify_rag_schema_state.py
           tests/unit/test_verify_migrations.py

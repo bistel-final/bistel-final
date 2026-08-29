@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.common.config import CORS_ORIGINS
 from app.main import app
 
 client = TestClient(app)
@@ -15,6 +16,33 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_cors_preflight_allows_configured_origin() -> None:
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": CORS_ORIGINS[0],
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == CORS_ORIGINS[0]
+    assert response.headers["access-control-allow-credentials"] == "true"
+
+
+def test_cors_preflight_rejects_unconfigured_origin() -> None:
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "https://not-allowed.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
 
 
 def test_health_import_succeeds_without_app_database_credential() -> None:
