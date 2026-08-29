@@ -33,7 +33,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
@@ -111,6 +111,7 @@ __all__ = [
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
+    "DeliveryCallbackTransition",
     "ApprovalDecisionRow",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
@@ -136,6 +137,7 @@ __all__ = [
     "list_action_deliveries",
     "begin_email_delivery",
     "settle_email_delivery",
+    "settle_delivery_callback",
     "INITIAL_DELIVERY_PAIRS",
 ]
 
@@ -2375,6 +2377,12 @@ class ActionDeliveryRow:
     result: dict[str, Any] | None
 
 
+@dataclass(frozen=True, slots=True)
+class DeliveryCallbackTransition:
+    delivery: ActionDeliveryRow
+    duplicate: bool
+
+
 _DELIVERY_COLUMNS = """
     action_id, channel, status, request_hash, attempt_count,
     provider_message_id, started_at, completed_at, last_error, result
@@ -2426,6 +2434,29 @@ _SELECT_EMAIL_DELIVERY_FOR_UPDATE = text(
     """
 )
 
+_SELECT_DELIVERY_FOR_UPDATE = text(
+    f"""
+    SELECT {_DELIVERY_COLUMNS}
+    FROM action_delivery
+    WHERE action_id = :action_id AND channel = :channel
+    FOR UPDATE
+    """
+)
+
+_UPDATE_DELIVERY_CALLBACK = text(
+    f"""
+    UPDATE action_delivery
+    SET status = :status,
+        provider_message_id = :provider_message_id,
+        completed_at = :completed_at,
+        last_error = :error_code,
+        result = CAST(:result AS jsonb)
+    WHERE action_id = :action_id
+      AND channel = :channel
+      AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
 _UPDATE_EMAIL_DELIVERY_FAILED = text(
     f"""
     UPDATE action_delivery
@@ -2447,6 +2478,9 @@ _UPDATE_EMAIL_DELIVERY_UNCERTAIN = text(
 #: `request_hash char(64)`는 소문자 hex다. 형식 위반은 DB가 CHECK로 막지만 그 전에
 #: 걸러야 caller 입력 오류가 driver 예외로 올라가지 않는다.
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# n8n·Kafka producer와 PostgreSQL host의 벽시계가 완전히 같다는 전제를 두지 않는다.
+_DELIVERY_CLOCK_SKEW_TOLERANCE: Final = timedelta(seconds=5)
 
 #: 생성 시점의 **정확한 (channel, status) 조합**. 설계 §7.1이 둘로 고정한다.
 #:
@@ -2646,6 +2680,118 @@ def settle_email_delivery(
         return row
 
     return _delivery_row(_write(connection, _run))
+
+
+def settle_delivery_callback(
+    connection: Connection,
+    *,
+    action_id: str,
+    channel: DeliveryChannel,
+    status: DeliveryStatus,
+    provider_message_id: str | None,
+    request_hash: str,
+    completed_at: datetime,
+    error_code: str | None,
+    event_id: str,
+) -> DeliveryCallbackTransition:
+    """Lock one delivery and apply at most one terminal callback transition.
+
+    A matching terminal row is returned unchanged as a duplicate.  The callback
+    cannot revive pre-send or canceled rows and cannot replace a terminal result.
+    ``request_hash`` contains ``action_id`` and is compared with the locked row,
+    binding the signed body to the otherwise unsigned path identity.
+    A callback within the cross-host clock-skew tolerance is accepted and clamped
+    to ``started_at`` so the deployed monotonic timestamp CHECK remains valid.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    request_hash = _require_text(request_hash, "request_hash")
+    event_id = _require_text(event_id, "event_id")
+    provider_message_id = _optional_text(
+        provider_message_id,
+        "provider_message_id",
+    )
+    error_code = _optional_text(error_code, "error_code")
+    if not _HEX64.fullmatch(request_hash):
+        raise RepositoryContractError("INVALID_REQUEST_HASH")
+    if not isinstance(completed_at, datetime) or completed_at.utcoffset() is None:
+        raise RepositoryContractError("INVALID_COMPLETED_AT")
+    try:
+        resolved_channel = DeliveryChannel(channel)
+        resolved_status = DeliveryStatus(status)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_DELIVERY_CALLBACK_ENUM") from exc
+    if resolved_status is DeliveryStatus.SENT:
+        if provider_message_id is None or error_code is not None:
+            raise RepositoryContractError("INVALID_SENT_CALLBACK")
+    elif resolved_status is DeliveryStatus.FAILED:
+        if error_code is None:
+            raise RepositoryContractError("INVALID_FAILED_CALLBACK")
+    else:
+        raise RepositoryContractError("CALLBACK_STATUS_NOT_TERMINAL")
+
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_DELIVERY_FOR_UPDATE,
+            {"action_id": action_id, "channel": resolved_channel.value},
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.request_hash != request_hash:
+        raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+    if locked.status in {DeliveryStatus.SENT, DeliveryStatus.FAILED}:
+        if locked.status is not resolved_status:
+            raise RepositoryConflict("DELIVERY_TERMINAL_STATUS_CHANGED")
+        return DeliveryCallbackTransition(delivery=locked, duplicate=True)
+    if locked.status is not DeliveryStatus.SENDING:
+        raise RepositoryConflict("DELIVERY_NOT_SENDING")
+    started_at = locked.started_at
+    if started_at is None or completed_at < started_at - _DELIVERY_CLOCK_SKEW_TOLERANCE:
+        raise RepositoryContractError("DELIVERY_COMPLETED_AT_INVALID")
+    stored_completed_at = max(completed_at, started_at)
+
+    transport = "N8N_WEBHOOK" if resolved_channel is DeliveryChannel.EMAIL else "KAFKA"
+    result_json = _json_payload(
+        {"event_id": event_id, "transport": transport},
+        "result",
+    )
+    audit = _run_audit_record(
+        (
+            AuditEvent.ACTION_SENT
+            if resolved_status is DeliveryStatus.SENT
+            else AuditEvent.ACTION_SEND_FAILED
+        ),
+        entity_id=action_id,
+        actor_type=ActorType.SYSTEM,
+        actor_id=None,
+        after={
+            "channel": resolved_channel.value,
+            "transport": transport,
+        },
+    )
+
+    def _run() -> Any:
+        row = connection.execute(
+            _UPDATE_DELIVERY_CALLBACK,
+            {
+                "action_id": action_id,
+                "channel": resolved_channel.value,
+                "status": resolved_status.value,
+                "provider_message_id": provider_message_id,
+                "completed_at": stored_completed_at,
+                "error_code": error_code,
+                "result": result_json,
+            },
+        ).one_or_none()
+        if row is None:
+            raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+        append_audit_log(connection, audit)
+        return row
+
+    updated = _delivery_row(_write(connection, _run))
+    return DeliveryCallbackTransition(delivery=updated, duplicate=False)
 
 
 @dataclass(frozen=True, slots=True)

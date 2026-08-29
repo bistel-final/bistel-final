@@ -76,9 +76,14 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
         for row in fields
         if row[1].startswith("V5-CM-")
     )
+    c_total = sum(
+        float(row[-2].removesuffix("h"))
+        for row in fields
+        if row[1].startswith("V5-C-") and row[2] != "P2"
+    )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (143.5, 46.5, 190.0, 61.5)
+    assert (p0, p1, total, common) == (145.0, 46.5, 191.5, 61.5)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -90,12 +95,22 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
         text,
     )
     common_prose = re.search(r"\*\*Common 합계: (?P<common>[0-9.]+)h\*\*", text)
-    assert summary is not None and priorities is not None and common_prose is not None
+    c_summary = re.search(r"\| C Agent/HITL \|[^\n]*\| (?P<c>[0-9.]+)h \|", text)
+    c_prose = re.search(r"\*\*C 합계: (?P<c>[0-9.]+)h\*\*", text)
+    assert (
+        summary is not None
+        and priorities is not None
+        and common_prose is not None
+        and c_summary is not None
+        and c_prose is not None
+    )
     assert float(summary["common"]) == common
     assert float(summary["total"]) == total
     assert float(priorities["p0"]) == p0
     assert float(priorities["p1"]) == p1
     assert float(common_prose["common"]) == common
+    assert float(c_summary["c"]) == c_total
+    assert float(c_prose["c"]) == c_total
     assert cm_3_5[-2] == "4.0h"
     assert {item.strip() for item in cm_3_5[-3].split(",")} == {
         "V5-CM-3.3",
@@ -137,8 +152,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "열세"
-    assert len(listed) == 13
+    assert exception_section["count_word"] == "열네"
+    assert len(listed) == 14
     assert listed == actual
 
 

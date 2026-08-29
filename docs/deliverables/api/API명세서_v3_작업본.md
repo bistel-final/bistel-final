@@ -69,7 +69,7 @@ check를 운영자가 확인할 수 있도록 5.1의 `ReadinessResponse(status=N
 
 | HTTP | 의미 |
 |---:|---|
-| 401 | `/internal` endpoint의 인증·secret 검증 실패 |
+| 401 | `/internal` endpoint의 인증·secret 검증 실패 (`UNAUTHORIZED`) |
 | 404 | 식별자로 요청한 리소스 없음 |
 | 409 | 이미 결정된 승인, 멱등성 충돌, 상태 전이 충돌 |
 | 422 | 요청 형식·Enum·범위 오류 |

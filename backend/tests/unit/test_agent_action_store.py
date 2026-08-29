@@ -417,6 +417,10 @@ def test_request_hash_is_raw_deterministic_lowercase_hex() -> None:
     second = subject._request_hash(**kwargs)
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
+    assert (
+        subject._request_hash(**(kwargs | {"action_id": "ACT-0000000000000002"}))
+        != first
+    )
     assert subject._request_hash(**(kwargs | {"lot_id": "LOT-2"})) != first
 
 
