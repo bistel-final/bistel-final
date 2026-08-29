@@ -1,6 +1,10 @@
-import apiClient, { USE_MOCK, mockResponse } from './client.js'
+import apiClient, { mockEnabledFor, mockResponse } from './client.js'
+import { assertExactObject, compactParams, requireNonEmptyString } from './contract.js'
+import { CORE_CHAMBER_GRAPH, CORE_DOCUMENT_HIT } from './contractMocks.js'
 import { DOC_DB, DOC_SCORES } from '../../features/knowledge/mock/documents.js'
 import { RELATIONS } from '../../features/knowledge/mock/relations.js'
+
+const USE_MOCK = mockEnabledFor('KNOWLEDGE')
 
 const equipmentNode = (equipment) => ({
   equipment_id: equipment.id,
@@ -48,9 +52,32 @@ const chamberRelation = (chamberId) => {
   }
 }
 
+export function getChamberRelationsCore(chamberId, params = {}) {
+  const normalizedId = requireNonEmptyString(chamberId, 'chamber_id')
+  assertExactObject(params, ['label', 'limit'], 'getChamberRelationsCore params')
+  const query = compactParams(params)
+  if (USE_MOCK) return mockResponse(CORE_CHAMBER_GRAPH)
+  return apiClient
+    .get(`/relations/chambers/${encodeURIComponent(normalizedId)}`, { params: query })
+    .then((response) => response.data)
+}
+
+const legacyRelationProjection = (graph) => ({
+  chamber: { chamber_id: graph.context.chamber_id },
+  equipment: { equipment_id: graph.context.equipment_id, model_code: graph.context.model_code },
+  area: { area_id: graph.context.area.toUpperCase() },
+  step: { step_id: graph.context.process_step_id, layer: null },
+  sibling_chambers: graph.nodes
+    .filter((node) => node.label === 'Chamber' && node.business_id !== graph.context.chamber_id)
+    .map((node) => ({ chamber_id: node.business_id })),
+  upstream: [],
+  downstream: [],
+})
+
+// Deprecated page projection. B migrates to the raw graph contract in its own Task.
 export function getChamberRelations(chamberId) {
   if (USE_MOCK) return mockResponse(chamberRelation(chamberId))
-  return apiClient.get(`/relations/chambers/${chamberId}`).then((response) => response.data)
+  return getChamberRelationsCore(chamberId).then(legacyRelationProjection)
 }
 
 export function getEquipmentRelations(equipmentId) {
@@ -102,6 +129,17 @@ export function searchDocuments({ query, model_code, top_k = 4 }) {
       hits: response.data,
       count: response.data.length,
     }))
+}
+
+export function searchDocumentsCore(input) {
+  assertExactObject(input, ['query', 'model_code', 'top_k'], 'searchDocumentsCore input')
+  const query = requireNonEmptyString(input.query, 'query')
+  const model_code = input.model_code === undefined ? undefined : requireNonEmptyString(input.model_code, 'model_code')
+  const top_k = input.top_k ?? 4
+  if (!Number.isInteger(top_k) || top_k < 1 || top_k > 10) throw new TypeError('top_k must be an integer from 1 to 10')
+  const body = compactParams({ query, model_code, top_k })
+  if (USE_MOCK) return mockResponse([CORE_DOCUMENT_HIT])
+  return apiClient.post('/documents/search', body).then((response) => response.data)
 }
 
 export function getDocument(documentId) {

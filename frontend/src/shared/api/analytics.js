@@ -1,7 +1,11 @@
-import apiClient, { ANALYTICS_QUERY_TIMEOUT_MS, USE_MOCK, mockResponse } from './client.js'
+import apiClient, { ANALYTICS_QUERY_TIMEOUT_MS, mockEnabledFor, mockResponse } from './client.js'
+import { assertExactObject, compactParams, requireDatePair } from './contract.js'
+import { CORE_AUDIT_LOG } from './contractMocks.js'
 import { page, toIso } from './format.js'
 import { AUDIT_EVENT_TYPES, AUDIT_LOGS } from '../../features/analytics/mock/auditLogs.js'
 import { NL_INITIAL_HISTORY, NL_QUERIES, NL_REJECTS } from '../../features/analytics/mock/queries.js'
+
+const USE_MOCK = mockEnabledFor('ANALYTICS')
 
 // POST /analytics/query — 응답은 API v3 canonical(AnalysisQueryResponse):
 //   generated_sql·columns·rows·row_count·metric·metric_result·group_by·visualization
@@ -88,7 +92,7 @@ export function getEvaluations(filter = { latest: true }) {
 // 화면 3 subview 는 페이지·집계가 필요해 선택 확장 /paged 를 소비한다 (API v3 5.2).
 // 호환 필수 GET /audit-logs 는 bare array 로 별도 제공된다 (API v3 3.8).
 // entity_id 는 부분 일치로 거른다.
-export function getAuditLogs(params = {}) {
+export function getAuditLogsPaged(params = {}) {
   if (USE_MOCK) {
     const { event_type, actor_type, entity_type, date_from, date_to, entity_id, page: p = 1, size = 20 } = params
     const filtered = AUDIT_LOGS.filter(
@@ -118,4 +122,20 @@ export function getAuditLogs(params = {}) {
     })
   }
   return apiClient.get('/audit-logs/paged', { params }).then((response) => response.data)
+}
+
+// Existing D page import remains stable until its domain-owned canonical transition.
+export const getAuditLogs = getAuditLogsPaged
+
+// GET /audit-logs — core bare-array compatibility contract.
+export function getAuditLogsCore(params = {}) {
+  assertExactObject(
+    params,
+    ['event_type', 'actor_type', 'entity_type', 'entity_id', 'date_from', 'date_to'],
+    'getAuditLogsCore params',
+  )
+  requireDatePair(params, 'getAuditLogsCore params')
+  const query = compactParams(params)
+  if (USE_MOCK) return mockResponse([CORE_AUDIT_LOG])
+  return apiClient.get('/audit-logs', { params: query }).then((response) => response.data)
 }

@@ -29,6 +29,9 @@
   Agent 감사는 선택 run·action·approval 문맥, 독립 감사 화면은 전역 검색·필터·집계다.
 - `POST /agent/runs`의 public 요청은 `AlarmRef(source, alarm_id)`를 사용한다. Frontend가 내부
   DB 키나 합성 평가 라벨을 조립하지 않는다.
+- `shared/api/`의 core client는 위 11개 method·path의 raw shape를 보존한다. bare array와
+  `/paged` envelope는 별도 함수로 유지하고 같은 path를 query 유무에 따라 두 shape로 해석하지
+  않는다. 기존 화면 adapter는 domain 전환 전까지만 deprecated export로 보존한다.
 
 ## Mock 데이터
 
@@ -43,6 +46,8 @@
 - 축약 키를 feature 컴포넌트에 새로 확산하지 않는다. API v3의 deprecated 호환 alias는 Backend
   serializer 한 곳에서만 제공하고 `shared/api/`가 canonical field로 정규화한다. Frontend 전환 뒤
   alias를 제거한다.
+- canonical projection은 deprecated alias를 생성하거나 읽지 않는다. runtime mock은 core client의
+  실제 응답과 같은 component shape를 사용하고 Backend fixture는 test-only oracle에서만 읽는다.
 
 ## 구조·실행 경계
 

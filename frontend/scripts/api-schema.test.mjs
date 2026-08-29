@@ -58,7 +58,9 @@ const CASES = [
   [
     'POST /approvals/{id}/decision',
     () => agent.decideApproval('APR-0002', { decision: 'APPROVE', decided_by: 'bang', decision_comment: null }),
-    ['approval_id', 'action_id', 'approval_status', 'send_status', 'agent_run_status', 'decided_by', 'decided_at', 'decision_comment'],
+    ['approval_id', 'agent_run_id', 'action_id', 'created_at', 'lot_id', 'lot', 'equipment_id', 'equipment',
+      'chamber_id', 'chamber', 'predicted_fault_code', 'fault_code', 'action_code', 'reason', 'status',
+      'decided_by', 'decided_at', 'decision_comment', 'approved_by', 'approved_at'],
   ],
   [
     'GET /audit-logs/paged',

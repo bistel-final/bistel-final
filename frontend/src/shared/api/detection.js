@@ -1,4 +1,6 @@
 import apiClient, { mockEnabledFor, mockResponse } from './client.js'
+import { assertExactObject, compactParams, requireDatePair, requireNonEmptyString } from './contract.js'
+import { CORE_ALARM, CORE_PARAMETER, CORE_TRACE_POINT } from './contractMocks.js'
 import { toIso } from './format.js'
 import { ALARMS } from '../../features/detection/mock/alarms.js'
 import {
@@ -145,7 +147,37 @@ export function getAlarms(params = {}) {
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id))
     return mockResponse({ items: rows.slice((p - 1) * size, p * size), total: rows.length, page: p, size })
   }
-  return apiClient.get('/alarms', { params }).then((r) => r.data)
+  return apiClient.get('/alarms/paged', { params }).then((r) => r.data)
+}
+
+// GET /alarms — core compatibility contract. The existing getAlarms() is the
+// deprecated paged UI adapter and intentionally uses /alarms/paged.
+export function getAlarmsCore(params = {}) {
+  assertExactObject(
+    params,
+    ['area', 'equipment', 'chamber', 'parameter', 'source', 'include_derived', 'date_from', 'date_to'],
+    'getAlarmsCore params',
+  )
+  requireDatePair(params, 'getAlarmsCore params')
+  const query = compactParams(params)
+  if (USE_MOCK) return mockResponse([CORE_ALARM])
+  return apiClient.get('/alarms', { params: query }).then((response) => response.data)
+}
+
+// GET /trace — the four identifiers are the complete public query contract.
+export function getTrace(params) {
+  assertExactObject(params, ['lot', 'wafer', 'chamber', 'parameter'], 'getTrace params')
+  const query = Object.fromEntries(
+    ['lot', 'wafer', 'chamber', 'parameter'].map((key) => [key, requireNonEmptyString(params[key], `getTrace.${key}`)]),
+  )
+  if (USE_MOCK) return mockResponse([CORE_TRACE_POINT])
+  return apiClient.get('/trace', { params: query }).then((response) => response.data)
+}
+
+// GET /parameters — core reference-data contract, distinct from /traces/catalog.
+export function getParameters() {
+  if (USE_MOCK) return mockResponse([CORE_PARAMETER])
+  return apiClient.get('/parameters').then((response) => response.data)
 }
 
 export function getAlarm(alarmId) {
