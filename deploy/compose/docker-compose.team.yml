@@ -104,7 +104,7 @@ services:
       - kafka_client_password
     healthcheck:
       test: ["CMD", "/opt/team/manage_topics.sh", "health", "kafka:9092"]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 12
       start_period: 30s
@@ -121,9 +121,12 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
-      KAFKA_CLIENT_USER: ${KAFKA_CLIENT_USER:?KAFKA_CLIENT_USER is required}
-      KAFKA_CLIENT_PASSWORD: ${KAFKA_CLIENT_PASSWORD:?KAFKA_CLIENT_PASSWORD is required}
+      KAFKA_CLIENT_USER_FILE: /run/secrets/kafka_client_user
+      KAFKA_CLIENT_PASSWORD_FILE: /run/secrets/kafka_client_password
       MES_CONSUMER_GROUP: kosa-fdc-mes-mock
+    secrets:
+      - kafka_client_user
+      - kafka_client_password
     networks:
       - team
 

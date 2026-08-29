@@ -45,8 +45,8 @@ BACKEND_ENV_KEYS = {
 }
 MES_ENV_KEYS = {
     "KAFKA_BOOTSTRAP_INTERNAL",
-    "KAFKA_CLIENT_USER",
-    "KAFKA_CLIENT_PASSWORD",
+    "KAFKA_CLIENT_USER_FILE",
+    "KAFKA_CLIENT_PASSWORD_FILE",
     "MES_CONSUMER_GROUP",
 }
 FORBIDDEN_SERVICE_KEYS = {
@@ -132,6 +132,19 @@ def test_backend_and_mes_environment_are_exact_allowlists() -> None:
         key.startswith(FORBIDDEN_BACKEND_PREFIXES)
         or key in {"N8N_USER", "N8N_PASSWORD"}
         for key in backend["environment"]
+    )
+    assert mes_mock["environment"]["KAFKA_CLIENT_USER_FILE"] == (
+        "/run/secrets/kafka_client_user"
+    )
+    assert mes_mock["environment"]["KAFKA_CLIENT_PASSWORD_FILE"] == (
+        "/run/secrets/kafka_client_password"
+    )
+    assert set(mes_mock["secrets"]) == {
+        "kafka_client_user",
+        "kafka_client_password",
+    }
+    assert not {"KAFKA_CLIENT_USER", "KAFKA_CLIENT_PASSWORD"} & set(
+        mes_mock["environment"]
     )
 
 
@@ -242,6 +255,7 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         "kafka_client_user",
         "kafka_client_password",
     }
+    assert kafka["healthcheck"]["interval"] == "30s"
     assert "exec /etc/kafka/docker/run" in start_script
     assert "/run/secrets/kafka_broker_password" in start_script
     assert "--if-not-exists" in script
