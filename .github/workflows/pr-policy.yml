@@ -190,7 +190,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_agent_runtime_migration.py
@@ -326,7 +326,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_detection_model.py
@@ -423,7 +423,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_postgres_role_matrix.py
@@ -569,7 +569,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_agent_state.py
@@ -589,10 +589,23 @@ jobs:
       # 분기와 변이 감도를 Node 22에서 검증하며 SMTP·Kafka·Backend에는 접속하지 않는다.
       - name: Prove the n8n workflow repository contracts
         working-directory: backend
+        env:
+          # email delivery unit이 `app.common.config` import 체인으로 요구하는 더미 8종.
+          # 이 step은 DB·Neo4j·n8n에 붙지 않는다 — collection 통과용 값이다.
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_n8n_workflows.py
           tests/unit/test_n8n_runtime_manifest.py
+          tests/unit/test_email_delivery.py
+          tests/unit/test_send_email_smoke.py
           -rs --no-header
 
       # 실제 PostgreSQL 16에서 checkpoint 직렬화와 C 소유 incident·routing·Tool 감사·
@@ -610,10 +623,11 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_approval_store_container.py
+          tests/unit/test_email_delivery_container.py
           tests/unit/test_agent_graph_container.py
           tests/unit/test_agent_rehydration_container.py
           tests/unit/test_agent_resume_lock_container.py

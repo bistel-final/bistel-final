@@ -26,7 +26,7 @@ BASE_ENV = {
     "NEO4J_USER": "neo4j",
     "NEO4J_PASSWORD": "pw",
     "NEO4J_URI": "bolt://localhost:7687",
-    "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/equipment-alert",
+    "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/fdc-notify-email",
     "AGENT_AUTONOMY_LEVEL": "2",
     "AGENT_MAX_TOOL_CALLS": "8",
     "AGENT_MAX_RETRY": "3",

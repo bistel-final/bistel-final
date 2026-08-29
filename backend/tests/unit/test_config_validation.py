@@ -18,7 +18,7 @@ BASE_ENV = {
     "NEO4J_USER": "neo4j",
     "NEO4J_PASSWORD": "pw",
     "NEO4J_URI": "bolt://localhost:7687",
-    "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/equipment-alert",
+    "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/fdc-notify-email",
     "AGENT_AUTONOMY_LEVEL": "2",
     "AGENT_MAX_TOOL_CALLS": "8",
     "AGENT_MAX_RETRY": "3",
@@ -122,7 +122,6 @@ class TestTimeoutAndRetryBounds:
     TIMEOUTS = (
         "TOOL_DB_TIMEOUT_SEC",
         "TOOL_EMBEDDING_TIMEOUT_SEC",
-        "N8N_WEBHOOK_TIMEOUT_SEC",
     )
 
     def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,7 +130,25 @@ class TestTimeoutAndRetryBounds:
         assert config.CLASSIFICATION_OUTPUT_RETRY == 1
         assert config.TOOL_DB_TIMEOUT_SEC == 5
         assert config.TOOL_EMBEDDING_TIMEOUT_SEC == 15
-        assert config.N8N_WEBHOOK_TIMEOUT_SEC == 10
+        assert config.N8N_WEBHOOK_TIMEOUT_SEC == 30
+
+    def test_n8n_timeout_allows_25(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        config = load_config(monkeypatch, N8N_WEBHOOK_TIMEOUT_SEC="25")
+
+        assert config.N8N_WEBHOOK_TIMEOUT_SEC == 25
+
+    @pytest.mark.parametrize("value", ["24", "1", "0", "-1"])
+    def test_n8n_timeout_rejects_below_25(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        with pytest.raises(RuntimeError, match="N8N_WEBHOOK_TIMEOUT_SEC"):
+            load_config(monkeypatch, N8N_WEBHOOK_TIMEOUT_SEC=value)
+
+    def test_n8n_timeout_rejects_non_integer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(RuntimeError, match="정수"):
+            load_config(monkeypatch, N8N_WEBHOOK_TIMEOUT_SEC="25s")
 
     def test_classification_retry_allows_zero(
         self,

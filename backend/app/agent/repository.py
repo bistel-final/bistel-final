@@ -134,6 +134,8 @@ __all__ = [
     "insert_action_delivery",
     "get_action_delivery",
     "list_action_deliveries",
+    "begin_email_delivery",
+    "settle_email_delivery",
     "INITIAL_DELIVERY_PAIRS",
 ]
 
@@ -1972,7 +1974,7 @@ def count_tool_calls_for_budget(
 
 
 # ---------------------------------------------------------------------------
-# approval_request · action_delivery — 초기 row만. 상태 머신은 후속이다
+# approval_request · action_delivery — 초기 row + C-4.3 EMAIL 발신 전이
 # ---------------------------------------------------------------------------
 
 
@@ -2400,6 +2402,48 @@ _SELECT_DELIVERIES = text(
     """
 )
 
+_BEGIN_EMAIL_DELIVERY = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'SENDING',
+        attempt_count = attempt_count + 1,
+        started_at = clock_timestamp(),
+        last_error = NULL,
+        completed_at = NULL
+    WHERE action_id = :action_id
+      AND channel = 'EMAIL'
+      AND status = 'WAITING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_SELECT_EMAIL_DELIVERY_FOR_UPDATE = text(
+    f"""
+    SELECT {_DELIVERY_COLUMNS}
+    FROM action_delivery
+    WHERE action_id = :action_id AND channel = 'EMAIL'
+    FOR UPDATE
+    """
+)
+
+_UPDATE_EMAIL_DELIVERY_FAILED = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'FAILED', completed_at = clock_timestamp(), last_error = :last_error
+    WHERE action_id = :action_id AND channel = 'EMAIL' AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_UPDATE_EMAIL_DELIVERY_UNCERTAIN = text(
+    f"""
+    UPDATE action_delivery
+    SET last_error = :last_error
+    WHERE action_id = :action_id AND channel = 'EMAIL' AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
 #: `request_hash char(64)`는 소문자 hex다. 형식 위반은 DB가 CHECK로 막지만 그 전에
 #: 걸러야 caller 입력 오류가 driver 예외로 올라가지 않는다.
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -2499,6 +2543,109 @@ def list_action_deliveries(
 ) -> list[ActionDeliveryRow]:
     rows = _fetch_all(connection, _SELECT_DELIVERIES, {"action_id": action_id})
     return [_delivery_row(row) for row in rows]
+
+
+def begin_email_delivery(
+    connection: Connection, *, action_id: str
+) -> ActionDeliveryRow | None:
+    """EMAIL ``WAITING`` 한 건만 ``SENDING``으로 claim한다.
+
+    0행은 경합 오류가 아니라 안전한 no-op이다. caller는 이 반환값이 ``None``이면
+    webhook을 호출하면 안 된다. network I/O는 이 transaction이 commit된 뒤에만 한다.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    try:
+        row = connection.execute(
+            _BEGIN_EMAIL_DELIVERY, {"action_id": action_id}
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    return None if row is None else _delivery_row(row)
+
+
+_DELIVERY_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,99}$")
+_TERMINAL_EMAIL_FAILURE_CODES = frozenset({"WEBHOOK_401", "WEBHOOK_422"})
+
+
+def settle_email_delivery(
+    connection: Connection,
+    *,
+    action_id: str,
+    request_hash: str,
+    failure_code: str | None,
+    terminal_failure: bool,
+) -> ActionDeliveryRow:
+    """HTTP 뒤 EMAIL row를 callback 정본과 수렴시킨다.
+
+    같은 hash의 ``SENT|FAILED``가 이미 보이면 callback 결과이므로 절대 덮어쓰지 않는다.
+    아직 ``SENDING``일 때만 401/422 확정 실패 또는 미확정 transport 오류를 기록한다.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    request_hash = _require_text(request_hash, "request_hash")
+    if not _HEX64.fullmatch(request_hash):
+        raise RepositoryContractError("INVALID_REQUEST_HASH")
+    if failure_code is not None and not _DELIVERY_ERROR_CODE.fullmatch(failure_code):
+        raise RepositoryContractError("INVALID_DELIVERY_ERROR_CODE")
+    if terminal_failure and failure_code is None:
+        raise RepositoryContractError("DELIVERY_FAILURE_CODE_REQUIRED")
+    if terminal_failure and failure_code not in _TERMINAL_EMAIL_FAILURE_CODES:
+        raise RepositoryContractError("DELIVERY_TERMINAL_FAILURE_INVALID")
+    if not terminal_failure and failure_code in _TERMINAL_EMAIL_FAILURE_CODES:
+        raise RepositoryContractError("DELIVERY_TERMINAL_FLAG_REQUIRED")
+
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_EMAIL_DELIVERY_FOR_UPDATE,
+            {"action_id": action_id},
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.request_hash != request_hash:
+        raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+    if locked.status in {DeliveryStatus.SENT, DeliveryStatus.FAILED}:
+        return locked
+    if locked.status is not DeliveryStatus.SENDING:
+        raise RepositoryConflict("DELIVERY_NOT_SENDING")
+    if failure_code is None:
+        return locked
+
+    if not terminal_failure:
+        row = _fetch_one(
+            connection,
+            _UPDATE_EMAIL_DELIVERY_UNCERTAIN,
+            {"action_id": action_id, "last_error": failure_code},
+            "DELIVERY_STATE_CHANGED",
+        )
+        return _delivery_row(row)
+
+    record = _run_audit_record(
+        AuditEvent.ACTION_SEND_FAILED,
+        entity_id=action_id,
+        actor_type=ActorType.SYSTEM,
+        actor_id=None,
+        after={
+            "channel": DeliveryChannel.EMAIL.value,
+            "transport": "N8N_WEBHOOK",
+            "reason_code": failure_code,
+        },
+    )
+
+    def _run() -> Any:
+        row = _fetch_one(
+            connection,
+            _UPDATE_EMAIL_DELIVERY_FAILED,
+            {"action_id": action_id, "last_error": failure_code},
+            "DELIVERY_STATE_CHANGED",
+        )
+        append_audit_log(connection, record)
+        return row
+
+    return _delivery_row(_write(connection, _run))
 
 
 @dataclass(frozen=True, slots=True)
