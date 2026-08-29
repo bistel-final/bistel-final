@@ -20,7 +20,7 @@ from app.agent.approval_store import (
     HitlDeliveryError,
     HitlResumeError,
 )
-from app.agent.checkpoint import AgentCheckpointError
+from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.mes_delivery import MesDeliveryError
 from app.agent.prompts import PROMPT_VERSION
@@ -30,6 +30,7 @@ from app.agent.repository import (
     PredictionRow,
     RepositoryConflict,
     RepositoryContractError,
+    active_run_latency_ms,
     finish_agent_run,
     get_agent_run,
     get_prediction_or_none,
@@ -64,6 +65,7 @@ from app.agent.tools import (
     TransactionFactory,
 )
 from app.common.enums import ActionCode, AlarmSource, Decision, RunStatus
+from app.common.exceptions import AppError
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     DocumentSearchToolInput,
@@ -138,6 +140,8 @@ class AgentGraphDependencies:
     tools: AuditedToolExecutor
     routing_graph: GraphBoundary
     ports: AgentNodePorts | None = None
+    configured_llm_model: str | None = None
+    require_bound_thread: bool = False
     now: Callable[[], datetime] = field(default_factory=lambda: _utc_now)
 
 
@@ -309,14 +313,16 @@ def _hitl_interrupt_node(
 
 
 def _entry_node(
-    fn: Callable[[AgentGraphState], dict[str, Any]],
-) -> Callable[[AgentGraphState], dict[str, Any]]:
+    fn: Callable[[AgentGraphState, dict[str, Any] | None], dict[str, Any]],
+) -> Callable[[AgentGraphState, dict[str, Any] | None], dict[str, Any]]:
     """입력 오류만 그대로 두고 run 생성 전 의존성 예외는 sanitize한다."""
 
-    def wrapped(state: AgentGraphState) -> dict[str, Any]:
+    def wrapped(
+        state: AgentGraphState, config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         try:
-            return fn(state)
-        except AgentGraphInputError:
+            return fn(state, config)
+        except (AgentGraphInputError, AppError):
             raise
         except Exception as exc:
             raise AgentGraphInputError(_classify_exception(exc)) from None
@@ -439,14 +445,12 @@ def build_agent_graph(
     )
 
     def run_latency_ms(connection: Any, run_id: str) -> int:
-        """DB 정본 ``started_at``과 현재 UTC 시각으로 경과 시간을 계산한다."""
+        """저장 subtotal과 현재 활성 구간에서 사람 대기를 제외해 계산한다."""
 
-        started_at = get_agent_run(connection, run_id).started_at
-        try:
-            elapsed = dependencies.now() - started_at
-        except (TypeError, OverflowError) as exc:
-            raise ValueError("RUN_CLOCK_INVALID") from exc
-        return max(0, int(elapsed.total_seconds() * 1000))
+        return active_run_latency_ms(
+            get_agent_run(connection, run_id),
+            now=dependencies.now(),
+        )
 
     def _finish_failed(
         connection: Any,
@@ -470,7 +474,10 @@ def build_agent_graph(
             latency_ms=latency_ms,
         )
 
-    def load_incident(state: AgentGraphState) -> dict[str, Any]:
+    def load_incident(
+        state: AgentGraphState,
+        config: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """run·route snapshot을 한 UoW에서 확정하고 DB를 놓은 뒤 graph를 읽는다."""
 
         level = state.get("autonomy_level")
@@ -484,12 +491,39 @@ def build_agent_graph(
             requested = AlarmRef.model_validate(state.get("requested_alarm"))
         except ValidationError as exc:
             raise AgentGraphInputError("REQUESTED_ALARM_INVALID") from exc
+        bound_thread: str | None = None
+        raw_thread = state.get("thread_id")
+        configurable = {} if config is None else config.get("configurable", {})
+        config_thread = (
+            configurable.get("thread_id") if isinstance(configurable, dict) else None
+        )
+        if dependencies.require_bound_thread:
+            try:
+                bound_thread = normalize_thread_id(raw_thread)
+                canonical_config = normalize_thread_id(config_thread)
+            except AgentCheckpointError as exc:
+                raise AgentGraphInputError(exc.reason_code) from exc
+            if bound_thread != canonical_config:
+                raise AgentGraphInputError("THREAD_BINDING_MISMATCH")
+            model = dependencies.configured_llm_model
+            if (
+                not isinstance(model, str)
+                or not model.strip()
+                or len(model.strip()) > 64
+            ):
+                raise AgentGraphInputError("LLM_MODEL_NOT_READY")
         with dependencies.transactions() as connection:
             started = start_incident_run(
                 connection,
                 requested,
                 autonomy_level=level,
+                llm_model=dependencies.configured_llm_model,
                 prompt_version=PROMPT_VERSION,
+                **(
+                    {}
+                    if bound_thread is None
+                    else {"thread_id_factory": lambda: bound_thread}
+                ),
             )
             bound = read_route_snapshot(connection, started.incident)
             representative = started.incident.representative_alarm

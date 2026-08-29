@@ -9,6 +9,7 @@ from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.agent.router import router as agent_router
+from app.agent.runtime_composition import close_agent_runtime
 from app.analytics.router import router as analytics_router
 from app.common.config import CORS_ORIGINS
 from app.common.db import dispose_engines, get_app_engine, get_readonly_engine
@@ -34,8 +35,13 @@ _STATUS_ERROR_CODE: dict[int, ErrorCode] = {
 async def lifespan(_: FastAPI):
     yield
 
-    dispose_engines()
-    close_neo4j_driver()
+    try:
+        close_agent_runtime()
+    finally:
+        try:
+            dispose_engines()
+        finally:
+            close_neo4j_driver()
 
 
 app = FastAPI(

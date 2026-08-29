@@ -2,7 +2,7 @@
 
 > 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`
 > 기준 문서: 요구사항 v2.1 · 시스템설계서 v2.1 · 역할분담 v10.1 · API v3 · WBS v5
-> 마지막 동기화: 2026-08-28
+> 마지막 동기화: 2026-08-29
 > 담당: 방대혁 · 모듈 `backend/app/agent/` · `frontend/src/features/agent/` · `deploy/n8n/`
 
 LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMTP, Kafka MES Mock,
@@ -55,13 +55,13 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-4.5 | P0 | Kafka MES Mock. 완료: 승인된 EQP_HOLD만 n8n Kafka Producer로 `fdc.actions`에 발행하고, MES Mock consumer 결과를 `fdc.actions.result` → write-back으로 반영한다. 승인 전 발행 0건·반려 시 발행 0건을 음성 테스트로 고정한다. execution 저장이 꺼진 WF4 malformed discard는 직접 조회할 수 없으므로 의심 record 전후 consumer offset 비교로 처리 여부를 확인하고, callback 실패 시 미해결 offset과 broker retention 안의 offset-reset 복구 절차를 runbook으로 증명한다 | FR-C-06, FR-C-12 | V5-C-4.4 | 4.0h |
 | V5-C-4.6 | P0 | 채널 멱등성. 완료: EMAIL·MES_MOCK 각각 `(action_id, channel)` 외부 효과 최대 1회, 동일 hash 재수신 동일 결과, 다른 hash 409, 응답 유실 `UNKNOWN`·자동 재발송 0회를 n8n·Kafka 경로에서 검증한다. CM-4.6 자동 lag 감지가 준비되기 전에는 runbook의 consumer group `kosa-fdc-wf4-writeback` lag 확인을 영구 활성 직전·직후 수동 수행하며, 확인할 수 없으면 영구 활성은 BLOCKED다 | FR-C-06, NFR-20 | V5-C-4.4, V5-C-4.5 | 3.0h |
 | V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 예약은 `AuditedToolExecutor`의 공용 예산 guard를 경유하고 `reserve_tool_call()`을 직접 호출하지 않는다. graph node는 공용 nonterminal Tool 수집 경계를 경유하며 예산 차단으로 run을 FAILED 처리하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
-| V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`이며 Chat은 A/B Tool만 사용한다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 2.0h |
+| V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`다. Chat은 명시된 `lot_hist_id`·`lot_id`·`chamber_id`·`model_code`로만 A/B 읽기 Tool을 선택하고, 근거 ID citation·required-nullable 판단·5종 evidence union을 검증하며 Runtime·감사·action·approval 쓰기는 0이다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 4.0h |
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고 D가 소유한 감사 subview를 탭에 조립한다. `api.audit()` 구현을 중복하지 않으며 Loading·Error·Empty·Success를 검증한다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1, V5-D-1.3 | 2.0h |
 | V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`의 incident 12개에서 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 중복 실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-3.4, V5-CM-4.7 | 2.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**P0·P1 23 Task / 69.5h** · **P2 별도 1 Task / 2.0h**
+**P0·P1 23 Task / 71.5h** · **P2 별도 1 Task / 2.0h**
 
 ---
 

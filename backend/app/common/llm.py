@@ -124,6 +124,50 @@ def _resolve_endpoint() -> tuple[str, str]:
     return base_url.rstrip("/"), api_key
 
 
+def configured_model() -> str:
+    """원격 호출 없이 provider 설정과 저장할 모델 식별자를 검증한다."""
+
+    _resolve_endpoint()
+    model = LLM_MODEL_MAIN.strip()
+    if not model or len(model) > 64:
+        raise LlmNotReadyError("LLM model 설정이 올바르지 않다.")
+    return model
+
+
+def preflight_model() -> str:
+    """run INSERT 전에 설정 모델이 provider에 실제 존재하는지 확인한다.
+
+    생성 요청에서만 ``/models``를 읽으며 import·API process startup에는 영향을 주지
+    않는다. 응답·URL·key·원문 예외는 반환하거나 로그에 넣지 않는다.
+    """
+
+    base_url, api_key = _resolve_endpoint()
+    model = configured_model()
+    try:
+        response = httpx.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=float(min(5, LLM_TIMEOUT_SEC)),
+        )
+    except httpx.HTTPError as exc:
+        raise LlmNotReadyError("LLM 모델 목록을 확인할 수 없다.") from exc
+    if response.status_code != 200:
+        raise LlmNotReadyError("LLM 모델 목록을 확인할 수 없다.")
+    try:
+        payload = response.json()
+        items = payload["data"]
+        model_ids = {
+            item["id"]
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LlmNotReadyError("LLM 모델 목록 형식이 올바르지 않다.") from exc
+    if model not in model_ids:
+        raise LlmNotReadyError("설정한 LLM 모델이 준비되지 않았다.")
+    return model
+
+
 def _request(messages: list[dict[str, str]]) -> dict[str, Any]:
     """OpenAI 호환 응답 JSON을 받는 공통 HTTP 경계."""
     base_url, api_key = _resolve_endpoint()
@@ -242,4 +286,6 @@ __all__ = [
     "LlmTimeoutError",
     "chat",
     "chat_with_usage",
+    "configured_model",
+    "preflight_model",
 ]

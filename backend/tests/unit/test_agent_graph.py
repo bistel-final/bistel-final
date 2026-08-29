@@ -429,6 +429,9 @@ def _build(
     existing_prediction: PredictionRow | None = None,
     run_evidence: dict[str, Any] | None = None,
     durable_interrupt: bool = True,
+    require_bound_thread: bool = False,
+    configured_llm_model: str | None = None,
+    start_calls: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -455,6 +458,7 @@ def _build(
         prompt_version=subject.PROMPT_VERSION,
         input_tokens=None if existing_prediction is None else 10,
         output_tokens=None if existing_prediction is None else 5,
+        latency_ms=0,
         evidence=dict(run_evidence or {}),
         started_at=RUN_STARTED_AT,
     )
@@ -471,7 +475,16 @@ def _build(
         ),
         steps=(),
     )
-    monkeypatch.setattr(subject, "start_incident_run", lambda *args, **kwargs: started)
+
+    def start(*_args: Any, **kwargs: Any) -> Any:
+        if start_calls is not None:
+            start_calls.append(dict(kwargs))
+        factory = kwargs.get("thread_id_factory")
+        if callable(factory):
+            run.thread_id = factory()
+        return started
+
+    monkeypatch.setattr(subject, "start_incident_run", start)
     monkeypatch.setattr(
         subject,
         "read_route_snapshot",
@@ -584,6 +597,8 @@ def _build(
             tools=tool_set,  # type: ignore[arg-type]
             routing_graph=GraphBoundary(lambda value: None, lambda value: None),
             ports=ports,
+            configured_llm_model=configured_llm_model,
+            require_bound_thread=require_bound_thread,
             now=(lambda: RUN_STARTED_AT) if now is None else now,
         ),
         checkpointer=(MemorySaver() if interrupt_after and durable_interrupt else None),
@@ -1247,6 +1262,66 @@ def test_level_three_is_rejected_before_any_transaction(
         _invoke(graph, level=3)
     assert exc.value.code == "AUTONOMY_LEVEL_NOT_IMPLEMENTED"
     assert finishes == []
+    assert transactions == []
+
+
+def test_production_thread_is_bound_to_input_config_and_start_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    graph, *_ = _build(
+        monkeypatch,
+        ports=_Ports(),
+        interrupt_after=("load_incident", "approval_email"),
+        require_bound_thread=True,
+        configured_llm_model="configured-model",
+        start_calls=calls,
+    )
+    thread_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+    graph.invoke(
+        {
+            "requested_alarm": ALARM,
+            "autonomy_level": 2,
+            "thread_id": thread_id,
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    snapshot = graph.get_state({"configurable": {"thread_id": thread_id}})
+
+    assert len(calls) == 1
+    assert calls[0]["thread_id_factory"]() == thread_id
+    assert calls[0]["llm_model"] == "configured-model"
+    assert tuple(snapshot.next) == ("collect_fdc",)
+
+
+def test_production_thread_mismatch_fails_before_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    graph, _, _, _, transactions = _build(
+        monkeypatch,
+        ports=_Ports(),
+        interrupt_after=("load_incident", "approval_email"),
+        require_bound_thread=True,
+        configured_llm_model="configured-model",
+        start_calls=calls,
+    )
+
+    with pytest.raises(AgentGraphInputError) as caught:
+        graph.invoke(
+            {
+                "requested_alarm": ALARM,
+                "autonomy_level": 2,
+                "thread_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            },
+            config={
+                "configurable": {"thread_id": "11111111-2222-3333-4444-555555555555"}
+            },
+        )
+
+    assert caught.value.code == "THREAD_BINDING_MISMATCH"
+    assert calls == []
     assert transactions == []
 
 

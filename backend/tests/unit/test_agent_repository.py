@@ -10,6 +10,7 @@ import ast
 import inspect
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -78,6 +79,84 @@ def _command(**overrides: Any) -> repo.CreateAgentRunCommand:
     }
     payload.update(overrides)
     return repo.CreateAgentRunCommand(**payload)
+
+
+def _timed_run(
+    *,
+    status: RunStatus,
+    latency_ms: int,
+    evidence: dict[str, Any] | None = None,
+) -> repo.AgentRunRow:
+    started = datetime(2026, 8, 29, 1, 0, tzinfo=UTC)
+    alarm = _ref("A1")
+    return repo.AgentRunRow(
+        agent_run_id="RUN-0000000000000001",
+        thread_id="11111111-2222-3333-4444-555555555555",
+        lot_id="LOT-1",
+        chamber_id="CH-1",
+        status=status,
+        autonomy_level=2,
+        requested_alarm=alarm,
+        representative_alarm=alarm,
+        action=None,
+        severity=None,
+        retry_of_run_id=None,
+        llm_model="configured-model",
+        prompt_version="prompt-v1",
+        evidence=evidence,
+        input_tokens=None,
+        output_tokens=None,
+        latency_ms=latency_ms,
+        started_at=started,
+        ended_at=None,
+    )
+
+
+def test_active_latency_excludes_wait_and_adds_resumed_segment() -> None:
+    started = datetime(2026, 8, 29, 1, 0, tzinfo=UTC)
+    initial = _timed_run(status=RunStatus.RUNNING, latency_ms=0)
+    waiting = _timed_run(
+        status=RunStatus.WAITING_APPROVAL,
+        latency_ms=1500,
+        evidence={
+            repo.ACTIVE_TIMING_KEY: {
+                "schema": repo.ACTIVE_TIMING_SCHEMA,
+                "active_started_at": None,
+            }
+        },
+    )
+    resumed = _timed_run(
+        status=RunStatus.RUNNING,
+        latency_ms=1500,
+        evidence={
+            repo.ACTIVE_TIMING_KEY: {
+                "schema": repo.ACTIVE_TIMING_SCHEMA,
+                "active_started_at": (started + timedelta(hours=1)).isoformat(),
+            }
+        },
+    )
+
+    assert (
+        repo.active_run_latency_ms(
+            initial,
+            now=started + timedelta(milliseconds=800),
+        )
+        == 800
+    )
+    assert (
+        repo.active_run_latency_ms(
+            waiting,
+            now=started + timedelta(days=1),
+        )
+        == 1500
+    )
+    assert (
+        repo.active_run_latency_ms(
+            resumed,
+            now=started + timedelta(hours=1, milliseconds=500),
+        )
+        == 2000
+    )
 
 
 class _Connection:
@@ -438,6 +517,7 @@ class TestSqlAndErrorContract:
                     "_DELIVERY_COLUMNS",
                     "_STALE_DELIVERY_PREDICATE",
                     "_ACTION_HISTORY_COLUMNS",
+                    "_PUBLIC_APPROVAL_SELECT",
                 }
                 continue
             assert isinstance(argument, ast.Constant)

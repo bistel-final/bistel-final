@@ -450,6 +450,8 @@ def _dependencies(
     *,
     fdc_summary: Callable[[dict[str, Any]], Any] | None = None,
     document_search: Callable[[dict[str, Any]], Any] | None = None,
+    configured_llm_model: str | None = None,
+    require_bound_thread: bool = False,
 ) -> AgentGraphDependencies:
     equipment = EquipmentContextToolResult(
         ok=True,
@@ -559,6 +561,8 @@ def _dependencies(
         ),
         routing_graph=_routing_graph(),
         ports=ports,
+        configured_llm_model=configured_llm_model,
+        require_bound_thread=require_bound_thread,
     )
 
 
@@ -644,6 +648,73 @@ def _checkpoint_connection(endpoint: Any) -> Any:
         row_factory=dict_row,
     ) as connection:
         yield connection
+
+
+def test_public_bootstrap_uses_one_start_and_both_durable_interrupts(
+    runtime: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint, engine = runtime
+    _seed_runtime(engine)
+    thread_id = str(uuid4())
+    calls: list[str] = []
+    original_start = start_incident_run
+
+    def counted_start(
+        connection: Any,
+        requested_alarm: AlarmRef,
+        **kwargs: Any,
+    ) -> Any:
+        calls.append("start")
+        return original_start(connection, requested_alarm, **kwargs)
+
+    monkeypatch.setattr(graph_module, "start_incident_run", counted_start)
+    ports = _HoldAssemblyPorts()
+    ports.persist_action = action_store_module.production_port(engine.begin)  # type: ignore[method-assign]
+    dependencies = _dependencies(
+        engine,
+        ports,
+        configured_llm_model="fixture-model",
+        require_bound_thread=True,
+    )
+    config = ck.build_thread_config(thread_id)
+
+    with _checkpoint_connection(endpoint) as connection:
+        PostgresSaver(connection).setup()
+        graph = build_agent_graph(
+            dependencies,
+            checkpointer=ck.build_postgres_saver(connection),
+            interrupt_after=("load_incident", "approval_email"),
+        )
+        first = graph.invoke(
+            {
+                "requested_alarm": ALARM,
+                "autonomy_level": 2,
+                "thread_id": thread_id,
+            },
+            config=config,
+        )
+        after_start = graph.get_state(config)
+        assert after_start.next == ("collect_fdc",)
+
+        second = graph.invoke(None, config=config)
+        after_email = graph.get_state(config)
+
+    assert calls == ["start"]
+    assert first["thread_id"] == second["thread_id"] == thread_id
+    assert after_email.next == ("hitl_interrupt",)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT status, llm_model, latency_ms, evidence "
+                "FROM agent_run WHERE thread_id = :thread_id"
+            ),
+            {"thread_id": thread_id},
+        ).one()
+    assert row.status == RunStatus.WAITING_APPROVAL.value
+    assert row.llm_model == "fixture-model"
+    assert row.latency_ms is not None and row.latency_ms >= 0
+    assert row.evidence[repo.ACTIVE_TIMING_KEY]["active_started_at"] is None
 
 
 def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
