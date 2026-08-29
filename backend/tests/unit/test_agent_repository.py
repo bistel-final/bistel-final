@@ -436,6 +436,7 @@ class TestSqlAndErrorContract:
                     "_TOOL_CALL_COLUMNS",
                     "_APPROVAL_COLUMNS",
                     "_DELIVERY_COLUMNS",
+                    "_STALE_DELIVERY_PREDICATE",
                     "_ACTION_HISTORY_COLUMNS",
                 }
                 continue

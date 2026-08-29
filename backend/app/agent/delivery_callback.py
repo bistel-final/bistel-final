@@ -10,12 +10,16 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import os
 import re
+import stat
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
 from types import ModuleType
 from typing import Annotated, Any, Literal, NoReturn
 
@@ -50,6 +54,12 @@ REPLAY_WINDOW_SECONDS = 300
 _TIMESTAMP = re.compile(r"^[0-9]{1,20}$")
 _SIGNATURE = re.compile(r"^sha256=[0-9a-f]{64}$")
 _HASH64 = re.compile(r"^[0-9a-f]{64}$")
+_TRAIL_RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_TRAIL_FIELDS = frozenset(
+    {"ts", "action_id", "channel", "status", "duplicate", "http_status"}
+)
+_TRAIL_LINE_MAX_BYTES = 512
+logger = logging.getLogger(__name__)
 
 NonEmptyText = Annotated[
     str,
@@ -168,6 +178,129 @@ class DeliveryCallbackStorageConfigError(RuntimeError):
         super().__init__("DELIVERY_CALLBACK_STORAGE_NOT_READY")
 
 
+class DeliveryCallbackTrailConfigError(RuntimeError):
+    """Trail path/run 설정의 실값을 노출하지 않는 기동 오류."""
+
+    def __init__(self, code: str = "DELIVERY_CALLBACK_TRAIL_CONFIG_INVALID") -> None:
+        super().__init__(code)
+        self.code = code
+
+
+class DeliveryCallbackTrail:
+    """Run-scoped append-only callback 증적.
+
+    파일은 애플리케이션 조립 때 exclusive create하고 같은 프로세스가 가진 fd에만
+    append한다. 각 JSONL record는 512B 이하의 단일 ``os.write``라 concurrent callback도
+    서로 덮어쓰지 않는다.
+    """
+
+    def __init__(
+        self,
+        *,
+        file_descriptor: int,
+        path: Path,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._file_descriptor = file_descriptor
+        self.path = path
+        self._clock = clock
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: ModuleType | Any = config,
+        *,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> DeliveryCallbackTrail | None:
+        raw_dir = getattr(settings, "DELIVERY_CALLBACK_TRAIL_DIR", None)
+        raw_run_id = getattr(settings, "DELIVERY_CALLBACK_TRAIL_RUN_ID", None)
+        directory = raw_dir.strip() if isinstance(raw_dir, str) else None
+        run_id = raw_run_id.strip() if isinstance(raw_run_id, str) else None
+        directory = directory or None
+        run_id = run_id or None
+        if directory is None and run_id is None:
+            return None
+        if (
+            directory is None
+            or run_id is None
+            or _TRAIL_RUN_ID.fullmatch(run_id) is None
+        ):
+            raise DeliveryCallbackTrailConfigError()
+
+        root = Path(directory)
+        try:
+            metadata = root.lstat()
+            if (
+                not root.is_absolute()
+                or stat.S_ISLNK(metadata.st_mode)
+                or not stat.S_ISDIR(metadata.st_mode)
+                or root.resolve(strict=True) != root
+                or (os.geteuid() != 0 and metadata.st_uid != os.geteuid())
+                or stat.S_IMODE(metadata.st_mode) & 0o077
+            ):
+                raise DeliveryCallbackTrailConfigError()
+        except (OSError, RuntimeError) as exc:
+            raise DeliveryCallbackTrailConfigError() from exc
+
+        path = root / f"trail-{run_id}.jsonl"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags, 0o600)
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.geteuid():
+                raise DeliveryCallbackTrailConfigError()
+            os.fchmod(descriptor, 0o600)
+        except (OSError, DeliveryCallbackTrailConfigError) as exc:
+            if "descriptor" in locals():
+                os.close(descriptor)
+            raise DeliveryCallbackTrailConfigError() from exc
+        return cls(file_descriptor=descriptor, path=path, clock=clock)
+
+    def append(
+        self,
+        *,
+        action_id: str,
+        channel: DeliveryChannel,
+        status: DeliveryStatus | None,
+        duplicate: bool | None,
+        http_status: int,
+    ) -> bool:
+        record = {
+            "ts": self._clock().astimezone(UTC).isoformat(),
+            "action_id": action_id,
+            "channel": channel.value,
+            "status": None if status is None else status.value,
+            "duplicate": duplicate,
+            "http_status": http_status,
+        }
+        if set(record) != _TRAIL_FIELDS:  # pragma: no cover - local invariant
+            return False
+        encoded = (
+            json.dumps(
+                record,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n"
+        )
+        if len(encoded) > _TRAIL_LINE_MAX_BYTES:
+            logger.error("delivery callback trail write failed code=LINE_TOO_LARGE")
+            return False
+        try:
+            written = os.write(self._file_descriptor, encoded)
+            if written != len(encoded):
+                raise OSError("partial callback trail write")
+        except OSError:
+            logger.error("delivery callback trail write failed code=WRITE_FAILED")
+            return False
+        return True
+
+    def close(self) -> None:
+        os.close(self._file_descriptor)
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedDeliveryHeaders:
     timestamp_text: str
@@ -255,10 +388,12 @@ class DeliveryCallbackService:
         secret: bytes,
         transactions: TransactionFactory,
         clock: Callable[[], float] = time.time,
+        trail: DeliveryCallbackTrail | None = None,
     ) -> None:
         self._secret = secret
         self._transactions = transactions
         self._clock = clock
+        self._trail = trail
 
     def verify_headers(
         self,
@@ -323,6 +458,24 @@ class DeliveryCallbackService:
             raise DependencyNotReadyError() from None
         return _delivery_result(transition)
 
+    def record_http_result(
+        self,
+        *,
+        action_id: str,
+        channel: DeliveryChannel,
+        result: DeliveryResult | None,
+        http_status: int,
+    ) -> None:
+        if self._trail is None:
+            return
+        self._trail.append(
+            action_id=action_id,
+            channel=channel,
+            status=None if result is None else DeliveryStatus(result.status),
+            duplicate=None if result is None else result.duplicate,
+            http_status=http_status,
+        )
+
 
 @contextmanager
 def _production_transactions() -> Iterator[Any]:
@@ -344,4 +497,10 @@ def get_delivery_callback_service() -> DeliveryCallbackService:
     return DeliveryCallbackService(
         secret=secret,
         transactions=_production_transactions,
+        trail=_PRODUCTION_CALLBACK_TRAIL,
     )
+
+
+# 설정 pair·run ID·경로·기존 파일을 요청 처리 전, 애플리케이션 import 단계에서
+# fail-closed한다. 기본 미설정이면 파일도 코드 경로도 생기지 않는다.
+_PRODUCTION_CALLBACK_TRAIL = DeliveryCallbackTrail.from_settings(config)

@@ -27,6 +27,7 @@ EXPECTED_KEYS = frozenset(
         "N8N_WF3_URL",
         "N8N_WEBHOOK_SECRET",
         "N8N_WEBHOOK_TIMEOUT_SEC",
+        "DELIVERY_UNKNOWN_AFTER_SEC",
         "AGENT_EMAIL_RECIPIENTS",
         "CORS_ORIGINS",
         "BACKEND_BASE_URL",
@@ -209,6 +210,15 @@ def validate(values: dict[str, str]) -> list[Finding]:
         postgres_port = 0
     if not 1 <= postgres_port <= 65535:
         findings.append(Finding("POSTGRES_PORT", "INVALID_PORT"))
+
+    try:
+        webhook_timeout = int(values["N8N_WEBHOOK_TIMEOUT_SEC"])
+        unknown_after = int(values["DELIVERY_UNKNOWN_AFTER_SEC"])
+    except ValueError:
+        findings.append(Finding("DELIVERY_UNKNOWN_AFTER_SEC", "INVALID_TIMEOUT"))
+    else:
+        if webhook_timeout < 25 or unknown_after < webhook_timeout * 2:
+            findings.append(Finding("DELIVERY_UNKNOWN_AFTER_SEC", "INVALID_TIMEOUT"))
 
     try:
         neo4j = urlsplit(values["NEO4J_URI"])
