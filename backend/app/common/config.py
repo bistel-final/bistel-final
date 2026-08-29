@@ -78,6 +78,11 @@ NEO4J_URI = get_env("NEO4J_URI")
 
 # n8n
 N8N_WEBHOOK_URL = get_env("N8N_WEBHOOK_URL")
+# Email delivery를 조립하지 않는 health·DB-only command는 secret/recipient 부재로
+# import 단계에서 죽지 않는다. production factory가 DB transaction 전에 fail-closed로
+# 검증한다(V5-C-4.3).
+N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET")
+AGENT_EMAIL_RECIPIENTS = os.getenv("AGENT_EMAIL_RECIPIENTS")
 
 # FastAPI
 API_HOST = get_env("API_HOST", "0.0.0.0")
@@ -130,7 +135,7 @@ if HITL_REQUIRED_SEVERITY != "HIGH":
 # ---------------------------------------------------------------------
 TOOL_DB_TIMEOUT_SEC = get_int_env("TOOL_DB_TIMEOUT_SEC", "5", minimum=1)
 TOOL_EMBEDDING_TIMEOUT_SEC = get_int_env("TOOL_EMBEDDING_TIMEOUT_SEC", "15", minimum=1)
-N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "10", minimum=1)
+N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "30", minimum=25)
 
 # ---------------------------------------------------------------------
 # LLM (.env.example 계약과 1:1)

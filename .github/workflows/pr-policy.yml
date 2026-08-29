@@ -190,7 +190,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_agent_runtime_migration.py
@@ -326,7 +326,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_detection_model.py
@@ -423,7 +423,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_postgres_role_matrix.py
@@ -569,7 +569,7 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
           tests/unit/test_agent_state.py
@@ -593,6 +593,8 @@ jobs:
           python -m pytest -q
           tests/unit/test_n8n_workflows.py
           tests/unit/test_n8n_runtime_manifest.py
+          tests/unit/test_email_delivery.py
+          tests/unit/test_send_email_smoke.py
           -rs --no-header
 
       # 실제 PostgreSQL 16에서 checkpoint 직렬화와 C 소유 incident·routing·Tool 감사·
@@ -610,10 +612,11 @@ jobs:
           NEO4J_USER: neo4j
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook/test
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_approval_store_container.py
+          tests/unit/test_email_delivery_container.py
           tests/unit/test_agent_graph_container.py
           tests/unit/test_agent_rehydration_container.py
           tests/unit/test_agent_resume_lock_container.py
