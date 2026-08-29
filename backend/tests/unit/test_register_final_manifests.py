@@ -1591,9 +1591,7 @@ class TestProductionProvenance:
         """**두 DB 내용이 다르면 어느 쪽도 정답이 아니다**(계획 §3.4 Gate 4)."""
 
         readers = _rag_readers()
-        readers["kosa_agent_e2e"] = _RagConnection(
-            dict(registrar.RUNTIME_RAG_ROWS)
-        )
+        readers["kosa_agent_e2e"] = _RagConnection(dict(registrar.RUNTIME_RAG_ROWS))
         readers["kosa_agent"] = _RagConnection(
             dict(registrar.RUNTIME_RAG_ROWS), offset=1
         )
@@ -1625,7 +1623,10 @@ class TestProductionProvenance:
         with pytest.raises(registrar.RegistrarError, match="행 수"):
             registrar.runtime_rag_provenance(readers, columns=_rag_columns())
 
-    @pytest.mark.parametrize("dropped", ["embedding_model", "chunk_contract_sha256"])
+    @pytest.mark.parametrize(
+        "dropped",
+        ["embedding_model", "chunk_contract_sha256", "embedding_weights_sha256"],
+    )
     def test_a_field_missing_from_both_markers_is_refused(
         self, markers: dict[str, Path], live: dict[str, Any], dropped: str
     ) -> None:
@@ -1650,6 +1651,7 @@ class TestProductionProvenance:
             ("chunk_contract_sha256", "0" * 60),
             ("embedding_model", "other/model"),
             ("embedding_model_revision", "0" * 40),
+            ("embedding_weights_sha256", "0" * 64),
             ("schema_sha256", "0" * 64),
             ("dimension", 768),
             ("format_version", 2),
@@ -1673,10 +1675,7 @@ class TestProductionProvenance:
     def test_a_drifted_source_map_is_refused(
         self, markers: dict[str, Path], live: dict[str, Any], both: bool
     ) -> None:
-        """**marker v1은 source map == corrected map이다**(구현리뷰 13차 필수 2).
-
-        원본 provenance로 해석하지 않는 것과 값을 아예 안 보는 것은 다르다.
-        """
+        """source map은 CM-1.3 원본 RAG hash와 일치해야 한다."""
 
         targets = markers.values() if both else [markers["kosa_agent"]]
         for path in targets:
@@ -1685,14 +1684,20 @@ class TestProductionProvenance:
         with pytest.raises(registrar.RegistrarError):
             registrar.runtime_rag_provenance(_rag_readers(), columns=_rag_columns())
 
-    def test_the_v1_source_map_equals_the_corrected_map(
+    def test_source_and_corrected_maps_are_separate_provenance(
         self, markers: dict[str, Path]
     ) -> None:
+        import load_rag_documents as rag
+
         for path in markers.values():
             payload = json.loads(path.read_text(encoding="utf-8"))
+            assert payload["source_sha256_by_document"] == rag.SOURCE_SHA256_BY_DOCUMENT
             assert (
-                payload["source_sha256_by_document"]
-                == payload["corrected_sha256_by_document"]
+                payload["corrected_sha256_by_document"] != rag.SOURCE_SHA256_BY_DOCUMENT
+            )
+            assert (
+                payload["correction_reason_by_document"]
+                == rag.CORRECTION_REASON_BY_DOCUMENT
             )
             assert payload["format_version"] == 1
 
@@ -1707,6 +1712,7 @@ class TestProductionProvenance:
         assert contract["chunk_contract_sha256"] == rag.CHUNK_CONTRACT_SHA256
         assert contract["embedding_model"] == rag.EMBEDDING_MODEL
         assert contract["embedding_model_revision"] == rag.EMBEDDING_MODEL_REVISION
+        assert contract["embedding_weights_sha256"] == rag.EMBEDDING_WEIGHTS_SHA256
         assert contract["dimension"] == rag.EMBEDDING_DIMENSION
         assert contract["format_version"] == 1
 

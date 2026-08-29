@@ -4,9 +4,11 @@ This is a small adapter around the mentor-provided RAG loading contract.  It
 keeps only the parts that belong to B Knowledge:
 
 * corrected RAG source files are explicit input;
-* only ``kosa_agent`` and ``kosa_agent_e2e`` can be targeted;
+* only ``kosa_agent``, ``kosa_agent_e2e``, and ``kosa_text2sql`` can be targeted;
 * canonical document IDs and deterministic chunk IDs are used;
-* only the three canonical documents are replaced in one transaction.
+* only the three canonical documents are replaced in one transaction;
+* if the live RAG fingerprint already matches the corrected corpus, the DB write
+  is skipped.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 import manifest_v3
-from dotenv import load_dotenv
 from db_target import (
     BootstrapTarget,
     TargetValidationError,
@@ -34,10 +35,10 @@ from db_target import (
     validate_connected_identity,
     validate_url_components,
 )
+from dotenv import load_dotenv
 from master_cypher import canonical_sha256
 from rag_chunk_contract import (
     CHUNK_CONTRACT_SHA256,
-    CHUNK_ID_FORMAT,
     CHUNK_SCHEMA_VERSION,
     FALLBACK_SECTION_TITLE,
     H2_HEADING_REGEX,
@@ -49,9 +50,12 @@ from sqlalchemy import create_engine
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CORRECTED_RAG_DIR = REPOSITORY_ROOT / "docs" / "knowledge" / "rag-corrected"
 MARKER_ROOT = REPOSITORY_ROOT / "infra" / "bootstrap" / "markers"
-SCHEMA_PATH = REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
+NOOP_ARTIFACT_ROOT = REPOSITORY_ROOT / "backend" / "artifacts" / "rag_noop"
+SCHEMA_PATH = (
+    REPOSITORY_ROOT / "backend" / "migrations" / "001_reference_extensions.sql"
+)
 
-ALLOWED_RAG_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e"})
+ALLOWED_RAG_DATABASES = frozenset({"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"})
 CANONICAL_DOCUMENT_IDS = (
     "DOC-SPEC-ET7500",
     "DOC-SPEC-PH9000",
@@ -64,7 +68,28 @@ REQUIRED_SOURCE_FILES = (
 )
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
+EMBEDDING_WEIGHTS_SHA256 = (
+    "b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38"
+)
 EMBEDDING_DIMENSION = 1024
+SOURCE_SHA256_BY_DOCUMENT = {
+    "DOC-SPEC-ET7500": (
+        "f3f5e04db8a06fc2f14f8b65422b3647a1fcda46a4e32dd5252bb1010076720f"
+    ),
+    "DOC-SPEC-PH9000": (
+        "a1ee6bd6a1410d389ed80a6937251f4d6a46aacb8109773a7797af6781c7d07a"
+    ),
+    "DOC-TROUBLE-FDC": (
+        "5a44e862faaf6f16a4aad103ecd6f37825a1387c14d18a9c09b32d0b90e97289"
+    ),
+}
+CORRECTION_REASON_BY_DOCUMENT = {
+    document_id: (
+        "원본 RAG의 머리말과 메타성 안내가 검색 chunk 본문에 섞여 문서 검색 품질을 "
+        "떨어뜨렸으므로, 최종 FDC 계약에 맞는 본문 중심 corrected source를 적재한다."
+    )
+    for document_id in SOURCE_SHA256_BY_DOCUMENT
+}
 SEARCH_SMOKE_CASES = (
     ("PH-9000 Photo Scanner 적용 범위", "PH-9000", "DOC-SPEC-PH9000"),
     ("ET-7500 Dry Etcher 적용 범위", "ET-7500", "DOC-SPEC-ET7500"),
@@ -143,7 +168,9 @@ def _parse_front_matter(path: Path) -> tuple[dict[str, str], str, str]:
     try:
         _, front_matter, body = text.split("---\n", 2)
     except ValueError as exc:
-        raise RagLoadError(f"{path.name}: YAML front matter가 닫히지 않았습니다") from exc
+        raise RagLoadError(
+            f"{path.name}: YAML front matter가 닫히지 않았습니다"
+        ) from exc
 
     metadata: dict[str, str] = {}
     for line in front_matter.splitlines():
@@ -188,7 +215,9 @@ def load_corrected_documents(source_dir: Path) -> tuple[RagDocument, ...]:
             raise RagLoadError(f"{filename}: canonical doc_id가 아닙니다: {doc_id}")
         doc_type = _require_metadata(metadata, "doc_type", filename=filename)
         if doc_type not in {"SPEC", "MANUAL", "TROUBLESHOOT"}:
-            raise RagLoadError(f"{filename}: doc_type이 DB CHECK와 다릅니다: {doc_type}")
+            raise RagLoadError(
+                f"{filename}: doc_type이 DB CHECK와 다릅니다: {doc_type}"
+            )
         documents.append(
             RagDocument(
                 document_id=doc_id,
@@ -304,13 +333,17 @@ def chunk_document(document: RagDocument) -> tuple[RagChunk, ...]:
 
 def prepare_corpus(source_dir: Path) -> PreparedRagCorpus:
     documents = load_corrected_documents(source_dir)
-    chunks = tuple(chunk for document in documents for chunk in chunk_document(document))
+    chunks = tuple(
+        chunk for document in documents for chunk in chunk_document(document)
+    )
     return PreparedRagCorpus(documents=documents, chunks=chunks)
 
 
 def validate_rag_target(database: str) -> BootstrapTarget:
     if database not in ALLOWED_RAG_DATABASES:
-        raise TargetValidationError("RAG 적재는 kosa_agent, kosa_agent_e2e만 허용합니다")
+        raise TargetValidationError(
+            "RAG 적재는 kosa_agent, kosa_agent_e2e, kosa_text2sql만 허용합니다"
+        )
     return load_bootstrap_target(database)
 
 
@@ -387,7 +420,8 @@ def load_corpus(
         INSERT INTO document
             (doc_id, title, doc_type, model_code, source_path, version)
         VALUES
-            (%(doc_id)s, %(title)s, %(doc_type)s, %(model_code)s, %(source_path)s, %(version)s)
+            (%(doc_id)s, %(title)s, %(doc_type)s, %(model_code)s,
+             %(source_path)s, %(version)s)
         """,
         [
             {
@@ -404,7 +438,8 @@ def load_corpus(
     connection.exec_driver_sql(
         """
         INSERT INTO document_chunk
-            (chunk_id, doc_id, chunk_seq, section_title, content, token_cnt, embedding, metadata_json)
+            (chunk_id, doc_id, chunk_seq, section_title, content, token_cnt,
+             embedding, metadata_json)
         VALUES
             (%(chunk_id)s, %(doc_id)s, %(chunk_seq)s, %(section_title)s, %(content)s,
              %(token_cnt)s, %(embedding)s::vector, %(metadata_json)s::jsonb)
@@ -456,7 +491,9 @@ def _validate_embedding_environment() -> None:
         raise RagLoadError(f"EMBEDDING_DIM은 {EMBEDDING_DIMENSION}이어야 합니다")
 
 
-def _load_sentence_transformer_encoder() -> Callable[[Sequence[str]], Sequence[Sequence[float]]]:
+def _load_sentence_transformer_encoder() -> (
+    Callable[[Sequence[str]], Sequence[Sequence[float]]]
+):
     _validate_embedding_environment()
     cache_dir = _embedding_cache_dir()
     try:
@@ -509,7 +546,8 @@ def _live_fingerprint(connection: Any, document_ids: Sequence[str]) -> str:
     chunks = _mapping_rows(
         connection.exec_driver_sql(
             """
-            SELECT chunk_id, doc_id, chunk_seq, section_title, content, token_cnt, metadata_json
+            SELECT chunk_id, doc_id, chunk_seq, section_title, content, token_cnt,
+                   metadata_json
               FROM document_chunk
              WHERE doc_id = ANY (%(document_ids)s)
              ORDER BY doc_id, chunk_seq, chunk_id
@@ -521,6 +559,50 @@ def _live_fingerprint(connection: Any, document_ids: Sequence[str]) -> str:
         {
             "documents": [_canonical_json(dict(row)) for row in documents],
             "chunks": [_canonical_json(dict(row)) for row in chunks],
+            "chunk_schema_version": CHUNK_SCHEMA_VERSION,
+            "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+            "embedding_dimension": EMBEDDING_DIMENSION,
+        }
+    )
+
+
+def _corpus_fingerprint(corpus: PreparedRagCorpus) -> str:
+    return canonical_sha256(
+        {
+            "documents": [
+                _canonical_json(
+                    {
+                        "doc_id": document.document_id,
+                        "title": document.title,
+                        "doc_type": document.doc_type,
+                        "model_code": document.model_code,
+                        "source_path": document.source_path,
+                        "version": document.version,
+                    }
+                )
+                for document in sorted(
+                    corpus.documents, key=lambda item: item.document_id
+                )
+            ],
+            "chunks": [
+                _canonical_json(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "doc_id": chunk.doc_id,
+                        "chunk_seq": chunk.chunk_seq,
+                        "section_title": chunk.section_title,
+                        "content": chunk.content,
+                        "token_cnt": chunk.token_cnt,
+                        "metadata_json": chunk.metadata_json,
+                    }
+                )
+                for chunk in sorted(
+                    corpus.chunks,
+                    key=lambda item: (item.doc_id, item.chunk_seq, item.chunk_id),
+                )
+            ],
             "chunk_schema_version": CHUNK_SCHEMA_VERSION,
             "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
             "embedding_model": EMBEDDING_MODEL,
@@ -556,7 +638,9 @@ def _search_smoke(
         rows = _mapping_rows(
             connection.exec_driver_sql(
                 """
-                SELECT d.doc_id, c.chunk_id, 1 - (c.embedding <=> %(embedding)s::vector) AS score
+                SELECT d.doc_id,
+                       c.chunk_id,
+                       1 - (c.embedding <=> %(embedding)s::vector) AS score
                   FROM document_chunk c
                   JOIN document d ON d.doc_id = c.doc_id
                  WHERE (%(model_code)s::varchar IS NULL
@@ -602,7 +686,11 @@ def verify_live_load(
     )
     chunk_count = _scalar_count(
         connection,
-        "SELECT count(*) AS value FROM document_chunk WHERE doc_id = ANY (%(document_ids)s)",
+        """
+        SELECT count(*) AS value
+          FROM document_chunk
+         WHERE doc_id = ANY (%(document_ids)s)
+        """,
         parameters,
     )
     null_embedding_count = _scalar_count(
@@ -636,7 +724,7 @@ def build_marker(
     corpus: PreparedRagCorpus,
     verification: PostLoadVerification,
 ) -> dict[str, Any]:
-    source_sha256_by_document = {
+    corrected_sha256_by_document = {
         document.document_id: document.corrected_sha256 for document in corpus.documents
     }
     marker = {
@@ -647,12 +735,14 @@ def build_marker(
         "profile": target.profile,
         "schema_sha256": _sha256_file(SCHEMA_PATH),
         "document_ids": list(CANONICAL_DOCUMENT_IDS),
-        "source_sha256_by_document": source_sha256_by_document,
-        "corrected_sha256_by_document": source_sha256_by_document,
+        "source_sha256_by_document": SOURCE_SHA256_BY_DOCUMENT,
+        "corrected_sha256_by_document": corrected_sha256_by_document,
+        "correction_reason_by_document": CORRECTION_REASON_BY_DOCUMENT,
         "chunk_schema_version": CHUNK_SCHEMA_VERSION,
         "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
         "embedding_model": EMBEDDING_MODEL,
         "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+        "embedding_weights_sha256": EMBEDDING_WEIGHTS_SHA256,
         "dimension": EMBEDDING_DIMENSION,
         "document_count": verification.document_count,
         "chunk_count": verification.chunk_count,
@@ -665,12 +755,68 @@ def build_marker(
     return marker
 
 
-def save_marker(marker: Mapping[str, Any], *, database: str, root: Path = MARKER_ROOT) -> None:
+def save_marker(
+    marker: Mapping[str, Any], *, database: str, root: Path = MARKER_ROOT
+) -> None:
     path = marker_path(database, root=root)
     manifest_v3.atomic_save_json(path, marker)
 
 
-def run_load(*, database: str, source_dir: Path) -> int:
+def _is_same_corpus_already_loaded(
+    connection: Any,
+    corpus: PreparedRagCorpus,
+    *,
+    encode: Callable[[Sequence[str]], Sequence[Sequence[float]]],
+) -> PostLoadVerification | None:
+    document_ids = tuple(document.document_id for document in corpus.documents)
+    if _live_fingerprint(connection, document_ids) != _corpus_fingerprint(corpus):
+        return None
+    return verify_live_load(connection, corpus, encode=encode)
+
+
+def save_noop_artifact(
+    target: BootstrapTarget,
+    corpus: PreparedRagCorpus,
+    verification: PostLoadVerification,
+    *,
+    root: Path = NOOP_ARTIFACT_ROOT,
+) -> Path:
+    artifact = {
+        "format_version": 1,
+        "artifact_type": "rag_idempotent_noop",
+        "task_id": "V5-B-1.4",
+        "status": "PASS",
+        "database": target.database,
+        "profile": target.profile,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "document_ids": list(CANONICAL_DOCUMENT_IDS),
+        "document_count": verification.document_count,
+        "chunk_count": verification.chunk_count,
+        "null_embedding_count": verification.null_embedding_count,
+        "before_fingerprint": verification.live_db_fingerprint_sha256,
+        "after_fingerprint": verification.live_db_fingerprint_sha256,
+        "db_write": "skipped",
+        "source_sha256_by_document": SOURCE_SHA256_BY_DOCUMENT,
+        "corrected_sha256_by_document": {
+            document.document_id: document.corrected_sha256
+            for document in corpus.documents
+        },
+        "correction_reason_by_document": CORRECTION_REASON_BY_DOCUMENT,
+        "chunk_schema_version": CHUNK_SCHEMA_VERSION,
+        "chunk_contract_sha256": CHUNK_CONTRACT_SHA256,
+        "embedding_model": EMBEDDING_MODEL,
+        "embedding_model_revision": EMBEDDING_MODEL_REVISION,
+        "embedding_weights_sha256": EMBEDDING_WEIGHTS_SHA256,
+        "dimension": EMBEDDING_DIMENSION,
+        "search_smoke": list(verification.search_smoke),
+    }
+    manifest_v3.scan_for_sensitive_values(artifact)
+    path = root / f"rag_noop.{target.database}.json"
+    manifest_v3.atomic_save_json(path, artifact)
+    return path
+
+
+def run_load(*, database: str, source_dir: Path, noop_only: bool = False) -> int:
     load_dotenv(REPOSITORY_ROOT / ".env")
     target = validate_rag_target(database)
     corpus = prepare_corpus(source_dir)
@@ -679,6 +825,29 @@ def run_load(*, database: str, source_dir: Path) -> int:
     validate_url_components(url, target)
     engine = create_engine(url)
     try:
+        with engine.connect() as connection:
+            validate_connected_identity(connection, target)
+            set_and_validate_public_search_path(connection)
+            preflight_schema(connection)
+            verification = _is_same_corpus_already_loaded(
+                connection,
+                corpus,
+                encode=encode,
+            )
+            if verification is not None:
+                save_marker(
+                    build_marker(target, corpus, verification),
+                    database=database,
+                )
+                if noop_only:
+                    save_noop_artifact(target, corpus, verification)
+                return 0
+            if noop_only:
+                raise RagLoadError(
+                    "live RAG fingerprint가 corrected corpus와 달라 "
+                    "no-op으로 검증할 수 없습니다"
+                )
+
         with engine.connect() as connection:
             with connection.begin():
                 validate_connected_identity(connection, target)
@@ -700,7 +869,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--database",
         required=True,
         choices=sorted(ALLOWED_RAG_DATABASES),
-        help="RAG 적재 대상 DB. 기본값과 평가 DB는 허용하지 않는다.",
+        help="RAG 적재 대상 DB. 명시한 세 DB만 허용한다.",
     )
     parser.add_argument(
         "--confirm-target",
@@ -714,6 +883,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=Path,
         help="검증된 corrected RAG 3종이 들어 있는 명시 경로.",
     )
+    parser.add_argument(
+        "--noop-only",
+        action="store_true",
+        help="이미 같은 corpus인 경우만 통과하고 DB write 경로는 실행하지 않는다.",
+    )
     args = parser.parse_args(argv)
     if args.database != args.confirm_target:
         raise RagLoadError("--confirm-target과 --database가 다릅니다")
@@ -722,7 +896,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    inserted = run_load(database=args.database, source_dir=args.source_dir)
+    inserted = run_load(
+        database=args.database,
+        source_dir=args.source_dir,
+        noop_only=args.noop_only,
+    )
     print(f"loaded_rag_rows={inserted}")
     return 0
 

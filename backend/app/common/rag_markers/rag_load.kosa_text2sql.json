@@ -2,8 +2,8 @@
   "format_version": 1,
   "artifact_type": "rag_load_marker",
   "status": "COMMITTED",
-  "database": "kosa_agent",
-  "profile": "runtime",
+  "database": "kosa_text2sql",
+  "profile": "evaluation",
   "schema_sha256": "ca01122ba432dd95c212400ce5b34837098690942ed0b8a77d7cafb35f60ec49",
   "document_ids": [
     "DOC-SPEC-ET7500",
@@ -73,5 +73,5 @@
       "passed": true
     }
   ],
-  "recorded_at": "2026-08-28T13:50:01.009383+00:00"
+  "recorded_at": "2026-08-28T13:50:48.835028+00:00"
 }

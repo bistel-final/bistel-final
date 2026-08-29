@@ -104,11 +104,11 @@ def test_cli_requires_confirm_target_to_match_database() -> None:
         )
 
 
-def test_schema_targets_are_wider_than_load_targets() -> None:
-    """**schema 대상 ⊃ 적재 대상.** 두 집합을 같다고 강제하면 안 된다.
+def test_schema_targets_match_load_targets_after_b_1_4() -> None:
+    """`V5-B-1.4` 이후 schema·load 대상은 모두 세 DB다.
 
-    문서를 넣지 않는 target에도 schema는 맞춰야 한다. 반대로 적재하지 않은 target에
-    B의 fingerprint 산식을 돌리면 `UndefinedColumn`으로 죽는다.
+    `kosa_text2sql`도 RAG 운영 검증 대상이 되었으므로 schema target을 더 넓은
+    과거 계약으로 고정하면 안 된다.
     """
 
     import load_rag_documents
@@ -119,16 +119,17 @@ def test_schema_targets_are_wider_than_load_targets() -> None:
         load_rag_documents.ALLOWED_RAG_DATABASES
         == postgres_transition.B_LOADED_RAG_TARGETS
     )
-    assert load_rag_documents.ALLOWED_RAG_DATABASES < runner.ALLOWED_RAG_DATABASES
+    assert load_rag_documents.ALLOWED_RAG_DATABASES == runner.ALLOWED_RAG_DATABASES
+    assert runner.ALLOWED_RAG_DATABASES == frozenset(
+        {"kosa_agent", "kosa_agent_e2e", "kosa_text2sql"}
+    )
 
 
 def test_every_schema_target_parses() -> None:
     """allowlist에 있는 target은 CLI가 전부 받는다."""
 
     for database in sorted(runner.ALLOWED_RAG_DATABASES):
-        args = runner.parse_args(
-            ["--database", database, "--confirm-target", database]
-        )
+        args = runner.parse_args(["--database", database, "--confirm-target", database])
         assert args.database == database
 
 

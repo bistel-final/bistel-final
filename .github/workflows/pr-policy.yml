@@ -229,6 +229,7 @@ jobs:
           tests/unit/test_prefetch_embedding_model.py
           tests/unit/test_preflight.py
           tests/unit/test_query_log.py
+          tests/unit/test_rag_readiness.py
           tests/unit/test_rebuild_runner.py
           tests/unit/test_reference_extensions.py
           tests/unit/test_register_final_manifests.py
@@ -244,6 +245,7 @@ jobs:
           tests/unit/test_source_manifest_artifact.py
           tests/unit/test_source_manifest_v4.py
           tests/unit/test_value_normalization.py
+          tests/unit/test_verify_rag_schema_state.py
           tests/unit/test_verify_migrations.py
           tests/contract/test_detection_label_isolation.py
           -rs --no-header
