@@ -36,3 +36,6 @@ deploy/compose/trail/
 
 # 개인 검토용 산출물 — 정리 후 docs/ 로 옮긴다
 output/
+
+# CM-4.7 reset 증적 — 로컬 전용, 커밋 금지 (runbook 정책)
+infra/bootstrap/reports/
