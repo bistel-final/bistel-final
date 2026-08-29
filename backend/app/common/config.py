@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -88,14 +89,48 @@ AGENT_EMAIL_RECIPIENTS = os.getenv("AGENT_EMAIL_RECIPIENTS")
 API_HOST = get_env("API_HOST", "0.0.0.0")
 API_PORT = int(get_env("API_PORT", "8000"))
 
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in get_env(
+
+def parse_cors_origins(raw_origins: str) -> list[str]:
+    """Credential CORS에서 사용할 명시 origin 목록만 허용한다."""
+
+    origins = [origin.strip() for origin in raw_origins.split(",")]
+    if not origins or any(not origin for origin in origins):
+        raise RuntimeError("CORS_ORIGINS 에 빈 origin을 사용할 수 없습니다")
+    if len(set(origins)) != len(origins):
+        raise RuntimeError("CORS_ORIGINS 에 중복 origin을 사용할 수 없습니다")
+
+    for origin in origins:
+        if origin in {"*", "null"}:
+            raise RuntimeError(
+                "CORS_ORIGINS 에 wildcard 또는 null을 사용할 수 없습니다"
+            )
+        try:
+            parsed = urlsplit(origin)
+            _ = parsed.port
+        except ValueError as exc:
+            raise RuntimeError("CORS_ORIGINS 형식이 올바르지 않습니다") from exc
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise RuntimeError(
+                "CORS_ORIGINS 는 credential·path·query·fragment 없는 "
+                "http(s) origin이어야 합니다"
+            )
+    return origins
+
+
+CORS_ORIGINS = parse_cors_origins(
+    get_env(
         "CORS_ORIGINS",
         "http://localhost:5173",
-    ).split(",")
-    if origin.strip()
-]
+    )
+)
 
 # ---------------------------------------------------------------------
 # 에이전트 동작 설정

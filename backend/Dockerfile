@@ -1,15 +1,23 @@
-FROM python:3.12-slim
+FROM python:3.12.8-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/workspace/backend
 
-WORKDIR /app
+WORKDIR /workspace/backend
 
-COPY requirements.txt .
+COPY backend/requirements.txt ./requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+# sentence-transformers의 열린 torch 범위가 최신 CUDA 전이를 끌어오지 않도록
+# CPU wheel을 먼저 고정한다. 공용 서버는 RAG 추론만 수행하며 GPU runtime을 쓰지 않는다.
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch==2.5.1 \
+    && pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY backend/app ./app
+COPY backend/scripts ./scripts
+COPY backend/artifacts ./artifacts
 
 EXPOSE 8000
 

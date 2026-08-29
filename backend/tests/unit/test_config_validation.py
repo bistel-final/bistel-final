@@ -52,6 +52,42 @@ class TestDefaults:
         assert config.MODEL_SIGNAL_ENABLED is False
 
 
+class TestCorsOrigins:
+    def test_explicit_origins_are_loaded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        config = load_config(
+            monkeypatch,
+            CORS_ORIGINS="https://fdc.example.com,http://10.0.0.5:53080",
+        )
+
+        assert config.CORS_ORIGINS == [
+            "https://fdc.example.com",
+            "http://10.0.0.5:53080",
+        ]
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "*",
+            "null",
+            "http://localhost:5173,",
+            "http://user:pw@example.com",
+            "http://example.com/path",
+            "http://example.com?query=1",
+            "http://example.com#fragment",
+            "http://example.com,http://example.com",
+            "ftp://example.com",
+        ],
+    )
+    def test_unsafe_origin_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+            load_config(monkeypatch, CORS_ORIGINS=value)
+
+
 class TestApplicationCredentialBoundary:
     def test_app_role_name_is_fixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(RuntimeError, match="APP_DB_USER"):

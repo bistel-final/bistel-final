@@ -5,6 +5,7 @@
 # 공개 저장소라 한 번의 `git add -A` 로 자격증명이 나간다.
 .env[ ]*
 !.env.example
+!deploy/compose/.env.team.example
 .venv/
 venv/
 

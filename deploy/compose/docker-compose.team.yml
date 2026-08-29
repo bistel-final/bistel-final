@@ -1,0 +1,145 @@
+services:
+  backend:
+    image: bistel-backend:${TEAM_IMAGE_TAG:?TEAM_IMAGE_TAG is required}
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:?POSTGRES_HOST is required}
+      POSTGRES_PORT: ${POSTGRES_PORT:?POSTGRES_PORT is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      APP_DB_USER: ${APP_DB_USER:?APP_DB_USER is required}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
+      READONLY_USER: ${READONLY_USER:?READONLY_USER is required}
+      READONLY_PASSWORD: ${READONLY_PASSWORD:?READONLY_PASSWORD is required}
+      NEO4J_URI: ${NEO4J_URI:?NEO4J_URI is required}
+      NEO4J_USER: ${NEO4J_USER:?NEO4J_USER is required}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:?N8N_WEBHOOK_URL is required}
+      N8N_WF3_URL: ${N8N_WF3_URL:?N8N_WF3_URL is required}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET is required}
+      N8N_WEBHOOK_TIMEOUT_SEC: ${N8N_WEBHOOK_TIMEOUT_SEC:?N8N_WEBHOOK_TIMEOUT_SEC is required}
+      AGENT_EMAIL_RECIPIENTS: ${AGENT_EMAIL_RECIPIENTS:?AGENT_EMAIL_RECIPIENTS is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      LLM_PROVIDER: ${LLM_PROVIDER:?LLM_PROVIDER is required}
+      LLM_MODEL_MAIN: ${LLM_MODEL_MAIN:?LLM_MODEL_MAIN is required}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:?LLM_TEMPERATURE is required}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:?LLM_MAX_TOKENS is required}
+      LLM_TIMEOUT_SEC: ${LLM_TIMEOUT_SEC:?LLM_TIMEOUT_SEC is required}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required}
+      LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL is required}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:?EMBEDDING_MODEL is required}
+      EMBEDDING_MODEL_REVISION: ${EMBEDDING_MODEL_REVISION:?EMBEDDING_MODEL_REVISION is required}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:?EMBEDDING_DIM is required}
+      EMBEDDING_MODEL_PATH: /models/bge-m3
+    volumes:
+      - type: bind
+        source: ${RAG_MODEL_CACHE_DIR:?RAG_MODEL_CACHE_DIR is required}
+        target: /models/bge-m3
+        read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks:
+      - team
+
+  frontend:
+    image: bistel-frontend:${TEAM_IMAGE_TAG:?TEAM_IMAGE_TAG is required}
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_USE_MOCK: "false"
+        VITE_USE_MOCK_DETECTION: "false"
+        VITE_USE_MOCK_AGENT: "false"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "53080:80"
+    networks:
+      - team
+
+  kafka:
+    image: apache/kafka:3.9.1
+    entrypoint: ["/opt/team/start_kafka.sh"]
+    restart: unless-stopped
+    ports:
+      - "53004:9094"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://${KAFKA_ADVERTISED_HOST:?KAFKA_ADVERTISED_HOST is required}:53004
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_OPTS: -Djava.security.auth.login.config=/tmp/kafka_server_jaas.conf
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ./kafka/manage_topics.sh:/opt/team/manage_topics.sh:ro
+      - ./kafka/start_kafka.sh:/opt/team/start_kafka.sh:ro
+    secrets:
+      - kafka_broker_user
+      - kafka_broker_password
+      - kafka_client_user
+      - kafka_client_password
+    healthcheck:
+      test: ["CMD", "/opt/team/manage_topics.sh", "health", "kafka:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - team
+
+  mes-mock:
+    profiles: ["mes"]
+    image: bistel-backend:${TEAM_IMAGE_TAG:?TEAM_IMAGE_TAG is required}
+    command: ["python", "-m", "app.mes_mock"]
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      KAFKA_CLIENT_USER: ${KAFKA_CLIENT_USER:?KAFKA_CLIENT_USER is required}
+      KAFKA_CLIENT_PASSWORD: ${KAFKA_CLIENT_PASSWORD:?KAFKA_CLIENT_PASSWORD is required}
+      MES_CONSUMER_GROUP: kosa-fdc-mes-mock
+    networks:
+      - team
+
+networks:
+  team:
+    driver: bridge
+
+volumes:
+  kafka_data:
+
+secrets:
+  kafka_broker_user:
+    environment: KAFKA_BROKER_USER
+  kafka_broker_password:
+    environment: KAFKA_BROKER_PASSWORD
+  kafka_client_user:
+    environment: KAFKA_CLIENT_USER
+  kafka_client_password:
+    environment: KAFKA_CLIENT_PASSWORD
