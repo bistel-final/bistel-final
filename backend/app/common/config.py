@@ -84,6 +84,9 @@ N8N_WEBHOOK_URL = get_env("N8N_WEBHOOK_URL")
 # 검증한다(V5-C-4.3).
 N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET")
 AGENT_EMAIL_RECIPIENTS = os.getenv("AGENT_EMAIL_RECIPIENTS")
+# MES adapter를 조립하지 않는 command는 WF3 URL 부재로 import 단계에서 죽지 않는다.
+# production factory가 DB 접근 전에 exact path와 secret을 함께 검증한다(V5-C-4.5).
+N8N_WF3_URL = os.getenv("N8N_WF3_URL")
 
 # FastAPI
 API_HOST = get_env("API_HOST", "0.0.0.0")
@@ -171,7 +174,7 @@ if HITL_REQUIRED_SEVERITY != "HIGH":
 TOOL_DB_TIMEOUT_SEC = get_int_env("TOOL_DB_TIMEOUT_SEC", "5", minimum=1)
 TOOL_EMBEDDING_TIMEOUT_SEC = get_int_env("TOOL_EMBEDDING_TIMEOUT_SEC", "15", minimum=1)
 # n8n delivery webhook은 SMTP callback 왕복을 포함하므로 25초 미만을 허용하지 않는다.
-# 현재 소비자는 C-4.3 EMAIL adapter뿐이며 C-4.5 MES adapter도 같은 경계를 재사용한다.
+# C-4.3 EMAIL과 C-4.5 MES adapter가 같은 n8n delivery 경계를 재사용한다.
 N8N_WEBHOOK_TIMEOUT_SEC = get_int_env("N8N_WEBHOOK_TIMEOUT_SEC", "30", minimum=25)
 
 # ---------------------------------------------------------------------

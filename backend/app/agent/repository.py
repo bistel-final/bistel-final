@@ -33,7 +33,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
@@ -111,6 +111,7 @@ __all__ = [
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
+    "MesDeliveryClaim",
     "DeliveryCallbackTransition",
     "ApprovalDecisionRow",
     "RESERVED_TOOL_OUTPUT_KEYS",
@@ -137,6 +138,8 @@ __all__ = [
     "list_action_deliveries",
     "begin_email_delivery",
     "settle_email_delivery",
+    "begin_mes_delivery",
+    "settle_mes_webhook",
     "settle_delivery_callback",
     "INITIAL_DELIVERY_PAIRS",
 ]
@@ -2378,6 +2381,16 @@ class ActionDeliveryRow:
 
 
 @dataclass(frozen=True, slots=True)
+class MesDeliveryClaim:
+    """승인·run·equipment와 결속된 MES ``SENDING`` claim."""
+
+    delivery: ActionDeliveryRow
+    action: ActionHistoryRow
+    approval: ApprovalRequestRow
+    equipment_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryCallbackTransition:
     delivery: ActionDeliveryRow
     duplicate: bool
@@ -2475,11 +2488,62 @@ _UPDATE_EMAIL_DELIVERY_UNCERTAIN = text(
     """
 )
 
+_BEGIN_MES_DELIVERY = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'SENDING',
+        attempt_count = attempt_count + 1,
+        started_at = clock_timestamp(),
+        last_error = NULL,
+        completed_at = NULL
+    WHERE action_id = :action_id
+      AND channel = 'MES_MOCK'
+      AND status = 'WAITING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_UPDATE_MES_DELIVERY_FAILED = text(
+    f"""
+    UPDATE action_delivery
+    SET status = 'FAILED', completed_at = clock_timestamp(), last_error = :last_error
+    WHERE action_id = :action_id AND channel = 'MES_MOCK' AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_UPDATE_MES_DELIVERY_UNCERTAIN = text(
+    f"""
+    UPDATE action_delivery
+    SET last_error = :last_error
+    WHERE action_id = :action_id AND channel = 'MES_MOCK' AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
+    """
+)
+
+_SELECT_APPROVAL_FOR_ACTION = text(
+    f"""
+    SELECT {_APPROVAL_COLUMNS}
+    FROM approval_request
+    WHERE action_id = :action_id
+    """
+)
+
+_SELECT_INCIDENT_EQUIPMENT = text(
+    """
+    SELECT DISTINCT equipment_id
+    FROM lot_history
+    WHERE lot_id = :lot_id AND chamber_id = :chamber_id
+    ORDER BY equipment_id
+    """
+)
+
 #: `request_hash char(64)`는 소문자 hex다. 형식 위반은 DB가 CHECK로 막지만 그 전에
 #: 걸러야 caller 입력 오류가 driver 예외로 올라가지 않는다.
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
-# n8n·Kafka producer와 PostgreSQL host의 벽시계가 완전히 같다는 전제를 두지 않는다.
+#: callback 시각은 n8n host, ``started_at``은 PostgreSQL host에서 생성된다. 정상적인
+#: 짧은 왕복을 host 간 NTP 오차로 거부하지 않되, 5초를 넘는 역행은 계약 위반으로 막는다.
 _DELIVERY_CLOCK_SKEW_TOLERANCE: Final = timedelta(seconds=5)
 
 #: 생성 시점의 **정확한 (channel, status) 조합**. 설계 §7.1이 둘로 고정한다.
@@ -2673,6 +2737,193 @@ def settle_email_delivery(
         row = _fetch_one(
             connection,
             _UPDATE_EMAIL_DELIVERY_FAILED,
+            {"action_id": action_id, "last_error": failure_code},
+            "DELIVERY_STATE_CHANGED",
+        )
+        append_audit_log(connection, record)
+        return row
+
+    return _delivery_row(_write(connection, _run))
+
+
+def begin_mes_delivery(
+    connection: Connection, *, action_id: str
+) -> MesDeliveryClaim | None:
+    """승인된 EQP_HOLD 한 건만 ``WAITING→SENDING``으로 claim한다.
+
+    delivery row를 먼저 잠그므로 같은 action의 동시 호출 중 하나만 외부 I/O
+    자격을 얻는다.
+    이미 claim·terminal·canceled 상태면 안전한 ``None``이며, 아직 WAITING인 row는
+    approval→run→CREATED action과 ``lot_history`` equipment 유일성을 같은
+    transaction에서 재검증한 뒤에만 전이한다.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_DELIVERY_FOR_UPDATE,
+            {
+                "action_id": action_id,
+                "channel": DeliveryChannel.MES_MOCK.value,
+            },
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.status is not DeliveryStatus.WAITING:
+        return None
+
+    action = get_action_history(connection, action_id)
+    try:
+        approval_row = connection.execute(
+            _SELECT_APPROVAL_FOR_ACTION,
+            {"action_id": action_id},
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if approval_row is None:
+        raise RepositoryConflict("MES_APPROVAL_IDENTITY_MISMATCH")
+    approval = _approval_row(approval_row)
+    try:
+        link = get_run_action(connection, approval.agent_run_id)
+        run = get_agent_run(connection, approval.agent_run_id)
+    except RepositoryNotFound as exc:
+        raise RepositoryConflict("MES_APPROVAL_IDENTITY_MISMATCH") from exc
+
+    # legacy ``action_history.approved_at``은 timestamp, Runtime
+    # ``approval_request.decided_at``은 timestamptz다. 둘은 같은 DB 값이어도 psycopg가
+    # 각각 naive/aware datetime으로 돌려주므로 직접 equality는 항상 거짓이다.
+    action_decided_at = action.approved_at
+    approval_decided_at = approval.decided_at
+    same_decision_time = (
+        action_decided_at is not None
+        and approval_decided_at is not None
+        and action_decided_at.replace(tzinfo=UTC) == approval_decided_at.astimezone(UTC)
+    )
+
+    if (
+        action.action_code is not ActionCode.EQP_HOLD
+        or not action.approval_required
+        or action.approval_status is not ApprovalStatus.APPROVED
+        or approval.action_id != action_id
+        or approval.status is not ApprovalStatus.APPROVED
+        or approval.decided_by is None
+        or approval.decided_at is None
+        or action.approved_by != approval.decided_by
+        or not same_decision_time
+        or link.link_role is not ActionLinkRole.CREATED
+        or link.action_id != action_id
+        or link.lot_id != action.lot_id
+        or link.chamber_id != action.chamber_id
+        or run.action is not ActionCode.EQP_HOLD
+        or run.lot_id != action.lot_id
+        or run.chamber_id != action.chamber_id
+    ):
+        raise RepositoryConflict("MES_APPROVAL_IDENTITY_MISMATCH")
+
+    try:
+        equipment_rows = connection.execute(
+            _SELECT_INCIDENT_EQUIPMENT,
+            {"lot_id": action.lot_id, "chamber_id": action.chamber_id},
+        ).all()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    equipment_ids = tuple(
+        str(row.equipment_id).strip()
+        for row in equipment_rows
+        if row.equipment_id is not None and str(row.equipment_id).strip()
+    )
+    if len(equipment_rows) != 1 or len(equipment_ids) != 1:
+        raise RepositoryContractError("MES_EQUIPMENT_NOT_UNIQUE")
+
+    try:
+        claimed_row = connection.execute(
+            _BEGIN_MES_DELIVERY,
+            {"action_id": action_id},
+        ).one_or_none()
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
+    if claimed_row is None:
+        raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+    return MesDeliveryClaim(
+        delivery=_delivery_row(claimed_row),
+        action=action,
+        approval=approval,
+        equipment_id=equipment_ids[0],
+    )
+
+
+_TERMINAL_MES_FAILURE_CODES = frozenset({"WEBHOOK_401", "WEBHOOK_422"})
+
+
+def settle_mes_webhook(
+    connection: Connection,
+    *,
+    action_id: str,
+    request_hash: str,
+    failure_code: str | None,
+    terminal_failure: bool,
+) -> ActionDeliveryRow:
+    """WF3 응답 뒤 MES row를 비동기 callback DB 정본과 수렴시킨다."""
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    request_hash = _require_text(request_hash, "request_hash")
+    if not _HEX64.fullmatch(request_hash):
+        raise RepositoryContractError("INVALID_REQUEST_HASH")
+    if failure_code is not None and not _DELIVERY_ERROR_CODE.fullmatch(failure_code):
+        raise RepositoryContractError("INVALID_DELIVERY_ERROR_CODE")
+    if terminal_failure and failure_code not in _TERMINAL_MES_FAILURE_CODES:
+        raise RepositoryContractError("DELIVERY_TERMINAL_FAILURE_INVALID")
+    if not terminal_failure and failure_code in _TERMINAL_MES_FAILURE_CODES:
+        raise RepositoryContractError("DELIVERY_TERMINAL_FLAG_REQUIRED")
+
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_DELIVERY_FOR_UPDATE,
+            {
+                "action_id": action_id,
+                "channel": DeliveryChannel.MES_MOCK.value,
+            },
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.request_hash != request_hash:
+        raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+    if locked.status in {DeliveryStatus.SENT, DeliveryStatus.FAILED}:
+        return locked
+    if locked.status is not DeliveryStatus.SENDING:
+        raise RepositoryConflict("DELIVERY_NOT_SENDING")
+    if failure_code is None:
+        return locked
+
+    if not terminal_failure:
+        row = _fetch_one(
+            connection,
+            _UPDATE_MES_DELIVERY_UNCERTAIN,
+            {"action_id": action_id, "last_error": failure_code},
+            "DELIVERY_STATE_CHANGED",
+        )
+        return _delivery_row(row)
+
+    record = _run_audit_record(
+        AuditEvent.ACTION_SEND_FAILED,
+        entity_id=action_id,
+        actor_type=ActorType.SYSTEM,
+        actor_id=None,
+        after={
+            "channel": DeliveryChannel.MES_MOCK.value,
+            "transport": "KAFKA",
+            "reason_code": failure_code,
+        },
+    )
+
+    def _run() -> Any:
+        row = _fetch_one(
+            connection,
+            _UPDATE_MES_DELIVERY_FAILED,
             {"action_id": action_id, "last_error": failure_code},
             "DELIVERY_STATE_CHANGED",
         )

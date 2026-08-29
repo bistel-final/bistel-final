@@ -22,6 +22,7 @@ from app.agent.approval_store import (
 )
 from app.agent.checkpoint import AgentCheckpointError
 from app.agent.hypothesis import HypothesisGenerationError
+from app.agent.mes_delivery import MesDeliveryError
 from app.agent.prompts import PROMPT_VERSION
 from app.agent.rehydration import RehydrationSeed
 from app.agent.repository import (
@@ -184,6 +185,8 @@ def _classify_exception(exc: Exception) -> str:
     if isinstance(exc, PortNotWiredError):
         return exc.code
     if isinstance(exc, AgentGraphInputError):
+        return exc.code
+    if isinstance(exc, MesDeliveryError):
         return exc.code
     if isinstance(exc, ValidationError):
         return "STATE_CONTRACT_ERROR"

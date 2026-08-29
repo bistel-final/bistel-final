@@ -391,8 +391,14 @@ class TestHiddenGoldIsolation:
 
     def test_no_evaluation_label_join(self) -> None:
         body = _code_only(Path(repo.__file__))
-        for forbidden in ("lot_history", "fault_code FROM", "evaluation"):
+        # C-4.5는 조치 대상 장비 식별을 위해 lot_history의 equipment_id만 읽는다.
+        # fault_code·evaluation 정답 label에는 계속 접근하지 않는다.
+        for forbidden in ("fault_code FROM", "evaluation"):
             assert forbidden not in body, forbidden
+        equipment_sql = str(repo._SELECT_INCIDENT_EQUIPMENT)
+        assert "SELECT DISTINCT equipment_id" in equipment_sql
+        assert "FROM lot_history" in equipment_sql
+        assert "fault_code" not in equipment_sql
 
 
 # --- SQL·오류 계약 ----------------------------------------------------------

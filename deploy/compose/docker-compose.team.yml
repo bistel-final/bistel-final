@@ -96,6 +96,7 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
       - ./kafka/manage_topics.sh:/opt/team/manage_topics.sh:ro
+      - ./kafka/manage_wf4_offsets.sh:/opt/team/manage_wf4_offsets.sh:ro
       - ./kafka/start_kafka.sh:/opt/team/start_kafka.sh:ro
     secrets:
       - kafka_broker_user

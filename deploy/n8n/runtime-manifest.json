@@ -21,7 +21,7 @@
   },
   "workflow_source_sha256": {
     "WF2-notify-email.json": "sha256:1c1204b0ffaee036af16e7db1862b4d7cc7eeebf05faa4ad7cfa62c3eb9b025e",
-    "WF3-mes-hold.json": "sha256:79b05d294b93a2d19cbc3d2de3d905e3f6cde90d48f5ba01707e42504b7341d6",
+    "WF3-mes-hold.json": "sha256:a28eef135f5acf79bfc5a59974361b0e6cda5ddecb2999bcf323f2b1b2c1d9b4",
     "WF4-result-writeback.json": "sha256:cce3bb35c82718aeeea55178827c58179cca263c52095c19316a7f2a1967513e"
   }
 }

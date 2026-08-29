@@ -68,6 +68,7 @@ python-dotenv==1.0.1          # .env 로드
 pydantic==2.10.3              # Tool 입출력 스키마 정의·검증
 tenacity==9.0.0               # Tool 재시도 정책
 httpx==0.28.1
+confluent-kafka==2.6.1       # Kafka 3.9.1 MES Mock producer/consumer (CPython 3.12 wheel)
 tqdm==4.67.1
 
 # ---------------------------------------------------------------------

@@ -23,12 +23,12 @@ docker compose -p bistel-team -f deploy/compose/docker-compose.team.yml \
 partition=1·replication=1이어야 한다. compose service를 Backend·Frontend·Kafka·MES Mock
 4종으로 유지하기 위해 별도 init service 대신 이 명시적 운영 단계를 정본으로 둔다.
 
-`mes-mock`은 `V5-C-4.5`의 `app.mes_mock` entrypoint가 merge된 뒤에만
-`--profile mes up -d`로 활성화한다. 그 전에는 `--profile mes config --services`로 4종
-정의만 확인한다. compose는 Kafka client 사용자명·비밀번호 원문을 container environment에
-넣지 않고 `/run/secrets/kafka_client_user`·`/run/secrets/kafka_client_password`로
-마운트한다. C-4.5 entrypoint는 `KAFKA_CLIENT_USER_FILE`·
-`KAFKA_CLIENT_PASSWORD_FILE` 경로만 소비해야 하며 원문 env fallback을 두지 않는다.
+`mes-mock`은 `--profile mes up -d mes-mock`으로 활성화한다. 이 consumer의 group은
+`kosa-fdc-mes-mock`이고, n8n WF4 write-back group은 `kosa-fdc-wf4-writeback`이다. 두
+group의 offset을 서로 대신 사용하지 않는다. consumer credential은 Docker secret으로 mount된
+`/run/secrets/kafka_client_user`·`/run/secrets/kafka_client_password`만 읽는다. 평문
+`KAFKA_CLIENT_USER`·`KAFKA_CLIENT_PASSWORD`는 consumer container 환경으로 전달하지 않으며
+fallback도 지원하지 않는다.
 
 일반 `config` 출력에는 치환된 secret이 포함될 수 있으므로 저장·공유하지 않는다. 검증은
 `config --quiet`, 서비스 확인은 `config --services`만 사용한다.
@@ -77,6 +77,65 @@ compose를 적용하지 않고 TLS listener와 인증서 배포가 준비될 때
 Frontend build는 `/api`와 모든 production mock=false를 Docker build arg로 고정한다.
 완성 image의 `/usr/share/nginx/html/assets`에 `localhost:8000`이 없고 `/api`가 있는지
 검사한다.
+
+## C-4.5 격리·공용 왕복
+
+저장소 CI는 `backend/tests/fixtures/v5_c_4_5/docker-compose.yml`의 별도 project와
+host port 39092로 Kafka 3.9.1을 기동한다. test credential만 사용하고 공용 Kafka에는
+접속하지 않는다. `fdc.actions`를 처리한 MES Mock은 result broker ack가 확인된 뒤에만
+input offset을 동기 commit한다. host-side ack/commit 회귀 뒤에는 같은 fixture의 실제
+`python -m app.mes_mock` container를 file-only secret으로 기동해 result 왕복까지 확인한다.
+
+첫 공용 왕복은 `kosa_agent_e2e`에만 기록한다. 아래 override는 Backend 한 개만 host
+53081에 공개하며 production DB 이름을 코드로 받을 수 없게 고정한다.
+
+```bash
+docker compose -p bistel-team-e2e \
+  -f deploy/compose/docker-compose.team.yml \
+  -f deploy/compose/docker-compose.e2e-backend.yml \
+  --env-file deploy/compose/.env.team config --quiet
+docker compose -p bistel-team-e2e \
+  -f deploy/compose/docker-compose.team.yml \
+  -f deploy/compose/docker-compose.e2e-backend.yml \
+  --env-file deploy/compose/.env.team up -d --build backend
+```
+
+실행 전 `kosa_agent`의 C 소유 테이블별 count와 정렬된 PK 기반 hash를 기록하고, 실행 뒤
+같은 질의 결과가 불변인지 대조한다. n8n `BACKEND_BASE_URL` 기존 값과 WF3·WF4 활성 상태를
+secret 없이 기록한 다음 임시로 `http://<host>:53081`을 사용한다. 승인된 EQP_HOLD 한 건이
+`WAITING→SENDING→SENT`이고 `ACTION_SENT` 감사 한 건인지 확인한 뒤 URL과 workflow 상태를
+원복하고 `bistel-team-e2e`만 `down`한다. production count/hash가 달라졌거나 원복을
+증명하지 못하면 공용 Gate는 실패다.
+
+## WF4 offset 관측과 제한 복구
+
+malformed result는 payload 조회가 아니라 WF4 group의 topic/partition/offset 전후를
+기록한다. offset이 정확히 1 증가하고 Backend callback·delivery·감사가 모두 0건이어야
+discard 증적이다.
+
+```bash
+docker compose -p bistel-team -f deploy/compose/docker-compose.team.yml \
+  --env-file deploy/compose/.env.team exec -T kafka \
+  /opt/team/manage_wf4_offsets.sh describe kafka:9092
+```
+
+callback 실패는 먼저 Backend를 복구해 같은 record가 재시도되고 callback 2xx·offset
+진행·lag 0으로 수렴하는지 확인한다. offset reset은 오진행이 확인된 경우에만 쓴다.
+WF4를 비활성화하고 group 상태가 Empty/Dead인지 확인한 뒤 retention 범위 안의 정확한
+partition/offset으로 dry-run하고, 출력 대조 후에만 확인 토큰을 붙여 실행한다.
+
+```bash
+docker compose -p bistel-team -f deploy/compose/docker-compose.team.yml \
+  --env-file deploy/compose/.env.team exec -T kafka \
+  /opt/team/manage_wf4_offsets.sh dry-run kafka:9092 <partition> <offset>
+docker compose -p bistel-team -f deploy/compose/docker-compose.team.yml \
+  --env-file deploy/compose/.env.team exec -T kafka \
+  /opt/team/manage_wf4_offsets.sh execute kafka:9092 <partition> <offset> WF4_DISABLED
+```
+
+전체 topic reset, retention 밖 offset, 실행 중인 group reset은 helper가 거부한다. 실행 후
+WF4를 재활성화하고 대상 delivery terminal 및 lag 0을 다시 확인한다. 명령 출력과 증적에는
+credential·webhook secret·payload 원문을 남기지 않는다.
 
 ## rollback
 
