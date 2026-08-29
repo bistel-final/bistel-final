@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # HTTPException 으로 올라온 상태코드를 공통 오류 코드에 대응시킨다.
 _STATUS_ERROR_CODE: dict[int, ErrorCode] = {
+    401: ErrorCode.UNAUTHORIZED,
     404: ErrorCode.RESOURCE_NOT_FOUND,
     409: ErrorCode.INCIDENT_ALREADY_RUNNING,
     422: ErrorCode.VALIDATION_ERROR,

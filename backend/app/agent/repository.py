@@ -111,6 +111,7 @@ __all__ = [
     "ToolCallRow",
     "ApprovalRequestRow",
     "ActionDeliveryRow",
+    "DeliveryCallbackTransition",
     "ApprovalDecisionRow",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
@@ -136,6 +137,7 @@ __all__ = [
     "list_action_deliveries",
     "begin_email_delivery",
     "settle_email_delivery",
+    "settle_delivery_callback",
     "INITIAL_DELIVERY_PAIRS",
 ]
 
@@ -2375,6 +2377,12 @@ class ActionDeliveryRow:
     result: dict[str, Any] | None
 
 
+@dataclass(frozen=True, slots=True)
+class DeliveryCallbackTransition:
+    delivery: ActionDeliveryRow
+    duplicate: bool
+
+
 _DELIVERY_COLUMNS = """
     action_id, channel, status, request_hash, attempt_count,
     provider_message_id, started_at, completed_at, last_error, result
@@ -2423,6 +2431,30 @@ _SELECT_EMAIL_DELIVERY_FOR_UPDATE = text(
     FROM action_delivery
     WHERE action_id = :action_id AND channel = 'EMAIL'
     FOR UPDATE
+    """
+)
+
+_SELECT_DELIVERY_FOR_UPDATE = text(
+    f"""
+    SELECT {_DELIVERY_COLUMNS}
+    FROM action_delivery
+    WHERE action_id = :action_id AND channel = :channel
+    FOR UPDATE
+    """
+)
+
+_UPDATE_DELIVERY_CALLBACK = text(
+    f"""
+    UPDATE action_delivery
+    SET status = :status,
+        provider_message_id = :provider_message_id,
+        completed_at = :completed_at,
+        last_error = :error_code,
+        result = CAST(:result AS jsonb)
+    WHERE action_id = :action_id
+      AND channel = :channel
+      AND status = 'SENDING'
+    RETURNING {_DELIVERY_COLUMNS}
     """
 )
 
@@ -2646,6 +2678,112 @@ def settle_email_delivery(
         return row
 
     return _delivery_row(_write(connection, _run))
+
+
+def settle_delivery_callback(
+    connection: Connection,
+    *,
+    action_id: str,
+    channel: DeliveryChannel,
+    status: DeliveryStatus,
+    provider_message_id: str | None,
+    request_hash: str,
+    completed_at: datetime,
+    error_code: str | None,
+    event_id: str,
+) -> DeliveryCallbackTransition:
+    """Lock one delivery and apply at most one terminal callback transition.
+
+    A matching terminal row is returned unchanged as a duplicate.  The callback
+    cannot revive pre-send or canceled rows and cannot replace a terminal result.
+    """
+
+    _require_transaction(connection)
+    action_id = _require_text(action_id, "action_id")
+    request_hash = _require_text(request_hash, "request_hash")
+    event_id = _require_text(event_id, "event_id")
+    provider_message_id = _optional_text(
+        provider_message_id,
+        "provider_message_id",
+    )
+    error_code = _optional_text(error_code, "error_code")
+    if not _HEX64.fullmatch(request_hash):
+        raise RepositoryContractError("INVALID_REQUEST_HASH")
+    if not isinstance(completed_at, datetime) or completed_at.utcoffset() is None:
+        raise RepositoryContractError("INVALID_COMPLETED_AT")
+    try:
+        resolved_channel = DeliveryChannel(channel)
+        resolved_status = DeliveryStatus(status)
+    except ValueError as exc:
+        raise RepositoryContractError("INVALID_DELIVERY_CALLBACK_ENUM") from exc
+    if resolved_status is DeliveryStatus.SENT:
+        if provider_message_id is None or error_code is not None:
+            raise RepositoryContractError("INVALID_SENT_CALLBACK")
+    elif resolved_status is DeliveryStatus.FAILED:
+        if error_code is None:
+            raise RepositoryContractError("INVALID_FAILED_CALLBACK")
+    else:
+        raise RepositoryContractError("CALLBACK_STATUS_NOT_TERMINAL")
+
+    locked = _delivery_row(
+        _fetch_one(
+            connection,
+            _SELECT_DELIVERY_FOR_UPDATE,
+            {"action_id": action_id, "channel": resolved_channel.value},
+            "DELIVERY_NOT_FOUND",
+        )
+    )
+    if locked.request_hash != request_hash:
+        raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+    if locked.status in {DeliveryStatus.SENT, DeliveryStatus.FAILED}:
+        if locked.status is not resolved_status:
+            raise RepositoryConflict("DELIVERY_TERMINAL_STATUS_CHANGED")
+        return DeliveryCallbackTransition(delivery=locked, duplicate=True)
+    if locked.status is not DeliveryStatus.SENDING:
+        raise RepositoryConflict("DELIVERY_NOT_SENDING")
+    if locked.started_at is None or completed_at < locked.started_at:
+        raise RepositoryContractError("DELIVERY_COMPLETED_AT_INVALID")
+
+    transport = "N8N_WEBHOOK" if resolved_channel is DeliveryChannel.EMAIL else "KAFKA"
+    result_json = _json_payload(
+        {"event_id": event_id, "transport": transport},
+        "result",
+    )
+    audit = _run_audit_record(
+        (
+            AuditEvent.ACTION_SENT
+            if resolved_status is DeliveryStatus.SENT
+            else AuditEvent.ACTION_SEND_FAILED
+        ),
+        entity_id=action_id,
+        actor_type=ActorType.SYSTEM,
+        actor_id=None,
+        after={
+            "channel": resolved_channel.value,
+            "transport": transport,
+        },
+    )
+
+    def _run() -> Any:
+        row = connection.execute(
+            _UPDATE_DELIVERY_CALLBACK,
+            {
+                "action_id": action_id,
+                "channel": resolved_channel.value,
+                "status": resolved_status.value,
+                "provider_message_id": provider_message_id,
+                "completed_at": completed_at,
+                "error_code": error_code,
+                "result": result_json,
+            },
+        ).one_or_none()
+        if row is None:
+            raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+        append_audit_log(connection, audit)
+        return row
+
+    updated = _delivery_row(_write(connection, _run))
+    return DeliveryCallbackTransition(delivery=updated, duplicate=False)
 
 
 @dataclass(frozen=True, slots=True)

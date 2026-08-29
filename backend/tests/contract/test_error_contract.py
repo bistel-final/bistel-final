@@ -1,7 +1,7 @@
 import logging
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -13,6 +13,7 @@ from app.common.exceptions import (
     ModelNotReadyError,
     NotFoundError,
     PolicyRejectedError,
+    UnauthorizedError,
 )
 from app.main import (
     handle_app_error,
@@ -45,6 +46,14 @@ def _build_app() -> FastAPI:
     @router.get("/not-found")
     def _not_found() -> None:
         raise NotFoundError(details={"alarm_id": "ALM-9999"})
+
+    @router.get("/unauthorized")
+    def _unauthorized() -> None:
+        raise UnauthorizedError()
+
+    @router.get("/http-unauthorized")
+    def _http_unauthorized() -> None:
+        raise HTTPException(status_code=401, detail="인증 정보가 올바르지 않습니다.")
 
     @router.get("/conflict")
     def _conflict() -> None:
@@ -89,6 +98,8 @@ class TestStatusMapping:
     @pytest.mark.parametrize(
         "path, status, code",
         [
+            ("/unauthorized", 401, ErrorCode.UNAUTHORIZED),
+            ("/http-unauthorized", 401, ErrorCode.UNAUTHORIZED),
             ("/not-found", 404, ErrorCode.RESOURCE_NOT_FOUND),
             ("/conflict", 409, ErrorCode.INCIDENT_ALREADY_RUNNING),
             ("/approval-conflict", 409, ErrorCode.APPROVAL_ALREADY_DECIDED),
@@ -120,7 +131,14 @@ class TestStatusMapping:
 class TestResponseShape:
     @pytest.mark.parametrize(
         "path",
-        ["/not-found", "/conflict", "/policy", "/not-ready", "/boom"],
+        [
+            "/unauthorized",
+            "/not-found",
+            "/conflict",
+            "/policy",
+            "/not-ready",
+            "/boom",
+        ],
     )
     def test_body_has_exactly_three_keys(self, client: TestClient, path: str) -> None:
         body = client.get(path).json()

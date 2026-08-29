@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorCode(StrEnum):
+    UNAUTHORIZED = "UNAUTHORIZED"
     RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND"
     INCIDENT_ALREADY_RUNNING = "INCIDENT_ALREADY_RUNNING"
     INCIDENT_ALREADY_PROCESSED = "INCIDENT_ALREADY_PROCESSED"
@@ -44,6 +45,12 @@ class AppError(Exception):
 
     def to_response(self) -> ErrorResponse:
         return ErrorResponse(code=self.code, message=self.message, details=self.details)
+
+
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = ErrorCode.UNAUTHORIZED
+    message = "인증 정보가 올바르지 않습니다."
 
 
 class NotFoundError(AppError):
