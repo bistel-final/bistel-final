@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,10 +24,16 @@ from app.agent.repository import (
 from app.agent.state import DeliveryPlan
 from app.agent.tools import TransactionFactory
 from app.common.enums import DeliveryStatus
+from app.common.mes_identity import (
+    EVENT_ID_PATTERN,
+    MesIdentityError,
+)
+from app.common.mes_identity import (
+    event_id_for as _event_id_for,
+)
 
 WEBHOOK_PATH = "/webhook/fdc-mes-hold"
 PAYLOAD_SCHEMA = "mes-hold-request-v1"
-EVENT_ID_PATTERN = re.compile(r"^MES:[0-9a-f]{64}$")
 
 
 class MesDeliveryError(RuntimeError):
@@ -150,19 +154,10 @@ def _utc_iso(value: datetime, code: str) -> str:
 def event_id_for(action_id: str, request_hash: str) -> str:
     """계획 v6의 UTF-8/NUL 직렬화로 stable MES event identity를 만든다."""
 
-    if not isinstance(action_id, str) or not action_id.strip():
-        raise MesDeliveryContractError("MES_ACTION_ID_INVALID")
-    if (
-        not isinstance(request_hash, str)
-        or re.fullmatch(r"[0-9a-f]{64}", request_hash) is None
-    ):
-        raise MesDeliveryContractError("MES_REQUEST_HASH_INVALID")
-    identity_raw = action_id + "\0MES_MOCK\0" + request_hash
-    digest = hashlib.sha256(identity_raw.encode("utf-8")).hexdigest()
-    event_id = f"MES:{digest}"
-    if EVENT_ID_PATTERN.fullmatch(event_id) is None:  # pragma: no cover - 방어 불변식
-        raise MesDeliveryContractError("MES_EVENT_ID_INVALID")
-    return event_id
+    try:
+        return _event_id_for(action_id, request_hash)
+    except MesIdentityError as exc:
+        raise MesDeliveryContractError(exc.code) from exc
 
 
 def raw_mes_payload(claim: MesDeliveryClaim) -> bytes:

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from app.agent.mes_delivery import event_id_for
+from app.common.mes_identity import event_id_for
 from app.mes_mock.consumer import (
     ACTIONS_TOPIC,
     RESULT_TOPIC,
@@ -32,6 +32,7 @@ confluent = pytest.importorskip("confluent_kafka")
 CLIENT_USER = "test-client-user"
 CLIENT_PASSWORD = "test-client-password"
 ACTION_ID = "ACT-kafka-roundtrip01"
+SERVICE_ACTION_ID = "ACT-kafka-file-secret01"
 REQUEST_HASH = "d" * 64
 
 
@@ -64,6 +65,13 @@ def _command_raw() -> bytes:
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+
+
+def _service_command_raw() -> bytes:
+    payload = json.loads(_command_raw())
+    payload["action_id"] = SERVICE_ACTION_ID
+    payload["event_id"] = event_id_for(SERVICE_ACTION_ID, REQUEST_HASH)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
 
 def _produce(value: bytes, key: bytes) -> None:
@@ -147,3 +155,38 @@ def test_wrong_sasl_credential_cannot_publish() -> None:
     )
     remaining = producer.flush(5)
     assert remaining != 0 or any(error is not None for error in errors)
+
+
+@pytest.mark.skipif(
+    os.getenv("MES_MOCK_SERVICE_RUNNING") != "1",
+    reason="file-only mes-mock fixture service 전용 smoke",
+)
+def test_file_only_consumer_service_publishes_result() -> None:
+    result_consumer = confluent.Consumer(
+        {
+            **_client_settings(),
+            "group.id": "kosa-fdc-mes-file-secret-test",
+            "enable.auto.commit": False,
+            "auto.offset.reset": "earliest",
+        }
+    )
+    result_consumer.subscribe([RESULT_TOPIC])
+    try:
+        _produce(_service_command_raw(), SERVICE_ACTION_ID.encode())
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            result = result_consumer.poll(1.0)
+            if result is None or result.error() is not None:
+                continue
+            if result.key() != SERVICE_ACTION_ID.encode():
+                continue
+            assert json.loads(result.value()) == {
+                "action_id": SERVICE_ACTION_ID,
+                "error_code": None,
+                "request_hash": REQUEST_HASH,
+                "status": "SENT",
+            }
+            return
+        pytest.fail("FILE_ONLY_MES_RESULT_NOT_RECEIVED")
+    finally:
+        result_consumer.close()

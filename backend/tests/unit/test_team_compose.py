@@ -16,6 +16,14 @@ PREFLIGHT_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "preflight_team_env.py
 E2E_OVERRIDE_PATH = (
     REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.e2e-backend.yml"
 )
+MES_FIXTURE_PATH = (
+    REPOSITORY_ROOT
+    / "backend"
+    / "tests"
+    / "fixtures"
+    / "v5_c_4_5"
+    / "docker-compose.yml"
+)
 
 BACKEND_ENV_KEYS = {
     "POSTGRES_HOST",
@@ -131,6 +139,19 @@ def test_backend_and_mes_environment_are_exact_allowlists() -> None:
     assert "env_file" not in mes_mock
     assert set(backend["environment"]) == BACKEND_ENV_KEYS
     assert set(mes_mock["environment"]) == MES_ENV_KEYS
+    assert set(mes_mock["secrets"]) == {
+        "kafka_client_user",
+        "kafka_client_password",
+    }
+    assert mes_mock["environment"]["KAFKA_CLIENT_USER_FILE"] == (
+        "/run/secrets/kafka_client_user"
+    )
+    assert mes_mock["environment"]["KAFKA_CLIENT_PASSWORD_FILE"] == (
+        "/run/secrets/kafka_client_password"
+    )
+    assert not {"KAFKA_CLIENT_USER", "KAFKA_CLIENT_PASSWORD"} & set(
+        mes_mock["environment"]
+    )
     assert not any(
         key.startswith(FORBIDDEN_BACKEND_PREFIXES)
         or key in {"N8N_USER", "N8N_PASSWORD"}
@@ -157,6 +178,24 @@ def test_external_services_and_retired_loader_are_absent() -> None:
     assert "00_load.sh" not in text
     assert not re.search(r"image:\s*(?:postgres|neo4j|n8nio/n8n)(?::|\s|$)", text)
     assert not re.search(r"(?:POSTGRES|NEO4J)_(?:BOOTSTRAP|TRANSITION)_", text)
+
+
+def test_mes_fixture_runs_the_real_entrypoint_with_file_only_secrets() -> None:
+    fixture = yaml.safe_load(MES_FIXTURE_PATH.read_text(encoding="utf-8"))
+    service = fixture["services"]["mes-mock"]
+
+    assert service["profiles"] == ["consumer"]
+    assert service["command"] == ["python", "-m", "app.mes_mock"]
+    assert service["environment"] == {
+        "KAFKA_BOOTSTRAP_INTERNAL": "kafka:9092",
+        "KAFKA_CLIENT_USER_FILE": "/run/secrets/kafka_client_user",
+        "KAFKA_CLIENT_PASSWORD_FILE": "/run/secrets/kafka_client_password",
+        "MES_CONSUMER_GROUP": "kosa-fdc-mes-mock",
+    }
+    assert set(service["secrets"]) == {
+        "kafka_client_user",
+        "kafka_client_password",
+    }
 
 
 def test_images_and_build_contracts_are_exactly_pinned() -> None:

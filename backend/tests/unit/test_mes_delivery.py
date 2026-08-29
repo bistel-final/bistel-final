@@ -4,6 +4,7 @@ import base64
 import json
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -582,15 +583,21 @@ def test_handler_failure_has_no_result_and_no_commit() -> None:
     assert producer.records == []
 
 
-def test_config_factory_keys_are_exact_and_repr_hides_values() -> None:
-    config = mock.MesMockConfig.from_mapping(
-        {
-            "KAFKA_BOOTSTRAP_INTERNAL": "kafka:9092",
-            "KAFKA_CLIENT_USER": "client-user",
-            "KAFKA_CLIENT_PASSWORD": "client-password-value",
-            "MES_CONSUMER_GROUP": "kosa-fdc-mes-mock",
-        }
-    )
+def _file_config(tmp_path: Path) -> dict[str, str]:
+    user_file = tmp_path / "client-user"
+    password_file = tmp_path / "client-password"
+    user_file.write_text("client-user\n", encoding="utf-8")
+    password_file.write_text("client-password-value\n", encoding="utf-8")
+    return {
+        "KAFKA_BOOTSTRAP_INTERNAL": "kafka:9092",
+        "KAFKA_CLIENT_USER_FILE": str(user_file),
+        "KAFKA_CLIENT_PASSWORD_FILE": str(password_file),
+        "MES_CONSUMER_GROUP": "kosa-fdc-mes-mock",
+    }
+
+
+def test_config_factory_keys_are_exact_and_repr_hides_values(tmp_path: Path) -> None:
+    config = mock.MesMockConfig.from_mapping(_file_config(tmp_path))
     assert set(config.consumer_settings()) == {
         "bootstrap.servers",
         "security.protocol",
@@ -611,6 +618,45 @@ def test_config_factory_keys_are_exact_and_repr_hides_values() -> None:
     }
     assert "client-password-value" not in repr(config)
     assert "client-user" not in repr(config)
+
+
+def test_plaintext_credentials_never_fall_back(tmp_path: Path) -> None:
+    values = _file_config(tmp_path)
+    values.pop("KAFKA_CLIENT_USER_FILE")
+    values.pop("KAFKA_CLIENT_PASSWORD_FILE")
+    values["KAFKA_CLIENT_USER"] = "legacy-user"
+    values["KAFKA_CLIENT_PASSWORD"] = "legacy-password"
+
+    with pytest.raises(mock.MesMockConfigError) as caught:
+        mock.MesMockConfig.from_mapping(values)
+
+    assert str(caught.value) == "MES_MOCK_CONFIG_INVALID"
+    assert "legacy" not in str(caught.value)
+
+
+@pytest.mark.parametrize("kind", ["missing", "empty", "directory", "oversized", "utf8"])
+def test_invalid_secret_file_fails_closed_without_path_or_value(
+    tmp_path: Path, kind: str
+) -> None:
+    values = _file_config(tmp_path)
+    password_file = Path(values["KAFKA_CLIENT_PASSWORD_FILE"])
+    if kind == "missing":
+        password_file.unlink()
+    elif kind == "empty":
+        password_file.write_bytes(b"")
+    elif kind == "directory":
+        password_file.unlink()
+        password_file.mkdir()
+    elif kind == "oversized":
+        password_file.write_bytes(b"x" * 4097)
+    else:
+        password_file.write_bytes(b"\xff")
+
+    with pytest.raises(mock.MesMockConfigError) as caught:
+        mock.MesMockConfig.from_mapping(values)
+
+    assert str(caught.value) == "MES_MOCK_CONFIG_INVALID"
+    assert str(password_file) not in str(caught.value)
 
 
 def test_changed_event_identity_is_discarded_without_result() -> None:

@@ -9,16 +9,19 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from threading import Event
 from typing import Any, Protocol
 
-from app.agent.mes_delivery import EVENT_ID_PATTERN, event_id_for
+from app.common.mes_identity import EVENT_ID_PATTERN, event_id_for
 
 ACTIONS_TOPIC = "fdc.actions"
 RESULT_TOPIC = "fdc.actions.result"
 DEFAULT_GROUP = "kosa-fdc-mes-mock"
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,99}$")
+_MAX_SECRET_BYTES = 4096
+_PLAINTEXT_CREDENTIAL_KEYS = ("KAFKA_CLIENT_USER", "KAFKA_CLIENT_PASSWORD")
 _EXPECTED_KEYS = frozenset(
     {
         "action_code",
@@ -48,6 +51,25 @@ class MesMockConfigError(MesMockError):
         super().__init__("MES_MOCK_CONFIG_INVALID")
 
 
+def _read_secret_file(values: Mapping[str, str], key: str) -> str:
+    raw_path = values.get(key)
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise MesMockConfigError
+    try:
+        with Path(raw_path.strip()).open("rb") as stream:
+            raw = stream.read(_MAX_SECRET_BYTES + 1)
+        if len(raw) > _MAX_SECRET_BYTES:
+            raise MesMockConfigError
+        value = raw.decode("utf-8").strip()
+    except MesMockConfigError:
+        raise
+    except (OSError, UnicodeError, ValueError):
+        raise MesMockConfigError from None
+    if not value or any(character.isspace() for character in value):
+        raise MesMockConfigError
+    return value
+
+
 class MesProcessOutcome(StrEnum):
     PUBLISHED = "PUBLISHED"
     DISCARDED = "DISCARDED"
@@ -65,15 +87,15 @@ class MesMockConfig:
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> MesMockConfig:
         bootstrap = values.get("KAFKA_BOOTSTRAP_INTERNAL", "").strip()
-        username = values.get("KAFKA_CLIENT_USER", "").strip()
-        password = values.get("KAFKA_CLIENT_PASSWORD", "").strip()
         group_id = values.get("MES_CONSUMER_GROUP", "").strip()
+        if any(values.get(key, "").strip() for key in _PLAINTEXT_CREDENTIAL_KEYS):
+            raise MesMockConfigError
+        username = _read_secret_file(values, "KAFKA_CLIENT_USER_FILE")
+        password = _read_secret_file(values, "KAFKA_CLIENT_PASSWORD_FILE")
         if (
             not bootstrap
             or any(character.isspace() for character in bootstrap)
             or ":" not in bootstrap
-            or not username
-            or not password
             or group_id != DEFAULT_GROUP
         ):
             raise MesMockConfigError

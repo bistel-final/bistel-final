@@ -25,10 +25,10 @@ partition=1·replication=1이어야 한다. compose service를 Backend·Frontend
 
 `mes-mock`은 `--profile mes up -d mes-mock`으로 활성화한다. 이 consumer의 group은
 `kosa-fdc-mes-mock`이고, n8n WF4 write-back group은 `kosa-fdc-wf4-writeback`이다. 두
-group의 offset을 서로 대신 사용하지 않는다. compose는 Kafka client 사용자명·비밀번호
-원문을 container environment에 넣지 않고 `/run/secrets/kafka_client_user`·
-`/run/secrets/kafka_client_password`로 마운트하며, entrypoint는 `KAFKA_CLIENT_USER_FILE`·
-`KAFKA_CLIENT_PASSWORD_FILE` 경로만 소비하고 원문 env fallback을 두지 않는다.
+group의 offset을 서로 대신 사용하지 않는다. consumer credential은 Docker secret으로 mount된
+`/run/secrets/kafka_client_user`·`/run/secrets/kafka_client_password`만 읽는다. 평문
+`KAFKA_CLIENT_USER`·`KAFKA_CLIENT_PASSWORD`는 consumer container 환경으로 전달하지 않으며
+fallback도 지원하지 않는다.
 
 일반 `config` 출력에는 치환된 secret이 포함될 수 있으므로 저장·공유하지 않는다. 검증은
 `config --quiet`, 서비스 확인은 `config --services`만 사용한다.
@@ -83,7 +83,8 @@ Frontend build는 `/api`와 모든 production mock=false를 Docker build arg로 
 저장소 CI는 `backend/tests/fixtures/v5_c_4_5/docker-compose.yml`의 별도 project와
 host port 39092로 Kafka 3.9.1을 기동한다. test credential만 사용하고 공용 Kafka에는
 접속하지 않는다. `fdc.actions`를 처리한 MES Mock은 result broker ack가 확인된 뒤에만
-input offset을 동기 commit한다.
+input offset을 동기 commit한다. host-side ack/commit 회귀 뒤에는 같은 fixture의 실제
+`python -m app.mes_mock` container를 file-only secret으로 기동해 result 왕복까지 확인한다.
 
 첫 공용 왕복은 `kosa_agent_e2e`에만 기록한다. 아래 override는 Backend 한 개만 host
 53081에 공개하며 production DB 이름을 코드로 받을 수 없게 고정한다.

@@ -800,9 +800,35 @@ jobs:
           tests/unit/test_mes_kafka_container.py
           -rs --no-header
 
+      - name: Start the file-only MES Mock consumer
+        run: >-
+          docker compose -p bistel-mes-test
+          -f backend/tests/fixtures/v5_c_4_5/docker-compose.yml
+          --profile consumer up -d --build mes-mock
+
+      - name: Prove the container entrypoint reads only mounted secrets
+        working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+          MES_KAFKA_TEST_BOOTSTRAP: localhost:39092
+          MES_MOCK_SERVICE_RUNNING: "1"
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_mes_kafka_container.py
+          -k file_only_consumer_service_publishes_result
+          -rs --no-header
+
       - name: Remove only the isolated Kafka project
         if: ${{ always() }}
         run: >-
           docker compose -p bistel-mes-test
           -f backend/tests/fixtures/v5_c_4_5/docker-compose.yml
+          --profile consumer
           down -v --remove-orphans

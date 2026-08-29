@@ -39,6 +39,25 @@ services:
       retries: 24
       start_period: 20s
 
+  mes-mock:
+    profiles: ["consumer"]
+    image: bistel-mes-mock-test
+    build:
+      context: ../../../..
+      dockerfile: backend/tests/fixtures/v5_c_4_5/Dockerfile.mes-mock
+    command: ["python", "-m", "app.mes_mock"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      KAFKA_CLIENT_USER_FILE: /run/secrets/kafka_client_user
+      KAFKA_CLIENT_PASSWORD_FILE: /run/secrets/kafka_client_password
+      MES_CONSUMER_GROUP: kosa-fdc-mes-mock
+    secrets:
+      - kafka_client_user
+      - kafka_client_password
+
 volumes:
   kafka_data:
 
