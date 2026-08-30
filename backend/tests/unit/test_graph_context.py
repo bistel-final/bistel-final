@@ -723,6 +723,29 @@ def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
     assert result.chamber_id is None
 
 
+def test_get_equipment_context_tool_maps_dependency_timeout_reason_code(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> None:
+            error = DependencyTimeoutError("NEO4J_TRANSACTION_TIMEOUT")
+            error.args = ("bolt://neo4j:secret@localhost:7687",)
+            raise error
+
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
+
+    assert result.ok is False
+    assert result.reason == "TIMEOUT: NEO4J_TRANSACTION_TIMEOUT"
+    assert "bolt://" not in result.reason
+    assert "secret" not in result.reason
+    assert result.chamber_id is None
+
+
 def test_get_equipment_context_tool_returns_dependency_failure(
     monkeypatch: Any,
 ) -> None:

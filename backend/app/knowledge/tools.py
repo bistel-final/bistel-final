@@ -15,6 +15,7 @@ from app.common.tool_contracts import (
     EquipmentContextToolResult,
     fail,
 )
+from app.common.tool_timeouts import DependencyTimeoutError
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.exceptions import EmbeddingModelNotReadyError
 from app.knowledge.graph_query import GraphQueryRepository
@@ -46,6 +47,8 @@ def search_documents(
         service = DocumentSearchService(DocumentSearchRepository(engine))
         hits = service.search(query, top_k=top_k, model_code=model_code)
         return DocumentSearchToolResult(ok=True, hits=hits)
+    except DependencyTimeoutError as exc:
+        return fail(DocumentSearchToolResult, f"TIMEOUT: {exc.reason_code}")
     except TimeoutError as exc:
         return fail(DocumentSearchToolResult, f"TIMEOUT: {exc}")
     except EmbeddingModelNotReadyError:
@@ -85,6 +88,8 @@ def get_equipment_context(chamber_id: str) -> EquipmentContextToolResult:
                 f"NOT_FOUND: chamber_id={chamber_id}",
             )
         return result
+    except DependencyTimeoutError as exc:
+        return fail(EquipmentContextToolResult, f"TIMEOUT: {exc.reason_code}")
     except TimeoutError as exc:
         return fail(EquipmentContextToolResult, f"TIMEOUT: {exc}")
     except ValidationError:

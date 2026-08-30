@@ -880,3 +880,37 @@ def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None
     assert result.ok is False
     assert result.hits == []
     assert result.reason == "TIMEOUT: 검색 시간 초과"
+
+
+def test_search_documents_tool_maps_dependency_timeout_reason_code(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class TimeoutService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            error = DependencyTimeoutError("DB_STATEMENT_TIMEOUT")
+            error.args = ("postgresql://user:secret@localhost/db",)
+            raise error
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", TimeoutService)
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is False
+    assert result.hits == []
+    assert result.reason == "TIMEOUT: DB_STATEMENT_TIMEOUT"
+    assert "postgresql://" not in result.reason
+    assert "secret" not in result.reason
