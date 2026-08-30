@@ -138,6 +138,182 @@ def test_action_provenance_requires_every_axis_to_be_zero() -> None:
     assert caught.value.reason_code == "ACTION_PROVENANCE_MISMATCH"
 
 
+class _TableHashConnection:
+    def __init__(self, rows: list[Mapping[str, Any]]) -> None:
+        self.rows = rows
+
+    def exec_driver_sql(self, _statement: str, *_args: Any) -> _Result:
+        return _Result(self.rows)
+
+
+def test_table_content_hash_is_independent_of_result_row_order() -> None:
+    columns = (
+        {"column_name": "id", "data_type": "integer"},
+        {"column_name": "note", "data_type": "text"},
+    )
+    rows = [{"id": 2, "note": "b"}, {"id": 1, "note": "a"}]
+    forward = evidence._typed_table_hash(_TableHashConnection(rows), "sample", columns)
+    reverse = evidence._typed_table_hash(
+        _TableHashConnection(list(reversed(rows))), "sample", columns
+    )
+    assert forward == reverse
+
+
+def test_observer_excludes_only_each_databases_live_write_relations() -> None:
+    assert set(orchestrator.OBSERVER_MUTABLE_TABLES) == set(
+        orchestrator.OBSERVER_DATABASES
+    )
+    assert set(orchestrator.OBSERVER_MUTABLE_TABLES["kosa_agent"]) == set(
+        reset.TARGET_TABLES
+    )
+    assert orchestrator.OBSERVER_MUTABLE_TABLES["kosa_text2sql"] == ("nl_query_log",)
+    assert set(orchestrator.OBSERVER_MUTABLE_SEQUENCES["kosa_agent"]) == set(
+        reset.TARGET_SEQUENCES
+    )
+    assert orchestrator.OBSERVER_MUTABLE_SEQUENCES["kosa_text2sql"] == (
+        reset.role_matrix.QUERY_LOG_SEQUENCE,
+    )
+
+
+@pytest.mark.parametrize("database", orchestrator.OBSERVER_DATABASES)
+def test_snapshot_observer_wires_each_databases_mutable_relations(
+    monkeypatch: pytest.MonkeyPatch,
+    database: str,
+) -> None:
+    _patch_public_preflight(monkeypatch)
+    monkeypatch.setattr(
+        orchestrator.db_target,
+        "validate_connected_identity",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        orchestrator.db_target,
+        "set_and_validate_public_search_path",
+        lambda *_a, **_k: None,
+    )
+    captured: dict[str, Any] = {}
+
+    def fingerprint(_connection: Any, **kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"sha256": _digest("f")}
+
+    monkeypatch.setattr(
+        orchestrator.evidence,
+        "snapshot_database_fingerprint",
+        fingerprint,
+    )
+
+    class _Context:
+        def __init__(self, value: Any = None) -> None:
+            self.value = value
+
+        def __enter__(self) -> Any:
+            return self.value
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+    class _Connection:
+        def begin(self) -> _Context:
+            return _Context()
+
+        def exec_driver_sql(self, _statement: str) -> None:
+            return None
+
+    class _Engine:
+        def __init__(self) -> None:
+            self.connection = _Connection()
+            self.disposed = False
+
+        def connect(self) -> _Context:
+            return _Context(self.connection)
+
+        def dispose(self) -> None:
+            self.disposed = True
+
+    engine = _Engine()
+    result = orchestrator.snapshot_observer(
+        database,
+        environ={},
+        engine_factory=lambda _target: engine,
+    )
+
+    assert result == {"sha256": _digest("f")}
+    assert captured == {
+        "mutable_tables": orchestrator.OBSERVER_MUTABLE_TABLES[database],
+        "mutable_sequences": orchestrator.OBSERVER_MUTABLE_SEQUENCES[database],
+    }
+    assert engine.disposed is True
+
+
+def test_steady_state_maps_wiring_bug_to_dependency_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        reset.agent_runtime,
+        "inspect_database",
+        lambda *_a, **_k: SimpleNamespace(state="PRESENT"),
+    )
+    monkeypatch.setattr(
+        reset.severity_guard,
+        "inspect_guard",
+        lambda *_a, **_k: SimpleNamespace(state="GUARDED_UNMARKED"),
+    )
+    monkeypatch.setattr(
+        reset,
+        "_checkpoint_catalog",
+        lambda _connection: (_ for _ in ()).throw(TypeError("signature drift")),
+    )
+    with pytest.raises(reset.DependencyFailure) as caught:
+        reset.assert_steady_state(object())
+    assert caught.value.reason_code == "RESET_FAILED"
+    assert isinstance(caught.value.__cause__, TypeError)
+
+
+def test_steady_state_maps_owner_contract_error_to_target_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        reset.agent_runtime,
+        "inspect_database",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            reset.agent_runtime.AgentRuntimeStateError("schema drift")
+        ),
+    )
+    with pytest.raises(reset.NoMutationBlocked) as caught:
+        reset.assert_steady_state(object())
+    assert caught.value.reason_code == "TARGET_STATE_MISMATCH"
+    assert isinstance(
+        caught.value.__cause__, reset.agent_runtime.AgentRuntimeStateError
+    )
+
+
+def test_sequence_reset_contract_uses_catalog_start_value() -> None:
+    assert reset.is_reset_sequence_state(
+        {"last_value": 7, "is_called": False, "start_value": 7}
+    )
+    assert not reset.is_reset_sequence_state(
+        {"last_value": 1, "is_called": False, "start_value": 7}
+    )
+
+
+def test_postcheck_engine_is_not_a_reused_connection_pool() -> None:
+    engine = reset._postcheck_engine_for(
+        reset.db_target.BootstrapTarget(
+            host="public-db.example",
+            port=5432,
+            username="bootstrap",
+            password="not-serialized",
+            database=reset.TARGET_DATABASE,
+            profile=reset.TARGET_PROFILE,
+        )
+    )
+    try:
+        assert isinstance(engine.pool, reset.NullPool)
+    finally:
+        engine.dispose()
+
+
 def test_pre_receipt_is_exclusive_and_unresolved_until_safe_final(
     tmp_path: Path,
 ) -> None:
@@ -226,7 +402,11 @@ def _successful_child(
             "pre_receipt_sha256": pre_sha,
             "row_counts": dict.fromkeys(reset.TARGET_TABLES, 0),
             "sequence_state": {
-                sequence: {"last_value": 1, "is_called": False}
+                sequence: {
+                    "last_value": 1,
+                    "is_called": False,
+                    "start_value": 1,
+                }
                 for sequence in reset.TARGET_SEQUENCES
             },
             "other_client_backends": 0,
@@ -268,7 +448,7 @@ def test_missing_applied_receipt_is_outcome_unknown_and_blocks_next_baseline(
         return {"sha256": _digest("a" if database == "kosa_agent" else "b")}
 
     def crashed(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(argv, 1, "", "")
+        return subprocess.CompletedProcess(argv, 1, "", "password=must-not-leak")
 
     payload, code = orchestrator.run_orchestrated_reset(
         environ={}, report_root=tmp_path, observer=observer, child_runner=crashed
@@ -276,6 +456,12 @@ def test_missing_applied_receipt_is_outcome_unknown_and_blocks_next_baseline(
     assert code == 1
     assert payload["status"] == "OUTCOME_UNKNOWN"
     assert payload["reason"] == "RESET_OUTCOME_UNKNOWN"
+    assert payload["child_returncode"] == 1
+    assert (
+        payload["child_stderr_sha256"]
+        == orchestrator.hashlib.sha256(b"password=must-not-leak").hexdigest()
+    )
+    assert "must-not-leak" not in str(payload)
     with pytest.raises(orchestrator.OrchestrationError) as caught:
         orchestrator.run_orchestrated_reset(
             environ={},

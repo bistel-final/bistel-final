@@ -211,6 +211,16 @@ def _typed_table_hash(
                 except value_normalization.ValueNormalizationError as exc:
                     raise EvidenceError("SNAPSHOT_VALUE_INVALID") from exc
         normalized.append(row)
+    # Heap/view 반환 순서는 내용 계약이 아니다. 서로 다른 repeatable-read
+    # transaction의 observer snapshot도 같은 row 집합이면 같은 digest여야 한다.
+    normalized.sort(
+        key=lambda row: json.dumps(
+            row,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+    )
     return len(normalized), manifest_v3.hash_canonical_rows(normalized)
 
 
@@ -236,7 +246,9 @@ def snapshot_database_fingerprint(
 
     ``mutable_*``는 catalog에는 남기되 content/sequence state 비교에서만 제외한다.
     따라서 E2E reset 전후 schema·owner·ACL·constraint·index drift는 계속 잡힌다.
-    observer DB에는 빈 tuple을 넘겨 모든 relation content와 sequence state를 본다.
+    observer DB는 reset child가 연결하지 못한다는 connector ledger를 별도로 고정한다.
+    따라서 정상 서비스가 쓰는 append-only relation은 호출자가 ``mutable_*``로 제외하고,
+    나머지 content와 전체 catalog 불변을 본다.
     """
 
     _assert_repeatable_read(connection)

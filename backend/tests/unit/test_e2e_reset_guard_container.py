@@ -194,7 +194,7 @@ def test_real_reset_clears_13_tables_and_preserves_checkpoint_schema(
             ).scalar_one()
         assert set(post.row_counts.values()) == {0}
         assert all(
-            value == {"last_value": 1, "is_called": False}
+            value == {"last_value": 1, "is_called": False, "start_value": 1}
             for value in post.sequence_state.values()
         )
         assert (
@@ -237,6 +237,37 @@ def test_full_fingerprint_detects_content_and_sequence_only_changes(
         engine.dispose()
 
 
+def test_fingerprint_ignores_only_declared_mutable_content(endpoint: Any) -> None:
+    engine = _engine(endpoint)
+    try:
+        with engine.connect() as connection, connection.begin():
+            connection.exec_driver_sql(
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+            )
+            before = evidence.snapshot_database_fingerprint(
+                connection, mutable_tables=("source_keep",)
+            )
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "UPDATE source_keep SET note='normal-service-write' WHERE id=1"
+            )
+        with engine.connect() as connection, connection.begin():
+            connection.exec_driver_sql(
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+            )
+            after = evidence.snapshot_database_fingerprint(
+                connection, mutable_tables=("source_keep",)
+            )
+        assert before["sha256"] == after["sha256"]
+        assert before["payload"]["mutable_content_excluded"] == ["source_keep"]
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "UPDATE source_keep SET note='preserve-me' WHERE id=1"
+            )
+        engine.dispose()
+
+
 def test_empty_reset_is_idempotent(endpoint: Any) -> None:
     engine = _engine(endpoint)
     try:
@@ -250,6 +281,27 @@ def test_empty_reset_is_idempotent(endpoint: Any) -> None:
                 transaction.commit()
             digests.append(result.preserved_after_sha256)
         assert len(set(digests)) == 1
+    finally:
+        engine.dispose()
+
+
+def test_real_steady_state_wiring_never_masks_signature_errors(endpoint: Any) -> None:
+    """실 catalog 배선이 TypeError/AttributeError로 깨지지 않는지 최소 1회 실행한다."""
+
+    engine = _engine(endpoint)
+    try:
+        with engine.connect() as connection, connection.begin():
+            connection.exec_driver_sql(
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+            )
+            try:
+                reset.assert_steady_state(connection)
+            except reset.ResetError as caught:
+                assert caught.reason_code in {
+                    "TARGET_STATE_MISMATCH",
+                    "RESET_FAILED",
+                }
+                assert not isinstance(caught.__cause__, TypeError | AttributeError)
     finally:
         engine.dispose()
 

@@ -25,6 +25,7 @@ import verify_public_profiles
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 TARGET_DATABASE = "kosa_agent_e2e"
 TARGET_PROFILE = "runtime"
@@ -138,6 +139,14 @@ def _engine_for(target: db_target.BootstrapTarget) -> Engine:
     return create_engine(url, pool_pre_ping=True, future=True)
 
 
+def _postcheck_engine_for(target: db_target.BootstrapTarget) -> Engine:
+    """write transaction의 pooled backend와 독립인 일회성 postcheck 연결."""
+
+    url = target.create_url()
+    db_target.validate_url_components(url, target)
+    return create_engine(url, poolclass=NullPool, future=True)
+
+
 def _prepare_transaction(
     connection: Any,
     target: db_target.BootstrapTarget,
@@ -196,14 +205,37 @@ def target_sequence_state(connection: Any) -> dict[str, dict[str, Any]]:
     for sequence in TARGET_SEQUENCES:
         row = _one(
             connection.exec_driver_sql(
-                f'SELECT last_value, is_called FROM public."{sequence}"'
+                f"""
+                SELECT state.last_value,
+                       state.is_called,
+                       catalog.seqstart AS start_value
+                FROM public."{sequence}" AS state
+                JOIN pg_catalog.pg_class relation
+                  ON relation.relname = %s
+                JOIN pg_catalog.pg_namespace namespace
+                  ON namespace.oid = relation.relnamespace
+                 AND namespace.nspname = 'public'
+                JOIN pg_catalog.pg_sequence catalog
+                  ON catalog.seqrelid = relation.oid
+                """,
+                (sequence,),
             )
         )
         state[sequence] = {
             "last_value": int(row["last_value"]),
             "is_called": row["is_called"] is True,
+            "start_value": int(row["start_value"]),
         }
     return state
+
+
+def is_reset_sequence_state(item: Mapping[str, Any]) -> bool:
+    return (
+        type(item.get("last_value")) is int
+        and type(item.get("start_value")) is int
+        and item.get("last_value") == item.get("start_value")
+        and item.get("is_called") is False
+    )
 
 
 def assert_target_zero(connection: Any) -> PostResetResult:
@@ -211,9 +243,7 @@ def assert_target_zero(connection: Any) -> PostResetResult:
     if any(counts.values()):
         raise DependencyFailure("RESET_APPLIED_WRITER_REENTRY")
     sequences = target_sequence_state(connection)
-    if any(
-        item != {"last_value": 1, "is_called": False} for item in sequences.values()
-    ):
+    if any(not is_reset_sequence_state(item) for item in sequences.values()):
         raise DependencyFailure("RESET_APPLIED_WRITER_REENTRY")
     clients = other_client_backend_count(connection)
     if clients:
@@ -269,13 +299,13 @@ def _checkpoint_catalog(connection: Any) -> dict[str, Any]:
 def assert_steady_state(connection: Any) -> None:
     """final marker와 Runtime/severity/checkpoint/role owner를 조립한다."""
 
-    inspection = agent_runtime.inspect_database(
-        connection, expected_constraints=severity_guard.GUARDED_CONSTRAINTS
-    )
-    guard = severity_guard.inspect_guard(connection)
-    if inspection.state != "PRESENT" or guard.state != "GUARDED_UNMARKED":
-        raise NoMutationBlocked("TARGET_STATE_MISMATCH")
     try:
+        inspection = agent_runtime.inspect_database(
+            connection, expected_constraints=severity_guard.GUARDED_CONSTRAINTS
+        )
+        guard = severity_guard.inspect_guard(connection)
+        if inspection.state != "PRESENT" or guard.state != "GUARDED_UNMARKED":
+            raise NoMutationBlocked("TARGET_STATE_MISMATCH")
         catalog = _checkpoint_catalog(connection)
         checkpoint_contract.assert_ready(catalog)
         checkpoint_contract.assert_checkpoint_acl(catalog)
@@ -287,10 +317,21 @@ def assert_steady_state(connection: Any) -> None:
         role_inspection = role_runner.inspect_snapshot(
             role_runner.read_snapshot(connection), contract
         )
-    except Exception as exc:
+        if role_inspection.state != "READY":
+            raise NoMutationBlocked("TARGET_STATE_MISMATCH")
+    except ResetError:
+        raise
+    except (
+        agent_runtime.AgentRuntimeError,
+        severity_guard.SeverityGuardError,
+        checkpoint_contract.CheckpointContractError,
+        checkpoint_contract.CheckpointStateError,
+        role_matrix.ContractError,
+        role_runner.RoleMatrixError,
+    ) as exc:
         raise NoMutationBlocked("TARGET_STATE_MISMATCH") from exc
-    if role_inspection.state != "READY":
-        raise NoMutationBlocked("TARGET_STATE_MISMATCH")
+    except Exception as exc:
+        raise DependencyFailure("RESET_FAILED") from exc
 
 
 def preserved_snapshot(connection: Any) -> dict[str, Any]:
@@ -331,7 +372,7 @@ def reset_runtime_data(
     except Exception as exc:
         raise DependencyFailure("RESET_FAILED") from exc
     if any(zero.values()) or any(
-        item != {"last_value": 1, "is_called": False} for item in sequences.values()
+        not is_reset_sequence_state(item) for item in sequences.values()
     ):
         raise DependencyFailure("RESET_FAILED")
     after = dict(snapshotter(connection))
@@ -385,6 +426,9 @@ def apply_reset(
     pre_receipt_path: Path,
     report_root: Path = evidence.DEFAULT_REPORT_ROOT,
     engine_factory: Callable[[db_target.BootstrapTarget], Engine] = _engine_for,
+    postcheck_engine_factory: Callable[
+        [db_target.BootstrapTarget], Engine
+    ] = _postcheck_engine_for,
     marker_root: Path = verify_public_profiles.MARKER_ROOT,
     fault_hook: Callable[[str], None] | None = None,
     preflight: Callable[[Any], None] = assert_steady_state,
@@ -435,9 +479,16 @@ def apply_reset(
         if fault_hook:
             fault_hook("after_applied_receipt")
 
-        with engine.connect() as connection, connection.begin():
-            _prepare_transaction(connection, target, readonly=True)
-            post = assert_target_zero(connection)
+        # write Engine의 pool에 남은 idle backend가 postcheck에서 "다른 client"로
+        # 오인되지 않게 먼저 닫고, NullPool 일회성 연결에서 검증한다.
+        engine.dispose()
+        postcheck_engine = postcheck_engine_factory(target)
+        try:
+            with postcheck_engine.connect() as connection, connection.begin():
+                _prepare_transaction(connection, target, readonly=True)
+                post = assert_target_zero(connection)
+        finally:
+            postcheck_engine.dispose()
         post_receipt = evidence.base_receipt("e2e_reset_post", run_id)
         post_receipt.update(
             {

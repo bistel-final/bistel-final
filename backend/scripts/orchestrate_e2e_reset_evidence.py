@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -18,6 +19,7 @@ from typing import Any
 
 import db_target
 import e2e_reset_evidence as evidence
+import postgres_role_matrix as role_matrix
 import reset_e2e_runtime as reset
 import verify_public_profiles
 from dotenv import load_dotenv
@@ -25,6 +27,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 OBSERVER_DATABASES = ("kosa_agent", "kosa_text2sql")
+OBSERVER_MUTABLE_TABLES: Mapping[str, tuple[str, ...]] = {
+    "kosa_agent": reset.TARGET_TABLES,
+    "kosa_text2sql": ("nl_query_log",),
+}
+OBSERVER_MUTABLE_SEQUENCES: Mapping[str, tuple[str, ...]] = {
+    "kosa_agent": reset.TARGET_SEQUENCES,
+    "kosa_text2sql": (role_matrix.QUERY_LOG_SEQUENCE,),
+}
 RESET_SCRIPT = Path(__file__).with_name("reset_e2e_runtime.py")
 
 
@@ -65,7 +75,11 @@ def snapshot_observer(
                 connection.exec_driver_sql("SET LOCAL statement_timeout = '30s'")
                 db_target.validate_connected_identity(connection, target)
                 db_target.set_and_validate_public_search_path(connection)
-                return evidence.snapshot_database_fingerprint(connection)
+                return evidence.snapshot_database_fingerprint(
+                    connection,
+                    mutable_tables=OBSERVER_MUTABLE_TABLES[database],
+                    mutable_sequences=OBSERVER_MUTABLE_SEQUENCES[database],
+                )
         finally:
             engine.dispose()
     except OrchestrationError:
@@ -83,6 +97,19 @@ def _load_child_payload(completed: subprocess.CompletedProcess[str]) -> dict[str
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _child_diagnostics(
+    completed: subprocess.CompletedProcess[str],
+) -> dict[str, Any]:
+    """원문 stderr를 노출하지 않고 operator 대조용 최소 진단을 남긴다."""
+
+    return {
+        "child_returncode": int(completed.returncode),
+        "child_stderr_sha256": hashlib.sha256(
+            completed.stderr.encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def _invoke_child(
@@ -180,7 +207,9 @@ def _valid_post_receipt(payload: Mapping[str, Any], pre_sha256: str) -> bool:
         and all(type(value) is int and value == 0 for value in row_counts.values())
         and set(sequence_state) == set(reset.TARGET_SEQUENCES)
         and all(
-            value == {"last_value": 1, "is_called": False}
+            isinstance(value, Mapping)
+            and set(value) == {"last_value", "is_called", "start_value"}
+            and reset.is_reset_sequence_state(value)
             for value in sequence_state.values()
         )
         and type(payload.get("other_client_backends")) is int
@@ -239,6 +268,7 @@ def run_orchestrated_reset(
     completed = _invoke_child(run_id, pre_path, report_root, runner=child_runner)
     child_payload = _load_child_payload(completed)
     child_reason = str(child_payload.get("reason") or "RESET_FAILED")
+    child_diagnostics = _child_diagnostics(completed)
     try:
         applied = _load_stage(report_root, run_id, "applied", "e2e_reset_applied")
         post = _load_stage(report_root, run_id, "post", "e2e_reset_post")
@@ -248,6 +278,7 @@ def run_orchestrated_reset(
             status="OUTCOME_UNKNOWN",
             reason="RESET_OUTCOME_UNKNOWN",
             pre_sha256=pre_sha,
+            extra=child_diagnostics,
         )
         _save_terminal(report_root, run_id, payload)
         return payload, 1
@@ -259,6 +290,7 @@ def run_orchestrated_reset(
                 status="OUTCOME_UNKNOWN",
                 reason="RESET_OUTCOME_UNKNOWN",
                 pre_sha256=pre_sha,
+                extra=child_diagnostics,
             )
             _save_terminal(report_root, run_id, payload)
             return payload, 1
@@ -278,6 +310,7 @@ def run_orchestrated_reset(
                 status="OUTCOME_UNKNOWN",
                 reason="RESET_OUTCOME_UNKNOWN",
                 pre_sha256=pre_sha,
+                extra=child_diagnostics,
             )
         else:
             payload = _terminal_receipt(
@@ -304,6 +337,7 @@ def run_orchestrated_reset(
             status="OUTCOME_UNKNOWN",
             reason="RESET_OUTCOME_UNKNOWN",
             pre_sha256=pre_sha,
+            extra=child_diagnostics,
         )
         _save_terminal(report_root, run_id, payload)
         return payload, 1
@@ -313,6 +347,7 @@ def run_orchestrated_reset(
             status="OUTCOME_UNKNOWN",
             reason="RESET_OUTCOME_UNKNOWN",
             pre_sha256=pre_sha,
+            extra=child_diagnostics,
         )
         _save_terminal(report_root, run_id, payload)
         return payload, 1
