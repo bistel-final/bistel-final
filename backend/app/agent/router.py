@@ -147,12 +147,10 @@ def read_agent_runs(
             status_code=422,
             detail="date_from과 date_to를 올바른 순서로 함께 보내야 합니다.",
         ) from exc
-    except (
-        RepositoryContractError,
-        RepositoryRetryable,
-        RepositoryUnavailable,
-    ) as exc:
+    except (RepositoryRetryable, RepositoryUnavailable) as exc:
         raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
 
 
 @router.get(
@@ -177,12 +175,10 @@ def read_agent_run_detail(
             status_code=404,
             detail="Agent 실행을 찾을 수 없습니다.",
         ) from exc
-    except (
-        RepositoryContractError,
-        RepositoryRetryable,
-        RepositoryUnavailable,
-    ) as exc:
+    except (RepositoryRetryable, RepositoryUnavailable) as exc:
         raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
 
 
 @router.get(

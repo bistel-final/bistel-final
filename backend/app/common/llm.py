@@ -178,6 +178,7 @@ def _request(
     if json_object and json_schema is not None:
         raise ValueError("JSON object mode와 JSON schema를 동시에 요청할 수 없습니다.")
     base_url, api_key = _resolve_endpoint()
+    provider = LLM_PROVIDER.strip().lower()
 
     max_retries = _retry_max()
     attempt = 0
@@ -190,10 +191,17 @@ def _request(
                 "max_tokens": LLM_MAX_TOKENS,
             }
             if json_schema is not None:
-                request_body["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": json_schema,
-                }
+                # OpenAI 외 provider의 /v1 호환 endpoint는 json_schema를 거부하거나
+                # 무시할 수 있다. 그 경로에서는 JSON object만 요청하고 호출부의
+                # Pydantic·citation 검증과 1회 교정으로 구조를 fail-closed 확정한다.
+                request_body["response_format"] = (
+                    {
+                        "type": "json_schema",
+                        "json_schema": json_schema,
+                    }
+                    if provider == "openai"
+                    else {"type": "json_object"}
+                )
             elif json_object:
                 request_body["response_format"] = {"type": "json_object"}
             response = httpx.post(

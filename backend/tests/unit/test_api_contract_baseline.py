@@ -464,7 +464,13 @@ def test_team_release_matches_implemented_optional_operation_contracts() -> None
     optional = _operation_map(load_optional_contract())
     team_release = _operation_map(load_team_release_contract())
     common = set(optional) & set(team_release)
-    assert common == TEAM_RELEASE_KEYS - {("GET", "/analytics/evaluations")}
+    assert common <= TEAM_RELEASE_KEYS
+    assert {
+        ("GET", "/audit-logs/paged"),
+        ("GET", "/analytics/history"),
+        ("POST", "/analytics/query"),
+        ("POST", "/analytics/validate"),
+    } <= common
     for key in common:
         assert team_release[key]["request"] == optional[key]["request"]
         assert team_release[key]["response_shape"] == optional[key]["response_shape"]

@@ -156,8 +156,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "스물네"
-    assert len(listed) == 24
+    assert exception_section["count_word"] == "스물다섯"
+    assert len(listed) == 25
     assert listed == actual
 
 
@@ -226,6 +226,28 @@ def test_incident_batch_entrypoint_reaches_the_golden_flow(
 
     assert rows["V5-C-5.3"] == ("P0", ["V5-C-5.1"])
     assert "V5-C-5.3" in rows["V5-C-6.1"][1]
+
+
+def test_c_5_2_detection_scaffold_keeps_a_endpoint_ownership() -> None:
+    """C 화면용 임시 route를 A endpoint 완료로 오인하지 않게 한다."""
+
+    fields = {row[1]: row for row in _task_fields()}
+    c_5_2 = fields["V5-C-5.2"][3]
+    a_3_1 = fields["V5-A-3.1"][3]
+    a_3_2 = fields["V5-A-3.2"][3]
+    assert all(
+        phrase in c_5_2 for phrase in ("scaffold", "A-3.1·A-3.2", "완료로 간주하지 않")
+    )
+    assert all(
+        field in a_3_1
+        for field in (
+            "predicted_fault_code",
+            "action_code",
+            "notify_status",
+            "mes_status",
+        )
+    )
+    assert "C-5.2 scaffold" in a_3_2
 
 
 #: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.3 → CM-3.4 → CM-3.5`

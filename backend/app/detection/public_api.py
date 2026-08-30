@@ -131,6 +131,11 @@ def list_alarms(
 
     try:
         rows = connection.execute(statement, params).mappings().all()
+        # TODO(V5-A-3.1): C-5.2의 화면 조립용 scaffold는 Runtime join을
+        # 소유하지 않는다. A가 agent_prediction·action·delivery를 연결해
+        # predicted_fault_code/fault, action_code, notify_status/notify,
+        # mes_status/mes를 최종 projection으로 승계할 때까지 명시적
+        # "연결 안 됨"으로 둔다. 이 route의 존재는 A-3.1 완료가 아니다.
         return [
             AlarmItem(
                 source=row["source"],
