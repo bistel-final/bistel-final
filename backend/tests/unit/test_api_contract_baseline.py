@@ -344,6 +344,50 @@ def test_required_shape_error_and_semantic_contracts() -> None:
     )
     assert "alarm_result" not in components["MetrologyEvidence"]["fields"]
 
+    run_fields = components["AgentRunItem"]["fields"]
+    assert run_fields["latency_ms"] == {
+        "minimum": 0,
+        "nullable": False,
+        "required": True,
+        "type": "integer",
+    }
+    assert run_fields["llm_model"] == {
+        "min_length": 1,
+        "nullable": False,
+        "required": True,
+        "type": "string",
+    }
+    for name in ("fault_name", "fault_color"):
+        assert run_fields[name] == {
+            "nullable": False,
+            "required": True,
+            "type": "null",
+        }
+
+    for component_name, field_names in {
+        "AutoToolCallItem": ("result_summary",),
+        "ChatToolCallItem": ("result_summary", "result"),
+    }.items():
+        fields = components[component_name]["fields"]
+        for name in field_names:
+            assert fields[name] == {
+                "min_length": 1,
+                "nullable": False,
+                "required": True,
+                "type": "string",
+            }
+
+    approval_fields = components["ApprovalItem"]["fields"]
+    assert all(
+        approval_fields[name]["required"] and not approval_fields[name]["nullable"]
+        for name in ("predicted_fault_code", "fault_code")
+    )
+    assert approval_fields["action_code"]["enum"] == [
+        "MONITORING",
+        "WARNING",
+        "EQP_HOLD",
+    ]
+
 
 def test_markdown_alias_rows_are_all_owned_by_fixture() -> None:
     rows = _markdown_table(
@@ -367,10 +411,6 @@ def test_markdown_alias_rows_are_all_owned_by_fixture() -> None:
     fixture_aliases = Counter(
         alias for _, aliases, _, _ in unique_contract_rows for alias in aliases
     )
-    # §3.6 additionally declares ApprovalItem.fault_code as the prediction alias;
-    # §2.7's projection table omits that one row.  Preserve the more specific
-    # endpoint contract instead of silently dropping it.
-    documented_aliases.update(["fault_code"])
     assert fixture_aliases == documented_aliases
 
 
@@ -478,6 +518,7 @@ def test_markdown_parser_fails_closed_on_missing_or_duplicate_table() -> None:
         ("required-nullable-to-optional", "required-nullable"),
         ("readiness-error-schema", "오류 schema"),
         ("alias-drift", "alias/canonical field"),
+        ("public-projection-drift", "공개 projection field"),
         ("implementation-source-link", "source.api_markdown"),
     ],
 )
@@ -509,6 +550,8 @@ def test_required_contract_mutations_fail_closed(
         operations[("GET", "/alarms")]["compatibility"][0]["aliases"][0] = (
             "equipment_legacy"
         )
+    elif mutation == "public-projection-drift":
+        fixture["components"]["AgentRunItem"]["fields"]["latency_ms"]["nullable"] = True
     elif mutation == "implementation-source-link":
         fixture["source"]["api_markdown"]["path"] = "backend/app/openapi.json"
     with pytest.raises(ContractValidationError, match=message):

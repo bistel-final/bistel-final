@@ -37,7 +37,16 @@ _OPTIONAL_FIXTURE = _FIXTURE_ROOT / "api_contract_optional.json"
 
 _HTTP_METHODS = {"DELETE", "GET", "PATCH", "POST", "PUT"}
 _OWNERS = {"A", "B", "C", "D", "Common"}
-_FIELD_TYPES = {"any", "array", "boolean", "integer", "number", "object", "string"}
+_FIELD_TYPES = {
+    "any",
+    "array",
+    "boolean",
+    "integer",
+    "null",
+    "number",
+    "object",
+    "string",
+}
 _FIELD_KEYS = {
     "additional_properties",
     "default",
@@ -298,6 +307,12 @@ def _validate_field(field: Any, where: str) -> None:
     if field_type not in _FIELD_TYPES:
         raise ContractValidationError(
             f"{where}.type이 지원되지 않습니다: {field_type!r}"
+        )
+    if field_type == "null" and (
+        field["nullable"] or set(field) != {"type", "required", "nullable"}
+    ):
+        raise ContractValidationError(
+            f"{where} null 전용 field는 추가 제약·nullable을 허용하지 않습니다"
         )
     if "enum" in field:
         enum = field["enum"]
@@ -626,6 +641,68 @@ def _validate_required_semantics(fixture: ContractFixture) -> None:
         )
     if set(delivery["status"].get("enum", [])) != {"SENT", "FAILED"}:
         raise ContractValidationError("delivery status는 SENT|FAILED여야 합니다")
+
+    projection_fields = {
+        ("AgentRunItem", "latency_ms"): {
+            "minimum": 0,
+            "nullable": False,
+            "required": True,
+            "type": "integer",
+        },
+        ("AgentRunItem", "llm_model"): {
+            "min_length": 1,
+            "nullable": False,
+            "required": True,
+            "type": "string",
+        },
+        ("AgentRunItem", "fault_name"): {
+            "nullable": False,
+            "required": True,
+            "type": "null",
+        },
+        ("AgentRunItem", "fault_color"): {
+            "nullable": False,
+            "required": True,
+            "type": "null",
+        },
+        ("AutoToolCallItem", "result_summary"): {
+            "min_length": 1,
+            "nullable": False,
+            "required": True,
+            "type": "string",
+        },
+        ("ChatToolCallItem", "result_summary"): {
+            "min_length": 1,
+            "nullable": False,
+            "required": True,
+            "type": "string",
+        },
+        ("ChatToolCallItem", "result"): {
+            "min_length": 1,
+            "nullable": False,
+            "required": True,
+            "type": "string",
+        },
+    }
+    for (component_name, field_name), expected in projection_fields.items():
+        actual = components[component_name]["fields"][field_name]
+        if actual != expected:
+            raise ContractValidationError(
+                f"공개 projection field 계약 불일치: {component_name}.{field_name}"
+            )
+
+    approval = components["ApprovalItem"]["fields"]
+    if any(
+        not approval[name]["required"] or approval[name]["nullable"]
+        for name in ("predicted_fault_code", "fault_code")
+    ):
+        raise ContractValidationError("승인 예측·alias는 required non-null입니다")
+    if approval["action_code"].get("enum") != [
+        "MONITORING",
+        "WARNING",
+        "EQP_HOLD",
+    ]:
+        raise ContractValidationError("승인 action_code는 ActionCode 3값이어야 합니다")
 
 
 def normalize_openapi_contract(openapi: Mapping[str, Any]) -> NormalizedContract:

@@ -244,24 +244,24 @@
           "type": "string"
         },
         "fault_color": {
-          "nullable": true,
+          "nullable": false,
           "required": true,
-          "type": "string"
+          "type": "null"
         },
         "fault_name": {
-          "nullable": true,
+          "nullable": false,
           "required": true,
-          "type": "string"
+          "type": "null"
         },
         "latency_ms": {
           "minimum": 0,
-          "nullable": true,
+          "nullable": false,
           "required": true,
           "type": "integer"
         },
         "llm_model": {
           "min_length": 1,
-          "nullable": true,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
@@ -642,6 +642,8 @@
       "fields": {
         "action_code": {
           "enum": [
+            "MONITORING",
+            "WARNING",
             "EQP_HOLD"
           ],
           "nullable": false,
@@ -735,7 +737,7 @@
             "TMD",
             "OTH"
           ],
-          "nullable": true,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
@@ -759,7 +761,7 @@
             "TMD",
             "OTH"
           ],
-          "nullable": true,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
@@ -885,7 +887,8 @@
           "type": "string"
         },
         "result_summary": {
-          "nullable": true,
+          "min_length": 1,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
@@ -977,12 +980,14 @@
           "type": "string"
         },
         "result": {
-          "nullable": true,
+          "min_length": 1,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
         "result_summary": {
-          "nullable": true,
+          "min_length": 1,
+          "nullable": false,
           "required": true,
           "type": "string"
         },
