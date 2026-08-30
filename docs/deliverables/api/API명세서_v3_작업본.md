@@ -132,10 +132,20 @@ Kafka `fdc.actions`에 발행하는 MES Mock임을 화면에 표시한다.
 
 ### 2.7 최종 참고 React 호환 projection
 
-최종 패키지의 React는 일부 축약 field를 직접 읽는다. 9개 호환 endpoint는 canonical field와 함께
-아래 deprecated alias를 한 전환 revision 동안 제공한다. alias는 Router serializer 한 곳에서만
-canonical 값으로 파생하며 DB column이나 공개 합성 GT를 직접 읽지 않는다. Frontend를 canonical
-field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
+최종 패키지의 React는 일부 축약 field를 직접 읽는다. 9개 호환 endpoint와 구현된 선택 확장은
+canonical field와 함께 아래 deprecated alias를 한 전환 revision 동안 제공한다. alias는 Router
+serializer 한 곳에서만 canonical 값으로 파생하며 DB column이나 공개 합성 GT를 직접 읽지 않는다.
+Frontend를 canonical field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
+
+이 절의 표는 사람이 읽는 요약이다. 전체 항목·소비자·제거 조건의 machine-readable 동반 산출물은
+[`compatibility_alias_registry.json`](compatibility_alias_registry.json)이며 외부 계약 정본은 이
+API 명세서다. 둘이 충돌하면 명세를 먼저 고친 뒤 registry를 갱신한다. registry 항목의 제거 가능
+상태는 `V5-CM-5.1`이 `OPEN|READY|BLOCKED`와 증적으로 판정한다.
+
+등록부의 `consumers`는 `frontend/src/features/**` 실제 source scan과 exact 대조한다. alias와
+이름만 같은 다른 도메인·로컬 객체의 property access는 `consumer_scan_ignores`에 파일과 사유를
+명시해야 하며, 두 목록 어디에도 분류되지 않은 신규 접근은 계약 테스트가 거부한다. `#Symbol`
+consumer는 파일 존재뿐 아니라 실제 함수·class·변수 선언까지 검증한다.
 
 | 응답 | canonical | deprecated alias | 파생 규칙 |
 |---|---|---|---|
@@ -150,8 +160,9 @@ field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
 | AgentRunItem | `chamber_id` | `chamber` | 같은 chamber ID 복사 |
 | AgentRunItem | `predicted_fault_code` | `fault_code`, `fault_name`, `fault_color` | `fault_code`는 예측값 복사. 등록된 UI metadata가 없으면 name·color는 null이며 임의로 생성하지 않음 |
 | ApprovalItem | `lot_id`, `equipment_id`, `chamber_id` | `lot`, `equipment`, `chamber` | 각 canonical ID를 같은 순서의 alias로 1:1 복사 |
-| ApprovalItem | `predicted_fault_code` | `fault_code` | 예측값을 그대로 복사하며 합성 GT를 읽지 않음 |
+| ApprovalItem | `predicted_fault_code` | `fault_code` | 같은 Runtime Agent 예측값 복사. 합성 GT 접근 금지 |
 | ApprovalItem | `decided_by`, `decided_at` | `approved_by`, `approved_at` | 결정 상태와 무관하게 같은 값 복사하는 legacy 표시 alias |
+| ActionItem·ActionDetailResponse | `agent_run_id`, `lot_id`, `equipment_id`, `chamber_id` | `created_by_agent_run_id`, `lot`, `equipment`, `chamber` | 구현된 선택 확장의 한시 화면 alias. 각 canonical 값을 같은 순서로 복사 |
 | AuditLogItem | `occurred_at`, `actor_type`, `event_type`, `entity_type`+`entity_id` | `at`, `actor`, `event`, `entity` | 시각·actor는 복사, event는 3.8 mapping, entity는 `entity_type:entity_id` |
 | AgentAskResponse | `evidence_items`, `limitations` | `evidence`, `limit` | 첫 DOCUMENT 근거 또는 null, limitations를 하나의 문자열로 결합 |
 | AgentAsk `evidence` | `document_id` | `doc_id` | 호환 단일 DOCUMENT 객체 안에서만 같은 ID 복사 |

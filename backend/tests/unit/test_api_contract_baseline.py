@@ -33,6 +33,13 @@ SUPPORT_MODULE = BACKEND_ROOT / "tests" / "support" / "api_contract_baseline.py"
 API_MARKDOWN = (
     REPOSITORY_ROOT / "docs" / "deliverables" / "api" / "API명세서_v3_작업본.md"
 )
+ALIAS_REGISTRY = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "deliverables"
+    / "api"
+    / "compatibility_alias_registry.json"
+)
 API_CSV = REPOSITORY_ROOT / "docs" / "deliverables" / "api" / "API명세서_v3_작업본.csv"
 APP_ROOT = BACKEND_ROOT / "app"
 
@@ -409,7 +416,7 @@ def test_required_shape_error_and_semantic_contracts() -> None:
     ]
 
 
-def test_markdown_alias_rows_are_all_owned_by_fixture() -> None:
+def test_markdown_alias_rows_are_owned_by_fixture_or_optional_registry() -> None:
     rows = _markdown_table(
         API_MARKDOWN.read_text(encoding="utf-8"),
         "### 2.7 최종 참고 React 호환 projection",
@@ -431,7 +438,12 @@ def test_markdown_alias_rows_are_all_owned_by_fixture() -> None:
     fixture_aliases = Counter(
         alias for _, aliases, _, _ in unique_contract_rows for alias in aliases
     )
-    assert fixture_aliases == documented_aliases
+    registry = json.loads(ALIAS_REGISTRY.read_text(encoding="utf-8"))
+    action_entry = next(
+        entry for entry in registry["entries"] if entry["id"] == "c-dto-action-copy"
+    )
+    optional_aliases = Counter(action_entry["compatibility_fields"])
+    assert fixture_aliases + optional_aliases == documented_aliases
 
 
 def test_optional_fixture_is_exact_implemented_allowlist() -> None:
