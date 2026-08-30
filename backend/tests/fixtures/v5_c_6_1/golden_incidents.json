@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "dataset_epoch": "fdc_final_20260818",
+  "source_manifest_sha256": "888409de2d935eeccf47a80030c65f6cf49c541621a283907849e7332297f843",
+  "incidents": [
+    {"lot_id": "LOT002", "chamber_id": "EQP05-PM2", "expected_action": "MONITORING", "alarm_sources": ["SUMMARY"]},
+    {"lot_id": "LOT004", "chamber_id": "EQP01-PM2", "expected_action": "MONITORING", "alarm_sources": ["SUMMARY"]},
+    {"lot_id": "LOT004", "chamber_id": "EQP04-PM2", "expected_action": "EQP_HOLD", "alarm_sources": ["R03", "SUMMARY", "TRACE"]},
+    {"lot_id": "LOT005", "chamber_id": "EQP02-PM1", "expected_action": "EQP_HOLD", "alarm_sources": ["R03", "SUMMARY", "TRACE"]},
+    {"lot_id": "LOT006", "chamber_id": "EQP06-PM1", "expected_action": "WARNING", "alarm_sources": ["SUMMARY", "TRACE"]},
+    {"lot_id": "LOT006", "chamber_id": "EQP06-PM2", "expected_action": "WARNING", "alarm_sources": ["SUMMARY", "TRACE"]},
+    {"lot_id": "LOT007", "chamber_id": "EQP01-PM1", "expected_action": "WARNING", "alarm_sources": ["SUMMARY", "TRACE"]},
+    {"lot_id": "LOT007", "chamber_id": "EQP04-PM1", "expected_action": "MONITORING", "alarm_sources": ["SUMMARY"]},
+    {"lot_id": "LOT009", "chamber_id": "EQP03-PM1", "expected_action": "WARNING", "alarm_sources": ["SUMMARY", "TRACE"]},
+    {"lot_id": "LOT009", "chamber_id": "EQP06-PM1", "expected_action": "MONITORING", "alarm_sources": ["SUMMARY"]},
+    {"lot_id": "LOT010", "chamber_id": "EQP01-PM1", "expected_action": "MONITORING", "alarm_sources": ["SUMMARY"]},
+    {"lot_id": "LOT011", "chamber_id": "EQP05-PM1", "expected_action": "EQP_HOLD", "alarm_sources": ["R03", "SUMMARY", "TRACE"]}
+  ]
+}
