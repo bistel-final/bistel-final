@@ -25,9 +25,10 @@ partition=1·replication=1이어야 한다. compose service를 Backend·Frontend
 
 `mes-mock`은 `--profile mes up -d mes-mock`으로 활성화한다. 이 consumer의 group은
 `kosa-fdc-mes-mock`이고, n8n WF4 write-back group은 `kosa-fdc-wf4-writeback`이다. 두
-group의 offset을 서로 대신 사용하지 않는다. consumer credential은 Docker secret으로 mount된
+group의 offset을 서로 대신 사용하지 않는다. Backend readiness와 consumer credential은
+Docker secret으로 mount된
 `/run/secrets/kafka_client_user`·`/run/secrets/kafka_client_password`만 읽는다. 평문
-`KAFKA_CLIENT_USER`·`KAFKA_CLIENT_PASSWORD`는 consumer container 환경으로 전달하지 않으며
+`KAFKA_CLIENT_USER`·`KAFKA_CLIENT_PASSWORD`는 두 container 환경으로 전달하지 않으며
 fallback도 지원하지 않는다.
 
 일반 `config` 출력에는 치환된 secret이 포함될 수 있으므로 저장·공유하지 않는다. 검증은
@@ -50,6 +51,9 @@ compose를 적용하지 않고 TLS listener와 인증서 배포가 준비될 때
 2. Frontend 53080·Kafka 53004가 기존 컨테이너에 사용되지 않는지 확인한다. 기존 공용
    PostgreSQL·Neo4j·n8n 포트와 컨테이너는 중지하지 않는다.
 3. 기동 후 Backend liveness는 Frontend 경유 `GET http://<host>:53080/api/health`로 확인한다.
+   이어 `GET http://<host>:53080/api/health/ready`가 exact 6 check `PASS`와 HTTP 200인지
+   확인한다. 503이면 [`readiness-verdict.md`](../../docs/troubleshooting/readiness-verdict.md)의
+   실패 check만 복구하며 공용 PostgreSQL·Neo4j·n8n을 재생성하지 않는다.
 4. Backend 컨테이너에서 기존 verifier를 실행한다.
 
    ```bash

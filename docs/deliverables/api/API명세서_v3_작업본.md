@@ -982,8 +982,10 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 }
 ```
 
-각 check의 `status`는 `PASS|FAIL`, `reason_code`는 allowlist string 또는 null,
-`latency_ms`는 0 이상 정수다. 전부 PASS면 200과 `READY`, 하나라도 FAIL이면 같은 DTO를
+각 check의 `status`는 `PASS|FAIL`, `reason_code`는 `NOT_CONFIGURED|CONTRACT_MISMATCH|`
+`DEPENDENCY_UNAVAILABLE|RAG_MODEL_NOT_READY|KAFKA_LAG_STALE|TIMEOUT` 또는 null,
+`latency_ms`는 0 이상 정수다. `RAG_MODEL_NOT_READY`는 `rag`, `KAFKA_LAG_STALE`은 `kafka`에만
+허용한다. 전부 PASS면 200과 `READY`, 하나라도 FAIL이면 같은 DTO를
 담은 503과 `NOT_READY`를 반환한다. anomaly model artifact는 조치 규칙의 필수 dependency가
 아니며, readiness 사유에 host·port·계정·secret·원문 exception을 노출하지 않는다.
 

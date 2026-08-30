@@ -18,6 +18,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD is required}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:?N8N_WEBHOOK_URL is required}
       N8N_WF3_URL: ${N8N_WF3_URL:?N8N_WF3_URL is required}
+      N8N_BASE_URL: ${N8N_BASE_URL:?N8N_BASE_URL is required}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET is required}
       N8N_WEBHOOK_TIMEOUT_SEC: ${N8N_WEBHOOK_TIMEOUT_SEC:?N8N_WEBHOOK_TIMEOUT_SEC is required}
       DELIVERY_UNKNOWN_AFTER_SEC: ${DELIVERY_UNKNOWN_AFTER_SEC:?DELIVERY_UNKNOWN_AFTER_SEC is required}
@@ -34,11 +35,17 @@ services:
       EMBEDDING_MODEL_REVISION: ${EMBEDDING_MODEL_REVISION:?EMBEDDING_MODEL_REVISION is required}
       EMBEDDING_DIM: ${EMBEDDING_DIM:?EMBEDDING_DIM is required}
       EMBEDDING_MODEL_PATH: /models/bge-m3
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      KAFKA_CLIENT_USER_FILE: /run/secrets/kafka_client_user
+      KAFKA_CLIENT_PASSWORD_FILE: /run/secrets/kafka_client_password
     volumes:
       - type: bind
         source: ${RAG_MODEL_CACHE_DIR:?RAG_MODEL_CACHE_DIR is required}
         target: /models/bge-m3
         read_only: true
+    secrets:
+      - kafka_client_user
+      - kafka_client_password
     healthcheck:
       test:
         - CMD

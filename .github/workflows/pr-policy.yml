@@ -214,6 +214,7 @@ jobs:
           httpx==0.28.1
           pgvector==0.3.6
           PyYAML==6.0.2
+          confluent-kafka==2.6.1
 
       # 기존 미등록 묶음·등록 가드·새 contract를 함께 고정한다. container/network 전용과
       # 선택 의존성 미설치 항목은 가드 내부 allowlist에 소유 이유를 남긴다.
@@ -279,6 +280,7 @@ jobs:
           tests/unit/test_preflight.py
           tests/unit/test_query_log.py
           tests/unit/test_rag_readiness.py
+          tests/unit/test_readiness.py
           tests/unit/test_rebuild_runner.py
           tests/unit/test_reference_extensions.py
           tests/unit/test_register_final_manifests.py

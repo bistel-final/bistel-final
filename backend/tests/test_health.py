@@ -15,7 +15,7 @@ def test_health() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "UP"}
 
 
 def test_cors_preflight_allows_configured_origin() -> None:
@@ -60,7 +60,7 @@ def test_health_import_succeeds_without_app_database_credential() -> None:
                 "from app.main import app; "
                 "response = TestClient(app).get('/health'); "
                 "assert response.status_code == 200; "
-                "assert response.json() == {'status': 'ok'}"
+                "assert response.json() == {'status': 'UP'}"
             ),
         ],
         check=False,

@@ -25,6 +25,7 @@ EXPECTED_KEYS = frozenset(
         "NEO4J_PASSWORD",
         "N8N_WEBHOOK_URL",
         "N8N_WF3_URL",
+        "N8N_BASE_URL",
         "N8N_WEBHOOK_SECRET",
         "N8N_WEBHOOK_TIMEOUT_SEC",
         "DELIVERY_UNKNOWN_AFTER_SEC",
@@ -63,7 +64,13 @@ SECRET_KEYS = frozenset(
 )
 
 URL_KEYS = frozenset(
-    {"N8N_WEBHOOK_URL", "N8N_WF3_URL", "LLM_BASE_URL", "BACKEND_BASE_URL"}
+    {
+        "N8N_WEBHOOK_URL",
+        "N8N_WF3_URL",
+        "N8N_BASE_URL",
+        "LLM_BASE_URL",
+        "BACKEND_BASE_URL",
+    }
 )
 
 LOCAL_HOSTS = frozenset(
@@ -241,6 +248,14 @@ def validate(values: dict[str, str]) -> list[Finding]:
 
     for key in URL_KEYS:
         findings.extend(_validate_url(key, values[key]))
+    try:
+        n8n_base = urlsplit(values["N8N_BASE_URL"])
+    except ValueError:
+        n8n_base = None
+    if n8n_base is not None and (
+        n8n_base.path not in {"", "/"} or n8n_base.query or n8n_base.fragment
+    ):
+        findings.append(Finding("N8N_BASE_URL", "ORIGIN_REQUIRED"))
 
     origins, origin_findings = _validate_origin_list(values["CORS_ORIGINS"])
     findings.extend(origin_findings)

@@ -21,6 +21,7 @@ from app.common.config import (
 #: profile과 정확히 하나(kosa_text2sql)로 고정한다 — Runtime처럼 여러 DB
 #: 중 하나를 고르는 개념이 아니다(설계서 v2.1 2.6).
 EVALUATION_POSTGRES_DB = "kosa_text2sql"
+DB_CONNECT_TIMEOUT_SECONDS = 5
 
 
 def create_postgres_url(username: str, password: str) -> URL:
@@ -66,7 +67,7 @@ def _create_engine(url: URL) -> Engine:
         url,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"connect_timeout": 5},
+        connect_args={"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS},
     )
 
 

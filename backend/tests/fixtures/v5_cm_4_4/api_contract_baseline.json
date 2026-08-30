@@ -1658,7 +1658,14 @@
           "type": "integer"
         },
         "reason_code": {
-          "min_length": 1,
+          "enum": [
+            "NOT_CONFIGURED",
+            "CONTRACT_MISMATCH",
+            "DEPENDENCY_UNAVAILABLE",
+            "RAG_MODEL_NOT_READY",
+            "KAFKA_LAG_STALE",
+            "TIMEOUT"
+          ],
           "nullable": true,
           "required": true,
           "type": "string"
