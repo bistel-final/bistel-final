@@ -45,6 +45,8 @@ from sqlalchemy.engine import Connection
 __all__ = [
     "SyntheticFaultLabelRow",
     "fetch_synthetic_fault_labels",
+    "IncidentFaultLabelRow",
+    "fetch_incident_fault_labels",
     "MetrologyOutcomeRow",
     "fetch_metrology_outcomes",
 ]
@@ -94,14 +96,69 @@ def fetch_synthetic_fault_labels(
         """
     )
     rows = (
-        connection.execute(query, {"lot_hist_ids": list(lot_hist_ids)})
-        .mappings()
-        .all()
+        connection.execute(query, {"lot_hist_ids": list(lot_hist_ids)}).mappings().all()
     )
     return [
         SyntheticFaultLabelRow(
             lot_hist_id=row["lot_hist_id"],
             lot_id=row["lot_id"],
+            fault_code=row["fault_code"],
+        )
+        for row in rows
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentFaultLabelRow:
+    """incident 전체 member 한 행의 합성 Fault 라벨(C-6.2 평가 전용)."""
+
+    lot_id: str
+    chamber_id: str
+    fault_code: str
+
+
+def fetch_incident_fault_labels(
+    connection: Connection,
+    incident_keys: Sequence[tuple[str, str]],
+) -> list[IncidentFaultLabelRow]:
+    """지정 incident의 **전체** ``lot_history`` member 라벨을 읽는다.
+
+    alarm이 발생한 wafer ID만 넘겨 일부 member를 잃는 경로를 만들지 않는다. 두 배열을
+    병렬 ``unnest``해 ``(lot_id, chamber_id)`` 쌍을 유지하고, 평가 role이 허용받은
+    세 column만 SELECT한다.
+    """
+
+    if not incident_keys:
+        return []
+    lot_ids = [lot_id for lot_id, _chamber_id in incident_keys]
+    chamber_ids = [chamber_id for _lot_id, chamber_id in incident_keys]
+    query = text(
+        """
+        WITH target(lot_id, chamber_id) AS (
+            SELECT * FROM unnest(
+                CAST(:lot_ids AS text[]), CAST(:chamber_ids AS text[])
+            )
+        )
+        SELECT history.lot_id, history.chamber_id, history.fault_code
+        FROM lot_history AS history
+        JOIN target
+          ON target.lot_id = history.lot_id
+         AND target.chamber_id = history.chamber_id
+        ORDER BY history.lot_id, history.chamber_id, history.lot_hist_id
+        """
+    )
+    rows = (
+        connection.execute(
+            query,
+            {"lot_ids": lot_ids, "chamber_ids": chamber_ids},
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        IncidentFaultLabelRow(
+            lot_id=row["lot_id"],
+            chamber_id=row["chamber_id"],
             fault_code=row["fault_code"],
         )
         for row in rows
@@ -145,9 +202,7 @@ def fetch_metrology_outcomes(
         """
     )
     rows = (
-        connection.execute(query, {"lot_hist_ids": list(lot_hist_ids)})
-        .mappings()
-        .all()
+        connection.execute(query, {"lot_hist_ids": list(lot_hist_ids)}).mappings().all()
     )
     return [
         MetrologyOutcomeRow(
