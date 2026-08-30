@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
+from app.common.db import DB_CONNECT_TIMEOUT_SECONDS
 from app.common.graph_readiness import GraphReadinessError, verify_graph_readiness
 from app.common.kafka_config import KafkaContractError, KafkaNotConfiguredError
 from app.common.kafka_readiness import (
@@ -62,6 +63,17 @@ READINESS_WORKERS = len(CHECK_NAMES)
 READINESS_DEADLINE_SECONDS = 10.0
 DEPENDENCY_TIMEOUT_SECONDS = 5.0
 RAG_RETRY_COOLDOWN_SECONDS = 60.0
+READINESS_CACHE_TTL_SECONDS = 3.0
+POSTGRES_STATEMENT_TIMEOUT_SECONDS = 3.0
+POSTGRES_LOCK_TIMEOUT_SECONDS = 2.0
+
+if (
+    DB_CONNECT_TIMEOUT_SECONDS + POSTGRES_STATEMENT_TIMEOUT_SECONDS
+    >= READINESS_DEADLINE_SECONDS
+):
+    raise RuntimeError(
+        "PostgreSQL readiness budget은 global deadline보다 작아야 합니다"
+    )
 
 
 class ReadinessNotConfiguredError(RuntimeError):
@@ -313,8 +325,8 @@ def _postgres_runtime_readiness(bundle: MarkerBundle) -> None:
     from app.common.db import get_app_engine
 
     with get_app_engine().connect() as connection, connection.begin():
-        connection.exec_driver_sql("SET LOCAL statement_timeout = '5000ms'")
-        connection.exec_driver_sql("SET LOCAL lock_timeout = '3000ms'")
+        connection.exec_driver_sql("SET LOCAL statement_timeout = '3000ms'")
+        connection.exec_driver_sql("SET LOCAL lock_timeout = '2000ms'")
         verify_postgresql_runtime(
             connection,
             payloads["runtime.runtime_checkpointed.json"],
@@ -326,8 +338,8 @@ def _reference_migration_readiness(bundle: MarkerBundle) -> None:
     from app.common.db import get_app_engine
 
     with get_app_engine().connect() as connection, connection.begin():
-        connection.exec_driver_sql("SET LOCAL statement_timeout = '5000ms'")
-        connection.exec_driver_sql("SET LOCAL lock_timeout = '3000ms'")
+        connection.exec_driver_sql("SET LOCAL statement_timeout = '3000ms'")
+        connection.exec_driver_sql("SET LOCAL lock_timeout = '2000ms'")
         verify_reference_migration(connection)
 
 
@@ -401,8 +413,13 @@ class ReadinessManager:
         ] = KafkaAdminProbe.from_environment,
         clock: Callable[[], float] = time.monotonic,
         sampler_period_seconds: float = SAMPLING_PERIOD_SECONDS,
+        cache_ttl_seconds: float = READINESS_CACHE_TTL_SECONDS,
         rag_warmup: Callable[[], None] = _rag_warmup,
     ) -> None:
+        if not 0 < cache_ttl_seconds < sampler_period_seconds:
+            raise ValueError(
+                "readiness cache TTL은 0보다 크고 sampler 주기보다 작아야 합니다"
+            )
         self._readiness_executor = readiness_executor or ThreadPoolExecutor(
             max_workers=READINESS_WORKERS,
             thread_name_prefix="readiness",
@@ -419,6 +436,11 @@ class ReadinessManager:
         self._kafka_probe_factory = kafka_probe_factory
         self._clock = clock
         self._sampler_period_seconds = sampler_period_seconds
+        self._cache_ttl_seconds = cache_ttl_seconds
+        self._collect_condition = threading.Condition()
+        self._collecting = False
+        self._cached_at: float | None = None
+        self._cached_result: ReadinessResponse | None = None
         self._tracker = KafkaLagTracker(clock=clock)
         self._stop = threading.Event()
         self._sampler_future: Future[None] | None = None
@@ -447,7 +469,34 @@ class ReadinessManager:
             self._sampler_future = self._sampler_executor.submit(self._sample_loop)
 
     def collect(self) -> ReadinessResponse:
-        return self._orchestrator.collect()
+        with self._collect_condition:
+            while True:
+                now = self._clock()
+                if (
+                    self._cached_result is not None
+                    and self._cached_at is not None
+                    and now - self._cached_at < self._cache_ttl_seconds
+                ):
+                    return self._cached_result
+                if not self._collecting:
+                    self._collecting = True
+                    break
+                self._collect_condition.wait()
+
+        try:
+            result = self._orchestrator.collect()
+        except BaseException:
+            with self._collect_condition:
+                self._collecting = False
+                self._collect_condition.notify_all()
+            raise
+
+        with self._collect_condition:
+            self._cached_at = self._clock()
+            self._cached_result = result
+            self._collecting = False
+            self._collect_condition.notify_all()
+        return result
 
     def _measure_kafka(self) -> None:
         sequence = self._tracker.begin_measurement()
@@ -463,7 +512,6 @@ class ReadinessManager:
         self._tracker.record(sequence, lag=measurement.lag)
 
     def _kafka_readiness(self) -> ReadinessFailureReason | None:
-        self._measure_kafka()
         return self._tracker.reason(worker_alive=self._sampler_alive())
 
     def _sampler_alive(self) -> bool:

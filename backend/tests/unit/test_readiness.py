@@ -11,11 +11,16 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.common import readiness
+from app.common.db import DB_CONNECT_TIMEOUT_SECONDS
 from app.common.kafka_config import KafkaClientConfig, KafkaConfigError
 from app.common.kafka_readiness import KafkaAdminProbe, KafkaLagTracker
 from app.common.readiness import (
     CHECK_NAMES,
+    POSTGRES_LOCK_TIMEOUT_SECONDS,
+    POSTGRES_STATEMENT_TIMEOUT_SECONDS,
+    READINESS_DEADLINE_SECONDS,
     RagWarmupController,
+    ReadinessManager,
     ReadinessOrchestrator,
 )
 from app.common.readiness_markers import (
@@ -190,6 +195,76 @@ def test_orchestrator_global_deadline_returns_all_checks_without_late_pollution(
     assert result.status == "NOT_READY"
     assert result.checks.rag.reason_code == "TIMEOUT"
     assert set(result.checks.model_dump()) == set(CHECK_NAMES)
+
+
+def test_manager_collect_shares_inflight_result_and_short_cache() -> None:
+    clock = [10.0]
+
+    class CountingOrchestrator:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def collect(self) -> ReadinessResponse:
+            self.calls += 1
+            self.started.set()
+            assert self.release.wait(timeout=2)
+            return _response()
+
+    orchestrator = CountingOrchestrator()
+    manager = ReadinessManager(
+        clock=lambda: clock[0],
+        rag_warmup=lambda: None,
+    )
+    manager._orchestrator = orchestrator  # type: ignore[assignment]
+    try:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(manager.collect) for _ in range(4)]
+            assert orchestrator.started.wait(timeout=1)
+            orchestrator.release.set()
+            results = [future.result(timeout=2) for future in futures]
+
+        assert orchestrator.calls == 1
+        assert all(result == results[0] for result in results)
+        assert manager.collect() == results[0]
+        assert orchestrator.calls == 1
+
+        clock[0] += readiness.READINESS_CACHE_TTL_SECONDS
+        assert manager.collect() == results[0]
+        assert orchestrator.calls == 2
+    finally:
+        manager.close()
+
+
+def test_kafka_readiness_uses_sampler_snapshot_without_admin_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = ReadinessManager(
+        clock=lambda: 10.0,
+        rag_warmup=lambda: None,
+    )
+    sequence = manager._tracker.begin_measurement()
+    assert manager._tracker.record(sequence, lag=0)
+    manager._sampler_future = SimpleNamespace(done=lambda: False)  # type: ignore[assignment]
+
+    def forbidden() -> None:
+        raise AssertionError("request path must not perform a Kafka admin probe")
+
+    monkeypatch.setattr(manager, "_measure_kafka", forbidden)
+    try:
+        assert manager._kafka_readiness() is None
+    finally:
+        manager._sampler_future = None
+        manager.close()
+
+
+def test_postgresql_check_budget_fits_global_readiness_deadline() -> None:
+    assert POSTGRES_LOCK_TIMEOUT_SECONDS < POSTGRES_STATEMENT_TIMEOUT_SECONDS
+    assert (
+        DB_CONNECT_TIMEOUT_SECONDS + POSTGRES_STATEMENT_TIMEOUT_SECONDS
+        < READINESS_DEADLINE_SECONDS
+    )
 
 
 def test_rag_warmup_is_single_flight_and_retries_transient_failure() -> None:

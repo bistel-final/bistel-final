@@ -34,8 +34,13 @@
 비활성화하고 `deploy/compose/kafka/manage_wf4_offsets.sh`의 dry-run 결과를 검토한 후 exact
 offset reset 절차를 사용한다. `--to-earliest` 일괄 reset은 금지한다.
 
-Sampler는 60초 주기이며 snapshot이 2주기보다 오래되거나 worker가 종료되면 이전 PASS를
-재사용하지 않는다. 재시작 직후 lag 지속 판정의 최대 관측 지연은 5분과 다음 sampling 1회다.
+Kafka Admin 조회는 60초 주기 sampler만 수행하고 `/health/ready` 요청 경로에서는 저장된
+snapshot만 읽는다. snapshot이 2주기보다 오래되거나 worker가 종료되면 이전 PASS를 재사용하지
+않는다. 재시작 직후 lag 지속 판정의 최대 관측 지연은 5분과 다음 sampling 1회다.
+
+동시에 들어온 readiness 요청은 하나의 6-check 실행을 공유하며, 완료 결과는 3초 동안만
+재사용한다. 따라서 probe burst가 executor를 고갈시키거나 Kafka Admin 조회를 증폭시키지 않는다.
+PostgreSQL check는 연결 5초와 statement 3초로 10초 aggregate deadline 안에서 종료한다.
 
 ## 적용일 확인
 
