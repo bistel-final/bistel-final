@@ -60,10 +60,10 @@ D의 독립 화면 7 전역 감사 조회를 대체하거나 중복 구현하지
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고, D의 bare 감사 API를 소비하는 run-scoped 감사 subview를 공유 경계에 구현한다. GRAPH는 `chamber_id·relation_id·graph_revision`으로 Ontology에 이동해 동일 revision의 관계를 복원한다. Loading·Error·Empty·Success와 승인 충돌·오류 상태를 검증한다. Detection 3 route는 A-3.1·A-3.2 승계 전 화면 실행용 scaffold이며 A Task 완료로 간주하지 않는다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1 | 6.0h |
 | V5-C-5.3 | P0 | incident 일회성 자동 배치 관리 명령. 완료: Runtime run 이력이 전혀 없는 incident만 stable order로 선택해 대표 `AlarmRef`로 기존 Agent runtime을 incident당 1회 실행하는 `run_pending_incidents.py --once`를 제공한다. start 뒤 continue 실패는 exact run을 FAILED로 보상하고 postcondition을 재조회하며, 이전 `RUNNING` run은 `INCOMPLETE_RUN`으로 정상 race와 구분한다. 기존 이력이 있으면 FAILED를 포함해 자동 재선택하지 않고 public 수동 재실행에 맡기며, 즉시 2회차 실행의 신규 run·action·delivery가 모두 0임을 검증한다. 상시 scheduler·public batch API/UI·n8n WF1은 만들지 않는다 | FR-C-09, FR-C-14 | V5-C-5.1 | 3.0h |
 | V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`에서 C-5.3 batch command 1회로 incident 12개를 실행해 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 2회차 batch 신규 run·action·delivery 0, 수동 재실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-5.3, V5-C-3.4, V5-CM-4.7 | 4.0h |
-| V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
+| V5-C-6.2 | P1 | Fault 5-class 평가. 완료: C-6.1 원 evidence의 round-2 baseline run 12건에서 Runtime prediction hash를 label 접근 전에 고정한다. evaluation role로 각 incident 전체 member를 읽어 distinct non-NRM 1종 7건만 Accuracy·고정 5-class Macro-F1·class별 Precision/Recall/F1로 보고하고, 0종 5건은 `NO_INJECTED_FAULT`, 2종 이상은 `AMBIGUOUS_LABEL`로 제외한다. 구조화 prediction·run-scoped 근거·규칙 조치 일치 12/12만 hard Gate로 삼고 합성 GT metadata 4종·두 DB provenance/shared-key hash·분모·제외 사유를 불변 artifact에 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 4.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**P0·P1 24 Task / 78.5h** · **P2 별도 1 Task / 2.0h**
+**P0·P1 24 Task / 82.5h** · **P2 별도 1 Task / 2.0h**
 
 ---
 
