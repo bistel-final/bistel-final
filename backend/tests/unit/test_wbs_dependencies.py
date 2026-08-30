@@ -81,7 +81,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (149.5, 48.0, 197.5, 64.0)
+    assert (p0, p1, total, common) == (151.0, 48.0, 199.0, 65.5)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -156,9 +156,19 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "열여덟"
-    assert len(listed) == 18
+    assert exception_section["count_word"] == "열아홉"
+    assert len(listed) == 19
     assert listed == actual
+
+
+def test_cm_4_7_effort_and_direct_predecessors_are_pinned() -> None:
+    row = next(item for item in _task_fields() if item[1] == "V5-CM-4.7")
+
+    assert row[-2] == "3.0h"
+    assert {item.strip() for item in row[-3].split(",")} == {
+        "V5-CM-3.4",
+        "V5-CM-4.3",
+    }
 
 
 def test_the_dependency_graph_has_no_cycle(rows: dict[str, TaskRow]) -> None:

@@ -400,6 +400,23 @@ jobs:
           tests/unit/test_checkpoint_container.py
           -rs --no-header
 
+      # V5-CM-4.7 E2E reset guard. unit은 target·intent·receipt·observer 분리를,
+      # container는 일회성 `kosa_agent_e2e`에서 13-table transaction rollback·
+      # writer race·commit/receipt fault window를 실증한다. 공용 DB는 접속하지 않는다.
+      - name: Prove the E2E reset evidence contract
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          tests/unit/test_e2e_reset_guard.py
+          -rs --no-header
+
+      - name: Prove E2E reset rollback and crash windows on PostgreSQL
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_e2e_reset_guard_container.py
+          -rs --no-header
+
       # V5-CM-3.4 묶음 2 준비. checkpoint 전용 backup 계약은 container가 필요 없다 —
       # 전환 backup(base 9)과 다른 계약이라는 것과 `restore_verified`가 관측 결과라는
       # 것을 순수 판정으로 고정한다. 지명하지 않으면 어느 job에도 잡히지 않는다.
