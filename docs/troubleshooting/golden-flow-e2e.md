@@ -30,7 +30,9 @@ PostgreSQL·n8n·Kafka·SMTP에는 접근하지 않는다.
 - `MONITORING` 5 / `WARNING` 4 / `EQP_HOLD` 3
 - R03 포함 incident 3
 - fixture의 `source_manifest_sha256`은 현재
-  `infra/bootstrap/source-manifest-v4.json` 파일 SHA-256과 실행 때 다시 대조한다.
+  `infra/bootstrap/source-manifest-v4.json` 파일 SHA-256과 CI 및 실행 때 모두
+  `validate_expected_oracle_source()`로 대조한다. 따라서 source manifest만 바뀌고
+  oracle이 갱신되지 않은 상태는 비싼 7-phase 실행 전 단위 회귀에서 차단된다.
 
 ## 3. phase와 실행 범위
 
@@ -174,6 +176,16 @@ cd backend
 위해 `COMPLETED+FAILED` 합을 유지하되, 같은 객체의 `numerator_by_status.COMPLETED`와
 `numerator_by_status.FAILED`를 반드시 함께 기록한다. 따라서 실패 증가가 완료율 개선처럼
 보이지 않도록 status별 분자를 따로 비교한다. `WAITING_APPROVAL`은 완료 분자에 포함하지 않는다.
+
+지표의 출처는 다음처럼 구분한다.
+
+- **DB snapshot 파생**: run active latency, completion rate, Tool call 수,
+  token 합계·평균·결측 수, rehydration snapshot bytes
+- **운영자 제출 evidence 파생**: `batch_wall_clock_ms`
+
+`batch_wall_clock_ms` artifact는 manifest의 SHA-256으로 제출 후 변조를 막지만, 제출 시점의
+측정값 자체를 DB에서 재계산하지는 않는다. 따라서 Level 비교에서 wall-clock은 보조 운영
+측정치로 표시하고, DB snapshot 파생 지표와 같은 출처의 관측값으로 오해하지 않는다.
 
 ## 9. UNKNOWN과 retry 주의
 

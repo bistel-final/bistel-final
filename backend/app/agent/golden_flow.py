@@ -270,6 +270,24 @@ def load_expected_oracle(payload: object) -> ExpectedOracle:
     return ExpectedOracle(DATASET_EPOCH, digest, tuple(incidents))
 
 
+def validate_expected_oracle_source(
+    oracle: ExpectedOracle,
+    source_manifest_sha256: str,
+) -> None:
+    """oracle를 실제 source-manifest 파일 digest와 순수 값으로 결속한다.
+
+    core가 파일시스템을 직접 읽지는 않는다. CLI와 CI가 각자 읽은 **동일한 실제 파일
+    digest**를 이 함수에 넘기게 해, 모양 검사와 값 검사가 서로 다른 규칙으로 갈라지는
+    것을 막는다.
+    """
+
+    if (
+        not _sha256(source_manifest_sha256)
+        or oracle.source_manifest_sha256 != source_manifest_sha256
+    ):
+        raise GoldenFlowContractError("ORACLE_INVALID")
+
+
 def snapshot_from_mapping(payload: object) -> GoldenFlowSnapshot:
     """Repository와 DB_SNAPSHOT artifact가 공유하는 exact snapshot parser."""
 
@@ -494,7 +512,7 @@ def level_metrics(
                 "COMPLETED": terminal["COMPLETED"],
                 "FAILED": terminal["FAILED"],
             },
-            "denominator": 12,
+            "denominator": EXPECTED_INCIDENT_COUNT,
         },
         "tool_calls": {
             f"{tool_name}:{status}": count
@@ -1090,4 +1108,5 @@ __all__ = [
     "level_metrics",
     "load_expected_oracle",
     "snapshot_from_mapping",
+    "validate_expected_oracle_source",
 ]

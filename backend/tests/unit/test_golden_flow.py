@@ -19,6 +19,7 @@ from app.agent import golden_flow as subject  # noqa: E402
 from scripts import verify_golden_flow as cli  # noqa: E402
 
 ORACLE_PATH = BACKEND_ROOT / "tests/fixtures/v5_c_6_1/golden_incidents.json"
+SOURCE_MANIFEST_PATH = BACKEND_ROOT.parent / "infra/bootstrap/source-manifest-v4.json"
 
 
 def _oracle() -> subject.ExpectedOracle:
@@ -98,6 +99,16 @@ def test_source_derived_oracle_is_exact_12_5_4_3_and_r03_three() -> None:
     assert all(
         "action_id" not in item.__dataclass_fields__ for item in oracle.incidents
     )
+
+
+def test_committed_oracle_matches_committed_source_manifest() -> None:
+    oracle = _oracle()
+    digest = hashlib.sha256(SOURCE_MANIFEST_PATH.read_bytes()).hexdigest()
+
+    subject.validate_expected_oracle_source(oracle, digest)
+
+    with pytest.raises(subject.GoldenFlowContractError, match="ORACLE_INVALID"):
+        subject.validate_expected_oracle_source(oracle, "0" * 64)
 
 
 def test_oracle_rejects_distribution_relaxation() -> None:

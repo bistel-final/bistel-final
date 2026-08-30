@@ -29,6 +29,7 @@ from app.agent.golden_flow import (  # noqa: E402
     evaluate_golden_flow,
     load_expected_oracle,
     snapshot_from_mapping,
+    validate_expected_oracle_source,
 )
 from app.agent.golden_flow_repository import (  # noqa: E402
     GoldenFlowRepositoryError,
@@ -469,8 +470,10 @@ def _load_oracle() -> Any:
         source_hash = hashlib.sha256(SOURCE_MANIFEST_PATH.read_bytes()).hexdigest()
     except OSError as exc:
         raise EvidenceInvalid("EVIDENCE_INVALID") from exc
-    if oracle.source_manifest_sha256 != source_hash:
-        raise EvidenceInvalid("EVIDENCE_INVALID")
+    try:
+        validate_expected_oracle_source(oracle, source_hash)
+    except GoldenFlowContractError as exc:
+        raise EvidenceInvalid("EVIDENCE_INVALID") from exc
     return oracle
 
 
