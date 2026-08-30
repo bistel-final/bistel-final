@@ -12,6 +12,7 @@
       "compatibility_fields": ["equipment", "chamber", "recipe", "lot", "wafer", "parameter", "step_no", "fault"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/pages/AgentRunPage.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "a-dto-alarm-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "A Detection 화면과 C Agent 통합 화면이 canonical alarm field만 소비한다."},
         {"check": "canonical_contract_green", "criteria": "AlarmItem canonical-only projection과 실 API 화면 회귀가 통과한다."},
@@ -31,6 +32,7 @@
       "enforcement": "validator",
       "derivation": "notify is true only for notify_status=SENT; mes is empty for null mes_status and otherwise its public status string.",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "a-dto-alarm-delivery-derived DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Alarm 화면이 notify_status와 mes_status만 소비한다."},
         {"check": "canonical_contract_green", "criteria": "상태별 canonical delivery 표시 회귀가 통과한다."},
@@ -49,6 +51,7 @@
       "compatibility_fields": ["name", "LSL", "LCL", "TARGET", "UCL", "USL"],
       "enforcement": "validator",
       "consumers": ["frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage"],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "a-dto-parameter-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx", "reason": "a-dto-parameter-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "a-dto-parameter-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/ontology-focus-state.js", "reason": "a-dto-parameter-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "AgentRunPage의 TARGET fallback을 포함해 uppercase parameter alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "parameter canonical 5선 렌더 회귀가 통과한다."},
@@ -66,6 +69,7 @@
       "replacement": "frontend/src/shared/api/detection.js#getAlarmsCore",
       "replacement_kind": "export",
       "consumers": ["frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage", "frontend/src/features/detection/pages/TracePage.jsx#TracePage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "getAlarms legacy paged adapter 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "A 화면이 bare-array core 또는 정식 server paging으로 전환된다."},
@@ -85,6 +89,7 @@
       "enforcement": "producer",
       "producer": "backend.app.knowledge.schemas.DocumentHit.from_tool_hit",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "문서 화면과 Agent 근거가 document_id만 소비한다."},
         {"check": "canonical_contract_green", "criteria": "DocumentHit canonical-only 회귀가 통과한다."},
@@ -102,6 +107,7 @@
       "replacement": "frontend/src/shared/api/knowledge.js#getChamberRelationsCore",
       "replacement_kind": "export",
       "consumers": ["frontend/src/features/knowledge/pages/KnowledgePage.jsx#KnowledgePage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "legacy relation shape 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "Knowledge 화면이 ChamberGraphResponse를 직접 소비한다."},
@@ -119,6 +125,7 @@
       "replacement": "frontend/src/shared/api/knowledge.js#searchDocumentsCore",
       "replacement_kind": "export",
       "consumers": ["frontend/src/features/knowledge/pages/DocumentsPage.jsx#DocumentsPage", "frontend/src/features/knowledge/pages/KnowledgePage.jsx#KnowledgePage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "legacy query/hits/count envelope 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "문서 화면이 bare DocumentHit 배열을 직접 소비한다."},
@@ -137,6 +144,7 @@
       "compatibility_fields": ["created_by_agent_run_id", "lot", "equipment", "chamber"],
       "enforcement": "validator",
       "consumers": ["backend/app/agent/public_schemas.py#ActionDetailResponse", "frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage"],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "c-dto-action-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Action 화면의 created_by_agent_run_id 등 alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "ActionItem canonical identity 렌더 회귀가 통과한다."},
@@ -156,6 +164,7 @@
       "enforcement": "validator",
       "derivation": "evidence is the first DOCUMENT evidence summary or null; limit joins limitations with '; '.",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Agent chat 소비자가 evidence_items와 limitations만 사용한다."},
         {"check": "canonical_contract_green", "criteria": "AgentAskResponse canonical-only 회귀가 통과한다."},
@@ -173,7 +182,8 @@
       "canonical_fields": ["chamber_id", "predicted_fault_code"],
       "compatibility_fields": ["chamber", "fault_code"],
       "enforcement": "validator",
-      "consumers": ["frontend/src/features/agent/components/RunDetailModal.jsx#RunDetailModal", "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard", "frontend/src/features/agent/components/RunListPanel.jsx#RunListPanel", "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard", "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard", "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage", "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumers": ["frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/components/RunDetailModal.jsx#RunDetailModal", "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard", "frontend/src/features/agent/components/RunListPanel.jsx#RunListPanel", "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard", "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard", "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "c-dto-agent-run-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "run chamber·fault alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "Agent/Detection 화면이 chamber_id·predicted_fault_code만 소비한다."},
@@ -193,6 +203,7 @@
       "enforcement": "validator",
       "derivation": "Both fields are required-null placeholders and must always be null until removed.",
       "consumers": ["frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard", "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard", "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard", "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage", "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "fault_name·fault_color placeholder 참조가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "화면이 predicted_fault_code만으로 정상 렌더된다."},
@@ -211,6 +222,7 @@
       "compatibility_fields": ["approved_by", "approved_at"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "approved_by·approved_at 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "결정 UI가 decided_by·decided_at만 소비한다."},
@@ -229,6 +241,7 @@
       "compatibility_fields": ["lot", "equipment", "chamber", "fault_code"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunDetailModal.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunHeaderCard.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunListPanel.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunSummaryCard.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/components/RunVerdictCard.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmDetailPanel.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "c-dto-approval-identity-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "approval identity alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "승인 UI가 canonical identity만 소비한다."},
@@ -247,6 +260,7 @@
       "compatibility_fields": ["doc_id"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Agent chat의 doc_id 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "문서 근거가 document_id로만 연결된다."},
@@ -265,6 +279,7 @@
       "compatibility_fields": ["name", "result"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "c-dto-chat-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/agent/pages/AgentRunPage.jsx", "reason": "c-dto-chat-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx", "reason": "c-dto-chat-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "c-dto-chat-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/knowledge/ontology-focus-state.js", "reason": "c-dto-chat-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Chat Tool name·result 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "Chat UI가 tool_name·status·result_summary만 소비한다."},
@@ -283,6 +298,7 @@
       "compatibility_fields": ["n", "s"],
       "enforcement": "validator",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/detection/components/DashEquipCard.jsx", "reason": "c-dto-public-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "c-dto-public-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceSidePanel.jsx", "reason": "c-dto-public-tool-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "Auto Analysis Tool n·s 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "실행 화면이 tool_name·status·result_summary만 소비한다."},
@@ -301,6 +317,7 @@
       "replacement_kind": "export",
       "export_alias_of": "frontend/src/shared/api/agent.js#decideApprovalFromUi",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "decideApproval 재수출 alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "승인 UI가 canonical decision enum만 전송한다."},
@@ -318,6 +335,7 @@
       "replacement": "frontend/src/shared/api/agent.js#decideApprovalCanonical",
       "replacement_kind": "export",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "APPROVE|REJECT UI adapter 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "모든 승인 호출자가 APPROVED|REJECTED를 사용한다."},
@@ -335,6 +353,7 @@
       "replacement": "frontend/src/shared/api/agent.js#getActionsCore",
       "replacement_kind": "export",
       "consumers": ["frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage", "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "getActions legacy page adapter 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "Action 소비 화면이 bare core 또는 정식 paging을 사용한다."},
@@ -352,6 +371,7 @@
       "replacement": "GET /alarms/{source}/{alarm_id}",
       "replacement_kind": "endpoint",
       "consumers": ["frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage", "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "목록 조회 후 client find 구현이 더 이상 호출되지 않는다."},
         {"check": "canonical_contract_green", "criteria": "A source-aware 단건 endpoint와 Frontend transport 회귀가 통과한다."},
@@ -369,6 +389,7 @@
       "replacement": "frontend/src/shared/api/agent.js#getApprovalsCore",
       "replacement_kind": "export",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "미구현 /approvals/paged adapter 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "승인 화면이 bare core 또는 정식 paging을 사용한다."},
@@ -386,6 +407,7 @@
       "replacement": "frontend/src/shared/api/agent.js#getRunsCore",
       "replacement_kind": "export",
       "consumers": ["frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "getRuns legacy page adapter 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "run 소비 화면이 bare core 또는 정식 paging을 사용한다."},
@@ -405,6 +427,7 @@
       "enforcement": "producer",
       "producer": "backend.app.analytics.audit._to_item",
       "consumers": [],
+      "consumer_scan_ignores": [{"reference": "frontend/src/features/analytics/components/AuditFilterBar.jsx", "reason": "d-dto-audit-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/analytics/pages/AuditLogPage.jsx", "reason": "d-dto-audit-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "d-dto-audit-copy DTO/transport가 아닌 로컬 또는 다른 도메인 객체의 동명 property"}],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "감사 화면의 at·actor 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "감사 화면이 occurred_at·actor_type만 소비한다."},
@@ -425,6 +448,7 @@
       "producer": "backend.app.analytics.audit._to_item",
       "derivation": "event maps selected canonical events using after status/channel; entity joins entity_type and entity_id with ':'.",
       "consumers": [],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "감사 화면의 event·entity 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "감사 화면이 canonical event/entity fields만 소비한다."},
@@ -443,6 +467,7 @@
       "replacement_kind": "export",
       "export_alias_of": "frontend/src/shared/api/analytics.js#getAuditLogsPaged",
       "consumers": ["frontend/src/features/analytics/pages/AuditLogPage.jsx#AuditLogPage"],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "getAuditLogs paged export alias 소비가 0건이다."},
         {"check": "canonical_contract_green", "criteria": "AuditLogPage가 canonical core 또는 정식 paged export를 명시 소비한다."},

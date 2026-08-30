@@ -142,6 +142,11 @@ Frontend를 canonical field로 전환하는 Task와 alias 제거 revision을 WBS
 API 명세서다. 둘이 충돌하면 명세를 먼저 고친 뒤 registry를 갱신한다. registry 항목의 제거 가능
 상태는 `V5-CM-5.1`이 `OPEN|READY|BLOCKED`와 증적으로 판정한다.
 
+등록부의 `consumers`는 `frontend/src/features/**` 실제 source scan과 exact 대조한다. alias와
+이름만 같은 다른 도메인·로컬 객체의 property access는 `consumer_scan_ignores`에 파일과 사유를
+명시해야 하며, 두 목록 어디에도 분류되지 않은 신규 접근은 계약 테스트가 거부한다. `#Symbol`
+consumer는 파일 존재뿐 아니라 실제 함수·class·변수 선언까지 검증한다.
+
 | 응답 | canonical | deprecated alias | 파생 규칙 |
 |---|---|---|---|
 | AlarmItem | `equipment_id`, `chamber_id`, `recipe_id`, `lot_id`, `wafer_id`, `parameter_id`, `recipe_step_no` | `equipment`, `chamber`, `recipe`, `lot`, `wafer`, `parameter`, `step_no` | 각 canonical ID를 같은 순서의 alias로 1:1 복사 |

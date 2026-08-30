@@ -26,6 +26,15 @@ REGISTRY_PATH = (
 API_MARKDOWN = (
     REPOSITORY_ROOT / "docs" / "deliverables" / "api" / "API명세서_v3_작업본.md"
 )
+BASELINE_PATH = (
+    REPOSITORY_ROOT
+    / "backend"
+    / "tests"
+    / "fixtures"
+    / "v5_cm_4_4"
+    / "api_contract_baseline.json"
+)
+FEATURE_ROOT = REPOSITORY_ROOT / "frontend" / "src" / "features"
 
 _COMMON_REQUIRED = {
     "id",
@@ -33,6 +42,7 @@ _COMMON_REQUIRED = {
     "owner",
     "symbol",
     "consumers",
+    "consumer_scan_ignores",
     "removal_conditions",
     "change_points",
     "gate",
@@ -93,6 +103,103 @@ def _path_part(reference: str) -> str:
     return reference.split("#", 1)[0]
 
 
+def _feature_sources() -> list[Path]:
+    return sorted(
+        path
+        for path in FEATURE_ROOT.rglob("*")
+        if path.is_file() and path.suffix in {".js", ".jsx"}
+    )
+
+
+def _source_reads_any_alias(source: str, aliases: list[str]) -> bool:
+    """보수적으로 dot·bracket property access를 alias 소비 후보로 센다."""
+
+    return any(
+        re.search(
+            rf"(?:\.\s*{re.escape(alias)}\b|"
+            rf"\[\s*['\"]{re.escape(alias)}['\"]\s*\])",
+            source,
+        )
+        for alias in aliases
+    )
+
+
+def _resolved_import(path: Path, specifier: str) -> Path | None:
+    if not specifier.startswith("."):
+        return None
+    unresolved = path.parent / specifier
+    candidates = [unresolved, unresolved.with_suffix(".js"), unresolved / "index.js"]
+    return next(
+        (candidate.resolve() for candidate in candidates if candidate.is_file()),
+        None,
+    )
+
+
+def _source_imports_export(
+    path: Path,
+    source: str,
+    *,
+    module_path: Path,
+    export_name: str,
+) -> bool:
+    for match in re.finditer(
+        r"import\s*\{(?P<names>.*?)\}\s*from\s*['\"](?P<source>[^'\"]+)['\"]",
+        source,
+        flags=re.DOTALL,
+    ):
+        if _resolved_import(path, match.group("source")) != module_path.resolve():
+            continue
+        imported = {
+            part.strip().split()[0]
+            for part in match.group("names").split(",")
+            if part.strip()
+        }
+        if export_name in imported:
+            return True
+    return False
+
+
+def _derived_feature_consumer_paths(entry: dict[str, Any]) -> set[str]:
+    paths: set[str] = set()
+    if entry["kind"] == "dto_field":
+        aliases = entry["compatibility_fields"]
+        for path in _feature_sources():
+            if _source_reads_any_alias(path.read_text(encoding="utf-8"), aliases):
+                paths.add(path.relative_to(REPOSITORY_ROOT).as_posix())
+        return paths
+
+    module_ref, export_name = entry["symbol"].split("#", 1)
+    module_path = REPOSITORY_ROOT / module_ref
+    for path in _feature_sources():
+        if _source_imports_export(
+            path,
+            path.read_text(encoding="utf-8"),
+            module_path=module_path,
+            export_name=export_name,
+        ):
+            paths.add(path.relative_to(REPOSITORY_ROOT).as_posix())
+    return paths
+
+
+def _assert_reference_symbol_exists(reference: str) -> None:
+    path_text, separator, symbol = reference.partition("#")
+    if not separator:
+        return
+    assert symbol, f"빈 consumer symbol: {reference}"
+    path = REPOSITORY_ROOT / path_text
+    if path_text.startswith("backend/"):
+        module = path.with_suffix("").relative_to(REPOSITORY_ROOT).as_posix()
+        _resolve_python_symbol(f"{module.replace('/', '.')}.{symbol}")
+        return
+    source = path.read_text(encoding="utf-8")
+    assert re.search(
+        rf"\b(?:function|class|const|let|var)\s+{re.escape(symbol)}\b",
+        source,
+    ) or re.search(
+        rf"export\s*\{{[^}}]*\b{re.escape(symbol)}\b", source
+    ), f"consumer symbol이 선언되지 않았습니다: {reference}"
+
+
 def test_registry_root_and_entries_are_well_formed() -> None:
     registry = _load_registry()
 
@@ -112,10 +219,24 @@ def test_registry_root_and_entries_are_well_formed() -> None:
         assert entry["kind"] in {"dto_field", "transport"}
         assert entry.get("projection") in {"copy", "derived", "placeholder"}
         assert isinstance(entry["consumers"], list)
+        assert isinstance(entry["consumer_scan_ignores"], list)
         assert isinstance(entry["change_points"], list) and entry["change_points"]
         _assert_unique(entry["consumers"], f"{entry['id']}.consumers")
+        _assert_unique(
+            entry["consumer_scan_ignores"],
+            f"{entry['id']}.consumer_scan_ignores",
+        )
         _assert_unique(entry["change_points"], f"{entry['id']}.change_points")
         assert entry["consumers"] == sorted(entry["consumers"])
+        assert entry["consumer_scan_ignores"] == sorted(
+            entry["consumer_scan_ignores"],
+            key=lambda item: item["reference"],
+        )
+        for ignored in entry["consumer_scan_ignores"]:
+            assert set(ignored) == {"reference", "reason"}
+            assert ignored["reference"].startswith("frontend/src/features/")
+            assert (REPOSITORY_ROOT / ignored["reference"]).is_file()
+            assert ignored["reason"].strip()
         assert entry["change_points"] == sorted(entry["change_points"])
         assert [item["check"] for item in entry["removal_conditions"]] == (
             _REMOVAL_CHECKS
@@ -125,6 +246,8 @@ def test_registry_root_and_entries_are_well_formed() -> None:
         for reference in [*entry["consumers"], *entry["change_points"]]:
             path = REPOSITORY_ROOT / _path_part(reference)
             assert path.is_file(), f"선언 경로가 파일이 아닙니다: {reference}"
+        for reference in entry["consumers"]:
+            _assert_reference_symbol_exists(reference)
 
         if entry["kind"] == "dto_field":
             assert set(entry) <= _DTO_ALLOWED
@@ -161,6 +284,27 @@ def test_registry_root_and_entries_are_well_formed() -> None:
                 assert _FRONTEND_SYMBOL.fullmatch(entry["export_alias_of"])
 
 
+def test_registered_feature_consumers_match_conservative_source_scan() -> None:
+    """`consumer_zero`를 산문이 아니라 features/** 실제 source에서 도출한다."""
+
+    for entry in _load_registry()["entries"]:
+        declared = {
+            _path_part(reference)
+            for reference in entry["consumers"]
+            if _path_part(reference).startswith("frontend/src/features/")
+        }
+        ignored = {item["reference"] for item in entry["consumer_scan_ignores"]}
+        assert declared.isdisjoint(ignored), entry["id"]
+        assert declared | ignored == _derived_feature_consumer_paths(entry), entry["id"]
+
+
+def test_consumer_scan_recognizes_dot_and_bracket_alias_access() -> None:
+    assert _source_reads_any_alias("row.doc_id", ["doc_id"])
+    assert _source_reads_any_alias("row?.doc_id", ["doc_id"])
+    assert _source_reads_any_alias("row['doc_id']", ["doc_id"])
+    assert not _source_reads_any_alias("const doc_id = 'local'", ["doc_id"])
+
+
 def test_registered_dto_symbols_and_fields_exist() -> None:
     entries = _load_registry()["entries"]
     for entry in entries:
@@ -173,6 +317,27 @@ def test_registered_dto_symbols_and_fields_exist() -> None:
             *entry["compatibility_fields"],
         }
         assert registered_fields <= set(schema.model_fields), entry["id"]
+
+
+def test_agent_run_placeholder_registry_matches_schema_and_frozen_fixture() -> None:
+    entry = next(
+        item
+        for item in _load_registry()["entries"]
+        if item["id"] == "c-dto-agent-run-placeholder"
+    )
+    schema = _resolve_python_symbol(entry["symbol"])
+    fixture = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    fields = fixture["components"]["AgentRunItem"]["fields"]
+
+    assert entry["projection"] == "placeholder"
+    assert entry["canonical_fields"] == []
+    for field in entry["compatibility_fields"]:
+        assert schema.model_fields[field].annotation is type(None)
+        assert fields[field] == {
+            "nullable": False,
+            "required": True,
+            "type": "null",
+        }
 
 
 def _alarm_payload() -> dict[str, Any]:
@@ -503,6 +668,18 @@ def test_api_markdown_declares_registry_authority_and_endpoint_replacements() ->
         for entry in _load_registry()["entries"]
         if entry["kind"] == "transport" and entry["replacement_kind"] == "endpoint"
     }
+    optional_section = markdown.split("### 5.2 선택 확장 API", 1)[1].split(
+        "### 5.3 팀 release 필수 확장 API",
+        1,
+    )[0]
+    optional_allowlist = {
+        f"{method} {path}"
+        for method, path in re.findall(
+            r"\|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*`([^`]+)`\s*\|",
+            optional_section,
+        )
+    }
+    assert endpoint_replacements <= optional_allowlist
     for replacement in endpoint_replacements:
         method, path = replacement.split(" ", 1)
         assert re.search(
