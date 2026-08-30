@@ -56,12 +56,12 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | Common | 4명 공동, 통합 관리 방대혁 | 72.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
-| C Agent/HITL | 방대혁 | 78.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
+| C Agent/HITL | 방대혁 | 80.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Analytics·Audit | 천승현 | 18.5h | 자연어 분석·질의/평가 이력·화면 6, 전역 감사 화면 7 |
-| **합계** | | **218.5h** | P2 도전 과제 제외 |
+| **합계** | | **220.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 174.5h / P1 44.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물일곱 개다.
+우선순위별 공수는 **P0 176.5h / P1 44.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물여덟 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -146,6 +146,9 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-C-5.3` **3.0h** — 미실행 incident 선택·대표 AlarmRef 결정, production Runtime 수명,
   target/confirm CLI와 incident별 실패 격리·exact run 보상, batch-scoped run·action·delivery
   관측 집계 및 격리 PostgreSQL 2회차 무변경 검증을 하나의 일회성 관리 명령 경계로 닫는다.
+- `V5-C-6.1` **4.0h** — 12 incident 5/4/3 golden flow, C-5.3 NDJSON·외부 effect 증적,
+  승인·반려·UNKNOWN·수동 재실행과 Level 1·2 지표를 exact artifact schema·read-only snapshot·
+  격리 container 회귀로 한 검증 경계에서 닫는다. 공용 실행은 별도 승인 Gate로 남긴다.
 
 ---
 
@@ -291,11 +294,11 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`다. Chat은 명시된 `lot_hist_id`·`lot_id`·`chamber_id`·`model_code`로만 A/B 읽기 Tool을 선택하고, 근거 ID citation·required-nullable 판단·5종 evidence union을 검증하며 Runtime·감사·action·approval 쓰기는 0이다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 4.0h |
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고, D의 bare 감사 API를 소비하는 run-scoped 감사 subview를 공유 경계에 구현한다. GRAPH는 `chamber_id·relation_id·graph_revision`으로 Ontology에 이동해 동일 revision의 관계를 복원한다. Loading·Error·Empty·Success와 승인 충돌·오류 상태를 검증한다. 화면 실행을 위해 추가한 Detection 3 route는 A-3.1·A-3.2 승계 전 scaffold이며 이 Task에서 A Task 완료로 간주하지 않는다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1 | 6.0h |
 | V5-C-5.3 | P0 | incident 일회성 자동 배치 관리 명령. 완료: Runtime run 이력이 전혀 없는 incident만 stable order로 선택해 대표 `AlarmRef`로 기존 Agent runtime을 incident당 1회 실행하는 `run_pending_incidents.py --once`를 제공한다. start 뒤 continue 실패는 exact run을 FAILED로 보상하고 postcondition을 재조회하며, 이전 `RUNNING` run은 `INCOMPLETE_RUN`으로 정상 race와 구분한다. 기존 이력이 있으면 FAILED를 포함해 자동 재선택하지 않고 public 수동 재실행에 맡기며, 즉시 2회차 실행의 신규 run·action·delivery가 모두 0임을 검증한다. 상시 scheduler·public batch API/UI·n8n WF1은 만들지 않는다 | FR-C-09, FR-C-14 | V5-C-5.1 | 3.0h |
-| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`에서 C-5.3 batch command 1회로 incident 12개를 실행해 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 2회차 batch 신규 run·action·delivery 0, 수동 재실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-5.3, V5-C-3.4, V5-CM-4.7 | 2.0h |
+| V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`에서 C-5.3 batch command 1회로 incident 12개를 실행해 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 2회차 batch 신규 run·action·delivery 0, 수동 재실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-5.3, V5-C-3.4, V5-CM-4.7 | 4.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: runtime·prompt·Tool 비노출 prediction hash를 먼저 고정하고 단일 non-NRM TRACE incident 7건의 Accuracy·Macro-F1·class별 Precision/Recall/F1·근거 유효율을 계산한다. SUMMARY-only 5건은 `NO_INJECTED_FAULT`, mixed는 `AMBIGUOUS_LABEL`로 제외하고 합성 GT metadata 4종·분모·제외 사유를 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 2.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**C 합계: 78.5h** (P2 2.0h 제외)
+**C 합계: 80.5h** (P2 2.0h 제외)
 
 ---
 
