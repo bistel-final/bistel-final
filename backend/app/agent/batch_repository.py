@@ -37,6 +37,7 @@ class PendingIncidentMemberRow:
     canonical_lot_id: str | None
     canonical_chamber_id: str | None
     is_pending: bool
+    has_incomplete_run: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +71,19 @@ _PENDING_MEMBERS: Final = text(
                     WHERE existing.lot_id = r.canonical_lot_id
                       AND existing.chamber_id = r.canonical_chamber_id
                 )
-            END AS is_pending
+            END AS is_pending,
+            CASE
+                WHEN r.canonical_lot_id IS NULL
+                  OR r.canonical_chamber_id IS NULL
+                THEN false
+                ELSE EXISTS (
+                    SELECT 1
+                    FROM agent_run AS active
+                    WHERE active.lot_id = r.canonical_lot_id
+                      AND active.chamber_id = r.canonical_chamber_id
+                      AND active.status = 'RUNNING'
+                )
+            END AS has_incomplete_run
         FROM resolved AS r
     )
     SELECT
@@ -82,7 +95,8 @@ _PENDING_MEMBERS: Final = text(
         raw_chamber_id,
         canonical_lot_id,
         canonical_chamber_id,
-        is_pending
+        is_pending,
+        has_incomplete_run
     FROM annotated
     ORDER BY source, alarm_id, lot_hist_id NULLS FIRST
     """
@@ -167,4 +181,5 @@ def _pending_row(row: Row[Any]) -> PendingIncidentMemberRow:
             None if row.canonical_chamber_id is None else str(row.canonical_chamber_id)
         ),
         is_pending=row.is_pending is True,
+        has_incomplete_run=row.has_incomplete_run is True,
     )

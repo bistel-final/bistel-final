@@ -221,3 +221,23 @@ def test_failed_run_without_action_is_not_pending() -> None:
     assert plan.selected == ()
     assert plan.rejected == ()
     assert plan.canonical_null_rows == 0
+
+
+def test_running_history_is_reported_as_incomplete_not_empty() -> None:
+    """이전 회차의 RUNNING 고아가 다음 dry-run의 empty로 숨지 않는다."""
+
+    with graph_fixture._runtime_context() as (_endpoint, super_engine):
+        graph_fixture._seed_runtime(super_engine)
+        app_engine = _grant_app_role(super_engine)
+        try:
+            graph_fixture._start_runtime_run(app_engine)
+            with app_engine.connect() as connection:
+                plan = runner.build_pending_batch_plan(connection)
+        finally:
+            app_engine.dispose()
+
+    assert plan.selected == ()
+    assert plan.rejected == ()
+    assert [(item.lot_id, item.chamber_id) for item in plan.incomplete] == [
+        ("LOT001", "EQP01-PM1")
+    ]

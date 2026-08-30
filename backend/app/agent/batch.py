@@ -19,6 +19,7 @@ from app.common.schemas import AlarmRef
 __all__ = [
     "PendingBatchPlan",
     "PendingIncident",
+    "IncompleteIncident",
     "RejectedIncident",
     "build_pending_batch_plan",
 ]
@@ -46,10 +47,18 @@ class RejectedIncident:
 
 
 @dataclass(frozen=True, slots=True)
+class IncompleteIncident:
+    lot_id: str
+    chamber_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class PendingBatchPlan:
     selected: tuple[PendingIncident, ...]
     rejected: tuple[RejectedIncident, ...]
     canonical_null_rows: int
+    canonical_null_by_source: tuple[tuple[str, int], ...] = ()
+    incomplete: tuple[IncompleteIncident, ...] = ()
 
 
 def build_pending_batch_plan(connection: Connection) -> PendingBatchPlan:
@@ -59,13 +68,16 @@ def build_pending_batch_plan(connection: Connection) -> PendingBatchPlan:
     groups: dict[IncidentKey, list[PendingIncidentMemberRow]] = defaultdict(list)
     invalid_keys: set[IncidentKey] = set()
     identity_keys: dict[AlarmIdentity, set[IncidentKey]] = defaultdict(set)
+    incomplete_keys: set[IncidentKey] = set()
     canonical_null_rows = 0
+    canonical_null_by_source: Counter[str] = Counter()
 
     for row in rows:
         raw_key = _key(row.raw_lot_id, row.raw_chamber_id)
         canonical_key = _key(row.canonical_lot_id, row.canonical_chamber_id)
         if canonical_key is None:
             canonical_null_rows += 1
+            canonical_null_by_source[row.alarm.source.value] += 1
             if raw_key is not None:
                 invalid_keys.add(raw_key)
             continue
@@ -76,6 +88,8 @@ def build_pending_batch_plan(connection: Connection) -> PendingBatchPlan:
                 invalid_keys.add(raw_key)
 
         identity_keys[_alarm_identity(row.alarm)].add(canonical_key)
+        if row.has_incomplete_run:
+            incomplete_keys.add(canonical_key)
         if not row.is_pending:
             continue
         groups[canonical_key].append(row)
@@ -124,6 +138,11 @@ def build_pending_batch_plan(connection: Connection) -> PendingBatchPlan:
         selected=tuple(item[1] for item in selected),
         rejected=tuple(rejected),
         canonical_null_rows=canonical_null_rows,
+        canonical_null_by_source=tuple(sorted(canonical_null_by_source.items())),
+        incomplete=tuple(
+            IncompleteIncident(lot_id, chamber_id)
+            for lot_id, chamber_id in sorted(incomplete_keys)
+        ),
     )
 
 

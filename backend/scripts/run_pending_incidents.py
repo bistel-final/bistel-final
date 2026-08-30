@@ -26,6 +26,10 @@ from app.agent.batch_repository import (  # noqa: E402
 )
 from app.agent.repository import get_agent_run  # noqa: E402
 from app.common.enums import RunStatus  # noqa: E402
+from app.common.exceptions import (  # noqa: E402
+    IncidentAlreadyProcessedError,
+    IncidentAlreadyRunningError,
+)
 from app.common.schemas import AlarmRef  # noqa: E402
 
 EXIT_OK = 0
@@ -39,6 +43,8 @@ class RuntimePort(Protocol):
     def start_run(self, alarm: AlarmRef) -> Any: ...
 
     def continue_run(self, thread_id: str, run_id: str) -> None: ...
+
+    def fail_registered_run(self, run_id: str) -> None: ...
 
     def close(self) -> None: ...
 
@@ -107,7 +113,18 @@ def _plan_payload(plan: PendingBatchPlan, database: str) -> dict[str, Any]:
             }
             for item in plan.rejected
         ],
-        "excluded": {"canonical_null_rows": plan.canonical_null_rows},
+        "incomplete": [
+            {
+                "lot_id": item.lot_id,
+                "chamber_id": item.chamber_id,
+                "reason": "INCOMPLETE_RUN",
+            }
+            for item in plan.incomplete
+        ],
+        "excluded": {
+            "canonical_null_rows": plan.canonical_null_rows,
+            "canonical_null_by_source": dict(plan.canonical_null_by_source),
+        },
     }
 
 
@@ -149,6 +166,23 @@ def _outcome_for_status(status: RunStatus) -> tuple[str, bool]:
     if status is RunStatus.FAILED:
         return "FAILED", False
     return "CONTRACT_FAILURE", False
+
+
+def _compensate_started_run(
+    engine: Any,
+    runtime: RuntimePort,
+    run_id: str,
+) -> tuple[str, bool]:
+    """continue 실패를 terminal DB 상태로 수렴하고 그 결과를 다시 읽는다."""
+
+    try:
+        runtime.fail_registered_run(run_id)
+    except Exception:  # noqa: BLE001 - postcondition 재조회가 최종 판정이다.
+        pass
+    try:
+        return _outcome_for_status(_status(engine, run_id))
+    except Exception:  # noqa: BLE001 - 보상 불확실은 성공으로 올리지 않는다.
+        return "CONTRACT_FAILURE", False
 
 
 def _new_failed_run(
@@ -196,6 +230,18 @@ def _run_once(engine: Any, runtime: RuntimePort, plan: PendingBatchPlan) -> int:
             }
         )
 
+    # 이전 회차의 RUNNING run은 pending 선택에서 빠져도 정상 empty로 숨기지 않는다.
+    for incomplete in plan.incomplete:
+        failed += 1
+        _emit(
+            {
+                "type": "incident",
+                "lot_id": incomplete.lot_id,
+                "chamber_id": incomplete.chamber_id,
+                "outcome": "INCOMPLETE_RUN",
+            }
+        )
+
     for incident in plan.selected:
         try:
             before = _observe(engine, incident)
@@ -204,6 +250,7 @@ def _run_once(engine: Any, runtime: RuntimePort, plan: PendingBatchPlan) -> int:
             _emit(_incident_payload(incident, "CONTRACT_FAILURE"))
             continue
         if before.run_ids:
+            # plan 생성 뒤·incident 실행 전 생긴 run은 동시 실행자의 정상 race다.
             skipped += 1
             _emit(_incident_payload(incident, "SKIPPED_RACE"))
             continue
@@ -214,13 +261,27 @@ def _run_once(engine: Any, runtime: RuntimePort, plan: PendingBatchPlan) -> int:
         success = False
         try:
             started = runtime.start_run(incident.representative)
-            started_id = started.agent_run_id
-            runtime.continue_run(started.thread_id, started.agent_run_id)
-            outcome, success = _outcome_for_status(
-                _status(engine, started.agent_run_id)
-            )
+        except (IncidentAlreadyRunningError, IncidentAlreadyProcessedError):
+            skipped += 1
+            _emit(_incident_payload(incident, "SKIPPED_RACE"))
+            continue
         except Exception:  # noqa: BLE001 - incident별 격리·sanitized outcome.
-            outcome = "CONTRACT_FAILURE"
+            pass
+        else:
+            started_id = started.agent_run_id
+            try:
+                runtime.continue_run(started.thread_id, started.agent_run_id)
+                outcome, success = _outcome_for_status(
+                    _status(engine, started.agent_run_id)
+                )
+            except Exception:  # noqa: BLE001 - exact run을 FAILED로 보상한다.
+                outcome, success = "CONTRACT_FAILURE", False
+            if outcome == "CONTRACT_FAILURE":
+                outcome, success = _compensate_started_run(
+                    engine,
+                    runtime,
+                    started.agent_run_id,
+                )
 
         try:
             after = _observe(engine, incident)

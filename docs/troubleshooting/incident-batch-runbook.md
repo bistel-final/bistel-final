@@ -15,7 +15,8 @@ cd backend
 
 dry-run은 PostgreSQL 조회만 수행하고 Agent Runtime·LLM·RAG·n8n·Kafka를 조립하지 않는다.
 `selected`에는 대표 AlarmRef가 확정된 incident만, `rejected`에는 resolver 계약 또는
-`occurred_at` 결손으로 실행할 수 없는 incident가 나온다.
+`occurred_at` 결손으로 실행할 수 없는 incident가 나온다. 이전 회차의 `RUNNING` run이 남은
+incident는 `incomplete`에 `INCOMPLETE_RUN`으로 별도 표시된다.
 
 공용 Runtime DB 실행에는 데이터베이스 이름을 한 번 더 확인하는 token이 필요하다.
 
@@ -38,8 +39,16 @@ stdout은 NDJSON만 사용한다.
 - 실행: incident별 `incident` 행과 마지막 `final` 1행
 - 성공 상태: `STARTED_COMPLETED` 또는 `STARTED_WAITING_APPROVAL`
 - 다른 실행이 먼저 만든 이력: `SKIPPED_RACE`(Runtime 호출 0회)
-- `FAILED`·`CONTRACT_FAILURE`·`ALARM_OCCURRED_AT_MISSING`·`RESOLVER_REJECTED`가 하나라도
-  있으면 exit 1
+- 배치 진입 전에 `RUNNING`이 남은 incident: `INCOMPLETE_RUN`
+- `FAILED`·`CONTRACT_FAILURE`·`INCOMPLETE_RUN`·`ALARM_OCCURRED_AT_MISSING`·
+  `RESOLVER_REJECTED`가 하나라도 있으면 exit 1
+
+`CONTRACT_FAILURE`가 나온 incident는 보상 뒤에도 exact run의 terminal 상태를 확인하지 못한
+경우다. `docs/troubleshooting/agent-background-recovery.md`의 조회 절차로 run과 checkpoint를
+대조하고, 활성 run을 임의 UPDATE하지 말고 해당 절차의 수동 복구 판정을 따른다.
+
+dry-run의 `excluded.canonical_null_by_source`는 canonical incident를 만들지 못한 alarm을
+source별로 집계한다. 원인을 조사할 때 전체 건수만 보고 정상 제외로 처리하지 않는다.
 
 `new_runs_observed`·`new_actions_observed`·`new_deliveries_observed`는 선택 incident의 실행
 전후를 비교한 **관측 delta**다. 단일 운영자 호출과 격리 E2E에서는 이 명령의 생성량과 같지만,
