@@ -36,16 +36,16 @@ _NODE_PROPERTIES: dict[str, str] = {
     "RecipeStep": "recipe_id, recipe_step_no",
 }
 
-#: 관계 방향 — 스키마 이해를 돕는 고정 서술 (정본 cypher 의 MERGE 방향 그대로)
+#: 관계 — 무방향 패턴으로 서술한다 (방향 실수 방지 — 프롬프트 규칙 2와 일관)
 _RELATION_SHAPES: tuple[str, ...] = (
-    "(:Chamber)-[:PART_OF]->(:Equipment)",
-    "(:Parameter)-[:MEASURED_ON]->(:Chamber)",
-    "(:Equipment)-[:OF_MODEL]->(:EquipmentModel)",
-    "(:Equipment)-[:PERFORMS]->(:ProcessStep)",
-    "(:ProcessStep)-[:IN_AREA]->(:Area)",
-    "(:EquipmentModel)-[:IN_AREA]->(:Area)",
-    "(:RecipeStep)-[:STEP_OF]->(:Recipe)",
-    "(:ProcessStep)-[:NEXT_STEP]->(:ProcessStep)",
+    "(:Chamber)-[:PART_OF]-(:Equipment)",
+    "(:Parameter)-[:MEASURED_ON]-(:Chamber)",
+    "(:Equipment)-[:OF_MODEL]-(:EquipmentModel)",
+    "(:Equipment)-[:PERFORMS]-(:ProcessStep)",
+    "(:ProcessStep)-[:IN_AREA]-(:Area)",
+    "(:EquipmentModel)-[:IN_AREA]-(:Area)",
+    "(:RecipeStep)-[:STEP_OF]-(:Recipe)",
+    "(:ProcessStep)-[:NEXT_STEP]-(:ProcessStep)",
 )
 
 _SYSTEM_PROMPT = """당신은 반도체 FDC 설비 온톨로지(Neo4j)의 Text2Cypher 변환기다.
@@ -56,6 +56,8 @@ _SYSTEM_PROMPT = """당신은 반도체 FDC 설비 온톨로지(Neo4j)의 Text2C
    출력한다. 요청을 조회로 바꿔 해석하지 않는다.
 2. MATCH 로 시작하고 RETURN 으로 끝나는 읽기 전용 조회 하나만 작성한다.
    CREATE·MERGE·DELETE·SET·REMOVE·CALL 등 쓰기·프로시저 구문 금지.
+   관계 패턴은 방향 화살표 없이 쓴다 — 예: (c:Chamber)-[:PART_OF]-(e:Equipment).
+   방향을 붙이면 반대로 쓰는 순간 결과가 0건이 된다.
 3. 아래 목록의 라벨·관계 타입·속성만 사용한다. 없는 것을 지어내지 않는다.
 4. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
 5. 설명 없이 Cypher 만 출력한다. 코드 블록(```cypher) 사용 가능.
@@ -84,7 +86,7 @@ def _graph_schema_context() -> str:
     for label in labels:
         properties = _NODE_PROPERTIES.get(label)
         lines.append(f"- {label}({properties})" if properties else f"- {label}")
-    lines.append("관계 (방향 그대로 사용):")
+    lines.append("관계 (방향 없는 패턴 그대로 사용):")
     lines.extend(f"- {shape}" for shape in _RELATION_SHAPES)
     lines.append(
         "값 예시: equipment_id='EQP01'~'EQP06', chamber_id='EQP01-PM1' 형식,"

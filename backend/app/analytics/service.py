@@ -30,6 +30,7 @@ import sqlglot
 from sqlglot import expressions as exp
 
 from app.analytics.charts import resolve_visualization
+from app.analytics.cross_check import run_cross_check
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.analytics.query_log import record_query_log
 from app.analytics.repository import (
@@ -375,6 +376,13 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
                     execution = retried_execution
 
     # ── 4. 성공 ────────────────────────────────────────────────────────
+    # 교차확인(#240): 구조 질의면 그래프로 재확인해 신뢰 배지를 싣는다.
+    # passthrough 는 Cypher 생성용 자연어가 없으므로 제외한다.
+    cross = (
+        None
+        if _is_sql_passthrough(question)
+        else run_cross_check(question, validation.normalized_sql, execution.rows)
+    )
     return AnalysisQueryResponse(
         question=question,
         generated_sql=validation.normalized_sql,
@@ -390,6 +398,7 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
         visualization=resolve_visualization(
             question, execution.columns, execution.rows, plan.visualization
         ),
+        cross_check=cross,
         is_valid=True,
         is_rejected=False,
         reject_reason=None,
