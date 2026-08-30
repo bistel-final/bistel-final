@@ -149,6 +149,7 @@ field로 전환하는 Task와 alias 제거 revision을 WBS v5에 각각 둔다.
 | AgentRunItem | `chamber_id` | `chamber` | 같은 chamber ID 복사 |
 | AgentRunItem | `predicted_fault_code` | `fault_code`, `fault_name`, `fault_color` | `fault_code`는 예측값 복사. 등록된 UI metadata가 없으면 name·color는 null이며 임의로 생성하지 않음 |
 | ApprovalItem | `lot_id`, `equipment_id`, `chamber_id` | `lot`, `equipment`, `chamber` | 각 canonical ID를 같은 순서의 alias로 1:1 복사 |
+| ApprovalItem | `predicted_fault_code` | `fault_code` | 예측값을 그대로 복사하며 합성 GT를 읽지 않음 |
 | ApprovalItem | `decided_by`, `decided_at` | `approved_by`, `approved_at` | 결정 상태와 무관하게 같은 값 복사하는 legacy 표시 alias |
 | AuditLogItem | `occurred_at`, `actor_type`, `event_type`, `entity_type`+`entity_id` | `at`, `actor`, `event`, `entity` | 시각·actor는 복사, event는 3.8 mapping, entity는 `entity_type:entity_id` |
 | AgentAskResponse | `evidence_items`, `limitations` | `evidence`, `limit` | 첫 DOCUMENT 근거 또는 null, limitations를 하나의 문자열로 결합 |
@@ -479,7 +480,11 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   `MES_MOCK`을 `MES`로 projection하며 목록 DTO가 외부 전송을 실행하지 않는다.
 - Tool canonical field는 `tool_name`, `status`, `result_summary`다. `n`, `s`는 Auto Analysis가
   읽는 한 전환 revision의 deprecated alias이며 `name/result`는 이 endpoint에 넣지 않는다. status는
-  `SUCCESS|ERROR|TIMEOUT`이다.
+  `SUCCESS|ERROR|TIMEOUT`이다. `result_summary`와 Chat projection의 `result`는 빈 문자열이
+  아닌 required field다.
+- `latency_ms`는 0 이상 정수, `llm_model`은 빈 문자열이 아닌 required field다.
+  UI metadata mapping이 확정되기 전 `fault_name`·`fault_color`는 nullable string이 아니라
+  **null만 허용**한다.
 - source-aware 식별자는 `alarm_source`와 `alarm_id`의 쌍이다.
 - 안정 정렬: `created_at DESC, agent_run_id DESC`.
 - bare array 전환 계약 동안 서버는 위 정렬 기준의 최근 500건까지만 반환한다. 날짜 범위를
@@ -516,7 +521,9 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 ]
 ```
 
-- `EQP_HOLD` action만 승인 대상이다.
+- `action_code`는 공통 `ActionCode` 3값(`MONITORING|WARNING|EQP_HOLD`)을 타입으로
+  공유하지만, 승인 projection validator는 `EQP_HOLD` action만 승인 대상으로 허용한다.
+- `predicted_fault_code`·`fault_code`는 required non-null이며 두 값이 정확히 같아야 한다.
 - `status`는 `PENDING|APPROVED|REJECTED`다. PENDING이면 결정 관련 field가 모두 null이고,
   결정 상태면 `decided_by`·`decided_at`이 필수이며 comment만 null일 수 있다.
 - `fault_code`는 `predicted_fault_code`의 deprecated 호환 alias이며 합성 GT가 아니다.

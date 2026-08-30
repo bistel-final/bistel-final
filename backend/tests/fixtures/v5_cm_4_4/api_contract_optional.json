@@ -1,0 +1,327 @@
+{
+  "components": {
+    "AnalysisQueryRequest": {
+      "type": "named"
+    },
+    "AnalysisQueryResponse": {
+      "type": "named"
+    },
+    "AuditLogPageResponse": {
+      "type": "named"
+    },
+    "DocumentDetailResponse": {
+      "type": "named"
+    },
+    "ErrorResponse": {
+      "additional_properties": false,
+      "fields": {
+        "code": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "details": {
+          "additional_properties": true,
+          "nullable": false,
+          "required": true,
+          "type": "object"
+        },
+        "message": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "NlQueryHistoryResponse": {
+      "type": "named"
+    },
+    "SqlValidateRequest": {
+      "type": "named"
+    },
+    "SqlValidateResponse": {
+      "type": "named"
+    }
+  },
+  "format_version": 1,
+  "operations": [
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "B",
+      "path": "/documents/{document_id}",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {
+          "document_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "DocumentDetailResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "DocumentDetailResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "chunks: chunk order"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "D",
+      "path": "/analytics/query",
+      "request": {
+        "body": {
+          "ref": "AnalysisQueryRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AnalysisQueryResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AnalysisQueryResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "read-only SELECT; row limit"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "D",
+      "path": "/analytics/validate",
+      "request": {
+        "body": {
+          "ref": "SqlValidateRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "SqlValidateResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "SqlValidateResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "12-step validation"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "D",
+      "path": "/analytics/history",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "date_from": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "is_rejected": {
+            "nullable": false,
+            "required": false,
+            "type": "boolean"
+          },
+          "is_valid": {
+            "nullable": false,
+            "required": false,
+            "type": "boolean"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          },
+          "size": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "NlQueryHistoryResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "NlQueryHistoryResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "asked_at DESC",
+        "nl_query_log_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "D",
+      "path": "/audit-logs/paged",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "actor_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_from": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "entity_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "entity_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "event_type": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          },
+          "size": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "AuditLogPageResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AuditLogPageResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "occurred_at DESC",
+        "audit_id DESC"
+      ],
+      "success_status": 200
+    }
+  ],
+  "source": {
+    "api_csv": {
+      "path": "docs/deliverables/api/API명세서_v3_작업본.csv",
+      "role": "canonical operation inventory, success response, other statuses, and stable sort"
+    },
+    "api_markdown": {
+      "path": "docs/deliverables/api/API명세서_v3_작업본.md",
+      "role": "canonical DTO, common error, bare-array, alias, and nested semantic rules"
+    }
+  }
+}

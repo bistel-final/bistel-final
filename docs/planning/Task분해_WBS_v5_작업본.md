@@ -53,14 +53,14 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 66.5h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 67.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 71.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Audit·확장 | 천승현 | 14.5h | 감사 read model·화면 3 감사 tab·선택 Text2SQL |
-| **합계** | | **202.0h** | P2 도전 과제 제외 |
+| **합계** | | **202.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 153.0h / P1 49.0h**이며 P2 3.5h는 합계에서 제외한다.
+우선순위별 공수는 **P0 153.5h / P1 49.0h**이며 P2 3.5h는 합계에서 제외한다.
 Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물한 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
@@ -175,7 +175,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-4.1 | P0 | 공통 Enum·DTO·Tool envelope. 완료: `AlarmRef`, Action/Approval/Delivery/Run 상태, Fault 5-class, 오류 body를 최종 기준으로 정렬한다. Tool signature는 `get_fdc_summary(lot_hist_id)`, `get_equipment_context(chamber_id)`, `search_documents(query, model_code=None, top_k=4)`, `send_action(action_id)`, `generate_analysis_plan(question)`으로 고정한다. Tool 결과는 `ok`·`reason`과 도메인 payload만 가지며 reason prefix는 공통 계약을 참조한다. `latency_ms`는 결과에서 제외하고 실행 wrapper가 `agent_tool_call` metadata로 기록한다. 공개 승인 요청은 `APPROVED\|REJECTED`이고 내부 Enum은 adapter에서만 변환한다 | FR-I-07, NFR-09~10 | V5-CM-1.2 | 1.5h |
 | V5-CM-4.2 | P0 | 감사 쓰기 계약. 완료: event enum·entity mapping·append-only helper와 트랜잭션 규칙을 제공한다. UPDATE·DELETE 경로를 만들지 않는다 | FR-D-07, NFR-05 | V5-CM-4.1 | 1.0h |
 | V5-CM-4.3 | P0 | profile 통합 검증기. 완료: 공용 3 DB의 epoch·stage·table·행 수·hash·권한·marker를 한 번에 검사하고 target별 결과를 보존한다. 한 target 실패가 전체 report를 지우지 않고 다른 DB 변경은 0건이다 | FR-I-04, NFR-14, NFR-18 | V5-CM-3.5 | 3.0h |
-| V5-CM-4.4 | P0 | API contract fixture baseline. 완료: 필수 public 11개(호환 9개·단일 chamber 관계 API·`POST /agent/runs`) + internal delivery 1개 + health 2개, **합계 14개**의 canonical DTO/OpenAPI 기대값과 오류·bare-array 규칙을 구현과 독립된 fixture로 고정한다. 구현된 선택 확장만 별도 fixture에 포함하고 deferred 확장은 OpenAPI 존재를 요구하지 않는다. **실제 endpoint PASS는 후속 최종 API gate에서 판정한다** | FR-I-01, FR-I-07, NFR-09~11 | V5-CM-4.1 | 1.5h |
+| V5-CM-4.4 | P0 | API contract fixture baseline. 완료: 필수 public 11개(호환 9개·단일 chamber 관계 API·`POST /agent/runs`) + internal delivery 1개 + health 2개, **합계 14개**의 canonical DTO/OpenAPI 기대값과 오류·bare-array 규칙을 구현과 독립된 fixture로 고정한다. 구현된 선택 확장만 별도 fixture에 포함하고 deferred 확장은 OpenAPI 존재를 요구하지 않는다. **실제 endpoint PASS는 후속 최종 API gate에서 판정한다** | FR-I-01, FR-I-07, NFR-09~11 | V5-CM-4.1 | 2.0h |
 | V5-CM-4.4-1 | P0 | **5화면 navigation 전환**. 완료: 현재 7개 메뉴(`/dashboard`·`/alarms`·`/traces`·`/agent-runs`·`/actions`·`/analytics`·`/audit-logs`)를 canonical 5영역(Dashboard·Alarm History·Agent·Documents·Ontology)으로 재구성한다. 기존 상세 route는 하위 흐름·deep link로 유지하고 독립된 제6 화면을 만들지 않는다. Text2SQL route는 선택 확장으로 분리한다 | FR-I-02 | V5-CM-4.4 | 2.0h |
 | V5-CM-4.4-2 | P0 | **shared client·projection 기반**. 완료: 필수 public 11개의 공용 client와 canonical→deprecated alias serializer만 제공한다. `POST /agent/runs`는 source-aware `AlarmRef` body를 사용한다. domain 페이지가 실제 호출·상태를 소비하는 책임은 A/B/C/D Task에 두고, Common에서 `api.audit()` UI를 호출하지 않는다 | FR-I-02, FR-I-03, NFR-11 | V5-CM-4.4-1 | 1.5h |
 | V5-CM-4.4-3 | P1 | alias 제거 조건. 완료: compatibility alias 목록과 모든 소비 화면의 canonical 전환 완료 조건을 문서화하고 조건 충족 시 실행할 추적 항목을 최종 gate에 연결한다 | FR-I-03 | V5-CM-4.4-2 | 1.0h |
@@ -192,7 +192,7 @@ Task 수는 96건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 5화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, 화면 4상태와 label 비누수를 검증하고 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.3 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
-**Common 합계: 66.5h**
+**Common 합계: 67.0h**
 
 ---
 
