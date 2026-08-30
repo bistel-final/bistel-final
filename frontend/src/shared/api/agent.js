@@ -1,4 +1,6 @@
 import apiClient, { mockEnabledFor, mockResponse } from './client.js'
+import { assertExactObject, compactParams, requireDatePair, requireNonEmptyString } from './contract.js'
+import { CORE_AGENT_ASK, CORE_AGENT_RUN, CORE_APPROVAL, approvalAfterDecision } from './contractMocks.js'
 import { toIso } from './format.js'
 import { RUNS } from '../../features/agent/mock/runs.js'
 import { ACTIONS, APPROVALS } from '../../features/agent/mock/actions.js'
@@ -35,7 +37,7 @@ const paginate = (rows, { page: p = 1, size = 20 } = {}) => ({
   size,
 })
 
-// GET /agent/runs — status?·equipment_id?·chamber_id?·date_from?·date_to?·page·size
+// Legacy page adapter. Real transport uses core GET /agent/runs and wraps the bare array locally.
 export function getRuns(params = {}) {
   if (USE_MOCK) {
     const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
@@ -51,7 +53,25 @@ export function getRuns(params = {}) {
       .sort((a, b) => b.started_at.localeCompare(a.started_at) || b.agent_run_id.localeCompare(a.agent_run_id))
     return mockResponse(paginate(rows, pageParams))
   }
-  return apiClient.get('/agent/runs', { params }).then((r) => r.data)
+  const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
+  return getRunsCore({ date_from, date_to }).then((rows) => {
+    const filtered = rows.filter(
+      (run) =>
+        (!status || run.status === status) &&
+        (!chamber_id || run.chamber_id === chamber_id) &&
+        (!equipment_id || run.equipment_id == null || run.equipment_id === equipment_id),
+    )
+    return paginate(filtered, pageParams)
+  })
+}
+
+// GET /agent/runs — core bare-array contract. There is no /agent/runs/paged endpoint.
+export function getRunsCore(params = {}) {
+  assertExactObject(params, ['date_from', 'date_to'], 'getRunsCore params')
+  requireDatePair(params, 'getRunsCore params')
+  const query = compactParams(params)
+  if (USE_MOCK) return mockResponse([CORE_AGENT_RUN])
+  return apiClient.get('/agent/runs', { params: query }).then((response) => response.data)
 }
 
 export function getRun(agentRunId) {
@@ -62,7 +82,7 @@ export function getRun(agentRunId) {
   return apiClient.get(`/agent/runs/${agentRunId}`).then((r) => r.data)
 }
 
-// GET /approvals — status?·page·size
+// Legacy page adapter. Real transport uses core GET /approvals and wraps the bare array locally.
 export function getApprovals(params = {}) {
   if (USE_MOCK) {
     const { status, ...pageParams } = params
@@ -71,28 +91,65 @@ export function getApprovals(params = {}) {
       .sort((a, b) => b.requested_at.localeCompare(a.requested_at) || b.approval_id.localeCompare(a.approval_id))
     return mockResponse(paginate(rows, pageParams))
   }
-  return apiClient.get('/approvals', { params }).then((r) => r.data)
+  const { status, ...pageParams } = params
+  return getApprovalsCore().then((rows) => paginate(rows.filter((approval) => !status || approval.status === status), pageParams))
 }
 
-// POST /approvals/{approval_id}/decision — decision(APPROVE/REJECT)·decided_by·decision_comment?
-export function decideApproval(approvalId, { decision, decided_by, decision_comment }) {
-  if (USE_MOCK) {
-    const p = APPROVALS.find((x) => x.approval_id === approvalId)
-    const approved = decision === 'APPROVE'
-    return mockResponse({
-      approval_id: approvalId,
-      action_id: p?.action_id ?? null,
-      approval_status: approved ? 'APPROVED' : 'REJECTED',
-      send_status: approved ? 'SENDING' : 'CANCELED',
-      agent_run_status: approved ? 'RUNNING' : 'COMPLETED',
-      decided_by,
-      decided_at: toIso('2026-06-04 07:49:00'),
-      decision_comment: decision_comment ?? null,
-    })
+// GET /approvals — core bare-array contract. There is no /approvals/paged endpoint.
+export function getApprovalsCore() {
+  if (USE_MOCK) return mockResponse([CORE_APPROVAL])
+  return apiClient.get('/approvals').then((response) => response.data)
+}
+
+// POST /approvals/{approval_id}/decision — strict public boundary.
+export function decideApprovalCanonical(approvalId, input) {
+  requireNonEmptyString(approvalId, 'approval_id')
+  assertExactObject(input, ['decision', 'decided_by', 'decision_comment'], 'approval decision')
+  const decision = input.decision
+  if (!['APPROVED', 'REJECTED'].includes(decision)) {
+    throw new TypeError('decision must be APPROVED or REJECTED')
   }
-  return apiClient
-    .post(`/approvals/${approvalId}/decision`, { decision, decided_by, decision_comment })
-    .then((r) => r.data)
+  const decided_by = requireNonEmptyString(input.decided_by, 'decided_by')
+  const decision_comment = input.decision_comment
+  if (decision_comment != null) requireNonEmptyString(decision_comment, 'decision_comment')
+  const body = compactParams({ decision, decided_by, decision_comment })
+  if (USE_MOCK) {
+    return mockResponse(approvalAfterDecision({ decision, decided_by, decision_comment }))
+  }
+  return apiClient.post(`/approvals/${encodeURIComponent(approvalId)}/decision`, body).then((r) => r.data)
+}
+
+// Existing C pages still send APPROVE|REJECT. Keep their import stable while the
+// transport boundary is canonical; V5-CM-4.4-3 removes this adapter after C migrates.
+export function decideApprovalFromUi(approvalId, input) {
+  assertExactObject(input, ['decision', 'decided_by', 'decision_comment'], 'UI approval decision')
+  const mapped = { APPROVE: 'APPROVED', REJECT: 'REJECTED' }[input.decision]
+  if (!mapped) throw new TypeError('UI decision must be APPROVE or REJECT')
+  return decideApprovalCanonical(approvalId, { ...input, decision: mapped })
+}
+
+export const decideApproval = decideApprovalFromUi
+
+// POST /agent/runs — source-aware run creation; no source-less overload exists.
+export function createRun(input) {
+  assertExactObject(input, ['alarm'], 'createRun input')
+  assertExactObject(input.alarm, ['source', 'alarm_id'], 'createRun alarm')
+  const source = input.alarm.source
+  if (!['TRACE', 'SUMMARY', 'R03'].includes(source)) {
+    throw new TypeError('alarm.source must be TRACE, SUMMARY, or R03')
+  }
+  const alarm_id = requireNonEmptyString(input.alarm.alarm_id, 'alarm.alarm_id')
+  const body = { alarm: { source, alarm_id } }
+  if (USE_MOCK) return mockResponse({ agent_run_id: 'RUN-000002', status: 'RUNNING', alarm: body.alarm })
+  return apiClient.post('/agent/runs', body).then((response) => response.data)
+}
+
+// POST /agent/ask — read-only Agent chat boundary.
+export function askAgent(input) {
+  assertExactObject(input, ['question'], 'askAgent input')
+  const body = { question: requireNonEmptyString(input.question, 'question') }
+  if (USE_MOCK) return mockResponse(CORE_AGENT_ASK)
+  return apiClient.post('/agent/ask', body).then((response) => response.data)
 }
 
 // GET /actions — approval_status?·send_status?·action_code?·equipment_id?·chamber_id?·date_from?·date_to?·page·size
