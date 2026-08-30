@@ -29,6 +29,7 @@ __all__ = [
     "load_optional_contract",
     "load_required_contract",
     "load_team_release_contract",
+    "normalize_fixture_semantic_contract",
     "normalize_openapi_contract",
 ]
 
@@ -821,12 +822,17 @@ def _validate_team_release_semantics(fixture: ContractFixture) -> None:
         raise ContractValidationError("팀 release evaluation sort 불일치")
 
 
-def normalize_openapi_contract(openapi: Mapping[str, Any]) -> NormalizedContract:
+def normalize_openapi_contract(
+    openapi: Mapping[str, Any], *, resolve_schemas: bool = False
+) -> NormalizedContract:
     """Return deterministic semantic operations from an OpenAPI document.
 
     Descriptive metadata (title, description, examples, operationId) is ignored.
     Array order remains meaningful; enum and required sets are sorted.
     """
+
+    if resolve_schemas:
+        return _normalize_openapi_semantic_contract(openapi)
 
     paths = openapi.get("paths")
     if not isinstance(paths, Mapping):
@@ -902,6 +908,383 @@ def normalize_openapi_contract(openapi: Mapping[str, Any]) -> NormalizedContract
                 "security_headers": sorted(set(security_headers)),
             }
     return dict(sorted(normalized.items()))
+
+
+def normalize_fixture_semantic_contract(
+    fixture: Mapping[str, Any],
+) -> NormalizedContract:
+    """Resolve a frozen fixture into the same operation-local schema form as OpenAPI.
+
+    Component names are intentionally absent from the result.  A public DTO may have
+    a different internal Pydantic class name as long as its recursive semantic shape
+    is the same.  ``type=named`` placeholders are rejected because they cannot prove
+    schema sync.
+    """
+
+    components = fixture.get("components")
+    operations = fixture.get("operations")
+    if not isinstance(components, Mapping) or not isinstance(operations, list):
+        raise ContractValidationError("fixture components/operations가 없습니다")
+
+    normalized: NormalizedContract = {}
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, Mapping):
+            raise ContractValidationError(
+                f"fixture operation이 object가 아닙니다: {index}"
+            )
+        method = operation.get("method")
+        path = operation.get("path")
+        if not isinstance(method, str) or not isinstance(path, str):
+            raise ContractValidationError("fixture operation key가 올바르지 않습니다")
+        request = operation.get("request")
+        if not isinstance(request, Mapping):
+            raise ContractValidationError(
+                f"fixture request가 없습니다: {method} {path}"
+            )
+        normalized_request: dict[str, Any] = {
+            "path": {},
+            "query": {},
+            "header": {},
+            "body": None,
+        }
+        for location in ("path", "query", "header"):
+            fields = request.get(location)
+            if not isinstance(fields, Mapping):
+                raise ContractValidationError(
+                    f"fixture request.{location}가 object가 아닙니다"
+                )
+            normalized_request[location] = {
+                name: _normalize_fixture_field(field, components, stack=())
+                for name, field in sorted(fields.items())
+            }
+        body = request.get("body")
+        if body is not None:
+            if not isinstance(body, Mapping) or set(body) != {"ref"}:
+                raise ContractValidationError("fixture body는 단일 ref여야 합니다")
+            normalized_request["body"] = _resolve_fixture_component(
+                body["ref"], components, stack=()
+            )
+
+        responses = operation.get("responses")
+        if not isinstance(responses, Mapping):
+            raise ContractValidationError(
+                f"fixture responses가 없습니다: {method} {path}"
+            )
+        normalized_responses: dict[str, Any] = {}
+        for status, response in sorted(
+            responses.items(), key=lambda item: str(item[0])
+        ):
+            if not isinstance(response, Mapping):
+                raise ContractValidationError("fixture response가 object가 아닙니다")
+            normalized_responses[str(status)] = {
+                "shape": response.get("shape"),
+                "schema": _resolve_fixture_component(
+                    response.get("schema_ref"), components, stack=()
+                ),
+            }
+        normalized[(method, path)] = {
+            "request": normalized_request,
+            "responses": normalized_responses,
+        }
+    return dict(sorted(normalized.items()))
+
+
+def _normalize_openapi_semantic_contract(
+    openapi: Mapping[str, Any],
+) -> NormalizedContract:
+    paths = openapi.get("paths")
+    raw_components = openapi.get("components", {})
+    components = (
+        raw_components.get("schemas", {}) if isinstance(raw_components, Mapping) else {}
+    )
+    if not isinstance(paths, Mapping) or not isinstance(components, Mapping):
+        raise ContractValidationError("OpenAPI paths/components가 없습니다")
+
+    normalized: NormalizedContract = {}
+    for path in sorted(paths):
+        path_item = paths[path]
+        if not isinstance(path_item, Mapping):
+            raise ContractValidationError(f"OpenAPI path item이 아닙니다: {path}")
+        inherited = path_item.get("parameters", [])
+        for raw_method, operation in path_item.items():
+            method = raw_method.upper()
+            if method not in _HTTP_METHODS:
+                continue
+            if not isinstance(operation, Mapping):
+                raise ContractValidationError(
+                    f"OpenAPI operation이 아닙니다: {method} {path}"
+                )
+            request: dict[str, Any] = {
+                "path": {},
+                "query": {},
+                "header": {},
+                "body": None,
+            }
+            for parameter in [*inherited, *operation.get("parameters", [])]:
+                if not isinstance(parameter, Mapping) or "$ref" in parameter:
+                    raise ContractValidationError(
+                        "parameter $ref/비object는 허용하지 않습니다"
+                    )
+                location = parameter.get("in")
+                name = parameter.get("name")
+                schema = parameter.get("schema")
+                if (
+                    location not in {"path", "query", "header"}
+                    or not isinstance(name, str)
+                    or not isinstance(schema, Mapping)
+                ):
+                    raise ContractValidationError(
+                        "OpenAPI parameter가 올바르지 않습니다"
+                    )
+                request[location][name] = _normalize_openapi_semantic_field(
+                    schema,
+                    required=bool(parameter.get("required")),
+                    components=components,
+                    stack=(),
+                )
+
+            request_body = operation.get("requestBody")
+            if request_body is not None:
+                if not isinstance(request_body, Mapping):
+                    raise ContractValidationError("requestBody가 object가 아닙니다")
+                request["body"] = _normalize_openapi_semantic_schema(
+                    _json_content_schema(request_body), components, stack=()
+                )
+
+            raw_responses = operation.get("responses")
+            if not isinstance(raw_responses, Mapping) or not raw_responses:
+                raise ContractValidationError(
+                    f"OpenAPI response가 없습니다: {method} {path}"
+                )
+            responses: dict[str, Any] = {}
+            for status, response in sorted(
+                raw_responses.items(), key=lambda item: str(item[0])
+            ):
+                if not re.fullmatch(r"[1-5][0-9]{2}", str(status)):
+                    continue
+                if not isinstance(response, Mapping):
+                    raise ContractValidationError(
+                        "OpenAPI response item이 object가 아닙니다"
+                    )
+                schema = _json_content_schema(response)
+                shape = "array" if schema.get("type") == "array" else "object"
+                responses[str(status)] = {
+                    "shape": shape,
+                    "schema": _normalize_openapi_semantic_schema(
+                        schema, components, stack=()
+                    ),
+                }
+            normalized[(method, path)] = {"request": request, "responses": responses}
+    return dict(sorted(normalized.items()))
+
+
+_OPENAPI_SCHEMA_KEYS = {
+    "default": "default",
+    "enum": "enum",
+    "format": "format",
+    "maxItems": "max_items",
+    "maxLength": "max_length",
+    "maximum": "maximum",
+    "minItems": "min_items",
+    "minLength": "min_length",
+    "minimum": "minimum",
+    "pattern": "pattern",
+}
+
+
+def _normalize_openapi_semantic_field(
+    schema: Mapping[str, Any],
+    *,
+    required: bool,
+    components: Mapping[str, Any],
+    stack: tuple[str, ...],
+) -> dict[str, Any]:
+    unwrapped, nullable = _nullable_schema(schema)
+    return {
+        "required": required,
+        "nullable": nullable,
+        "schema": _normalize_openapi_semantic_schema(
+            unwrapped, components, stack=stack
+        ),
+    }
+
+
+def _normalize_openapi_semantic_schema(
+    schema: Mapping[str, Any],
+    components: Mapping[str, Any],
+    *,
+    stack: tuple[str, ...],
+) -> dict[str, Any]:
+    schema, nullable = _nullable_schema(schema)
+    if nullable:
+        result = _normalize_openapi_semantic_schema(schema, components, stack=stack)
+        return {"nullable": True, "schema": result}
+    if "$ref" in schema:
+        name = _ref_name(schema["$ref"])
+        if name in stack:
+            raise ContractValidationError(
+                f"순환 OpenAPI component ref: {stack + (name,)}"
+            )
+        target = components.get(name)
+        if not isinstance(target, Mapping):
+            raise ContractValidationError(f"OpenAPI component가 없습니다: {name}")
+        return _normalize_openapi_semantic_schema(
+            target, components, stack=stack + (name,)
+        )
+
+    discriminator = schema.get("discriminator")
+    union = schema.get("oneOf")
+    if isinstance(discriminator, Mapping) and isinstance(union, list):
+        property_name = discriminator.get("propertyName")
+        mapping = discriminator.get("mapping", {})
+        if not isinstance(property_name, str) or not isinstance(mapping, Mapping):
+            raise ContractValidationError("OpenAPI discriminator가 올바르지 않습니다")
+        variants: dict[str, Any] = {}
+        for tag, reference in sorted(mapping.items()):
+            variants[str(tag)] = _normalize_openapi_semantic_schema(
+                {"$ref": reference}, components, stack=stack
+            )
+        return {
+            "type": "discriminated_union",
+            "discriminator": property_name,
+            "variants": variants,
+        }
+
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        return {
+            "type": "union",
+            "variants": [
+                _normalize_openapi_semantic_schema(item, components, stack=stack)
+                for item in any_of
+                if isinstance(item, Mapping)
+            ],
+        }
+
+    field_type = schema.get("type", "any")
+    result: dict[str, Any] = {"type": field_type}
+    for source_key, target_key in _OPENAPI_SCHEMA_KEYS.items():
+        if source_key in schema:
+            value = schema[source_key]
+            result[target_key] = sorted(value) if source_key == "enum" else value
+    if field_type == "array":
+        items = schema.get("items")
+        if not isinstance(items, Mapping):
+            raise ContractValidationError("OpenAPI array items가 없습니다")
+        result["items"] = _normalize_openapi_semantic_schema(
+            items, components, stack=stack
+        )
+    if field_type == "object":
+        additional = schema.get("additionalProperties", True)
+        result["additional_properties"] = (
+            _normalize_openapi_semantic_schema(additional, components, stack=stack)
+            if isinstance(additional, Mapping)
+            else additional is not False
+        )
+        properties = schema.get("properties", {})
+        required_fields = schema.get("required", [])
+        if not isinstance(properties, Mapping) or not isinstance(required_fields, list):
+            raise ContractValidationError(
+                "OpenAPI object properties/required가 잘못됐습니다"
+            )
+        result["fields"] = {
+            name: _normalize_openapi_semantic_field(
+                value,
+                required=name in required_fields,
+                components=components,
+                stack=stack,
+            )
+            for name, value in sorted(properties.items())
+            if isinstance(value, Mapping)
+        }
+    return result
+
+
+def _normalize_fixture_field(
+    field: Any,
+    components: Mapping[str, Any],
+    *,
+    stack: tuple[str, ...],
+) -> dict[str, Any]:
+    if not isinstance(field, Mapping):
+        raise ContractValidationError("fixture field가 object가 아닙니다")
+    if "required" not in field or "nullable" not in field:
+        raise ContractValidationError("fixture field required/nullable이 없습니다")
+    schema = {
+        key: value
+        for key, value in field.items()
+        if key not in {"required", "nullable"}
+    }
+    return {
+        "required": field["required"],
+        "nullable": field["nullable"],
+        "schema": _normalize_fixture_schema(schema, components, stack=stack),
+    }
+
+
+def _resolve_fixture_component(
+    name: Any,
+    components: Mapping[str, Any],
+    *,
+    stack: tuple[str, ...],
+) -> dict[str, Any]:
+    if not isinstance(name, str) or not name:
+        raise ContractValidationError("fixture component ref가 올바르지 않습니다")
+    if name in stack:
+        raise ContractValidationError(f"순환 fixture component ref: {stack + (name,)}")
+    component = components.get(name)
+    if not isinstance(component, Mapping):
+        raise ContractValidationError(f"fixture component가 없습니다: {name}")
+    return _normalize_fixture_schema(component, components, stack=stack + (name,))
+
+
+def _normalize_fixture_schema(
+    schema: Mapping[str, Any],
+    components: Mapping[str, Any],
+    *,
+    stack: tuple[str, ...],
+) -> dict[str, Any]:
+    if set(schema) == {"ref"}:
+        return _resolve_fixture_component(schema["ref"], components, stack=stack)
+    schema_type = schema.get("type")
+    if schema_type == "named":
+        raise ContractValidationError(
+            "named placeholder는 semantic 비교에 사용할 수 없습니다"
+        )
+    if schema_type == "discriminated_union":
+        variants = schema.get("variants")
+        if not isinstance(variants, Mapping):
+            raise ContractValidationError("fixture union variants가 없습니다")
+        return {
+            "type": "discriminated_union",
+            "discriminator": schema.get("discriminator"),
+            "variants": {
+                tag: _resolve_fixture_component(name, components, stack=stack)
+                for tag, name in sorted(variants.items())
+            },
+        }
+    result = {
+        key: value
+        for key, value in schema.items()
+        if key not in {"fields", "items", "ref"}
+    }
+    if "ref" in schema:
+        resolved = _resolve_fixture_component(schema["ref"], components, stack=stack)
+        result = {**resolved, **result}
+    if schema_type == "object":
+        fields = schema.get("fields", {})
+        if not isinstance(fields, Mapping):
+            raise ContractValidationError("fixture object fields가 아닙니다")
+        result["fields"] = {
+            name: _normalize_fixture_field(field, components, stack=stack)
+            for name, field in sorted(fields.items())
+        }
+    if schema_type == "array":
+        items = schema.get("items")
+        if not isinstance(items, Mapping):
+            raise ContractValidationError("fixture array items가 없습니다")
+        result["items"] = _normalize_fixture_schema(items, components, stack=stack)
+    return result
 
 
 def _json_content_schema(value: Mapping[str, Any]) -> Mapping[str, Any]:
