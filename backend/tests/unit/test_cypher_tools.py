@@ -51,5 +51,5 @@ def test_retry_feedback_appended(monkeypatch):
 def test_schema_context_lists_labels_relations_and_properties():
     context = cypher_tools._graph_schema_context()
     assert "- Chamber(chamber_id)" in context
-    assert "(:Parameter)-[:MEASURED_ON]->(:Chamber)" in context
+    assert "(:Parameter)-[:MEASURED_ON]-(:Chamber)" in context
     assert "EQP01" in context  # 값 예시 포함

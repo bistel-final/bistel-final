@@ -1,6 +1,7 @@
 // 결과 — 표 / 통계 / 차트 3개 탭 (디자인 v2 06)
 // 명세 AnalysisQueryResponse: rows 는 객체 배열이라 컬럼 접근은 row[columns[i]] 다.
 // 차트는 visualization.chart_type · x · y 를 그대로 읽는다.
+import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
@@ -69,6 +70,8 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
   const viz = def.visualization
   const columns = def.columns ?? []
   const groupBy = def.group_by ?? []
+  // 교차확인 배지(#240) — MATCH·MISMATCH 만 표시 (SKIPPED 는 무표시)
+  const crossStatus = def.cross_check?.status
   // 단위는 응답의 y 컬럼명이 근거다 (창작 금지) — raw 히스토그램은 값 컬럼 빈도
   const unitLabel = viz?.y ?? (type === 'histogram' && viz?.x ? `${viz.x} 빈도` : null)
 
@@ -76,7 +79,21 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
     <Card className="animate-[om-fadein_.25s]">
       <CardHeader
         title="결과"
-        note={<span className="font-mono">{def.row_count ?? rows.length}행</span>}
+        note={
+          <span className="flex items-center gap-2 font-mono">
+            {crossStatus === 'MATCH' && (
+              <span title={`그래프(Neo4j)로 재확인됨 — ${def.cross_check?.summary ?? ''}`}>
+                <Badge variant="t-green">✓ 그래프 교차 확인</Badge>
+              </span>
+            )}
+            {crossStatus === 'MISMATCH' && (
+              <span title={`두 저장소의 답이 다름 — ${def.cross_check?.summary ?? ''}`}>
+                <Badge variant="bg-red">⚠ 저장소 불일치</Badge>
+              </span>
+            )}
+            {def.row_count ?? rows.length}행
+          </span>
+        }
       />
 
       <div className="flex items-center justify-between px-5 pb-4">

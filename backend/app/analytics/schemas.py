@@ -19,6 +19,18 @@ class GroupedMetricResult(ApiModel):
     value: int | float | None = None
 
 
+class CrossCheck(ApiModel):
+    """SQL 답을 그래프로 재확인한 결과 — 품질 배지용 (#240).
+
+    SKIPPED 는 '확인 대상 아님/불가'이지 실패가 아니다 — 프론트는
+    MATCH·MISMATCH 만 배지로 표시한다.
+    """
+
+    status: Literal["MATCH", "MISMATCH", "SKIPPED"]
+    cypher: str | None = None
+    summary: str | None = None
+
+
 class AnalysisQueryResponse(ApiModel):
     """자연어 질의의 성공·정책 거부를 함께 표현하는 HTTP 200 계약."""
 
@@ -31,6 +43,7 @@ class AnalysisQueryResponse(ApiModel):
     metric_result: int | float | list[GroupedMetricResult] | None = None
     group_by: list[str]
     visualization: VisualizationPlan | None = None
+    cross_check: CrossCheck | None = None
     is_valid: bool
     is_rejected: bool
     reject_reason: str | None = None
