@@ -18,10 +18,13 @@ from app.analytics.audit import (
     fetch_audit_logs,
     fetch_audit_logs_paged,
 )
+from app.analytics.cypher_service import run_graph_query
 from app.analytics.query_log import QueryHistoryUnavailableError, fetch_query_history
 from app.analytics.schemas import (
     AnalysisQueryRequest,
     AnalysisQueryResponse,
+    GraphQueryRequest,
+    GraphQueryResponse,
     NlQueryHistoryResponse,
     SqlValidateRequest,
     SqlValidateResponse,
@@ -115,6 +118,16 @@ def get_audit_logs_paged(
 def post_analytics_query(request: AnalysisQueryRequest) -> AnalysisQueryResponse:
     """자연어 질의 한 건을 검증·실행한다."""
     return run_analysis_query(request.question)
+
+
+@router.post("/analytics/graph-query", response_model=GraphQueryResponse)
+def post_analytics_graph_query(request: GraphQueryRequest) -> GraphQueryResponse:
+    """그래프(온톨로지) 자연어 질의 한 건을 검증·실행한다.
+
+    B 합의(#238): backend 전용 경로 — 사용자 Cypher 직접 입력 경로는
+    없다 (SQL 과 달리 passthrough 미제공이 의도된 차이다).
+    """
+    return run_graph_query(request.question)
 
 
 @router.post("/analytics/validate", response_model=SqlValidateResponse)

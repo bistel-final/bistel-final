@@ -156,6 +156,45 @@ class SqlValidateResponse(ApiModel):
     checks: list[ValidationCheck] | None = None
 
 
+class GraphQueryRequest(ApiModel):
+    question: str = Field(min_length=1, max_length=1000)
+
+
+class GraphQueryResponse(ApiModel):
+    """그래프(Text2Cypher) 질의의 성공·정책 거부를 함께 표현하는 HTTP 200 계약.
+
+    AnalysisQueryResponse 의 미러다 — metric·visualization·이력 id 는 없다
+    (그래프 결과는 표 렌더, 이력 기록은 별도 확장 항목).
+    """
+
+    question: str
+    generated_cypher: str | None = None
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int = Field(ge=0)
+    is_valid: bool
+    is_rejected: bool
+    reject_reason: str | None = None
+    error_msg: str | None = None
+    latency_ms: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> "GraphQueryResponse":
+        if self.row_count != len(self.rows):
+            raise ValueError("row_count는 rows 길이와 일치해야 합니다")
+        if self.is_rejected:
+            if self.is_valid:
+                raise ValueError("정책 거부 응답은 is_valid=false여야 합니다")
+            if not self.reject_reason:
+                raise ValueError("정책 거부 응답에는 reject_reason이 필요합니다")
+            if self.columns or self.rows or self.generated_cypher:
+                raise ValueError("정책 거부 응답의 결과와 cypher는 비어야 합니다")
+            return self
+        if self.reject_reason is not None:
+            raise ValueError("거부되지 않은 응답에는 reject_reason을 넣을 수 없습니다")
+        return self
+
+
 class EvaluationItem(ApiModel):
     case_type: Literal["GOLD", "DEFENSE"]
     case_id: str = Field(min_length=1)

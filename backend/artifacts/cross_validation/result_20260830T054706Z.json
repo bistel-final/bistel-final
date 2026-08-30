@@ -1,0 +1,131 @@
+{
+  "executed_at": "20260830T054706Z",
+  "passed": 7,
+  "total": 7,
+  "items": [
+    {
+      "id": "X01",
+      "question": "전체 챔버 수",
+      "mode": "scalar",
+      "passed": true,
+      "detail": {
+        "sql": [
+          12
+        ],
+        "cypher": [
+          12
+        ]
+      }
+    },
+    {
+      "id": "X02",
+      "question": "EQP01 의 챔버 목록",
+      "mode": "set",
+      "passed": true,
+      "detail": {
+        "sql": [
+          "EQP01-PM1",
+          "EQP01-PM2"
+        ],
+        "cypher": [
+          "EQP01-PM2",
+          "EQP01-PM1"
+        ]
+      }
+    },
+    {
+      "id": "X03",
+      "question": "챔버-파라미터 측정 조합 수",
+      "mode": "scalar",
+      "passed": true,
+      "detail": {
+        "sql": [
+          48
+        ],
+        "cypher": [
+          48
+        ]
+      }
+    },
+    {
+      "id": "X04",
+      "question": "Photo 구역 장비 목록",
+      "mode": "set",
+      "passed": true,
+      "detail": {
+        "sql": [
+          "EQP01",
+          "EQP03",
+          "EQP02"
+        ],
+        "cypher": [
+          "EQP01",
+          "EQP02",
+          "EQP03"
+        ]
+      }
+    },
+    {
+      "id": "X05",
+      "question": "장비별 챔버 수",
+      "mode": "set",
+      "passed": true,
+      "detail": {
+        "sql": [
+          "EQP01:2",
+          "EQP02:2",
+          "EQP03:2",
+          "EQP04:2",
+          "EQP05:2",
+          "EQP06:2"
+        ],
+        "cypher": [
+          "EQP01:2",
+          "EQP02:2",
+          "EQP03:2",
+          "EQP04:2",
+          "EQP05:2",
+          "EQP06:2"
+        ]
+      }
+    },
+    {
+      "id": "X06",
+      "question": "Photo 구역 장비들의 SUMMARY 행 수 (그래프 소속 vs RDB area 컬럼)",
+      "mode": "hybrid",
+      "passed": true,
+      "detail": {
+        "graph_filter": [
+          "EQP01",
+          "EQP02",
+          "EQP03"
+        ],
+        "via_graph": [
+          2400
+        ],
+        "baseline": [
+          2400
+        ]
+      }
+    },
+    {
+      "id": "X07",
+      "question": "ET-7500 모델 장비들의 lot 처리 건수 (그래프 모델 소속 vs RDB)",
+      "mode": "hybrid",
+      "passed": true,
+      "detail": {
+        "graph_filter": [
+          "EQP04",
+          "EQP05",
+          "EQP06"
+        ],
+        "via_graph": [
+          300
+        ],
+        "baseline": [
+          300
+        ]
+      }
+    }
+  ]
+}
