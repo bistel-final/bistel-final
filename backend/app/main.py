@@ -1,21 +1,21 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.agent.router import router as agent_router
 from app.agent.runtime_composition import close_agent_runtime
 from app.analytics.router import router as analytics_router
 from app.common.config import CORS_ORIGINS
-from app.common.db import dispose_engines, get_app_engine, get_readonly_engine
+from app.common.db import dispose_engines
 from app.common.exceptions import AppError, ErrorCode, ErrorResponse
-from app.common.neo4j import close_neo4j_driver, get_neo4j_driver
-from app.common.rag_readiness import verify_rag_readiness
+from app.common.neo4j import close_neo4j_driver
+from app.common.readiness import ReadinessManager, create_readiness_manager
+from app.common.schemas import HealthResponse, ReadinessResponse
 from app.detection.router import router as detection_router
 from app.knowledge.router import router as knowledge_router
 
@@ -32,16 +32,32 @@ _STATUS_ERROR_CODE: dict[int, ErrorCode] = {
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    yield
+async def lifespan(application: FastAPI):
+    factory = getattr(
+        application.state,
+        "readiness_manager_factory",
+        create_readiness_manager,
+    )
+    manager: ReadinessManager = factory()
+    application.state.readiness_manager = manager
+    try:
+        manager.start()
+    except Exception:
+        logger.warning("readiness background startup failed")
 
     try:
-        close_agent_runtime()
+        yield
     finally:
         try:
-            dispose_engines()
+            manager.close()
         finally:
-            close_neo4j_driver()
+            try:
+                close_agent_runtime()
+            finally:
+                try:
+                    dispose_engines()
+                finally:
+                    close_neo4j_driver()
 
 
 app = FastAPI(
@@ -133,49 +149,25 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
     )
 
 
-@app.get("/health", tags=["System"])
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/health", tags=["System"], response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(status="UP")
 
 
-@app.get("/health/ready", tags=["System"])
-def readiness() -> dict[str, object]:
-    services: dict[str, str] = {}
-
-    try:
-        with get_app_engine().connect() as connection:
-            connection.execute(text("SELECT 1"))
-        services["postgres"] = "available"
-    except Exception:
-        services["postgres"] = "unavailable"
-
-    try:
-        with get_app_engine().connect() as connection:
-            verify_rag_readiness(connection)
-        services["rag"] = "available"
-    except Exception:
-        services["rag"] = "unavailable"
-
-    try:
-        with get_readonly_engine().connect() as connection:
-            connection.execute(text("SELECT 1"))
-        services["postgres_readonly"] = "available"
-    except Exception:
-        services["postgres_readonly"] = "unavailable"
-
-    try:
-        get_neo4j_driver().verify_connectivity()
-        services["neo4j"] = "available"
-    except Exception:
-        services["neo4j"] = "unavailable"
-
-    if "unavailable" in services.values():
-        raise HTTPException(
+@app.get(
+    "/health/ready",
+    tags=["System"],
+    response_model=ReadinessResponse,
+    responses={503: {"model": ReadinessResponse}},
+)
+def readiness(request: Request) -> ReadinessResponse | Response:
+    result: ReadinessResponse = request.app.state.readiness_manager.collect()
+    if result.status == "NOT_READY":
+        return JSONResponse(
             status_code=503,
-            detail={"status": "not_ready", "services": services},
+            content=result.model_dump(mode="json"),
         )
-
-    return {"status": "ready", "services": services}
+    return result
 
 
 app.include_router(detection_router)

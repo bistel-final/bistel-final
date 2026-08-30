@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -52,50 +51,79 @@ class AlarmRef(ApiModel):
 
 
 class HealthResponse(ApiModel):
-    status: Literal["ok"] = "ok"
-    service: str = Field(min_length=1)
-    timestamp: datetime
+    status: Literal["UP"]
 
 
 ReadinessFailureReason = Literal[
+    "NOT_CONFIGURED",
+    "CONTRACT_MISMATCH",
+    "DEPENDENCY_UNAVAILABLE",
+    "RAG_MODEL_NOT_READY",
+    "KAFKA_LAG_STALE",
     "TIMEOUT",
-    "CONNECTION_FAILED",
-    "UNEXPECTED_RESPONSE",
 ]
 
 
-class ReadinessDependency(ApiModel):
-    status: Literal["up", "down"]
+class ReadinessCheck(ApiModel):
+    status: Literal["PASS", "FAIL"]
+    reason_code: ReadinessFailureReason | None
     latency_ms: int = Field(ge=0)
-    reason: ReadinessFailureReason | None = None
 
     @model_validator(mode="after")
-    def validate_reason(self) -> "ReadinessDependency":
-        if self.status == "up" and self.reason is not None:
-            raise ValueError("정상 의존성에는 실패 reason을 넣을 수 없습니다")
-        if self.status == "down" and self.reason is None:
-            raise ValueError("실패 의존성에는 정규화된 reason이 필요합니다")
+    def validate_reason(self) -> "ReadinessCheck":
+        if self.status == "PASS" and self.reason_code is not None:
+            raise ValueError("PASS check의 reason_code는 null이어야 합니다")
+        if self.status == "FAIL" and self.reason_code is None:
+            raise ValueError("FAIL check에는 reason_code가 필요합니다")
         return self
 
 
-class ReadinessDependencies(ApiModel):
-    postgres: ReadinessDependency
-    neo4j: ReadinessDependency
-    n8n: ReadinessDependency
+class ReadinessChecks(ApiModel):
+    postgresql_runtime: ReadinessCheck
+    reference_migration: ReadinessCheck
+    neo4j: ReadinessCheck
+    rag: ReadinessCheck
+    n8n: ReadinessCheck
+    kafka: ReadinessCheck
+
+    @model_validator(mode="after")
+    def validate_reason_ownership(self) -> "ReadinessChecks":
+        common = {
+            "NOT_CONFIGURED",
+            "CONTRACT_MISMATCH",
+            "DEPENDENCY_UNAVAILABLE",
+            "TIMEOUT",
+        }
+        allowed = {
+            "postgresql_runtime": common,
+            "reference_migration": common,
+            "neo4j": common,
+            "rag": common | {"RAG_MODEL_NOT_READY"},
+            "n8n": common,
+            "kafka": common | {"KAFKA_LAG_STALE"},
+        }
+        for name, reasons in allowed.items():
+            reason = getattr(self, name).reason_code
+            if reason is not None and reason not in reasons:
+                raise ValueError(f"{name} check에 허용되지 않은 reason_code입니다")
+        return self
 
 
 class ReadinessResponse(ApiModel):
-    status: Literal["ready", "not_ready"]
-    dependencies: ReadinessDependencies
+    status: Literal["READY", "NOT_READY"]
+    dataset_epoch: Literal["fdc_final_20260818"]
+    checks: ReadinessChecks
 
     @model_validator(mode="after")
     def validate_status(self) -> "ReadinessResponse":
-        dependency_states = {
-            self.dependencies.postgres.status,
-            self.dependencies.neo4j.status,
-            self.dependencies.n8n.status,
-        }
-        expected = "ready" if dependency_states == {"up"} else "not_ready"
+        expected = (
+            "READY"
+            if all(
+                getattr(self.checks, name).status == "PASS"
+                for name in ReadinessChecks.model_fields
+            )
+            else "NOT_READY"
+        )
         if self.status != expected:
-            raise ValueError("readiness 상태와 의존성 상태가 일치하지 않습니다")
+            raise ValueError("readiness 상태와 check 상태가 일치하지 않습니다")
         return self

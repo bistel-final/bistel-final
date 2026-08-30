@@ -1,0 +1,23 @@
+{
+  "artifact_type": "role_matrix_core",
+  "format_version": 1,
+  "task_id": "V5-CM-3.5",
+  "dataset_epoch": "fdc_final_20260818",
+  "database": "kosa_agent",
+  "profile": "runtime",
+  "schema_stage": "runtime_checkpointed",
+  "matrix_stage": "role_core",
+  "matrix_digest_sha256": "16b9e0152f3c4e8a995585ee91a8db206ad283d38a8a4e3e54566588ced97159",
+  "target_host_fingerprint": "26f733d15db9487445d155a1318abe2df11ec76eb80402b4be3e07ff6666886c",
+  "approval_sha256": "02b805c2f562430a3775d3c2069a094709dbd3d32841308a426b7b4037b3f7ad",
+  "snapshot_sha256": "de15f594e9e203fe12590e9ab3aa3f899ed2ee651a589f1a612c6dba235d95ed",
+  "row_fingerprint_sha256": "d30f615527e77a0c9a311b7c65c9b792111eaaa11eacefed08edc95d7999e414",
+  "predecessor_artifacts": {
+    "agent_severity_guard_final.kosa_agent.json": "8f4622768022052af22daf78533f58628e5d82a84c9fde0af0a78e830c6638d3",
+    "checkpoint_setup_final.kosa_agent.json": "4c2c8db5cf0b0d67a40baebb038c6f534125f6b77d6650924118bddd0207b0fd"
+  },
+  "change_reference": "CM35-166",
+  "status": "APPLIED",
+  "applied_at": "2026-08-26T09:14:25.199253+00:00",
+  "recorded_at": "2026-08-26T09:14:25.199253+00:00"
+}

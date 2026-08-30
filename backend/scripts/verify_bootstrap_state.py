@@ -1266,6 +1266,8 @@ def verify_neo4j(
             "Neo4j read-only 검증을 수행할 수 없습니다",
             reason_code="CONNECT_OR_QUERY_FAILED",
         ) from exc
+    # Runtime readiness와 bootstrap verifier가 같은 canonical fingerprint 함수를
+    # 역재사용한다. 두 경로의 알고리즘 drift를 허용하지 않는다.
     graph_fingerprint = neo4j_bootstrap.snapshot_fingerprint(snapshot)
     label_counts = Counter(node.label for node in snapshot.nodes)
     type_counts = Counter(item.relation_type for item in snapshot.relationships)

@@ -24,6 +24,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.common import postgres_readiness as runtime_reference  # noqa: E402
+
 EXIT_OK = 0
 EXIT_MISMATCH = 1
 EXIT_USAGE = 2
@@ -576,18 +582,10 @@ def assert_view_sql_shape(text: str) -> None:
 
 def assert_r03_columns(rows: Sequence[Mapping[str, Any]]) -> None:
     """`information_schema.columns`를 ordinal 순으로 받아 12컬럼 계약과 대조한다."""
-
-    observed = tuple(
-        (
-            str(row["column_name"]),
-            str(row["data_type"]),
-            row["character_maximum_length"],
-            str(row["is_nullable"]).upper() == "YES",
-        )
-        for row in rows
-    )
-    if observed != R03_COLUMNS:
-        raise ReferenceV5Error("R03_CONTRACT_MISMATCH", EXIT_MISMATCH)
+    try:
+        runtime_reference.validate_r03_columns(rows)
+    except runtime_reference.PostgresReadinessError as exc:
+        raise ReferenceV5Error("R03_CONTRACT_MISMATCH", EXIT_MISMATCH) from exc
 
 
 def assert_r03_constraints(rows: Sequence[Mapping[str, Any]]) -> None:
@@ -597,19 +595,10 @@ def assert_r03_constraints(rows: Sequence[Mapping[str, Any]]) -> None:
     `CHECK (false)`가 옳은 이름으로 들어와도 통과한다(구현리뷰 1차 필수 2).
     """
 
-    observed = {
-        str(row["conname"]): (
-            str(row["contype"]),
-            _normalize_sql(str(row["definition"])),
-        )
-        for row in rows
-    }
-    expected = {
-        name: (contype, _normalize_sql(definition))
-        for name, (contype, definition) in R03_CONSTRAINT_DEFINITIONS.items()
-    }
-    if observed != expected:
-        raise ReferenceV5Error("R03_CONTRACT_MISMATCH", EXIT_MISMATCH)
+    try:
+        runtime_reference.validate_r03_constraints(rows)
+    except runtime_reference.PostgresReadinessError as exc:
+        raise ReferenceV5Error("R03_CONTRACT_MISMATCH", EXIT_MISMATCH) from exc
     # type별 개수는 위 exact 비교가 이미 함의한다. 여기서 다시 세면 어떤 입력으로도
     # 단독으로 깨뜨릴 수 없는 죽은 방어가 된다(변이 N4). 개수 계약은
     # `R03_CONSTRAINT_COUNTS`와 `R03_CONSTRAINTS`의 **상수 일관성**으로 지킨다.
@@ -635,10 +624,10 @@ def assert_r03_foreign_keys(rows: Sequence[Mapping[str, Any]]) -> None:
 
 def assert_view_columns(rows: Sequence[Mapping[str, Any]]) -> None:
     """View 17컬럼의 이름·순서·타입을 본다."""
-
-    observed = tuple((str(row["column_name"]), str(row["data_type"])) for row in rows)
-    if observed != VIEW_COLUMNS:
-        raise ReferenceV5Error("VIEW_CONTRACT_MISMATCH", EXIT_MISMATCH)
+    try:
+        runtime_reference.validate_view_columns(rows)
+    except runtime_reference.PostgresReadinessError as exc:
+        raise ReferenceV5Error("VIEW_CONTRACT_MISMATCH", EXIT_MISMATCH) from exc
     # DTO enrichment 필드 배제도 위 exact 비교가 함의한다(변이 N6). 계약은
     # `VIEW_COLUMNS`와 `DTO_ONLY_FIELDS`가 겹치지 않는다는 **상수 성질**이다.
 
@@ -661,8 +650,10 @@ def assert_view_identity(definition: str) -> None:
     두 migration 경로가 이 하나의 identity로 수렴해야 한다.
     """
 
-    if view_definition_sha256(definition) != CANONICAL_VIEW_SHA256:
-        raise ReferenceV5Error("VIEW_CONTRACT_MISMATCH", EXIT_MISMATCH)
+    try:
+        runtime_reference.validate_view_identity(definition)
+    except runtime_reference.PostgresReadinessError as exc:
+        raise ReferenceV5Error("VIEW_CONTRACT_MISMATCH", EXIT_MISMATCH) from exc
 
 
 def normalized_view_definition(definition: str) -> str:

@@ -29,8 +29,8 @@ from app.common.enums import (
 )
 from app.common.exceptions import PolicyRejectedError
 from app.common.schemas import (
-    ReadinessDependencies,
-    ReadinessDependency,
+    ReadinessCheck,
+    ReadinessChecks,
     ReadinessResponse,
 )
 from app.common.tool_contracts import (
@@ -153,31 +153,39 @@ class TestSharedContracts:
         with pytest.raises(ValidationError):
             ParameterSummaryItem(**payload)
 
-    def test_readiness_down_requires_normalized_reason(self) -> None:
+    def test_readiness_fail_requires_normalized_reason(self) -> None:
         with pytest.raises(ValidationError, match="reason"):
-            ReadinessDependency(status="down", latency_ms=2000)
+            ReadinessCheck(status="FAIL", reason_code=None, latency_ms=2000)
 
-        dependency = ReadinessDependency(
-            status="down",
+        dependency = ReadinessCheck(
+            status="FAIL",
             latency_ms=2000,
-            reason="TIMEOUT",
+            reason_code="TIMEOUT",
         )
 
-        assert dependency.reason == "TIMEOUT"
+        assert dependency.reason_code == "TIMEOUT"
 
-    def test_readiness_aggregate_status_must_match_dependencies(self) -> None:
-        dependencies = ReadinessDependencies(
-            postgres=ReadinessDependency(status="up", latency_ms=2),
-            neo4j=ReadinessDependency(status="up", latency_ms=3),
-            n8n=ReadinessDependency(
-                status="down",
+    def test_readiness_aggregate_status_must_match_checks(self) -> None:
+        passed = ReadinessCheck(status="PASS", reason_code=None, latency_ms=2)
+        checks = ReadinessChecks(
+            postgresql_runtime=passed,
+            reference_migration=passed,
+            neo4j=passed,
+            rag=passed,
+            n8n=ReadinessCheck(
+                status="FAIL",
                 latency_ms=2000,
-                reason="CONNECTION_FAILED",
+                reason_code="DEPENDENCY_UNAVAILABLE",
             ),
+            kafka=passed,
         )
 
         with pytest.raises(ValidationError, match="일치"):
-            ReadinessResponse(status="ready", dependencies=dependencies)
+            ReadinessResponse(
+                status="READY",
+                dataset_epoch="fdc_final_20260818",
+                checks=checks,
+            )
 
 
 class TestDetectionSchemas:

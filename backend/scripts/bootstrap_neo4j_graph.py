@@ -61,6 +61,10 @@ from neo4j_target import (
     validate_database_name,
 )
 
+from app.common.graph_readiness import (
+    snapshot_fingerprint as runtime_snapshot_fingerprint,
+)
+
 MARKER_ROOT = BOOTSTRAP_ROOT / "markers"
 BACKUP_SCHEMA_VERSION = "neo4j-logical-v2"
 RESTORE_ALGORITHM_VERSION = "neo4j-logical-restore-v2"
@@ -414,7 +418,8 @@ def snapshot_payload(
 
 
 def snapshot_fingerprint(snapshot: GraphSnapshot, *, legacy: bool = False) -> str:
-    return canonical_sha256(snapshot_payload(snapshot, legacy=legacy))
+    # Runtime readiness와 bootstrap/restore가 같은 canonical 알고리즘을 쓴다.
+    return runtime_snapshot_fingerprint(snapshot, legacy=legacy)
 
 
 def expected_snapshot(parsed: ParsedMasterCypher) -> GraphSnapshot:

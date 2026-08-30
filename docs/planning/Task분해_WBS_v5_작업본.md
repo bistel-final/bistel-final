@@ -53,15 +53,15 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 
 | 영역 | 담당 | 공수 | 핵심 산출물 |
 |---|---|---:|---|
-| Common | 4명 공동, 통합 관리 방대혁 | 70.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
+| Common | 4명 공동, 통합 관리 방대혁 | 72.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 77.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Analytics·Audit | 천승현 | 18.5h | 자연어 분석·질의/평가 이력·화면 6, 전역 감사 화면 7 |
-| **합계** | | **215.5h** | P2 도전 과제 제외 |
+| **합계** | | **217.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 173.5h / P1 42.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물다섯 개다.
+우선순위별 공수는 **P0 173.5h / P1 44.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 스물여섯 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -76,6 +76,9 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-CM-4.5` **3.0h** — 외부 공용 DB·Neo4j·n8n을 재생성하지 않는 팀 Compose와
   Frontend production build·Backend CORS·Kafka SASL/토픽 lifecycle·MES 선택 profile을
   하나의 배포 전 리허설 경계로 닫는다. 공용 적용은 별도 승인·증적 Gate로 남긴다.
+- `V5-CM-4.6` **4.0h** — 6종 의존성의 marker/live 계약을 병렬 deadline으로 검사하고
+  RAG single-flight warmup·Kafka lag sampler·복구 판정표를 별도 실행 자원과 회귀로
+  함께 고정한다. liveness는 이 과정과 분리해 dependency 장애에도 process 생존을 보장한다.
 - `V5-CM-4.4-1` **3.0h** — 7개 primary navigation·숨김 호환/상세 route를 기계 계약으로
   고정하고, 팀 release 필수 API 5종의 구현 독립 fixture와 정본 문서·WBS·Frontend CI를 한
   제품 범위 전환으로 동기화한다.
@@ -192,7 +195,7 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-4.4-2 | P0 | **shared client·projection 기반**. 완료: 필수 public 11개의 core client와 paged·화면 adapter를 method·path·shape로 분리하고 source-aware `POST /agent/runs`와 public 승인 enum을 exact 전송한다. Frontend는 canonical-only projection과 fixture 기반 test oracle·동형 runtime mock을 제공하며 deprecated alias 파생은 Backend Router 단독 소유다. domain 페이지의 실소비는 A/B/C/D Task에 두고 Common shell의 감사 UI 호출은 0건이다 | FR-I-02, FR-I-03, NFR-11 | V5-CM-4.4-1 | 3.0h |
 | V5-CM-4.4-3 | P1 | alias 제거 조건. 완료: compatibility alias 목록과 모든 `features/**` 소비자의 core client·canonical projection 전환을 정적 import/call·alias 속성 스캔과 alias 미포함 실서버 동형 fixture 회귀로 증명한다. 등록부 `consumers`가 실제 소비자와 exact 일치하고 deprecated adapter 참조 0건일 때만 alias 제거 추적 항목을 최종 gate에 연결한다 | FR-I-03 | V5-CM-4.4-2 | 1.5h |
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·n8n은 학원 공용 외부 서비스로 환경변수 연결하고 팀 compose에는 Backend·Frontend·Kafka·MES Mock consumer만 둔다. `/api` proxy·명시 CORS Origin·고정 image tag를 적용하며 DB/Neo4j/n8n 컨테이너와 reference `00_load.sh` 호출은 0건이다 | FR-I-04, FR-I-06, NFR-02, NFR-12, NFR-15 | V5-CM-4.3, V5-C-4.2 | 3.0h |
-| V5-CM-4.6 | P1 | liveness·readiness·복구. 완료: `/health`는 process 생존만 반환하고 `/health/ready`는 병렬 timeout으로 PostgreSQL epoch/schema/role·reference marker, Neo4j 44/85 marker/fingerprint, RAG 3문서·chunk·vector1024·검색 smoke, n8n, Kafka metadata·`fdc.actions`·`fdc.actions.result`와 consumer group `kosa-fdc-wf4-writeback` lag를 검사한다. lag가 5분 이상 0보다 크거나 다른 의존성이 미준비면 sanitized 503이고 process는 종료하지 않는다 | FR-I-05, NFR-02, NFR-16 | V5-CM-4.5, V5-CM-2.7, V5-B-1.4, V5-C-4.2, V5-C-4.5 | 2.0h |
+| V5-CM-4.6 | P1 | liveness·readiness·복구. 완료: `/health`는 process 생존만 반환하고 `/health/ready`는 병렬 timeout으로 PostgreSQL epoch/schema/role·reference marker, Neo4j 44/85 marker/fingerprint, RAG 3문서·chunk·vector1024·검색 smoke, n8n, Kafka metadata·`fdc.actions`·`fdc.actions.result`와 consumer group `kosa-fdc-wf4-writeback` lag를 검사한다. lag가 5분 이상 0보다 크거나 다른 의존성이 미준비면 sanitized 503이고 process는 종료하지 않는다 | FR-I-05, NFR-02, NFR-16 | V5-CM-4.5, V5-CM-2.7, V5-B-1.4, V5-C-4.2, V5-C-4.5 | 4.0h |
 | V5-CM-4.7 | P0 | E2E reset guard. 완료: host·DB·token 확인 후 `kosa_agent_e2e`의 Runtime 실행 데이터만 초기화한다. `kosa_agent`·`kosa_text2sql` 대상은 거부하고 source·reference·RAG·checkpoint schema를 보존하며 다른 DB 변경 0건을 증명한다 | NFR-14, NFR-18 | V5-CM-3.4, V5-CM-4.3 | 3.0h |
 | V5-CM-4.8 | P1 | Tool hard timeout·sentinel 복구 재평가. 완료: `get_equipment_context`의 Neo4j transaction timeout과 `search_documents`·`get_fdc_summary` DB 구간의 PostgreSQL statement timeout을 실제 집행하고 8초 뒤 작업 종료 postcondition을 증명한다. in-process embedding·model 구간은 process 격리 도입 또는 soft 유지와 NFR-03 부분 미충족 기록 중 하나를 결정한다. hard 종료가 증명된 구간에 한해 sentinel 시간 기반 자동 회수를 재평가하고, Tool별 hard/soft 판정·잔여 한계를 남긴다 | NFR-03 | V5-C-2.2 | 3.0h |
 
@@ -204,7 +207,7 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 7화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. Analytics가 query·validate·history·evaluations를, 전역 Audit가 paged API를 **실제 소비**하며 route-level Mock 0과 Loading·Error·Empty·Success를 검증한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, label 비누수와 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.4, V5-D-2.6 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
-**Common 합계: 70.0h**
+**Common 합계: 72.0h**
 
 ---
 

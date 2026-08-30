@@ -38,6 +38,7 @@ BACKEND_ENV_KEYS = {
     "NEO4J_PASSWORD",
     "N8N_WEBHOOK_URL",
     "N8N_WF3_URL",
+    "N8N_BASE_URL",
     "N8N_WEBHOOK_SECRET",
     "N8N_WEBHOOK_TIMEOUT_SEC",
     "DELIVERY_UNKNOWN_AFTER_SEC",
@@ -54,6 +55,9 @@ BACKEND_ENV_KEYS = {
     "EMBEDDING_MODEL_REVISION",
     "EMBEDDING_DIM",
     "EMBEDDING_MODEL_PATH",
+    "KAFKA_BOOTSTRAP_INTERNAL",
+    "KAFKA_CLIENT_USER_FILE",
+    "KAFKA_CLIENT_PASSWORD_FILE",
 }
 MES_ENV_KEYS = {
     "KAFKA_BOOTSTRAP_INTERNAL",
@@ -107,6 +111,7 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
             "NEO4J_PASSWORD": "neo4j-secret-value",
             "N8N_WEBHOOK_URL": "http://10.20.30.40:5678/webhook/fdc-notify-email",
             "N8N_WF3_URL": "http://10.20.30.40:5678/webhook/fdc-mes-hold",
+            "N8N_BASE_URL": "http://10.20.30.40:5678",
             "N8N_WEBHOOK_SECRET": "webhook-secret-value",
             "CORS_ORIGINS": "http://10.20.30.40:53080",
             "BACKEND_BASE_URL": "http://10.20.30.40:53080/api",
@@ -144,6 +149,20 @@ def test_backend_and_mes_environment_are_exact_allowlists() -> None:
         "kafka_client_user",
         "kafka_client_password",
     }
+    assert set(backend["secrets"]) == {
+        "kafka_client_user",
+        "kafka_client_password",
+    }
+    assert backend["environment"]["KAFKA_BOOTSTRAP_INTERNAL"] == "kafka:9092"
+    assert backend["environment"]["KAFKA_CLIENT_USER_FILE"] == (
+        "/run/secrets/kafka_client_user"
+    )
+    assert backend["environment"]["KAFKA_CLIENT_PASSWORD_FILE"] == (
+        "/run/secrets/kafka_client_password"
+    )
+    assert not {"KAFKA_CLIENT_USER", "KAFKA_CLIENT_PASSWORD"} & set(
+        backend["environment"]
+    )
     assert mes_mock["environment"]["KAFKA_CLIENT_USER_FILE"] == (
         "/run/secrets/kafka_client_user"
     )
