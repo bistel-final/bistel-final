@@ -31,7 +31,9 @@
   DB 키나 합성 평가 라벨을 조립하지 않는다.
 - `shared/api/`의 core client는 위 11개 method·path의 raw shape를 보존한다. bare array와
   `/paged` envelope는 별도 함수로 유지하고 같은 path를 query 유무에 따라 두 shape로 해석하지
-  않는다. 기존 화면 adapter는 domain 전환 전까지만 deprecated export로 보존한다.
+  않는다. 문서화된 `/paged` path가 없는 Agent run·approval은 core bare array를 화면 adapter가
+  로컬 page envelope로 감싼다. `/agent/runs/paged`·`/approvals/paged`를 임의로 만들지 않는다.
+  기존 화면 adapter는 domain 전환 전까지만 deprecated export로 보존한다.
 
 ## Mock 데이터
 

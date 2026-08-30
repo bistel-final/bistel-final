@@ -25,4 +25,3 @@ export function requireDatePair(value, label) {
   const hasTo = own(value, 'date_to') && value.date_to !== undefined
   if (hasFrom !== hasTo) throw new TypeError(`${label} requires date_from and date_to together`)
 }
-

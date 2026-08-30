@@ -6,6 +6,12 @@ process.env.VITE_USE_MOCK = 'false'
 const fixtureUrl = new URL('../../backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json', import.meta.url)
 const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'))
 const components = fixture.components
+const agentSource = await readFile(new URL('../src/shared/api/agent.js', import.meta.url), 'utf8')
+assert.doesNotMatch(
+  agentSource,
+  /apiClient\.(?:get|post)\(['"]\/(?:agent\/runs|approvals)\/paged/,
+  '미구현 Agent paged endpoint를 호출하면 안 됩니다',
+)
 
 const appRoot = new URL('../src/app/', import.meta.url)
 for (const entry of await readdir(appRoot, { withFileTypes: true })) {
@@ -21,6 +27,7 @@ assert.equal(coreOperations.length, 11, 'core public operation count drifted')
 
 const validateScalar = (schema, value, label) => {
   if (value === null) {
+    if (schema.type === 'null') return
     assert.equal(schema.nullable, true, `${label} must not be null`)
     return
   }
@@ -117,8 +124,6 @@ const responseFor = (method, url, data) => {
       alarm: data?.alarm ?? { source: 'TRACE', alarm_id: 'TAL-0001' },
     },
     'GET /alarms/paged': { items: [CORE_ALARM], total: 1, page: 1, size: 20 },
-    'GET /agent/runs/paged': { items: [CORE_AGENT_RUN], total: 1, page: 1, size: 20 },
-    'GET /approvals/paged': { items: [CORE_APPROVAL], total: 1, page: 1, size: 20 },
     'GET /audit-logs/paged': { items: [CORE_AUDIT_LOG], total: 1, page: 1, size: 20 },
   }
   assert.ok(key in responses, `unexpected transport call: ${key}`)
@@ -192,7 +197,7 @@ const pagedResults = await Promise.all([
 ])
 assert.deepEqual(
   captures.slice(-4).map(({ method, url }) => `${method} ${url}`),
-  ['GET /alarms/paged', 'GET /agent/runs/paged', 'GET /approvals/paged', 'GET /audit-logs/paged'],
+  ['GET /alarms/paged', 'GET /agent/runs', 'GET /approvals', 'GET /audit-logs/paged'],
 )
 for (const result of pagedResults) {
   assert.deepEqual(Object.keys(result).sort(), ['items', 'page', 'size', 'total'])
@@ -341,6 +346,20 @@ const projectionCases = [
   ['AgentAskResponse', mockResults[6], 'projectAgentAsk'],
 ]
 const projections = await import('../src/shared/api/projections.js')
+const compatibilityAliases = new Map()
+for (const operation of fixture.operations) {
+  for (const rule of operation.compatibility) {
+    const aliases = compatibilityAliases.get(rule.component) ?? new Set()
+    rule.aliases.forEach((alias) => aliases.add(alias))
+    compatibilityAliases.set(rule.component, aliases)
+  }
+}
+for (const [component, fields] of Object.entries(projections.CANONICAL_FIELDS)) {
+  assert.ok(components[component]?.fields, `${component} must be backed by the Backend fixture`)
+  const aliases = compatibilityAliases.get(component) ?? new Set()
+  const expected = Object.keys(components[component].fields).filter((field) => !aliases.has(field))
+  assert.deepEqual([...fields].sort(), expected.sort(), `${component} canonical fields drifted`)
+}
 for (const [component, value, projectionName] of projectionCases) {
   const withoutAliases = structuredClone(value)
   for (const alias of aliases[component]) delete withoutAliases[alias]
@@ -361,6 +380,20 @@ for (const [component, value, projectionName] of projectionCases) {
   delete aliasOnlyMutation[canonicalWitness[component]]
   assert.throws(() => projections[projectionName](aliasOnlyMutation), /missing canonical fields/)
 }
+
+const askWithNestedAlias = structuredClone(mockResults[6])
+askWithNestedAlias.evidence_items[0].doc_id = askWithNestedAlias.evidence_items[0].document_id
+assert.deepEqual(projections.projectAgentAsk(askWithNestedAlias), projections.projectAgentAsk(mockResults[6]))
+assert.ok(!Object.hasOwn(projections.projectAgentAsk(askWithNestedAlias).evidence_items[0], 'doc_id'))
+delete askWithNestedAlias.evidence_items[0].document_id
+assert.throws(() => projections.projectAgentAsk(askWithNestedAlias), /missing canonical fields/)
+
+const runWithNestedAlias = structuredClone(mockResults[5][0])
+runWithNestedAlias.deliveries[0].legacy_status = runWithNestedAlias.deliveries[0].status
+assert.deepEqual(projections.projectAgentRun(runWithNestedAlias), projections.projectAgentRun(mockResults[5][0]))
+assert.ok(!Object.hasOwn(projections.projectAgentRun(runWithNestedAlias).deliveries[0], 'legacy_status'))
+delete runWithNestedAlias.deliveries[0].status
+assert.throws(() => projections.projectAgentRun(runWithNestedAlias), /missing canonical fields/)
 
 const serializedMocks = JSON.stringify(mockResults)
 assert.ok(!serializedMocks.includes('ground_truth_fault_code'))

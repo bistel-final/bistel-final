@@ -92,6 +92,20 @@ const CANONICAL_FIELDS = Object.freeze({
     'title',
     'tools',
   ],
+  PublicDeliveryItem: ['channel', 'status'],
+  AlarmEvidence: ['excerpt', 'source_id', 'title', 'type'],
+  TraceEvidence: ['excerpt', 'source_id', 'title', 'type'],
+  GraphEvidence: ['excerpt', 'graph_revision', 'relation_id', 'source_id', 'title', 'type'],
+  DocumentEvidence: ['chunk_id', 'document_id', 'excerpt', 'section', 'source_id', 'title', 'type'],
+  MetrologyEvidence: ['excerpt', 'source_id', 'title', 'type'],
+})
+
+const EVIDENCE_COMPONENT_BY_TYPE = Object.freeze({
+  ALARM: 'AlarmEvidence',
+  TRACE: 'TraceEvidence',
+  GRAPH: 'GraphEvidence',
+  DOCUMENT: 'DocumentEvidence',
+  METROLOGY: 'MetrologyEvidence',
 })
 
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
@@ -119,6 +133,12 @@ const projectChatTool = (tool) => {
   return { tool_name: tool.tool_name, status: tool.status, result_summary: tool.result_summary }
 }
 
+const projectEvidence = (evidence) => {
+  const component = EVIDENCE_COMPONENT_BY_TYPE[evidence?.type]
+  if (!component) throw new TypeError(`EvidenceItem has an unknown type: ${String(evidence?.type)}`)
+  return pickCanonical(evidence, component)
+}
+
 export const projectAlarm = (value) => pickCanonical(value, 'AlarmItem')
 export const projectParameter = (value) => pickCanonical(value, 'ParameterItem')
 export const projectDocumentHit = (value) => pickCanonical(value, 'DocumentHit')
@@ -128,14 +148,15 @@ export const projectAuditLog = (value) => pickCanonical(value, 'AuditLogItem')
 export function projectAgentRun(value) {
   const projected = pickCanonical(value, 'AgentRunItem')
   projected.tools = value.tools.map(projectAutoTool)
+  projected.deliveries = value.deliveries.map((delivery) => pickCanonical(delivery, 'PublicDeliveryItem'))
   return projected
 }
 
 export function projectAgentAsk(value) {
   const projected = pickCanonical(value, 'AgentAskResponse')
   projected.tools = value.tools.map(projectChatTool)
+  projected.evidence_items = value.evidence_items.map(projectEvidence)
   return projected
 }
 
 export { CANONICAL_FIELDS }
-

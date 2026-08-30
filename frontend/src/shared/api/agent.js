@@ -37,7 +37,7 @@ const paginate = (rows, { page: p = 1, size = 20 } = {}) => ({
   size,
 })
 
-// GET /agent/runs — status?·equipment_id?·chamber_id?·date_from?·date_to?·page·size
+// Legacy page adapter. Real transport uses core GET /agent/runs and wraps the bare array locally.
 export function getRuns(params = {}) {
   if (USE_MOCK) {
     const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
@@ -53,10 +53,19 @@ export function getRuns(params = {}) {
       .sort((a, b) => b.started_at.localeCompare(a.started_at) || b.agent_run_id.localeCompare(a.agent_run_id))
     return mockResponse(paginate(rows, pageParams))
   }
-  return apiClient.get('/agent/runs/paged', { params }).then((r) => r.data)
+  const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
+  return getRunsCore({ date_from, date_to }).then((rows) => {
+    const filtered = rows.filter(
+      (run) =>
+        (!status || run.status === status) &&
+        (!chamber_id || run.chamber_id === chamber_id) &&
+        (!equipment_id || run.equipment_id == null || run.equipment_id === equipment_id),
+    )
+    return paginate(filtered, pageParams)
+  })
 }
 
-// GET /agent/runs — core bare-array contract. Status and paging belong to /paged.
+// GET /agent/runs — core bare-array contract. There is no /agent/runs/paged endpoint.
 export function getRunsCore(params = {}) {
   assertExactObject(params, ['date_from', 'date_to'], 'getRunsCore params')
   requireDatePair(params, 'getRunsCore params')
@@ -73,7 +82,7 @@ export function getRun(agentRunId) {
   return apiClient.get(`/agent/runs/${agentRunId}`).then((r) => r.data)
 }
 
-// GET /approvals — status?·page·size
+// Legacy page adapter. Real transport uses core GET /approvals and wraps the bare array locally.
 export function getApprovals(params = {}) {
   if (USE_MOCK) {
     const { status, ...pageParams } = params
@@ -82,10 +91,11 @@ export function getApprovals(params = {}) {
       .sort((a, b) => b.requested_at.localeCompare(a.requested_at) || b.approval_id.localeCompare(a.approval_id))
     return mockResponse(paginate(rows, pageParams))
   }
-  return apiClient.get('/approvals/paged', { params }).then((r) => r.data)
+  const { status, ...pageParams } = params
+  return getApprovalsCore().then((rows) => paginate(rows.filter((approval) => !status || approval.status === status), pageParams))
 }
 
-// GET /approvals — core bare-array contract. Filters and paging belong to /paged.
+// GET /approvals — core bare-array contract. There is no /approvals/paged endpoint.
 export function getApprovalsCore() {
   if (USE_MOCK) return mockResponse([CORE_APPROVAL])
   return apiClient.get('/approvals').then((response) => response.data)
