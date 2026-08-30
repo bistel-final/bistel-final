@@ -9,17 +9,11 @@ COPY frontend/ ./
 
 ARG VITE_API_BASE_URL=/api
 ARG VITE_USE_MOCK=false
-ARG VITE_USE_MOCK_DETECTION=false
-ARG VITE_USE_MOCK_AGENT=false
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_USE_MOCK=${VITE_USE_MOCK}
-ENV VITE_USE_MOCK_DETECTION=${VITE_USE_MOCK_DETECTION}
-ENV VITE_USE_MOCK_AGENT=${VITE_USE_MOCK_AGENT}
 
 RUN test "$VITE_API_BASE_URL" = "/api" \
     && test "$VITE_USE_MOCK" = "false" \
-    && test "$VITE_USE_MOCK_DETECTION" = "false" \
-    && test "$VITE_USE_MOCK_AGENT" = "false" \
     && npm run build \
     && ! grep -R -q -E "localhost:8000|127\\.0\\.0\\.1:8000" dist/assets \
     && grep -R -q -F "/api" dist/assets
