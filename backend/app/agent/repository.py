@@ -30,12 +30,15 @@ Tool 예산 정책은 `V5-C-2.2`가 소유한다. 이 계층은 그들이 정한
 from __future__ import annotations
 
 import json
+import logging
 import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from threading import Lock
 from typing import Any, Final
 
 from sqlalchemy import text
@@ -74,6 +77,8 @@ from app.common.enums import (
 from app.common.ids import new_agent_run_id, new_approval_id, new_tool_call_id
 from app.common.schemas import AlarmRef
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "AgentRepositoryError",
     "RepositoryConflict",
@@ -96,6 +101,8 @@ __all__ = [
     "list_run_alarms",
     "set_run_action",
     "finish_agent_run",
+    "finish_agent_run_with_active_latency",
+    "active_run_latency_ms",
     "merge_run_action_provenance",
     "ACTION_PROVENANCE_KEY",
     "ACTION_PROVENANCE_SCHEMA",
@@ -117,6 +124,11 @@ __all__ = [
     "DeliveryRecoveryReason",
     "DeliveryRecoveryResult",
     "ApprovalDecisionRow",
+    "PublicAgentRunRecord",
+    "PublicApprovalRecord",
+    "PublicDeliveryRecord",
+    "PublicToolCallRecord",
+    "public_read_omission_counts",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
     "link_run_action",
@@ -140,6 +152,10 @@ __all__ = [
     "insert_action_delivery",
     "get_action_delivery",
     "list_action_deliveries",
+    "list_agent_runs_public",
+    "list_approvals_public",
+    "get_approval_public",
+    "get_agent_run_by_thread_exact",
     "begin_email_delivery",
     "settle_email_delivery",
     "begin_mes_delivery",
@@ -573,12 +589,12 @@ _INSERT_RUN = text(
         agent_run_id, thread_id, retry_of_run_id, lot_id, chamber_id,
         requested_alarm_source, requested_alarm_id,
         representative_alarm_source, representative_alarm_id,
-        status, autonomy_level, llm_model, prompt_version
+        status, autonomy_level, llm_model, prompt_version, latency_ms
     ) VALUES (
         :agent_run_id, :thread_id, :retry_of_run_id, :lot_id, :chamber_id,
         :requested_alarm_source, :requested_alarm_id,
         :representative_alarm_source, :representative_alarm_id,
-        :status, :autonomy_level, :llm_model, :prompt_version
+        :status, :autonomy_level, :llm_model, :prompt_version, 0
     )
     RETURNING {_RUN_COLUMNS}
     """
@@ -722,6 +738,10 @@ def create_agent_run(
 
 _SELECT_RUN = text(f"SELECT {_RUN_COLUMNS} FROM agent_run WHERE agent_run_id = :run_id")
 
+_SELECT_RUN_BY_THREAD = text(
+    f"SELECT {_RUN_COLUMNS} FROM agent_run WHERE thread_id = :thread_id"
+)
+
 #: 활성 incident는 `ux_agent_run_incident_active`가 강제하는 그 상태 집합이다.
 ACTIVE_RUN_STATUSES: Final[tuple[str, ...]] = (
     RunStatus.RUNNING.value,
@@ -749,6 +769,27 @@ _SELECT_RUN_ALARMS = text(
 def get_agent_run(connection: Connection, agent_run_id: str) -> AgentRunRow:
     row = _fetch_one(connection, _SELECT_RUN, {"run_id": agent_run_id}, "RUN_NOT_FOUND")
     return _run_row(row)
+
+
+def get_agent_run_by_thread_exact(
+    connection: Connection, thread_id: str
+) -> AgentRunRow:
+    """보상 경계에서 thread와 결속된 run이 정확히 한 건인지 확인한다.
+
+    물리 스키마에는 ``thread_id`` UNIQUE가 없으므로 ``one_or_none``에 기대지 않는다.
+    중복은 임의 한 행을 FAILED로 만들 수 없는 identity corruption이다.
+    """
+
+    rows = _fetch_all(
+        connection,
+        _SELECT_RUN_BY_THREAD,
+        {"thread_id": _require_text(thread_id, "thread_id")},
+    )
+    if not rows:
+        raise RepositoryNotFound("RUN_THREAD_NOT_FOUND")
+    if len(rows) != 1:
+        raise RepositoryContractError("RUN_THREAD_NOT_EXACTLY_ONE")
+    return _run_row(rows[0])
 
 
 _SELECT_RUN_FOR_UPDATE = text(
@@ -1006,6 +1047,88 @@ TERMINAL_EVENTS: Final[Mapping[RunStatus, AuditEvent]] = {
     RunStatus.FAILED: AuditEvent.AGENT_RUN_FAILED,
 }
 
+ACTIVE_TIMING_KEY: Final = "active_timing"
+ACTIVE_TIMING_SCHEMA: Final = "agent-active-timing-v1"
+
+
+def _active_latency_snapshot_ms(
+    *,
+    status: RunStatus,
+    subtotal_ms: int | None,
+    started_at: datetime,
+    timing: object,
+    now: datetime,
+) -> int:
+    """저장 subtotal과 현재 활성 구간으로 HITL 제외 latency를 계산한다.
+
+    실행 갱신과 public read model이 이 함수를 함께 사용한다. SQL에서 timestamp를
+    재해석하거나 ``started_at``으로 별도 fallback하지 않는다.
+    """
+
+    if now.tzinfo is None:
+        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID")
+    if subtotal_ms is None or subtotal_ms < 0:
+        raise RepositoryContractError("ACTIVE_TIMING_SUBTOTAL_INVALID")
+    if status is not RunStatus.RUNNING:
+        return subtotal_ms
+
+    if timing is None:
+        active_started_at = started_at if subtotal_ms == 0 else None
+    else:
+        if (
+            not isinstance(timing, Mapping)
+            or timing.get("schema") != ACTIVE_TIMING_SCHEMA
+        ):
+            raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+        raw = timing.get("active_started_at")
+        if raw is None:
+            active_started_at = None
+        elif not isinstance(raw, str):
+            raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+        else:
+            try:
+                active_started_at = datetime.fromisoformat(raw)
+            except ValueError as exc:
+                raise RepositoryContractError("ACTIVE_TIMING_INVALID") from exc
+            if active_started_at.tzinfo is None:
+                raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+
+    if active_started_at is None:
+        raise RepositoryContractError("ACTIVE_TIMING_START_MISSING")
+    try:
+        elapsed_ms = int((now - active_started_at).total_seconds() * 1000)
+    except (TypeError, OverflowError) as exc:
+        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID") from exc
+    return min(2_147_483_647, subtotal_ms + max(0, elapsed_ms))
+
+
+def active_run_latency_ms(run: AgentRunRow, *, now: datetime) -> int:
+    """HITL 사람 대기를 제외한 현재 활성시간 snapshot을 계산한다."""
+
+    return _active_latency_snapshot_ms(
+        status=run.status,
+        subtotal_ms=run.latency_ms,
+        started_at=run.started_at,
+        timing=(run.evidence or {}).get(ACTIVE_TIMING_KEY),
+        now=now,
+    )
+
+
+def _timing_evidence(
+    run: AgentRunRow,
+    *,
+    active_started_at: datetime | None,
+) -> dict[str, Any]:
+    evidence = dict(run.evidence or {})
+    evidence[ACTIVE_TIMING_KEY] = {
+        "schema": ACTIVE_TIMING_SCHEMA,
+        "active_started_at": (
+            None if active_started_at is None else active_started_at.isoformat()
+        ),
+    }
+    return evidence
+
+
 _FINISH_RUN = text(
     f"""
     UPDATE agent_run
@@ -1085,6 +1208,33 @@ def finish_agent_run(
         return row
 
     return _run_row(_write(connection, _run))
+
+
+def finish_agent_run_with_active_latency(
+    connection: Connection,
+    agent_run_id: str,
+    status: RunStatus,
+    *,
+    now: datetime,
+    evidence: Mapping[str, Any] | None = None,
+) -> AgentRunRow:
+    """활성 구간을 닫고 terminal 상태·누적 latency를 원자적으로 저장한다."""
+
+    _require_transaction(connection)
+    run = lock_agent_run(connection, agent_run_id)
+    latency_ms = active_run_latency_ms(run, now=now)
+    closed = dict(run.evidence or {}) if evidence is None else dict(evidence)
+    closed[ACTIVE_TIMING_KEY] = {
+        "schema": ACTIVE_TIMING_SCHEMA,
+        "active_started_at": None,
+    }
+    return finish_agent_run(
+        connection,
+        agent_run_id,
+        status,
+        evidence=closed,
+        latency_ms=latency_ms,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2102,7 +2252,8 @@ def get_approval_request(
 _UPDATE_RUN_WAITING_APPROVAL = text(
     f"""
     UPDATE agent_run
-    SET status = :waiting
+    SET status = :waiting, latency_ms = :latency_ms,
+        evidence = CAST(:evidence AS jsonb)
     WHERE agent_run_id = :run_id AND status = :running
     RETURNING {_RUN_COLUMNS}
     """
@@ -2111,7 +2262,7 @@ _UPDATE_RUN_WAITING_APPROVAL = text(
 _UPDATE_RUN_RESUMED = text(
     f"""
     UPDATE agent_run
-    SET status = :running
+    SET status = :running, evidence = CAST(:evidence AS jsonb)
     WHERE agent_run_id = :run_id AND status = :waiting
     RETURNING {_RUN_COLUMNS}
     """
@@ -2192,6 +2343,7 @@ def begin_approval_wait(
     *,
     agent_run_id: str,
     approval_id: str,
+    now: datetime | None = None,
 ) -> AgentRunRow:
     """결속된 EQP_HOLD bundle과 run을 같은 UoW에서 WAITING으로 만든다.
 
@@ -2209,6 +2361,9 @@ def begin_approval_wait(
         return run
     if run.status is not RunStatus.RUNNING:
         raise RepositoryConflict("RUN_STATE_INVALID")
+    observed_at = datetime.now(UTC) if now is None else now
+    latency_ms = active_run_latency_ms(run, now=observed_at)
+    evidence = _timing_evidence(run, active_started_at=None)
     try:
         row = connection.execute(
             _UPDATE_RUN_WAITING_APPROVAL,
@@ -2216,6 +2371,8 @@ def begin_approval_wait(
                 "run_id": agent_run_id,
                 "running": RunStatus.RUNNING.value,
                 "waiting": RunStatus.WAITING_APPROVAL.value,
+                "latency_ms": latency_ms,
+                "evidence": _json_payload(evidence, "evidence"),
             },
         ).one_or_none()
     except SQLAlchemyError as exc:
@@ -2230,6 +2387,7 @@ def resume_from_approval(
     *,
     agent_run_id: str,
     approval_id: str,
+    now: datetime | None = None,
 ) -> AgentRunRow:
     """terminal 승인과 결속된 WAITING run만 RUNNING으로 CAS한다."""
 
@@ -2243,6 +2401,10 @@ def resume_from_approval(
         raise RepositoryConflict("APPROVAL_STILL_PENDING")
     if approval.status not in {ApprovalStatus.APPROVED, ApprovalStatus.REJECTED}:
         raise RepositoryConflict("APPROVAL_NOT_RESUMABLE")
+    observed_at = datetime.now(UTC) if now is None else now
+    if observed_at.tzinfo is None:
+        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID")
+    evidence = _timing_evidence(run, active_started_at=observed_at)
     try:
         row = connection.execute(
             _UPDATE_RUN_RESUMED,
@@ -2250,6 +2412,7 @@ def resume_from_approval(
                 "run_id": agent_run_id,
                 "running": RunStatus.RUNNING.value,
                 "waiting": RunStatus.WAITING_APPROVAL.value,
+                "evidence": _json_payload(evidence, "evidence"),
             },
         ).one_or_none()
     except SQLAlchemyError as exc:
@@ -3325,3 +3488,432 @@ def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
         approval_agent_run_id=row.approval_agent_run_id,
         delivery_channels=tuple(item.channel for item in deliveries),
     )
+
+
+# ---------------------------------------------------------------------------
+# API v3 공개 목록 read model — 한 endpoint당 고정 1 query
+# ---------------------------------------------------------------------------
+
+_PUBLIC_READ_OMISSIONS: Counter[tuple[str, str]] = Counter()
+_PUBLIC_READ_OMISSIONS_LOCK = Lock()
+
+
+def record_public_read_omission(surface: str, code: str) -> None:
+    """손상 행 제외를 식별자 없이 로그·process-local counter에 남긴다."""
+
+    with _PUBLIC_READ_OMISSIONS_LOCK:
+        _PUBLIC_READ_OMISSIONS[(surface, code)] += 1
+    logger.warning("public %s row omitted (code=%s)", surface, code)
+
+
+def public_read_omission_counts() -> dict[tuple[str, str], int]:
+    """운영 관측·테스트용 snapshot. 내부 mutable counter를 직접 노출하지 않는다."""
+
+    with _PUBLIC_READ_OMISSIONS_LOCK:
+        return dict(_PUBLIC_READ_OMISSIONS)
+
+
+@dataclass(frozen=True, slots=True)
+class PublicToolCallRecord:
+    tool_name: str
+    status: ToolCallStatus
+
+
+@dataclass(frozen=True, slots=True)
+class PublicDeliveryRecord:
+    channel: DeliveryChannel
+    status: DeliveryStatus
+
+
+@dataclass(frozen=True, slots=True)
+class PublicAgentRunRecord:
+    agent_run_id: str
+    created_at: datetime
+    requested_alarm: AlarmRef
+    chamber_id: str
+    predicted_fault_code: FaultHypothesis | None
+    confidence: float | None
+    recommended_action: ActionCode | None
+    status: RunStatus
+    action_id: str | None
+    approval_id: str | None
+    tools: tuple[PublicToolCallRecord, ...]
+    deliveries: tuple[PublicDeliveryRecord, ...]
+    latency_ms: int
+    llm_model: str
+
+
+# API v3가 bare array를 유지하므로 DB가 무한히 자라도 한 요청이 모두 읽지 않는다.
+PUBLIC_AGENT_RUN_LIMIT: Final = 500
+
+
+@dataclass(frozen=True, slots=True)
+class PublicApprovalRecord:
+    approval_id: str
+    agent_run_id: str
+    action_id: str
+    created_at: datetime
+    lot_id: str
+    equipment_id: str
+    chamber_id: str
+    predicted_fault_code: FaultHypothesis
+    action_code: ActionCode
+    reason: str
+    status: ApprovalStatus
+    decided_by: str | None
+    decided_at: datetime | None
+    decision_comment: str | None
+
+
+_SELECT_PUBLIC_AGENT_RUNS = text(
+    """
+    SELECT r.agent_run_id,
+           r.started_at AS created_at,
+           r.requested_alarm_source,
+           r.requested_alarm_id,
+           r.chamber_id,
+           p.predicted_fault_code,
+           p.confidence,
+           r.action AS recommended_action,
+           r.status,
+           linked.action_id,
+           action.action_code AS stored_action_code,
+           approval.approval_id,
+           approval.agent_run_id AS approval_agent_run_id,
+           COALESCE(tool_rows.items, '[]'::jsonb) AS tools,
+           COALESCE(delivery_rows.items, '[]'::jsonb) AS deliveries,
+           r.latency_ms,
+           r.evidence -> 'active_timing' AS active_timing,
+           clock_timestamp() AS observed_at,
+           r.llm_model
+    FROM agent_run AS r
+    LEFT JOIN agent_prediction AS p
+      ON p.agent_run_id = r.agent_run_id
+    LEFT JOIN agent_run_action AS linked
+      ON linked.agent_run_id = r.agent_run_id
+     AND linked.link_role = 'CREATED'
+    LEFT JOIN action_history AS action
+      ON action.action_id = linked.action_id
+    LEFT JOIN approval_request AS approval
+      ON approval.action_id = linked.action_id
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'tool_name', tool.tool_name,
+                       'status', tool.status
+                   )
+                   ORDER BY tool.call_seq
+               ) AS items
+        FROM agent_tool_call AS tool
+        WHERE tool.agent_run_id = r.agent_run_id
+    ) AS tool_rows ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'channel', delivery.channel,
+                       'status', delivery.status
+                   )
+                   ORDER BY delivery.channel
+               ) AS items
+        FROM action_delivery AS delivery
+        WHERE delivery.action_id = linked.action_id
+    ) AS delivery_rows ON TRUE
+    WHERE (
+        CAST(:date_from AS timestamptz) IS NULL
+        OR r.started_at >= CAST(:date_from AS timestamptz)
+    )
+      AND (
+        CAST(:date_to AS timestamptz) IS NULL
+        OR r.started_at < CAST(:date_to AS timestamptz)
+    )
+    ORDER BY r.started_at DESC, r.agent_run_id DESC
+    LIMIT :limit
+    """
+)
+
+
+_PUBLIC_APPROVAL_SELECT = """
+    SELECT approval.approval_id,
+           approval.agent_run_id,
+           approval.action_id,
+           approval.requested_at AS created_at,
+           run.lot_id,
+           run.chamber_id,
+           prediction.predicted_fault_code,
+           action.action_code,
+           action.reason,
+           approval.status,
+           approval.decided_by,
+           approval.decided_at,
+           approval.decision_comment,
+           linked.agent_run_id AS linked_agent_run_id,
+           linked.action_id AS linked_action_id,
+           linked.lot_id AS linked_lot_id,
+           linked.chamber_id AS linked_chamber_id,
+           action.lot_id AS action_lot_id,
+           action.chamber_id AS action_chamber_id,
+           ARRAY(
+               SELECT DISTINCT history.equipment_id
+               FROM lot_history AS history
+               WHERE history.lot_id = run.lot_id
+                 AND history.chamber_id = run.chamber_id
+                 AND history.equipment_id IS NOT NULL
+               ORDER BY history.equipment_id
+           ) AS equipment_ids
+    FROM approval_request AS approval
+    LEFT JOIN agent_run AS run
+      ON run.agent_run_id = approval.agent_run_id
+    LEFT JOIN agent_prediction AS prediction
+      ON prediction.agent_run_id = approval.agent_run_id
+    LEFT JOIN agent_run_action AS linked
+      ON linked.agent_run_id = approval.agent_run_id
+     AND linked.action_id = approval.action_id
+     AND linked.link_role = 'CREATED'
+    LEFT JOIN action_history AS action
+      ON action.action_id = approval.action_id
+"""
+
+_SELECT_PUBLIC_APPROVALS = text(
+    f"""{_PUBLIC_APPROVAL_SELECT}
+    WHERE approval.status = ANY(:public_statuses)
+    ORDER BY approval.requested_at DESC, approval.approval_id DESC
+    """
+)
+
+_SELECT_PUBLIC_APPROVAL = text(
+    f"""{_PUBLIC_APPROVAL_SELECT}
+    WHERE approval.approval_id = :approval_id
+      AND approval.status = ANY(:public_statuses)
+    """
+)
+
+
+def _public_tool_records(value: object) -> tuple[PublicToolCallRecord, ...]:
+    if not isinstance(value, list):
+        raise RepositoryContractError("PUBLIC_TOOL_ROWS_INVALID")
+    records: list[PublicToolCallRecord] = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != {"tool_name", "status"}:
+            raise RepositoryContractError("PUBLIC_TOOL_ROW_INVALID")
+        try:
+            records.append(
+                PublicToolCallRecord(
+                    tool_name=_require_text(item["tool_name"], "tool_name"),
+                    status=ToolCallStatus(item["status"]),
+                )
+            )
+        except ValueError as exc:
+            raise RepositoryContractError("PUBLIC_TOOL_STATUS_INVALID") from exc
+    return tuple(records)
+
+
+def _public_delivery_records(value: object) -> tuple[PublicDeliveryRecord, ...]:
+    if not isinstance(value, list):
+        raise RepositoryContractError("PUBLIC_DELIVERY_ROWS_INVALID")
+    records: list[PublicDeliveryRecord] = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != {"channel", "status"}:
+            raise RepositoryContractError("PUBLIC_DELIVERY_ROW_INVALID")
+        try:
+            records.append(
+                PublicDeliveryRecord(
+                    channel=DeliveryChannel(item["channel"]),
+                    status=DeliveryStatus(item["status"]),
+                )
+            )
+        except ValueError as exc:
+            raise RepositoryContractError("PUBLIC_DELIVERY_VALUE_INVALID") from exc
+    return tuple(records)
+
+
+def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
+    try:
+        predicted = (
+            None
+            if row.predicted_fault_code is None
+            else FaultHypothesis(row.predicted_fault_code)
+        )
+        recommended = (
+            None
+            if row.recommended_action is None
+            else ActionCode(row.recommended_action)
+        )
+        status = RunStatus(row.status)
+    except ValueError as exc:
+        raise RepositoryContractError("PUBLIC_RUN_ENUM_INVALID") from exc
+    if row.action_id is not None:
+        try:
+            stored_action = ActionCode(row.stored_action_code)
+        except (TypeError, ValueError) as exc:
+            raise RepositoryContractError("PUBLIC_RUN_ACTION_MISSING") from exc
+        if stored_action is not recommended:
+            raise RepositoryContractError("PUBLIC_RUN_ACTION_MISMATCH")
+    if row.approval_id is not None and row.approval_agent_run_id != row.agent_run_id:
+        raise RepositoryContractError("PUBLIC_RUN_APPROVAL_MISMATCH")
+    latency_ms = _active_latency_snapshot_ms(
+        status=status,
+        subtotal_ms=row.latency_ms,
+        started_at=row.created_at,
+        timing=row.active_timing,
+        now=row.observed_at,
+    )
+    llm_model = _require_text(row.llm_model, "llm_model")
+    confidence = row.confidence
+    return PublicAgentRunRecord(
+        agent_run_id=row.agent_run_id,
+        created_at=row.created_at,
+        requested_alarm=_alarm_ref(row.requested_alarm_source, row.requested_alarm_id),
+        chamber_id=row.chamber_id,
+        predicted_fault_code=predicted,
+        confidence=(
+            float(confidence) if isinstance(confidence, Decimal) else confidence
+        ),
+        recommended_action=recommended,
+        status=status,
+        action_id=row.action_id,
+        approval_id=row.approval_id,
+        tools=_public_tool_records(row.tools),
+        deliveries=_public_delivery_records(row.deliveries),
+        latency_ms=latency_ms,
+        llm_model=llm_model,
+    )
+
+
+def list_agent_runs_public(
+    connection: Connection,
+    *,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> list[PublicAgentRunRecord]:
+    """공개 실행 목록을 행 수와 무관한 단일 query로 읽는다.
+
+    Tool input/output/error와 delivery 전송 상세는 SELECT 자체에서 제외한다. 공개
+    serializer가 필드를 버리는 방식보다 DB 경계에서 읽지 않는 편이 누출 면적이 작다.
+    """
+
+    rows = _fetch_all(
+        connection,
+        _SELECT_PUBLIC_AGENT_RUNS,
+        {
+            "date_from": date_from,
+            "date_to": date_to,
+            "limit": PUBLIC_AGENT_RUN_LIMIT,
+        },
+    )
+    records: list[PublicAgentRunRecord] = []
+    for row in rows:
+        try:
+            records.append(_public_agent_run_record(row))
+        except RepositoryContractError as exc:
+            # 식별자·row·원문은 로그에 넣지 않는다. 한 손상 행이 정상 실행 이력을
+            # 가리지 않되 운영자는 고정 code로 원인을 집계할 수 있다.
+            record_public_read_omission("agent_run", exc.code)
+    return records
+
+
+def _public_approval_record(row: Row[Any]) -> PublicApprovalRecord:
+    required_child_values = (
+        row.lot_id,
+        row.chamber_id,
+        row.predicted_fault_code,
+        row.action_code,
+        row.reason,
+        row.linked_agent_run_id,
+        row.linked_action_id,
+        row.linked_lot_id,
+        row.linked_chamber_id,
+        row.action_lot_id,
+        row.action_chamber_id,
+    )
+    if any(value is None for value in required_child_values):
+        raise RepositoryContractError("PUBLIC_APPROVAL_CHILD_MISSING")
+
+    equipment_ids = row.equipment_ids
+    if not isinstance(equipment_ids, list) or len(equipment_ids) != 1:
+        raise RepositoryContractError("PUBLIC_APPROVAL_EQUIPMENT_NOT_EXACTLY_ONE")
+    equipment_id = _require_text(equipment_ids[0], "equipment_id")
+    if (
+        row.linked_agent_run_id != row.agent_run_id
+        or row.linked_action_id != row.action_id
+        or row.linked_lot_id != row.lot_id
+        or row.linked_chamber_id != row.chamber_id
+        or row.action_lot_id != row.lot_id
+        or row.action_chamber_id != row.chamber_id
+    ):
+        raise RepositoryContractError("PUBLIC_APPROVAL_IDENTITY_MISMATCH")
+    try:
+        status = ApprovalStatus(row.status)
+        if status not in {
+            ApprovalStatus.PENDING,
+            ApprovalStatus.APPROVED,
+            ApprovalStatus.REJECTED,
+        }:
+            raise ValueError
+        action_code = ActionCode(row.action_code)
+        if action_code is not ActionCode.EQP_HOLD:
+            raise ValueError
+        predicted = FaultHypothesis(row.predicted_fault_code)
+    except ValueError as exc:
+        raise RepositoryContractError("PUBLIC_APPROVAL_ENUM_INVALID") from exc
+
+    return PublicApprovalRecord(
+        approval_id=row.approval_id,
+        agent_run_id=row.agent_run_id,
+        action_id=row.action_id,
+        created_at=row.created_at,
+        lot_id=_require_text(row.lot_id, "lot_id"),
+        equipment_id=equipment_id,
+        chamber_id=_require_text(row.chamber_id, "chamber_id"),
+        predicted_fault_code=predicted,
+        action_code=action_code,
+        reason=_require_text(row.reason, "reason"),
+        status=status,
+        decided_by=row.decided_by,
+        decided_at=row.decided_at,
+        decision_comment=row.decision_comment,
+    )
+
+
+def list_approvals_public(connection: Connection) -> list[PublicApprovalRecord]:
+    """공개 승인 이력을 단일 query로 읽고 손상 행만 fail-closed 격리한다."""
+
+    rows = _fetch_all(
+        connection,
+        _SELECT_PUBLIC_APPROVALS,
+        {
+            "public_statuses": [
+                ApprovalStatus.PENDING.value,
+                ApprovalStatus.APPROVED.value,
+                ApprovalStatus.REJECTED.value,
+            ]
+        },
+    )
+    records: list[PublicApprovalRecord] = []
+    for row in rows:
+        try:
+            records.append(_public_approval_record(row))
+        except RepositoryContractError as exc:
+            record_public_read_omission("approval", exc.code)
+    return records
+
+
+def get_approval_public(
+    connection: Connection, approval_id: str
+) -> PublicApprovalRecord:
+    """결정 UoW 안에서 대상 한 건과 child cardinality를 되읽는다."""
+
+    target = _require_text(approval_id, "approval_id")
+    row = _fetch_one(
+        connection,
+        _SELECT_PUBLIC_APPROVAL,
+        {
+            "approval_id": target,
+            "public_statuses": [
+                ApprovalStatus.PENDING.value,
+                ApprovalStatus.APPROVED.value,
+                ApprovalStatus.REJECTED.value,
+            ],
+        },
+        "APPROVAL_NOT_FOUND",
+    )
+    return _public_approval_record(row)

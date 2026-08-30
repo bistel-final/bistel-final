@@ -8,7 +8,7 @@ canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 �
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Final, Literal, Protocol, TypedDict
+from typing import TYPE_CHECKING, Final, Literal, NotRequired, Protocol, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -234,6 +234,8 @@ class PersistResult(StateModel):
 class AgentGraphInput(TypedDict):
     requested_alarm: AlarmRef
     autonomy_level: int
+    # public body에는 없고 POST orchestration이 Runnable config와 함께 주입한다.
+    thread_id: NotRequired[str]
 
 
 class AgentGraphState(TypedDict, total=False):

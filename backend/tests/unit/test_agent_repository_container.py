@@ -714,7 +714,8 @@ def test_evidence_and_metrics_round_trip(engine: Any) -> None:
     with engine.begin() as connection:
         run = repo.create_agent_run(connection, _command())
     assert run.evidence is None
-    assert (run.input_tokens, run.output_tokens, run.latency_ms) == (None, None, None)
+    # public 목록은 202 직후에도 required latency를 반환하므로 생성 subtotal은 0이다.
+    assert (run.input_tokens, run.output_tokens, run.latency_ms) == (None, None, 0)
 
     with engine.begin() as connection:
         finished = repo.finish_agent_run(

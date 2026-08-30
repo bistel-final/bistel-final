@@ -1,7 +1,11 @@
+import logging
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from sqlalchemy.engine import Connection
 
+from app.agent.ask import AgentAskUnavailable
 from app.agent.delivery_callback import (
     DeliveryCallbackService,
     DeliveryResult,
@@ -11,9 +15,185 @@ from app.agent.delivery_callback import (
     parse_callback_body,
     validate_json_content_type,
 )
-from app.common.exceptions import IdempotencyConflictError
+from app.agent.public_read_model import (
+    PublicDateRangeError,
+    list_public_agent_runs,
+    list_public_approvals,
+)
+from app.agent.public_schemas import (
+    AgentAskRequest,
+    AgentAskResponse,
+    PublicAgentRunItem,
+    PublicApprovalItem,
+)
+from app.agent.repository import (
+    RepositoryContractError,
+    RepositoryRetryable,
+    RepositoryUnavailable,
+)
+from app.agent.runtime_composition import (
+    AgentRuntime,
+    get_agent_runtime,
+    runtime_http_error,
+)
+from app.agent.schemas import (
+    AgentRunAcceptedResponse,
+    AgentRunCreateRequest,
+    ApprovalDecisionRequest,
+)
+from app.common.db import get_db_connection
+from app.common.exceptions import (
+    AppError,
+    DependencyNotReadyError,
+    IdempotencyConflictError,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Agent"])
+
+
+def _agent_read_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail="Agent 조회 데이터베이스가 준비되지 않았습니다.",
+    )
+
+
+def _agent_read_contract_error(exc: RepositoryContractError) -> AppError:
+    """손상 code만 기록하고 public 응답에는 내부 row·driver 정보를 숨긴다."""
+
+    logger.error("agent public read contract failed (code=%s)", exc.code)
+    mapped = runtime_http_error(exc)
+    if isinstance(mapped, AppError):
+        return mapped
+    return AppError()
+
+
+@router.post(
+    "/agent/runs",
+    response_model=AgentRunAcceptedResponse,
+    status_code=202,
+)
+def create_agent_run(
+    payload: AgentRunCreateRequest,
+    background_tasks: BackgroundTasks,
+    runtime: Annotated[AgentRuntime, Depends(get_agent_runtime)],
+) -> AgentRunAcceptedResponse:
+    """첫 durable checkpoint까지 동기 확정한 뒤 나머지 graph를 이어간다."""
+
+    try:
+        started = runtime.start_run(payload.alarm)
+        try:
+            # add_task는 현재 in-memory 등록만 보상한다. 202 뒤 process 종료 창은
+            # agent-background-recovery runbook의 수동 복구 범위다.
+            background_tasks.add_task(
+                runtime.continue_run,
+                started.thread_id,
+                started.agent_run_id,
+            )
+        except Exception:
+            runtime.fail_registered_run(started.agent_run_id)
+            raise
+    except Exception as exc:
+        mapped = runtime_http_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    return AgentRunAcceptedResponse(
+        agent_run_id=started.agent_run_id,
+        status="RUNNING",
+        alarm=started.alarm,
+    )
+
+
+@router.get("/agent/runs", response_model=list[PublicAgentRunItem])
+def read_agent_runs(
+    connection: Annotated[Connection, Depends(get_db_connection)],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[PublicAgentRunItem]:
+    """Auto Analysis 실행 이력. API v3 호환 bare array다."""
+
+    try:
+        return list_public_agent_runs(
+            connection,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except PublicDateRangeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="date_from과 date_to를 올바른 순서로 함께 보내야 합니다.",
+        ) from exc
+    except (RepositoryRetryable, RepositoryUnavailable) as exc:
+        raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
+
+
+@router.post("/agent/ask", response_model=AgentAskResponse)
+def ask_agent(
+    payload: AgentAskRequest,
+    runtime: Annotated[AgentRuntime, Depends(get_agent_runtime)],
+) -> AgentAskResponse:
+    """A/B 읽기 Tool 근거만 사용하는 Chat facade."""
+
+    try:
+        return runtime.ask_public(payload.question)
+    except AgentAskUnavailable as exc:
+        raise DependencyNotReadyError() from exc
+    except Exception as exc:
+        mapped = runtime_http_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+
+
+@router.get("/approvals", response_model=list[PublicApprovalItem])
+def read_approvals(
+    connection: Annotated[Connection, Depends(get_db_connection)],
+) -> list[PublicApprovalItem]:
+    """EQP_HOLD 승인 대기·결정 이력. 내부 AUTO·EXPIRED는 노출하지 않는다."""
+
+    try:
+        return list_public_approvals(connection)
+    except (RepositoryRetryable, RepositoryUnavailable) as exc:
+        raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
+
+
+@router.post(
+    "/approvals/{approval_id}/decision",
+    response_model=PublicApprovalItem,
+)
+def decide_public_approval(
+    approval_id: str,
+    payload: ApprovalDecisionRequest,
+    background_tasks: BackgroundTasks,
+    runtime: Annotated[AgentRuntime, Depends(get_agent_runtime)],
+) -> PublicApprovalItem:
+    """결정·공개 projection을 한 UoW로 commit한 뒤 graph 재개를 등록한다."""
+
+    try:
+        decided = runtime.decide_approval_public(approval_id, payload)
+        try:
+            # 등록-time 예외만 보상한다. 응답 뒤 process 종료는 runbook에서 대조한다.
+            background_tasks.add_task(
+                runtime.resume_decided,
+                decided.thread_id,
+                decided.agent_run_id,
+            )
+        except Exception:
+            runtime.fail_registered_run(decided.agent_run_id)
+            raise
+    except Exception as exc:
+        mapped = runtime_http_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    return decided.item
 
 
 @router.post(

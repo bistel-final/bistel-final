@@ -87,3 +87,34 @@ def test_legacy_chat_does_not_require_new_usage_fields(monkeypatch) -> None:
         ),
     )
     assert llm.chat([{"role": "user", "content": "q"}]) == "legacy"
+
+
+def test_preflight_returns_only_a_model_present_in_provider_list(monkeypatch) -> None:
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "configured-model")
+    monkeypatch.setattr(
+        llm.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(
+            200,
+            json={"data": [{"id": "configured-model"}]},
+        ),
+    )
+
+    assert llm.preflight_model() == "configured-model"
+
+
+def test_preflight_fails_closed_when_configured_model_is_absent(monkeypatch) -> None:
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "configured-model")
+    monkeypatch.setattr(
+        llm.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(
+            200,
+            json={"data": [{"id": "another-model"}]},
+        ),
+    )
+
+    with pytest.raises(llm.LlmNotReadyError):
+        llm.preflight_model()
