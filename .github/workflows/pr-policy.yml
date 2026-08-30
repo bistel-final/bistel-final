@@ -73,6 +73,37 @@ jobs:
             fi
           done
 
+  frontend-contract:
+    name: Frontend contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verify navigation contract
+        working-directory: frontend
+        run: npm run test:navigation
+
   # `V5-CM-1.6`이 corrected 계열을 삭제하면서 이 job에서 corrected step만 뺐다.
   # **job 자체는 남긴다** — rehearsal lifecycle·recovery lock·V5 artifact write·공용
   # 전환 argv 계약이 Windows에서 도는 곳은 여기뿐이라, 통째로 지우면 그 검증들이 함께

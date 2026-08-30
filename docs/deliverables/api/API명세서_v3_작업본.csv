@@ -26,10 +26,10 @@
 확장,C,GET,/actions/{action_id},action·delivery 상세,path: action_id,ActionDetailResponse,"404,422,503",단건,channel별 상태
 확장,C,POST,/actions/{action_id}/deliveries/{channel}/retry,실패 channel 재전송,"path: action_id; channel=EMAIL|MES",PublicDeliveryResult,"404,409,422,503",멱등성,"DeliveryResult와 같은 field; public MES는 내부 MES_MOCK의 projection"
 내부,C,POST,/internal/actions/{action_id}/delivery,delivery 상태 write-back,"HMAC timestamp/signature; body: event_id,channel=EMAIL|MES_MOCK,status=SENT|FAILED,provider_message_id,request_hash,completed_at,error_code",DeliveryResult,"401,404,409,422,503",action+channel+request_hash 멱등,n8n·Kafka worker 전용; replay window 300초
-확장,D,POST,/analytics/query,선택 자연어 Text2SQL,"body: question 1..1000",AnalysisQueryResponse,"422,503","read-only SELECT; row limit","필수 5화면 범위 밖; 정책 거부는 200+is_rejected=true; 합성 GT 제외"
-확장,D,POST,/analytics/validate,SQL 실행 없는 검증,body: sql 1..20000,SqlValidateResponse,422,12단계 검증,실행 없음
-확장,D,GET,/analytics/history,질의 이력,"query: page,size,filters",PageEnvelope<NlQueryLogItem>,422,"asked_at DESC; id DESC",읽기 전용
-확장,D,GET,/analytics/evaluations,Text2SQL 평가 이력,"query: page,size,latest",PageEnvelope<EvaluationResponse>,422,"executed_at DESC; run_id DESC",평가 provenance
-확장,D,GET,/audit-logs/paged,페이지 감사 조회,"query: page,size,filters",AuditLogPageResponse,"422,503","occurred_at DESC; audit_id DESC","event count는 동일 전체 filter 기준"
+팀필수,D,POST,/analytics/query,자연어 Text2SQL,"body: question 1..1000",AnalysisQueryResponse,"422,503","read-only SELECT; row limit","7화면 release 필수; 정책 거부는 200+is_rejected=true; 합성 GT 제외"
+팀필수,D,POST,/analytics/validate,SQL 실행 없는 검증,body: sql 1..20000,SqlValidateResponse,422,12단계 검증,실행 없음
+팀필수,D,GET,/analytics/history,질의 이력·재실행 원본,"query: page,size,filters",NlQueryHistoryResponse,422,"asked_at DESC; nl_query_log_id DESC",읽기 전용
+팀필수,D,GET,/analytics/evaluations,Text2SQL 평가 이력,"query: latest,page,size",EvaluationListResponse,422,"executed_at DESC; run_id DESC",immutable 평가 artifact read-only projection
+팀필수,D,GET,/audit-logs/paged,전역 페이지 감사 조회,"query: page,size,filters",AuditLogPageResponse,"422,503","occurred_at DESC; audit_id DESC","Agent 상세 감사와 구분; event count는 동일 전체 filter 기준"
 운영,Common,GET,/health,process liveness,없음,HealthResponse,500,업무 API 수 제외,외부 의존성 미검사
 운영,Common,GET,/health/ready,통합 readiness,없음,ReadinessResponse,503,업무 API 수 제외,"PostgreSQL Runtime epoch·schema·권한; reference migration marker; Neo4j 44/85 marker·fingerprint; RAG 3 IDs·source/corrected hash·chunk·NULL embedding 0·dimension 1024·search smoke; n8n; Kafka topics; 실패도 같은 DTO+NOT_READY"

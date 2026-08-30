@@ -15,15 +15,18 @@ API v3의 기능 범위와 정책은 요구사항정의서 v2.1과 시스템설�
 | 보안 필수 public API | 1개 | `GET /relations/chambers/{chamber_id}` |
 | 실행 필수 public API | 1개 | `POST /agent/runs` |
 | 필수 internal callback | 1개 | `POST /internal/actions/{action_id}/delivery` |
+| 팀 release 필수 확장 | 5개 | Analytics 4개 + 전역 Audit 1개 |
 | 운영·진단 API | 2개 | `/health`, `/health/ready`; 업무 API 수에서 제외 |
 
-따라서 필수 public 업무 API는 11개(호환 9 + 보안 1 + 실행 1)다. internal callback과 health는
-각각 별도 scope이며 public 업무 API 개수에 합산하지 않는다.
+따라서 멘토 core public 업무 API는 11개(호환 9 + 보안 1 + 실행 1)이고, 팀 release public
+업무 API는 확장 5개를 더한 16개다. internal callback과 health는 각각 별도 scope이며 최종
+contract Gate는 core 14 operation + team 5 operation = 19개를 대조한다.
 
 Ontology public API는 선택 chamber의 subgraph와 화면·Agent가 함께 쓰는 context를 한 응답으로
 반환한다. 같은 path의 별도 DTO나 전체 graph용 중복 public endpoint를 만들지 않으며, Neo4j
 URI·계정·Cypher를 노출하지 않는다. `get_equipment_context`는 같은 B service를 사용하는 내부
-Agent Tool adapter다. Text2SQL·Analytics는 필수 9개를 깨지 않는 선택 확장으로 구분한다.
+Agent Tool adapter다. 멘토 core 분류는 유지하되 Text2SQL·이력·평가와 전역 감사 5개는 팀
+release 필수 overlay로 별도 검증한다.
 
 공용 PostgreSQL·Neo4j·n8n은 외부 canonical 서비스다. 팀 compose 범위는
 Backend·Frontend·Kafka·MES Mock뿐이며 API 문서나 OpenAPI가 두 번째 DB·Neo4j·n8n을 기본
@@ -42,7 +45,7 @@ non-null·1024차원·검색 smoke, n8n, Kafka metadata·필수 topic을 의존�
 교차검토를 마친 v3 계약을 기준으로 Backend DTO·계약 테스트와 생성기를 함께 갱신하고
 CSV·Markdown·PDF를 동일 revision으로 생성한다. 생성 후에는 다음을 확인한다.
 
-- 필수 public 11개(호환 9 + 보안 1 + 실행 1), internal callback 1개, 운영 2개의
+- core public 11개(호환 9 + 보안 1 + 실행 1), internal callback 1개, 운영 2개와 팀 release 5개의
   누락·중복·혼입 여부
 - Markdown·CSV·PDF·OpenAPI의 path·DTO·Enum 일치 여부
 - `git diff --check`

@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:navigation": "node scripts/navigation-contract.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

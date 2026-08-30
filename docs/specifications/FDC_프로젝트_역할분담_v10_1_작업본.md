@@ -95,7 +95,7 @@ anomaly score는 모델 상태와 이상 근거를 설명하기 위한 보조 �
 contract/integration test 및 평가 artifact까지 책임진다. 공통 파일 변경은 담당자 한 명이 독점하지
 않으며 계약 소유자와 소비자가 함께 검토한다.
 
-### 3.2 5개 사용자 화면
+### 3.2 7개 사용자 화면
 
 | 사용자 화면 | 주 책임 | 협업 |
 |---|---|---|
@@ -104,15 +104,14 @@ contract/integration test 및 평가 artifact까지 책임진다. 공통 파일 
 | 3. Agent 분석 | C | A 감지, B 근거, D 감사 조회 |
 | 4. 문서 검색 | B | C 근거 deep link |
 | 5. Ontology | B | Neo4j 44/85 관계 시각화, C의 근거 연결 |
+| 6. 자연어 분석 | D | 질의·SQL·표·차트, 이력·평가 보조 탭 |
+| 7. 감사로그 | D | 전체 이벤트 검색·필터·페이지·유형 집계 |
 
-기존 React 상세 route나 승인·감사 탭은 위 다섯 화면의 내부 route·subview로 유지할 수 있다.
-별도 사용자 화면 수를 늘리는 것은 필수 범위가 아니다.
+Agent 화면의 감사 탭은 선택 run·action·approval 문맥을 설명하고, 독립 감사로그 화면은 전체
+이벤트를 검색·필터·집계한다. 자연어 분석의 이력·평가는 같은 화면의 보조 탭이라 8번째 메뉴가
+아니다. `/knowledge`는 숨김 호환 route, `/traces`·`/actions`는 상세 흐름으로 유지한다.
 
-현재 저장소 React의 7개 메뉴와 기존 route는 아직 이 목표에 맞춰지지 않았으므로 완료로 승계하지
-않는다. WBS v5에는 5개 메뉴·호환 projection·Ontology 보안 API·감사 wrapper 소비가 별도
-Frontend adapter Task로 배정되어 있다.
-
-### 3.3 최소 API와 확장 API
+### 3.3 멘토 기준 API와 팀 release 확장 API
 
 최종 패키지의 물리 React `App.jsx`와 `검토질문_답변.html`이 확정한 다섯 화면을 우선한다.
 `02_화면별_API_가이드.md`에는 제거된 Text2SQL 화면이 남아 있으므로 API 목록 부분은 stale로
@@ -123,8 +122,10 @@ API 없이 Neo4j Browser와 기본 계정을 직접 노출하므로, 프로젝�
 `GET /relations/chambers/{chamber_id}`를 보안 필수 API로 추가한다. Alarm 화면에서 source-aware
 분석을 시작하는 `POST /agent/runs`도 프로젝트 실행 필수로 둔다. 따라서 public 필수는 호환
 9개 + 보안 1개 + 실행 1개다.
-Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관리한다. 동일 path가 요청 조건에 따라
-배열과 페이지 객체를 번갈아 반환하지 않는다. 상세 계약은 `API명세서_v3_작업본.md`를 따른다.
+멘토 기준 public 11개는 그대로 보존한다. 팀은 `POST /analytics/query`,
+`POST /analytics/validate`, `GET /analytics/history`, `GET /analytics/evaluations`,
+`GET /audit-logs/paged` 5개를 release 필수 확장으로 추가한다. 나머지 상세·페이지·재시도 API는
+선택 확장이다. 동일 path가 요청 조건에 따라 배열과 페이지 객체를 번갈아 반환하지 않는다.
 
 ### 3.4 공용 DB와 파괴적 작업
 
@@ -148,7 +149,7 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 | A. Detection | 신동원 | Summary/evaluation/알람/R03 결정론 재현, 모델 score 근거, 합성 라벨 격리 평가 | `GET /alarms`, `GET /trace`, `GET /parameters` | 화면 1·2, 감지·모델 평가 |
 | B. Knowledge | 강연권 | Neo4j 44/85 안전 검증, RAG 문서 정정·검색, 근거 provenance | `POST /documents/search`, 보안 필수 `GET /relations/chambers/{chamber_id}` | 화면 4·5, 관계·검색 평가 |
 | C. Agent·HITL | 방대혁 | LangGraph, 원인 가설, 3단계 조치, 승인, n8n SMTP, Kafka MES Mock | 호환 4개 + 실행 필수 `POST /agent/runs` + 필수 내부 delivery callback | 화면 3, 상태 전이·E2E |
-| D. Analytics·Audit | 천승현 | 감사 read model/API, 선택 확장 Text2SQL·통계·차트 | `GET /audit-logs` | 화면 3 감사 탭, 선택 확장 SQL 방어·정확도 |
+| D. Analytics·Audit | 천승현 | Text2SQL·통계·차트·질의/평가 이력, 감사 read model/API | `GET /audit-logs` + 팀 release 5개 | 화면 6·7, Agent 문맥 감사 연동, SQL 방어·정확도 |
 
 ---
 
@@ -164,13 +165,13 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
   참고 Backend는 실행 이력을 메모리로 합성한다. Common이 최종 base DDL 위에 Agent 실행·승인·
   조치·감사 table migration 계보를 설계·적용한다.
 - `V5-CM-3.1`은 빈 `r03_alarm_history`와 저장 알람 189건 기준 `v_alarm_event` 골격까지만
-  생성한다. A가 이후 R03 3건을 파생해 192건으로 완성한다. `nl_query_log`는 D의 선택
-  Text2SQL을 구현할 때 evaluation DB에만 만든다.
+  생성한다. A가 이후 R03 3건을 파생해 192건으로 완성한다. `nl_query_log`는 D의 최소권한
+  writer가 runtime에 기록하고 평가 실행은 격리 evaluation DB를 사용한다.
 - RAG의 vector/document schema와 corrected 문서 3종은 B 소유 migration·loader로 세 논리 DB에
   동일하게 적용하며 서비스 readiness는 runtime DB만 본다.
 - 공통 `AlarmRef`, Action/Approval/Delivery Enum, 오류 응답, append-only audit 계약을 관리한다.
-- 호환 필수 API 9개, Ontology 보안 필수 API 1개, Agent 실행 필수 API 1개의 OpenAPI·React
-  contract test를 통합한다.
+- 호환 필수 API 9개, Ontology 보안 필수 1개, Agent 실행 필수 1개와 팀 release 확장 5개의
+  독립 OpenAPI·React contract test를 통합한다.
 - `kosa_text2sql`을 Text2SQL 화면 활성 여부와 무관한 격리 evaluation/reference DB로 유지하고,
   선택 Text2SQL에는 별도 readonly projection만 제공한다.
 
@@ -336,14 +337,13 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 
 ---
 
-## 9. D — 감사·선택 확장 Analytics Full-stack
+## 9. D — 감사·Analytics Full-stack
 
 ### 9.1 담당 범위
 
 - 공통 append-only 감사로그의 조회 repository/API와 화면을 담당한다.
-- Text2SQL은 최종 5화면과 필수 인수 기준에서 제거됐다. 일정과 필수 E2E를 막지 않는 선택
-  확장으로만 유지한다.
-- 선택 구현 시 최종 schema와 허용 column만 조회하고 SQL AST 방어, timeout, row limit,
+- Text2SQL·질의 이력·평가 이력과 전역 감사로그 화면은 팀의 7화면 release 필수 범위다.
+- 최종 schema와 허용 column만 조회하고 SQL AST 방어, timeout, row limit,
   deterministic 통계·차트 plan 및 질의 이력을 관리한다.
 
 ### 9.2 감사 조회 책임
@@ -355,10 +355,9 @@ Text2SQL과 기존 상세·페이지·재시도 API는 선택 확장으로 관�
 
 ### 9.3 API·화면·평가 책임
 
-- 필수: `GET /audit-logs`
-- 선택 확장: 자연어 질의, SQL 검증, 질의 이력, Text2SQL 평가 이력, paged 감사 조회
-- 화면 3의 감사 subview를 연결한다. Text2SQL을 구현할 때만 별도 route/subview를 활성화한다.
-- 선택 Text2SQL의 정책 거부는 SQL 미실행 상태의 구조화된 정상 결과로 반환하고 요청 형식
+- 필수: `GET /audit-logs`와 팀 release 5개 API
+- 화면 3의 문맥 감사 subview, 화면 6 자연어 분석·이력·평가, 화면 7 전역 감사를 연결한다.
+- Text2SQL의 정책 거부는 SQL 미실행 상태의 구조화된 정상 결과로 반환하고 요청 형식
   오류와 구분한다.
 
 ---

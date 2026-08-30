@@ -7,9 +7,9 @@
 
 ## 디자인 기준
 
-- Dashboard·Alarm History·Agent·Documents·Ontology 5개 화면을 canonical 사용자 영역으로
-  사용한다. Text2SQL·Analytics와 기존 8개 route family는 현행 요구사항에서 확장으로 명시한
-  경우에만 유지한다.
+- Dashboard·Alarm History·Agent·Documents·Ontology·자연어 분석·감사로그 7개를 정확한 순서의
+  primary navigation으로 사용한다. 자연어 분석의 이력·평가는 보조 탭이며 8번째 메뉴가 아니다.
+  `/knowledge`는 숨김 호환 route, `/traces`·`/actions`는 독립 route에서 제외한다.
 - `frontend/_design_export/v2/`는 시각·레이아웃 참고본이다. 데이터·API 계약의 근거가 아니다.
 - `frontend/_design_export/BISTelligence FDC 이상감지 플랫폼/`은 재설계 이전 이력이며
   레이아웃·Mock·계약의 기준으로 사용하지 않는다.
@@ -24,6 +24,9 @@
 - `POST /internal/actions/{action_id}/delivery` 1개는 n8n·Kafka 결과 write-back용 internal
   callback이며 Frontend에서 호출하지 않는다.
 - `/health`·`/health/ready` 2개는 내부 운영·진단 API이며 public 업무 API 수에서 제외한다.
+- `POST /analytics/query`, `POST /analytics/validate`, `GET /analytics/history`,
+  `GET /analytics/evaluations`, `GET /audit-logs/paged` 5개는 팀 release 필수 확장이다.
+  Agent 감사는 선택 run·action·approval 문맥, 독립 감사 화면은 전역 검색·필터·집계다.
 - `POST /agent/runs`의 public 요청은 `AlarmRef(source, alarm_id)`를 사용한다. Frontend가 내부
   DB 키나 합성 평가 라벨을 조립하지 않는다.
 

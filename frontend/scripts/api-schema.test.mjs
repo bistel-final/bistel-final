@@ -61,7 +61,7 @@ const CASES = [
     ['approval_id', 'action_id', 'approval_status', 'send_status', 'agent_run_status', 'decided_by', 'decided_at', 'decision_comment'],
   ],
   [
-    'GET /audit-logs',
+    'GET /audit-logs/paged',
     () => analytics.getAuditLogs(),
     [...PAGE, 'event_types', 'event_type_counts'],
     ['audit_id', 'occurred_at', 'actor_type', 'actor_id', 'event_type', 'entity_type', 'entity_id', 'before', 'after', 'detail'],

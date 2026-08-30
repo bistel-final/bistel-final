@@ -19,6 +19,7 @@ from tests.support.api_contract_baseline import (
     ContractValidationError,
     load_optional_contract,
     load_required_contract,
+    load_team_release_contract,
     normalize_openapi_contract,
 )
 
@@ -27,6 +28,7 @@ BACKEND_ROOT = REPOSITORY_ROOT / "backend"
 FIXTURE_ROOT = BACKEND_ROOT / "tests" / "fixtures" / "v5_cm_4_4"
 REQUIRED_FIXTURE = FIXTURE_ROOT / "api_contract_baseline.json"
 OPTIONAL_FIXTURE = FIXTURE_ROOT / "api_contract_optional.json"
+TEAM_RELEASE_FIXTURE = FIXTURE_ROOT / "api_contract_team_release.json"
 SUPPORT_MODULE = BACKEND_ROOT / "tests" / "support" / "api_contract_baseline.py"
 API_MARKDOWN = (
     REPOSITORY_ROOT / "docs" / "deliverables" / "api" / "API명세서_v3_작업본.md"
@@ -63,6 +65,13 @@ DEFERRED_AGENT_DETAIL_KEYS = {
     ("GET", "/agent/runs/{run_id}"),
     ("GET", "/actions"),
     ("GET", "/actions/{action_id}"),
+}
+TEAM_RELEASE_KEYS = {
+    ("POST", "/analytics/query"),
+    ("POST", "/analytics/validate"),
+    ("GET", "/analytics/history"),
+    ("GET", "/analytics/evaluations"),
+    ("GET", "/audit-logs/paged"),
 }
 
 
@@ -144,6 +153,15 @@ def _markdown_optional_keys(text: str) -> set[tuple[str, str]]:
     rows = _markdown_table(
         text,
         "### 5.2 선택 확장 API",
+        "| 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |",
+    )
+    return {(row[1], row[2].strip("`")) for row in rows}
+
+
+def _markdown_team_release_keys(text: str) -> set[tuple[str, str]]:
+    rows = _markdown_table(
+        text,
+        "### 5.3 팀 release 필수 확장 API",
         "| 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |",
     )
     return {(row[1], row[2].strip("`")) for row in rows}
@@ -234,11 +252,13 @@ def test_public_support_api_is_typed_and_import_side_effect_free() -> None:
         "NormalizedContract",
         "load_optional_contract",
         "load_required_contract",
+        "load_team_release_contract",
         "normalize_openapi_contract",
     ]
     for function_name in (
         "load_required_contract",
         "load_optional_contract",
+        "load_team_release_contract",
         "normalize_openapi_contract",
     ):
         signature = inspect.signature(getattr(module, function_name))
@@ -267,7 +287,7 @@ def test_public_support_api_is_typed_and_import_side_effect_free() -> None:
 
 
 def test_fixtures_are_canonical_utf8_sorted_json() -> None:
-    for path in (REQUIRED_FIXTURE, OPTIONAL_FIXTURE):
+    for path in (REQUIRED_FIXTURE, OPTIONAL_FIXTURE, TEAM_RELEASE_FIXTURE):
         raw = path.read_text(encoding="utf-8")
         assert (
             raw
@@ -426,6 +446,29 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
     }
 
 
+def test_team_release_fixture_is_exact_documented_inventory() -> None:
+    fixture = load_team_release_contract()
+    actual = set(_operation_map(fixture))
+    markdown = API_MARKDOWN.read_text(encoding="utf-8")
+    assert actual == TEAM_RELEASE_KEYS == _markdown_team_release_keys(markdown)
+    csv_keys = {
+        (row["Method"], row["Path"]) for row in _csv_rows() if row["구분"] == "팀필수"
+    }
+    assert csv_keys == TEAM_RELEASE_KEYS
+
+
+def test_team_release_matches_implemented_optional_operation_contracts() -> None:
+    optional = _operation_map(load_optional_contract())
+    team_release = _operation_map(load_team_release_contract())
+    common = set(optional) & set(team_release)
+    assert common == TEAM_RELEASE_KEYS - {("GET", "/analytics/evaluations")}
+    for key in common:
+        assert team_release[key]["request"] == optional[key]["request"]
+        assert team_release[key]["response_shape"] == optional[key]["response_shape"]
+        assert team_release[key]["responses"] == optional[key]["responses"]
+        assert team_release[key]["success_status"] == optional[key]["success_status"]
+
+
 def test_frontend_only_agent_detail_extensions_are_not_promoted() -> None:
     optional_keys = set(_operation_map(load_optional_contract()))
     allowlist = _markdown_optional_keys(API_MARKDOWN.read_text(encoding="utf-8"))
@@ -455,6 +498,11 @@ def test_common_components_are_self_contained_and_equal() -> None:
     assert common == {"ErrorResponse"}
     assert all(required[name] == optional[name] for name in common)
 
+    team_release = load_team_release_contract()["components"]
+    for baseline in (required, optional):
+        shared = set(baseline) & set(team_release)
+        assert all(baseline[name] == team_release[name] for name in shared)
+
 
 def test_optional_loader_rejects_common_component_drift(tmp_path: Path) -> None:
     optional = copy.deepcopy(load_optional_contract())
@@ -463,11 +511,19 @@ def test_optional_loader_rejects_common_component_drift(tmp_path: Path) -> None:
         load_optional_contract(_write_fixture(tmp_path, optional))
 
 
+def test_team_release_loader_rejects_component_drift(tmp_path: Path) -> None:
+    fixture = copy.deepcopy(load_team_release_contract())
+    fixture["components"]["ErrorResponse"]["fields"]["message"]["nullable"] = True
+    with pytest.raises(ContractValidationError, match="공통 component 불일치"):
+        load_team_release_contract(_write_fixture(tmp_path, fixture))
+
+
 @pytest.mark.parametrize(
     ("loader", "fixture_path"),
     [
         (load_required_contract, REQUIRED_FIXTURE),
         (load_optional_contract, OPTIONAL_FIXTURE),
+        (load_team_release_contract, TEAM_RELEASE_FIXTURE),
     ],
 )
 def test_both_loaders_share_strict_envelope_validation(
@@ -571,6 +627,29 @@ def test_optional_missing_and_deferred_mutations_break_exact_set() -> None:
     fixture["operations"].append(fake)
     with pytest.raises(AssertionError):
         _assert_optional_exact_set(fixture)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("remove-operation", "팀 release operation 집합"),
+        ("weaken-field", "evaluation request 불일치"),
+        ("delete-evaluation-component", "responses.200 ref가 없습니다"),
+    ],
+)
+def test_team_release_mutations_fail_closed(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    fixture = copy.deepcopy(load_team_release_contract())
+    if mutation == "remove-operation":
+        fixture["operations"].pop()
+    elif mutation == "weaken-field":
+        operation = _operation_map(fixture)[("GET", "/analytics/evaluations")]
+        operation["request"]["query"]["latest"]["default"] = False
+    elif mutation == "delete-evaluation-component":
+        del fixture["components"]["EvaluationListResponse"]
+    with pytest.raises(ContractValidationError, match=message):
+        load_team_release_contract(_write_fixture(tmp_path, fixture))
 
 
 def test_baseline_has_no_implementation_openapi_generation_link() -> None:
