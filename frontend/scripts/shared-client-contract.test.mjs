@@ -12,6 +12,8 @@ assert.doesNotMatch(
   /apiClient\.(?:get|post)\(['"]\/(?:agent\/runs|approvals)\/paged/,
   '미구현 Agent paged endpoint를 호출하면 안 됩니다',
 )
+const aliasRegistryUrl = new URL('../../docs/deliverables/api/compatibility_alias_registry.json', import.meta.url)
+const aliasRegistry = JSON.parse(await readFile(aliasRegistryUrl, 'utf8'))
 
 const appRoot = new URL('../src/app/', import.meta.url)
 for (const entry of await readdir(appRoot, { withFileTypes: true })) {
@@ -148,6 +150,44 @@ const detection = await import('../src/shared/api/detection.js?shared-client-rea
 const knowledge = await import('../src/shared/api/knowledge.js?shared-client-real')
 const agent = await import('../src/shared/api/agent.js?shared-client-real')
 const analytics = await import('../src/shared/api/analytics.js?shared-client-real')
+
+const transportModules = new Map([
+  ['frontend/src/shared/api/detection.js', detection],
+  ['frontend/src/shared/api/knowledge.js', knowledge],
+  ['frontend/src/shared/api/agent.js', agent],
+  ['frontend/src/shared/api/analytics.js', analytics],
+])
+const parseTransportSymbol = (reference) => {
+  const [modulePath, exportName, ...rest] = reference.split('#')
+  assert.equal(rest.length, 0, `invalid transport symbol: ${reference}`)
+  assert.ok(modulePath && exportName, `invalid transport symbol: ${reference}`)
+  const module = transportModules.get(modulePath)
+  assert.ok(module, `unregistered transport module: ${modulePath}`)
+  return { module, exportName }
+}
+const transportEntries = aliasRegistry.entries.filter(({ kind }) => kind === 'transport')
+assert.ok(transportEntries.length > 0, 'compatibility registry must contain transport entries')
+assert.equal(new Set(transportEntries.map(({ id }) => id)).size, transportEntries.length, 'transport ids must be unique')
+for (const entry of transportEntries) {
+  const current = parseTransportSymbol(entry.symbol)
+  assert.equal(typeof current.module[current.exportName], 'function', `${entry.id} current export is missing`)
+
+  if (entry.replacement_kind === 'export') {
+    const replacement = parseTransportSymbol(entry.replacement)
+    assert.equal(typeof replacement.module[replacement.exportName], 'function', `${entry.id} replacement export is missing`)
+  } else {
+    assert.match(entry.replacement, /^(GET|POST|PUT|PATCH|DELETE) \/[A-Za-z0-9_/{}/.-]+$/, `${entry.id} endpoint is invalid`)
+  }
+
+  if (entry.export_alias_of) {
+    const target = parseTransportSymbol(entry.export_alias_of)
+    assert.strictEqual(
+      current.module[current.exportName],
+      target.module[target.exportName],
+      `${entry.id} export alias identity drifted`,
+    )
+  }
+}
 
 const realResults = await Promise.all([
   detection.getAlarmsCore({ date_from: undefined, date_to: undefined }),
@@ -400,4 +440,6 @@ const serializedMocks = JSON.stringify(mockResults)
 assert.ok(!serializedMocks.includes('ground_truth_fault_code'))
 assert.ok(!serializedMocks.includes('lot_history.fault_code'))
 
-console.log('shared-client-contract: 11 core transports, run bare adapter, exact mocks, canonical projections passed')
+console.log(
+  `shared-client-contract: 11 core transports, ${transportEntries.length} compatibility transports, run bare adapter, exact mocks, canonical projections passed`,
+)
