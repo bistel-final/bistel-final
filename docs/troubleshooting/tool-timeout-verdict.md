@@ -1,6 +1,6 @@
 # Agent read Tool timeout 판정표
 
-> Task: `V5-CM-4.8` · 기준일: 2026-08-29  
+> Task: `V5-CM-4.8` · 기준일: 2026-08-29
 > 범위: Agent read Tool 3종의 DB server 실행 구간 · 공용 서비스 접근 0회
 
 ## 판정
