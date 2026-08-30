@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.common.exceptions import ErrorCode
 from app.common.tool_contracts import DocumentHit as ToolDocumentHit
+from app.common.tool_timeouts import DependencyTimeoutError
 from app.knowledge import embedding
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.exceptions import EmbeddingModelNotReadyError
@@ -220,6 +221,80 @@ def test_repository_search_without_model_code_searches_all_documents(
         "query_vector": "[0.1]",
         "top_k": 4,
     }
+    assert connection.closed is True
+
+
+def test_repository_applies_timeout_before_vector_registration_and_query() -> None:
+    events: list[str] = []
+
+    class FakeResult:
+        def mappings(self) -> FakeResult:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return []
+
+    class FakeConnection:
+        connection = SimpleNamespace(driver_connection=object())
+        closed = False
+
+        def execute(self, sql: object, _params: dict[str, object]) -> FakeResult:
+            if "set_config('statement_timeout'" in str(sql):
+                events.append("timeout")
+            else:
+                events.append("query")
+            return FakeResult()
+
+        def close(self) -> None:
+            self.closed = True
+            events.append("close")
+
+    connection = FakeConnection()
+    repository = DocumentSearchRepository(
+        SimpleNamespace(connect=lambda: connection),
+        timeout_seconds=0.2,
+        vector_registrar=lambda _: events.append("register_vector"),
+    )
+
+    assert repository.search([0.1]) == []
+    assert events == ["timeout", "register_vector", "query", "close"]
+
+
+def test_repository_maps_registration_query_cancel_and_closes_connection() -> None:
+    from psycopg import errors as psycopg_errors
+
+    class FakeResult:
+        def mappings(self) -> FakeResult:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return []
+
+    class FakeConnection:
+        connection = SimpleNamespace(driver_connection=object())
+        closed = False
+
+        def execute(self, _sql: object, _params: dict[str, object]) -> FakeResult:
+            return FakeResult()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+
+    def canceled_registration(_: object) -> None:
+        raise psycopg_errors.QueryCanceled("secret driver detail")
+
+    repository = DocumentSearchRepository(
+        SimpleNamespace(connect=lambda: connection),
+        vector_registrar=canceled_registration,
+    )
+
+    with pytest.raises(DependencyTimeoutError) as raised:
+        repository.search([0.1])
+
+    assert raised.value.reason_code == "DB_STATEMENT_TIMEOUT"
+    assert "secret" not in str(raised.value)
     assert connection.closed is True
 
 
@@ -805,3 +880,37 @@ def test_search_documents_tool_returns_timeout_failure(monkeypatch: Any) -> None
     assert result.ok is False
     assert result.hits == []
     assert result.reason == "TIMEOUT: 검색 시간 초과"
+
+
+def test_search_documents_tool_maps_dependency_timeout_reason_code(
+    monkeypatch: Any,
+) -> None:
+    class FakePoolFactory:
+        def get_engine(self, logical_db: object, role: object) -> object:
+            return object()
+
+    class TimeoutService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def search(
+            self,
+            query: str,
+            *,
+            top_k: int,
+            model_code: str | None,
+        ) -> list[ToolDocumentHit]:
+            error = DependencyTimeoutError("DB_STATEMENT_TIMEOUT")
+            error.args = ("postgresql://user:secret@localhost/db",)
+            raise error
+
+    monkeypatch.setattr("app.knowledge.tools.pool_factory", FakePoolFactory())
+    monkeypatch.setattr("app.knowledge.tools.DocumentSearchService", TimeoutService)
+
+    result = search_documents_tool.invoke({"query": "check"})
+
+    assert result.ok is False
+    assert result.hits == []
+    assert result.reason == "TIMEOUT: DB_STATEMENT_TIMEOUT"
+    assert "postgresql://" not in result.reason
+    assert "secret" not in result.reason

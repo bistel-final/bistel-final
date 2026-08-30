@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from neo4j import Query
 
 from app.common.tool_contracts import (
     EquipmentContextToolResult,
 )
+from app.common.tool_timeouts import DependencyTimeoutError
 from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_query import (
     GraphQueryRepository,
@@ -455,6 +458,48 @@ def test_graph_repository_maps_tool_payload_row() -> None:
         "database": "neo4j",
         "default_access_mode": "READ",
     }
+    query = driver.queries[-1]
+    assert isinstance(query, Query)
+    assert query.text == GraphQueryRepository.TOOL_CONTEXT_QUERY
+    assert query.timeout == 5.0
+
+
+def test_graph_repository_maps_only_server_transaction_timeout_code() -> None:
+    from neo4j.exceptions import Neo4jError
+
+    timeout_error = Neo4jError._hydrate_neo4j(
+        code="Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration",
+        message="secret cypher detail",
+    )
+    driver = _Driver(run_error=timeout_error)
+    repository = GraphQueryRepository(
+        driver_factory=lambda: driver,
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    with pytest.raises(DependencyTimeoutError) as raised:
+        repository.get_equipment_context_payload("EQP04-PM2")
+
+    assert raised.value.reason_code == "NEO4J_TRANSACTION_TIMEOUT"
+    assert "secret" not in str(raised.value)
+
+
+def test_graph_repository_does_not_map_non_timeout_neo4j_code() -> None:
+    from neo4j.exceptions import Neo4jError
+
+    dependency_error = Neo4jError._hydrate_neo4j(
+        code="Neo.TransientError.Transaction.DeadlockDetected",
+        message="secret cypher detail",
+    )
+    repository = GraphQueryRepository(
+        driver_factory=lambda: _Driver(run_error=dependency_error),
+        graph_revision_loader=lambda: REVISION,
+        database="neo4j",
+    )
+
+    with pytest.raises(type(dependency_error)):
+        repository.get_equipment_context_payload("EQP04-PM2")
 
 
 def test_load_graph_revision_validates_marker_and_does_not_cache(tmp_path: Any) -> None:
@@ -678,6 +723,29 @@ def test_get_equipment_context_tool_returns_timeout(monkeypatch: Any) -> None:
     assert result.chamber_id is None
 
 
+def test_get_equipment_context_tool_maps_dependency_timeout_reason_code(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_equipment_context(self, chamber_id: str) -> None:
+            error = DependencyTimeoutError("NEO4J_TRANSACTION_TIMEOUT")
+            error.args = ("bolt://neo4j:secret@localhost:7687",)
+            raise error
+
+    monkeypatch.setattr("app.knowledge.tools.EquipmentContextService", FakeService)
+
+    result = get_equipment_context_tool.invoke({"chamber_id": "EQP01-PM1"})
+
+    assert result.ok is False
+    assert result.reason == "TIMEOUT: NEO4J_TRANSACTION_TIMEOUT"
+    assert "bolt://" not in result.reason
+    assert "secret" not in result.reason
+    assert result.chamber_id is None
+
+
 def test_get_equipment_context_tool_returns_dependency_failure(
     monkeypatch: Any,
 ) -> None:
@@ -737,22 +805,27 @@ class _Driver:
         self,
         graph_record: dict[str, Any] | None = None,
         tool_record: dict[str, Any] | None = None,
+        run_error: Exception | None = None,
     ) -> None:
         self.graph_record = graph_record
         self.tool_record = tool_record
+        self.run_error = run_error
         self.session_options: dict[str, Any] | None = None
+        self.queries: list[object] = []
 
     def session(self, **options: Any) -> _Session:
         self.session_options = options
-        return _Session(self.graph_record, self.tool_record)
+        return _Session(self, self.graph_record, self.tool_record)
 
 
 class _Session:
     def __init__(
         self,
+        driver: _Driver,
         graph_record: dict[str, Any] | None,
         tool_record: dict[str, Any] | None,
     ) -> None:
+        self.driver = driver
         self.graph_record = graph_record
         self.tool_record = tool_record
 
@@ -762,11 +835,15 @@ class _Session:
     def __exit__(self, *_: object) -> bool:
         return False
 
-    def run(self, query: str, parameters: dict[str, Any]) -> _PayloadResult:
-        if query == ChamberGraphRepository.GRAPH_PROJECTION_QUERY:
+    def run(self, query: object, parameters: dict[str, Any]) -> _PayloadResult:
+        self.driver.queries.append(query)
+        if self.driver.run_error is not None:
+            raise self.driver.run_error
+        query_text = query.text if isinstance(query, Query) else query
+        if query_text == ChamberGraphRepository.GRAPH_PROJECTION_QUERY:
             assert parameters == {"chamber_id": "EQP01-PM1"}
             return _PayloadResult(self.graph_record)
-        if query == GraphQueryRepository.TOOL_CONTEXT_QUERY:
+        if query_text == GraphQueryRepository.TOOL_CONTEXT_QUERY:
             assert parameters == {"chamber_id": "EQP04-PM2"}
             return _PayloadResult(self.tool_record)
         raise AssertionError(f"unexpected query: {query}")

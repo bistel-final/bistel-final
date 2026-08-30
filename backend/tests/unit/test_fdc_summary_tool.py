@@ -21,6 +21,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from psycopg import errors as psycopg_errors
 
 from app.common.enums import AlarmType, ThresholdValidationStatus
 from app.common.tool_contracts import (
@@ -222,9 +223,7 @@ class TestBuildAnomalySignal:
     def test_scores_single_wafer_with_identity_normalizer(self) -> None:
         loaded = LoadedModel(manifest=_manifest(), forest=_FakeForest(-0.3))
 
-        signal = _build_anomaly_signal(
-            loaded, "LH-00181", "LOT004", [_parameter_row()]
-        )
+        signal = _build_anomaly_signal(loaded, "LH-00181", "LOT004", [_parameter_row()])
 
         assert signal is not None
         assert signal.score == pytest.approx(0.3)
@@ -308,9 +307,7 @@ class TestFdcSummaryService:
     def test_returns_none_when_parameter_rows_are_empty(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._install_repository(
-            monkeypatch, lot_row=WAFER_ROW, parameter_rows=[]
-        )
+        self._install_repository(monkeypatch, lot_row=WAFER_ROW, parameter_rows=[])
 
         service = FdcSummaryService(connection=object(), model_loader=lambda: None)
 
@@ -418,6 +415,9 @@ class TestFdcSummaryService:
 # 3) tools.get_fdc_summary — 공통 ok/reason 계약 wiring
 # ---------------------------------------------------------------------
 class _FakeConnection:
+    def execute(self, _sql: object, _params: object) -> None:
+        return None
+
     def __enter__(self) -> _FakeConnection:
         return self
 
@@ -440,6 +440,37 @@ def _install_fake_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestGetFdcSummaryTool:
+    def test_applies_local_timeout_before_constructing_service(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        events: list[str] = []
+
+        class RecordingConnection(_FakeConnection):
+            def execute(self, sql: object, _params: object) -> None:
+                assert "set_config('statement_timeout'" in str(sql)
+                events.append("timeout")
+
+        class RecordingEngine:
+            def connect(self) -> RecordingConnection:
+                return RecordingConnection()
+
+        class FakeService:
+            def __init__(self, connection: object) -> None:
+                events.append("service")
+
+            def get_fdc_summary(self, lot_hist_id: str) -> None:
+                events.append("query")
+                return None
+
+        monkeypatch.setattr(
+            "app.detection.tools.get_readonly_engine", lambda: RecordingEngine()
+        )
+        monkeypatch.setattr("app.detection.tools.FdcSummaryService", FakeService)
+
+        get_fdc_summary_tool.invoke({"lot_hist_id": "missing"})
+
+        assert events == ["timeout", "service", "query"]
+
     def test_returns_common_success_contract(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -524,3 +555,23 @@ class TestGetFdcSummaryTool:
 
         assert result.ok is False
         assert result.reason == "DEPENDENCY_ERROR: FDC summary 조회 의존성 오류"
+
+    def test_maps_raw_postgres_query_cancel_to_sanitized_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_engine(monkeypatch)
+
+        class FakeService:
+            def __init__(self, connection: object) -> None:
+                pass
+
+            def get_fdc_summary(self, lot_hist_id: str) -> None:
+                raise psycopg_errors.QueryCanceled("secret SQL and DSN")
+
+        monkeypatch.setattr("app.detection.tools.FdcSummaryService", FakeService)
+
+        result = get_fdc_summary_tool.invoke({"lot_hist_id": "LH-00181"})
+
+        assert result.ok is False
+        assert result.reason == "TIMEOUT: DB_STATEMENT_TIMEOUT"
+        assert "secret" not in result.reason

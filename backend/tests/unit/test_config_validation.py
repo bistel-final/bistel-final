@@ -169,6 +169,16 @@ class TestTimeoutAndRetryBounds:
         assert config.N8N_WEBHOOK_TIMEOUT_SEC == 30
         assert config.DELIVERY_UNKNOWN_AFTER_SEC == 600
 
+    def test_db_timeout_must_be_shorter_than_read_tool_caller_deadline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert (
+            load_config(monkeypatch, TOOL_DB_TIMEOUT_SEC="7").TOOL_DB_TIMEOUT_SEC == 7
+        )
+
+        with pytest.raises(RuntimeError, match="caller deadline 8초보다"):
+            load_config(monkeypatch, TOOL_DB_TIMEOUT_SEC="8")
+
     def test_n8n_timeout_allows_25(self, monkeypatch: pytest.MonkeyPatch) -> None:
         config = load_config(monkeypatch, N8N_WEBHOOK_TIMEOUT_SEC="25")
 
