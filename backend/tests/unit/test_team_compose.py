@@ -296,12 +296,13 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         REPOSITORY_ROOT / "deploy" / "compose" / "kafka" / "manage_wf4_offsets.sh"
     ).read_text(encoding="utf-8")
 
-    assert kafka["ports"] == ["53004:9094"]
+    assert kafka["ports"] == ["9092:9094"]
     assert environment["KAFKA_LISTENERS"] == (
         "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093," "EXTERNAL://0.0.0.0:9094"
     )
-    assert environment["KAFKA_ADVERTISED_LISTENERS"].startswith(
-        "INTERNAL://kafka:9092,EXTERNAL://${KAFKA_ADVERTISED_HOST:?"
+    assert environment["KAFKA_ADVERTISED_LISTENERS"] == (
+        "INTERNAL://kafka:9092,"
+        "EXTERNAL://${KAFKA_ADVERTISED_HOST:?KAFKA_ADVERTISED_HOST is required}:53005"
     )
     assert environment["KAFKA_LISTENER_SECURITY_PROTOCOL_MAP"] == (
         "INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT"
@@ -371,6 +372,7 @@ def test_external_kafka_probe_uses_a_separate_network_and_negative_auth() -> Non
 
     assert '"--network"' in probe
     assert 'KAFKA_IMAGE = "apache/kafka:3.9.1"' in probe
+    assert "bootstrap = f\"{values['KAFKA_ADVERTISED_HOST']}:53005\"" in probe
     assert '"intentionally-wrong-credential"' in probe
     assert "KAFKA_INVALID_CREDENTIAL_ACCEPTED" in probe
     assert "fdc.actions.result" in probe

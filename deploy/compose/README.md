@@ -37,19 +37,24 @@ fallback도 지원하지 않는다.
 ## Kafka network trust boundary
 
 INTERNAL·EXTERNAL listener는 모두 `SASL_PLAINTEXT/PLAIN`이다. 이는 **인증만 제공하고
-전송 구간 암호화나 credential 기밀성을 제공하지 않는다**. 현재 선택은 Kafka `53004`와 공용
-n8n이 같은 학원 내부 신뢰망에 있고, host firewall이 `53004` 접근을 승인된 n8n/팀 host로만
+전송 구간 암호화나 credential 기밀성을 제공하지 않는다**. 현재 선택은 Kafka `53005`와 공용
+n8n이 같은 학원 내부 신뢰망에 있고, host firewall이 `53005` 접근을 승인된 n8n/팀 host로만
 제한한다는 배포 전제에서만 허용한다. 인터넷·비신뢰 VLAN·포트 포워딩에 노출해야 하면 이
 compose를 적용하지 않고 TLS listener와 인증서 배포가 준비될 때까지 Kafka Gate를
 `BLOCKED`로 둔다. `probe_external_kafka.py`의 잘못된 credential 음성은 인증 활성만
 증명하며 채널 암호화를 증명하지 않는다.
 
+외부 `53006`에서 서버 host `9093`으로 향하는 포워딩은 사용하지 않는다. `9093`은 KRaft
+CONTROLLER 전용 PLAINTEXT listener이므로 compose에서 host에 publish하지 않으며 외부 노출을
+허용하지 않는다.
+
 ## 적용 전후 증적
 
 1. 적용 전 `docker ps --no-trunc`와 `docker network inspect`로 전체 container ID·image·
    publish port·network membership를 기록한다.
-2. Frontend 53080·Kafka 53004가 기존 컨테이너에 사용되지 않는지 확인한다. 기존 공용
-   PostgreSQL·Neo4j·n8n 포트와 컨테이너는 중지하지 않는다.
+2. Frontend 53080·Kafka **host 9092**가 기존 컨테이너나 host process에 사용되지 않는지
+   반드시 확인한다. host 9092는 흔히 사용하는 Kafka 포트이므로 점유 중이면 적용하지 않는다.
+   기존 공용 PostgreSQL·Neo4j·n8n 포트와 컨테이너는 중지하지 않는다.
 3. 기동 후 Backend liveness는 Frontend 경유 `GET http://<host>:53080/api/health`로 확인한다.
    이어 `GET http://<host>:53080/api/health/ready`가 exact 6 check `PASS`와 HTTP 200인지
    확인한다. 503이면 [`readiness-verdict.md`](../../docs/troubleshooting/readiness-verdict.md)의
