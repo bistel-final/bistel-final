@@ -29,6 +29,7 @@ const EXPECTED_ROUTE_PATHS = [
 
 assert.deepEqual(PRIMARY_MENUS, EXPECTED_MENUS, '주 navigation 7개 순서·라벨·경로 불일치')
 assert.equal(new Set(PRIMARY_MENUS.map(({ to }) => to)).size, PRIMARY_MENUS.length, '중복 navigation 경로')
+assert.equal(new Set(PRIMARY_MENUS.map(({ label }) => label)).size, PRIMARY_MENUS.length, '중복 navigation 라벨')
 
 const routeSource = await readFile(new URL('../src/app/routes.jsx', import.meta.url), 'utf8')
 const pathTokens = [...routeSource.matchAll(/\bpath\s*:/g)]
