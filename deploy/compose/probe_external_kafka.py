@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     network = f"bistel-kafka-probe-{os.getpid()}"
-    bootstrap = f"{values['KAFKA_ADVERTISED_HOST']}:53004"
+    bootstrap = f"{values['KAFKA_ADVERTISED_HOST']}:53005"
     created = _run(["docker", "network", "create", network])
     if created.returncode != 0:
         print("ERROR PROBE_NETWORK_CREATE_FAILED")
