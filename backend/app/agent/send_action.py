@@ -14,9 +14,9 @@ from types import ModuleType
 from typing import Any, Final
 
 import httpx
+from pydantic import ValidationError
 
 from app.agent.email_delivery import (
-    EmailDeliveryConfigError,
     EmailDeliveryContractError,
     EmailDeliveryOutcome,
     EmailDeliveryResult,
@@ -26,7 +26,6 @@ from app.agent.email_delivery import (
     production_ports as email_production_ports,
 )
 from app.agent.mes_delivery import (
-    MesDeliveryConfigError,
     MesDeliveryContractError,
     MesDeliveryOutcome,
     MesDeliveryResult,
@@ -209,7 +208,18 @@ def _projection(
                 duplicate=duplicate,
             )
         )
-    return SendActionToolResult(ok=True, action_id=action_id, deliveries=items)
+    effect_attempted = invoked_channel is not None and outcome not in {
+        None,
+        EmailDeliveryOutcome.NOOP,
+        MesDeliveryOutcome.NOOP,
+    }
+    return SendActionToolResult(
+        ok=True,
+        action_id=action_id,
+        deliveries=items,
+        effect_attempted=effect_attempted,
+        effect_channel=invoked_channel if effect_attempted else None,
+    )
 
 
 def _outcome_failure(
@@ -234,7 +244,7 @@ class SendActionService:
     def invoke(self, payload: dict[str, Any]) -> SendActionToolResult:
         try:
             request = SendActionToolInput.model_validate(payload)
-        except Exception:
+        except ValidationError:
             return _policy_rejected()
 
         try:
@@ -246,8 +256,6 @@ class SendActionService:
         except RepositoryNotFound:
             return _not_found()
         except AgentRepositoryError:
-            return _dependency_error()
-        except Exception:
             return _dependency_error()
 
         if not deliveries:
@@ -286,8 +294,6 @@ class SendActionService:
             return _policy_rejected()
         except AgentRepositoryError:
             return _dependency_error()
-        except Exception:
-            return _dependency_error()
 
         failed = _outcome_failure(outcome)
         if failed is not None:
@@ -295,7 +301,7 @@ class SendActionService:
         try:
             with self.transactions() as connection:
                 current = tuple(list_action_deliveries(connection, request.action_id))
-        except Exception:
+        except AgentRepositoryError:
             return _dependency_error()
         if not current:
             return _dependency_error()
@@ -317,21 +323,18 @@ def build_send_action_tool(
 ) -> Callable[[dict[str, Any]], SendActionToolResult]:
     """EMAIL·MES adapter를 같은 runtime UoW owner로 지연 조립한다."""
 
-    try:
-        email = email_production_ports(
-            settings,
-            transactions,
-            http_post=http_post,
-            clock=clock,
-        ).service
-        mes = mes_production_ports(
-            settings,
-            transactions,
-            http_post=http_post,
-            clock=clock,
-        ).service
-    except (EmailDeliveryConfigError, MesDeliveryConfigError):
-        return lambda _payload: _dependency_error()
+    email = email_production_ports(
+        settings,
+        transactions,
+        http_post=http_post,
+        clock=clock,
+    ).service
+    mes = mes_production_ports(
+        settings,
+        transactions,
+        http_post=http_post,
+        clock=clock,
+    ).service
     return SendActionService(
         transactions=transactions,
         email=email,

@@ -225,7 +225,7 @@ def test_send_action_wrapper_timeout_returns_fixed_json_and_timeout_audit(
     assert finalized["error_msg"] == audit_code
 
 
-def test_send_action_uses_twenty_second_deadline(
+def test_send_action_deadline_is_derived_above_the_webhook_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _RecordingRunner:
@@ -245,6 +245,8 @@ def test_send_action_uses_twenty_second_deadline(
         document=lambda payload: {
             "ok": True,
             "action_id": "ACT-1",
+            "effect_attempted": True,
+            "effect_channel": "EMAIL",
             "deliveries": [
                 {
                     "channel": "EMAIL",
@@ -259,7 +261,8 @@ def test_send_action_uses_twenty_second_deadline(
 
     executor.send_action("RUN-1", SendActionToolInput(action_id="ACT-1"))
 
-    assert captured == [20.0]
+    assert captured == [subject.N8N_WEBHOOK_TIMEOUT_SEC + 5.0]
+    assert captured[0] > subject.N8N_WEBHOOK_TIMEOUT_SEC
 
 
 def test_production_boundary_passes_the_graph_transaction_owner_to_send_action(
@@ -267,7 +270,10 @@ def test_production_boundary_passes_the_graph_transaction_owner_to_send_action(
 ) -> None:
     from app.agent import send_action as send_action_module
 
-    settings = SimpleNamespace(marker="runtime-settings")
+    settings = SimpleNamespace(
+        marker="runtime-settings",
+        N8N_WEBHOOK_TIMEOUT_SEC=25,
+    )
     transactions = object()
     post = object()
     clock = object()
@@ -300,6 +306,53 @@ def test_production_boundary_passes_the_graph_transaction_owner_to_send_action(
         "kwargs": {"http_post": post, "clock": clock},
     }
     assert boundary.send_action({"action_id": "ACT-1"}) == {"action_id": "ACT-1"}
+    assert boundary.send_action_deadline_seconds == 30.0
+
+
+def test_send_action_deadline_cannot_be_shorter_than_adapter_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: pytest.fail(
+            "invalid deadline must fail before invoke"
+        ),
+    )
+    object.__setattr__(executor, "send_action_deadline_seconds", 20.0)
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        executor.send_action("RUN-1", SendActionToolInput(action_id="ACT-1"))
+
+    assert exc.value.code == "SEND_ACTION_DEADLINE_INVALID"
+    assert events == []
+
+
+def test_production_boundary_without_delivery_settings_is_explicitly_unwired() -> None:
+    boundary = ToolBoundary.production()
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        boundary.send_action({"action_id": "ACT-1"})
+
+    assert exc.value.code == "SEND_ACTION_NOT_WIRED"
+
+
+def test_production_boundary_rejects_invalid_delivery_config_before_db() -> None:
+    transaction_calls = 0
+
+    @contextmanager
+    def transactions() -> Any:
+        nonlocal transaction_calls
+        transaction_calls += 1
+        yield object()
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        ToolBoundary.production(
+            settings=SimpleNamespace(N8N_WEBHOOK_TIMEOUT_SEC=30),
+            transactions=transactions,
+        )
+
+    assert exc.value.code == "SEND_ACTION_CONFIG_INVALID"
+    assert transaction_calls == 0
 
 
 @pytest.mark.parametrize(

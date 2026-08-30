@@ -1330,6 +1330,59 @@ def test_finalizing_another_runs_call_is_not_found(engine: Any) -> None:
     assert exc.value.code == "TOOL_CALL_NOT_FOUND"
 
 
+def test_successful_send_action_no_calls_remain_audited_but_are_budget_free(
+    engine: Any,
+) -> None:
+    run = _run_id(engine)
+    outputs = [
+        {
+            "ok": True,
+            "action_id": "ACT-1",
+            "deliveries": [],
+            "effect_attempted": True,
+            "effect_channel": "EMAIL",
+        },
+        {
+            "ok": True,
+            "action_id": "ACT-1",
+            "deliveries": [],
+            "effect_attempted": False,
+            "effect_channel": None,
+        },
+        {
+            "ok": True,
+            "action_id": "ACT-1",
+            "deliveries": [],
+            "effect_attempted": False,
+            "effect_channel": None,
+        },
+    ]
+    for output in outputs:
+        with engine.begin() as connection:
+            reserved = repo.reserve_tool_call(
+                connection,
+                agent_run_id=run,
+                tool_name="send_action",
+            )
+        with engine.begin() as connection:
+            repo.finalize_tool_call(
+                connection,
+                tool_call_id=reserved.tool_call_id,
+                agent_run_id=run,
+                status=ToolCallStatus.SUCCESS,
+                latency_ms=1,
+                output=output,
+            )
+
+    with engine.begin() as connection:
+        physical = repo.count_tool_calls(connection, run)
+        budget = repo.count_tool_calls_for_budget(connection, run)
+
+    assert physical == 3
+    assert budget.total == 1
+    assert budget.by_tool == {"send_action": 1}
+
+
 def test_concurrent_reservations_get_distinct_sequences(runtime_engine: Any) -> None:
     """**두 connection이 동시에 예약해도 `call_seq`가 `[1, 2]`다**(계획 §4.3).
 

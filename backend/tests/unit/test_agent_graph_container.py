@@ -539,6 +539,8 @@ def _dependencies(
             ok=True,
             action_id=action_id,
             deliveries=projected,
+            effect_attempted=sent_now is not None,
+            effect_channel=sent_now,
         )
 
     boundary = ToolBoundary(

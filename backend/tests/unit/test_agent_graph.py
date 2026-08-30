@@ -200,6 +200,12 @@ class _FakeTools:
             return SendActionToolResult(
                 ok=True,
                 action_id=request.action_id,
+                effect_attempted=True,
+                effect_channel=(
+                    DeliveryChannel.EMAIL
+                    if self.send_count == 1
+                    else DeliveryChannel.MES_MOCK
+                ),
                 deliveries=[
                     ChannelDeliveryResult(
                         channel=DeliveryChannel.EMAIL,
@@ -218,6 +224,8 @@ class _FakeTools:
         return SendActionToolResult(
             ok=True,
             action_id=request.action_id,
+            effect_attempted=True,
+            effect_channel=DeliveryChannel.EMAIL,
             deliveries=[
                 ChannelDeliveryResult(
                     channel=DeliveryChannel.EMAIL,

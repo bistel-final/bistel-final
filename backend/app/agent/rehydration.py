@@ -30,6 +30,7 @@ from app.agent.repository import (
     get_prediction_or_none,
     list_run_alarms,
     list_tool_calls,
+    tool_call_consumes_budget,
 )
 from app.agent.routing import (
     GraphRouteEvidence,
@@ -373,16 +374,18 @@ def _rehydrated_tool_budget(
     tail = calls[snapshot.used :]
     snapshot_send_used = 0 if snapshot.send_used is None else snapshot.send_used
     remaining_send_budget = snapshot.send_budget - snapshot_send_used
+    budget_tail = tuple(call for call in tail if tool_call_consumes_budget(call))
     if (
         remaining_send_budget < 0
-        or len(tail) > remaining_send_budget
+        or len(budget_tail) > remaining_send_budget
         or any(call.tool_name != "send_action" for call in tail)
     ):
         raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
 
     by_tool: dict[str, int] = {}
     pending = 0
-    for call in calls:
+    budget_calls = tuple(call for call in calls if tool_call_consumes_budget(call))
+    for call in budget_calls:
         by_tool[call.tool_name] = by_tool.get(call.tool_name, 0) + 1
         if (
             call.status is ToolCallStatus.ERROR
@@ -393,7 +396,7 @@ def _rehydrated_tool_budget(
             pending += 1
     return ToolBudget(
         max_calls=snapshot.max_calls,
-        used=len(calls),
+        used=len(budget_calls),
         by_tool=by_tool,
         send_budget=snapshot.send_budget,
         send_used=by_tool.get("send_action", 0),

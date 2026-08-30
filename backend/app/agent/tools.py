@@ -29,7 +29,11 @@ from app.agent.repository import (
     reserve_tool_call,
 )
 from app.agent.state import ToolBudget
-from app.common.config import AGENT_MAX_RETRY, AGENT_MAX_TOOL_CALLS
+from app.common.config import (
+    AGENT_MAX_RETRY,
+    AGENT_MAX_TOOL_CALLS,
+    N8N_WEBHOOK_TIMEOUT_SEC,
+)
 from app.common.enums import ToolCallStatus
 from app.common.tool_contracts import (
     AGENT_TOOL_NAMES,
@@ -48,7 +52,7 @@ from app.common.tool_contracts import (
 ResultT = TypeVar("ResultT", bound=ToolResult)
 logger = logging.getLogger(__name__)
 SEND_ACTION_BUDGET: Final = 2
-SEND_ACTION_DEADLINE_SECONDS: Final = 20.0
+SEND_ACTION_DEADLINE_GRACE_SECONDS: Final = 5.0
 
 
 class ToolDeadlineExceeded(TimeoutError):
@@ -76,6 +80,19 @@ class ToolBoundaryError(RuntimeError):
         super().__init__(code)
         self.code = code
         self.prior_code = prior_code
+
+
+def _send_action_deadline_for_timeout(webhook_timeout_seconds: Any) -> float:
+    """adapter timeout보다 반드시 긴 wrapper deadline을 만든다."""
+
+    if type(webhook_timeout_seconds) is not int or webhook_timeout_seconds < 25:
+        raise ToolBoundaryError("SEND_ACTION_TIMEOUT_CONFIG_INVALID")
+    return float(webhook_timeout_seconds) + SEND_ACTION_DEADLINE_GRACE_SECONDS
+
+
+SEND_ACTION_DEADLINE_SECONDS: Final = _send_action_deadline_for_timeout(
+    N8N_WEBHOOK_TIMEOUT_SEC
+)
 
 
 class DeadlineRunner(Protocol):
@@ -138,6 +155,7 @@ class ToolBoundary:
     equipment_context: Callable[[dict[str, Any]], Any]
     document_search: Callable[[dict[str, Any]], Any]
     send_action: Callable[[dict[str, Any]], Any] = _send_action_not_wired
+    send_action_deadline_seconds: float = SEND_ACTION_DEADLINE_SECONDS
 
     @classmethod
     def production(
@@ -158,23 +176,33 @@ class ToolBoundary:
         from app.knowledge.tools import get_equipment_context, search_documents
 
         send_action = _send_action_not_wired
+        send_action_deadline_seconds = SEND_ACTION_DEADLINE_SECONDS
         if settings is not None or transactions is not None:
             if settings is None or transactions is None:
                 raise ToolBoundaryError("SEND_ACTION_FACTORY_INCOMPLETE")
+            from app.agent.email_delivery import EmailDeliveryConfigError
+            from app.agent.mes_delivery import MesDeliveryConfigError
             from app.agent.send_action import build_send_action_tool
 
-            send_action = build_send_action_tool(
-                settings,
-                transactions,
-                **({} if http_post is None else {"http_post": http_post}),
-                **({} if clock is None else {"clock": clock}),
+            send_action_deadline_seconds = _send_action_deadline_for_timeout(
+                getattr(settings, "N8N_WEBHOOK_TIMEOUT_SEC", None)
             )
+            try:
+                send_action = build_send_action_tool(
+                    settings,
+                    transactions,
+                    **({} if http_post is None else {"http_post": http_post}),
+                    **({} if clock is None else {"clock": clock}),
+                )
+            except (EmailDeliveryConfigError, MesDeliveryConfigError) as exc:
+                raise ToolBoundaryError("SEND_ACTION_CONFIG_INVALID") from exc
 
         return cls(
             fdc_summary=get_fdc_summary.invoke,
             equipment_context=get_equipment_context.invoke,
             document_search=search_documents.invoke,
             send_action=send_action,
+            send_action_deadline_seconds=send_action_deadline_seconds,
         )
 
 
@@ -192,7 +220,7 @@ class AuditedToolExecutor:
     boundary: ToolBoundary
     deadline_runner: DeadlineRunner | None
     deadline_seconds: float = 8.0
-    send_action_deadline_seconds: float = SEND_ACTION_DEADLINE_SECONDS
+    send_action_deadline_seconds: float | None = None
     clock: Callable[[], float] = monotonic
 
     def fdc_summary(
@@ -231,13 +259,20 @@ class AuditedToolExecutor:
     def send_action(
         self, agent_run_id: str, request: SendActionToolInput
     ) -> SendActionToolResult | None:
+        deadline_seconds = (
+            self.boundary.send_action_deadline_seconds
+            if self.send_action_deadline_seconds is None
+            else self.send_action_deadline_seconds
+        )
+        if deadline_seconds < self.boundary.send_action_deadline_seconds:
+            raise ToolBoundaryError("SEND_ACTION_DEADLINE_INVALID")
         return self._invoke(
             agent_run_id=agent_run_id,
             tool_name="send_action",
             request=request.model_dump(mode="json"),
             invoke=self.boundary.send_action,
             result_type=SendActionToolResult,
-            deadline_seconds=self.send_action_deadline_seconds,
+            deadline_seconds=deadline_seconds,
             timeout_result=_send_action_timeout_result,
         )
 
@@ -448,4 +483,5 @@ __all__ = [
     "ToolRunnerSaturated",
     "TransactionFactory",
     "SEND_ACTION_DEADLINE_SECONDS",
+    "SEND_ACTION_DEADLINE_GRACE_SECONDS",
 ]

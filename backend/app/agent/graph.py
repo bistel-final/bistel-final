@@ -715,6 +715,10 @@ def build_agent_graph(
             "deliveries": result.deliveries,
         }
 
+    # 감사 증적의 node 이름은 채널이 아니다. 세 delivery node는 같은
+    # send_stored_action을 부르고 채널은 DB 저장 plan이 결정하므로, HITL 복구
+    # 재생에서는 approval_email node가 MES 발행을 수행할 수 있다. 실제 채널은
+    # Tool output의 effect_channel로 판정한다.
     def send_stored_action(
         state: AgentGraphState,
         *,

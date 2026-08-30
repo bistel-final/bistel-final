@@ -131,6 +131,7 @@ __all__ = [
     "list_tool_calls",
     "count_tool_calls",
     "count_tool_calls_for_budget",
+    "tool_call_consumes_budget",
     "create_approval_request",
     "get_approval_request",
     "begin_approval_wait",
@@ -1691,7 +1692,7 @@ class ToolCallRow:
 
 @dataclass(frozen=True, slots=True)
 class ToolBudgetCounts:
-    """run row lock 아래에서 읽은 Tool 호출 시도 집계."""
+    """run row lock 아래에서 읽은 예산 소비 Tool 호출 집계."""
 
     total: int
     by_tool: Mapping[str, int]
@@ -1773,23 +1774,6 @@ _COUNT_TOOL_CALLS = text(
     "SELECT count(*) AS total FROM agent_tool_call WHERE agent_run_id = :run_id"
 )
 
-_COUNT_TOOL_CALLS_FOR_BUDGET = text(
-    """
-    SELECT tool_name,
-           count(*) AS call_count,
-           count(*) FILTER (
-               WHERE status = :reserved_status
-                 AND error_msg = :reserved_error
-                 AND output IS NULL
-                 AND latency_ms IS NULL
-           ) AS pending_count
-    FROM agent_tool_call
-    WHERE agent_run_id = :run_id
-    GROUP BY tool_name
-    ORDER BY tool_name
-    """
-)
-
 
 def _tool_call_row(row: Row[Any]) -> ToolCallRow:
     return ToolCallRow(
@@ -1803,6 +1787,25 @@ def _tool_call_row(row: Row[Any]) -> ToolCallRow:
         latency_ms=row.latency_ms,
         called_at=row.called_at,
         error_msg=row.error_msg,
+    )
+
+
+def tool_call_consumes_budget(call: ToolCallRow) -> bool:
+    """실제 외부 효과가 없다고 명시된 성공 send_action만 예산에서 제외한다.
+
+    이전 형식·실패·timeout·미종료 예약은 모두 보수적으로 소비 처리한다. 감사 행은
+    삭제하지 않으며 이 함수는 예산 projection에만 영향을 준다.
+    """
+
+    if call.tool_name != "send_action":
+        return True
+    output = call.output
+    return not (
+        call.status is ToolCallStatus.SUCCESS
+        and isinstance(output, Mapping)
+        and output.get("ok") is True
+        and output.get("effect_attempted") is False
+        and output.get("effect_channel") is None
     )
 
 
@@ -1949,10 +1952,10 @@ def count_tool_calls_for_budget(
     connection: Connection,
     agent_run_id: str,
 ) -> ToolBudgetCounts:
-    """run을 잠근 뒤 총·Tool별·미종료 예약 수를 한 snapshot으로 읽는다.
+    """run을 잠근 뒤 예산 소비 Tool의 총·Tool별·미종료 수를 읽는다.
 
     caller는 이 함수와 :func:`reserve_tool_call`을 같은 transaction에서 호출한다.
-    이 계층은 정책을 판정하지 않으며 sentinel도 일반 호출 시도처럼 집계한다.
+    멱등 성공 no-call 감사 행만 제외하며 sentinel·이전 형식은 일반 시도처럼 센다.
     """
 
     _require_transaction(connection)
@@ -1963,24 +1966,29 @@ def count_tool_calls_for_budget(
         ).one_or_none()
         if locked is None:
             raise RepositoryNotFound("RUN_NOT_FOUND")
-        rows = connection.execute(
-            _COUNT_TOOL_CALLS_FOR_BUDGET,
-            {
-                "run_id": agent_run_id,
-                "reserved_status": ToolCallStatus.ERROR.value,
-                "reserved_error": RESERVED_ERROR_MSG,
-            },
-        ).all()
+        rows = connection.execute(_SELECT_TOOL_CALLS, {"run_id": agent_run_id}).all()
     except AgentRepositoryError:
         raise
     except SQLAlchemyError as exc:
         raise _translate(exc) from exc
 
-    by_tool = {str(row.tool_name): int(row.call_count) for row in rows}
+    calls = [_tool_call_row(row) for row in rows]
+    budget_calls = [call for call in calls if tool_call_consumes_budget(call)]
+    by_tool: dict[str, int] = {}
+    pending = 0
+    for call in budget_calls:
+        by_tool[call.tool_name] = by_tool.get(call.tool_name, 0) + 1
+        if (
+            call.status is ToolCallStatus.ERROR
+            and call.error_msg == RESERVED_ERROR_MSG
+            and call.output is None
+            and call.latency_ms is None
+        ):
+            pending += 1
     return ToolBudgetCounts(
         total=sum(by_tool.values()),
         by_tool=by_tool,
-        pending_reservations=sum(int(row.pending_count) for row in rows),
+        pending_reservations=pending,
     )
 
 

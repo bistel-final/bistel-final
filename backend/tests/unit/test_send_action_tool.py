@@ -13,6 +13,8 @@ import pytest
 
 from app.agent import graph as graph_module
 from app.agent import send_action as subject
+from app.agent.email_delivery import EmailDeliveryConfigError
+from app.agent.mes_delivery import MesDeliveryConfigError
 from app.agent.repository import (
     ActionBundle,
     ActionDeliveryRow,
@@ -155,6 +157,8 @@ def test_warning_waiting_executes_email_and_returns_full_projection(
         {
             "ok": True,
             "action_id": "ACT-1",
+            "effect_attempted": True,
+            "effect_channel": "EMAIL",
             "deliveries": [
                 {
                     "channel": "EMAIL",
@@ -192,6 +196,8 @@ def test_pending_hold_sends_approval_and_keeps_blocked_mes_in_projection(
     ]
     assert email.calls == [("approval", "APR-1")]
     assert mes.calls == []
+    assert result.effect_attempted is True
+    assert result.effect_channel is DeliveryChannel.EMAIL
 
 
 def test_approved_hold_sends_mes_and_marks_preexisting_email_duplicate(
@@ -213,6 +219,8 @@ def test_approved_hold_sends_mes_and_marks_preexisting_email_duplicate(
     assert result.deliveries[0].duplicate is True
     assert result.deliveries[0].sent is False
     assert result.deliveries[1].sent is True
+    assert result.effect_attempted is True
+    assert result.effect_channel is DeliveryChannel.MES_MOCK
     assert email.calls == []
     assert mes.calls == ["ACT-1"]
 
@@ -273,6 +281,10 @@ def test_adapter_outcome_projects_exact_effect_flags(
     assert result.deliveries[0].status is stored_status
     assert result.deliveries[0].sent is sent
     assert result.deliveries[0].duplicate is duplicate
+    assert result.effect_attempted is (outcome is not subject.EmailDeliveryOutcome.NOOP)
+    assert result.effect_channel is (
+        None if outcome is subject.EmailDeliveryOutcome.NOOP else DeliveryChannel.EMAIL
+    )
 
 
 @pytest.mark.parametrize(
@@ -301,6 +313,8 @@ def test_warning_existing_state_is_no_call_success(
     assert result.deliveries[0].status is status
     assert result.deliveries[0].sent is False
     assert result.deliveries[0].duplicate is (status is DeliveryStatus.SENT)
+    assert result.effect_attempted is False
+    assert result.effect_channel is None
     assert email.calls == [] and mes.calls == []
     assert transactions == ["begin", "commit"]
 
@@ -337,6 +351,8 @@ def test_hold_existing_states_are_no_call_full_plan_success(
 
     assert result.ok is True
     assert len(result.deliveries) == 2
+    assert result.effect_attempted is False
+    assert result.effect_channel is None
     assert email.calls == [] and mes.calls == []
 
 
@@ -449,7 +465,37 @@ def test_repository_hash_race_is_idempotency_conflict(
     assert result.deliveries == []
 
 
-def test_invalid_factory_config_returns_fixed_dependency_result_without_db() -> None:
+def test_unexpected_repository_bug_is_not_masked_as_dependency_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [_row(DeliveryChannel.EMAIL, DeliveryStatus.WAITING)]
+    service, *_ = _service(monkeypatch, _bundle(ActionCode.WARNING), rows)
+    monkeypatch.setattr(
+        subject,
+        "get_action_bundle",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("programming bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="programming bug"):
+        service.invoke({"action_id": "ACT-1"})
+
+
+def test_unexpected_adapter_bug_is_not_masked_as_dependency_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [_row(DeliveryChannel.EMAIL, DeliveryStatus.WAITING)]
+    service, email, *_ = _service(
+        monkeypatch,
+        _bundle(ActionCode.WARNING),
+        rows,
+    )
+    email.error = RuntimeError("programming bug")
+
+    with pytest.raises(RuntimeError, match="programming bug"):
+        service.invoke({"action_id": "ACT-1"})
+
+
+def test_invalid_factory_config_fails_fast_without_db() -> None:
     transaction_calls = 0
 
     @contextmanager
@@ -458,11 +504,8 @@ def test_invalid_factory_config_returns_fixed_dependency_result_without_db() -> 
         transaction_calls += 1
         yield object()
 
-    tool = subject.build_send_action_tool(SimpleNamespace(), transactions)
-
-    result = tool({"action_id": "ACT-1"})
-
-    assert result.reason.startswith("DEPENDENCY_ERROR:")
+    with pytest.raises((EmailDeliveryConfigError, MesDeliveryConfigError)):
+        subject.build_send_action_tool(SimpleNamespace(), transactions)
     assert transaction_calls == 0
 
 

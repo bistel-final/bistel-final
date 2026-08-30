@@ -585,6 +585,8 @@ class TestSendActionContract:
         result = SendActionToolResult(
             ok=True,
             action_id="ACT-001",
+            effect_attempted=True,
+            effect_channel=DeliveryChannel.EMAIL,
             deliveries=[
                 ChannelDeliveryResult(
                     channel=DeliveryChannel.EMAIL,
@@ -603,6 +605,7 @@ class TestSendActionContract:
 
         assert result.deliveries[0].sent is True
         assert result.deliveries[1].status is DeliveryStatus.BLOCKED
+        assert result.effect_channel is DeliveryChannel.EMAIL
 
     def test_duplicate_reports_no_new_external_effect(self) -> None:
         item = ChannelDeliveryResult(
@@ -613,6 +616,37 @@ class TestSendActionContract:
         )
 
         assert item.duplicate is True
+
+    def test_success_effect_must_name_the_actual_delivery_channel(self) -> None:
+        delivery = ChannelDeliveryResult(
+            channel=DeliveryChannel.EMAIL,
+            status=DeliveryStatus.SENT,
+            sent=True,
+            duplicate=False,
+        )
+
+        with pytest.raises(ValidationError, match="effect_channel"):
+            SendActionToolResult(
+                ok=True,
+                action_id="ACT-001",
+                deliveries=[delivery],
+                effect_attempted=True,
+            )
+        with pytest.raises(ValidationError, match="deliveries"):
+            SendActionToolResult(
+                ok=True,
+                action_id="ACT-001",
+                deliveries=[delivery.model_copy(update={"sent": False})],
+                effect_attempted=True,
+                effect_channel=DeliveryChannel.MES_MOCK,
+            )
+
+        with pytest.raises(ValidationError, match="effect_attempted"):
+            SendActionToolResult(
+                ok=True,
+                action_id="ACT-001",
+                deliveries=[delivery.model_copy(update={"sent": False})],
+            )
 
     @pytest.mark.parametrize(
         "payload",

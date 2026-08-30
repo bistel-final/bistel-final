@@ -400,6 +400,43 @@ def test_post_snapshot_send_action_audit_restores_the_current_db_budget(
     )
 
 
+def test_two_idempotent_hitl_recoveries_do_not_exhaust_the_mes_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _wire(monkeypatch)
+    attempted = {
+        "ok": True,
+        "action_id": "ACT-1",
+        "deliveries": [],
+        "effect_attempted": True,
+        "effect_channel": "EMAIL",
+    }
+    no_call = {
+        "ok": True,
+        "action_id": "ACT-1",
+        "deliveries": [],
+        "effect_attempted": False,
+        "effect_channel": None,
+    }
+    # 최초 approval EMAIL은 예산을 쓰지만 checkpoint 상실 뒤 두 번의 멱등
+    # recovery 감사 행은 쓰지 않는다. 따라서 승인 후 MES 1회 자리가 남는다.
+    state.tool_calls = [
+        _tool_call("send_action", output=attempted),
+        _tool_call("send_action", output=no_call),
+        _tool_call("send_action", output=no_call),
+    ]
+
+    payload = subject.build_rehydrated_state(object(), "RUN-1")
+
+    assert payload["tool_budget"] == ToolBudget(
+        used=1,
+        by_tool={"send_action": 1},
+        send_used=1,
+        pending_reservations=0,
+    )
+    assert len(state.tool_calls) == 3, "감사 행 자체는 모두 보존한다"
+
+
 def test_post_snapshot_send_action_tail_cannot_exceed_the_send_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

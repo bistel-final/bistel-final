@@ -42,7 +42,7 @@ LangGraph Level 1·2, 원인 가설, 3단계 규칙 조치, HITL 승인, n8n SMT
 | V5-C-1.2 | P0 | 실제 routing 결합. 완료: `lot_history` LOT/WAFER routing과 B `GraphService`·`get_equipment_context`의 Process Step 인접을 결합한다. public graph API를 내부 Tool 대신 호출하지 않으며 불일치는 `route_consistency=false`로 보존한다 | FR-C-10 | V5-C-1.1, V5-B-3.2 | 2.0h |
 | V5-C-1.3 | P0 | 중복 실행 방지. 완료: 동일 incident 동시 요청에서 활성 run 1개만 만들고 처리 완료 incident는 재선택하지 않는다 | FR-C-09, FR-C-14 | V5-C-1.1 | 1.5h |
 | V5-C-2.1 | P0 | LangGraph Level 1·2 골격. 완료: load_incident→A/B Tool 수집→가설→규칙 조치→저장→delivery/HITL→finalize를 같은 State·Tool로 구성하고 설정만으로 고정 흐름/조건 분기를 전환한다. fixture에서 Level별 완료와 `agent_tool_call` 기반 호출 수 차이를 고정한다 | FR-C-02 | V5-C-1.2, V5-A-3.2-1, V5-B-2.2, V5-B-3.2 | 6.5h |
-| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다. 읽기 Tool은 caller 대기 soft 8초를 적용하고 worker 포화·queue 대기를 실제 Tool timeout과 별도 code로 구분한다. hard 상한의 실제 집행·종료 검증은 `V5-CM-4.8`에 귀속한다. finalize 실패 예약 sentinel은 자동 회수·삭제·차감하지 않고 row를 보존해 예산에 계속 포함하며, hard 종료가 확보된 구간의 회수 가능성만 `V5-CM-4.8`에서 재평가한다 | FR-C-08, NFR-03 | V5-C-2.1 | 4.0h |
+| V5-C-2.2 | P0 | Tool 예산. 완료: 총 8회·동일 Tool 재시도 상한·전송 예약을 HITL 중단·재개 전후 누적 적용하고 checkpoint·DB에서 복원한다. 읽기 Tool은 caller 대기 soft 8초를 적용하고 worker 포화·queue 대기를 실제 Tool timeout과 별도 code로 구분한다. 외부 효과 없는 성공 `send_action` no-call은 감사 행을 보존하되 예산에서만 제외하고, 실패·timeout·미종료·구형 output은 보수적으로 소비한다. hard 상한의 실제 집행·종료 검증은 `V5-CM-4.8`에 귀속한다. finalize 실패 예약 sentinel은 자동 회수·삭제·차감하지 않고 row를 보존해 예산에 계속 포함하며, hard 종료가 확보된 구간의 회수 가능성만 `V5-CM-4.8`에서 재평가한다 | FR-C-08, NFR-03 | V5-C-2.1 | 4.0h |
 | V5-C-2.3 | P0 | 원인 가설. 완료: `FOC\|RFM\|MFD\|TMD\|OTH` 구조화 출력과 실제 AlarmRef·chunk·relation 근거 인용을 생성하고 실제 LLM input/output token·model·prompt version을 run·prediction에 기록한다. `NRM`과 합성 라벨·Generator FAULTS는 query·State·Tool·prompt에 넣지 않는다 | FR-C-07, FR-C-15, NFR-19 | V5-C-2.2 | 4.0h |
 | V5-C-3.1 | P0 | `decide_action`. 완료: SUMMARY OOC-only → MONITORING, TRACE OOS → WARNING, strict R03 → EQP_HOLD의 3단계 순수 규칙 함수를 만든다. LLM·score·metrology를 입력에서 제외한다 | FR-C-03 | V5-C-2.3 | 2.0h |
 | V5-C-3.2 | P0 | action 생성 transaction. 완료: incident advisory lock→run row lock 아래 `action_history`·CREATED/REUSED link·approval·delivery와 policy provenance를 한 트랜잭션에서 만들고 incident당 유효 action 1건을 보장한다. `request_hash`는 stable identity의 raw 64 hex이며 같은 run 재호출과 자동 조치의 FAILED retry를 멱등 처리한다. EQP_HOLD는 approval의 상태·소유 run을 검증하며 새 run에 기존 approval을 재사용하지 않는다 | FR-C-14 | V5-C-3.1 | 4.0h |
@@ -150,8 +150,9 @@ bytes 기준 HMAC-SHA256, timestamp, 300초 replay window를 검증한다.
   `pg_column_size`로 기록한다. 단일 wafer 격리 fixture만으로 임의 상한을 정하지 않는다.
 - Tool 예산은 총 8회이며 interrupt 전후 누적값을 checkpoint와 DB에서 복원한다. DB의
   `agent_run` row lock 아래 총·Tool별 호출 수를 다시 집계한 뒤 같은 transaction에서 예약한다.
-- `send_action` 2회를 위해 읽기 Tool은 합계 6회까지만 예약한다. 동일 Tool은 최초 호출을 포함해
-  최대 4회이며, 차단은 실제 Tool을 호출하지 않고 nonterminal exact code로 State·run에 남긴다.
+- 실제 효과를 시도하는 `send_action` 2회를 위해 읽기 Tool은 합계 6회까지만 예약한다.
+  성공 멱등 no-call은 감사 행을 남기되 예산에서 제외한다. 동일 Tool은 최초 호출을 포함해 최대
+  4회이며, 차단은 실제 Tool을 호출하지 않고 nonterminal exact code로 State·run에 남긴다.
 - finalize 실패 sentinel은 자동 회수·삭제·차감하지 않고 row를 보존해 예산에 계속 포함한다.
   Tool별 hard 상한과 안전한 회수 재평가는 `V5-CM-4.8`이 소유하며 최종 `V5-CM-5.3` Gate가
   그 hard/soft 판정·종료 postcondition·잔여 미충족을 인용한다.
