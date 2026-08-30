@@ -11,6 +11,7 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.team.yml"
+FRONTEND_DOCKERFILE_PATH = REPOSITORY_ROOT / "frontend" / "Dockerfile"
 TEAM_ENV_EXAMPLE = REPOSITORY_ROOT / "deploy" / "compose" / ".env.team.example"
 PREFLIGHT_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "preflight_team_env.py"
 E2E_OVERRIDE_PATH = (
@@ -254,14 +255,21 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
 def test_frontend_proxy_and_production_build_args_are_fixed() -> None:
     frontend = _load_yaml()["services"]["frontend"]
     nginx = (REPOSITORY_ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+    dockerfile = FRONTEND_DOCKERFILE_PATH.read_text(encoding="utf-8")
 
     assert frontend["ports"] == ["8080:80"]
     assert frontend["build"]["args"] == {
         "VITE_API_BASE_URL": "/api",
         "VITE_USE_MOCK": "false",
-        "VITE_USE_MOCK_DETECTION": "false",
-        "VITE_USE_MOCK_AGENT": "false",
     }
+    assert "ARG VITE_API_BASE_URL=/api" in dockerfile
+    assert "ARG VITE_USE_MOCK=false" in dockerfile
+    assert "ENV VITE_USE_MOCK=${VITE_USE_MOCK}" in dockerfile
+    assert 'test "$VITE_USE_MOCK" = "false"' in dockerfile
+    assert "VITE_USE_MOCK_DETECTION" not in COMPOSE_PATH.read_text(encoding="utf-8")
+    assert "VITE_USE_MOCK_AGENT" not in COMPOSE_PATH.read_text(encoding="utf-8")
+    assert "VITE_USE_MOCK_DETECTION" not in dockerfile
+    assert "VITE_USE_MOCK_AGENT" not in dockerfile
     assert "location /api/" in nginx
     assert "proxy_pass http://backend:8000/;" in nginx
     assert "try_files $uri $uri/ /index.html;" in nginx
@@ -296,7 +304,7 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         REPOSITORY_ROOT / "deploy" / "compose" / "kafka" / "manage_wf4_offsets.sh"
     ).read_text(encoding="utf-8")
 
-    assert kafka["ports"] == ["9092:9094"]
+    assert kafka["ports"] == ["53005:9094"]
     assert environment["KAFKA_LISTENERS"] == (
         "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093," "EXTERNAL://0.0.0.0:9094"
     )

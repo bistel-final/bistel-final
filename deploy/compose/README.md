@@ -44,16 +44,16 @@ compose를 적용하지 않고 TLS listener와 인증서 배포가 준비될 때
 `BLOCKED`로 둔다. `probe_external_kafka.py`의 잘못된 credential 음성은 인증 활성만
 증명하며 채널 암호화를 증명하지 않는다.
 
-외부 `53006`에서 서버 host `9093`으로 향하는 포워딩은 사용하지 않는다. `9093`은 KRaft
-CONTROLLER 전용 PLAINTEXT listener이므로 compose에서 host에 publish하지 않으며 외부 노출을
-허용하지 않는다.
+`9093`은 KRaft CONTROLLER 전용 PLAINTEXT listener이므로 **어떤 배포 topology에서도**
+compose가 host에 publish하지 않으며 외부 노출을 허용하지 않는다.
 
 ## 적용 전후 증적
 
 1. 적용 전 `docker ps --no-trunc`와 `docker network inspect`로 전체 container ID·image·
    publish port·network membership를 기록한다.
-2. Frontend 통합 진입점 **host 8080**·Kafka **host 9092**가 기존 컨테이너나 host process에 사용되지 않는지
-   반드시 확인한다. host 9092는 흔히 사용하는 Kafka 포트이므로 점유 중이면 적용하지 않는다.
+2. Frontend 통합 진입점 **host 8080**·Kafka **host 53005**가 기존 컨테이너나 host process에 사용되지 않는지
+   반드시 확인한다. Kafka publish와 advertised listener는 모두 53005이며, 점유 중이면
+   다른 포트로 즉석 변경하지 말고 적용을 중단한다.
    기존 공용 PostgreSQL·Neo4j·n8n 포트와 컨테이너는 중지하지 않는다.
 3. 기동 후 Backend liveness는 Frontend 경유 `GET http://<host>:8080/api/health`로 확인한다.
    외부 포트 포워딩 환경에서는 `GET http://<public-host>:53000/api/health`도 같은 응답이어야
@@ -84,7 +84,8 @@ CONTROLLER 전용 PLAINTEXT listener이므로 compose에서 host에 publish하�
    불변인지 대조한다. detection joblib이 없으면 `anomaly signal unavailable`을 비차단
    상태로 기록한다.
 
-Frontend build는 `/api`와 모든 production mock=false를 Docker build arg로 고정한다.
+Frontend build는 `/api`와 전역 `VITE_USE_MOCK=false`만 Docker build arg로 고정한다.
+도메인별 `VITE_USE_MOCK_*` override는 production Compose·Dockerfile에 두지 않는다.
 완성 image의 `/usr/share/nginx/html/assets`에 `localhost:8000`이 없고 `/api`가 있는지
 검사한다.
 
