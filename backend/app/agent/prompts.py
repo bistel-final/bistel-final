@@ -153,14 +153,26 @@ def build_hypothesis_messages(
         "supporting_relation_ids, uncertainty. predicted_fault_code must be one of "
         "FOC, RFM, MFD, TMD, OTH. supporting_alarms entries use "
         '{"source":"TRACE|SUMMARY|R03","alarm_id":"..."}. '
-        "Cite only supplied identifiers. Cite at least one member alarm; when document "
-        "hits or relation identifiers exist, cite at least one of each."
+        "Cite only supplied identifiers. Cite at least one member alarm; when "
+        "document hits or relation identifiers exist, cite at least one of each. "
+        "Copy alarm entries from route.incident.member_alarms, chunk strings from "
+        "document.hits[].chunk_id, "
+        "and relation strings from route.graph_evidence[].relation_ids exactly. "
+        "Use this exact value shape with all seven keys and no extra keys: "
+        '{"predicted_fault_code":"OTH","confidence":0.0,"cause_summary":"...",'
+        '"supporting_alarms":[{"source":"SUMMARY","alarm_id":"..."}],'
+        '"supporting_chunk_ids":["..."],"supporting_relation_ids":["..."],'
+        '"uncertainty":"..."}. confidence is a number from 0 to 1; all supporting '
+        "fields are JSON arrays and uncertainty is a string."
     )
     user = f"Evidence JSON:\n{evidence_json}"
     if correction_reason is not None:
         user += (
             "\nThe previous output was rejected for sanitized reason "
-            f"{correction_reason}. Rebuild the JSON from the same evidence."
+            f"{correction_reason}. Rebuild the JSON from the same evidence. Copy "
+            "citation identifiers exactly from the arrays named in the system "
+            "instruction; do not "
+            "substitute document_id, title, chamber_id, or any inferred identifier."
         )
     messages = [
         {"role": "system", "content": system},

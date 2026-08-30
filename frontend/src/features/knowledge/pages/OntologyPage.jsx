@@ -1,16 +1,55 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { getChamberRelationsCore } from '../../../shared/api/knowledge.js'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
+import { parseOntologyFocus, resolveOntologyFocus } from '../ontology-focus-state.js'
 
 // 온톨로지 — 라이트 시안 5번. Neo4j Browser 임베드 (연결/해제 토글)
 // 헤더 툴바: `graph fdc` + Cypher 예시(모노 dim) + URL 입력(모노) + [임베드 연결]/[연결 해제]
 const CYPHER_EXAMPLE = 'MATCH (c:Chamber)-[r]->(n) RETURN c, r, n LIMIT 50'
 
 function OntologyPage() {
+  const [searchParams] = useSearchParams()
   const [url, setUrl] = useState('')
   const [embedUrl, setEmbedUrl] = useState(null)
+  const requestedFocus = useMemo(() => parseOntologyFocus(searchParams), [searchParams])
+  const focusKey = requestedFocus.phase === 'ready'
+    ? `${requestedFocus.chamberId}:${requestedFocus.relationId}:${requestedFocus.graphRevision}`
+    : null
+  const [resolved, setResolved] = useState({ key: null, focus: null })
+  const focus = requestedFocus.phase === 'ready'
+    ? resolved.key === focusKey
+      ? resolved.focus
+      : { ...requestedFocus, phase: 'loading' }
+    : requestedFocus
 
   const connected = Boolean(embedUrl)
+
+  useEffect(() => {
+    if (requestedFocus.phase !== 'ready') return undefined
+    let active = true
+    getChamberRelationsCore(requestedFocus.chamberId).then(
+      (graph) => {
+        if (active) setResolved({ key: focusKey, focus: resolveOntologyFocus(graph, requestedFocus) })
+      },
+      () => {
+        if (active) {
+          setResolved({
+            key: focusKey,
+            focus: {
+              ...requestedFocus,
+              phase: 'error',
+              message: '연결된 그래프 근거를 불러오지 못했습니다.',
+            },
+          })
+        }
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [focusKey, requestedFocus])
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -41,6 +80,45 @@ function OntologyPage() {
           )}
         </span>
       </Card>
+
+      {focus.phase !== 'none' && (
+        <Card className="mt-4 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[13px] font-extrabold text-ink">Agent 그래프 근거</div>
+              {focus.phase === 'loading' && <div className="mt-1 text-[12px] text-g2">연결 관계를 복원하는 중…</div>}
+              {focus.phase === 'found' && (
+                <>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[12px] font-bold text-blue">
+                    <span>{focus.source?.business_id ?? focus.relation.source}</span>
+                    <span>—[{focus.relation.type}]→</span>
+                    <span>{focus.target?.business_id ?? focus.relation.target}</span>
+                  </div>
+                  <div className="mt-2 font-mono text-[10.5px] text-g2">
+                    {focus.relationId} · {focus.chamberId} · rev {focus.graphRevision}
+                  </div>
+                  <div className="mt-3 rounded-lg border border-line bg-soft px-3 py-2 font-mono text-[11px] text-g1">
+                    MATCH (a)-[r]→(b) WHERE r.relation_id = '{focus.relationId}' RETURN a, r, b
+                  </div>
+                </>
+              )}
+              {['invalid', 'error', 'not-found', 'revision-mismatch'].includes(focus.phase) && (
+                <div className="mt-1 text-[12px] font-bold text-red">
+                  {focus.message ??
+                    (focus.phase === 'revision-mismatch'
+                      ? `그래프 버전이 달라 근거 관계를 복원할 수 없습니다. 현재 rev ${focus.actualRevision}`
+                      : '해당 그래프 관계를 찾을 수 없습니다.')}
+                </div>
+              )}
+            </div>
+            {focus.phase === 'found' && (
+              <span className="rounded-full border border-tint-green-line bg-state-green-bg px-3 py-1 text-[11px] font-bold text-green-dark">
+                관계 복원 완료
+              </span>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="mt-4">
         {connected ? (

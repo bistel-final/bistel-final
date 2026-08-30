@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getAlarms, getDashboard, getTraceCatalog, searchTraces } from '../../../shared/api/detection.js'
+import { getAlarm, getAlarms, getDashboard, getTraceCatalog, searchTraces } from '../../../shared/api/detection.js'
 import { getActions } from '../../../shared/api/agent.js'
 import { fmtShort } from '../../../shared/api/format.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
@@ -56,6 +56,9 @@ function AlarmsPage() {
   const [applied, setApplied] = useState(DEFAULT_SCOPE)
   const [page, setPage] = useState(1)
   const tab = searchParams.get('tab') === 'SUMMARY' ? 'SUMMARY' : 'TRACE'
+  const sourceQuery = searchParams.get('source')
+  const source = ['TRACE', 'SUMMARY', 'R03'].includes(sourceQuery) ? sourceQuery : null
+  const invalidSource = sourceQuery !== null && source === null
 
   const load = useCallback(() => {
     const scope = {}
@@ -67,25 +70,31 @@ function AlarmsPage() {
       getTraceCatalog(),
       getAlarms({ ...scope, page: 1, size: WIDE }),
       getActions({ page: 1, size: WIDE }),
+      alarmId && source ? getAlarm(alarmId, source) : Promise.resolve(null),
     ])
-      .then(([summary, catalog, alarmPage, actionPage]) =>
+      .then(([summary, catalog, alarmPage, actionPage, focusedAlarm]) =>
         setData({
           hierarchy: summary.hierarchy ?? [],
           catalog,
           alarms: alarmPage.items ?? [],
           actionOf: Object.fromEntries((actionPage.items ?? []).map((a) => [a.action_id, a])),
+          focusedAlarm,
         }),
       )
       .catch((e) => setError(e.message))
-  }, [applied])
+  }, [alarmId, applied, source])
   useEffect(() => {
     load()
   }, [load])
 
   // 선택 알람 트렌드 — /alarms/:alarmId 로 복원된다
   const selected = useMemo(
-    () => (alarmId ? (data?.alarms ?? []).find((a) => a.alarm_id === alarmId) ?? null : null),
-    [alarmId, data],
+    () => {
+      if (!alarmId || invalidSource) return null
+      if (source) return data?.focusedAlarm ?? null
+      return (data?.alarms ?? []).find((alarm) => alarm.alarm_id === alarmId) ?? null
+    },
+    [alarmId, data, invalidSource, source],
   )
   const loadTrace = useCallback(() => {
     if (!selected) return
@@ -144,7 +153,12 @@ function AlarmsPage() {
     params.set('tab', next)
     setSearchParams(params, { replace: true })
   }
-  const select = (id) => navigate(`/alarms/${id}?tab=${tab}`)
+  const select = (id) => {
+    const selectedSource = data.alarms.find((alarm) => alarm.alarm_id === id)?.source
+    const query = new URLSearchParams({ tab })
+    if (selectedSource) query.set('source', selectedSource)
+    navigate(`/alarms/${encodeURIComponent(id)}?${query}`)
+  }
 
   const limOf = (sensorId) => sensorLimit(null, data.catalog, sensorId)
   const shownTrace = trace?.forId === alarmId ? trace : null
@@ -238,7 +252,9 @@ function AlarmsPage() {
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{num(isTrace ? lim?.spec_lower : lim?.ctrl_lower)}</td>
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{num(isTrace ? lim?.spec_upper : lim?.ctrl_upper)}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} text-[11px] text-g1`}>
-                        {act ? `${act.send_channel} · ${act.send_status}` : '—'}
+                        {act?.deliveries?.length
+                          ? act.deliveries.map((delivery) => `${delivery.channel} · ${delivery.status}`).join(' / ')
+                          : '—'}
                       </td>
                     </tr>
                   )

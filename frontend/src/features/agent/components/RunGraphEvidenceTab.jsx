@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getChamberRelations } from '../../../shared/api/knowledge.js'
+import { Link } from 'react-router-dom'
+import { getChamberRelationsCore } from '../../../shared/api/knowledge.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
+import { normalizeOntologyGraph } from '../../knowledge/ontology-focus-state.js'
+import { evidenceHref } from '../agent-run-view-state.js'
 
 const NODE_HEX = {
   Area: '#0f766e',
@@ -55,7 +58,7 @@ const graphRelationship = (type, source, target, displayType = type) => ({
 
 function normalizeProjection(raw) {
   if (!raw) return null
-  if (Array.isArray(raw.nodes) && Array.isArray(raw.relationships)) return raw
+  if (Array.isArray(raw.nodes) && Array.isArray(raw.relationships)) return normalizeOntologyGraph(raw)
 
   // legacy mock DTO를 화면 표시용 projection으로 변환하는 경로다.
   // 여기서 만드는 display_type은 Neo4j 실제 relationship type이 아니다.
@@ -160,7 +163,7 @@ function relationTitle(rel) {
   return rel.display_type ?? RELATION_TEXT[rel.type] ?? rel.type
 }
 
-function EvidenceGraph({ graph }) {
+function EvidenceGraph({ graph, focusedRelationIds }) {
   const positioned = useMemo(() => layoutNodes(graph.nodes, graph.root_node_id), [graph])
   const nodes = [...positioned.values()]
   const relationships = graph.relationships.filter((rel) => positioned.has(rel.source) && positioned.has(rel.target))
@@ -177,6 +180,7 @@ function EvidenceGraph({ graph }) {
         const target = positioned.get(rel.target)
         const midX = (source.x + target.x) / 2
         const midY = (source.y + target.y) / 2
+        const focused = focusedRelationIds.has(rel.id)
         return (
           <g key={rel.id}>
             <line
@@ -184,11 +188,11 @@ function EvidenceGraph({ graph }) {
               y1={source.y}
               x2={target.x}
               y2={target.y}
-              stroke="var(--color-dash-line)"
-              strokeWidth="1.4"
+              stroke={focused ? '#2563eb' : 'var(--color-dash-line)'}
+              strokeWidth={focused ? '3' : '1.4'}
               markerEnd="url(#graph-arrow)"
             />
-            <text x={midX} y={midY - 6} fontSize="8.5" fill="var(--color-g2)" textAnchor="middle">
+            <text x={midX} y={midY - 6} fontSize="8.5" fill={focused ? '#2563eb' : 'var(--color-g2)'} textAnchor="middle">
               {relationTitle(rel)}
             </text>
           </g>
@@ -282,12 +286,33 @@ function NodeSummary({ graph }) {
   )
 }
 
-function RunGraphEvidenceTab({ run }) {
+function GraphEvidenceLinks({ items, chamberId }) {
+  if (items.length === 0) return null
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((item) => (
+        <div key={item.source_id} className="flex items-center justify-between gap-3 rounded-lg border border-tint-blue-line bg-tint-blue px-3.5 py-3">
+          <span className="min-w-0">
+            <span className="block truncate text-[12px] font-bold text-ink">{item.title}</span>
+            <span className="block truncate font-mono text-[10.5px] text-g2">{item.relation_id} · rev {item.graph_revision.slice(0, 10)}…</span>
+          </span>
+          <Link to={evidenceHref(item, { chamberId })} className="flex-none text-[12px] font-bold text-blue">
+            온톨로지에서 보기 →
+          </Link>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
   const chamberId = run.incident?.chamber_id
+  const graphItems = evidenceItems.filter((item) => item.type === 'GRAPH')
+  const focusedRelationIds = useMemo(() => new Set(graphItems.map((item) => item.relation_id)), [graphItems])
   const [state, setState] = useState({ chamberId: null, status: 'idle', graph: null, error: null })
 
   const load = useCallback((nextChamberId) => {
-    getChamberRelations(nextChamberId)
+    getChamberRelationsCore(nextChamberId)
       .then((response) => {
         const graph = normalizeProjection(response)
         setState({ chamberId: nextChamberId, status: graph ? 'success' : 'empty', graph, error: null })
@@ -306,7 +331,12 @@ function RunGraphEvidenceTab({ run }) {
     return <LoadingState message="그래프 근거를 불러오는 중…" />
   }
   if (state.status === 'error') {
-    return <ErrorState title="그래프 근거를 불러오지 못했습니다" detail={state.error} onRetry={() => load(chamberId)} />
+    return (
+      <div className="flex flex-col gap-4">
+        <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
+        <ErrorState title="그래프 근거를 불러오지 못했습니다" detail={state.error} onRetry={() => load(chamberId)} />
+      </div>
+    )
   }
   if (!state.graph || state.graph.nodes.length === 0) {
     return <EmptyState title="그래프 근거가 없습니다" description={chamberId} />
@@ -314,9 +344,10 @@ function RunGraphEvidenceTab({ run }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
       <NodeSummary graph={state.graph} />
       <div className="rounded-[10px] border border-line bg-white p-3">
-        <EvidenceGraph graph={state.graph} />
+        <EvidenceGraph graph={state.graph} focusedRelationIds={focusedRelationIds} />
       </div>
       <div>
         <div className="mb-2 text-[11px] font-bold text-g2">근거 요약</div>

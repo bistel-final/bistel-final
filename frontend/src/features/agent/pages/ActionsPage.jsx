@@ -312,7 +312,7 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           </div>
           <div className={CELL_SUB}>LOT · 챔버</div>
         </td>
-        <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.sensor_id}</td>
+        <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.sensor_id ?? '—'}</td>
         <td className={TD_CLS}>
           <Badge variant={actionCodeVariant(a.action_code)}>{a.action_code}</Badge>
         </td>
@@ -323,17 +323,20 @@ function ActionRow({ action: a, cls, isOpen, isPending, onToggle, onReview }) {
           </span>
         </td>
         <td className={TD_CLS}>
-          {a.send_status === 'SENT' ? <Badge variant="t-green">SENT</Badge> : <span className="text-g2">—</span>}
+          <div className="flex flex-wrap gap-1">
+            {(a.deliveries ?? []).length === 0 ? (
+              <span className="text-g2">—</span>
+            ) : (
+              a.deliveries.map((delivery) => (
+                <Badge key={delivery.channel} variant={delivery.status === 'SENT' ? 't-green' : 't-gray'}>
+                  {delivery.channel} · {delivery.status}
+                </Badge>
+              ))
+            )}
+          </div>
         </td>
         <td className={TD_CLS}>
-          {/* 알람 N건 → 해당 알람들만 필터된 알람 목록으로 이동 */}
-          <Link
-            to={`/alarms?alarms=${a.alarm_ids.join(',')}`}
-            onClick={(e) => e.stopPropagation()}
-            className={`${CELL_MONO} font-bold`}
-          >
-            {a.alarm_count ?? a.alarm_ids.length}건
-          </Link>
+          <span className={`${CELL_MONO} text-g2`}>—</span>
         </td>
         <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.created_at)}</td>
         <td className={`${TD_CLS} text-right`}>

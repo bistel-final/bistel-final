@@ -1,6 +1,6 @@
 import apiClient, { mockEnabledFor, mockResponse } from './client.js'
 import { assertExactObject, compactParams, requireDatePair, requireNonEmptyString } from './contract.js'
-import { CORE_ALARM, CORE_PARAMETER, CORE_TRACE_POINT } from './contractMocks.js'
+import { CORE_AGENT_RUN, CORE_ALARM, CORE_PARAMETER, CORE_TRACE_POINT } from './contractMocks.js'
 import { toIso } from './format.js'
 import { ALARMS } from '../../features/detection/mock/alarms.js'
 import {
@@ -28,11 +28,42 @@ const runOfAlarm = {}
 for (const r of RUNS) for (const id of r.alarm_ids) runOfAlarm[id] = r
 
 // AlarmItem — incident 는 (lot_id, chamber_id) 두 개뿐이다. sensor_id 등은 형제 필드.
+const alarmSourceOf = (alarm) =>
+  alarm.source ?? (String(alarm.rule_id).startsWith('R03') ? 'R03' : alarm.judgement === 'OOS' ? 'TRACE' : 'SUMMARY')
+
+// Agent 화면의 canonical R03 근거는 배포 데이터 기반 legacy ALM-* mock과 ID 체계가
+// 다르다. source-aware deep-link도 mock에서 실제 공개 응답과 같은 필드를 복원한다.
+const CORE_R03_ALARM_DETAIL = Object.freeze({
+  alarm_id: CORE_AGENT_RUN.alarm_id,
+  source: CORE_AGENT_RUN.alarm_source,
+  area: 'Etch',
+  lot_hist_id: 'LH-000004',
+  lot_id: 'LOT004',
+  wafer_no: 2,
+  chamber_id: CORE_AGENT_RUN.chamber_id,
+  equipment_id: 'EQP04',
+  sensor_id: 'ET_REFL',
+  recipe_step_no: 1,
+  recipe_step_name: 'MAIN_ETCH',
+  rule_id: 'R03_CONSEC',
+  judgement: 'OOS',
+  hit_cnt: 3,
+  detail: 'OOS for 3 consecutive WAFER at MAIN_ETCH',
+  occurred_at: CORE_AGENT_RUN.created_at,
+  incident: { lot_id: 'LOT004', chamber_id: CORE_AGENT_RUN.chamber_id },
+  action_id: CORE_AGENT_RUN.action_id,
+  action_code: CORE_AGENT_RUN.recommended_action,
+  approval_status: 'PENDING',
+  latest_agent_run_id: CORE_AGENT_RUN.agent_run_id,
+  agent_run_status: CORE_AGENT_RUN.status,
+})
+
 const toItem = (a) => {
   const act = actionOfAlarm[a.alarm_id]
   const run = runOfAlarm[a.alarm_id]
   return {
     alarm_id: a.alarm_id,
+    source: alarmSourceOf(a),
     lot_hist_id: a.lot_hist_id,
     lot_id: a.lot_id,
     wafer_no: Number(a.wafer_no),
@@ -180,12 +211,26 @@ export function getParameters() {
   return apiClient.get('/parameters').then((response) => response.data)
 }
 
-export function getAlarm(alarmId) {
+export function getAlarm(alarmId, source = null) {
   if (USE_MOCK) {
-    const a = ALARMS.find((item) => item.alarm_id === alarmId)
+    if (
+      alarmId === CORE_R03_ALARM_DETAIL.alarm_id &&
+      (!source || source === CORE_R03_ALARM_DETAIL.source)
+    ) {
+      return mockResponse(CORE_R03_ALARM_DETAIL)
+    }
+    const a = ALARMS.find(
+      (item) =>
+        item.alarm_id === alarmId &&
+        (!source || alarmSourceOf(item) === source),
+    )
     return mockResponse(a ? toItem(a) : null)
   }
-  return apiClient.get(`/alarms/${alarmId}`).then((response) => response.data)
+  return getAlarmsCore(source ? { source } : {}).then(
+    (alarms) => alarms.find(
+      (alarm) => alarm.alarm_id === alarmId && (!source || alarm.source === source),
+    ) ?? null,
+  )
 }
 
 // GET /traces/catalog — 조회 선택지 + 센서별 한계선·단위

@@ -168,23 +168,46 @@ def preflight_model() -> str:
     return model
 
 
-def _request(messages: list[dict[str, str]]) -> dict[str, Any]:
+def _request(
+    messages: list[dict[str, str]],
+    *,
+    json_object: bool = False,
+    json_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """OpenAI 호환 응답 JSON을 받는 공통 HTTP 경계."""
+    if json_object and json_schema is not None:
+        raise ValueError("JSON object mode와 JSON schema를 동시에 요청할 수 없습니다.")
     base_url, api_key = _resolve_endpoint()
+    provider = LLM_PROVIDER.strip().lower()
 
     max_retries = _retry_max()
     attempt = 0
     while True:
         try:
+            request_body: dict[str, Any] = {
+                "model": LLM_MODEL_MAIN,
+                "messages": messages,
+                "temperature": LLM_TEMPERATURE,
+                "max_tokens": LLM_MAX_TOKENS,
+            }
+            if json_schema is not None:
+                # OpenAI 외 provider의 /v1 호환 endpoint는 json_schema를 거부하거나
+                # 무시할 수 있다. 그 경로에서는 JSON object만 요청하고 호출부의
+                # Pydantic·citation 검증과 1회 교정으로 구조를 fail-closed 확정한다.
+                request_body["response_format"] = (
+                    {
+                        "type": "json_schema",
+                        "json_schema": json_schema,
+                    }
+                    if provider == "openai"
+                    else {"type": "json_object"}
+                )
+            elif json_object:
+                request_body["response_format"] = {"type": "json_object"}
             response = httpx.post(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": LLM_MODEL_MAIN,
-                    "messages": messages,
-                    "temperature": LLM_TEMPERATURE,
-                    "max_tokens": LLM_MAX_TOKENS,
-                },
+                json=request_body,
                 timeout=LLM_TIMEOUT_SEC,
             )
         except httpx.TimeoutException as exc:
@@ -244,10 +267,19 @@ def _usage_token(usage: object, field: str) -> int:
     return value
 
 
-def chat_with_usage(messages: list[dict[str, str]]) -> ChatCompletion:
+def chat_with_usage(
+    messages: list[dict[str, str]],
+    *,
+    json_object: bool = False,
+    json_schema: dict[str, Any] | None = None,
+) -> ChatCompletion:
     """응답 본문과 provider 실제 model·usage를 엄격하게 반환한다."""
 
-    payload = _request(messages)
+    payload = _request(
+        messages,
+        json_object=json_object,
+        json_schema=json_schema,
+    )
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip() or len(model.strip()) > 64:
         raise LlmDependencyError("LLM model 형식을 해석할 수 없다.")

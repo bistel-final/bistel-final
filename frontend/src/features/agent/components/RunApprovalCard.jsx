@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { decideApproval } from '../../../shared/api/agent.js'
+import { decideApprovalCanonical } from '../../../shared/api/agent.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 
 // 요청 body 의 decision 값은 APPROVE / REJECT — 응답·조회 상태값(APPROVED / REJECTED)과 다르다
-const DECISION = { APPROVE: 'APPROVE', REJECT: 'REJECT' }
-const RESULT_OF = { APPROVE: 'APPROVED', REJECT: 'REJECTED' }
+const DECISION = { APPROVE: 'APPROVED', REJECT: 'REJECTED' }
+const RESULT_OF = { APPROVED: 'APPROVED', REJECTED: 'REJECTED' }
 const DECIDED_LABEL = { APPROVED: '승인 완료', REJECTED: '반려' }
 const STATUS_VARIANT = { PENDING: 't-amber', APPROVED: 't-green', REJECTED: 't-red' }
 
@@ -34,7 +34,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
   }
 
   // 자동 조치(LOT_HOLD·MONITOR)는 HITL 승인 대상이 아니다 — 폼 대신 안내만 노출
-  if (action && action.approval_status === 'AUTO') {
+  if (action && action.action_code !== 'EQP_HOLD') {
     return (
       <div>
         <div className="mb-2 text-xs font-bold text-g1">승인</div>
@@ -45,7 +45,10 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
           </div>
           <div className="mt-2 text-xs leading-[1.6] text-g1">
             {action.action_code} 는 기본 결정표의 자동 승인 조치입니다. 승인 절차 없이{' '}
-            <span className="font-mono font-bold text-navy">{action.send_channel}</span> 채널로 전송됩니다.
+            <span className="font-mono font-bold text-navy">
+              {action.deliveries.map((delivery) => delivery.channel).join(' · ') || '채널 없음'}
+            </span>
+            으로 처리됩니다.
           </div>
         </div>
       </div>
@@ -79,7 +82,7 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
       return
     }
     setSending(true)
-    decideApproval(approval.approval_id, {
+    decideApprovalCanonical(approval.approval_id, {
       decision,
       decided_by: decidedBy.trim(),
       decision_comment: decisionComment.trim(),
@@ -87,12 +90,10 @@ function RunApprovalCard({ action, approval, decided, onDecided, onToast }) {
       .then((res) => {
         setSending(false)
         onDecided({
-          status: res?.approval_status ?? RESULT_OF[decision],
+          status: res?.status ?? RESULT_OF[decision],
           decided_by: res?.decided_by ?? decidedBy.trim(),
           decision_comment: res?.decision_comment ?? decisionComment.trim(),
           approval_id: res?.approval_id ?? approval.approval_id,
-          send_status: res?.send_status ?? null,
-          agent_run_status: res?.agent_run_status ?? null,
         })
         onToast({
           tone: decision === DECISION.APPROVE ? 'ok' : 'oos',

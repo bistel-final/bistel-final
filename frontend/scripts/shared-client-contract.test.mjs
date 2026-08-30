@@ -199,6 +199,7 @@ assert.deepEqual(
   captures.slice(-4).map(({ method, url }) => `${method} ${url}`),
   ['GET /alarms/paged', 'GET /agent/runs', 'GET /approvals', 'GET /audit-logs/paged'],
 )
+assert.ok(!captures.some(({ url }) => url === '/agent/runs/paged'))
 for (const result of pagedResults) {
   assert.deepEqual(Object.keys(result).sort(), ['items', 'page', 'size', 'total'])
   assert.ok(Array.isArray(result.items))
@@ -399,4 +400,4 @@ const serializedMocks = JSON.stringify(mockResults)
 assert.ok(!serializedMocks.includes('ground_truth_fault_code'))
 assert.ok(!serializedMocks.includes('lot_history.fault_code'))
 
-console.log('shared-client-contract: 11 core transports, paged split, exact mocks, canonical projections passed')
+console.log('shared-client-contract: 11 core transports, run bare adapter, exact mocks, canonical projections passed')

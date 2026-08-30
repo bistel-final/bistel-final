@@ -107,6 +107,32 @@ def test_embedding_model_is_loaded_once_from_local_cache(monkeypatch: Any) -> No
     embedding.get_embedding_model.cache_clear()
 
 
+def test_embedding_warmup_runs_first_inference_and_validates_dimension(
+    monkeypatch: Any,
+) -> None:
+    queries: list[str] = []
+    monkeypatch.setattr(
+        embedding,
+        "embed_query",
+        lambda query: queries.append(query) or [0.0] * 1024,
+    )
+
+    embedding.warm_embedding_model()
+
+    assert queries == [embedding.EMBEDDING_WARMUP_QUERY]
+
+
+@pytest.mark.parametrize("vector", [[0.0] * 1023, [float("nan")] * 1024])
+def test_embedding_warmup_rejects_invalid_vector(
+    monkeypatch: Any,
+    vector: list[float],
+) -> None:
+    monkeypatch.setattr(embedding, "embed_query", lambda _query: vector)
+
+    with pytest.raises(EmbeddingModelNotReadyError):
+        embedding.warm_embedding_model()
+
+
 def test_embedding_model_missing_cache_raises_model_not_ready(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: Any,

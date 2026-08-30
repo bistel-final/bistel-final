@@ -693,6 +693,35 @@ def test_runtime_preflight_failure_never_builds_resources() -> None:
     assert built == []
 
 
+def test_new_run_preflight_warms_embedding_before_resource_build() -> None:
+    graph = _RuntimeGraph()
+    resources = _runtime_resources(graph)
+    order: list[str] = []
+    runtime = AgentRuntime(
+        factory=lambda _model: order.append("resources") or resources,
+        llm_preflight=lambda: order.append("llm") or "configured-model",
+        embedding_preflight=lambda: order.append("embedding"),
+    )
+
+    assert runtime.preflight() is resources
+    assert order == ["llm", "embedding", "resources"]
+
+
+def test_embedding_preflight_failure_never_builds_resources() -> None:
+    built: list[str] = []
+    runtime = AgentRuntime(
+        factory=lambda model: built.append(model),  # type: ignore[arg-type,return-value]
+        llm_preflight=lambda: "configured-model",
+        embedding_preflight=lambda: (_ for _ in ()).throw(RuntimeError("secret")),
+    )
+
+    with pytest.raises(runtime_module.AgentRuntimeError) as caught:
+        runtime.preflight()
+
+    assert caught.value.code == "RAG_MODEL_NOT_READY"
+    assert built == []
+
+
 def test_resume_resource_build_does_not_require_remote_llm_preflight() -> None:
     graph = _RuntimeGraph()
     resources = _runtime_resources(graph)
@@ -701,6 +730,7 @@ def test_resume_resource_build_does_not_require_remote_llm_preflight() -> None:
         factory=lambda _model: resources,
         llm_preflight=lambda: remote_calls.append("remote") or "configured-model",
         model_config=lambda: "configured-model",
+        embedding_preflight=lambda: remote_calls.append("embedding"),
     )
 
     assert runtime.resources() is resources

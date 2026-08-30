@@ -17,7 +17,7 @@ const POINT_HEX = { OOS: '#dc2626', OOC: '#f59e0b' }
 const KST_MS = 9 * 60 * 60 * 1000
 const hhmm = (ms) => new Date(ms + KST_MS).toISOString().slice(11, 16)
 
-function HistoryTrendChart({ wafer, lim }) {
+function HistoryTrendChart({ wafer, lim, emptyMessage = null }) {
   const points = [...(wafer?.points ?? [])]
     .map((p) => ({ ...p, ms: Date.parse(p.measured_at) }))
     .filter((p) => Number.isFinite(p.ms))
@@ -27,7 +27,7 @@ function HistoryTrendChart({ wafer, lim }) {
   if (points.length === 0)
     return (
       <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">
-        선택한 알람의 trace 실측이 응답에 없습니다
+        {emptyMessage ?? '선택한 알람의 trace 실측이 응답에 없습니다'}
       </div>
     )
 
@@ -121,23 +121,31 @@ function HistoryTrendChart({ wafer, lim }) {
 }
 
 // 트렌드 카드 래퍼 — 제목 `PARAM · WAFER · EQP-CH`
-export function HistoryTrendCard({ alarm, wafer, lim, loading }) {
+export function HistoryTrendCard({ alarm, wafer, lim, loading, emptyMessage = null }) {
+  const parameter = alarm?.parameter_id ?? alarm?.sensor_id
+  const waferLabel = alarm?.wafer_id ?? (alarm?.wafer_no != null ? `W${alarm.wafer_no}` : null)
   return (
     <Card className="px-5 pb-3 pt-4">
       <div className="mb-2 flex items-baseline justify-between">
         <span className="font-mono text-[14px] font-extrabold text-ink">
-          {alarm ? `${alarm.sensor_id} · W${alarm.wafer_no} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
+          {alarm ? `${parameter ?? 'PARAMETER 미제공'} · ${waferLabel ?? 'WAFER 미제공'} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
         </span>
         <span className="text-[11.5px] text-g2">
           {alarm
-            ? `${lim?.sensor_name ?? ''}${lim?.unit ? ` · 단위 ${lim.unit}` : ''}`
-            : '행을 선택하면 트렌드가 표시됩니다'}
+            ? `${lim?.parameter_name ?? lim?.sensor_name ?? ''}${lim?.unit ? ` · 단위 ${lim.unit}` : ''}`
+            : emptyMessage
+              ? '실측 데이터 연결 대기'
+              : '행을 선택하면 트렌드가 표시됩니다'}
         </span>
       </div>
       {loading ? (
         <div className="flex h-[300px] items-center justify-center text-[12.5px] text-g2">트렌드를 불러오는 중…</div>
       ) : alarm ? (
-        <HistoryTrendChart wafer={wafer} lim={lim} />
+        <HistoryTrendChart wafer={wafer} lim={lim} emptyMessage={emptyMessage} />
+      ) : emptyMessage ? (
+        <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line px-6 text-center text-[12.5px] text-g2">
+          {emptyMessage}
+        </div>
       ) : (
         <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">
           테이블에서 알람 행을 선택해 주세요

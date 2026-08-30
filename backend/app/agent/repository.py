@@ -72,6 +72,7 @@ from app.common.enums import (
     Severity,
     ToolCallStatus,
     requires_approval,
+    resolve_delivery_channels,
     resolve_severity,
 )
 from app.common.ids import new_agent_run_id, new_approval_id, new_tool_call_id
@@ -125,6 +126,8 @@ __all__ = [
     "DeliveryRecoveryResult",
     "ApprovalDecisionRow",
     "PublicAgentRunRecord",
+    "PublicActionDeliveryRecord",
+    "PublicActionRecord",
     "PublicApprovalRecord",
     "PublicDeliveryRecord",
     "PublicToolCallRecord",
@@ -141,6 +144,9 @@ __all__ = [
     "reserve_tool_call",
     "finalize_tool_call",
     "list_tool_calls",
+    "list_actions_public",
+    "get_action_public",
+    "get_agent_run_public",
     "count_tool_calls",
     "count_tool_calls_for_budget",
     "tool_call_consumes_budget",
@@ -3526,6 +3532,14 @@ class PublicDeliveryRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicActionDeliveryRecord:
+    channel: DeliveryChannel
+    status: DeliveryStatus
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class PublicAgentRunRecord:
     agent_run_id: str
     created_at: datetime
@@ -3563,6 +3577,20 @@ class PublicApprovalRecord:
     decided_by: str | None
     decided_at: datetime | None
     decision_comment: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicActionRecord:
+    action_id: str
+    agent_run_id: str
+    action_code: ActionCode
+    lot_id: str
+    equipment_id: str | None
+    chamber_id: str
+    reason: str
+    approval_status: ApprovalStatus | None
+    deliveries: tuple[PublicActionDeliveryRecord, ...]
+    created_at: datetime
 
 
 _SELECT_PUBLIC_AGENT_RUNS = text(
@@ -3625,9 +3653,76 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
       AND (
         CAST(:date_to AS timestamptz) IS NULL
         OR r.started_at < CAST(:date_to AS timestamptz)
-    )
+      )
+      AND (CAST(:run_status AS text) IS NULL OR r.status = CAST(:run_status AS text))
+      AND (
+        CAST(:fault_code AS text) IS NULL
+        OR p.predicted_fault_code = CAST(:fault_code AS text)
+      )
+      AND (CAST(:run_id AS text) IS NULL OR r.agent_run_id = CAST(:run_id AS text))
     ORDER BY r.started_at DESC, r.agent_run_id DESC
     LIMIT :limit
+    """
+)
+
+
+_PUBLIC_ACTION_SELECT = """
+    SELECT action.action_id,
+           linked.agent_run_id,
+           action.action_code,
+           action.lot_id,
+           COALESCE(
+               action.equipment_id,
+               incident_equipment.equipment_id
+           ) AS equipment_id,
+           action.chamber_id,
+           action.reason,
+           approval.status AS approval_status,
+           COALESCE(delivery_rows.items, '[]'::jsonb) AS deliveries,
+           action.created_at
+    FROM action_history AS action
+    LEFT JOIN agent_run_action AS linked
+      ON linked.action_id = action.action_id
+     AND linked.link_role = 'CREATED'
+    LEFT JOIN approval_request AS approval
+      ON approval.action_id = action.action_id
+    LEFT JOIN LATERAL (
+        SELECT CASE
+                 WHEN count(DISTINCT history.equipment_id) = 1
+                 THEN min(history.equipment_id)
+                 ELSE NULL
+               END AS equipment_id
+        FROM lot_history AS history
+        WHERE history.lot_id = action.lot_id
+          AND history.chamber_id = action.chamber_id
+          AND history.equipment_id IS NOT NULL
+    ) AS incident_equipment ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'channel', delivery.channel,
+                       'status', delivery.status,
+                       'started_at', delivery.started_at,
+                       'completed_at', delivery.completed_at
+                   )
+                   ORDER BY delivery.channel
+               ) AS items
+        FROM action_delivery AS delivery
+        WHERE delivery.action_id = action.action_id
+    ) AS delivery_rows ON TRUE
+"""
+
+_SELECT_PUBLIC_ACTIONS = text(
+    f"""{_PUBLIC_ACTION_SELECT}
+    WHERE (CAST(:action_code AS text) IS NULL
+           OR action.action_code = CAST(:action_code AS text))
+    ORDER BY action.created_at DESC, action.action_id DESC
+    """
+)
+
+_SELECT_PUBLIC_ACTION = text(
+    f"""{_PUBLIC_ACTION_SELECT}
+    WHERE action.action_id = :action_id
     """
 )
 
@@ -3784,6 +3879,9 @@ def list_agent_runs_public(
     *,
     date_from: datetime | None,
     date_to: datetime | None,
+    status: RunStatus | None = None,
+    predicted_fault_code: FaultHypothesis | None = None,
+    run_id: str | None = None,
 ) -> list[PublicAgentRunRecord]:
     """공개 실행 목록을 행 수와 무관한 단일 query로 읽는다.
 
@@ -3798,6 +3896,13 @@ def list_agent_runs_public(
             "date_from": date_from,
             "date_to": date_to,
             "limit": PUBLIC_AGENT_RUN_LIMIT,
+            "run_status": None if status is None else RunStatus(status).value,
+            "fault_code": (
+                None
+                if predicted_fault_code is None
+                else FaultHypothesis(predicted_fault_code).value
+            ),
+            "run_id": None if run_id is None else _require_text(run_id, "run_id"),
         },
     )
     records: list[PublicAgentRunRecord] = []
@@ -3809,6 +3914,116 @@ def list_agent_runs_public(
             # 가리지 않되 운영자는 고정 code로 원인을 집계할 수 있다.
             record_public_read_omission("agent_run", exc.code)
     return records
+
+
+def get_agent_run_public(
+    connection: Connection, agent_run_id: str
+) -> PublicAgentRunRecord:
+    records = list_agent_runs_public(
+        connection,
+        date_from=None,
+        date_to=None,
+        run_id=agent_run_id,
+    )
+    if not records:
+        raise RepositoryNotFound("RUN_NOT_FOUND")
+    if len(records) != 1:
+        raise RepositoryContractError("PUBLIC_RUN_NOT_EXACTLY_ONE")
+    return records[0]
+
+
+def _public_action_delivery_records(
+    value: object,
+) -> tuple[PublicActionDeliveryRecord, ...]:
+    if not isinstance(value, list):
+        raise RepositoryContractError("PUBLIC_ACTION_DELIVERIES_INVALID")
+    records: list[PublicActionDeliveryRecord] = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != {
+            "channel",
+            "status",
+            "started_at",
+            "completed_at",
+        }:
+            raise RepositoryContractError("PUBLIC_ACTION_DELIVERY_INVALID")
+        try:
+            records.append(
+                PublicActionDeliveryRecord(
+                    channel=DeliveryChannel(item["channel"]),
+                    status=DeliveryStatus(item["status"]),
+                    started_at=item["started_at"],
+                    completed_at=item["completed_at"],
+                )
+            )
+        except ValueError as exc:
+            raise RepositoryContractError(
+                "PUBLIC_ACTION_DELIVERY_VALUE_INVALID"
+            ) from exc
+    return tuple(records)
+
+
+def _public_action_record(row: Row[Any]) -> PublicActionRecord:
+    if row.agent_run_id is None:
+        raise RepositoryContractError("PUBLIC_ACTION_RUN_MISSING")
+    try:
+        action_code = ActionCode(row.action_code)
+        approval_status = (
+            None if row.approval_status is None else ApprovalStatus(row.approval_status)
+        )
+    except ValueError as exc:
+        raise RepositoryContractError("PUBLIC_ACTION_ENUM_INVALID") from exc
+    if action_code is ActionCode.EQP_HOLD:
+        if approval_status not in {
+            ApprovalStatus.PENDING,
+            ApprovalStatus.APPROVED,
+            ApprovalStatus.REJECTED,
+        }:
+            raise RepositoryContractError("PUBLIC_ACTION_APPROVAL_MISSING")
+    elif approval_status is not None:
+        raise RepositoryContractError("PUBLIC_ACTION_APPROVAL_UNEXPECTED")
+    deliveries = _public_action_delivery_records(row.deliveries)
+    expected_channels = resolve_delivery_channels(action_code)
+    if tuple(item.channel for item in deliveries) != tuple(sorted(expected_channels)):
+        raise RepositoryContractError("PUBLIC_ACTION_DELIVERY_SET_INVALID")
+    return PublicActionRecord(
+        action_id=_require_text(row.action_id, "action_id"),
+        agent_run_id=_require_text(row.agent_run_id, "agent_run_id"),
+        action_code=action_code,
+        lot_id=_require_text(row.lot_id, "lot_id"),
+        equipment_id=_optional_text(row.equipment_id, "equipment_id"),
+        chamber_id=_require_text(row.chamber_id, "chamber_id"),
+        reason=_require_text(row.reason, "reason"),
+        approval_status=approval_status,
+        deliveries=deliveries,
+        created_at=row.created_at,
+    )
+
+
+def list_actions_public(
+    connection: Connection,
+    *,
+    action_code: ActionCode | None = None,
+) -> list[PublicActionRecord]:
+    rows = _fetch_all(
+        connection,
+        _SELECT_PUBLIC_ACTIONS,
+        {
+            "action_code": (
+                None if action_code is None else ActionCode(action_code).value
+            )
+        },
+    )
+    return [_public_action_record(row) for row in rows]
+
+
+def get_action_public(connection: Connection, action_id: str) -> PublicActionRecord:
+    row = _fetch_one(
+        connection,
+        _SELECT_PUBLIC_ACTION,
+        {"action_id": _require_text(action_id, "action_id")},
+        "ACTION_NOT_FOUND",
+    )
+    return _public_action_record(row)
 
 
 def _public_approval_record(row: Row[Any]) -> PublicApprovalRecord:

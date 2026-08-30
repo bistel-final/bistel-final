@@ -1,5 +1,14 @@
 {
   "components": {
+    "ActionDetailResponse": {
+      "type": "named"
+    },
+    "ActionItem": {
+      "type": "named"
+    },
+    "AgentRunDetailResponse": {
+      "type": "named"
+    },
     "AnalysisQueryRequest": {
       "type": "named"
     },
@@ -310,6 +319,142 @@
       "sort": [
         "occurred_at DESC",
         "audit_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "C",
+      "path": "/agent/runs/{run_id}",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {
+          "run_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AgentRunDetailResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AgentRunDetailResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "single run"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "C",
+      "path": "/actions",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "action_code": {
+            "enum": [
+              "MONITORING",
+              "WARNING",
+              "EQP_HOLD"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "item_ref": "ActionItem",
+        "type": "array"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ActionItem",
+          "shape": "array"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "created_at DESC",
+        "action_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "C",
+      "path": "/actions/{action_id}",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {
+          "action_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "ActionDetailResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "ActionDetailResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "single action"
       ],
       "success_status": 200
     }

@@ -6,6 +6,49 @@ import { RELATIONS } from '../../features/knowledge/mock/relations.js'
 
 const USE_MOCK = mockEnabledFor('KNOWLEDGE')
 
+const mockCoreGraphFor = (chamberId) => {
+  if (chamberId === CORE_CHAMBER_GRAPH.context.chamber_id) return CORE_CHAMBER_GRAPH
+  const originalNodeId = `Chamber:${CORE_CHAMBER_GRAPH.context.chamber_id}`
+  const nextNodeId = `Chamber:${chamberId}`
+  const equipmentId = chamberId.replace(/-PM\d+$/, '')
+  const relation = CORE_CHAMBER_GRAPH.relationships[0]
+  const parameterId = 'ET_REFL'
+  const parameterNodeId = `Parameter:${parameterId}`
+  return {
+    ...CORE_CHAMBER_GRAPH,
+    context: {
+      ...CORE_CHAMBER_GRAPH.context,
+      area: 'Etch',
+      equipment_id: equipmentId,
+      chamber_id: chamberId,
+      model_code: 'ET-7500',
+      process_step_id: 'CT-ETCH',
+      adjacent_process_step_ids: ['CT-PHOTO'],
+      parameter_ids: [parameterId],
+      relation_ids: [relation.relation_id],
+    },
+    nodes: [
+      { node_id: nextNodeId, label: 'Chamber', business_id: chamberId, name: chamberId, properties: {} },
+      { node_id: parameterNodeId, label: 'Parameter', business_id: parameterId, name: parameterId, properties: {} },
+    ],
+    relationships: [
+      {
+        ...relation,
+        from_node_id: relation.from_node_id === originalNodeId ? nextNodeId : parameterNodeId,
+        to_node_id: relation.to_node_id === originalNodeId ? nextNodeId : parameterNodeId,
+      },
+    ],
+    node_count: 2,
+    relationship_count: 1,
+  }
+}
+
+const MOCK_DOCUMENT_ALIASES = Object.freeze({
+  'DOC-TROUBLE-FDC': { legacy: 'TROUBLE_FDC_FaultGuide', firstChunk: 6 },
+  'DOC-SPEC-PH9000': { legacy: 'SPEC_PH-9000_PhotoScanner', firstChunk: 5 },
+  'DOC-SPEC-ET7500': { legacy: 'SPEC_ET-7500_DryEtcher', firstChunk: 1 },
+})
+
 const equipmentNode = (equipment) => ({
   equipment_id: equipment.id,
   equipment_name: equipment.id,
@@ -56,7 +99,7 @@ export function getChamberRelationsCore(chamberId, params = {}) {
   const normalizedId = requireNonEmptyString(chamberId, 'chamber_id')
   assertExactObject(params, ['label', 'limit'], 'getChamberRelationsCore params')
   const query = compactParams(params)
-  if (USE_MOCK) return mockResponse(CORE_CHAMBER_GRAPH)
+  if (USE_MOCK) return mockResponse(mockCoreGraphFor(normalizedId))
   return apiClient
     .get(`/relations/chambers/${encodeURIComponent(normalizedId)}`, { params: query })
     .then((response) => response.data)
@@ -144,11 +187,19 @@ export function searchDocumentsCore(input) {
 
 export function getDocument(documentId) {
   if (USE_MOCK) {
+    const alias = MOCK_DOCUMENT_ALIASES[documentId] ?? { legacy: documentId, firstChunk: 1 }
+    const seen = new Set()
     const chunks = Object.values(DOC_DB)
       .flat()
-      .filter((document) => document.doc === documentId)
+      .filter((document) => document.doc === alias.legacy)
+      .filter((document) => {
+        const key = `${document.section ?? ''}\u0000${document.excerpt ?? ''}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
       .map((document, index) => ({
-        chunk_id: `CHK-MOCK-${String(index + 1).padStart(4, '0')}`,
+        chunk_id: `${documentId}:cs2:${String(alias.firstChunk + index).padStart(4, '0')}`,
         chunk_seq: index + 1,
         section_title: document.section ?? null,
         content: document.excerpt ?? '',
@@ -167,5 +218,5 @@ export function getDocument(documentId) {
         : null,
     )
   }
-  return apiClient.get(`/documents/${documentId}`).then((response) => response.data)
+  return apiClient.get(`/documents/${encodeURIComponent(documentId)}`).then((response) => response.data)
 }

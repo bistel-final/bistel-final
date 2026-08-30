@@ -96,33 +96,31 @@ function ActionDetailPanel({ actionId }) {
             {action.incident.lot_id} · {action.incident.chamber_id}
           </span>
         </Field>
-        <Field label="파라미터">
-          <span className="font-mono font-bold">{action.sensor_id}</span>
-        </Field>
-        <Field label="발송 채널">
-          <span className="font-mono font-bold">{action.send_channel || DASH}</span>
+        <Field label="전송 채널">
+          <span className="font-mono font-bold">
+            {(action.deliveries ?? []).map((delivery) => delivery.channel).join(' · ') || DASH}
+          </span>
         </Field>
         <Field label="승인">
           <span className={`font-bold ${approvalClass(approval)}`}>{approvalLabel(approval)}</span>
-          {approval === 'APPROVED' && (
-            <span className="ml-1.5 font-mono text-[11.5px] font-semibold text-g1">
-              {action.approved_by} · {fmtDateTime(action.approved_at)}
-            </span>
-          )}
         </Field>
         <Field label="전송">
-          {action.send_status === 'SENT' ? (
-            <Badge variant="t-green">SENT</Badge>
-          ) : (
-            <span className="font-semibold text-g1">{SEND_LABEL[action.send_status] ?? action.send_status}</span>
-          )}
+          <span className="flex flex-wrap gap-1">
+            {(action.deliveries ?? []).length === 0
+              ? DASH
+              : action.deliveries.map((delivery) => (
+                  <Badge key={delivery.channel} variant={delivery.status === 'SENT' ? 't-green' : 't-gray'}>
+                    {delivery.channel} · {SEND_LABEL[delivery.status] ?? delivery.status}
+                  </Badge>
+                ))}
+          </span>
         </Field>
         <Field label="생성 시각">
           <span className="font-mono font-bold">{fmtDateTime(action.created_at)}</span>
         </Field>
       </div>
 
-      {action.reason ? (
+      {fault ? (
         <div className="rounded-lg border border-line bg-white px-3.5 py-3">
           <div className="flex items-center gap-2">
             <Badge variant="t-blue">{fault.code}</Badge>
@@ -136,8 +134,7 @@ function ActionDetailPanel({ actionId }) {
       )}
 
       <div className="flex items-center gap-2 text-[12.5px] font-bold text-g1">
-        <span>incident 알람</span>
-        <span className="font-mono font-extrabold text-navy">{action.alarm_count}건</span>
+        <span>연결 실행</span>
         {action.created_by_agent_run_id && (
           <Link to={`/agent-runs/${action.created_by_agent_run_id}`} className="ml-1 font-sans text-xs font-bold">
             생성 실행에서 보기 →
