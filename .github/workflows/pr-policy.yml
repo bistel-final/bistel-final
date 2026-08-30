@@ -210,6 +210,8 @@ jobs:
           tests/unit/test_common_boundary_adapters.py
           tests/unit/test_common_db_evaluation.py
           tests/unit/test_common_ids_enums.py
+          tests/unit/test_cypher_tools.py
+          tests/unit/test_cypher_validator.py
           tests/unit/test_detection_evaluation.py
           tests/unit/test_document_contract.py
           tests/unit/test_document_search.py
