@@ -30,12 +30,15 @@ Tool 예산 정책은 `V5-C-2.2`가 소유한다. 이 계층은 그들이 정한
 from __future__ import annotations
 
 import json
+import logging
 import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from threading import Lock
 from typing import Any, Final
 
 from sqlalchemy import text
@@ -73,6 +76,8 @@ from app.common.enums import (
 )
 from app.common.ids import new_agent_run_id, new_approval_id, new_tool_call_id
 from app.common.schemas import AlarmRef
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentRepositoryError",
@@ -123,6 +128,7 @@ __all__ = [
     "PublicApprovalRecord",
     "PublicDeliveryRecord",
     "PublicToolCallRecord",
+    "public_read_omission_counts",
     "RESERVED_TOOL_OUTPUT_KEYS",
     "RESERVED_ERROR_MSG",
     "link_run_action",
@@ -1045,53 +1051,67 @@ ACTIVE_TIMING_KEY: Final = "active_timing"
 ACTIVE_TIMING_SCHEMA: Final = "agent-active-timing-v1"
 
 
-def _timing_started_at(run: AgentRunRow) -> datetime | None:
-    """저장된 현재 활성 구간 시작을 읽는다.
+def _active_latency_snapshot_ms(
+    *,
+    status: RunStatus,
+    subtotal_ms: int | None,
+    started_at: datetime,
+    timing: object,
+    now: datetime,
+) -> int:
+    """저장 subtotal과 현재 활성 구간으로 HITL 제외 latency를 계산한다.
 
-    최초 구간은 별도 JSON을 쓰지 않고 정본 ``started_at``을 사용한다. 승인 재개 뒤
-    구간만 versioned evidence에 기록한다. 알 수 없는 모양을 시작 시각으로 추측하지
-    않는다.
+    실행 갱신과 public read model이 이 함수를 함께 사용한다. SQL에서 timestamp를
+    재해석하거나 ``started_at``으로 별도 fallback하지 않는다.
     """
 
-    timing = (run.evidence or {}).get(ACTIVE_TIMING_KEY)
+    if now.tzinfo is None:
+        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID")
+    if subtotal_ms is None or subtotal_ms < 0:
+        raise RepositoryContractError("ACTIVE_TIMING_SUBTOTAL_INVALID")
+    if status is not RunStatus.RUNNING:
+        return subtotal_ms
+
     if timing is None:
-        if run.status is RunStatus.RUNNING and (run.latency_ms or 0) == 0:
-            return run.started_at
-        return None
-    if not isinstance(timing, Mapping) or timing.get("schema") != ACTIVE_TIMING_SCHEMA:
-        raise RepositoryContractError("ACTIVE_TIMING_INVALID")
-    raw = timing.get("active_started_at")
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
-        raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+        active_started_at = started_at if subtotal_ms == 0 else None
+    else:
+        if (
+            not isinstance(timing, Mapping)
+            or timing.get("schema") != ACTIVE_TIMING_SCHEMA
+        ):
+            raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+        raw = timing.get("active_started_at")
+        if raw is None:
+            active_started_at = None
+        elif not isinstance(raw, str):
+            raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+        else:
+            try:
+                active_started_at = datetime.fromisoformat(raw)
+            except ValueError as exc:
+                raise RepositoryContractError("ACTIVE_TIMING_INVALID") from exc
+            if active_started_at.tzinfo is None:
+                raise RepositoryContractError("ACTIVE_TIMING_INVALID")
+
+    if active_started_at is None:
+        raise RepositoryContractError("ACTIVE_TIMING_START_MISSING")
     try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError as exc:
-        raise RepositoryContractError("ACTIVE_TIMING_INVALID") from exc
-    if parsed.tzinfo is None:
-        raise RepositoryContractError("ACTIVE_TIMING_INVALID")
-    return parsed
+        elapsed_ms = int((now - active_started_at).total_seconds() * 1000)
+    except (TypeError, OverflowError) as exc:
+        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID") from exc
+    return min(2_147_483_647, subtotal_ms + max(0, elapsed_ms))
 
 
 def active_run_latency_ms(run: AgentRunRow, *, now: datetime) -> int:
     """HITL 사람 대기를 제외한 현재 활성시간 snapshot을 계산한다."""
 
-    if now.tzinfo is None:
-        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID")
-    subtotal = run.latency_ms
-    if subtotal is None or subtotal < 0:
-        raise RepositoryContractError("ACTIVE_TIMING_SUBTOTAL_INVALID")
-    if run.status is not RunStatus.RUNNING:
-        return subtotal
-    started_at = _timing_started_at(run)
-    if started_at is None:
-        raise RepositoryContractError("ACTIVE_TIMING_START_MISSING")
-    try:
-        elapsed_ms = int((now - started_at).total_seconds() * 1000)
-    except (TypeError, OverflowError) as exc:
-        raise RepositoryContractError("ACTIVE_TIMING_CLOCK_INVALID") from exc
-    return subtotal + max(0, elapsed_ms)
+    return _active_latency_snapshot_ms(
+        status=run.status,
+        subtotal_ms=run.latency_ms,
+        started_at=run.started_at,
+        timing=(run.evidence or {}).get(ACTIVE_TIMING_KEY),
+        now=now,
+    )
 
 
 def _timing_evidence(
@@ -3474,6 +3494,24 @@ def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
 # API v3 공개 목록 read model — 한 endpoint당 고정 1 query
 # ---------------------------------------------------------------------------
 
+_PUBLIC_READ_OMISSIONS: Counter[tuple[str, str]] = Counter()
+_PUBLIC_READ_OMISSIONS_LOCK = Lock()
+
+
+def record_public_read_omission(surface: str, code: str) -> None:
+    """손상 행 제외를 식별자 없이 로그·process-local counter에 남긴다."""
+
+    with _PUBLIC_READ_OMISSIONS_LOCK:
+        _PUBLIC_READ_OMISSIONS[(surface, code)] += 1
+    logger.warning("public %s row omitted (code=%s)", surface, code)
+
+
+def public_read_omission_counts() -> dict[tuple[str, str], int]:
+    """운영 관측·테스트용 snapshot. 내부 mutable counter를 직접 노출하지 않는다."""
+
+    with _PUBLIC_READ_OMISSIONS_LOCK:
+        return dict(_PUBLIC_READ_OMISSIONS)
+
 
 @dataclass(frozen=True, slots=True)
 class PublicToolCallRecord:
@@ -3503,6 +3541,10 @@ class PublicAgentRunRecord:
     deliveries: tuple[PublicDeliveryRecord, ...]
     latency_ms: int
     llm_model: str
+
+
+# API v3가 bare array를 유지하므로 DB가 무한히 자라도 한 요청이 모두 읽지 않는다.
+PUBLIC_AGENT_RUN_LIMIT: Final = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -3540,25 +3582,9 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
            approval.agent_run_id AS approval_agent_run_id,
            COALESCE(tool_rows.items, '[]'::jsonb) AS tools,
            COALESCE(delivery_rows.items, '[]'::jsonb) AS deliveries,
-           CASE
-             WHEN r.status = 'RUNNING' AND r.latency_ms IS NOT NULL THEN
-               LEAST(
-                 2147483647,
-                 r.latency_ms + GREATEST(
-                   0,
-                   FLOOR(EXTRACT(EPOCH FROM (
-                     clock_timestamp() - COALESCE(
-                       NULLIF(
-                         r.evidence -> 'active_timing' ->> 'active_started_at',
-                         ''
-                       )::timestamptz,
-                       r.started_at
-                     )
-                   )) * 1000)::bigint
-                 )
-               )::integer
-             ELSE r.latency_ms
-           END AS latency_ms,
+           r.latency_ms,
+           r.evidence -> 'active_timing' AS active_timing,
+           clock_timestamp() AS observed_at,
            r.llm_model
     FROM agent_run AS r
     LEFT JOIN agent_prediction AS p
@@ -3599,8 +3625,9 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
       AND (
         CAST(:date_to AS timestamptz) IS NULL
         OR r.started_at < CAST(:date_to AS timestamptz)
-      )
+    )
     ORDER BY r.started_at DESC, r.agent_run_id DESC
+    LIMIT :limit
     """
 )
 
@@ -3700,12 +3727,6 @@ def _public_delivery_records(value: object) -> tuple[PublicDeliveryRecord, ...]:
 
 
 def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
-    if row.latency_ms is None:
-        raise RepositoryContractError("PUBLIC_RUN_LATENCY_MISSING")
-    latency_ms = int(row.latency_ms)
-    if latency_ms < 0:
-        raise RepositoryContractError("PUBLIC_RUN_LATENCY_INVALID")
-    llm_model = _require_text(row.llm_model, "llm_model")
     try:
         predicted = (
             None
@@ -3729,6 +3750,14 @@ def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
             raise RepositoryContractError("PUBLIC_RUN_ACTION_MISMATCH")
     if row.approval_id is not None and row.approval_agent_run_id != row.agent_run_id:
         raise RepositoryContractError("PUBLIC_RUN_APPROVAL_MISMATCH")
+    latency_ms = _active_latency_snapshot_ms(
+        status=status,
+        subtotal_ms=row.latency_ms,
+        started_at=row.created_at,
+        timing=row.active_timing,
+        now=row.observed_at,
+    )
+    llm_model = _require_text(row.llm_model, "llm_model")
     confidence = row.confidence
     return PublicAgentRunRecord(
         agent_run_id=row.agent_run_id,
@@ -3765,9 +3794,21 @@ def list_agent_runs_public(
     rows = _fetch_all(
         connection,
         _SELECT_PUBLIC_AGENT_RUNS,
-        {"date_from": date_from, "date_to": date_to},
+        {
+            "date_from": date_from,
+            "date_to": date_to,
+            "limit": PUBLIC_AGENT_RUN_LIMIT,
+        },
     )
-    return [_public_agent_run_record(row) for row in rows]
+    records: list[PublicAgentRunRecord] = []
+    for row in rows:
+        try:
+            records.append(_public_agent_run_record(row))
+        except RepositoryContractError as exc:
+            # 식별자·row·원문은 로그에 넣지 않는다. 한 손상 행이 정상 실행 이력을
+            # 가리지 않되 운영자는 고정 code로 원인을 집계할 수 있다.
+            record_public_read_omission("agent_run", exc.code)
+    return records
 
 
 def _public_approval_record(row: Row[Any]) -> PublicApprovalRecord:
@@ -3834,7 +3875,7 @@ def _public_approval_record(row: Row[Any]) -> PublicApprovalRecord:
 
 
 def list_approvals_public(connection: Connection) -> list[PublicApprovalRecord]:
-    """공개 승인 이력을 단일 query로 읽고 child·장비 cardinality를 fail-closed한다."""
+    """공개 승인 이력을 단일 query로 읽고 손상 행만 fail-closed 격리한다."""
 
     rows = _fetch_all(
         connection,
@@ -3847,7 +3888,13 @@ def list_approvals_public(connection: Connection) -> list[PublicApprovalRecord]:
             ]
         },
     )
-    return [_public_approval_record(row) for row in rows]
+    records: list[PublicApprovalRecord] = []
+    for row in rows:
+        try:
+            records.append(_public_approval_record(row))
+        except RepositoryContractError as exc:
+            record_public_read_omission("approval", exc.code)
+    return records
 
 
 def get_approval_public(

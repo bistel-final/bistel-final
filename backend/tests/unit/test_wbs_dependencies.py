@@ -156,8 +156,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "열아홉"
-    assert len(listed) == 19
+    assert exception_section["count_word"] == "스무"
+    assert len(listed) == 20
     assert listed == actual
 
 

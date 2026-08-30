@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from typing import Annotated
 
@@ -25,7 +26,11 @@ from app.agent.public_schemas import (
     PublicAgentRunItem,
     PublicApprovalItem,
 )
-from app.agent.repository import RepositoryRetryable, RepositoryUnavailable
+from app.agent.repository import (
+    RepositoryContractError,
+    RepositoryRetryable,
+    RepositoryUnavailable,
+)
 from app.agent.runtime_composition import (
     AgentRuntime,
     get_agent_runtime,
@@ -37,7 +42,13 @@ from app.agent.schemas import (
     ApprovalDecisionRequest,
 )
 from app.common.db import get_db_connection
-from app.common.exceptions import DependencyNotReadyError, IdempotencyConflictError
+from app.common.exceptions import (
+    AppError,
+    DependencyNotReadyError,
+    IdempotencyConflictError,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Agent"])
 
@@ -47,6 +58,16 @@ def _agent_read_unavailable() -> HTTPException:
         status_code=503,
         detail="Agent 조회 데이터베이스가 준비되지 않았습니다.",
     )
+
+
+def _agent_read_contract_error(exc: RepositoryContractError) -> AppError:
+    """손상 code만 기록하고 public 응답에는 내부 row·driver 정보를 숨긴다."""
+
+    logger.error("agent public read contract failed (code=%s)", exc.code)
+    mapped = runtime_http_error(exc)
+    if isinstance(mapped, AppError):
+        return mapped
+    return AppError()
 
 
 @router.post(
@@ -64,6 +85,8 @@ def create_agent_run(
     try:
         started = runtime.start_run(payload.alarm)
         try:
+            # add_task는 현재 in-memory 등록만 보상한다. 202 뒤 process 종료 창은
+            # agent-background-recovery runbook의 수동 복구 범위다.
             background_tasks.add_task(
                 runtime.continue_run,
                 started.thread_id,
@@ -105,6 +128,8 @@ def read_agent_runs(
         ) from exc
     except (RepositoryRetryable, RepositoryUnavailable) as exc:
         raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
 
 
 @router.post("/agent/ask", response_model=AgentAskResponse)
@@ -135,6 +160,8 @@ def read_approvals(
         return list_public_approvals(connection)
     except (RepositoryRetryable, RepositoryUnavailable) as exc:
         raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
 
 
 @router.post(
@@ -152,6 +179,7 @@ def decide_public_approval(
     try:
         decided = runtime.decide_approval_public(approval_id, payload)
         try:
+            # 등록-time 예외만 보상한다. 응답 뒤 process 종료는 runbook에서 대조한다.
             background_tasks.add_task(
                 runtime.resume_decided,
                 decided.thread_id,

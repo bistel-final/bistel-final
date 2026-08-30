@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Final
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
 from app.agent.public_schemas import (
@@ -27,6 +28,7 @@ from app.agent.repository import (
     RepositoryContractError,
     list_agent_runs_public,
     list_approvals_public,
+    record_public_read_omission,
 )
 from app.common.boundary_adapters import (
     to_public_approval_status,
@@ -155,7 +157,18 @@ def list_public_agent_runs(
         date_from=lower,
         date_to=upper,
     )
-    return [_public_run(record) for record in records]
+    items: list[PublicAgentRunItem] = []
+    for record in records:
+        try:
+            items.append(_public_run(record))
+        except RepositoryContractError as exc:
+            record_public_read_omission("agent_run_projection", exc.code)
+        except ValidationError:
+            record_public_read_omission(
+                "agent_run_projection",
+                "PUBLIC_RUN_DTO_INVALID",
+            )
+    return items
 
 
 def to_public_approval(record: PublicApprovalRecord) -> PublicApprovalItem:
@@ -190,7 +203,16 @@ _public_approval = to_public_approval
 
 
 def list_public_approvals(connection: Connection) -> list[PublicApprovalItem]:
-    return [to_public_approval(record) for record in list_approvals_public(connection)]
+    items: list[PublicApprovalItem] = []
+    for record in list_approvals_public(connection):
+        try:
+            items.append(to_public_approval(record))
+        except ValidationError:
+            record_public_read_omission(
+                "approval_projection",
+                "PUBLIC_APPROVAL_DTO_INVALID",
+            )
+    return items
 
 
 __all__ = [

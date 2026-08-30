@@ -18,6 +18,9 @@
 - graceful shutdown timeout·강제 종료와 background 예외가 겹치면 실제 업무 결함이 아니어도
   `BACKGROUND_EXECUTION_FAILED` 또는 `APPROVAL_RESUME_FAILED` 근거로 `FAILED`가 될 수 있다.
   이를 자동으로 RUNNING으로 되돌리거나 새 run으로 재실행하지 않는다.
+- graceful shutdown 시작 뒤 늦게 도착한 background 호출은 닫힌 checkpoint pool을 다시
+  조립하지 않고 `AGENT_RUNTIME_CLOSED`로 안전 실패한다. 이 차단은 이미 실행 중이던 작업의
+  내구성이나 202 이후 process 종료 창을 복구해 주는 기능은 아니다.
 
 ## 2. 지원되는 재개 경계
 

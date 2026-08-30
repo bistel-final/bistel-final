@@ -482,6 +482,8 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   `SUCCESS|ERROR|TIMEOUT`이다.
 - source-aware 식별자는 `alarm_source`와 `alarm_id`의 쌍이다.
 - 안정 정렬: `created_at DESC, agent_run_id DESC`.
+- bare array 전환 계약 동안 서버는 위 정렬 기준의 최근 500건까지만 반환한다. 날짜 범위를
+  지정해도 결과가 500건을 넘으면 같은 상한을 적용하며, 페이지네이션은 후속 확장 계약이다.
 
 ### 3.6 `GET /approvals`
 

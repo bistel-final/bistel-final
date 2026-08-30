@@ -28,7 +28,6 @@ from app.agent.public_read_model import (  # noqa: E402
 )
 from app.agent.repository import (  # noqa: E402
     CreateAgentRunCommand,
-    RepositoryContractError,
     create_agent_run,
 )
 from app.agent.runtime_composition import AgentRuntime  # noqa: E402
@@ -369,7 +368,7 @@ def test_public_approval_uses_real_distinct_equipment_and_decision_aliases(
     assert rejected[0].approved_at == rejected[0].decided_at
 
 
-def test_public_approval_fails_closed_when_incident_has_two_equipments(
+def test_public_approval_omits_only_row_when_incident_has_two_equipments(
     runtime_engine: Any,
 ) -> None:
     with runtime_engine.begin() as connection:
@@ -388,9 +387,7 @@ def test_public_approval_fails_closed_when_incident_has_two_equipments(
         )
 
     with runtime_engine.connect() as connection:
-        with pytest.raises(RepositoryContractError) as caught:
-            list_public_approvals(connection)
-    assert caught.value.code == "PUBLIC_APPROVAL_EQUIPMENT_NOT_EXACTLY_ONE"
+        assert list_public_approvals(connection) == []
 
 
 def test_agent_ask_changes_zero_rows_in_all_runtime_write_tables(

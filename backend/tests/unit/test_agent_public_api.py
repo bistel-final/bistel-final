@@ -210,30 +210,36 @@ def test_date_pair_uses_kst_half_open_boundaries() -> None:
         read_model.public_run_date_bounds(date.max, date.max)
 
 
+def _run_db_row(**overrides: Any) -> SimpleNamespace:
+    values: dict[str, Any] = {
+        "agent_run_id": "RUN-0000000000000001",
+        "created_at": NOW,
+        "requested_alarm_source": "R03",
+        "requested_alarm_id": "R03-1",
+        "chamber_id": "EQP04-PM2",
+        "predicted_fault_code": "RFM",
+        "confidence": Decimal("0.840"),
+        "recommended_action": "EQP_HOLD",
+        "status": "WAITING_APPROVAL",
+        "action_id": "ACT-0000000000000001",
+        "stored_action_code": "EQP_HOLD",
+        "approval_id": "APR-0000000000000001",
+        "approval_agent_run_id": "RUN-0000000000000001",
+        "tools": [{"tool_name": "search_documents", "status": "SUCCESS"}],
+        "deliveries": [{"channel": "MES_MOCK", "status": "BLOCKED"}],
+        "latency_ms": 920,
+        "active_timing": None,
+        "observed_at": NOW,
+        "llm_model": "configured-model",
+    }
+    values.update(overrides)
+    if "agent_run_id" in overrides and "approval_agent_run_id" not in overrides:
+        values["approval_agent_run_id"] = overrides["agent_run_id"]
+    return SimpleNamespace(**values)
+
+
 def test_run_repository_is_one_query_without_raw_tool_data() -> None:
-    connection = _Connection(
-        [
-            SimpleNamespace(
-                agent_run_id="RUN-0000000000000001",
-                created_at=NOW,
-                requested_alarm_source="R03",
-                requested_alarm_id="R03-1",
-                chamber_id="EQP04-PM2",
-                predicted_fault_code="RFM",
-                confidence=Decimal("0.840"),
-                recommended_action="EQP_HOLD",
-                status="WAITING_APPROVAL",
-                action_id="ACT-0000000000000001",
-                stored_action_code="EQP_HOLD",
-                approval_id="APR-0000000000000001",
-                approval_agent_run_id="RUN-0000000000000001",
-                tools=[{"tool_name": "search_documents", "status": "SUCCESS"}],
-                deliveries=[{"channel": "MES_MOCK", "status": "BLOCKED"}],
-                latency_ms=920,
-                llm_model="configured-model",
-            )
-        ]
-    )
+    connection = _Connection([_run_db_row()])
 
     records = repo.list_agent_runs_public(connection, date_from=NOW, date_to=NOW)
 
@@ -244,7 +250,63 @@ def test_run_repository_is_one_query_without_raw_tool_data() -> None:
     assert "tool.output" not in sql
     assert "tool.error_msg" not in sql
     assert "agent_prediction_review" not in sql
+    assert "active_started_at" not in sql
+    assert "LIMIT :limit" in sql
+    assert connection.calls[0][1]["limit"] == repo.PUBLIC_AGENT_RUN_LIMIT
     assert records[0].confidence == 0.84
+
+
+def test_run_repository_omits_only_nullable_or_malformed_legacy_rows(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    before = repo.public_read_omission_counts()
+    connection = _Connection(
+        [
+            _run_db_row(),
+            _run_db_row(
+                agent_run_id="RUN-0000000000000002",
+                latency_ms=None,
+            ),
+            _run_db_row(
+                agent_run_id="RUN-0000000000000003",
+                llm_model=None,
+            ),
+            _run_db_row(
+                agent_run_id="RUN-0000000000000004",
+                status="RUNNING",
+                latency_ms=100,
+                active_timing={
+                    "schema": repo.ACTIVE_TIMING_SCHEMA,
+                    "active_started_at": "not-a-timestamp",
+                },
+            ),
+            _run_db_row(
+                agent_run_id="RUN-0000000000000005",
+                status="RUNNING",
+                latency_ms=100,
+                active_timing={"schema": repo.ACTIVE_TIMING_SCHEMA},
+            ),
+        ]
+    )
+
+    records = repo.list_agent_runs_public(connection, date_from=None, date_to=None)
+
+    assert [record.agent_run_id for record in records] == ["RUN-0000000000000001"]
+    assert "ACTIVE_TIMING_SUBTOTAL_INVALID" in caplog.text
+    assert "INVALID_LLM_MODEL" in caplog.text
+    assert "ACTIVE_TIMING_INVALID" in caplog.text
+    assert "ACTIVE_TIMING_START_MISSING" in caplog.text
+    assert "RUN-0000000000000002" not in caplog.text
+    after = repo.public_read_omission_counts()
+    assert after.get(("agent_run", "ACTIVE_TIMING_SUBTOTAL_INVALID"), 0) == (
+        before.get(("agent_run", "ACTIVE_TIMING_SUBTOTAL_INVALID"), 0) + 1
+    )
+    assert after.get(("agent_run", "INVALID_LLM_MODEL"), 0) == (
+        before.get(("agent_run", "INVALID_LLM_MODEL"), 0) + 1
+    )
+    assert after.get(("agent_run", "ACTIVE_TIMING_START_MISSING"), 0) == (
+        before.get(("agent_run", "ACTIVE_TIMING_START_MISSING"), 0) + 1
+    )
 
 
 def _approval_db_row(equipment_ids: list[str]) -> SimpleNamespace:
@@ -278,9 +340,7 @@ def test_approval_repository_requires_exactly_one_real_equipment(
 ) -> None:
     connection = _Connection([_approval_db_row(equipment_ids)])
 
-    with pytest.raises(repo.RepositoryContractError) as caught:
-        repo.list_approvals_public(connection)
-    assert caught.value.code == "PUBLIC_APPROVAL_EQUIPMENT_NOT_EXACTLY_ONE"
+    assert repo.list_approvals_public(connection) == []
     assert len(connection.calls) == 1
 
 
@@ -288,9 +348,16 @@ def test_approval_repository_fails_closed_on_cross_entity_identity() -> None:
     row = _approval_db_row(["EQP04"])
     row.linked_action_id = "ACT-OTHER"
 
-    with pytest.raises(repo.RepositoryContractError) as caught:
-        repo.list_approvals_public(_Connection([row]))
-    assert caught.value.code == "PUBLIC_APPROVAL_IDENTITY_MISMATCH"
+    assert repo.list_approvals_public(_Connection([row])) == []
+
+
+def test_approval_repository_omits_bad_row_without_hiding_healthy_row() -> None:
+    healthy = _approval_db_row(["EQP04"])
+    invalid = _approval_db_row(["EQP04", "EQP05"])
+
+    records = repo.list_approvals_public(_Connection([healthy, invalid]))
+
+    assert [record.approval_id for record in records] == ["APR-0000000000000001"]
 
 
 def test_rejected_approval_aliases_copy_canonical_decision_fields(
@@ -368,6 +435,23 @@ def test_repository_unavailable_maps_to_sanitized_503(
 
     assert response.status_code == 503
     assert "secret" not in response.text
+
+
+def test_repository_contract_maps_to_sanitized_500_and_logs_code(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def invalid(*_args: Any, **_kwargs: Any) -> list[PublicAgentRunItem]:
+        raise repo.RepositoryContractError("PUBLIC_RUN_DTO_INVALID", "row=secret")
+
+    monkeypatch.setattr(agent_router, "list_public_agent_runs", invalid)
+    _app, client = _test_app(object())
+
+    response = client.get("/agent/runs")
+
+    assert response.status_code == 500
+    assert "secret" not in response.text
+    assert "PUBLIC_RUN_DTO_INVALID" in caplog.text
 
 
 class _FakePublicRuntime:
@@ -652,3 +736,22 @@ def test_runtime_close_is_idempotent_and_pool_closes_after_executor_error() -> N
 
     assert executor.shutdowns == 1
     assert pool.closed == 1
+
+
+def test_runtime_close_prevents_late_resource_or_ask_rebuild() -> None:
+    built: list[str] = []
+    asked: list[str] = []
+    runtime = AgentRuntime(
+        factory=lambda model: built.append(model),  # type: ignore[arg-type,return-value]
+        ask_factory=lambda: asked.append("ask"),  # type: ignore[arg-type,return-value]
+        model_config=lambda: "configured-model",
+    )
+    runtime.close()
+
+    for call in (runtime.resources, lambda: runtime.ask_public("question")):
+        with pytest.raises(runtime_module.AgentRuntimeError) as caught:
+            call()
+        assert caught.value.code == "AGENT_RUNTIME_CLOSED"
+
+    assert built == []
+    assert asked == []

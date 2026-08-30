@@ -58,6 +58,7 @@ from app.common.config import AGENT_AUTONOMY_LEVEL
 from app.common.db import create_app_postgres_url, get_app_engine
 from app.common.enums import RunStatus
 from app.common.exceptions import (
+    AppError,
     ApprovalAlreadyDecidedError,
     DependencyNotReadyError,
     InvalidRequestError,
@@ -272,14 +273,21 @@ class AgentRuntime:
         self._autonomy_level = autonomy_level
         self._resources: RuntimeResources | None = None
         self._ask_service: ask.AgentAskService | None = None
+        self._closed = False
         self._lock = Lock()
 
+    def _require_open(self) -> None:
+        if self._closed:
+            raise AgentRuntimeError("AGENT_RUNTIME_CLOSED")
+
     def _build_or_get(self, model: str) -> RuntimeResources:
+        self._require_open()
         if self._resources is not None:
             if self._resources.llm_model != model:
                 raise AgentRuntimeError("LLM_MODEL_CHANGED")
             return self._resources
         with self._lock:
+            self._require_open()
             if self._resources is not None:
                 if self._resources.llm_model != model:
                     raise AgentRuntimeError("LLM_MODEL_CHANGED")
@@ -293,6 +301,7 @@ class AgentRuntime:
     def resources(self) -> RuntimeResources:
         """재개/종료 경로용 조립. LLM 원격 가용성을 다시 요구하지 않는다."""
 
+        self._require_open()
         if self._autonomy_level not in (1, 2):
             raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
         try:
@@ -304,6 +313,7 @@ class AgentRuntime:
     def preflight(self) -> RuntimeResources:
         """POST run DML 전에 configured model의 원격 준비까지 확인한다."""
 
+        self._require_open()
         if self._autonomy_level not in (1, 2):
             raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
         try:
@@ -519,9 +529,11 @@ class AgentRuntime:
     def ask_public(self, question: str) -> ask.AgentAskResponse:
         """checkpoint·run DML 없이 Ask 전용 A/B read Tool만 조립한다."""
 
+        self._require_open()
         service = self._ask_service
         if service is None:
             with self._lock:
+                self._require_open()
                 service = self._ask_service
                 if service is None:
                     try:
@@ -533,6 +545,9 @@ class AgentRuntime:
 
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             resources = self._resources
             self._resources = None
             self._ask_service = None
@@ -581,7 +596,7 @@ def runtime_http_error(exc: Exception) -> Exception:
     if isinstance(exc, RepositoryNotFound):
         return NotFoundError()
     if isinstance(exc, RepositoryContractError):
-        return RuntimeError("AGENT_RUNTIME_CONTRACT_ERROR")
+        return AppError()
     return exc
 
 
