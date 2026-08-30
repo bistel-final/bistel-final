@@ -603,6 +603,7 @@ jobs:
           tests/unit/test_agent_approval_store.py
           tests/unit/test_agent_rehydration.py
           tests/unit/test_agent_graph.py
+          tests/unit/test_send_action_tool.py
           -rs --no-header
 
       # V5-C-4.1 n8n workflow repository 계약. JSON graph·exact schema·HMAC·callback
@@ -655,6 +656,7 @@ jobs:
           tests/unit/test_channel_idempotency_matrix.py
           tests/unit/test_mes_delivery_container.py
           tests/unit/test_agent_graph_container.py
+          tests/unit/test_send_action_container.py
           tests/unit/test_agent_rehydration_container.py
           tests/unit/test_agent_resume_lock_container.py
           -rs --no-header

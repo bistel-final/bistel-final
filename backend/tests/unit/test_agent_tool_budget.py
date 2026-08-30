@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from app.agent import tools as subject
-from app.agent.repository import ToolBudgetCounts
+from app.agent.repository import (
+    ToolBudgetCounts,
+    ToolCallRow,
+    tool_call_consumes_budget,
+)
 from app.agent.tools import AuditedToolExecutor, ToolBoundary, ToolBudgetBlocked
+from app.common.enums import ToolCallStatus
 
 
 def _counts(
@@ -23,6 +29,69 @@ def _counts(
         by_tool=by_tool,
         pending_reservations=pending,
     )
+
+
+def _call(
+    *,
+    tool_name: str = "send_action",
+    status: ToolCallStatus = ToolCallStatus.SUCCESS,
+    output: dict[str, Any] | None = None,
+    error_msg: str | None = None,
+) -> ToolCallRow:
+    return ToolCallRow(
+        tool_call_id="TOOL-1",
+        agent_run_id="RUN-1",
+        call_seq=1,
+        tool_name=tool_name,
+        input=None,
+        output=output,
+        status=status,
+        latency_ms=0,
+        called_at=datetime.now(UTC),
+        error_msg=error_msg,
+    )
+
+
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [
+        (
+            _call(
+                output={
+                    "ok": True,
+                    "effect_attempted": False,
+                    "effect_channel": None,
+                }
+            ),
+            False,
+        ),
+        (
+            _call(
+                output={
+                    "ok": True,
+                    "effect_attempted": True,
+                    "effect_channel": "EMAIL",
+                }
+            ),
+            True,
+        ),
+        (_call(output={"ok": True}), True),
+        (
+            _call(
+                status=ToolCallStatus.ERROR,
+                output=None,
+                error_msg="CALL_RESERVED_NOT_COMPLETED",
+            ),
+            True,
+        ),
+        (_call(tool_name="search_documents", output={"ok": True}), True),
+    ],
+)
+def test_only_explicit_successful_send_action_no_call_is_budget_free(
+    call: ToolCallRow,
+    expected: bool,
+) -> None:
+    assert tool_call_consumes_budget(call) is expected
 
 
 @pytest.mark.parametrize(

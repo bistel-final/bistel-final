@@ -79,11 +79,13 @@ from app.common.llm import ChatCompletion  # noqa: E402
 from app.common.schemas import AlarmRef  # noqa: E402
 from app.common.tool_contracts import (  # noqa: E402
     AnomalySignal,
+    ChannelDeliveryResult,
     DocumentSearchToolInput,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
     ParameterSummaryItem,
+    SendActionToolResult,
     WaferContext,
 )
 from app.knowledge.schemas import (  # noqa: E402
@@ -458,11 +460,95 @@ def _dependencies(
         process_step_id="CT-PHOTO",
         graph_revision="rev-1",
     )
+    sent_channels: set[tuple[str, DeliveryChannel]] = set()
+
+    def send_action(payload: dict[str, Any]) -> SendActionToolResult:
+        action_id = str(payload["action_id"])
+        sent_now: DeliveryChannel | None = None
+        try:
+            with engine.connect() as connection:
+                bundle = repo.get_action_bundle(connection, action_id)
+                deliveries = repo.list_action_deliveries(connection, action_id)
+        except repo.AgentRepositoryError:
+            bundle = None
+            deliveries = []
+
+        if bundle is not None:
+            if bundle.action_code is ActionCode.WARNING:
+                target = DeliveryChannel.EMAIL
+                if (action_id, target) not in sent_channels:
+                    ports.notify_email(action_id)
+                    sent_now = target
+            elif bundle.approval_status is ApprovalStatus.PENDING:
+                target = DeliveryChannel.EMAIL
+                if (action_id, target) not in sent_channels:
+                    assert bundle.approval_agent_run_id is not None
+                    assert bundle.approval_id is not None
+                    ports.approval_email(
+                        bundle.approval_agent_run_id,
+                        action_id,
+                        bundle.approval_id,
+                    )
+                    sent_now = target
+            elif bundle.approval_status is ApprovalStatus.APPROVED:
+                target = DeliveryChannel.MES_MOCK
+                if (action_id, target) not in sent_channels:
+                    ports.publish_mes(action_id)
+                    sent_now = target
+        elif isinstance(ports, _HoldAssemblyPorts):
+            if "hitl_interrupt" in ports.calls:
+                sent_now = DeliveryChannel.MES_MOCK
+                ports.publish_mes(action_id)
+            else:
+                sent_now = DeliveryChannel.EMAIL
+                ports.approval_email("RUN-FIXTURE", action_id, "APR-FIXTURE")
+            deliveries = [
+                SimpleNamespace(
+                    channel=DeliveryChannel.EMAIL,
+                    status=DeliveryStatus.WAITING,
+                ),
+                SimpleNamespace(
+                    channel=DeliveryChannel.MES_MOCK,
+                    status=DeliveryStatus.BLOCKED,
+                ),
+            ]
+        else:
+            sent_now = DeliveryChannel.EMAIL
+            ports.notify_email(action_id)
+            deliveries = [
+                SimpleNamespace(
+                    channel=DeliveryChannel.EMAIL,
+                    status=DeliveryStatus.WAITING,
+                )
+            ]
+
+        if sent_now is not None:
+            sent_channels.add((action_id, sent_now))
+        projected: list[ChannelDeliveryResult] = []
+        for delivery in deliveries:
+            was_sent = (action_id, delivery.channel) in sent_channels
+            projected.append(
+                ChannelDeliveryResult(
+                    channel=delivery.channel,
+                    status=(DeliveryStatus.SENT if was_sent else delivery.status),
+                    sent=delivery.channel is sent_now,
+                    duplicate=was_sent and delivery.channel is not sent_now,
+                )
+            )
+        return SendActionToolResult(
+            ok=True,
+            action_id=action_id,
+            deliveries=projected,
+            effect_attempted=sent_now is not None,
+            effect_channel=sent_now,
+        )
+
     boundary = ToolBoundary(
         fdc_summary=fdc_summary or (lambda payload: _fdc_result()),
         equipment_context=lambda payload: equipment,
         document_search=document_search
         or (lambda payload: DocumentSearchToolResult(ok=True, hits=[])),
+        send_action=send_action,
     )
     return AgentGraphDependencies(
         transactions=engine.begin,
@@ -605,7 +691,7 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
     assert interrupted["terminal_error"] is None
     assert "autonomy_level" in interrupted
     assert checkpoint.get("approval_decision") is None
-    assert ToolBudget.model_validate(checkpoint["tool_budget"]).used == 2
+    assert ToolBudget.model_validate(checkpoint["tool_budget"]).used == 3
     assert first_ports.calls[-1:] == ["approval_email"]
     assert first_ports.calls.count("hitl_interrupt") == 0
     with engine.connect() as connection:
@@ -636,7 +722,7 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
             DocumentSearchToolInput(query="resume-blocked"),
         )
     assert blocked.value.code == "TOOL_RETRY_EXHAUSTED"
-    assert blocked.value.budget.used == 5
+    assert blocked.value.budget.used == 6
 
     second_ports = _HoldAssemblyPorts()
     second_ports.hitl_interrupt = approval_store_module.hitl_decision_port(  # type: ignore[method-assign]
@@ -666,9 +752,9 @@ def test_actual_graph_resumes_after_hitl_from_a_new_postgres_saver(
 
     assert second_ports.calls == ["publish_mes", "writeback_result"]
     assert resumed["action_decision"].action is ActionCode.EQP_HOLD
-    # 중단 checkpoint는 2건이지만 완료 State는 terminal transaction에서
-    # DB 5건을 다시 읽는다.
-    assert resumed["tool_budget"].used == 5
+    # 중단 checkpoint의 읽기 2회+EMAIL 1회, 재개 전 진단 3회, 승인 뒤
+    # publish_mes의 audited send 1회를 모두 DB에서 읽는다.
+    assert resumed["tool_budget"].used == 7
     assert Decision(resumed["approval_decision"]) is Decision.APPROVE
     assert run.status == RunStatus.COMPLETED.value
     assert run.latency_ms is not None and run.latency_ms >= 0

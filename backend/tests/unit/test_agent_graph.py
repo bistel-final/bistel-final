@@ -17,11 +17,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.agent import decision as decision_module
 from app.agent import graph as subject
 from app.agent import incident_repository, routing_repository
-from app.agent.approval_store import (
-    EmailTransportError,
-    HitlDeliveryError,
-    HitlResumeError,
-)
+from app.agent.approval_store import HitlResumeError
 from app.agent.graph import (
     CANONICAL_NODES,
     INTERNAL_NODES,
@@ -66,10 +62,12 @@ from app.common.enums import (
 )
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
+    ChannelDeliveryResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
     ParameterSummaryItem,
+    SendActionToolResult,
     WaferContext,
 )
 
@@ -161,6 +159,9 @@ class _FakeTools:
         self.llm_usage: list[tuple[int, int]] = []
         self._fdc_ok = fdc_ok
         self._equipment_ok = equipment_ok
+        self.action: ActionCode | None = ActionCode.WARNING
+        self.send_count = 0
+        self.send_failure_reason: str | None = None
 
     def budget(self, run_id: str) -> ToolBudget:
         return ToolBudget(used=len(self.calls))
@@ -186,6 +187,54 @@ class _FakeTools:
     def document_search(self, run_id: str, request: Any) -> DocumentSearchToolResult:
         self.calls.append(("documents", request))
         return DocumentSearchToolResult(ok=True, hits=[])
+
+    def send_action(self, run_id: str, request: Any) -> SendActionToolResult:
+        self.calls.append(("send_action", request))
+        self.send_count += 1
+        if self.send_failure_reason is not None:
+            return SendActionToolResult(ok=False, reason=self.send_failure_reason)
+        if self.action is ActionCode.EQP_HOLD:
+            mes_status = (
+                DeliveryStatus.BLOCKED if self.send_count == 1 else DeliveryStatus.SENT
+            )
+            return SendActionToolResult(
+                ok=True,
+                action_id=request.action_id,
+                effect_attempted=True,
+                effect_channel=(
+                    DeliveryChannel.EMAIL
+                    if self.send_count == 1
+                    else DeliveryChannel.MES_MOCK
+                ),
+                deliveries=[
+                    ChannelDeliveryResult(
+                        channel=DeliveryChannel.EMAIL,
+                        status=DeliveryStatus.SENT,
+                        sent=self.send_count == 1,
+                        duplicate=self.send_count > 1,
+                    ),
+                    ChannelDeliveryResult(
+                        channel=DeliveryChannel.MES_MOCK,
+                        status=mes_status,
+                        sent=self.send_count > 1,
+                        duplicate=False,
+                    ),
+                ],
+            )
+        return SendActionToolResult(
+            ok=True,
+            action_id=request.action_id,
+            effect_attempted=True,
+            effect_channel=DeliveryChannel.EMAIL,
+            deliveries=[
+                ChannelDeliveryResult(
+                    channel=DeliveryChannel.EMAIL,
+                    status=DeliveryStatus.SENT,
+                    sent=True,
+                    duplicate=False,
+                )
+            ],
+        )
 
 
 class _BudgetBlockedTools(_FakeTools):
@@ -383,6 +432,7 @@ def _build(
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
+    tool_set.action = None if ports is None else ports.action
     finish_events: list[tuple[str, Any]] = []
     transaction_events: list[str] = []
 
@@ -614,16 +664,20 @@ def test_level_one_warning_calls_all_read_tools_and_email(
     ports = _Ports(action=ActionCode.WARNING)
     graph, tools, _, finishes, _ = _build(monkeypatch, ports=ports)
     state = _invoke(graph, level=1)
-    assert [name for name, _ in tools.calls] == ["fdc", "equipment", "documents"]
+    assert [name for name, _ in tools.calls] == [
+        "fdc",
+        "equipment",
+        "documents",
+        "send_action",
+    ]
     assert ports.calls == [
         "generate_hypothesis",
         "decide_action",
         "persist_action",
-        "notify_email",
     ]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
     assert state["action_id"] == "ACT-1"
-    assert state["tool_budget"].used == 3
+    assert state["tool_budget"].used == 4
     assert set(state) == set(subject.CompletedAgentState.model_fields)
     assert tools.llm_usage == [(10, 5)]
     assert not {
@@ -660,9 +714,13 @@ def test_level_two_skips_only_redundant_equipment_context_and_keeps_model_filter
 ) -> None:
     graph, tools, _, finishes, _ = _build(monkeypatch, ports=_Ports())
     _invoke(graph, level=2)
-    assert [name for name, _ in tools.calls] == ["fdc", "documents"]
+    assert [name for name, _ in tools.calls] == [
+        "fdc",
+        "documents",
+        "send_action",
+    ]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
-    document_input = tools.calls[-1][1]
+    document_input = next(value for name, value in tools.calls if name == "documents")
     assert document_input.model_code == "MODEL-1"
 
 
@@ -681,7 +739,7 @@ def test_level_one_and_two_compare_completion_and_actual_tool_call_counts(
     )
     _invoke(graph_two, level=2)
 
-    assert len(tools_one.calls) == 3 and len(tools_two.calls) == 2
+    assert len(tools_one.calls) == 4 and len(tools_two.calls) == 3
     assert [status for status, _ in finishes_one] == [RunStatus.COMPLETED.value]
     assert [status for status, _ in finishes_two] == [RunStatus.COMPLETED.value]
 
@@ -689,7 +747,7 @@ def test_level_one_and_two_compare_completion_and_actual_tool_call_counts(
 def test_approval_email_interrupt_keeps_internal_channels_for_resume_detection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, _, ports, finishes, _ = _build(
+    graph, tools, ports, finishes, _ = _build(
         monkeypatch,
         ports=_Ports(action=ActionCode.EQP_HOLD, decision=Decision.APPROVE),
         interrupt_after=("approval_email",),
@@ -697,7 +755,8 @@ def test_approval_email_interrupt_keeps_internal_channels_for_resume_detection(
 
     state = _invoke(graph)
 
-    assert ports is not None and ports.calls[-1:] == ["approval_email"]
+    assert ports is not None and ports.calls[-1:] == ["persist_action"]
+    assert [name for name, _ in tools.calls][-1:] == ["send_action"]
     assert ports.calls.count("hitl_interrupt") == 0
     assert state["approval_decision"] is None
     assert state["terminal_error"] is None
@@ -717,44 +776,38 @@ def test_hitl_interrupt_configuration_requires_a_checkpointer(
         )
 
 
-def test_typed_approval_email_failure_is_nonterminal_and_still_interrupts(
+def test_send_action_failure_is_nonterminal_and_still_interrupts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ports = _EmailFailurePorts(EmailTransportError("EMAIL_TIMEOUT"))
+    ports = _Ports(action=ActionCode.EQP_HOLD)
+    tools = _FakeTools()
+    tools.send_failure_reason = "TIMEOUT: fixture"
     graph, _, _, finishes, _ = _build(
         monkeypatch,
+        tools=tools,
         ports=ports,
         interrupt_after=("approval_email",),
     )
     state = _invoke(graph)
-    assert [error.code for error in state["errors"]][-1:] == ["EMAIL_TIMEOUT"]
+    assert [error.code for error in state["errors"]][-1:] == ["TIMEOUT"]
     assert state["errors"][-1].terminal is False
     assert state["terminal_error"] is None
     assert finishes == []
 
 
-def test_untyped_approval_email_failure_preserves_retry_checkpoint(
+def test_legacy_approval_email_port_is_not_called_by_delivery_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ports = _EmailFailurePorts(RuntimeError("raw fixture message"))
-    graph, _, _, finishes, _ = _build(
+    graph, tools, _, finishes, _ = _build(
         monkeypatch,
         ports=ports,
         interrupt_after=("approval_email",),
     )
-    config = {"configurable": {"thread_id": "11111111-2222-3333-4444-555555555555"}}
-    with pytest.raises(HitlDeliveryError) as caught:
-        _invoke(graph)
-    assert caught.value.code == "NODE_EXECUTION_ERROR"
-    snapshot = graph.get_state(config)
-    assert snapshot.next == ("approval_email",)
-    assert snapshot.values.get("terminal_error") is None
-
-    ports.error = None
-    graph.invoke(None, config=config)
-    resumed = graph.get_state(config)
-    assert resumed.next == ("hitl_interrupt",)
-    assert ports.calls.count("approval_email") == 2
+    state = _invoke(graph)
+    assert state["terminal_error"] is None
+    assert ports.calls.count("approval_email") == 0
+    assert [name for name, _ in tools.calls].count("send_action") == 1
     assert finishes == []
 
 
@@ -849,7 +902,12 @@ def test_level_two_keeps_equipment_when_route_evidence_is_insufficient(
 ) -> None:
     graph, tools, *_ = _build(monkeypatch, level_route=route, ports=_Ports())
     _invoke(graph, level=2)
-    assert [name for name, _ in tools.calls] == ["fdc", "equipment", "documents"]
+    assert [name for name, _ in tools.calls] == [
+        "fdc",
+        "equipment",
+        "documents",
+        "send_action",
+    ]
 
 
 def test_no_action_skips_persistence_and_delivery(
@@ -876,13 +934,15 @@ def test_hold_follows_the_internal_approval_branch(
     tail: list[str],
 ) -> None:
     ports = _Ports(action=ActionCode.EQP_HOLD, decision=decision)
-    graph, _, _, finishes, _ = _build(monkeypatch, ports=ports)
+    graph, tools, _, finishes, _ = _build(monkeypatch, ports=ports)
     _invoke(graph)
-    assert ports.calls[-(len(tail) + 2) :] == [
-        "approval_email",
+    expected_ports = [
         "hitl_interrupt",
-        *tail,
+        *[item for item in tail if item != "publish_mes"],
     ]
+    assert ports.calls[-len(expected_ports) :] == expected_ports
+    expected_sends = 2 if decision is Decision.APPROVE else 1
+    assert [name for name, _ in tools.calls].count("send_action") == expected_sends
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
 
@@ -892,7 +952,12 @@ def test_failed_read_tools_do_not_skip_document_search(
     tools = _FakeTools(fdc_ok=False, equipment_ok=False)
     graph, _, _, finishes, _ = _build(monkeypatch, tools=tools, ports=_Ports())
     state = _invoke(graph)
-    assert [name for name, _ in tools.calls] == ["fdc", "equipment", "documents"]
+    assert [name for name, _ in tools.calls] == [
+        "fdc",
+        "equipment",
+        "documents",
+        "send_action",
+    ]
     assert [error.code for error in state["errors"]] == ["TIMEOUT", "DEPENDENCY_ERROR"]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
@@ -912,6 +977,7 @@ def test_budget_block_is_nonterminal_and_reaches_completed_run_evidence(
         "fdc-blocked",
         "equipment",
         "documents",
+        "send_action",
     ]
 
 

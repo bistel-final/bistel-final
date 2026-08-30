@@ -404,12 +404,36 @@ class SendActionToolResult(ToolResult):
 
     action_id: NonEmptyId | None = None
     deliveries: list[ChannelDeliveryResult] = Field(default_factory=list)
+    # ``sent``는 callback까지 끝난 동기 성공만 뜻한다. ACCEPTED·FAILED처럼 실제
+    # adapter를 호출했지만 sent=false인 결과와 멱등 no-call을 구분하기 위해 실행
+    # 효과 자체를 별도 계약으로 둔다.
+    effect_attempted: bool | None = None
+    effect_channel: DeliveryChannel | None = None
 
     @model_validator(mode="after")
-    def _validate_unique_channels(self) -> "SendActionToolResult":
+    def _validate_delivery_effect(self) -> "SendActionToolResult":
         channels = [delivery.channel for delivery in self.deliveries]
         if len(channels) != len(set(channels)):
             raise ValueError("deliveries에는 같은 channel을 중복할 수 없습니다")
+        if not self.ok:
+            return self
+        if self.effect_attempted is None:
+            raise ValueError("성공 결과에는 effect_attempted가 필요합니다")
+        if self.effect_attempted != (self.effect_channel is not None):
+            raise ValueError(
+                "effect_attempted와 effect_channel은 함께 외부 효과를 표현해야 합니다"
+            )
+        if self.effect_channel is not None and self.effect_channel not in channels:
+            raise ValueError(
+                "effect_channel은 deliveries에 포함된 channel이어야 합니다"
+            )
+        sent_channels = {
+            delivery.channel for delivery in self.deliveries if delivery.sent
+        }
+        if sent_channels and sent_channels != {self.effect_channel}:
+            raise ValueError(
+                "sent=true인 channel은 실제 effect_channel과 같아야 합니다"
+            )
         return self
 
 

@@ -22,7 +22,7 @@ from app.agent.tools import (
     ToolRunnerSaturated,
 )
 from app.common.enums import ToolCallStatus
-from app.common.tool_contracts import DocumentSearchToolInput
+from app.common.tool_contracts import DocumentSearchToolInput, SendActionToolInput
 
 
 class _DirectRunner:
@@ -36,11 +36,17 @@ class _TimeoutRunner:
         raise ToolDeadlineExceeded
 
 
+class _SaturatedRunner:
+    def call(self, fn: Any, payload: dict[str, Any], *, seconds: float) -> Any:
+        raise ToolRunnerSaturated
+
+
 def _boundary(document: Any) -> ToolBoundary:
     return ToolBoundary(
         fdc_summary=lambda _payload: None,
         equipment_context=lambda _payload: None,
         document_search=document,
+        send_action=document,
     )
 
 
@@ -177,6 +183,176 @@ def test_deadline_exception_has_no_output_and_a_sanitized_code(
     assert finalized["status"] is ToolCallStatus.TIMEOUT
     assert finalized["output"] is None
     assert finalized["error_msg"] == "TOOL_DEADLINE_EXCEEDED"
+
+
+@pytest.mark.parametrize(
+    ("runner", "reason", "audit_code"),
+    [
+        (
+            _TimeoutRunner(),
+            "TIMEOUT: SEND_ACTION_DEADLINE",
+            "TOOL_DEADLINE_EXCEEDED",
+        ),
+        (
+            _SaturatedRunner(),
+            "TIMEOUT: TOOL_RUNNER_SATURATED",
+            "TOOL_RUNNER_SATURATED",
+        ),
+    ],
+)
+def test_send_action_wrapper_timeout_returns_fixed_json_and_timeout_audit(
+    monkeypatch: pytest.MonkeyPatch,
+    runner: Any,
+    reason: str,
+    audit_code: str,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: pytest.fail("runner must not invoke the adapter"),
+        runner=runner,
+    )
+
+    result = executor.send_action(
+        "RUN-1",
+        SendActionToolInput(action_id="ACT-1"),
+    )
+
+    assert result is not None and result.reason == reason
+    assert result.action_id is None and result.deliveries == []
+    finalized = _finalized(events)
+    assert finalized["status"] is ToolCallStatus.TIMEOUT
+    assert finalized["output"] is None
+    assert finalized["error_msg"] == audit_code
+
+
+def test_send_action_deadline_is_derived_above_the_webhook_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RecordingRunner:
+        def call(
+            self,
+            fn: Any,
+            payload: dict[str, Any],
+            *,
+            seconds: float,
+        ) -> Any:
+            captured.append(seconds)
+            return fn(payload)
+
+    captured: list[float] = []
+    executor, _events = _harness(
+        monkeypatch,
+        document=lambda payload: {
+            "ok": True,
+            "action_id": "ACT-1",
+            "effect_attempted": True,
+            "effect_channel": "EMAIL",
+            "deliveries": [
+                {
+                    "channel": "EMAIL",
+                    "status": "SENT",
+                    "sent": True,
+                    "duplicate": False,
+                }
+            ],
+        },
+        runner=_RecordingRunner(),
+    )
+
+    executor.send_action("RUN-1", SendActionToolInput(action_id="ACT-1"))
+
+    assert captured == [subject.N8N_WEBHOOK_TIMEOUT_SEC + 5.0]
+    assert captured[0] > subject.N8N_WEBHOOK_TIMEOUT_SEC
+
+
+def test_production_boundary_passes_the_graph_transaction_owner_to_send_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent import send_action as send_action_module
+
+    settings = SimpleNamespace(
+        marker="runtime-settings",
+        N8N_WEBHOOK_TIMEOUT_SEC=25,
+    )
+    transactions = object()
+    post = object()
+    clock = object()
+    captured: dict[str, Any] = {}
+
+    def factory(
+        actual_settings: Any,
+        actual_transactions: Any,
+        **kwargs: Any,
+    ) -> Any:
+        captured.update(
+            settings=actual_settings,
+            transactions=actual_transactions,
+            kwargs=kwargs,
+        )
+        return lambda payload: payload
+
+    monkeypatch.setattr(send_action_module, "build_send_action_tool", factory)
+
+    boundary = ToolBoundary.production(
+        settings=settings,
+        transactions=transactions,  # type: ignore[arg-type]
+        http_post=post,  # type: ignore[arg-type]
+        clock=clock,  # type: ignore[arg-type]
+    )
+
+    assert captured == {
+        "settings": settings,
+        "transactions": transactions,
+        "kwargs": {"http_post": post, "clock": clock},
+    }
+    assert boundary.send_action({"action_id": "ACT-1"}) == {"action_id": "ACT-1"}
+    assert boundary.send_action_deadline_seconds == 30.0
+
+
+def test_send_action_deadline_cannot_be_shorter_than_adapter_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: pytest.fail(
+            "invalid deadline must fail before invoke"
+        ),
+    )
+    object.__setattr__(executor, "send_action_deadline_seconds", 20.0)
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        executor.send_action("RUN-1", SendActionToolInput(action_id="ACT-1"))
+
+    assert exc.value.code == "SEND_ACTION_DEADLINE_INVALID"
+    assert events == []
+
+
+def test_production_boundary_without_delivery_settings_is_explicitly_unwired() -> None:
+    boundary = ToolBoundary.production()
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        boundary.send_action({"action_id": "ACT-1"})
+
+    assert exc.value.code == "SEND_ACTION_NOT_WIRED"
+
+
+def test_production_boundary_rejects_invalid_delivery_config_before_db() -> None:
+    transaction_calls = 0
+
+    @contextmanager
+    def transactions() -> Any:
+        nonlocal transaction_calls
+        transaction_calls += 1
+        yield object()
+
+    with pytest.raises(ToolBoundaryError) as exc:
+        ToolBoundary.production(
+            settings=SimpleNamespace(N8N_WEBHOOK_TIMEOUT_SEC=30),
+            transactions=transactions,
+        )
+
+    assert exc.value.code == "SEND_ACTION_CONFIG_INVALID"
+    assert transaction_calls == 0
 
 
 @pytest.mark.parametrize(

@@ -69,6 +69,8 @@ from app.common.tool_contracts import (
     DocumentSearchToolInput,
     EquipmentContextToolInput,
     FdcSummaryToolInput,
+    SendActionToolInput,
+    SendActionToolResult,
     ToolResult,
 )
 
@@ -713,17 +715,40 @@ def build_agent_graph(
             "deliveries": result.deliveries,
         }
 
+    # 감사 증적의 node 이름은 채널이 아니다. 세 delivery node는 같은
+    # send_stored_action을 부르고 채널은 DB 저장 plan이 결정하므로, HITL 복구
+    # 재생에서는 approval_email node가 MES 발행을 수행할 수 있다. 실제 채널은
+    # Tool output의 effect_channel로 판정한다.
+    def send_stored_action(
+        state: AgentGraphState,
+        *,
+        node: str,
+    ) -> dict[str, Any]:
+        result, tool_budget, errors = _collect_tool_result(
+            state,
+            node=node,
+            invoke=lambda: dependencies.tools.send_action(
+                _required_state_id(state, "run_id"),
+                SendActionToolInput(action_id=_required_state_id(state, "action_id")),
+            ),
+            budget=lambda: dependencies.tools.budget(state["run_id"]),
+        )
+        update: dict[str, Any] = {
+            "tool_budget": tool_budget,
+            "errors": errors,
+        }
+        if isinstance(result, SendActionToolResult) and result.ok:
+            update["deliveries"] = tuple(
+                DeliveryPlan(channel=item.channel, status=item.status)
+                for item in result.deliveries
+            )
+        return update
+
     def notify_email(state: AgentGraphState) -> dict[str, Any]:
-        ports.notify_email(_required_state_id(state, "action_id"))
-        return {"errors": state.get("errors", ())}
+        return send_stored_action(state, node="notify_email")
 
     def approval_email(state: AgentGraphState) -> dict[str, Any]:
-        ports.approval_email(
-            _required_state_id(state, "run_id"),
-            _required_state_id(state, "action_id"),
-            _required_state_id(state, "approval_id"),
-        )
-        return {"errors": state.get("errors", ())}
+        return send_stored_action(state, node="approval_email")
 
     def hitl_interrupt(state: AgentGraphState) -> dict[str, Any]:
         decision = Decision(
@@ -735,8 +760,7 @@ def build_agent_graph(
         }
 
     def publish_mes(state: AgentGraphState) -> dict[str, Any]:
-        ports.publish_mes(_required_state_id(state, "action_id"))
-        return {"errors": state.get("errors", ())}
+        return send_stored_action(state, node="publish_mes")
 
     def writeback_result(state: AgentGraphState) -> dict[str, Any]:
         return {

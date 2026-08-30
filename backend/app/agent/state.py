@@ -158,7 +158,10 @@ class DeliveryPlan(StateModel):
 
 
 class ToolBudget(StateModel):
-    """``agent_tool_call`` 행 수에서 파생한 실행 시점의 예산 snapshot."""
+    """예산 소비 ``agent_tool_call``에서 파생한 실행 시점 snapshot.
+
+    감사 행 자체는 모두 유지하되 외부 효과 없는 성공 send_action no-call만 제외한다.
+    """
 
     max_calls: int = Field(default=AGENT_MAX_TOOL_CALLS, ge=1)
     used: int = Field(ge=0)
