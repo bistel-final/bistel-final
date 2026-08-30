@@ -205,6 +205,9 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     backend_dockerfile = (REPOSITORY_ROOT / "backend" / "Dockerfile").read_text(
         encoding="utf-8"
     )
+    backend_requirements = (REPOSITORY_ROOT / "backend" / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
     frontend_dockerfile = (REPOSITORY_ROOT / "frontend" / "Dockerfile").read_text(
         encoding="utf-8"
     )
@@ -221,6 +224,8 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     assert "COPY backend/artifacts ./artifacts" in backend_dockerfile
     assert "https://download.pytorch.org/whl/cpu" in backend_dockerfile
     assert "torch==2.5.1" in backend_dockerfile
+    assert "torch==2.5.1" in backend_requirements
+    assert "transformers==4.46.3" in backend_requirements
     assert "FROM node:22.14.0-alpine AS build" in frontend_dockerfile
     assert "FROM nginx:1.27.3-alpine" in frontend_dockerfile
     assert "npm ci" in frontend_dockerfile

@@ -439,6 +439,9 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
     _assert_optional_exact_set(fixture)
     assert set(_operation_map(fixture)) == {
         ("GET", "/documents/{document_id}"),
+        ("GET", "/agent/runs/{run_id}"),
+        ("GET", "/actions"),
+        ("GET", "/actions/{action_id}"),
         ("GET", "/audit-logs/paged"),
         ("POST", "/analytics/query"),
         ("POST", "/analytics/validate"),
@@ -469,13 +472,13 @@ def test_team_release_matches_implemented_optional_operation_contracts() -> None
         assert team_release[key]["success_status"] == optional[key]["success_status"]
 
 
-def test_frontend_only_agent_detail_extensions_are_not_promoted() -> None:
+def test_agent_detail_extensions_are_promoted_when_routes_exist() -> None:
     optional_keys = set(_operation_map(load_optional_contract()))
     allowlist = _markdown_optional_keys(API_MARKDOWN.read_text(encoding="utf-8"))
     routes = _router_inventory()
     assert DEFERRED_AGENT_DETAIL_KEYS <= allowlist
-    assert DEFERRED_AGENT_DETAIL_KEYS.isdisjoint(routes)
-    assert DEFERRED_AGENT_DETAIL_KEYS.isdisjoint(optional_keys)
+    assert DEFERRED_AGENT_DETAIL_KEYS <= routes
+    assert DEFERRED_AGENT_DETAIL_KEYS <= optional_keys
 
 
 def test_required_fixture_does_not_require_current_router_presence(
@@ -614,7 +617,7 @@ def test_required_contract_mutations_fail_closed(
         load_required_contract(_write_fixture(tmp_path, fixture))
 
 
-def test_optional_missing_and_deferred_mutations_break_exact_set() -> None:
+def test_optional_missing_and_unknown_mutations_break_exact_set() -> None:
     fixture = copy.deepcopy(load_optional_contract())
     fixture["operations"].pop()
     with pytest.raises(AssertionError):
@@ -623,7 +626,7 @@ def test_optional_missing_and_deferred_mutations_break_exact_set() -> None:
     fixture = copy.deepcopy(load_optional_contract())
     fake = copy.deepcopy(fixture["operations"][0])
     fake["method"] = "GET"
-    fake["path"] = "/agent/runs/{run_id}"
+    fake["path"] = "/agent/runs/{run_id}/retry"
     fixture["operations"].append(fake)
     with pytest.raises(AssertionError):
         _assert_optional_exact_set(fixture)

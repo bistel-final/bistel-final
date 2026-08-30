@@ -21,7 +21,7 @@ from app.common.enums import (
     ToolCallStatus,
 )
 from app.common.ids import NonEmptyId
-from app.common.schemas import ApiModel
+from app.common.schemas import AlarmRef, ApiModel
 
 
 class PublicToolCallItem(ApiModel):
@@ -142,6 +142,104 @@ class PublicApprovalItem(ApiModel):
         return self
 
 
+class ActionDeliveryItem(ApiModel):
+    channel: PublicDeliveryChannel
+    status: DeliveryStatus
+
+
+class ActionDeliveryDetailItem(ActionDeliveryItem):
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+def _validate_action_matrix(
+    action_code: ActionCode,
+    approval_status: PublicApprovalStatus | None,
+    deliveries: list[ActionDeliveryItem],
+) -> None:
+    expected_channels = {
+        ActionCode.MONITORING: [],
+        ActionCode.WARNING: [PublicDeliveryChannel.EMAIL],
+        ActionCode.EQP_HOLD: [
+            PublicDeliveryChannel.EMAIL,
+            PublicDeliveryChannel.MES,
+        ],
+    }[action_code]
+    if [item.channel for item in deliveries] != expected_channels:
+        raise ValueError("action_code별 공개 delivery channel 행렬과 다릅니다")
+    if action_code is ActionCode.EQP_HOLD:
+        if approval_status is None:
+            raise ValueError("EQP_HOLD에는 공개 승인 상태가 필요합니다")
+    elif approval_status is not None:
+        raise ValueError("EQP_HOLD 외 조치는 공개 승인 상태가 null입니다")
+
+
+class ActionItem(ApiModel):
+    action_id: NonEmptyId
+    agent_run_id: NonEmptyId
+    created_by_agent_run_id: NonEmptyId
+    action_code: ActionCode
+    lot_id: NonEmptyId
+    lot: NonEmptyId
+    equipment_id: NonEmptyId | None
+    equipment: NonEmptyId | None
+    chamber_id: NonEmptyId
+    chamber: NonEmptyId
+    reason: str = Field(min_length=1)
+    approval_status: PublicApprovalStatus | None
+    deliveries: list[ActionDeliveryItem]
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def validate_projection(self) -> "ActionItem":
+        if self.created_by_agent_run_id != self.agent_run_id:
+            raise ValueError("created_by_agent_run_id alias가 agent_run_id와 다릅니다")
+        if self.lot != self.lot_id:
+            raise ValueError("lot alias가 lot_id와 다릅니다")
+        if self.equipment != self.equipment_id:
+            raise ValueError("equipment alias가 equipment_id와 다릅니다")
+        if self.chamber != self.chamber_id:
+            raise ValueError("chamber alias가 chamber_id와 다릅니다")
+        _validate_action_matrix(
+            self.action_code,
+            self.approval_status,
+            self.deliveries,
+        )
+        return self
+
+
+class ActionDetailResponse(ActionItem):
+    deliveries: list[ActionDeliveryDetailItem]
+
+
+class AgentRunApprovalItem(ApiModel):
+    approval_id: NonEmptyId
+    action_id: NonEmptyId
+    agent_run_id: NonEmptyId
+    status: PublicApprovalStatus
+    decided_by: str | None
+    decided_at: datetime | None
+    decision_comment: str | None
+
+
+class AgentRunActionItem(ApiModel):
+    action_id: NonEmptyId
+    agent_run_id: NonEmptyId
+    action_code: ActionCode
+    reason: str = Field(min_length=1)
+    approval_status: PublicApprovalStatus | None
+    deliveries: list[ActionDeliveryItem]
+
+    @model_validator(mode="after")
+    def validate_action_matrix(self) -> "AgentRunActionItem":
+        _validate_action_matrix(
+            self.action_code,
+            self.approval_status,
+            self.deliveries,
+        )
+        return self
+
+
 class AgentAskRequest(ApiModel):
     question: str = Field(min_length=1, max_length=1000)
 
@@ -211,6 +309,20 @@ class MetrologyAskEvidence(ApiModel):
     excerpt: str = Field(min_length=1)
 
 
+class RunAlarmEvidence(ApiModel):
+    type: Literal["ALARM"]
+    source_id: NonEmptyId
+    title: str = Field(min_length=1)
+    excerpt: str = Field(min_length=1)
+    alarm: AlarmRef
+
+    @model_validator(mode="after")
+    def validate_source_identity(self) -> "RunAlarmEvidence":
+        if self.source_id != self.alarm.to_token():
+            raise ValueError("ALARM source_id는 AlarmRef token과 같아야 합니다")
+        return self
+
+
 AskEvidenceItem = Annotated[
     AlarmAskEvidence
     | TraceAskEvidence
@@ -220,6 +332,48 @@ AskEvidenceItem = Annotated[
     Field(discriminator="type"),
 ]
 ASK_EVIDENCE_ADAPTER = TypeAdapter(AskEvidenceItem)
+
+RunEvidenceItem = Annotated[
+    RunAlarmEvidence
+    | TraceAskEvidence
+    | GraphAskEvidence
+    | DocumentAskEvidence
+    | MetrologyAskEvidence,
+    Field(discriminator="type"),
+]
+RUN_EVIDENCE_ADAPTER = TypeAdapter(RunEvidenceItem)
+
+
+class AgentRunDetailResponse(PublicAgentRunItem):
+    evidence_items: list[RunEvidenceItem]
+    approval: AgentRunApprovalItem | None
+    action: AgentRunActionItem | None
+
+    @model_validator(mode="after")
+    def validate_detail_identity(self) -> "AgentRunDetailResponse":
+        source_ids = [item.source_id for item in self.evidence_items]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("evidence source_id는 중복될 수 없습니다")
+        if self.action is None:
+            if self.action_id is not None or self.approval is not None:
+                raise ValueError(
+                    "action detail이 없으면 action·approval 참조도 없어야 합니다"
+                )
+            return self
+        if self.action.action_id != self.action_id:
+            raise ValueError("action detail identity가 목록 projection과 다릅니다")
+        if self.action.agent_run_id != self.agent_run_id:
+            raise ValueError("action detail의 run identity가 다릅니다")
+        if self.approval is None:
+            if self.approval_id is not None:
+                raise ValueError("approval detail이 없으면 approval_id도 null입니다")
+        elif (
+            self.approval.approval_id != self.approval_id
+            or self.approval.agent_run_id != self.agent_run_id
+            or self.approval.action_id != self.action.action_id
+        ):
+            raise ValueError("approval detail identity가 다릅니다")
+        return self
 
 
 class AskDocumentEvidenceAlias(ApiModel):
@@ -298,6 +452,14 @@ class AgentAskResponse(ApiModel):
 
 __all__ = [
     "ASK_EVIDENCE_ADAPTER",
+    "RUN_EVIDENCE_ADAPTER",
+    "ActionDeliveryDetailItem",
+    "ActionDeliveryItem",
+    "ActionDetailResponse",
+    "ActionItem",
+    "AgentRunActionItem",
+    "AgentRunApprovalItem",
+    "AgentRunDetailResponse",
     "AgentAskRequest",
     "AgentAskResponse",
     "AlarmAskEvidence",
@@ -311,5 +473,7 @@ __all__ = [
     "PublicApprovalItem",
     "PublicDeliveryItem",
     "PublicToolCallItem",
+    "RunAlarmEvidence",
+    "RunEvidenceItem",
     "TraceAskEvidence",
 ]

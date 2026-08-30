@@ -108,6 +108,10 @@ jobs:
         working-directory: frontend
         run: npm run test:shared-client
 
+      - name: Verify Agent screen assembly contract
+        working-directory: frontend
+        run: npm run test:agent-screen
+
   # `V5-CM-1.6`이 corrected 계열을 삭제하면서 이 job에서 corrected step만 뺐다.
   # **job 자체는 남긴다** — rehearsal lifecycle·recovery lock·V5 artifact write·공용
   # 전환 argv 계약이 Windows에서 도는 곳은 여기뿐이라, 통째로 지우면 그 검증들이 함께
@@ -233,6 +237,7 @@ jobs:
           tests/unit/test_agent_runtime_migration.py
           tests/unit/test_agent_ask.py
           tests/unit/test_agent_public_api.py
+          tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
           tests/unit/test_analysis_plan_tool.py
           tests/unit/test_apply_agent_runtime.py
@@ -252,6 +257,7 @@ jobs:
           tests/unit/test_cypher_tools.py
           tests/unit/test_cypher_validator.py
           tests/unit/test_detection_evaluation.py
+          tests/unit/test_detection_public_api.py
           tests/unit/test_document_contract.py
           tests/unit/test_document_search.py
           tests/unit/test_final_profile_manifests.py

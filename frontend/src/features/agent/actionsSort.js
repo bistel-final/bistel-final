@@ -1,9 +1,7 @@
 // 조치 목록 정렬·탭 규칙 — 화면(ActionsPage)과 테스트(scripts/actions-sort.test.mjs)가
 // 같은 함수를 쓴다 (복사 금지). JSX 없이 순수 JS로 두어 node에서도 import 가능.
 //
-// 필드는 명세 ActionDetailResponse 기준이다:
-//   approval_status(PENDING/APPROVED/AUTO) · send_status(WAITING/SENDING/SENT/FAILED) ·
-//   created_at · action_id  — 축약 필드(channel 등)는 쓰지 않는다.
+// 필드는 공개 ActionItem 기준이다. 전송 상태는 `deliveries[]`가 유일한 정본이다.
 //
 // 규칙 (디자인 v2 §5 조치 목록):
 // 1) approval_status PENDING 행이 최상단 고정 — 그 안에서 created_at 내림차순
@@ -35,5 +33,5 @@ export function tabParams(key) {
 export function matchTab(a, key) {
   if (key === 'ALL') return true
   if (key === 'PENDING') return a.approval_status === 'PENDING'
-  return a.send_status === key
+  return (a.deliveries ?? []).some((delivery) => delivery.status === key)
 }

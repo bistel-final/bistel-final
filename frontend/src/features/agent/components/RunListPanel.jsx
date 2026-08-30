@@ -1,7 +1,7 @@
 import { fmtShort } from '../../../shared/api/format.js'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
-import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
+import { actionCodeVariant, runStatusVariant } from '../../../shared/components/ui/statusStyles.js'
 import { FaultBadge } from './faultStyles.jsx'
 
 // 자동 분석 실행 리스트 — 라이트 시안 3번 좌측 286px
@@ -28,8 +28,9 @@ function RunListPanel({ runs, selectedId, onSelect }) {
               </div>
               <div className="mt-1 font-mono text-[11px] text-g1">{r.incident?.chamber_id}</div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge variant={runStatusVariant(r.status)}>{r.status ?? '상태 미제공'}</Badge>
                 <FaultBadge code={r.fault_code} />
-                <Badge variant={actionCodeVariant(r.recommended_action)}>{r.recommended_action}</Badge>
+                <Badge variant={actionCodeVariant(r.recommended_action)}>{r.recommended_action ?? '조치 미정'}</Badge>
               </div>
             </button>
           )

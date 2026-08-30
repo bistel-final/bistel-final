@@ -9,9 +9,6 @@ import DocumentsPage from '../features/knowledge/pages/DocumentsPage.jsx'
 import OntologyPage from '../features/knowledge/pages/OntologyPage.jsx'
 import KnowledgePage from '../features/knowledge/pages/KnowledgePage.jsx'
 
-// 승인 대기 건이 있는 런이 Agent 화면 기본 진입점
-const DEFAULT_RUN_ID = 'RUN-20260603-0005'
-
 // 라이트 테마 개편 — 네비 7개 (알람 히스토리 · 문서 검색 · 온톨로지 포함).
 // 트레이스 뷰어(/traces) · 조치 목록(/actions)은 라우트를 제거해 URL 접근도 막는다 (팀 합의,
 // 미지의 경로는 아래 캐치올이 /dashboard 로 돌린다). 페이지 파일은 남의 파트 코드라 삭제하지 않는다.
@@ -25,7 +22,7 @@ export const router = createBrowserRouter([
       // 선택 알람이 URL에 담긴다 — 새로고침·링크 공유 시 상세 패널까지 복원
       { path: 'alarms', element: <AlarmsPage /> },
       { path: 'alarms/:alarmId', element: <AlarmsPage /> },
-      { path: 'agent-runs', element: <Navigate to={`/agent-runs/${DEFAULT_RUN_ID}`} replace /> },
+      { path: 'agent-runs', element: <AgentRunPage /> },
       { path: 'agent-runs/:runId', element: <AgentRunPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'ontology', element: <OntologyPage /> },

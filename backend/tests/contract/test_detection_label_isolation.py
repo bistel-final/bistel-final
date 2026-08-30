@@ -24,7 +24,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.common import tool_contracts
-from app.detection import evaluation_loader, schemas
+from app.detection import evaluation_loader, public_schemas, schemas
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
@@ -113,8 +113,10 @@ def _pydantic_models_in(module: object) -> list[type[BaseModel]]:
 
 
 def test_detection_api_schemas_have_no_label_field() -> None:
-    """`app/detection/schemas.py`(A의 화면·API 응답 계약) 어디에도
-    fault_code·label 성격의 필드가 없는지 확인한다.
+    """Detection 계산·평가 내부 DTO에는 prediction·label이 역류하지 않는다.
+
+    API v3 공개 boundary의 ``predicted_fault_code``와 deprecated ``fault``는 Agent
+    Runtime prediction의 nullable projection이며 합성 ground truth가 아니다.
     """
 
     checked = 0
@@ -127,6 +129,11 @@ def test_detection_api_schemas_have_no_label_field() -> None:
             ), f"{model.__qualname__}.{field_name}가 라벨 성격의 필드입니다"
 
     assert checked > 0
+
+    public_alarm_fields = set(public_schemas.AlarmItem.model_fields)
+    assert {"predicted_fault_code", "fault"} <= public_alarm_fields
+    assert "fault_code" not in public_alarm_fields
+    assert not any("label" in field.lower() for field in public_alarm_fields)
 
 
 def test_fdc_summary_tool_result_has_no_label_field() -> None:

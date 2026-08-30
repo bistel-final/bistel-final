@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -27,6 +28,7 @@ function saveSearchHistory(history) {
 // 문서 검색 — 라이트 시안 4번
 // 좌 280px: 추천 질의 + 검색 기록(localStorage) / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
+  const [searchParams] = useSearchParams()
   const documentRequestRef = useRef(0)
   const [input, setInput] = useState('')
   const [result, setResult] = useState(null) // { query, hits }
@@ -39,6 +41,41 @@ function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
+  const deepLinkKey = `${searchParams.get('document_id') ?? ''}:${searchParams.get('chunk_id') ?? ''}`
+
+  useEffect(() => {
+    const documentId = searchParams.get('document_id')
+    const chunkId = searchParams.get('chunk_id')
+    if (!documentId || !chunkId) return
+    const requestToken = ++documentRequestRef.current
+    Promise.resolve().then(() => {
+      if (documentRequestRef.current !== requestToken) return
+      setSelectedHit({ document_id: documentId, chunk_id: chunkId, title: documentId })
+      setDetailOpen(true)
+      setDetailLoading(true)
+      setDetailError(null)
+      return getDocument(documentId)
+        .then(
+          (detail) => {
+            if (documentRequestRef.current !== requestToken) return
+            setDocumentDetail(detail)
+            if (!detail) setDetailError('문서를 찾을 수 없습니다.')
+          },
+          () => {
+            if (documentRequestRef.current === requestToken) {
+              setDocumentDetail(null)
+              setDetailError('문서 상세를 불러오지 못했습니다.')
+            }
+          },
+        )
+        .finally(() => {
+          if (documentRequestRef.current === requestToken) setDetailLoading(false)
+        })
+    })
+    return () => {
+      if (documentRequestRef.current === requestToken) documentRequestRef.current += 1
+    }
+  }, [deepLinkKey, searchParams])
 
   const run = (query) => {
     const q = query.trim()
@@ -78,6 +115,7 @@ function DocumentsPage() {
       .then((detail) => {
         if (documentRequestRef.current !== requestToken) return
         setDocumentDetail(detail)
+        if (!detail) setDetailError('문서를 찾을 수 없습니다.')
       })
       .catch((e) => {
         if (documentRequestRef.current !== requestToken) return

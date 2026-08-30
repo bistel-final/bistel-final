@@ -517,6 +517,7 @@ class TestSqlAndErrorContract:
                     "_DELIVERY_COLUMNS",
                     "_STALE_DELIVERY_PREDICATE",
                     "_ACTION_HISTORY_COLUMNS",
+                    "_PUBLIC_ACTION_SELECT",
                     "_PUBLIC_APPROVAL_SELECT",
                 }
                 continue

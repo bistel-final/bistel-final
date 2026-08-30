@@ -40,8 +40,8 @@ from app.common.tool_contracts import (
     ParameterSummaryItem,
     VisualizationPlan,
 )
+from app.detection.public_schemas import AlarmItem
 from app.detection.schemas import (
-    AlarmItem,
     DashboardSummaryResponse,
     ParameterLimits,
     TraceCatalogResponse,
@@ -61,21 +61,39 @@ ALARM_REF = {"source": "TRACE", "alarm_id": "TAL-0001"}
 
 def _alarm_payload() -> dict[str, object]:
     return {
-        "alarm": ALARM_REF,
+        "source": "TRACE",
+        "alarm_id": "TAL-0001",
         "occurred_at": NOW,
-        "area": "etch",
+        "area": "Etch",
         "equipment_id": "EQP04",
+        "equipment": "EQP04",
         "chamber_id": "EQP04-PM2",
-        "parameter_id": "ET_REFL",
-        "lot_hist_id": "LH-00001",
+        "chamber": "EQP04-PM2",
+        "recipe_id": "RECIPE04",
+        "recipe": "RECIPE04",
         "lot_id": "LOT004",
-        "wafer_no": 1,
+        "lot": "LOT004",
+        "wafer_id": "LOT004W001",
+        "wafer": "LOT004W001",
+        "parameter_id": "ET_REFL",
+        "parameter": "ET_REFL",
         "recipe_step_no": 1,
+        "step_no": 1,
+        "seq_no": 0,
         "alarm_type": "OOS",
         "value": 61.0,
-        "limit_type": "USL",
-        "limit_value": 60.0,
-        "incident": INCIDENT,
+        "rule_code": "TRACE_OOS",
+        "predicted_fault_code": None,
+        "fault": None,
+        "action_code": None,
+        "notify_status": None,
+        "notify": False,
+        "mes_status": None,
+        "mes": "",
+        "statistic_type": None,
+        "cl": None,
+        "ucl": None,
+        "lcl": None,
     }
 
 
@@ -164,26 +182,24 @@ class TestSharedContracts:
 
 class TestDetectionSchemas:
     def test_alarm_is_source_aware_and_uses_canonical_terms(self) -> None:
-        alarm = AlarmItem(**_alarm_payload(), approval_status="AUTO")
+        alarm = AlarmItem(**_alarm_payload())
 
-        assert alarm.alarm.to_token() == "TRACE:TAL-0001"
+        assert f"{alarm.source}:{alarm.alarm_id}" == "TRACE:TAL-0001"
         assert alarm.parameter_id == "ET_REFL"
         assert alarm.alarm_type == "OOS"
-        assert alarm.approval_status == "AUTO"
+        assert alarm.parameter == alarm.parameter_id
 
-    def test_alarm_rejects_source_less_legacy_shape(self) -> None:
-        with pytest.raises(ValidationError):
-            AlarmItem(
-                **_alarm_payload(),
-                alarm_id="TAL-0001",
-                sensor_id="ET_REFL",
-                judgement="OOS",
-            )
+    def test_alarm_rejects_divergent_alias(self) -> None:
+        payload = {**_alarm_payload(), "parameter": "PH_FOCUS"}
 
-    def test_alarm_action_approval_accepts_full_v2_status(self) -> None:
-        alarm = AlarmItem(**_alarm_payload(), approval_status="EXPIRED")
+        with pytest.raises(ValidationError, match="alias"):
+            AlarmItem(**payload)
 
-        assert alarm.approval_status == "EXPIRED"
+    def test_alarm_rejects_rule_source_mismatch(self) -> None:
+        payload = {**_alarm_payload(), "rule_code": "SUMMARY_OOC"}
+
+        with pytest.raises(ValidationError, match="rule_code"):
+            AlarmItem(**payload)
 
     def test_dashboard_empty_result_keeps_explicit_request_range(self) -> None:
         requested_range = [date(2026, 8, 8), date(2026, 8, 9)]

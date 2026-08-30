@@ -48,6 +48,8 @@ langchain-ollama==0.2.1       # 임시 유지. 최종 배포에서는 사용하�
 # ---------------------------------------------------------------------
 # RAG · 임베딩  (팀원 2)
 # ---------------------------------------------------------------------
+torch==2.5.1                  # sentence-transformers 3.3.1 실행 기준; latest 전이 의존 금지
+transformers==4.46.3         # BGE-M3 local cache 호환 기준; cold import 회귀 방지
 sentence-transformers==3.3.1  # bge-m3 등 로컬 임베딩 실행
 langchain-text-splitters==0.3.2  # 문서 청킹
 python-frontmatter==1.1.0     # md 파일 YAML 헤더 파싱

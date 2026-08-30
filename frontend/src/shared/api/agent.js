@@ -1,27 +1,73 @@
 import apiClient, { mockEnabledFor, mockResponse } from './client.js'
 import { assertExactObject, compactParams, requireDatePair, requireNonEmptyString } from './contract.js'
-import { CORE_AGENT_ASK, CORE_AGENT_RUN, CORE_APPROVAL, approvalAfterDecision } from './contractMocks.js'
+import {
+  CORE_AGENT_ASK,
+  CORE_AGENT_RUN,
+  CORE_APPROVAL,
+  CORE_CHAMBER_GRAPH,
+  approvalAfterDecision,
+} from './contractMocks.js'
 import { toIso } from './format.js'
-import { RUNS } from '../../features/agent/mock/runs.js'
-import { ACTIONS, APPROVALS } from '../../features/agent/mock/actions.js'
+import { APPROVALS } from '../../features/agent/mock/actions.js'
+import { adaptActionForLegacyPage, adaptRunForLegacyPage, hasDeliveryStatus } from '../../features/agent/agent-run-view-state.js'
+import { PUBLIC_ACTIONS } from '../../features/agent/mock/publicActions.js'
 
 // 백엔드 agent 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
 const USE_MOCK = mockEnabledFor('AGENT')
 
-const isoRun = (r) => ({
-  ...r,
-  incident_first_at: toIso(r.incident_first_at),
-  incident_last_at: toIso(r.incident_last_at),
-  started_at: toIso(r.started_at),
-  ended_at: toIso(r.ended_at),
-  tool_calls: r.tool_calls.map((t) => ({ ...t, called_at: toIso(t.called_at) })),
+const GRAPH_EVIDENCE = Object.freeze({
+  type: 'GRAPH',
+  source_id: CORE_CHAMBER_GRAPH.relationships[0].relation_id,
+  title: '챔버 측정 관계',
+  excerpt: `${CORE_AGENT_RUN.chamber_id}의 파라미터 측정 관계를 판단 근거로 사용했습니다.`,
+  relation_id: CORE_CHAMBER_GRAPH.relationships[0].relation_id,
+  graph_revision: CORE_CHAMBER_GRAPH.graph_revision,
 })
 
-const isoAction = (a) => ({
-  ...a,
-  created_at: toIso(a.created_at),
-  approved_at: toIso(a.approved_at),
-  sent_at: toIso(a.sent_at),
+const CORE_AGENT_RUN_DETAIL = Object.freeze({
+  ...CORE_AGENT_RUN,
+  evidence_items: [
+    {
+      type: 'ALARM',
+      source_id: 'R03:R03-f41e6518529e8ed5e6a9',
+      title: '연속 OOS 알람',
+      excerpt: '같은 챔버·파라미터·Recipe Step에서 연속 3 WAFER OOS가 발생했습니다.',
+      alarm: { source: 'R03', alarm_id: 'R03-f41e6518529e8ed5e6a9' },
+    },
+    {
+      type: 'TRACE',
+      source_id: 'LH-000004',
+      title: '대표 Trace',
+      excerpt: '대표 알람의 측정 Trace를 판정에 사용했습니다.',
+    },
+    {
+      type: 'DOCUMENT',
+      source_id: 'DOC-TROUBLE-FDC:cs2:0006',
+      title: 'RFM 진단 가이드',
+      excerpt: '반사파 상승과 RF 정합 상태를 우선 점검합니다.',
+      document_id: 'DOC-TROUBLE-FDC',
+      chunk_id: 'DOC-TROUBLE-FDC:cs2:0006',
+      section: '3. 대표 이상 유형별 진단 > 3.2 RFM',
+    },
+    GRAPH_EVIDENCE,
+  ],
+  approval: {
+    approval_id: CORE_APPROVAL.approval_id,
+    action_id: CORE_APPROVAL.action_id,
+    agent_run_id: CORE_APPROVAL.agent_run_id,
+    status: CORE_APPROVAL.status,
+    decided_by: CORE_APPROVAL.decided_by,
+    decided_at: CORE_APPROVAL.decided_at,
+    decision_comment: CORE_APPROVAL.decision_comment,
+  },
+  action: {
+    action_id: CORE_AGENT_RUN.action_id,
+    agent_run_id: CORE_AGENT_RUN.agent_run_id,
+    action_code: CORE_AGENT_RUN.recommended_action,
+    reason: CORE_APPROVAL.reason,
+    approval_status: CORE_APPROVAL.status,
+    deliveries: CORE_AGENT_RUN.deliveries,
+  },
 })
 
 const isoApproval = (p) => ({
@@ -37,49 +83,50 @@ const paginate = (rows, { page: p = 1, size = 20 } = {}) => ({
   size,
 })
 
-// Legacy page adapter. Real transport uses core GET /agent/runs and wraps the bare array locally.
-export function getRuns(params = {}) {
+// GET /agent/runs — core bare-array contract. There is no /agent/runs/paged endpoint.
+export function getRunsCore(params = {}, options = {}) {
+  assertExactObject(params, ['date_from', 'date_to', 'status', 'predicted_fault_code'], 'getRunsCore params')
+  requireDatePair(params, 'getRunsCore params')
+  const query = compactParams(params)
   if (USE_MOCK) {
-    const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
-    const rows = RUNS.filter(
-      (r) =>
-        (!status || r.status === status) &&
-        (!equipment_id || r.equipment_id === equipment_id) &&
-        (!chamber_id || r.incident.chamber_id === chamber_id) &&
-        (!date_from || r.started_at >= date_from) &&
-        (!date_to || r.started_at <= date_to),
-    )
-      .map(isoRun)
-      .sort((a, b) => b.started_at.localeCompare(a.started_at) || b.agent_run_id.localeCompare(a.agent_run_id))
-    return mockResponse(paginate(rows, pageParams))
-  }
-  const { status, equipment_id, chamber_id, date_from, date_to, ...pageParams } = params
-  return getRunsCore({ date_from, date_to }).then((rows) => {
-    const filtered = rows.filter(
+    const rows = [CORE_AGENT_RUN].filter(
       (run) =>
-        (!status || run.status === status) &&
-        (!chamber_id || run.chamber_id === chamber_id) &&
-        (!equipment_id || run.equipment_id == null || run.equipment_id === equipment_id),
+        (!query.status || run.status === query.status) &&
+        (!query.predicted_fault_code || run.predicted_fault_code === query.predicted_fault_code) &&
+        (!query.date_from || run.created_at.slice(0, 10) >= query.date_from) &&
+        (!query.date_to || run.created_at.slice(0, 10) <= query.date_to),
     )
-    return paginate(filtered, pageParams)
+    return mockResponse(rows)
+  }
+  return apiClient.get('/agent/runs', { params: query, signal: options.signal }).then((response) => response.data)
+}
+
+// Deprecated page adapter. Equipment/chamber filtering and paging stay client-side
+// because API v3 intentionally exposes a bare-array endpoint only.
+export function getRuns(params = {}) {
+  const { page = 1, size = 20, equipment_id, chamber_id, ...coreParams } = params
+  return getRunsCore(coreParams).then((rows) => {
+    const adapted = rows
+      .map(adaptRunForLegacyPage)
+      .filter(
+        (run) =>
+          (!equipment_id || run.equipment_id === equipment_id) &&
+          (!chamber_id || run.incident.chamber_id === chamber_id),
+      )
+      .sort((a, b) => b.started_at.localeCompare(a.started_at) || b.agent_run_id.localeCompare(a.agent_run_id))
+    return paginate(adapted, { page, size })
   })
 }
 
-// GET /agent/runs — core bare-array contract. There is no /agent/runs/paged endpoint.
-export function getRunsCore(params = {}) {
-  assertExactObject(params, ['date_from', 'date_to'], 'getRunsCore params')
-  requireDatePair(params, 'getRunsCore params')
-  const query = compactParams(params)
-  if (USE_MOCK) return mockResponse([CORE_AGENT_RUN])
-  return apiClient.get('/agent/runs', { params: query }).then((response) => response.data)
-}
-
-export function getRun(agentRunId) {
+export function getRun(agentRunId, options = {}) {
+  const normalizedId = requireNonEmptyString(agentRunId, 'agent_run_id')
   if (USE_MOCK) {
-    const r = RUNS.find((x) => x.agent_run_id === agentRunId)
-    return mockResponse(r ? isoRun(r) : null)
+    if (normalizedId === CORE_AGENT_RUN.agent_run_id) return mockResponse(CORE_AGENT_RUN_DETAIL)
+    return mockResponse(null)
   }
-  return apiClient.get(`/agent/runs/${agentRunId}`).then((r) => r.data)
+  return apiClient
+    .get(`/agent/runs/${encodeURIComponent(normalizedId)}`, { signal: options.signal })
+    .then((response) => response.data)
 }
 
 // Legacy page adapter. Real transport uses core GET /approvals and wraps the bare array locally.
@@ -152,32 +199,61 @@ export function askAgent(input) {
   return apiClient.post('/agent/ask', body).then((response) => response.data)
 }
 
-// GET /actions — approval_status?·send_status?·action_code?·equipment_id?·chamber_id?·date_from?·date_to?·page·size
-export function getActions(params = {}) {
+export function getActionsCore(params = {}) {
+  assertExactObject(params, ['action_code'], 'getActionsCore params')
+  const query = compactParams(params)
   if (USE_MOCK) {
-    const { approval_status, send_status, action_code, equipment_id, chamber_id, date_from, date_to, ...pageParams } =
-      params
-    const rows = ACTIONS.filter(
-      (a) =>
-        (!approval_status || a.approval_status === approval_status) &&
-        (!send_status || a.send_status === send_status) &&
-        (!action_code || a.action_code === action_code) &&
-        (!equipment_id || a.equipment_id === equipment_id) &&
-        (!chamber_id || a.incident.chamber_id === chamber_id) &&
-        (!date_from || a.created_at >= date_from) &&
-        (!date_to || a.created_at <= date_to),
-    )
-      .map(isoAction)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.action_id.localeCompare(a.action_id))
-    return mockResponse(paginate(rows, pageParams))
+    return mockResponse(PUBLIC_ACTIONS.filter((action) => !query.action_code || action.action_code === query.action_code))
   }
-  return apiClient.get('/actions', { params }).then((r) => r.data)
+  return apiClient.get('/actions', { params: query }).then((response) => response.data)
+}
+
+// Deprecated page adapter for the existing Action screen.
+export function getActions(params = {}) {
+  const {
+    page = 1,
+    size = 20,
+    approval_status,
+    send_status,
+    action_code,
+    equipment_id,
+    chamber_id,
+    date_from,
+    date_to,
+  } = params
+  return getActionsCore({ action_code }).then((rows) => {
+    const adapted = rows
+      .map(adaptActionForLegacyPage)
+      .filter(
+        (action) =>
+          (!approval_status || action.approval_status === approval_status) &&
+          (!send_status || hasDeliveryStatus(action, send_status)) &&
+          (!equipment_id || action.equipment_id === equipment_id) &&
+          (!chamber_id || action.chamber_id === chamber_id) &&
+          (!date_from || action.created_at.slice(0, 10) >= date_from) &&
+          (!date_to || action.created_at.slice(0, 10) <= date_to),
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.action_id.localeCompare(a.action_id))
+    return paginate(adapted, { page, size })
+  })
 }
 
 export function getAction(actionId) {
+  const normalizedId = requireNonEmptyString(actionId, 'action_id')
   if (USE_MOCK) {
-    const a = ACTIONS.find((x) => x.action_id === actionId)
-    return mockResponse(a ? isoAction(a) : null)
+    const action = PUBLIC_ACTIONS.find((item) => item.action_id === normalizedId)
+    return mockResponse(
+      action
+        ? {
+            ...action,
+            deliveries: action.deliveries.map((delivery) => ({
+              ...delivery,
+              started_at: action.created_at,
+              completed_at: delivery.status === 'SENT' ? action.created_at : null,
+            })),
+          }
+        : null,
+    )
   }
-  return apiClient.get(`/actions/${actionId}`).then((r) => r.data)
+  return apiClient.get(`/actions/${encodeURIComponent(normalizedId)}`).then((response) => response.data)
 }

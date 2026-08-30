@@ -1,9 +1,21 @@
 // 상태→스타일 매핑 — README "상태→색 매핑 (전 화면 공통, 고정)" 그대로.
 // 6화면이 이 함수를 공유한다. 화면 개별 색 지정 금지.
 
-// 조치코드: EQP_HOLD 적 · LOT_HOLD 황 · MONITOR 녹 (틴트)
+// 공개 조치코드: EQP_HOLD 적 · WARNING 황 · MONITORING 녹 (틴트)
 export const actionCodeVariant = (code) =>
-  code === 'EQP_HOLD' ? 't-red' : code === 'LOT_HOLD' ? 't-amber' : 't-green'
+  code === 'EQP_HOLD' ? 't-red' : code === 'WARNING' ? 't-amber' : 't-green'
+
+// Agent run 상태: 실행 중 청 · 승인 대기 황 · 완료 녹 · 실패 적
+export const runStatusVariant = (status) =>
+  status === 'RUNNING'
+    ? 'bg-blue'
+    : status === 'WAITING_APPROVAL'
+      ? 'bg-amber'
+      : status === 'COMPLETED'
+        ? 'bg-green'
+        : status === 'FAILED'
+          ? 'bg-red'
+          : 'bg-gray'
 
 // 룰: R03만 적색 강조(solid), R01/R02 회색 틴트
 export const ruleVariant = (rule) => (String(rule).startsWith('R03') ? 'bg-red' : 't-gray')

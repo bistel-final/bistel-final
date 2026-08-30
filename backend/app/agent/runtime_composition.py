@@ -251,6 +251,14 @@ def _production_ask_service() -> ask.AgentAskService:
     return ask.AgentAskService(tools=ask.StructuredAskReadTools.production())
 
 
+def _production_embedding_preflight() -> None:
+    """새 run DML 전에 local RAG model을 warm-up한다."""
+
+    from app.knowledge.embedding import warm_embedding_model
+
+    warm_embedding_model()
+
+
 class AgentRuntime:
     """public endpoint가 공유하는 lazy runtime과 crash-window 보상 경계."""
 
@@ -261,12 +269,14 @@ class AgentRuntime:
         ask_factory: AskServiceFactory = _production_ask_service,
         llm_preflight: Callable[[], str] = llm.preflight_model,
         model_config: Callable[[], str] = llm.configured_model,
+        embedding_preflight: Callable[[], None] | None = None,
         autonomy_level: int = AGENT_AUTONOMY_LEVEL,
     ) -> None:
         self._factory = factory
         self._ask_factory = ask_factory
         self._llm_preflight = llm_preflight
         self._model_config = model_config
+        self._embedding_preflight = embedding_preflight
         self._autonomy_level = autonomy_level
         self._resources: RuntimeResources | None = None
         self._ask_service: ask.AgentAskService | None = None
@@ -317,6 +327,11 @@ class AgentRuntime:
             model = self._llm_preflight()
         except Exception as exc:
             raise AgentRuntimeError("LLM_NOT_READY") from exc
+        if self._embedding_preflight is not None:
+            try:
+                self._embedding_preflight()
+            except Exception as exc:
+                raise AgentRuntimeError("RAG_MODEL_NOT_READY") from exc
         return self._build_or_get(model)
 
     @staticmethod
@@ -552,7 +567,9 @@ class AgentRuntime:
             resources.close()
 
 
-_production_runtime = AgentRuntime()
+_production_runtime = AgentRuntime(
+    embedding_preflight=_production_embedding_preflight,
+)
 
 
 def get_agent_runtime() -> AgentRuntime:

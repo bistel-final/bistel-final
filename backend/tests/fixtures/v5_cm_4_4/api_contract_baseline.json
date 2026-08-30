@@ -2235,6 +2235,29 @@
             "nullable": false,
             "required": false,
             "type": "string"
+          },
+          "predicted_fault_code": {
+            "enum": [
+              "FOC",
+              "RFM",
+              "MFD",
+              "TMD",
+              "OTH"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "WAITING_APPROVAL",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
           }
         }
       },

@@ -7,6 +7,7 @@
 !.env.example
 !deploy/compose/.env.team.example
 .venv/
+.venv-fresh/
 venv/
 
 # Python

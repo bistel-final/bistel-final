@@ -2,7 +2,15 @@ import logging
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Request,
+)
 from sqlalchemy.engine import Connection
 
 from app.agent.ask import AgentAskUnavailable
@@ -17,17 +25,24 @@ from app.agent.delivery_callback import (
 )
 from app.agent.public_read_model import (
     PublicDateRangeError,
+    list_public_actions,
     list_public_agent_runs,
     list_public_approvals,
+    load_public_action_detail,
+    load_public_agent_run_detail,
 )
 from app.agent.public_schemas import (
+    ActionDetailResponse,
+    ActionItem,
     AgentAskRequest,
     AgentAskResponse,
+    AgentRunDetailResponse,
     PublicAgentRunItem,
     PublicApprovalItem,
 )
 from app.agent.repository import (
     RepositoryContractError,
+    RepositoryNotFound,
     RepositoryRetryable,
     RepositoryUnavailable,
 )
@@ -42,9 +57,11 @@ from app.agent.schemas import (
     ApprovalDecisionRequest,
 )
 from app.common.db import get_db_connection
+from app.common.enums import ActionCode, FaultHypothesis, RunStatus
 from app.common.exceptions import (
     AppError,
     DependencyNotReadyError,
+    ErrorResponse,
     IdempotencyConflictError,
 )
 
@@ -112,6 +129,8 @@ def read_agent_runs(
     connection: Annotated[Connection, Depends(get_db_connection)],
     date_from: date | None = None,
     date_to: date | None = None,
+    status: RunStatus | None = None,
+    predicted_fault_code: FaultHypothesis | None = None,
 ) -> list[PublicAgentRunItem]:
     """Auto Analysis 실행 이력. API v3 호환 bare array다."""
 
@@ -120,12 +139,95 @@ def read_agent_runs(
             connection,
             date_from=date_from,
             date_to=date_to,
+            status=status,
+            predicted_fault_code=predicted_fault_code,
         )
     except PublicDateRangeError as exc:
         raise HTTPException(
             status_code=422,
             detail="date_from과 date_to를 올바른 순서로 함께 보내야 합니다.",
         ) from exc
+    except (
+        RepositoryContractError,
+        RepositoryRetryable,
+        RepositoryUnavailable,
+    ) as exc:
+        raise _agent_read_unavailable() from exc
+
+
+@router.get(
+    "/agent/runs/{run_id}",
+    response_model=AgentRunDetailResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def read_agent_run_detail(
+    run_id: Annotated[str, Path(min_length=1)],
+    connection: Annotated[Connection, Depends(get_db_connection)],
+) -> AgentRunDetailResponse:
+    """저장된 실행·Tool 결과만 projection한 Agent 상세다."""
+
+    try:
+        return load_public_agent_run_detail(connection, run_id)
+    except RepositoryNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent 실행을 찾을 수 없습니다.",
+        ) from exc
+    except (
+        RepositoryContractError,
+        RepositoryRetryable,
+        RepositoryUnavailable,
+    ) as exc:
+        raise _agent_read_unavailable() from exc
+
+
+@router.get(
+    "/actions",
+    response_model=list[ActionItem],
+    responses={
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def read_actions(
+    connection: Annotated[Connection, Depends(get_db_connection)],
+    action_code: ActionCode | None = None,
+) -> list[ActionItem]:
+    """조치 이력 bare array. severity는 action_code에서 파생하므로 노출하지 않는다."""
+
+    try:
+        return list_public_actions(connection, action_code=action_code)
+    except (
+        RepositoryContractError,
+        RepositoryRetryable,
+        RepositoryUnavailable,
+    ) as exc:
+        raise _agent_read_unavailable() from exc
+
+
+@router.get(
+    "/actions/{action_id}",
+    response_model=ActionDetailResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def read_action_detail(
+    action_id: Annotated[str, Path(min_length=1)],
+    connection: Annotated[Connection, Depends(get_db_connection)],
+) -> ActionDetailResponse:
+    """delivery 시각까지 확장한 조치 상세다."""
+
+    try:
+        return load_public_action_detail(connection, action_id)
+    except RepositoryNotFound as exc:
+        raise HTTPException(status_code=404, detail="조치를 찾을 수 없습니다.") from exc
     except (RepositoryRetryable, RepositoryUnavailable) as exc:
         raise _agent_read_unavailable() from exc
     except RepositoryContractError as exc:

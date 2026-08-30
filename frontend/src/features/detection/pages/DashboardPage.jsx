@@ -27,8 +27,8 @@ const WIDE = 200
 
 // Fault 분류 도넛 색 — 시안 뱃지 색 대응 (RFM·CDX red / MFD amber / TMD sky / FOC violet / OTH gray)
 const FAULT_HEX = { RFM: OOS_HEX, CDX: OOS_HEX, MFD: OOC_HEX, TMD: '#0ea5e9', FOC: '#7c3aed', OTH: GRAY_HEX }
-// 조치 도넛 색 — MONITOR gray / LOT_HOLD amber / EQP_HOLD red
-const ACTION_HEX = { MONITOR: GRAY_HEX, LOT_HOLD: OOC_HEX, EQP_HOLD: OOS_HEX }
+// 조치 도넛 색 — 공개 ActionCode 3종
+const ACTION_HEX = { MONITORING: GRAY_HEX, WARNING: OOC_HEX, EQP_HOLD: OOS_HEX }
 
 const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 const dateOf = (iso) => String(iso ?? '').slice(0, 10)
@@ -107,7 +107,9 @@ function DashboardPage() {
 
     const oos = rows.filter((a) => a.judgement === 'OOS').length
     const ooc = rows.length - oos
-    const mesSent = actRows.filter((a) => a.send_channel === 'MES' && a.send_status === 'SENT').length
+    const delivered = (action, channel, status) =>
+      (action.deliveries ?? []).some((delivery) => delivery.channel === channel && delivery.status === status)
+    const mesSent = actRows.filter((action) => delivered(action, 'MES', 'SENT')).length
 
     const byDay = {}
     for (const a of rows) {
@@ -128,14 +130,14 @@ function DashboardPage() {
 
     const actionMap = {}
     for (const a of actRows) actionMap[a.action_code] = (actionMap[a.action_code] ?? 0) + 1
-    const actionSlices = ['EQP_HOLD', 'LOT_HOLD', 'MONITOR']
+    const actionSlices = ['EQP_HOLD', 'WARNING', 'MONITORING']
       .filter((c) => actionMap[c])
       .map((c) => ({ label: c, value: actionMap[c], color: ACTION_HEX[c] }))
 
     const notify = [
-      { label: 'Email', value: actRows.filter((a) => a.send_channel === 'EMAIL' && a.send_status === 'SENT').length, color: GREEN_HEX },
+      { label: 'Email', value: actRows.filter((action) => delivered(action, 'EMAIL', 'SENT')).length, color: GREEN_HEX },
       { label: 'MES', value: mesSent, color: BLUE_HEX },
-      { label: 'None', value: actRows.filter((a) => a.send_status !== 'SENT').length, color: GRAY_HEX },
+      { label: 'None', value: actRows.filter((action) => !(action.deliveries ?? []).some((delivery) => delivery.status === 'SENT')).length, color: GRAY_HEX },
     ]
 
     return {

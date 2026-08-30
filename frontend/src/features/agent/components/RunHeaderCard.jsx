@@ -1,7 +1,7 @@
 import { fmtDateTime } from '../../../shared/api/format.js'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
-import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
+import { actionCodeVariant, runStatusVariant } from '../../../shared/components/ui/statusStyles.js'
 import { FaultBadge } from './faultStyles.jsx'
 import { approvalText } from './agentModel.js'
 
@@ -26,6 +26,7 @@ function RunHeaderCard({ run, approvalStatus }) {
         </div>
       </div>
       <div className="mt-3.5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-cell-line pt-3.5">
+        <Badge variant={runStatusVariant(run.status)}>{run.status ?? '상태 미제공'}</Badge>
         <FaultBadge code={run.fault_code} name={run.fault_name} />
         <span className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-g2">신뢰도</span>
@@ -34,7 +35,7 @@ function RunHeaderCard({ run, approvalStatus }) {
           </span>
           <span className="font-mono text-[11.5px] font-bold text-ink">{conf}%</span>
         </span>
-        <Badge variant={actionCodeVariant(run.recommended_action)}>{run.recommended_action}</Badge>
+        <Badge variant={actionCodeVariant(run.recommended_action)}>{run.recommended_action ?? '조치 미정'}</Badge>
         <span className={`text-[12.5px] font-bold ${ap.cls}`}>{ap.label}</span>
       </div>
     </Card>

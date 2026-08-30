@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { fmtDateTime } from '../../../shared/api/format.js'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
+import RunAuditSubview from '../../../shared/components/audit/RunAuditSubview.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
@@ -8,11 +10,12 @@ import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 
 // 근거 · 조치 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
-// 탭 3개: RAG 문서 근거 / 그래프 근거 / 권고 조치 · 승인
+// 이전 시안의 상세 모달 안에서 C-5.2의 공개 근거·승인·감사 계약을 함께 제공한다.
 const TABS = [
   { key: 'rag', label: 'RAG 문서 근거' },
   { key: 'graph', label: '그래프 근거' },
   { key: 'act', label: '권고 조치 · 승인' },
+  { key: 'audit', label: '감사 이력' },
 ]
 
 // 조치 절차 체크리스트 — EQP_HOLD 4단계 / 그 외 3단계 (시안 고정 문안)
@@ -23,21 +26,36 @@ const CHECKLIST = {
     '담당 엔지니어 점검 배정',
     '점검 완료 후 HOLD 해제 · 재가동',
   ],
-  LOT_HOLD: ['해당 LOT 진행 중단 등록', '후속 계측 의뢰 · 결과 확인', '이상 없으면 HOLD 해제'],
-  MONITOR: ['해당 챔버 모니터링 강화 등록', '다음 LOT 처리 결과 확인', '재발 시 조치 상향 검토'],
+  WARNING: ['이상 경고 이메일 발송', '다음 LOT 처리 결과 확인', '재발 시 조치 상향 검토'],
+  MONITORING: ['해당 챔버 모니터링 강화 등록', '다음 LOT 처리 결과 확인', '재발 시 조치 상향 검토'],
 }
 
-function RunDetailModal({ open, onClose, run, action, approval, docs, decided, onDecide, deciding }) {
+function RunDetailModal({
+  open,
+  onClose,
+  run,
+  action,
+  approval,
+  docs,
+  evidenceItems = [],
+  tools = [],
+  approvalState,
+  onDecide,
+}) {
   const [tab, setTab] = useState('rag')
+  const [decidedBy, setDecidedBy] = useState('')
+  const [comment, setComment] = useState('')
   if (!open) return null
 
   const hits = docs?.hits ?? []
 
-  const status = decided ?? action?.approval_status
+  const status = approvalState?.status ?? approval?.status ?? action?.approval_status
   const ap = approvalText(status)
   const isHold = action?.action_code === 'EQP_HOLD'
-  const steps = CHECKLIST[action?.action_code] ?? CHECKLIST.MONITOR
-  const mesSent = decided === 'APPROVED' || action?.send_status === 'SENT'
+  const steps = CHECKLIST[action?.action_code] ?? CHECKLIST.MONITORING
+  const mesDelivery = action?.deliveries?.find((delivery) => delivery.channel === 'MES')
+  const mesSent = mesDelivery?.status === 'SENT'
+  const deciding = approvalState?.phase === 'pending'
 
   const tabCls = (on) =>
     `inline-flex h-8 cursor-pointer items-center rounded-lg border px-3.5 text-[12px] font-bold ${
@@ -76,9 +94,22 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
         </div>
 
         <div className="overflow-y-auto px-6 py-5">
+          {tools.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-soft px-3.5 py-3">
+              <span className="mr-1 text-[11px] font-bold text-g2">Tool 실행</span>
+              {tools.map((tool, index) => (
+                <Badge key={`${tool.tool_name}:${index}`} variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>
+                  {tool.tool_name} · {tool.status}
+                </Badge>
+              ))}
+            </div>
+          )}
+
           {tab === 'rag' && <RunRagEvidenceTab hits={hits} />}
 
-          {tab === 'graph' && <RunGraphEvidenceTab run={run} />}
+          {tab === 'graph' && <RunGraphEvidenceTab run={run} evidenceItems={evidenceItems} />}
+
+          {tab === 'act' && !action && <EmptyState title="아직 결정된 조치가 없습니다" />}
 
           {tab === 'act' && action && (
             <div className="flex flex-col gap-5">
@@ -102,14 +133,22 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
               </div>
 
               <div>
-                <div className="mb-1.5 text-[11px] font-bold text-g2">MES 전송 상태</div>
-                <span className={`font-mono text-[12.5px] font-bold ${mesSent ? 'text-green-dark' : decided === 'REJECTED' ? 'text-red' : 'text-g1'}`}>
-                  {decided === 'APPROVED'
-                    ? 'SENT · 전송 완료'
-                    : decided === 'REJECTED'
-                      ? 'CANCELED · 전송 취소'
-                      : `${action.send_status}${action.sent_at ? ` · ${fmtDateTime(action.sent_at)}` : ''} (${action.send_channel})`}
-                </span>
+                <div className="mb-1.5 text-[11px] font-bold text-g2">채널 전송 상태</div>
+                <div className="flex flex-wrap gap-2">
+                  {(action.deliveries ?? []).map((delivery) => (
+                    <Badge key={delivery.channel} variant={delivery.status === 'SENT' ? 't-green' : 't-gray'}>
+                      {delivery.channel} · {delivery.status}
+                    </Badge>
+                  ))}
+                  {(action.deliveries ?? []).length === 0 && <span className="text-[12px] text-g2">전송 채널 없음</span>}
+                </div>
+                {mesDelivery && (
+                  <div
+                    className={`mt-2 font-mono text-[11.5px] font-bold ${mesSent ? 'text-green-dark' : status === 'REJECTED' ? 'text-red' : 'text-g1'}`}
+                  >
+                    {`${mesDelivery.status}${mesDelivery.completed_at ? ` · ${fmtDateTime(mesDelivery.completed_at)}` : ''} (MES)${status === 'REJECTED' ? ' · 승인 반려' : ''}`}
+                  </div>
+                )}
               </div>
 
               {isHold ? (
@@ -121,13 +160,35 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
                       {approval && <span className="ml-1 font-mono text-g2">({approval.approval_id})</span>}
                     </div>
                     <div className="mt-3 flex gap-2">
-                      <Button sm disabled={deciding} onClick={() => onDecide('APPROVE')}>
+                      <input
+                        value={decidedBy}
+                        onChange={(event) => setDecidedBy(event.target.value)}
+                        placeholder="결정자"
+                        disabled={deciding}
+                        className="h-8 min-w-0 flex-1 rounded-lg border border-field-line bg-white px-3 text-[12px]"
+                      />
+                      <input
+                        value={comment}
+                        onChange={(event) => setComment(event.target.value)}
+                        placeholder="결정 근거 (선택)"
+                        disabled={deciding}
+                        className="h-8 min-w-0 flex-[2] rounded-lg border border-field-line bg-white px-3 text-[12px]"
+                      />
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <Button sm disabled={deciding} onClick={() => onDecide('APPROVED', decidedBy, comment)}>
                         승인
                       </Button>
-                      <Button sm variant="outline-red" disabled={deciding} onClick={() => onDecide('REJECT')}>
+                      <Button sm variant="outline-red" disabled={deciding} onClick={() => onDecide('REJECTED', decidedBy, comment)}>
                         반려
                       </Button>
                     </div>
+                    {approvalState?.error && <div className="mt-2 text-[11.5px] font-bold text-red">{approvalState.error}</div>}
+                    {approvalState?.phase === 'conflict' && (
+                      <div className="mt-2 text-[11.5px] font-bold text-tint-amber-text">
+                        이미 처리되어 최신 상태를 다시 조회했습니다.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className={`text-[13px] font-bold ${ap.cls}`}>{ap.label}</div>
@@ -138,6 +199,14 @@ function RunDetailModal({ open, onClose, run, action, approval, docs, decided, o
                 </div>
               )}
             </div>
+          )}
+
+          {tab === 'audit' && (
+            <RunAuditSubview
+              agent_run_id={run.agent_run_id}
+              action_id={action?.action_id}
+              approval_id={approval?.approval_id}
+            />
           )}
         </div>
       </div>

@@ -425,7 +425,11 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 
 #### Query
 
-`date_from`, `date_to`는 선택이며 함께 주거나 함께 생략한다. 상태·가설 filter는 확장 계약이다.
+`date_from`, `date_to`는 선택이며 함께 주거나 함께 생략한다. `status`는
+`RUNNING|WAITING_APPROVAL|COMPLETED|FAILED`, `predicted_fault_code`는
+`FOC|RFM|MFD|TMD|OTH` 중 하나를 선택하는 서버 filter다. `equipment_id`·`chamber_id`·페이지
+조건은 이 bare-array API의 서버 query가 아니며, 구 화면 호환 adapter가 응답을 client-side로
+filter·정렬·slice한다.
 
 #### Response 200 — `AgentRunItem[]`
 

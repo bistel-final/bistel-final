@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -18,6 +19,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 EXPECTED_EMBEDDING_MODEL = "BAAI/bge-m3"
 EXPECTED_EMBEDDING_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 EXPECTED_EMBEDDING_DIMENSION = 1024
+EMBEDDING_WARMUP_QUERY = "FDC document retrieval readiness"
 
 
 @lru_cache(maxsize=1)
@@ -84,3 +86,13 @@ def embed_query(query: str) -> list[float]:
 
     vector = get_embedding_model().encode([query], normalize_embeddings=True)[0]
     return [float(value) for value in vector]
+
+
+def warm_embedding_model() -> None:
+    """새 Agent run 전에 local model load와 첫 inference를 끝낸다."""
+
+    vector = embed_query(EMBEDDING_WARMUP_QUERY)
+    if len(vector) != EXPECTED_EMBEDDING_DIMENSION or not all(
+        math.isfinite(value) for value in vector
+    ):
+        raise EmbeddingModelNotReadyError()

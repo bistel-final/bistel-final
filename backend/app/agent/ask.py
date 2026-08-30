@@ -15,6 +15,10 @@ from typing import Any, Final, Protocol
 
 from pydantic import Field, ValidationError
 
+from app.agent.evidence_projection import (
+    project_document_evidence,
+    project_fdc_evidence,
+)
 from app.agent.public_schemas import (
     AgentAskRequest,
     AgentAskResponse,
@@ -22,7 +26,6 @@ from app.agent.public_schemas import (
     AskEvidenceItem,
     AskToolItem,
     DocumentAskEvidence,
-    TraceAskEvidence,
 )
 from app.common import llm
 from app.common.enums import ActionCode, FaultHypothesis, ToolCallStatus
@@ -39,7 +42,6 @@ from app.common.tool_contracts import (
 
 ASK_SYNTHESIS_MAX_ROUNDS: Final[int] = 2
 _DOCUMENT_TOP_K: Final[int] = 4
-_MAX_EXCERPT_CHARS: Final[int] = 600
 
 _LOT_HISTORY_PATTERN = re.compile(r"(?<![A-Z0-9])LH-?[A-Z0-9]{3,}(?![A-Z0-9])", re.I)
 _LOT_PATTERN = re.compile(r"(?<![A-Z0-9])LOT[0-9]{3,}(?![A-Z0-9])", re.I)
@@ -183,13 +185,6 @@ def extract_ask_identifiers(question: str) -> AskIdentifiers:
     )
 
 
-def _compact_text(value: str) -> str:
-    compact = " ".join(value.split())
-    if len(compact) <= _MAX_EXCERPT_CHARS:
-        return compact
-    return compact[: _MAX_EXCERPT_CHARS - 1].rstrip() + "…"
-
-
 def _tool_item(name: str, status: ToolCallStatus, summary: str) -> AskToolItem:
     return AskToolItem(
         tool_name=name,
@@ -222,19 +217,9 @@ def _failure_outcome(name: str, reason: str) -> _ToolOutcome:
 def _fdc_outcome(result: FdcSummaryToolResult) -> _ToolOutcome:
     if not result.ok:
         return _failure_outcome("get_fdc_summary", result.reason)
-    if result.wafer is None:
+    evidence = project_fdc_evidence(result)
+    if evidence is None:
         raise AgentAskContractError("ASK_FDC_SUCCESS_PAYLOAD_INVALID")
-    ooc = sum(item.ooc_point_cnt for item in result.parameters)
-    oos = sum(item.oos_point_cnt for item in result.parameters)
-    evidence = TraceAskEvidence(
-        type="TRACE",
-        source_id=result.wafer.lot_hist_id,
-        title=f"{result.wafer.lot_hist_id} FDC summary",
-        excerpt=(
-            f"lot={result.wafer.lot_id}; chamber={result.wafer.chamber_id}; "
-            f"parameters={len(result.parameters)}; OOC points={ooc}; OOS points={oos}"
-        ),
-    )
     return _ToolOutcome(
         item=_tool_item(
             "get_fdc_summary",
@@ -269,18 +254,7 @@ def _equipment_outcome(result: EquipmentContextToolResult) -> _ToolOutcome:
 def _document_outcome(result: DocumentSearchToolResult) -> _ToolOutcome:
     if not result.ok:
         return _failure_outcome("search_documents", result.reason)
-    evidence = tuple(
-        DocumentAskEvidence(
-            type="DOCUMENT",
-            source_id=hit.chunk_id,
-            title=hit.title,
-            excerpt=_compact_text(hit.content),
-            document_id=hit.document_id,
-            chunk_id=hit.chunk_id,
-            section=hit.section,
-        )
-        for hit in result.hits
-    )
+    evidence = project_document_evidence(result)
     return _ToolOutcome(
         item=_tool_item(
             "search_documents",

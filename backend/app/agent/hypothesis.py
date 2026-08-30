@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from typing import Final
@@ -23,6 +24,56 @@ from app.common.tool_contracts import (
 )
 
 MAX_GENERATION_ROUNDS: Final = 2
+logger = logging.getLogger(__name__)
+HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
+    "name": "agent_hypothesis",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "predicted_fault_code": {
+                "type": "string",
+                "enum": ["FOC", "RFM", "MFD", "TMD", "OTH"],
+            },
+            "confidence": {"type": "number"},
+            "cause_summary": {"type": "string"},
+            "supporting_alarms": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "enum": ["TRACE", "SUMMARY", "R03"],
+                        },
+                        "alarm_id": {"type": "string"},
+                    },
+                    "required": ["source", "alarm_id"],
+                },
+            },
+            "supporting_chunk_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "supporting_relation_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "uncertainty": {"type": "string"},
+        },
+        "required": [
+            "predicted_fault_code",
+            "confidence",
+            "cause_summary",
+            "supporting_alarms",
+            "supporting_chunk_ids",
+            "supporting_relation_ids",
+            "uncertainty",
+        ],
+    },
+}
 ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
         "LLM_NOT_READY",
@@ -112,8 +163,10 @@ def _citation_reason(
 ) -> str | None:
     allowed_alarms = {alarm.to_token() for alarm in route.incident.member_alarms}
     cited_alarms = {alarm.to_token() for alarm in hypothesis.supporting_alarms}
-    if not cited_alarms or not cited_alarms <= allowed_alarms:
-        return "CITATION_INVALID"
+    if not cited_alarms:
+        return "ALARM_CITATION_REQUIRED"
+    if not cited_alarms <= allowed_alarms:
+        return "ALARM_CITATION_OUTSIDE_EVIDENCE"
 
     allowed_chunks = (
         {hit.chunk_id for hit in document_evidence.hits}
@@ -121,10 +174,10 @@ def _citation_reason(
         else set()
     )
     cited_chunks = set(hypothesis.supporting_chunk_ids)
-    if not cited_chunks <= allowed_chunks:
-        return "CITATION_INVALID"
     if allowed_chunks and not cited_chunks:
-        return "CITATION_INVALID"
+        return "DOCUMENT_CITATION_REQUIRED"
+    if not cited_chunks <= allowed_chunks:
+        return "DOCUMENT_CITATION_OUTSIDE_EVIDENCE"
 
     allowed_relations = {
         relation_id
@@ -132,10 +185,10 @@ def _citation_reason(
         for relation_id in item.relation_ids
     }
     cited_relations = set(hypothesis.supporting_relation_ids)
-    if not cited_relations <= allowed_relations:
-        return "CITATION_INVALID"
     if allowed_relations and not cited_relations:
-        return "CITATION_INVALID"
+        return "RELATION_CITATION_REQUIRED"
+    if not cited_relations <= allowed_relations:
+        return "RELATION_CITATION_OUTSIDE_EVIDENCE"
     return None
 
 
@@ -162,7 +215,10 @@ def generate_hypothesis(
             raise HypothesisGenerationError(exc.code, usage=accumulated) from exc
 
         try:
-            completion = llm.chat_with_usage(messages)
+            completion = llm.chat_with_usage(
+                messages,
+                json_schema=HYPOTHESIS_RESPONSE_SCHEMA,
+            )
         except (
             llm.LlmNotReadyError,
             llm.LlmTimeoutError,
@@ -187,14 +243,27 @@ def generate_hypothesis(
             hypothesis = Hypothesis.model_validate_json(
                 _json_content(completion.content)
             )
-        except (ValidationError, ValueError):
-            correction_reason = "STRUCTURE_INVALID"
+        except ValidationError as exc:
+            fields = sorted(
+                {
+                    ".".join(str(part) for part in error["loc"])
+                    for error in exc.errors(include_input=False, include_url=False)
+                }
+            )
+            correction_reason = "STRUCTURE_INVALID:" + ",".join(fields)
+            continue
+        except ValueError:
+            correction_reason = "JSON_INVALID"
             continue
 
         correction_reason = _citation_reason(hypothesis, document_evidence, route)
         if correction_reason is None:
             return HypothesisOutcome(hypothesis=hypothesis, llm_usage=accumulated)
 
+    logger.warning(
+        "hypothesis output rejected after correction (reason=%s)",
+        correction_reason or "STRUCTURE_INVALID",
+    )
     raise HypothesisGenerationError("HYPOTHESIS_STRUCTURE_INVALID", usage=accumulated)
 
 

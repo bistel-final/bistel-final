@@ -35,6 +35,54 @@ def test_chat_with_usage_uses_provider_model_not_request_model(monkeypatch) -> N
     assert (result.prompt_tokens, result.completion_tokens) == (7, 3)
 
 
+def test_chat_with_usage_adds_requested_response_format_only(monkeypatch) -> None:
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    requests: list[dict[str, object]] = []
+
+    def post(*args, **kwargs):
+        requests.append(kwargs["json"])
+        return _response()
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+
+    llm.chat_with_usage([{"role": "user", "content": "q"}])
+    llm.chat_with_usage(
+        [{"role": "user", "content": "q"}],
+        json_object=True,
+    )
+    schema = {
+        "name": "answer",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+    }
+    llm.chat_with_usage(
+        [{"role": "user", "content": "q"}],
+        json_schema=schema,
+    )
+
+    assert "response_format" not in requests[0]
+    assert requests[1]["response_format"] == {"type": "json_object"}
+    assert requests[2]["response_format"] == {
+        "type": "json_schema",
+        "json_schema": schema,
+    }
+
+
+def test_chat_with_usage_rejects_ambiguous_response_formats(monkeypatch) -> None:
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "ollama")
+    with pytest.raises(ValueError, match="동시"):
+        llm.chat_with_usage(
+            [{"role": "user", "content": "q"}],
+            json_object=True,
+            json_schema={"name": "answer", "strict": True, "schema": {}},
+        )
+
+
 @pytest.mark.parametrize(
     "usage",
     [

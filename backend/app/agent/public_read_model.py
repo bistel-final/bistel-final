@@ -15,26 +15,54 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
+from app.agent.evidence_projection import (
+    project_document_evidence,
+    project_fdc_evidence,
+)
 from app.agent.public_schemas import (
+    ActionDeliveryDetailItem,
+    ActionDeliveryItem,
+    ActionDetailResponse,
+    ActionItem,
+    AgentRunActionItem,
+    AgentRunApprovalItem,
+    AgentRunDetailResponse,
+    GraphAskEvidence,
     PublicAgentRunItem,
     PublicApprovalItem,
     PublicDeliveryItem,
     PublicToolCallItem,
+    RunAlarmEvidence,
+    RunEvidenceItem,
 )
 from app.agent.repository import (
+    PublicActionRecord,
     PublicAgentRunRecord,
     PublicApprovalRecord,
     PublicToolCallRecord,
     RepositoryContractError,
+    get_action_public,
+    get_agent_run_public,
+    get_approval_public,
+    get_prediction_or_none,
+    list_actions_public,
     list_agent_runs_public,
     list_approvals_public,
     record_public_read_omission,
+    list_run_alarms,
+    list_tool_calls,
 )
 from app.common.boundary_adapters import (
     to_public_approval_status,
     to_public_channel,
 )
-from app.common.enums import ToolCallStatus
+from app.common.enums import ActionCode, FaultHypothesis, RunStatus, ToolCallStatus
+from app.common.schemas import AlarmRef
+from app.common.tool_contracts import (
+    DocumentSearchToolResult,
+    EquipmentContextToolResult,
+    FdcSummaryToolResult,
+)
 
 _KST: Final = ZoneInfo("Asia/Seoul")
 
@@ -150,12 +178,16 @@ def list_public_agent_runs(
     *,
     date_from: date | None,
     date_to: date | None,
+    status: RunStatus | None = None,
+    predicted_fault_code: FaultHypothesis | None = None,
 ) -> list[PublicAgentRunItem]:
     lower, upper = public_run_date_bounds(date_from, date_to)
     records = list_agent_runs_public(
         connection,
         date_from=lower,
         date_to=upper,
+        status=status,
+        predicted_fault_code=predicted_fault_code,
     )
     items: list[PublicAgentRunItem] = []
     for record in records:
@@ -215,10 +247,239 @@ def list_public_approvals(connection: Connection) -> list[PublicApprovalItem]:
     return items
 
 
+def _action_delivery(record: object) -> ActionDeliveryItem:
+    return ActionDeliveryItem(
+        channel=to_public_channel(record.channel),
+        status=record.status,
+    )
+
+
+def _public_action(record: PublicActionRecord) -> ActionItem:
+    status = (
+        None
+        if record.approval_status is None
+        else to_public_approval_status(record.approval_status)
+    )
+    return ActionItem(
+        action_id=record.action_id,
+        agent_run_id=record.agent_run_id,
+        created_by_agent_run_id=record.agent_run_id,
+        action_code=record.action_code,
+        lot_id=record.lot_id,
+        lot=record.lot_id,
+        equipment_id=record.equipment_id,
+        equipment=record.equipment_id,
+        chamber_id=record.chamber_id,
+        chamber=record.chamber_id,
+        reason=record.reason,
+        approval_status=status,
+        deliveries=[_action_delivery(delivery) for delivery in record.deliveries],
+        created_at=record.created_at,
+    )
+
+
+def _public_action_detail(record: PublicActionRecord) -> ActionDetailResponse:
+    item = _public_action(record)
+    return ActionDetailResponse(
+        **item.model_dump(exclude={"deliveries"}),
+        deliveries=[
+            ActionDeliveryDetailItem(
+                channel=to_public_channel(delivery.channel),
+                status=delivery.status,
+                started_at=delivery.started_at,
+                completed_at=delivery.completed_at,
+            )
+            for delivery in record.deliveries
+        ],
+    )
+
+
+def list_public_actions(
+    connection: Connection,
+    *,
+    action_code: ActionCode | None,
+) -> list[ActionItem]:
+    return [
+        _public_action(record)
+        for record in list_actions_public(connection, action_code=action_code)
+    ]
+
+
+def load_public_action_detail(
+    connection: Connection,
+    action_id: str,
+) -> ActionDetailResponse:
+    return _public_action_detail(get_action_public(connection, action_id))
+
+
+def _alarm_evidence(alarm: AlarmRef) -> RunAlarmEvidence:
+    return RunAlarmEvidence(
+        type="ALARM",
+        source_id=alarm.to_token(),
+        title=f"{alarm.source.value} alarm {alarm.alarm_id}",
+        excerpt=(f"source={alarm.source.value}; alarm_id={alarm.alarm_id}"),
+        alarm=alarm,
+    )
+
+
+def _stored_tool_evidence(
+    connection: Connection,
+    agent_run_id: str,
+    *,
+    supporting_relation_ids: tuple[str, ...],
+) -> list[RunEvidenceItem]:
+    items: list[RunEvidenceItem] = []
+    graph_revision: str | None = None
+    for call in list_tool_calls(connection, agent_run_id):
+        if call.status is not ToolCallStatus.SUCCESS or call.output is None:
+            continue
+        try:
+            if call.tool_name == "get_fdc_summary":
+                projected = project_fdc_evidence(
+                    FdcSummaryToolResult.model_validate(call.output)
+                )
+                if projected is not None:
+                    items.append(projected)
+            elif call.tool_name == "search_documents":
+                items.extend(
+                    project_document_evidence(
+                        DocumentSearchToolResult.model_validate(call.output)
+                    )
+                )
+            elif call.tool_name == "get_equipment_context":
+                result = EquipmentContextToolResult.model_validate(call.output)
+                if result.ok and result.graph_revision is not None:
+                    graph_revision = result.graph_revision
+        except (ValidationError, TypeError, ValueError):
+            # 부분·구버전 payload는 해당 evidence만 생략한다.
+            # 원문 오류는 공개하지 않는다.
+            continue
+    if graph_revision is not None:
+        for relation_id in supporting_relation_ids:
+            try:
+                items.append(
+                    GraphAskEvidence(
+                        type="GRAPH",
+                        source_id=relation_id,
+                        title=f"Graph relation {relation_id}",
+                        excerpt=(f"relation={relation_id}; revision={graph_revision}"),
+                        relation_id=relation_id,
+                        graph_revision=graph_revision,
+                    )
+                )
+            except (ValidationError, TypeError, ValueError):
+                # citation 하나가 손상되어도 검증 가능한 다른 근거는 유지한다.
+                continue
+    return items
+
+
+def _prediction_citations(
+    connection: Connection, agent_run_id: str
+) -> tuple[tuple[AlarmRef, ...], tuple[str, ...]]:
+    prediction = get_prediction_or_none(connection, agent_run_id)
+    if prediction is None:
+        return (), ()
+    evidence = prediction.evidence
+    alarms: list[AlarmRef] = []
+    raw_alarms = evidence.get("supporting_alarms", ())
+    if isinstance(raw_alarms, list | tuple):
+        for item in raw_alarms:
+            try:
+                alarms.append(AlarmRef.model_validate(item))
+            except (ValidationError, TypeError, ValueError):
+                continue
+
+    relations: list[str] = []
+    raw_relations = evidence.get("supporting_relation_ids", ())
+    if isinstance(raw_relations, list | tuple):
+        for item in raw_relations:
+            if isinstance(item, str) and item.strip():
+                relations.append(item)
+    return tuple(alarms), tuple(relations)
+
+
+def load_public_agent_run_detail(
+    connection: Connection,
+    agent_run_id: str,
+) -> AgentRunDetailResponse:
+    record = get_agent_run_public(connection, agent_run_id)
+    item = _public_run(record)
+    cited_alarms, relation_ids = _prediction_citations(connection, agent_run_id)
+    evidence: list[RunEvidenceItem] = [
+        _alarm_evidence(alarm)
+        for alarm in (*list_run_alarms(connection, agent_run_id), *cited_alarms)
+    ]
+    evidence.extend(
+        _stored_tool_evidence(
+            connection,
+            agent_run_id,
+            supporting_relation_ids=relation_ids,
+        )
+    )
+    deduplicated: list[RunEvidenceItem] = []
+    seen: set[str] = set()
+    for evidence_item in evidence:
+        if evidence_item.source_id in seen:
+            continue
+        seen.add(evidence_item.source_id)
+        deduplicated.append(evidence_item)
+
+    action_detail = (
+        None
+        if record.action_id is None
+        else get_action_public(connection, record.action_id)
+    )
+    action = (
+        None
+        if action_detail is None
+        else AgentRunActionItem(
+            action_id=action_detail.action_id,
+            agent_run_id=action_detail.agent_run_id,
+            action_code=action_detail.action_code,
+            reason=action_detail.reason,
+            approval_status=(
+                None
+                if action_detail.approval_status is None
+                else to_public_approval_status(action_detail.approval_status)
+            ),
+            deliveries=[
+                _action_delivery(delivery) for delivery in action_detail.deliveries
+            ],
+        )
+    )
+    approval_record = (
+        None
+        if record.approval_id is None
+        else get_approval_public(connection, record.approval_id)
+    )
+    approval = (
+        None
+        if approval_record is None
+        else AgentRunApprovalItem(
+            approval_id=approval_record.approval_id,
+            action_id=approval_record.action_id,
+            agent_run_id=approval_record.agent_run_id,
+            status=to_public_approval_status(approval_record.status),
+            decided_by=approval_record.decided_by,
+            decided_at=approval_record.decided_at,
+            decision_comment=approval_record.decision_comment,
+        )
+    )
+    return AgentRunDetailResponse(
+        **item.model_dump(),
+        evidence_items=deduplicated,
+        approval=approval,
+        action=action,
+    )
+
+
 __all__ = [
     "PublicDateRangeError",
     "list_public_agent_runs",
+    "list_public_actions",
     "list_public_approvals",
+    "load_public_action_detail",
+    "load_public_agent_run_detail",
     "public_run_date_bounds",
     "to_public_approval",
 ]

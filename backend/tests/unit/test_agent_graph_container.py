@@ -1788,7 +1788,7 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
     monkeypatch.setattr(
         hypothesis_module.llm,
         "chat_with_usage",
-        lambda messages: ChatCompletion(
+        lambda messages, **_kwargs: ChatCompletion(
             content=content,
             model="provider-actual-model",
             prompt_tokens=31,

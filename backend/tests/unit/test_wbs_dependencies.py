@@ -81,7 +81,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (171.5, 39.5, 211.0, 69.5)
+    assert (p0, p1, total, common) == (173.5, 41.5, 215.0, 69.5)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -217,6 +217,15 @@ def test_tool_hard_timeout_followup_reaches_the_final_gate(
     assert rows["V5-CM-4.8"][0] == "P1"
     assert rows["V5-CM-4.8"][1] == ["V5-C-2.2"]
     assert "V5-CM-4.8" in rows["V5-CM-5.3"][1]
+
+
+def test_incident_batch_entrypoint_reaches_the_golden_flow(
+    rows: dict[str, TaskRow],
+) -> None:
+    """자동 배치 구현 없이 수동 POST 12회로 golden flow를 대체하지 못하게 한다."""
+
+    assert rows["V5-C-5.3"] == ("P0", ["V5-C-5.1"])
+    assert "V5-C-5.3" in rows["V5-C-6.1"][1]
 
 
 #: `CM-3.1 → B-1.1 → CM-1.8 → CM-3.2 → CM-3.3 → CM-3.4 → CM-3.5`
