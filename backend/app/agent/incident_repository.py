@@ -36,6 +36,7 @@ from app.common.schemas import AlarmRef
 __all__ = [
     "IncidentAlarmEvent",
     "IncidentSnapshot",
+    "RESOLVED_ALARM_SELECT_SQL",
     "fetch_incident_snapshot",
 ]
 
@@ -62,6 +63,26 @@ class IncidentSnapshot:
     members: tuple[IncidentAlarmEvent, ...]
 
 
+#: incident snapshot과 C-5.3 pending batch가 공유하는 **유일한 resolved SELECT**.
+#:
+#: 이 projection을 복제하면 수동 POST와 자동 batch가 서로 다른 owner·drift 규칙으로
+#: 같은 alarm을 해석할 수 있다. 두 caller는 뒤쪽 policy만 달리하고 이 raw/canonical
+#: mapping은 반드시 함께 바뀐다.
+RESOLVED_ALARM_SELECT_SQL: Final = """
+    SELECT
+        v.source                AS source,
+        v.alarm_id              AS alarm_id,
+        v.occurred_at           AS occurred_at,
+        v.lot_hist_id           AS lot_hist_id,
+        v.lot_id                AS raw_lot_id,
+        v.chamber_id            AS raw_chamber_id,
+        h.lot_id                AS canonical_lot_id,
+        h.chamber_id            AS canonical_chamber_id
+    FROM v_alarm_event AS v
+    LEFT JOIN lot_history AS h ON h.lot_hist_id = v.lot_hist_id
+"""
+
+
 #: 요청 resolve·scoped unresolved·raw/canonical drift·member를 한 snapshot에 담는다.
 #:
 #: `candidate`는 raw key와 canonical key **둘 중 하나라도** 요청 incident를 가리키는
@@ -81,19 +102,9 @@ class IncidentSnapshot:
 #: 그때 두 연산자는 같기 때문이다. 의도를 명시하는 방어이며 mapping 순서가 바뀌면 의미가
 #: 생긴다. 그 순서는 `test_the_mapping_order_is_fixed`가 고정한다.
 _SNAPSHOT = text(
-    """
+    f"""
     WITH resolved AS (
-        SELECT
-            v.source                AS source,
-            v.alarm_id              AS alarm_id,
-            v.occurred_at           AS occurred_at,
-            v.lot_hist_id           AS lot_hist_id,
-            v.lot_id                AS raw_lot_id,
-            v.chamber_id            AS raw_chamber_id,
-            h.lot_id                AS canonical_lot_id,
-            h.chamber_id            AS canonical_chamber_id
-        FROM v_alarm_event AS v
-        LEFT JOIN lot_history AS h ON h.lot_hist_id = v.lot_hist_id
+        {RESOLVED_ALARM_SELECT_SQL}
     ),
     requested AS (
         SELECT * FROM resolved
