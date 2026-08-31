@@ -14,7 +14,8 @@ Issue 종료는 금지한다.
 
 2단은 다음 조건을 모두 충족한 뒤 한 번만 실행한다.
 
-- CM-5.1의 D-2.6·owner drift·release 19/live 24 semantic blocker가 모두 해소됨
+- CM-5.1의 release 20·classified live 30·API spec operations 36과 semantic drift 0이
+  최신 `main` CI에서 확인됨
 - `V5-A-3.4`, `V5-B-4.1`, `V5-B-4.2`, `V5-C-5.2`, `V5-C-6.1`,
   `V5-D-1.4`, `V5-D-2.6` 완료
 - `V5-CM-4.7` reset confirmation과 사용자 명시 실행 승인
@@ -29,19 +30,24 @@ Issue 종료는 금지한다.
 `preflight_team_env.py`가 `LOCALHOST_FORBIDDEN`으로 거부한다.
 
 ```text
-브라우저/타 노트북 → Frontend        http://<팀장-PC-IP>:53080
+브라우저/타 노트북 → Frontend        http://<팀장-PC-IP>:8080
+외부 브라우저    → Frontend        http://<공인-IP>:53000 (NAT → 팀장-PC:8080)
 Frontend Nginx      → Backend         http://backend:8000
 Backend             → PostgreSQL      <팀장-PC-IP>:53001
 Backend             → Neo4j           bolt://<팀장-PC-IP>:<publish-port>
 Backend             → n8n             http://<팀장-PC-IP>:<publish-port>
-n8n WF2~4           → Backend callback http://<팀장-PC-IP>:53080/api
+n8n WF2~4           → Backend callback http://<팀장-PC-IP>:8080/api
 n8n·외부 probe      → Kafka            <팀장-PC-IP>:53005
 Backend·MES Mock    → Kafka            kafka:9092
 ```
 
-- Backend 8000은 host에 게시하지 않는다. 외부·브라우저 요청은 Nginx `/api`만 사용한다.
-- 53080은 Docker host publish이며 교육장 LAN 안에서만 사용한다. 교수님께 외부 포트 개방을
-  요청하거나 즉석 포워딩을 추가하지 않는다.
+- Backend container 8000은 host에 직접 게시하지 않고 Frontend Nginx `/api`로만
+  접근한다. Frontend의 host 8080이 교육장 LAN 통합 진입점이다.
+- 교수님이 관리하는 외부 TCP 53000은 팀장 PC TCP 8080으로만 포워딩한다.
+  Compose에는 공인 IP나 외부 53000을 bind하지 않으며, n8n `BACKEND_BASE_URL`도
+  `<팀장-PC-IP>:8080/api` 경로를 사용한다.
+- 외부 53000 확인은 배포 reachability smoke이며 CM-5.2의 같은-LAN 기능 판정을 대신하지
+  않는다. 개방이 아직 반영되지 않았다고 2단 내부 검증을 우회하거나 포트를 즉석 변경하지 않는다.
 - Kafka는 host/container `53005:9094`, advertised `:53005`를 유지한다. 9093은 KRaft
   controller 전용이며 host에 공개하지 않는다.
 - 타 VLAN에서 접속이 안 되면 포트를 더 열지 않는다. 팀장 PC에서 직접 시연하거나 사전에
@@ -180,8 +186,9 @@ HAR뿐이다. `.env`, cookie export, 전체 Docker log, n8n payload 원문, prom
 
 ## 9. 타 노트북과 n8n smoke 소유
 
-- 타 노트북은 `http://<팀장-PC-IP>:53080`, `/api/health`, `/api/health/ready`만 확인한다.
-  callback secret이나 DB·Kafka credential을 받지 않는다.
+- 타 노트북은 `http://<팀장-PC-IP>:8080`, `/api/health`, `/api/health/ready`만 확인한다.
+  외부 NAT smoke는 승인된 네트워크에서 `http://<공인-IP>:53000/api/health`만
+  확인하며 callback secret이나 DB·Kafka credential을 받지 않는다.
 - n8n callback reachability는 공용 n8n 컨테이너에서 WF2~4의 실제 서명 callback으로
   확인한다. 타 노트북의 curl로 대신하지 않는다.
 - 타 노트북 실패가 AP isolation인지 서비스 실패인지 구분한다. 서비스가 팀장 PC에서
