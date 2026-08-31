@@ -193,14 +193,34 @@ def test_api_datetime_inventory_and_offset_mutation() -> None:
     assert not (set(public_fields) & gate.INTERNAL_DATETIME_EXCEPTIONS)
     gate.validate_api_datetime_samples(
         {
-            "AlarmItem.occurred_at": "2026-08-04T06:52:29+09:00",
-            "InternalHmac.ts": "2026-08-03T21:52:29+00:00",
+            "AlarmItem.occurred_at": (
+                datetime(2026, 8, 4, 6, 52, 29),
+                "2026-08-04T06:52:29+09:00",
+            ),
+            "InternalHmac.ts": (
+                datetime(2026, 8, 3, 21, 52, 29, tzinfo=UTC),
+                "2026-08-03T21:52:29+00:00",
+            ),
         },
         exceptions=("InternalHmac.ts",),
     )
     with pytest.raises(gate.FinalGateError, match=r"not \+09:00"):
         gate.validate_api_datetime_samples(
-            {"AlarmItem.occurred_at": "2026-08-03T21:52:29+00:00"}
+            {
+                "AlarmItem.occurred_at": (
+                    datetime(2026, 8, 4, 6, 52, 29),
+                    "2026-08-03T21:52:29+00:00",
+                )
+            }
+        )
+    with pytest.raises(gate.FinalGateError, match="wall-time drift"):
+        gate.validate_api_datetime_samples(
+            {
+                "ActionItem.created_at": (
+                    datetime(2026, 8, 4, 6, 52, 29),
+                    "2026-08-04T15:52:29+09:00",
+                )
+            }
         )
 
 

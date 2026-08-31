@@ -40,6 +40,7 @@ from decimal import Decimal
 from enum import StrEnum
 from threading import Lock
 from typing import Any, Final
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Row
@@ -79,6 +80,8 @@ from app.common.ids import new_agent_run_id, new_approval_id, new_tool_call_id
 from app.common.schemas import AlarmRef
 
 logger = logging.getLogger(__name__)
+
+_KST: Final = ZoneInfo("Asia/Seoul")
 
 __all__ = [
     "AgentRepositoryError",
@@ -1633,6 +1636,29 @@ def _action_history_row(row: Row[Any]) -> ActionHistoryRow:
     )
 
 
+def _action_history_wall_time(value: datetime) -> datetime:
+    """Convert a Runtime instant to legacy ``action_history`` KST wall time.
+
+    The final-data table uses ``timestamp without time zone`` and its values are
+    interpreted as Asia/Seoul wall time by the public read model. Runtime
+    callers must provide an offset-aware instant; this repository boundary
+    performs the only allowed conversion before writing that table.
+    """
+
+    if not isinstance(value, datetime) or value.tzinfo is None:
+        raise RepositoryContractError("ACTION_TIMESTAMP_OFFSET_REQUIRED")
+    try:
+        offset = value.utcoffset()
+    except (OverflowError, ValueError) as exc:
+        raise RepositoryContractError("ACTION_TIMESTAMP_INVALID") from exc
+    if offset is None:
+        raise RepositoryContractError("ACTION_TIMESTAMP_OFFSET_REQUIRED")
+    try:
+        return value.astimezone(_KST).replace(tzinfo=None)
+    except (OverflowError, ValueError) as exc:
+        raise RepositoryContractError("ACTION_TIMESTAMP_INVALID") from exc
+
+
 def insert_action_history(
     connection: Connection,
     *,
@@ -1656,6 +1682,7 @@ def insert_action_history(
         raise RepositoryContractError("INVALID_ACTION_CODE") from exc
     approval_required = requires_approval(action)
     status = ApprovalStatus.PENDING if approval_required else ApprovalStatus.AUTO
+    created_wall_time = _action_history_wall_time(created_at)
     row = _insert_one(
         connection,
         _INSERT_ACTION_HISTORY,
@@ -1668,8 +1695,8 @@ def insert_action_history(
             "approval_required": "Y" if approval_required else "N",
             "approval_status": status.value,
             "approved_by": None if approval_required else "system",
-            "approved_at": None if approval_required else created_at,
-            "created_at": created_at,
+            "approved_at": None if approval_required else created_wall_time,
+            "created_at": created_wall_time,
         },
     )
     return _action_history_row(row)
@@ -2500,6 +2527,9 @@ def decide_approval(
         if approval_row is None:
             raise RepositoryConflict("APPROVAL_NOT_PENDING")
         decided = _approval_row(approval_row)
+        decided_at = decided.decided_at
+        if decided_at is None:  # DB RETURNING 계약 위반
+            raise RepositoryContractError("DECIDED_AT_MISSING")
 
         action_row = connection.execute(
             _UPDATE_ACTION_APPROVAL,
@@ -2509,7 +2539,9 @@ def decide_approval(
                 "status": target.value,
                 "approved_by": actor_id if resolved is Decision.APPROVE else None,
                 "approved_at": (
-                    decided.decided_at if resolved is Decision.APPROVE else None
+                    _action_history_wall_time(decided_at)
+                    if resolved is Decision.APPROVE
+                    else None
                 ),
             },
         ).one_or_none()
@@ -2528,9 +2560,6 @@ def decide_approval(
         if delivery_row is None:
             raise RepositoryConflict("MES_DELIVERY_NOT_BLOCKED")
 
-        decided_at = decided.decided_at
-        if decided_at is None:  # DB RETURNING 계약 위반
-            raise RepositoryContractError("DECIDED_AT_MISSING")
         record = audit.model_copy(
             update={
                 "after": {
@@ -3190,15 +3219,16 @@ def begin_mes_delivery(
     except RepositoryNotFound as exc:
         raise RepositoryConflict("MES_APPROVAL_IDENTITY_MISMATCH") from exc
 
-    # legacy ``action_history.approved_at``은 timestamp, Runtime
-    # ``approval_request.decided_at``은 timestamptz다. 둘은 같은 DB 값이어도 psycopg가
-    # 각각 naive/aware datetime으로 돌려주므로 직접 equality는 항상 거짓이다.
+    # final-data ``action_history.approved_at``은 KST wall-time timestamp,
+    # Runtime ``approval_request.decided_at``은 timestamptz다. repository write 경계가
+    # 앞 값을 KST-naive로 정규화하므로 같은 instant로 복원해 비교한다.
     action_decided_at = action.approved_at
     approval_decided_at = approval.decided_at
     same_decision_time = (
         action_decided_at is not None
         and approval_decided_at is not None
-        and action_decided_at.replace(tzinfo=UTC) == approval_decided_at.astimezone(UTC)
+        and action_decided_at.replace(tzinfo=_KST).astimezone(UTC)
+        == approval_decided_at.astimezone(UTC)
     )
 
     if (

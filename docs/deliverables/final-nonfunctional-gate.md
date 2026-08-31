@@ -2,7 +2,7 @@
 
 > Task: `V5-CM-5.3` · 정본: `final-nonfunctional-gate.json`
 > Stage: **SKELETON** · Verdict: **INCOMPLETE**
-> JSON SHA-256: `b9bb280c90d6cb2fd19eee6b61c7d79eaa69578f179f846cb5aa5a220de260f0`
+> JSON SHA-256: `d2adf7dd15403da0469d41e2c2880401f917fe70ef901ecc6d9c67265ba31f0f`
 
 ## 규칙
 
@@ -18,7 +18,7 @@
 
 ### NFR-02
 
-- `file` `backend/scripts/final_nonfunctional_gate.py` — tracked 전수 secret scan과 exact binary baseline (`3b1539391c490ec015a325fa3f261de69c8860cb9777c4cb1c6491e7a7ea3d7b`)
+- `file` `backend/scripts/final_nonfunctional_gate.py` — tracked 전수 secret scan과 exact binary baseline (`b22414be45bfdbbf7d8836eb8bdeba8e2338d92708bc75ab04dd3532cbe0597b`)
 
 ### NFR-03
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = BACKEND_ROOT / "scripts"
@@ -31,6 +32,7 @@ REPORT_JSON_PATH = REPOSITORY_ROOT / "docs/deliverables/final-nonfunctional-gate
 REPORT_MARKDOWN_PATH = REPOSITORY_ROOT / "docs/deliverables/final-nonfunctional-gate.md"
 MAX_TEXT_BYTES = 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+KST = ZoneInfo("Asia/Seoul")
 
 RuleStatus = Literal["PASS", "FAIL", "EVIDENCE_MISSING", "NOT_EXERCISED", "RESIDUAL"]
 OverallVerdict = Literal["INCOMPLETE", "FAIL", "BLOCKED", "PASS_WITH_RESIDUALS", "PASS"]
@@ -271,6 +273,8 @@ TIMESTAMP_REGISTRY: Mapping[str, tuple[str, ...]] = {
     "summary_alarm_history": ("occurred_at",),
     "trace_alarm_history": ("occurred_at",),
 }
+# ``action_history`` is a final-data legacy table: its naive values are KST
+# wall time. Runtime writes normalize aware instants at the repository boundary.
 
 OPENAPI_DATETIME_FIELDS = frozenset(
     {
@@ -641,22 +645,33 @@ def validate_timestamp_contract(
 
 
 def validate_api_datetime_samples(
-    samples: Mapping[str, str | None], *, exceptions: Iterable[str] = ()
+    samples: Mapping[str, tuple[datetime, str | None]],
+    *,
+    exceptions: Iterable[str] = (),
 ) -> None:
-    """Require every non-null public date-time sample to serialize with KST offset."""
+    """Validate public offsets and source-to-response instant preservation."""
 
     exception_set = set(exceptions)
     if not exception_set.issubset(samples):
         raise FinalGateError("date-time exception is not present in inventory")
-    for field, value in samples.items():
-        if value is None or field in exception_set:
+    for field, (source, value) in samples.items():
+        if value is None:
             continue
         try:
             parsed = datetime.fromisoformat(value)
         except ValueError as exc:
             raise FinalGateError(f"API date-time sample is invalid: {field}") from exc
-        if parsed.utcoffset() is None or not value.endswith("+09:00"):
+        if parsed.utcoffset() is None:
+            raise FinalGateError(f"API date-time sample has no offset: {field}")
+        if field not in exception_set and not value.endswith("+09:00"):
             raise FinalGateError(f"API date-time sample is not +09:00: {field}")
+        expected = (
+            source.replace(tzinfo=KST)
+            if source.tzinfo is None
+            else source.astimezone(KST)
+        )
+        if parsed != expected:
+            raise FinalGateError(f"API date-time sample has wall-time drift: {field}")
 
 
 def collect_openapi_datetime_fields(openapi: Mapping[str, Any]) -> tuple[str, ...]:

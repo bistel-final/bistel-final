@@ -31,6 +31,7 @@ from app.common.enums import (
 from app.common.schemas import AlarmRef
 
 NOW = datetime(2026, 8, 29, 13, 0, tzinfo=UTC)
+ACTION_WALL_TIME = datetime(2026, 8, 29, 22, 0)
 
 
 def _run() -> repo.PublicAgentRunRecord:
@@ -87,7 +88,7 @@ def _action() -> repo.PublicActionRecord:
                 completed_at=None,
             ),
         ),
-        created_at=NOW,
+        created_at=ACTION_WALL_TIME,
     )
 
 
@@ -117,6 +118,9 @@ def test_action_projection_has_exact_aliases_and_hides_internal_channel() -> Non
     assert payload["agent_run_id"] == payload["created_by_agent_run_id"]
     assert payload["equipment_id"] == payload["equipment"]
     assert [item["channel"] for item in payload["deliveries"]] == ["EMAIL", "MES"]
+    assert payload["created_at"] == "2026-08-29T22:00:00+09:00"
+    assert payload["deliveries"][0]["started_at"] == payload["created_at"]
+    assert payload["deliveries"][0]["completed_at"] == payload["created_at"]
     serialized = str(payload)
     for forbidden in (
         "MES_MOCK",

@@ -99,7 +99,11 @@ class PublicDateRangeError(ValueError):
 
 
 def _public_datetime(value: datetime | None) -> datetime | None:
-    """Serialize public Agent timestamps as Asia/Seoul while preserving wall time."""
+    """Serialize public Agent timestamps as Asia/Seoul.
+
+    Final-data/legacy naive timestamps are already KST wall time. Runtime aware
+    timestamps are instants and are converted to KST.
+    """
 
     if value is None:
         return None
