@@ -263,6 +263,7 @@ jobs:
           tests/unit/test_detection_public_api.py
           tests/unit/test_document_contract.py
           tests/unit/test_document_search.py
+          tests/unit/test_evaluation_store.py
           tests/unit/test_final_profile_manifests.py
           tests/unit/test_generator_reproduction.py
           tests/unit/test_graph_context.py
