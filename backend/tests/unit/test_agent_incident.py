@@ -325,6 +325,7 @@ class TestHandoffToTheRunCommand:
             requested_alarm=result.requested_alarm,
             representative_alarm=result.representative_alarm,
             member_alarms=result.member_alarms,
+            llm_model="test-model",
         )
         normalized = repo._validate_create_command(command)
         assert normalized.lot_id == LOT

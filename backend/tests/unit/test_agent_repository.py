@@ -10,6 +10,7 @@ import ast
 import inspect
 import json
 import sys
+from dataclasses import MISSING
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -76,6 +77,7 @@ def _command(**overrides: Any) -> repo.CreateAgentRunCommand:
         "requested_alarm": members[0],
         "representative_alarm": members[0],
         "member_alarms": members,
+        "llm_model": "test-model",
     }
     payload.update(overrides)
     return repo.CreateAgentRunCommand(**payload)
@@ -344,6 +346,15 @@ class TestRunLlmUsageContract:
 class TestCreateAgentRunInvariants:
     """1차 계획리뷰 필수 2 — 대표 알람 불변을 **표현할 수 없게** 만든다."""
 
+    def test_new_run_supplies_the_public_non_null_storage_fields(self) -> None:
+        """신규 행은 nullable legacy DDL과 무관하게 공개 DTO 계약을 만족한다."""
+
+        statement = " ".join(str(repo._INSERT_RUN).split())
+        assert ":llm_model, :prompt_version, 0" in statement
+        field = repo.CreateAgentRunCommand.__dataclass_fields__["llm_model"]
+        assert field.default is MISSING
+        assert field.default_factory is MISSING
+
     @pytest.mark.parametrize(
         ("overrides", "code"),
         [
@@ -362,6 +373,8 @@ class TestCreateAgentRunInvariants:
             ),
             ({"autonomy_level": 4}, "INVALID_AUTONOMY_LEVEL"),
             ({"autonomy_level": 0}, "INVALID_AUTONOMY_LEVEL"),
+            ({"llm_model": None}, "INVALID_LLM_MODEL"),
+            ({"llm_model": "   "}, "EMPTY_LLM_MODEL"),
         ],
     )
     def test_bad_input_is_refused_before_sql(

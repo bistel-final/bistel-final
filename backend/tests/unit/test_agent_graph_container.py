@@ -450,7 +450,7 @@ def _dependencies(
     *,
     fdc_summary: Callable[[dict[str, Any]], Any] | None = None,
     document_search: Callable[[dict[str, Any]], Any] | None = None,
-    configured_llm_model: str | None = None,
+    configured_llm_model: str | None = "fixture-model",
     require_bound_thread: bool = False,
 ) -> AgentGraphDependencies:
     equipment = EquipmentContextToolResult(
@@ -572,6 +572,7 @@ def _start_runtime_run(engine: Any) -> str:
             connection,
             AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01"),
             autonomy_level=2,
+            llm_model="fixture-model",
         )
     return started.run.agent_run_id
 
@@ -1797,7 +1798,13 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
     )
     ports = _AssemblyPorts()
     ports.generate_hypothesis = production_port()  # type: ignore[method-assign]
-    graph = build_agent_graph(_dependencies(engine, ports))
+    graph = build_agent_graph(
+        _dependencies(
+            engine,
+            ports,
+            configured_llm_model="provider-actual-model",
+        )
+    )
 
     state = graph.invoke(
         {

@@ -27,6 +27,7 @@
 확장,C,POST,/actions/{action_id}/deliveries/{channel}/retry,실패 channel 재전송,"path: action_id; channel=EMAIL|MES",PublicDeliveryResult,"404,409,422,503",멱등성,"DeliveryResult와 같은 field; public MES는 내부 MES_MOCK의 projection"
 내부,C,POST,/internal/actions/{action_id}/delivery,delivery 상태 write-back,"HMAC timestamp/signature; body: event_id,channel=EMAIL|MES_MOCK,status=SENT|FAILED,provider_message_id,request_hash,completed_at,error_code",DeliveryResult,"401,404,409,422,503",action+channel+request_hash 멱등,n8n·Kafka worker 전용; replay window 300초
 팀필수,D,POST,/analytics/query,자연어 Text2SQL,"body: question 1..1000",AnalysisQueryResponse,"422,503","read-only SELECT; row limit","7화면 release 필수; 정책 거부는 200+is_rejected=true; 합성 GT 제외"
+확장,D,POST,/analytics/graph-query,자연어 Graph 질의,"body: question 1..1000",GraphQueryResponse,422,"validated read-only Cypher; row limit","backend 전용 plan·validator 경로; 사용자 Cypher passthrough 없음"
 팀필수,D,POST,/analytics/validate,SQL 실행 없는 검증,body: sql 1..20000,SqlValidateResponse,422,12단계 검증,실행 없음
 팀필수,D,GET,/analytics/history,질의 이력·재실행 원본,"query: page,size,filters",NlQueryHistoryResponse,422,"asked_at DESC; nl_query_log_id DESC",읽기 전용
 팀필수,D,GET,/analytics/evaluations,Text2SQL 평가 이력,"query: latest,page,size",EvaluationListResponse,422,"executed_at DESC; run_id DESC",immutable 평가 artifact read-only projection

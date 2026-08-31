@@ -81,6 +81,7 @@ def _hold_bundle(engine: Any) -> tuple[str, str, str]:
                 requested_alarm=ALARM,
                 representative_alarm=ALARM,
                 member_alarms=(ALARM,),
+                llm_model="test-model",
             ),
         )
     stored = action_store.production_port(engine.begin)(

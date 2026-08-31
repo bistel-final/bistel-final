@@ -57,6 +57,12 @@
     "EvaluationListResponse": {
       "type": "named"
     },
+    "GraphQueryRequest": {
+      "type": "named"
+    },
+    "GraphQueryResponse": {
+      "type": "named"
+    },
     "NlQueryHistoryResponse": {
       "type": "named"
     },
@@ -120,6 +126,38 @@
       },
       "sort": [
         "chunks: chunk order"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "D",
+      "path": "/analytics/graph-query",
+      "request": {
+        "body": {
+          "ref": "GraphQueryRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "GraphQueryResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "GraphQueryResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "validated read-only Cypher; row limit"
       ],
       "success_status": 200
     },

@@ -149,6 +149,7 @@ def _command(**overrides: Any) -> repo.CreateAgentRunCommand:
         "requested_alarm": members[0],
         "representative_alarm": members[0],
         "member_alarms": members,
+        "llm_model": "test-model",
     }
     payload.update(overrides)
     return repo.CreateAgentRunCommand(**payload)
@@ -746,7 +747,10 @@ def test_run_llm_usage_adds_actual_cost_and_refuses_provenance_change(
     with engine.begin() as connection:
         run = repo.create_agent_run(
             connection,
-            _command(prompt_version="agent-hypothesis-v1"),
+            _command(
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+            ),
         )
     with engine.begin() as connection:
         repo.record_run_llm_usage(
@@ -791,7 +795,10 @@ def test_run_llm_usage_aggregate_overflow_and_terminal_run_are_rejected(
     with engine.begin() as connection:
         run = repo.create_agent_run(
             connection,
-            _command(prompt_version="agent-hypothesis-v1"),
+            _command(
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+            ),
         )
         connection.execute(
             text(
@@ -834,7 +841,10 @@ def test_concurrent_hypothesis_save_keeps_one_prediction_and_both_usage_costs(
     with engine.begin() as connection:
         run = repo.create_agent_run(
             connection,
-            _command(prompt_version="agent-hypothesis-v1"),
+            _command(
+                llm_model="actual-model",
+                prompt_version="agent-hypothesis-v1",
+            ),
         )
     barrier = Barrier(2)
 

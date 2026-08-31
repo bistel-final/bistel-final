@@ -1012,6 +1012,7 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | C | GET | `/actions/{action_id}` | action·channel delivery 상세 | `ActionDetailResponse` | 404, 422, 503 |
 | C | POST | `/actions/{action_id}/deliveries/{channel}/retry` | 실패 channel 재전송 | `PublicDeliveryResult` | 404, 409, 422, 503 |
 | D | POST | `/analytics/query` | 선택 자연어 Text2SQL | `AnalysisQueryResponse` | 422, 503 |
+| D | POST | `/analytics/graph-query` | 검증된 자연어 Graph 질의 | `GraphQueryResponse` | 422 |
 | D | POST | `/analytics/validate` | SQL 실행 없는 검증 | `SqlValidateResponse` | 422 |
 | D | GET | `/analytics/history` | 질의 이력 | `PageEnvelope<NlQueryLogItem>` | 422 |
 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
