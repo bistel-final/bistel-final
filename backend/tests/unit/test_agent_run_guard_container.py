@@ -471,7 +471,12 @@ def test_repeatable_read_blocks_through_the_other_defense(db: Any) -> None:
         _start(db)  # 다른 connection에서 run 하나를 만들고 commit
 
         with pytest.raises(IncidentAlreadyRunningError):
-            guard.start_incident_run(connection, _ref("TA-01"), autonomy_level=2)
+            guard.start_incident_run(
+                connection,
+                _ref("TA-01"),
+                autonomy_level=2,
+                llm_model="test-model",
+            )
         transaction.rollback()
 
     assert _counts(db)["agent_run"] == 1
