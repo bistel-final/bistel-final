@@ -169,7 +169,7 @@ def evaluate_sync(
     }
     document_gate = not undocumented and len(document_keys) == 35
     release_gate = release_pass == 19
-    live_gate = len(live_keys) == 24 and live_pass == 24 and not unclassified
+    live_gate = len(live_keys) == 29 and live_pass == 29 and not unclassified
     overall = "PASS" if document_gate and release_gate and live_gate else "BLOCKED"
     return {
         "classified_live_count": len(live_keys),

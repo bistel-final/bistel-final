@@ -31,8 +31,8 @@ def test_canonical_model_is_sorted_full_schema_and_has_three_populations() -> No
     assert raw == json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     assert len(value["operations"]) == 35
     assert sum(item["release_required"] for item in value["operations"]) == 19
-    assert sum(item["semantic"] is not None for item in value["operations"]) == 24
-    assert sum(item["implemented"] for item in value["operations"]) == 23
+    assert sum(item["semantic"] is not None for item in value["operations"]) == 29
+    assert sum(item["implemented"] for item in value["operations"]) == 28
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
     assert "discriminated_union" in encoded
     assert "^[0-9a-f]{64}$" in encoded

@@ -91,7 +91,7 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-CM-4.8` **3.0h** — PostgreSQL·Neo4j의 server-side timeout을 세 Agent read Tool에
   연결하고, 두 digest-pinned 격리 컨테이너의 실제 종료·세션 정리·후속 query와 exact 예외
   사상을 검증한다. CPU soft 구간·sentinel 비회수 판정과 CM-5.3 인용표까지 한 Gate로 닫는다.
-- `V5-CM-5.1` **4.0h** — release 19개·classified live 24개·문서 inventory
+- `V5-CM-5.1` **4.0h** — release 19개·classified live 29개·문서 inventory
   35개를 full-schema semantic으로 대조하고, 단일 canonical JSON에서 Markdown·CSV·PDF를
   재생성한다. alias 25개의 소비·대체체·수동 증거 판정기와 drift 변이 회귀를 같은
   계약 Gate로 닫는다.
@@ -217,9 +217,9 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-CM-5.1 | P1 | 실제 API·산출물 sync gate. 완료: core public 11개 + internal delivery 1개 + health 2개와 team release Analytics 4개+전역 Audit 1개, **합계 19 operation**의 route/OpenAPI/contract를 두 독립 baseline과 대조하고 동일 Method+Path 중복 0을 확인한다. deferred 선택 확장은 OpenAPI를 요구하지 않는다. API Markdown·CSV·PDF를 같은 schema에서 재생성해 path·request·response·status diff 0을 기록한다 | FR-I-01, FR-I-07, NFR-10~11 | V5-CM-4.4, V5-CM-4.4-3, V5-A-3.2, V5-B-2.3, V5-B-3.3, V5-C-4.4, V5-C-5.1, V5-D-1.2, V5-D-1.4, V5-D-2.6, V5-CM-4.6 | 4.0h |
+| V5-CM-5.1 | P1 | 실제 API·산출물 sync gate. 완료: core public 11개 + internal delivery 1개 + health 2개와 team release Analytics 4개+전역 Audit 1개, **합계 19 operation**의 release 계약과 구현된 선택 API를 합친 **classified live 29 operation**의 route/OpenAPI/contract를 두 독립 baseline과 대조하고 동일 Method+Path 중복 0을 확인한다. 미구현 deferred 선택 확장은 OpenAPI를 요구하지 않는다. API Markdown·CSV·PDF를 같은 schema에서 재생성해 path·request·response·status diff 0을 기록한다 | FR-I-01, FR-I-07, NFR-10~11 | V5-CM-4.4, V5-CM-4.4-3, V5-A-3.2, V5-B-2.3, V5-B-3.3, V5-C-4.4, V5-C-5.1, V5-D-1.2, V5-D-1.4, V5-D-2.6, V5-CM-4.6 | 4.0h |
 | V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 7화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. Analytics가 query·validate·history·evaluations를, 전역 Audit가 paged API를 **실제 소비**하며 route-level Mock 0과 Loading·Error·Empty·Success를 검증한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, label 비누수와 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.4, V5-D-2.6 | 2.0h |
-| V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
+| V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. public DTO의 DB 유래 non-nullable 필드를 DDL `NOT NULL`·서버 기본값·write 경계 필수값 중 하나와 대조해 저장 시 NULL 생성 사각을 막는다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-10, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
 **Common 합계: 74.0h**
 

@@ -40,11 +40,11 @@
 | 9 | 필수 | C | POST | `/approvals/{approval_id}/decision` | 승인·반려 | semantic |
 | 10 | 필수 | D | GET | `/audit-logs` | append-only 감사 이력 | semantic |
 | 11 | 확장 | A | GET | `/dataset/bounds` | 데이터 epoch·필터 범위 | inventory |
-| 12 | 확장 | A | GET | `/dashboard/summary` | 서버 대시보드 집계 | inventory |
-| 13 | 확장 | A | GET | `/alarms/{source}/{alarm_id}` | source-aware 알람 상세 | inventory |
-| 14 | 확장 | A | GET | `/alarms/paged` | 페이지 알람 목록 | inventory |
-| 15 | 확장 | A | GET | `/traces/catalog` | Trace 선택 목록 | inventory |
-| 16 | 확장 | A | POST | `/traces/search` | 복합 Trace 검색 | inventory |
+| 12 | 확장 | A | GET | `/dashboard/summary` | 서버 대시보드 집계 | semantic |
+| 13 | 확장 | A | GET | `/alarms/{source}/{alarm_id}` | source-aware 알람 상세 | semantic |
+| 14 | 확장 | A | GET | `/alarms/paged` | 페이지 알람 목록 | semantic |
+| 15 | 확장 | A | GET | `/traces/catalog` | Trace 선택 목록 | semantic |
+| 16 | 확장 | A | POST | `/traces/search` | 복합 Trace 검색 | semantic |
 | 17 | 확장 | B | GET | `/relations/equipment/{equipment_id}` | 설비 관계 | inventory |
 | 18 | 확장 | B | GET | `/documents/{document_id}` | 문서 상세 | semantic |
 | 19 | 실행필수 | C | POST | `/agent/runs` | Agent 분석 시작 | semantic |
@@ -2922,7 +2922,714 @@
 - 계약 규칙:
   - 없음
 
-> deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
+```json
+{
+  "request": {
+    "body": null,
+    "header": {},
+    "path": {},
+    "query": {
+      "area": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "enum": [
+            "ALL",
+            "Etch",
+            "Photo"
+          ],
+          "type": "string"
+        }
+      },
+      "chamber_id": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "date": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "equipment_id": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "alarm_count": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "area": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "enum": [
+                "Etch",
+                "Photo"
+              ],
+              "type": "string"
+            }
+          },
+          "daily_trend": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "date": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "format": "date",
+                      "type": "string"
+                    }
+                  },
+                  "has_r03_consec": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "boolean"
+                    }
+                  },
+                  "ooc_count": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "oos_count": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "date_range": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "date",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "equipment_counts": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "alarm_count": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "area_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "chambers": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "additional_properties": false,
+                        "fields": {
+                          "alarm_count": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "minimum": 0.0,
+                              "type": "integer"
+                            }
+                          },
+                          "chamber_id": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "min_length": 1,
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "hierarchy": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "area_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "chambers": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "min_length": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "ooc_count": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "oos_count": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "pending_approvals": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "action_code": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "EQP_HOLD",
+                        "MONITORING",
+                        "WARNING"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "action_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "agent_run_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "approval_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "incident": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "additional_properties": false,
+                      "fields": {
+                        "chamber_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "lot_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "requested_at": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "severity": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "HIGH",
+                        "LOW",
+                        "MEDIUM"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "recent_alarms": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "action_code": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "EQP_HOLD",
+                        "MONITORING",
+                        "WARNING"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "action_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "agent_run_status": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "COMPLETED",
+                        "FAILED",
+                        "RUNNING",
+                        "WAITING_APPROVAL"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "alarm_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "approval_status": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "APPROVED",
+                        "AUTO",
+                        "EXPIRED",
+                        "PENDING",
+                        "REJECTED"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "area": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "chamber_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "detail": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "hit_cnt": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "incident": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "additional_properties": false,
+                      "fields": {
+                        "chamber_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "lot_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "judgement": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "OOC",
+                        "OOS"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "latest_agent_run_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_hist_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "occurred_at": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "recipe_step_name": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "recipe_step_no": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  },
+                  "rule_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "R01_OOS",
+                        "R02_OOC",
+                        "R03_CONSEC"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "source": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "R03",
+                        "SUMMARY",
+                        "TRACE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "wafer_no": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "reference_date": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          "sensor_catalog": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "min_length": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "top_sensors": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "alarm_count": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "chamber_ids": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "min_length": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "422": {
+      "schema": {
+        "additional_properties": true,
+        "fields": {
+          "detail": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
 
 ### 4.13 `GET /alarms/{source}/{alarm_id}`
 
@@ -2935,7 +3642,322 @@
 - 계약 규칙:
   - 없음
 
-> deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
+```json
+{
+  "request": {
+    "body": null,
+    "header": {},
+    "path": {
+      "alarm_id": {
+        "nullable": false,
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "source": {
+        "nullable": false,
+        "required": true,
+        "schema": {
+          "enum": [
+            "R03",
+            "SUMMARY",
+            "TRACE"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "query": {}
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "action_code": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "enum": [
+                "EQP_HOLD",
+                "MONITORING",
+                "WARNING"
+              ],
+              "type": "string"
+            }
+          },
+          "action_id": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "agent_run_status": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "enum": [
+                "COMPLETED",
+                "FAILED",
+                "RUNNING",
+                "WAITING_APPROVAL"
+              ],
+              "type": "string"
+            }
+          },
+          "alarm_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "approval_status": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "enum": [
+                "APPROVED",
+                "AUTO",
+                "EXPIRED",
+                "PENDING",
+                "REJECTED"
+              ],
+              "type": "string"
+            }
+          },
+          "area": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "Etch",
+                "Photo"
+              ],
+              "type": "string"
+            }
+          },
+          "chamber_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "detail": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "equipment_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "hit_cnt": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "incident": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "chamber_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "lot_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "judgement": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "OOC",
+                "OOS"
+              ],
+              "type": "string"
+            }
+          },
+          "latest_agent_run_id": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "lot_hist_id": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "lot_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "occurred_at": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "recipe_step_name": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "recipe_step_no": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "rule_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "R01_OOS",
+                "R02_OOC",
+                "R03_CONSEC"
+              ],
+              "type": "string"
+            }
+          },
+          "sensor_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "source": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "R03",
+                "SUMMARY",
+                "TRACE"
+              ],
+              "type": "string"
+            }
+          },
+          "wafer_no": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "422": {
+      "schema": {
+        "additional_properties": true,
+        "fields": {
+          "detail": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
 
 ### 4.14 `GET /alarms/paged`
 
@@ -2948,7 +3970,412 @@
 - 계약 규칙:
   - 없음
 
-> deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
+```json
+{
+  "request": {
+    "body": null,
+    "header": {},
+    "path": {},
+    "query": {
+      "area": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "enum": [
+            "ALL",
+            "Etch",
+            "Photo"
+          ],
+          "type": "string"
+        }
+      },
+      "chamber_id": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "date": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "equipment_id": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "judgement": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "enum": [
+            "OOC",
+            "OOS"
+          ],
+          "type": "string"
+        }
+      },
+      "page": {
+        "nullable": false,
+        "required": false,
+        "schema": {
+          "default": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "sensor_id": {
+        "nullable": true,
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "size": {
+        "nullable": false,
+        "required": false,
+        "schema": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "items": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "action_code": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "EQP_HOLD",
+                        "MONITORING",
+                        "WARNING"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "action_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "agent_run_status": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "COMPLETED",
+                        "FAILED",
+                        "RUNNING",
+                        "WAITING_APPROVAL"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "alarm_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "approval_status": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "APPROVED",
+                        "AUTO",
+                        "EXPIRED",
+                        "PENDING",
+                        "REJECTED"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "area": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "chamber_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "detail": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "hit_cnt": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "incident": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "additional_properties": false,
+                      "fields": {
+                        "chamber_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "lot_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "judgement": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "OOC",
+                        "OOS"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "latest_agent_run_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_hist_id": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "occurred_at": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "recipe_step_name": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "recipe_step_no": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  },
+                  "rule_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "R01_OOS",
+                        "R02_OOC",
+                        "R03_CONSEC"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "source": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "R03",
+                        "SUMMARY",
+                        "TRACE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "wafer_no": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "page": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "size": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 100.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "total": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "422": {
+      "schema": {
+        "additional_properties": true,
+        "fields": {
+          "detail": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
 
 ### 4.15 `GET /traces/catalog`
 
@@ -2961,7 +4388,234 @@
 - 계약 규칙:
   - 없음
 
-> deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
+```json
+{
+  "request": {
+    "body": null,
+    "header": {},
+    "path": {},
+    "query": {}
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "areas": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "area_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "equipments": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "area_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "chambers": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "min_length": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "lots": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "lot_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "wafer_nos": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "recipes": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "area_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "Etch",
+                        "Photo"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "recipe_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "sensors": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "ctrl_lower": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "ctrl_upper": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "sensor_name": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "spec_lower": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "spec_upper": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "target": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "unit": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "upper_only": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
 
 ### 4.16 `POST /traces/search`
 
@@ -2974,7 +4628,395 @@
 - 계약 규칙:
   - 없음
 
-> deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
+```json
+{
+  "request": {
+    "body": {
+      "additional_properties": false,
+      "fields": {
+        "area": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "enum": [
+              "Etch",
+              "Photo"
+            ],
+            "type": "string"
+          }
+        },
+        "chamber_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "equipment_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "from": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "lot_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "recipe_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "sensor_ids": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "items": {
+              "min_length": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "to": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "wafer_nos": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "header": {},
+    "path": {},
+    "query": {}
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "limits": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": {
+                "additional_properties": false,
+                "fields": {
+                  "ctrl_lower": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "ctrl_upper": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "sensor_name": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "spec_lower": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "spec_upper": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "target": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "unit": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "upper_only": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "fields": {},
+              "type": "object"
+            }
+          },
+          "measured_step_stats": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "additional_properties": {
+                "additional_properties": true,
+                "fields": {},
+                "type": "object"
+              },
+              "fields": {},
+              "type": "object"
+            }
+          },
+          "total": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "wafers": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "chamber_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "equipment_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_hist_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "missing_steps": {
+                    "nullable": false,
+                    "required": false,
+                    "schema": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "occurred_at": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "points": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "additional_properties": false,
+                        "fields": {
+                          "measured_at": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "format": "date-time",
+                              "type": "string"
+                            }
+                          },
+                          "recipe_step_name": {
+                            "nullable": true,
+                            "required": false,
+                            "schema": {
+                              "type": "string"
+                            }
+                          },
+                          "recipe_step_no": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "minimum": 1.0,
+                              "type": "integer"
+                            }
+                          },
+                          "seq_no": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "minimum": 0.0,
+                              "type": "integer"
+                            }
+                          },
+                          "value": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "sensor_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "wafer_no": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "422": {
+      "schema": {
+        "additional_properties": true,
+        "fields": {
+          "detail": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
 
 ### 4.17 `GET /relations/equipment/{equipment_id}`
 
