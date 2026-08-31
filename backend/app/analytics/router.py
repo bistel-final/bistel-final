@@ -68,7 +68,7 @@ def get_query_history(
 
 @router.get("/analytics/evaluations", response_model=EvaluationListResponse)
 def get_evaluations(
-    latest: bool = False,
+    latest: bool = True,  # canonical(api_spec_v3) 기본값 true — 최신 1건이 기본 조회
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ) -> EvaluationListResponse:
