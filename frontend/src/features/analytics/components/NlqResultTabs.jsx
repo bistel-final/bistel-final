@@ -3,7 +3,7 @@
 // 차트는 visualization.chart_type · x · y 를 그대로 읽는다.
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
-import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import { Card } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
 import { BarChart, HistogramChart, LineChart } from './NlqCharts.jsx'
 import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
@@ -77,26 +77,35 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
 
   return (
     <Card className="animate-[om-fadein_.25s]">
-      <CardHeader
-        title="결과"
-        note={
-          <span className="flex items-center gap-2 font-mono">
-            {crossStatus === 'MATCH' && (
-              <span title={`그래프(Neo4j)로 재확인됨 — ${def.cross_check?.summary ?? ''}`}>
-                <Badge variant="t-green">✓ 그래프 교차 확인</Badge>
-              </span>
-            )}
-            {crossStatus === 'MISMATCH' && (
-              <span title={`두 저장소의 답이 다름 — ${def.cross_check?.summary ?? ''}`}>
-                <Badge variant="bg-red">⚠ 저장소 불일치</Badge>
-              </span>
-            )}
-            {def.row_count ?? rows.length}행
+      {/* 결과 헤더 — 발표 스케일: 교차확인 결과를 배지+한 줄 설명으로 크게, 행 수는 navy mono */}
+      <div className="flex items-center justify-between gap-4 px-6 pb-3 pt-5">
+        <div className="flex items-center gap-3">
+          <span className="text-[15px] font-bold tracking-[-.01em] text-ink">결과</span>
+          <span className="font-mono text-[13px] text-g1">
+            <span className="font-bold text-navy">{def.row_count ?? rows.length}</span>행
           </span>
-        }
-      />
+        </div>
+        {crossStatus === 'MATCH' && (
+          <div className="flex items-center gap-2.5 rounded-full border border-tint-green-line bg-tint-green px-3.5 py-1.5">
+            <Badge variant="bg-green">✓ 교차 확인</Badge>
+            <span className="text-[12.5px] font-semibold text-green">PostgreSQL · Neo4j 두 저장소가 같은 답</span>
+            {def.cross_check?.summary && (
+              <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
+            )}
+          </div>
+        )}
+        {crossStatus === 'MISMATCH' && (
+          <div className="flex items-center gap-2.5 rounded-full border border-tint-red-line bg-tint-red px-3.5 py-1.5">
+            <Badge variant="bg-red">⚠ 저장소 불일치</Badge>
+            <span className="text-[12.5px] font-semibold text-red">두 저장소의 답이 다릅니다 — 정합성 점검 필요</span>
+            {def.cross_check?.summary && (
+              <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
+            )}
+          </div>
+        )}
+      </div>
 
-      <div className="flex items-center justify-between px-5 pb-4">
+      <div className="flex items-center justify-between px-6 pb-4">
         <div className="flex gap-2">
           {TABS.map(([key, label]) => (
             <Button key={key} sm variant={tab === key ? 'primary' : 'outline'} onClick={() => onTab(key)}>
@@ -105,7 +114,9 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
           ))}
         </div>
         {unitLabel && (
-          <span className="font-mono text-[11px] text-g1">단위 · {unitLabel}</span>
+          <span className="font-mono text-[12.5px] text-g1">
+            단위 · <span className="font-bold text-navy">{unitLabel}</span>
+          </span>
         )}
       </div>
 

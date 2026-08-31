@@ -6,7 +6,7 @@
 
 const BLUE_HEX = '#2563eb'
 const VW = 640
-const VH = 238
+const VH = 300
 const L = 44
 const R = VW - 16
 const T = 22
@@ -115,7 +115,7 @@ export function LineChart({ rows, x, y }) {
   // x 라벨은 겹치지 않게 최대 8개만 고른다
   const step = Math.max(1, Math.ceil(ordered.length / 8))
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} className="block h-[238px] w-full font-mono">
+    <svg viewBox={`0 0 ${VW} ${VH}`} className="block h-[300px] w-full font-mono">
       <Grid max={max} y={py} />
       <polygon points={area} fill={BLUE_HEX} opacity="0.07" />
       <polyline points={pts} fill="none" stroke={BLUE_HEX} strokeWidth="2" strokeLinejoin="round" />
@@ -185,7 +185,7 @@ export function HistogramChart({ rows, x, y }) {
   const bw = (R - L - gap * (bars.length - 1)) / bars.length
   const step = Math.max(1, Math.ceil(bars.length / 8))
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} className="block h-[238px] w-full font-mono">
+    <svg viewBox={`0 0 ${VW} ${VH}`} className="block h-[300px] w-full font-mono">
       <Grid max={max} y={py} />
       {bars.map((b, i) => {
         const h = (b.value / max) * (B - T)

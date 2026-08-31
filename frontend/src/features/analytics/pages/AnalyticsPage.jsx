@@ -13,6 +13,7 @@ import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 import NlqEvaluationPanel from '../components/NlqEvaluationPanel.jsx'
+import NlqPipeline from '../components/NlqPipeline.jsx'
 
 // 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
@@ -225,11 +226,13 @@ function AnalyticsPage() {
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
-        <div className="text-[22px] font-extrabold text-navy">자연어 분석</div>
-        <div className="text-xs text-g1">읽기 전용 · 허용 테이블 16종</div>
+        <div className="text-[22px] font-extrabold tracking-[-.01em] text-ink">자연어 분석</div>
+        <div className="text-[12.5px] text-g2">
+          읽기 전용 · 허용 테이블 <span className="font-mono font-bold text-navy">16</span>종 · LLM <span className="font-mono">gpt-4o-mini</span>
+        </div>
       </div>
 
-      <Card className="px-5 py-[18px]">
+      <Card className="px-6 py-5">
         <div className="flex gap-3">
           <input
             type="text"
@@ -238,15 +241,15 @@ function AnalyticsPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') ask(e.target.value)
             }}
-            placeholder="데이터에 대해 질문하세요 (예: 챔버별 알람 건수)"
-            className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-white px-3 font-mono text-sm text-ink focus:border-blue focus:outline-none"
+            placeholder="데이터에 대해 질문하세요 — 예: 챔버별 알람 건수, EQP01에 챔버가 몇 개야?"
+            className="h-[52px] min-w-0 flex-1 rounded-lg border border-line bg-white px-4 text-[15px] text-ink placeholder:text-faint focus:border-blue focus:outline-none focus:ring-2 focus:ring-tint-blue"
           />
-          <Button onClick={() => ask(question)} className="flex-none" style={{ height: 44, padding: '0 34px' }}>
+          <Button onClick={() => ask(question)} className="flex-none text-[14px]" style={{ height: 52, padding: '0 36px' }}>
             질문
           </Button>
         </div>
         {/* 예시 칩 — 클릭 = 질문 실행. '지워줘'(거부 유도)만 적색 틴트 */}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3.5 flex flex-wrap gap-2">
           {NL_CHIPS.map((q) => {
             const danger = q.includes('지워줘')
             return (
@@ -254,8 +257,10 @@ function AnalyticsPage() {
                 key={q}
                 type="button"
                 onClick={() => ask(q)}
-                className={`inline-flex h-7 cursor-pointer items-center rounded-full border px-4 font-sans text-[11.5px] font-semibold ${
-                  danger ? 'border-tint-red-line bg-tint-red text-red' : 'border-tint-blue-line bg-tint-blue text-blue'
+                className={`inline-flex h-8 cursor-pointer items-center rounded-full border px-4 font-sans text-[12.5px] font-semibold transition-colors ${
+                  danger
+                    ? 'border-tint-red-line bg-tint-red text-red hover:bg-red hover:text-white'
+                    : 'border-tint-blue-line bg-tint-blue text-blue hover:bg-blue hover:text-white'
                 }`}
               >
                 {q}
@@ -264,6 +269,11 @@ function AnalyticsPage() {
           })}
         </div>
       </Card>
+
+      {/* 파이프라인 트래커 — 질문 전에도 구조가 보이고, 질의 중엔 단계가 순서대로 켜진다 */}
+      <div className="mt-4">
+        <NlqPipeline phase={phase} def={def} rejected={rejected} />
+      </div>
 
       {hasSql && (
         <div className="mt-[18px]">
