@@ -25,7 +25,7 @@ from app.agent.golden_flow import (
     snapshot_from_mapping,
     validate_expected_oracle_source,
 )
-from app.evaluation.fault_5class import IncidentKey
+from app.evaluation.fault_5class import EXPECTED_POPULATION_COUNT, IncidentKey
 from scripts.verify_golden_flow import EvidenceInvalid, load_evidence_bundle
 
 BACKEND_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -133,7 +133,7 @@ def _population_sha256(members: tuple[PopulationMember, ...]) -> str:
 
 
 def load_evaluation_population(evidence_path: Path) -> EvaluationPopulation:
-    """원 evidence를 완전 검증한 뒤 baseline exact 12 run을 다시 도출한다."""
+    """원 evidence를 완전 검증한 뒤 baseline exact 모집단을 다시 도출한다."""
 
     try:
         bundle = load_evidence_bundle(evidence_path)
@@ -168,16 +168,16 @@ def load_evaluation_population(evidence_path: Path) -> EvaluationPopulation:
     runs = tuple(snapshot.runs)
     actions = tuple(snapshot.actions)
     if (
-        len(runs) != 12
-        or len(actions) != 12
-        or len({action.action_id for action in actions}) != 12
+        len(runs) != EXPECTED_POPULATION_COUNT
+        or len(actions) != EXPECTED_POPULATION_COUNT
+        or len({action.action_id for action in actions}) != EXPECTED_POPULATION_COUNT
         or any(run.retry_of_run_id is not None for run in runs)
         or any(run.autonomy_level != 2 for run in runs)
         or any(action.link_role != "CREATED" for action in actions)
     ):
         raise PopulationEvidenceInvalid("EVIDENCE_INVALID")
     runs_by_id = {run.agent_run_id: run for run in runs}
-    if len(runs_by_id) != 12:
+    if len(runs_by_id) != EXPECTED_POPULATION_COUNT:
         raise PopulationEvidenceInvalid("EVIDENCE_INVALID")
 
     members: list[PopulationMember] = []

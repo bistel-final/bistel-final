@@ -248,6 +248,22 @@ def test_artifact_rejects_every_missing_exact_key(missing: str) -> None:
         subject.validate_artifact(artifact)
 
 
+def test_artifact_carries_the_small_sample_interpretation_limit() -> None:
+    frozen = subject.freeze_predictions(_predictions())
+    artifact = subject.artifact_to_dict(_result(), _provenance(frozen.prediction_hash))
+
+    disclaimer = artifact["production_performance_disclaimer"]
+    assert "분류 모집단은 7건" in disclaimer
+    assert "클래스별 support는 1~2건" in disclaimer
+    assert "성능 추정치로 해석하지 않는다" in disclaimer
+
+    artifact["production_performance_disclaimer"] = "표본 한계를 삭제한 문구"
+    with pytest.raises(
+        subject.FaultEvaluationContractError, match="ARTIFACT_METADATA_INVALID"
+    ):
+        subject.validate_artifact(artifact)
+
+
 def test_artifact_rejects_metric_and_gate_inconsistency() -> None:
     frozen = subject.freeze_predictions(_predictions())
     artifact = subject.artifact_to_dict(_result(), _provenance(frozen.prediction_hash))

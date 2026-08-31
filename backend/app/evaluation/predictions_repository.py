@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from app.common.schemas import AlarmRef
 from app.evaluation.fault_5class import (
+    EXPECTED_POPULATION_COUNT,
     FrozenPredictions,
     IncidentFaultLabelRow,
     IncidentKey,
@@ -268,7 +269,11 @@ def read_runtime_evaluation_snapshot(
 ) -> RuntimeEvaluationSnapshot:
     """identity → shared keys → exact baseline prediction을 한 snapshot에서 읽는다."""
 
-    if database != TARGET_DATABASE or len(run_ids) != 12 or len(set(run_ids)) != 12:
+    if (
+        database != TARGET_DATABASE
+        or len(run_ids) != EXPECTED_POPULATION_COUNT
+        or len(set(run_ids)) != EXPECTED_POPULATION_COUNT
+    ):
         raise PredictionTargetMismatch("TARGET_MISMATCH")
     try:
         with engine.connect() as connection:
@@ -278,7 +283,9 @@ def read_runtime_evaluation_snapshot(
             assert_identity(connection, database=TARGET_DATABASE, role=TARGET_ROLE)
             key_hash = shared_key_sha256(connection)
             rows = connection.execute(PREDICTIONS_SQL, {"run_ids": list(run_ids)}).all()
-            if len(rows) != 12 or {row.agent_run_id for row in rows} != set(run_ids):
+            if len(rows) != EXPECTED_POPULATION_COUNT or {
+                row.agent_run_id for row in rows
+            } != set(run_ids):
                 raise PredictionTargetMismatch("TARGET_MISMATCH")
             if any(row.retry_of_run_id is not None for row in rows):
                 raise PredictionTargetMismatch("TARGET_MISMATCH")
@@ -300,7 +307,7 @@ def read_evaluation_label_snapshot(
     """freeze 이후 identity·공통 key 정렬을 통과해야만 label callback을 부른다."""
 
     if (
-        len(frozen.records) != 12
+        len(frozen.records) != EXPECTED_POPULATION_COUNT
         or len(expected_shared_key_sha256) != 64
         or any(char not in "0123456789abcdef" for char in expected_shared_key_sha256)
     ):

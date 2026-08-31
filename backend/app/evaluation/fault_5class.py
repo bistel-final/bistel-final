@@ -42,7 +42,8 @@ SOURCE_ZIP_SHA256: Final = (
 )
 PRODUCTION_PERFORMANCE_DISCLAIMER: Final = (
     "이 결과는 Generator 공개 합성 라벨 benchmark이며 실제 생산 공정 성능을 "
-    "나타내지 않는다."
+    "나타내지 않는다. 분류 모집단은 7건이고 클래스별 support는 1~2건이므로 "
+    "개별 클래스 지표를 성능 추정치로 해석하지 않는다."
 )
 
 
@@ -606,11 +607,13 @@ def validate_artifact(artifact: Mapping[str, Any]) -> None:
         raise FaultEvaluationContractError("ARTIFACT_REVISION_INVALID")
 
     structured = _validate_count_metric(
-        artifact["structured_prediction"], denominator=12
+        artifact["structured_prediction"], denominator=EXPECTED_POPULATION_COUNT
     )
-    evidence = _validate_count_metric(artifact["evidence_valid_run"], denominator=12)
+    evidence = _validate_count_metric(
+        artifact["evidence_valid_run"], denominator=EXPECTED_POPULATION_COUNT
+    )
     agreement = _validate_count_metric(
-        artifact["rule_action_agreement"], denominator=12
+        artifact["rule_action_agreement"], denominator=EXPECTED_POPULATION_COUNT
     )
     classification = artifact["classification"]
     if not isinstance(classification, Mapping) or set(classification) != {
@@ -664,11 +667,11 @@ def validate_artifact(artifact: Mapping[str, Any]) -> None:
     ):
         raise FaultEvaluationContractError("ARTIFACT_GATE_INVALID")
     expected_reasons: list[str] = []
-    if structured != 12:
+    if structured != EXPECTED_POPULATION_COUNT:
         expected_reasons.append("STRUCTURED_PREDICTION_NOT_100_PERCENT")
-    if evidence != 12:
+    if evidence != EXPECTED_POPULATION_COUNT:
         expected_reasons.append("EVIDENCE_ID_NOT_100_PERCENT")
-    if agreement != 12:
+    if agreement != EXPECTED_POPULATION_COUNT:
         expected_reasons.append("RULE_ACTION_NOT_100_PERCENT")
     for key, reason in zip(
         versions,
