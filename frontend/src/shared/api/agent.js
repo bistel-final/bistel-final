@@ -14,13 +14,16 @@ import { PUBLIC_ACTIONS } from '../../features/agent/mock/publicActions.js'
 
 // 백엔드 agent 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
 const USE_MOCK = mockEnabledFor('AGENT')
+const GRAPH_EVIDENCE_RELATION_ID = CORE_CHAMBER_GRAPH.relationships.find(
+  (relationship) => relationship.from_node_id === 'Parameter:PH_FOCUS',
+).relation_id
 
 const GRAPH_EVIDENCE = Object.freeze({
   type: 'GRAPH',
-  source_id: CORE_CHAMBER_GRAPH.relationships[0].relation_id,
+  source_id: GRAPH_EVIDENCE_RELATION_ID,
   title: '챔버 측정 관계',
   excerpt: `${CORE_AGENT_RUN.chamber_id}의 파라미터 측정 관계를 판단 근거로 사용했습니다.`,
-  relation_id: CORE_CHAMBER_GRAPH.relationships[0].relation_id,
+  relation_id: GRAPH_EVIDENCE_RELATION_ID,
   graph_revision: CORE_CHAMBER_GRAPH.graph_revision,
 })
 

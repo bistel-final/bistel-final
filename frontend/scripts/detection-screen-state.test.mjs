@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import {
   hasDashboardResults,
   partitionAlarms,
@@ -31,3 +32,13 @@ assert.deepEqual(alarms.map((alarm) => alarm.alarm_id), ['TRACE-1', 'R03-1', 'SU
 assert.equal(hasDashboardResults(null), false)
 assert.equal(hasDashboardResults({ total: 0 }), false)
 assert.equal(hasDashboardResults({ total: 1 }), true)
+
+const alarmsPageSource = await readFile(new URL('../src/features/detection/pages/AlarmsPage.jsx', import.meta.url), 'utf8')
+const handlerStart = alarmsPageSource.indexOf('  const handleRunAnalysis = () => {')
+const handlerEnd = alarmsPageSource.indexOf('\n  const rows = useMemo', handlerStart)
+const runHandler = alarmsPageSource.slice(handlerStart, handlerEnd)
+assert.ok(handlerStart >= 0 && handlerEnd > handlerStart)
+assert.equal((runHandler.match(/createRun\(/g) ?? []).length, 1, '분석 버튼 클릭당 POST 경로는 하나여야 합니다')
+assert.match(runHandler, /navigate\(`\/agent-runs\/\$\{accepted\.agent_run_id\}`\)/, '202 응답 run 상세로 이동해야 합니다')
+assert.match(runHandler, /catch\(\(error\) => setRunError\(runErrorMessage\(error\)\)\)/)
+assert.doesNotMatch(runHandler, /retry|setTimeout|setInterval/, '409·422·503에서 자동 재시도하면 안 됩니다')

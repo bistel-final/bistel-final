@@ -114,12 +114,12 @@ assert.equal(
 )
 const graphEvidence = {
   type: 'GRAPH',
-  relation_id: 'REL-47fcae63de255c114f5d',
+  relation_id: 'REL-9687560b5876022b2512',
   graph_revision: '3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb',
 }
 assert.equal(
   evidenceHref(graphEvidence, { chamberId: 'EQP04-PM2' }),
-  '/ontology?chamber_id=EQP04-PM2&relation_id=REL-47fcae63de255c114f5d&graph_revision=3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb',
+  '/ontology?chamber_id=EQP04-PM2&relation_id=REL-9687560b5876022b2512&graph_revision=3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb',
 )
 assert.equal(evidenceHref({ type: 'TRACE', source_id: 'LH-1' }), null)
 
@@ -130,7 +130,8 @@ const contextualGraph = await getChamberRelationsCore('EQP04-PM2')
 assert.equal(contextualGraph.context.chamber_id, 'EQP04-PM2')
 const resolvedFocus = resolveOntologyFocus(contextualGraph, graphFocus)
 assert.equal(resolvedFocus.phase, 'found')
-assert.equal(resolvedFocus.relation.relation_id, graphEvidence.relation_id)
+assert.equal(resolvedFocus.relation.id, graphEvidence.relation_id)
+assert.equal(resolvedFocus.source.business_id, 'ET_REFL')
 assert.equal(resolvedFocus.target.business_id, 'EQP04-PM2')
 assert.equal(
   resolveOntologyFocus(contextualGraph, { ...graphFocus, graphRevision: 'stale' }).phase,

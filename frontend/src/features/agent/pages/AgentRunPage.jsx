@@ -5,8 +5,8 @@ import { getAlarm, getParameters, getTrace } from '../../../shared/api/detection
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
+import { HistoryTrendCard } from '../../../shared/components/trace/HistoryTrendChart.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
-import { HistoryTrendCard } from '../../detection/components/HistoryTrendChart.jsx'
 import {
   adaptRunForLegacyPage,
   approvalViewState,
