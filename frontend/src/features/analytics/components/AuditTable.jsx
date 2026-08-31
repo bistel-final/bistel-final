@@ -61,14 +61,26 @@ function AuditTable({ items }) {
                 </td>
                 <td className={`${TD_CLS} font-mono font-bold text-blue`}>{e.entity_id}</td>
                 <td className={`${TD_CLS} max-w-[320px]`}>
-                  <div className="truncate text-[12px] text-g1" title={e.detail ?? ''}>
-                    {e.detail ?? '—'}
-                  </div>
-                  {(before || after) && (
-                    <div className="mt-0.5 font-mono text-[10.5px] text-g2">
-                      {before ?? '—'} <span className="text-faint">→</span> {after ?? '—'}
+                  {/* detail 이 없으면 빈 줄을 그리지 않는다 — before→after 만 남을 때 본문 줄로 쓴다 */}
+                  {e.detail && (
+                    <div className="truncate text-[12px] text-g1" title={e.detail}>
+                      {e.detail}
                     </div>
                   )}
+                  {(before || after) && (
+                    <div
+                      className={`truncate font-mono text-[10.5px] text-g2 ${e.detail ? 'mt-0.5' : ''}`}
+                      title={`${before ?? '—'} → ${after ?? '—'}`}
+                    >
+                      {before ? (
+                        <>
+                          {before} <span className="text-faint">→</span>{' '}
+                        </>
+                      ) : null}
+                      {after ?? '—'}
+                    </div>
+                  )}
+                  {!e.detail && !before && !after && <span className="text-[12px] text-faint">—</span>}
                 </td>
                 <td className={`${TD_CLS} text-[12px] ${res.cls}`}>{res.label}</td>
               </tr>

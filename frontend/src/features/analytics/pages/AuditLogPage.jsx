@@ -8,15 +8,23 @@ import AuditFilterBar from '../components/AuditFilterBar.jsx'
 import { ALL, DEFAULT_AUDIT_FILTER } from '../components/auditModel.js'
 import AuditEventTypeBars from '../components/AuditEventTypeBars.jsx'
 import AuditTable from '../components/AuditTable.jsx'
+import Pagination from '../../../shared/components/ui/Pagination.jsx'
 
 // 감사로그 — 라이트 시안 7번. 필터 변경 즉시 재조회 (조회 버튼 없음).
 // 좌 270px 유형별 집계 + 우측 테이블. 유형 목록·집계는 응답 event_types / event_type_counts 그대로 쓴다.
-const PAGE_SIZE = 50
+const PAGE_SIZE = 10 // 감사 이벤트 규모(수십건)에 맞춘 페이지 크기 — 서버 pagination
 
 function AuditLogPage() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState(DEFAULT_AUDIT_FILTER)
+  // 서버 pagination (V5-D-1.4) — 정렬은 서버가 occurred_at DESC, audit_id DESC 로 보증한다.
+  // 필터가 바뀌면 1페이지로 돌아간다 (직전 페이지가 새 조건에서는 범위 밖일 수 있다).
+  const [page, setPage] = useState(1)
+  const changeFilter = (next) => {
+    setFilter(next)
+    setPage(1)
+  }
   // 샘플 ID 칩 — 최초 응답의 distinct entity_id 3개로 고정한다 (필터에 따라 흔들리지 않게)
   const [samples, setSamples] = useState(null)
 
@@ -27,7 +35,7 @@ function AuditLogPage() {
       entity_id: filter.target.trim() || undefined,
       date_from: filter.from || undefined,
       date_to: filter.to || undefined,
-      page: 1,
+      page,
       size: PAGE_SIZE,
     })
       .then((res) => {
@@ -35,7 +43,7 @@ function AuditLogPage() {
         setSamples((prev) => prev ?? [...new Set((res.items ?? []).map((e) => e.entity_id))].slice(0, 3))
       })
       .catch((e) => setError(e.message))
-  }, [filter])
+  }, [filter, page])
   useEffect(() => {
     load()
   }, [load])
@@ -56,6 +64,8 @@ function AuditLogPage() {
 
   const items = data.items ?? []
   const eventTypes = data.event_types ?? []
+  const total = data.total ?? items.length
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -69,9 +79,9 @@ function AuditLogPage() {
       <AuditFilterBar
         eventTypes={eventTypes}
         value={filter}
-        onChange={setFilter}
+        onChange={changeFilter}
         samples={samples ?? []}
-        onReset={() => setFilter(DEFAULT_AUDIT_FILTER)}
+        onReset={() => changeFilter(DEFAULT_AUDIT_FILTER)}
       />
 
       <div className="flex items-start gap-4">
@@ -82,7 +92,17 @@ function AuditLogPage() {
           {items.length === 0 ? (
             <EmptyState title="조건에 맞는 감사 이벤트가 없습니다" description="기간·유형·주체·대상 필터를 조정해 주세요." />
           ) : (
-            <AuditTable items={items} />
+            <>
+              <AuditTable items={items} />
+              {pageCount > 1 && (
+                <Pagination
+                  page={page}
+                  pageCount={pageCount}
+                  rangeLabel={`${(page - 1) * PAGE_SIZE + 1} – ${Math.min(page * PAGE_SIZE, total)} / ${total}`}
+                  onPage={setPage}
+                />
+              )}
+            </>
           )}
         </Card>
       </div>
