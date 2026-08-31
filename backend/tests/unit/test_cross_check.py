@@ -58,6 +58,21 @@ def test_compare_scalar_and_set():
     assert matched  # 집합 비교 — 순서 무관
 
 
+def test_compare_unwraps_node_dicts():
+    # 그래프가 RETURN c 로 노드를 통째로 돌려줘도 속성값으로 풀어 집합 바교한다
+    matched, _ = _compare(
+        [{"chamber": "EQP01-PM1"}, {"chamber": "EQP01-PM2"}],
+        [{"c": {"chamber_id": "EQP01-PM2"}}, {"c": {"chamber_id": "EQP01-PM1"}}],
+    )
+    assert matched
+    # 다속성 노드는 *_id 하나를 business key 로 골라 바교한다
+    matched, _ = _compare(
+        [{"equipment": "EQP01"}],
+        [{"e": {"equipment_id": "EQP01", "area": "Photo", "model_code": "PH-9000"}}],
+    )
+    assert matched
+
+
 def test_compare_count_scalar_vs_list_fallback():
     # SQL 은 COUNT=2, 그래프는 노드 목록 2건 — 같은 사실, 일치로 판정
     matched, summary = _compare(

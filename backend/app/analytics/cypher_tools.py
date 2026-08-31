@@ -91,7 +91,13 @@ def _graph_schema_context() -> str:
     lines.extend(f"- {shape}" for shape in _RELATION_SHAPES)
     lines.append(
         "값 예시: equipment_id='EQP01'~'EQP06', chamber_id='EQP01-PM1' 형식,"
-        " area_id='Photo'|'Etch'"
+        " model_code='PH-9000'|'ET-7500'"
+    )
+    lines.append(
+        "구역 코드값은 Area.area_id 와 Equipment.area 에 'Photo'|'Etch' 로 있다 —"
+        " Area.area_name 은 표시명('Photolithography','Dry Etch')이라"
+        " 코드로 필터하지 않는다."
+        " 설비의 구역은 Equipment.area 속성으로 바로 필터할 수 있다."
     )
     return "\n".join(lines)
 
