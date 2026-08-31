@@ -1,5 +1,5 @@
 import { Card } from '../../../shared/components/ui/Card.jsx'
-import { judgeValue, limitLines } from './TraceModel.jsx'
+import { judgeValue, limitLines } from '../../../shared/trace/traceModel.js'
 
 // 시안 v2 03_트레이스뷰어 차트 — SVG viewBox 1000×260 직접 렌더링 (recharts 제거)
 //

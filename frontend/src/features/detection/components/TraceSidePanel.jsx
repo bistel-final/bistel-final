@@ -2,7 +2,8 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, CardHeader, DashedCard } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
 import { ruleVariant } from '../../../shared/components/ui/statusStyles.js'
-import { alarmSummary, detailNumbers } from './TraceModel.jsx'
+import { detailNumbers } from '../../../shared/trace/traceModel.js'
+import { alarmSummary } from './TraceModel.jsx'
 
 // 우측 330px 컬럼 — 구간 통계 · anomaly_score · 이 구간의 알람 (시안 v2 03_트레이스뷰어)
 

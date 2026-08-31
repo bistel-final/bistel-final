@@ -1,3 +1,7 @@
+import { detailNumbers, judgeValue, limitLines } from '../../../shared/trace/traceModel.js'
+
+export { detailNumbers, judgeValue, limitLines } from '../../../shared/trace/traceModel.js'
+
 // 트레이스 뷰어 파생 로직 — 순수 함수만 모아둔 파일 (컴포넌트 없음)
 //
 // 데이터 출처는 GET /traces/catalog · POST /traces/search · GET /alarms 뿐이다. 값 창작 금지:
@@ -51,31 +55,6 @@ export function decorateWafers(wafers, catalog) {
 // 센서 한계선 — search 응답 limits[sensor_id] 우선, 없으면 catalog.sensors
 export function sensorLimit(limits, catalog, sensorId) {
   return limits?.[sensorId] ?? (catalog?.sensors ?? []).find((s) => s.sensor_id === sensorId) ?? null
-}
-
-// 차트 기준선 5개 — 값이 null 인 선은 그리지 않는다 (ET_REFL 은 전부 null → 한계선 미제공)
-export function limitLines(lim) {
-  return [
-    ['USL', lim?.spec_upper],
-    ['UCL', lim?.ctrl_upper],
-    ['TARGET', lim?.target],
-    ['LCL', lim?.ctrl_lower],
-    ['LSL', lim?.spec_lower],
-  ]
-    .filter(([, value]) => value != null)
-    .map(([label, value]) => ({ label, value }))
-}
-
-// 포인트 1개의 한계선 판정 — spec 벗어남 OOS · ctrl 벗어남 OOC · 그 외 OK (한계선 없으면 null)
-export function judgeValue(value, lim) {
-  if (value == null || !lim) return null
-  const has = [lim.spec_lower, lim.ctrl_lower, lim.ctrl_upper, lim.spec_upper].some((v) => v != null)
-  if (!has) return null
-  if (lim.spec_upper != null && value > lim.spec_upper) return 'OOS'
-  if (lim.spec_lower != null && value < lim.spec_lower) return 'OOS'
-  if (lim.ctrl_upper != null && value > lim.ctrl_upper) return 'OOC'
-  if (lim.ctrl_lower != null && value < lim.ctrl_lower) return 'OOC'
-  return 'OK'
 }
 
 export function judgeOf(min, max, lim) {
@@ -282,15 +261,6 @@ export function scopedAlarms(alarms, f) {
         (!f.to || dateOf(a.occurred_at) <= f.to),
     )
     .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.alarm_id.localeCompare(b.alarm_id))
-}
-
-// detail 문자열에서 실측 수치만 뽑는다 (없는 항목은 null)
-export function detailNumbers(detail) {
-  const grab = (k) => {
-    const m = String(detail ?? '').match(new RegExp(`${k}\\s+(-?[0-9.]+)`))
-    return m ? Number(m[1]) : null
-  }
-  return { mean: grab('mean'), min: grab('min'), max: grab('max') }
 }
 
 /**
