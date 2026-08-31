@@ -89,7 +89,7 @@
     "path": {},
     "query": {
       "area": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "enum": [
@@ -101,14 +101,14 @@
         }
       },
       "chamber": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "date_from": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -116,7 +116,7 @@
         }
       },
       "date_to": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -124,7 +124,7 @@
         }
       },
       "equipment": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
@@ -139,14 +139,14 @@
         }
       },
       "parameter": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "source": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "enum": [
@@ -162,375 +162,364 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "action_code": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "EQP_HOLD",
-                "MONITORING",
-                "WARNING"
-              ],
-              "type": "string"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "action_code": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "EQP_HOLD",
+                  "MONITORING",
+                  "WARNING"
+                ],
+                "type": "string"
+              }
+            },
+            "alarm_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "alarm_type": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "OOC",
+                  "OOS"
+                ],
+                "type": "string"
+              }
+            },
+            "area": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "Etch",
+                  "Photo"
+                ],
+                "type": "string"
+              }
+            },
+            "chamber": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "chamber_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "cl": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "equipment": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "equipment_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "fault": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "lcl": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "lot": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "lot_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "mes": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "mes_status": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "BLOCKED",
+                  "CANCELED",
+                  "FAILED",
+                  "SENDING",
+                  "SENT",
+                  "UNKNOWN",
+                  "WAITING"
+                ],
+                "type": "string"
+              }
+            },
+            "notify": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "boolean"
+              }
+            },
+            "notify_status": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "FAILED",
+                  "SENDING",
+                  "SENT",
+                  "UNKNOWN",
+                  "WAITING"
+                ],
+                "type": "string"
+              }
+            },
+            "occurred_at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "parameter": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "parameter_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "predicted_fault_code": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "recipe": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "recipe_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "recipe_step_no": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 1.0,
+                "type": "integer"
+              }
+            },
+            "rule_code": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "R03_CONSEC",
+                  "SUMMARY_OOC",
+                  "TRACE_OOS"
+                ],
+                "type": "string"
+              }
+            },
+            "seq_no": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "source": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "R03",
+                  "SUMMARY",
+                  "TRACE"
+                ],
+                "type": "string"
+              }
+            },
+            "statistic_type": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "step_no": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 1.0,
+                "type": "integer"
+              }
+            },
+            "ucl": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "value": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "wafer": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "wafer_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
             }
           },
-          "alarm_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "alarm_type": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "OOC",
-                "OOS"
-              ],
-              "type": "string"
-            }
-          },
-          "area": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "Etch",
-                "Photo"
-              ],
-              "type": "string"
-            }
-          },
-          "chamber": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "chamber_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "cl": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "equipment": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "equipment_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "fault": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "lcl": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "lot": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "lot_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "mes": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "mes_status": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "BLOCKED",
-                "CANCELED",
-                "FAILED",
-                "SENDING",
-                "SENT",
-                "UNKNOWN",
-                "WAITING"
-              ],
-              "type": "string"
-            }
-          },
-          "notify": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          "notify_status": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FAILED",
-                "SENDING",
-                "SENT",
-                "UNKNOWN",
-                "WAITING"
-              ],
-              "type": "string"
-            }
-          },
-          "occurred_at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "parameter": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "parameter_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "predicted_fault_code": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "recipe": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "recipe_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "recipe_step_no": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          "rule_code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "R03_CONSEC",
-                "SUMMARY_OOC",
-                "TRACE_OOS"
-              ],
-              "type": "string"
-            }
-          },
-          "seq_no": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "source": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "R03",
-                "SUMMARY",
-                "TRACE"
-              ],
-              "type": "string"
-            }
-          },
-          "statistic_type": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "step_no": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          "ucl": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "value": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "wafer": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "wafer_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -597,105 +586,94 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "measured_at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "measured_at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "recipe_step_no": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 1.0,
+                "type": "integer"
+              }
+            },
+            "seq_no": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "value": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
             }
           },
-          "recipe_step_no": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          "seq_no": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "value": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -729,165 +707,134 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "LCL": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "LCL": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "LSL": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "TARGET": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "UCL": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "USL": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "area": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "Etch",
+                  "Photo"
+                ],
+                "type": "string"
+              }
+            },
+            "ctrl_lower": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "ctrl_upper": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "name": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "parameter_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "parameter_name": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "spec_lower": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "spec_upper": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "target_value": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "unit": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "upper_only": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "boolean"
+              }
             }
           },
-          "LSL": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "TARGET": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "UCL": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "USL": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "area": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "Etch",
-                "Photo"
-              ],
-              "type": "string"
-            }
-          },
-          "ctrl_lower": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "ctrl_upper": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "name": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "parameter_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "parameter_name": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "spec_lower": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "spec_upper": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "target_value": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "number"
-            }
-          },
-          "unit": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "upper_only": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "boolean"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
     }
   }
 }
@@ -932,8 +879,8 @@
           "required": false,
           "schema": {
             "default": 4,
-            "maximum": 10,
-            "minimum": 1,
+            "maximum": 10.0,
+            "minimum": 1.0,
             "type": "integer"
           }
         }
@@ -947,138 +894,127 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "chunk_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "pattern": "^.+:cs2:[0-9]{4}$",
-              "type": "string"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "chunk_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "content": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "doc_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "document_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "model_code": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "score": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "maximum": 1.0,
+                "minimum": -1.0,
+                "type": "number"
+              }
+            },
+            "section": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "title": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
             }
           },
-          "content": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "doc_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "document_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "model_code": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "score": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "maximum": 1,
-              "minimum": -1,
-              "type": "number"
-            }
-          },
-          "section": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "title": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -1112,141 +1048,23 @@
         "nullable": false,
         "required": true,
         "schema": {
-          "min_length": 1,
           "type": "string"
         }
       }
     },
-    "query": {
-      "label": {
-        "nullable": false,
-        "required": false,
-        "schema": {
-          "enum": [
-            "Area",
-            "Chamber",
-            "Equipment",
-            "EquipmentModel",
-            "Parameter",
-            "ProcessStep"
-          ],
-          "type": "string"
-        }
-      },
-      "limit": {
-        "nullable": false,
-        "required": false,
-        "schema": {
-          "default": 500,
-          "maximum": 1000,
-          "minimum": 1,
-          "type": "integer"
-        }
-      }
-    }
+    "query": {}
   },
   "responses": {
     "200": {
       "schema": {
         "additional_properties": false,
         "fields": {
-          "context": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": false,
-              "fields": {
-                "adjacent_process_step_ids": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "area": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "enum": [
-                      "Etch",
-                      "Photo"
-                    ],
-                    "type": "string"
-                  }
-                },
-                "chamber_id": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "min_length": 1,
-                    "type": "string"
-                  }
-                },
-                "equipment_id": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "min_length": 1,
-                    "type": "string"
-                  }
-                },
-                "model_code": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "min_length": 1,
-                    "type": "string"
-                  }
-                },
-                "parameter_ids": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "process_step_id": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "min_length": 1,
-                    "type": "string"
-                  }
-                },
-                "relation_ids": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                }
-              },
-              "type": "object"
-            }
-          },
           "graph_revision": {
             "nullable": false,
             "required": true,
             "schema": {
-              "pattern": "^[0-9a-f]{64}$",
+              "min_length": 1,
               "type": "string"
-            }
-          },
-          "node_count": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "type": "integer"
             }
           },
           "nodes": {
@@ -1264,22 +1082,7 @@
                       "type": "string"
                     }
                   },
-                  "label": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "Area",
-                        "Chamber",
-                        "Equipment",
-                        "EquipmentModel",
-                        "Parameter",
-                        "ProcessStep"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "name": {
+                  "display_name": {
                     "nullable": false,
                     "required": true,
                     "schema": {
@@ -1287,7 +1090,15 @@
                       "type": "string"
                     }
                   },
-                  "node_id": {
+                  "id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "label": {
                     "nullable": false,
                     "required": true,
                     "schema": {
@@ -1310,14 +1121,6 @@
               "type": "array"
             }
           },
-          "relationship_count": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
           "relationships": {
             "nullable": false,
             "required": true,
@@ -1325,7 +1128,7 @@
               "items": {
                 "additional_properties": false,
                 "fields": {
-                  "from_node_id": {
+                  "id": {
                     "nullable": false,
                     "required": true,
                     "schema": {
@@ -1333,15 +1136,15 @@
                       "type": "string"
                     }
                   },
-                  "relation_id": {
+                  "source": {
                     "nullable": false,
                     "required": true,
                     "schema": {
-                      "pattern": "^REL-[0-9a-f]{20}$",
+                      "min_length": 1,
                       "type": "string"
                     }
                   },
-                  "to_node_id": {
+                  "target": {
                     "nullable": false,
                     "required": true,
                     "schema": {
@@ -1362,34 +1165,8 @@
               },
               "type": "array"
             }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "404": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
           },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
+          "root_node_id": {
             "nullable": false,
             "required": true,
             "schema": {
@@ -1404,65 +1181,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -1493,7 +1256,7 @@
     "path": {},
     "query": {
       "date_from": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -1501,7 +1264,7 @@
         }
       },
       "date_to": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -1509,7 +1272,7 @@
         }
       },
       "predicted_fault_code": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "enum": [
@@ -1523,7 +1286,7 @@
         }
       },
       "status": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "enum": [
@@ -1540,335 +1303,324 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "action_id": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "agent_run_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "alarm_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "alarm_source": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "R03",
-                "SUMMARY",
-                "TRACE"
-              ],
-              "type": "string"
-            }
-          },
-          "approval_id": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "chamber": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "chamber_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "confidence": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "maximum": 1,
-              "minimum": 0,
-              "type": "number"
-            }
-          },
-          "created_at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "deliveries": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "items": {
-                "additional_properties": false,
-                "fields": {
-                  "channel": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "EMAIL",
-                        "MES"
-                      ],
-                      "type": "string"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "action_id": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "agent_run_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "alarm_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "alarm_source": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "R03",
+                  "SUMMARY",
+                  "TRACE"
+                ],
+                "type": "string"
+              }
+            },
+            "approval_id": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "chamber": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "chamber_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "confidence": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              }
+            },
+            "created_at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "deliveries": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "items": {
+                  "additional_properties": false,
+                  "fields": {
+                    "channel": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "EMAIL",
+                          "MES"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "status": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "BLOCKED",
+                          "CANCELED",
+                          "FAILED",
+                          "SENDING",
+                          "SENT",
+                          "UNKNOWN",
+                          "WAITING"
+                        ],
+                        "type": "string"
+                      }
                     }
                   },
-                  "status": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "BLOCKED",
-                        "CANCELED",
-                        "FAILED",
-                        "SENDING",
-                        "SENT",
-                        "UNKNOWN",
-                        "WAITING"
-                      ],
-                      "type": "string"
-                    }
-                  }
+                  "type": "object"
                 },
-                "type": "object"
-              },
-              "type": "array"
-            }
-          },
-          "fault_code": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "fault_color": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "null"
-            }
-          },
-          "fault_name": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "type": "null"
-            }
-          },
-          "latency_ms": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "llm_model": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "predicted_fault_code": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "recommended_action": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "enum": [
-                "EQP_HOLD",
-                "MONITORING",
-                "WARNING"
-              ],
-              "type": "string"
-            }
-          },
-          "status": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "COMPLETED",
-                "FAILED",
-                "RUNNING",
-                "WAITING_APPROVAL"
-              ],
-              "type": "string"
-            }
-          },
-          "tools": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "items": {
-                "additional_properties": false,
-                "fields": {
-                  "n": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "min_length": 1,
-                      "type": "string"
+                "type": "array"
+              }
+            },
+            "fault_code": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "fault_color": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "null"
+              }
+            },
+            "fault_name": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "null"
+              }
+            },
+            "latency_ms": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "llm_model": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "predicted_fault_code": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "recommended_action": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "EQP_HOLD",
+                  "MONITORING",
+                  "WARNING"
+                ],
+                "type": "string"
+              }
+            },
+            "status": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "COMPLETED",
+                  "FAILED",
+                  "RUNNING",
+                  "WAITING_APPROVAL"
+                ],
+                "type": "string"
+              }
+            },
+            "tools": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "items": {
+                  "additional_properties": false,
+                  "fields": {
+                    "n": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
+                    },
+                    "result_summary": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
+                    },
+                    "s": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "ERROR",
+                          "SUCCESS",
+                          "TIMEOUT"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "status": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "ERROR",
+                          "SUCCESS",
+                          "TIMEOUT"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "tool_name": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
                     }
                   },
-                  "result_summary": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "min_length": 1,
-                      "type": "string"
-                    }
-                  },
-                  "s": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "ERROR",
-                        "SUCCESS",
-                        "TIMEOUT"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "status": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "ERROR",
-                        "SUCCESS",
-                        "TIMEOUT"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "tool_name": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "min_length": 1,
-                      "type": "string"
-                    }
-                  }
+                  "type": "object"
                 },
-                "type": "object"
-              },
-              "type": "array"
+                "type": "array"
+              }
             }
-          }
+          },
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -1923,6 +1675,7 @@
             "nullable": false,
             "required": true,
             "schema": {
+              "min_length": 1,
               "type": "string"
             }
           },
@@ -1930,8 +1683,8 @@
             "nullable": true,
             "required": true,
             "schema": {
-              "maximum": 1,
-              "minimum": 0,
+              "maximum": 1.0,
+              "minimum": 0.0,
               "type": "number"
             }
           },
@@ -1991,6 +1744,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2014,9 +1768,6 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "enum": [
-                            "ALARM"
-                          ],
                           "type": "string"
                         }
                       }
@@ -2046,6 +1797,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2076,9 +1828,6 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "enum": [
-                            "DOCUMENT"
-                          ],
                           "type": "string"
                         }
                       }
@@ -2092,6 +1841,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2099,7 +1849,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "pattern": "^[0-9a-f]{64}$",
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2107,7 +1857,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "pattern": "^REL-[0-9a-f]{20}$",
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2131,9 +1881,6 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "enum": [
-                            "GRAPH"
-                          ],
                           "type": "string"
                         }
                       }
@@ -2147,6 +1894,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2170,9 +1918,6 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "enum": [
-                            "METROLOGY"
-                          ],
                           "type": "string"
                         }
                       }
@@ -2186,6 +1931,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
+                          "min_length": 1,
                           "type": "string"
                         }
                       },
@@ -2209,9 +1955,6 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "enum": [
-                            "TRACE"
-                          ],
                           "type": "string"
                         }
                       }
@@ -2338,65 +2081,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -2432,227 +2161,192 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "action_code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "EQP_HOLD",
-                "MONITORING",
-                "WARNING"
-              ],
-              "type": "string"
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "action_code": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "EQP_HOLD",
+                  "MONITORING",
+                  "WARNING"
+                ],
+                "type": "string"
+              }
+            },
+            "action_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "agent_run_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "approval_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "approved_at": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "approved_by": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "chamber": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "chamber_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "created_at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "decided_at": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "decided_by": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "decision_comment": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "equipment": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "equipment_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "fault_code": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "lot": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "lot_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "predicted_fault_code": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "reason": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "status": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "APPROVED",
+                  "PENDING",
+                  "REJECTED"
+                ],
+                "type": "string"
+              }
             }
           },
-          "action_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "agent_run_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "approval_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "approved_at": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "approved_by": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "chamber": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "chamber_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "created_at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "decided_at": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "decided_by": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "decision_comment": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "max_length": 1000,
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "equipment": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "equipment_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "fault_code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "lot": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "lot_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "predicted_fault_code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "FOC",
-                "MFD",
-                "OTH",
-                "RFM",
-                "TMD"
-              ],
-              "type": "string"
-            }
-          },
-          "reason": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "status": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "APPROVED",
-                "PENDING",
-                "REJECTED"
-              ],
-              "type": "string"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
     }
   }
 }
@@ -2681,6 +2375,7 @@
           "nullable": false,
           "required": true,
           "schema": {
+            "max_length": 40,
             "min_length": 1,
             "type": "string"
           }
@@ -2701,7 +2396,6 @@
           "required": false,
           "schema": {
             "max_length": 1000,
-            "min_length": 1,
             "type": "string"
           }
         }
@@ -2714,7 +2408,6 @@
         "nullable": false,
         "required": true,
         "schema": {
-          "min_length": 1,
           "type": "string"
         }
       }
@@ -2774,7 +2467,6 @@
             "nullable": true,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           },
@@ -2814,7 +2506,6 @@
             "nullable": true,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           },
@@ -2822,8 +2513,6 @@
             "nullable": true,
             "required": true,
             "schema": {
-              "max_length": 1000,
-              "min_length": 1,
               "type": "string"
             }
           },
@@ -2912,135 +2601,53 @@
       },
       "shape": "object"
     },
-    "404": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "409": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -3071,14 +2678,14 @@
     "path": {},
     "query": {
       "actor_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "date_from": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -3086,7 +2693,7 @@
         }
       },
       "date_to": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -3094,21 +2701,21 @@
         }
       },
       "entity_id": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "entity_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "event_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
@@ -3119,186 +2726,167 @@
   "responses": {
     "200": {
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "actor": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+        "items": {
+          "additional_properties": true,
+          "fields": {
+            "actor": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "actor_id": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "actor_type": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "after": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "additional_properties": true,
+                "fields": {},
+                "type": "object"
+              }
+            },
+            "at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "audit_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "integer"
+              }
+            },
+            "before": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "additional_properties": true,
+                "fields": {},
+                "type": "object"
+              }
+            },
+            "detail": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "entity": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "entity_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "entity_type": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "event": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "event_type": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "occurred_at": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
             }
           },
-          "actor_id": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "actor_type": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "after": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          },
-          "audit_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          "before": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "detail": {
-            "nullable": true,
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          "entity": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "entity_id": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "entity_type": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "event": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "event_type": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "occurred_at": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "format": "date-time",
-              "type": "string"
-            }
-          }
+          "type": "object"
         },
-        "type": "object"
+        "type": "array"
       },
       "shape": "array"
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -3422,7 +3010,6 @@
         "nullable": false,
         "required": true,
         "schema": {
-          "min_length": 1,
           "type": "string"
         }
       }
@@ -3531,101 +3118,53 @@
       },
       "shape": "object"
     },
-    "404": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -3738,77 +3277,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "enum": [
-                "RUNNING"
-              ],
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "404": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "409": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -3819,65 +3287,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -4629,13 +4083,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -4646,7 +4114,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -4663,13 +4130,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -4680,7 +4161,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -4697,13 +4177,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -4714,7 +4208,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -4785,7 +4278,7 @@
     "path": {},
     "query": {
       "action_code": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "enum": [
@@ -4971,13 +4464,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -4988,7 +4495,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -5005,13 +4511,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -5022,7 +4542,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -5249,13 +4768,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -5266,7 +4799,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -5283,13 +4815,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -5300,7 +4846,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -5317,13 +4862,27 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
               "type": "string"
             }
           },
           "details": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
               "additional_properties": true,
               "fields": {},
@@ -5334,7 +4893,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -5447,19 +5005,17 @@
     },
     "header": {
       "X-Delivery-Signature": {
-        "nullable": false,
-        "required": true,
+        "nullable": true,
+        "required": false,
         "schema": {
-          "pattern": "^sha256=[0-9a-f]{64}$",
           "type": "string"
         }
       },
       "X-Delivery-Timestamp": {
-        "nullable": false,
-        "required": true,
+        "nullable": true,
+        "required": false,
         "schema": {
-          "minimum": 0,
-          "type": "integer"
+          "type": "string"
         }
       }
     },
@@ -5468,7 +5024,6 @@
         "nullable": false,
         "required": true,
         "schema": {
-          "min_length": 1,
           "type": "string"
         }
       }
@@ -5484,6 +5039,7 @@
             "nullable": false,
             "required": true,
             "schema": {
+              "max_length": 20,
               "min_length": 1,
               "type": "string"
             }
@@ -5556,169 +5112,53 @@
       },
       "shape": "object"
     },
-    "401": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "404": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "409": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -6044,65 +5484,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -6239,31 +5665,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -6377,31 +5823,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -6432,7 +5898,7 @@
     "path": {},
     "query": {
       "date_from": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -6440,7 +5906,7 @@
         }
       },
       "date_to": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -6448,14 +5914,14 @@
         }
       },
       "is_rejected": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "boolean"
         }
       },
       "is_valid": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "boolean"
@@ -6619,31 +6085,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -6727,7 +6213,7 @@
                     "nullable": false,
                     "required": true,
                     "schema": {
-                      "minimum": 0,
+                      "minimum": 0.0,
                       "type": "integer"
                     }
                   },
@@ -6735,7 +6221,7 @@
                     "nullable": false,
                     "required": true,
                     "schema": {
-                      "minimum": 0,
+                      "minimum": 0.0,
                       "type": "integer"
                     }
                   },
@@ -6743,7 +6229,7 @@
                     "nullable": false,
                     "required": true,
                     "schema": {
-                      "minimum": 0,
+                      "minimum": 0.0,
                       "type": "integer"
                     }
                   },
@@ -6810,7 +6296,7 @@
                             "nullable": false,
                             "required": true,
                             "schema": {
-                              "minimum": 0,
+                              "minimum": 0.0,
                               "type": "integer"
                             }
                           },
@@ -6888,7 +6374,7 @@
                             "nullable": true,
                             "required": false,
                             "schema": {
-                              "minimum": 0,
+                              "minimum": 0.0,
                               "type": "integer"
                             }
                           },
@@ -6962,7 +6448,7 @@
                     "nullable": false,
                     "required": true,
                     "schema": {
-                      "minimum": 0,
+                      "minimum": 0.0,
                       "type": "integer"
                     }
                   }
@@ -6976,7 +6462,7 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "minimum": 1,
+              "minimum": 1.0,
               "type": "integer"
             }
           },
@@ -6984,8 +6470,8 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "maximum": 100,
-              "minimum": 1,
+              "maximum": 100.0,
+              "minimum": 1.0,
               "type": "integer"
             }
           },
@@ -6993,7 +6479,7 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "minimum": 0,
+              "minimum": 0.0,
               "type": "integer"
             }
           }
@@ -7004,31 +6490,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -7059,14 +6565,14 @@
     "path": {},
     "query": {
       "actor_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "date_from": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -7074,7 +6580,7 @@
         }
       },
       "date_to": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "format": "date",
@@ -7082,21 +6588,21 @@
         }
       },
       "entity_id": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "entity_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
         }
       },
       "event_type": {
-        "nullable": false,
+        "nullable": true,
         "required": false,
         "schema": {
           "type": "string"
@@ -7294,65 +6800,51 @@
     },
     "422": {
       "schema": {
-        "additional_properties": false,
+        "additional_properties": true,
         "fields": {
-          "code": {
+          "detail": {
             "nullable": false,
-            "required": true,
+            "required": false,
             "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "503": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
+              "items": {
+                "additional_properties": true,
+                "fields": {
+                  "loc": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "union",
+                        "variants": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "msg": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "type": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         },
@@ -7392,43 +6884,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "enum": [
-                "UP"
-              ],
-              "type": "string"
-            }
-          }
-        },
-        "type": "object"
-      },
-      "shape": "object"
-    },
-    "500": {
-      "schema": {
-        "additional_properties": false,
-        "fields": {
-          "code": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "details": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "additional_properties": true,
-              "fields": {},
-              "type": "object"
-            }
-          },
-          "message": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
               "type": "string"
             }
           }
@@ -7482,7 +6937,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7526,7 +6981,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7570,7 +7025,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7614,7 +7069,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7658,7 +7113,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7702,7 +7157,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7744,9 +7199,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "enum": [
-                "fdc_final_20260818"
-              ],
               "type": "string"
             }
           },
@@ -7786,7 +7238,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7830,7 +7282,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7874,7 +7326,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7918,7 +7370,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -7962,7 +7414,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -8006,7 +7458,7 @@
                         "nullable": false,
                         "required": true,
                         "schema": {
-                          "minimum": 0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -8048,9 +7500,6 @@
             "nullable": false,
             "required": true,
             "schema": {
-              "enum": [
-                "fdc_final_20260818"
-              ],
               "type": "string"
             }
           },

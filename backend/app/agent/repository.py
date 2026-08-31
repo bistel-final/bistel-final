@@ -474,8 +474,8 @@ class CreateAgentRunCommand:
     requested_alarm: AlarmRef
     representative_alarm: AlarmRef
     member_alarms: tuple[AlarmRef, ...]
+    llm_model: str
     retry_of_run_id: str | None = None
-    llm_model: str | None = None
     prompt_version: str | None = None
 
 
@@ -644,7 +644,9 @@ def _validate_create_command(
         representative_alarm=command.representative_alarm,
         member_alarms=command.member_alarms,
         retry_of_run_id=_optional_text(command.retry_of_run_id, "retry_of_run_id"),
-        llm_model=_optional_text(command.llm_model, "llm_model"),
+        # 공개 Agent DTO는 llm_model을 필수로 반환한다. 신규 run이 legacy NULL을
+        # 더 만들 수 없도록 DB write 경계에서도 필수값으로 고정한다.
+        llm_model=_require_text(command.llm_model, "llm_model"),
         prompt_version=_optional_text(command.prompt_version, "prompt_version"),
     )
     for alarm in (

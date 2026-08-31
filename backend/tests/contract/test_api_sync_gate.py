@@ -109,7 +109,7 @@ def test_canonical_semantics_rejects_unsorted_enum_storage() -> None:
         raise AssertionError("sync gate must reject unsorted canonical enums")
 
 
-def test_current_openapi_drift_and_missing_sets_are_exact() -> None:
+def test_current_openapi_matches_the_final_canonical_contract() -> None:
     spec, required, optional, team = _inputs()
     actual = normalize_openapi_contract(app.openapi(), resolve_schemas=True)
     report = evaluate_sync(spec, actual, required, optional, team)
@@ -123,34 +123,9 @@ def test_current_openapi_drift_and_missing_sets_are_exact() -> None:
         for item in report["operations"]
         if item["status"] == "MISSING"
     }
-    assert drift == {
-        ("GET", "/actions"),
-        ("GET", "/actions/{action_id}"),
-        ("GET", "/agent/runs"),
-        ("GET", "/agent/runs/{run_id}"),
-        ("GET", "/alarms"),
-        ("GET", "/analytics/evaluations"),
-        ("GET", "/analytics/history"),
-        ("GET", "/approvals"),
-        ("GET", "/audit-logs"),
-        ("GET", "/audit-logs/paged"),
-        ("GET", "/documents/{document_id}"),
-        ("GET", "/health"),
-        ("GET", "/health/ready"),
-        ("GET", "/parameters"),
-        ("GET", "/relations/chambers/{chamber_id}"),
-        ("GET", "/trace"),
-        ("POST", "/agent/ask"),
-        ("POST", "/agent/runs"),
-        ("POST", "/analytics/graph-query"),
-        ("POST", "/analytics/query"),
-        ("POST", "/analytics/validate"),
-        ("POST", "/approvals/{approval_id}/decision"),
-        ("POST", "/documents/search"),
-        ("POST", "/internal/actions/{action_id}/delivery"),
-    }
-    # V5-D-2.6 merge로 evaluations route가 합류해 MISSING이 비었다. 남은 24건은
-    # 전부 semantic DRIFT이며 최종화(release 19 + live 24 PASS) 전까지 유지된다.
+    assert drift == set()
     assert missing == set()
-    assert report["status_counts"] == {"PASS": 0, "DRIFT": 24, "MISSING": 0}
-    assert report["overall"] == "BLOCKED"
+    assert report["status_counts"] == {"PASS": 24, "DRIFT": 0, "MISSING": 0}
+    assert report["release_pass_count"] == 19
+    assert report["live_pass_count"] == 24
+    assert report["overall"] == "PASS"

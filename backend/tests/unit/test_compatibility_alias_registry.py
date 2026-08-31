@@ -151,6 +151,10 @@ def test_registry_root_and_entries_are_well_formed() -> None:
             assert ignored["reference"].startswith("frontend/src/features/")
             assert (REPOSITORY_ROOT / ignored["reference"]).is_file()
             assert ignored["reason"].strip()
+            assert (
+                "DTO/transport가 아닌 로컬 또는 다른 도메인 객체"
+                not in (ignored["reason"])
+            ), f"구체적인 ignore 근거가 필요합니다: {entry['id']}"
         assert entry["change_points"] == sorted(entry["change_points"])
         assert [item["check"] for item in entry["removal_conditions"]] == (
             _REMOVAL_CHECKS
