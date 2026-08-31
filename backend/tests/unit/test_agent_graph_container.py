@@ -450,7 +450,7 @@ def _dependencies(
     *,
     fdc_summary: Callable[[dict[str, Any]], Any] | None = None,
     document_search: Callable[[dict[str, Any]], Any] | None = None,
-    configured_llm_model: str | None = None,
+    configured_llm_model: str | None = "fixture-model",
     require_bound_thread: bool = False,
 ) -> AgentGraphDependencies:
     equipment = EquipmentContextToolResult(
