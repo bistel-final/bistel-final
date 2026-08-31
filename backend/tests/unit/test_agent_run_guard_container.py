@@ -176,6 +176,7 @@ def _seed_incident(connection: Any) -> None:
 
 
 def _start(db: Any, alarm_id: str = "TA-01", **over: Any) -> Any:
+    over.setdefault("llm_model", "test-model")
     with db.begin() as connection:
         return guard.start_incident_run(
             connection, _ref(alarm_id), autonomy_level=2, **over

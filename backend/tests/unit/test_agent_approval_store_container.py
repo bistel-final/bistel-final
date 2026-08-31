@@ -98,7 +98,6 @@ def _seed(lot_id: str, chamber_id: str) -> RehydrationSeed:
                 requested_alarm=ALARM,
                 representative_alarm=ALARM,
                 member_alarms=(ALARM,),
-                llm_model="test-model",
             ),
             wafer_routes=(),
             graph_evidence=(),
@@ -132,6 +131,7 @@ def _create_waiting_bundle(
                 requested_alarm=ALARM,
                 representative_alarm=ALARM,
                 member_alarms=(ALARM,),
+                llm_model="test-model",
             ),
         )
     result = action_store.production_port(engine.begin)(

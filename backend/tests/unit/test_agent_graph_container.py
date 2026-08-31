@@ -572,6 +572,7 @@ def _start_runtime_run(engine: Any) -> str:
             connection,
             AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01"),
             autonomy_level=2,
+            llm_model="fixture-model",
         )
     return started.run.agent_run_id
 
