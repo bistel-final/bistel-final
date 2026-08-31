@@ -1,8 +1,19 @@
 """자가 교정 강화 검증 — 값 도메인 힌트·0행 재시도 조건·validator 컬럼 힌트."""
 
 from app.analytics import tools
-from app.analytics.service import _has_string_equality_filter
+from app.analytics.service import _has_string_equality_filter, _is_zero_scalar
 from app.analytics.sql_validator import validate_sql
+
+# ── 0값 집계 감지 (COUNT=0 은 1행 — 0행 재시도 사각지대 보정) ──────────
+
+
+def test_zero_scalar_detection():
+    assert _is_zero_scalar([{"chamber_count": 0}])
+    assert not _is_zero_scalar([{"chamber_count": 2}])
+    assert not _is_zero_scalar([])  # 진짜 0행은 별도 조건이 잡는다
+    assert not _is_zero_scalar([{"a": 0, "b": 1}])  # 다컬럼은 집계 스칼라가 아니다
+    assert not _is_zero_scalar([{"flag": False}])  # bool 은 0 으로 보지 않는다
+
 
 # ── 0행 재시도 조건: 문자열 등호 필터 감지 ─────────────────────────────
 

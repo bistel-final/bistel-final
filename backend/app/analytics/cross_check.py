@@ -62,7 +62,22 @@ def is_structural_sql(sql: str) -> bool:
 
 
 def _first_values(rows: list[dict[str, Any]]) -> list[Any]:
-    return [next(iter(row.values())) for row in rows if row]
+    """각 행의 첫 컬럼 값. 그래프가 노드를 통째로 돌려줘(RETURN c) 값이 속성 dict 이면
+    단일 속성은 그 값으로 풀고, 다속성이면 business key 로 보이는 것(*_id)을 골라
+    SQL 문자열 목록과 비교 가능하게 한다 (오경보 방지)."""
+    values: list[Any] = []
+    for row in rows:
+        if not row:
+            continue
+        value = next(iter(row.values()))
+        if isinstance(value, dict):
+            if len(value) == 1:
+                value = next(iter(value.values()))
+            else:
+                key_like = [v for k, v in value.items() if str(k).endswith("_id")]
+                value = key_like[0] if len(key_like) == 1 else value
+        values.append(value)
+    return values
 
 
 def _is_number(value: Any) -> bool:

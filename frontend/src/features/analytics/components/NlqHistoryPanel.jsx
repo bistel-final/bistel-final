@@ -40,6 +40,11 @@ function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready' }) {
             <div className="text-[12.5px] font-bold text-ink">{h.question}</div>
             <div className="mt-2.5 flex items-center gap-3">
               <Badge variant={h.ok ? 't-green' : 'bg-red'}>{h.ok ? '성공' : '거부'}</Badge>
+              {h.logged === false && (
+                <span title="이 질의는 이력 DB(nl_query_log)에 기록되지 않았습니다 — 기록 계정·DSN 설정을 확인하세요">
+                  <Badge variant="t-amber">기록 안 됨</Badge>
+                </span>
+              )}
               <span className="font-mono text-[11px] text-g1">{h.row_count ?? 0}행</span>
               {!h.ok && h.reason && (
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-bold text-red">

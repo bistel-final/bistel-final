@@ -25,13 +25,19 @@ from __future__ import annotations
 import re
 import time
 from decimal import Decimal
+from typing import Any
 
 import sqlglot
 from sqlglot import expressions as exp
 
 from app.analytics.charts import resolve_visualization
 from app.analytics.cross_check import run_cross_check
-from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
+from app.analytics.db_pool import (
+    LogicalDb,
+    PoolConfigurationError,
+    PoolRole,
+    pool_factory,
+)
 from app.analytics.query_log import record_query_log
 from app.analytics.repository import (
     QueryExecution,
@@ -159,6 +165,22 @@ def _has_string_equality_filter(sql: str) -> bool:
             if isinstance(side, exp.Literal) and side.is_string:
                 return True
     return False
+
+
+def _is_zero_scalar(rows: list[dict[str, Any]]) -> bool:
+    """COUNT/SUM 가 0 인 단일 스칼라 결과인지 본다.
+
+    COUNT(*) 는 조건이 틀려도 0행이 아니라 '0 이 들어있는 1행'을 반환하므로
+    0행 재시도 조건에 안 걸린다 (action_history 오귀속 실측). 같은 보정 대상이다.
+    """
+    if len(rows) != 1 or len(rows[0]) != 1:
+        return False
+    value = next(iter(rows[0].values()))
+    return (
+        isinstance(value, int | float | Decimal)
+        and not isinstance(value, bool)
+        and value == 0
+    )
 
 
 def _generate_plan(question: str) -> AnalysisPlanToolResult:
@@ -320,7 +342,28 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
                 validation = hinted_validation
 
     # ── 3. 실행 — 대상은 언제나 normalized_sql, pool 은 QUERY 전용 ─────
-    engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+    # pool 설정 누락(배포 env 미전달 등)은 500 이 아니라 계약 오류 응답으로 접는다 —
+    # 화면이 Error 상태를 그릴 수 있고, 이력도 DB_ERROR 로 남는다 (조용한 실패 금지).
+    try:
+        engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
+    except PoolConfigurationError as exc:
+        return AnalysisQueryResponse(
+            question=question,
+            generated_sql=validation.normalized_sql,
+            columns=[],
+            rows=[],
+            row_count=0,
+            metric=plan.metric,
+            metric_result=None,
+            group_by=list(plan.group_by),
+            visualization=plan.visualization,
+            is_valid=True,
+            is_rejected=False,
+            reject_reason=None,
+            error_msg=f"분석 DB 연결 설정이 없다 — {exc}",
+            latency_ms=_elapsed_ms(),
+            nl_query_log_id=None,
+        )
     try:
         execution: QueryExecution = execute_validated_select(
             engine, validation.normalized_sql
@@ -348,7 +391,7 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
     # 재생성본이 검증을 통과하고 실제 행을 반환할 때만 채택 — 아니면
     # 원 결과(0행)를 그대로 낸다 (정당한 빈 결과일 수 있다).
     if (
-        execution.row_count == 0
+        (execution.row_count == 0 or _is_zero_scalar(execution.rows))
         and not _is_sql_passthrough(question)
         and _has_string_equality_filter(validation.normalized_sql)
     ):
@@ -370,7 +413,11 @@ def _execute_analysis_query(question: str) -> AnalysisQueryResponse:
                     )
                 except QueryExecutionError:
                     retried_execution = None
-                if retried_execution is not None and retried_execution.row_count > 0:
+                if (
+                    retried_execution is not None
+                    and retried_execution.row_count > 0
+                    and not _is_zero_scalar(retried_execution.rows)
+                ):
                     plan = retried
                     validation = retried_validation
                     execution = retried_execution

@@ -143,6 +143,7 @@ function AnalyticsPage() {
               row_count: 0,
               latency_ms: d.latency_ms,
               reason: d.reject_reason,
+              logged: d.nl_query_log_id != null,
             })
           } else if (d.error_msg) {
             // 검증은 통과했으나 DB 실행에서 실패 — 거부와 구분되는 상태
@@ -155,6 +156,7 @@ function AnalyticsPage() {
               row_count: 0,
               latency_ms: d.latency_ms,
               reason: d.error_msg,
+              logged: d.nl_query_log_id != null,
             })
           } else {
             setDef(d)
@@ -169,6 +171,7 @@ function AnalyticsPage() {
                 row_count: d.row_count ?? (d.rows ?? []).length,
                 latency_ms: d.latency_ms,
                 reason: null,
+                logged: d.nl_query_log_id != null,
               })
             })
           }
