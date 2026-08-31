@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test:navigation": "node scripts/navigation-contract.test.mjs",
     "test:shared-client": "node scripts/shared-client-contract.test.mjs",
-    "test:agent-screen": "node scripts/agent-run-view-state.test.mjs"
+    "test:agent-screen": "node scripts/agent-run-view-state.test.mjs",
+    "test:detection-screen": "node scripts/detection-screen-state.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

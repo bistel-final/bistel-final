@@ -34,7 +34,7 @@ import {
 const split = (v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [])
 const isR03 = (a) => String(a.rule_id).startsWith('R03')
 // 조회 구간의 알람 — 챔버 단위로 받아 화면에서 LOT·파라미터·웨이퍼로 좁힌다
-const ALARM_PAGE_SIZE = 200
+const ALARM_PAGE_SIZE = 100
 
 function TracePage() {
   const [searchParams, setSearchParams] = useSearchParams()

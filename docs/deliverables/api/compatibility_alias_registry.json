@@ -68,7 +68,7 @@
       "symbol": "frontend/src/shared/api/detection.js#getAlarms",
       "replacement": "frontend/src/shared/api/detection.js#getAlarmsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage", "frontend/src/features/detection/pages/TracePage.jsx#TracePage"],
+      "consumers": ["frontend/src/features/detection/pages/TracePage.jsx#TracePage", "frontend/src/shared/api/detection.js#getAllAlarms"],
       "consumer_scan_ignores": [],
       "removal_conditions": [
         {"check": "consumer_zero", "criteria": "getAlarms legacy paged adapter 소비가 0건이다."},

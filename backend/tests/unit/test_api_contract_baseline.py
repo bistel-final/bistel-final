@@ -458,6 +458,11 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
         ("POST", "/analytics/query"),
         ("POST", "/analytics/validate"),
         ("GET", "/analytics/history"),
+        ("GET", "/dashboard/summary"),
+        ("GET", "/alarms/paged"),
+        ("GET", "/alarms/{source}/{alarm_id}"),
+        ("GET", "/traces/catalog"),
+        ("POST", "/traces/search"),
         # V5-D-2.6 구현으로 optional 확장 집합에 합류 (팀 release fixture 와 정의 동일)
         ("GET", "/analytics/evaluations"),
     }

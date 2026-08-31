@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAlarms, getDashboard } from '../../../shared/api/detection.js'
+import { getAllAlarms, getDashboard } from '../../../shared/api/detection.js'
 import { getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
+import { hasDashboardResults, periodLabel } from '../detection-screen-state.js'
 import {
   BLUE_HEX,
   ChartCard,
@@ -23,7 +25,7 @@ import {
 // 알람 대시보드 — 라이트 시안 1번. KPI 4장(전부 클릭 이동형) + 차트 8장(2열 grid).
 // 기간·유형 분리 집계는 summary 응답에 없다 — 알람을 넓게 받아 클라이언트에서 집계한다.
 // TODO(api): /dashboard/summary 에 기간·judgement 분리 집계 파라미터가 정의되면 서버 집계로 환원.
-const WIDE = 200
+const WIDE = 100
 
 // Fault 분류 도넛 색 — 시안 뱃지 색 대응 (RFM·CDX red / MFD amber / TMD sky / FOC violet / OTH gray)
 const FAULT_HEX = { RFM: OOS_HEX, CDX: OOS_HEX, MFD: OOC_HEX, TMD: '#0ea5e9', FOC: '#7c3aed', OTH: GRAY_HEX }
@@ -32,9 +34,11 @@ const ACTION_HEX = { MONITORING: GRAY_HEX, WARNING: OOC_HEX, EQP_HOLD: OOS_HEX }
 
 const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 const dateOf = (iso) => String(iso ?? '').slice(0, 10)
-// runs/actions 목록에는 area 파라미터가 없다 — 설비 prefix 로 클라이언트에서 보정한다
-const AREA_BY_PREFIX = { PHO: 'PHOTO', ETC: 'ETCH' }
-const areaOfEqp = (id) => AREA_BY_PREFIX[String(id ?? '').slice(0, 3)] ?? null
+// runs/actions 목록에는 area 파라미터가 없다 — 설비 ID 접두어는 실제 데이터(EQP01..)와
+// 무관한 시안 전용 규칙이라 쓸 수 없다. 대신 실 hierarchy(GET /dashboard/summary)의
+// area_id·equipment_id 매핑에서 유도한다(buildAreaOfEquipment).
+const buildAreaOfEquipment = (hierarchy) =>
+  Object.fromEntries((hierarchy ?? []).map((h) => [h.equipment_id, h.area_id]))
 const inRange = (iso, { from, to }) => {
   const d = dateOf(iso)
   return (!from || d >= from) && (!to || d <= to)
@@ -82,7 +86,7 @@ function DashboardPage() {
     if (applied.chamber !== ALL) scope.chamber_id = applied.chamber
     Promise.all([
       getDashboard({}), // 필터 선택지(hierarchy)는 항상 전체 계층에서 만든다
-      getAlarms({ ...scope, page: 1, size: WIDE }),
+      getAllAlarms(scope), // size 상한(100)보다 총 건수가 많을 수 있어 전체 페이지를 순회한다
       getRuns({ ...(scope.equipment_id ? { equipment_id: scope.equipment_id } : null), ...(scope.chamber_id ? { chamber_id: scope.chamber_id } : null), page: 1, size: WIDE }),
       getActions({ ...(scope.equipment_id ? { equipment_id: scope.equipment_id } : null), ...(scope.chamber_id ? { chamber_id: scope.chamber_id } : null), page: 1, size: WIDE }),
     ])
@@ -100,7 +104,8 @@ function DashboardPage() {
     if (!data) return null
     const { alarms, runs, actions } = data
     const range = { from: applied.from, to: applied.to }
-    const areaOk = (id) => applied.area === ALL || areaOfEqp(id) === applied.area
+    const areaOfEqp = buildAreaOfEquipment(data.summary.hierarchy)
+    const areaOk = (id) => applied.area === ALL || areaOfEqp[id] === applied.area
     const rows = alarms.filter((a) => inRange(a.occurred_at, range))
     const runRows = runs.filter((r) => inRange(r.started_at, range) && areaOk(r.equipment_id))
     const actRows = actions.filter((a) => inRange(a.created_at, range) && areaOk(a.equipment_id))
@@ -190,7 +195,7 @@ function DashboardPage() {
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">알람 대시보드</div>
         <div className="text-[11.5px] text-g2">
-          기간 <span className="font-mono">{applied.from} ~ {applied.to}</span> · 알람{' '}
+          기간 <span className="font-mono">{periodLabel(applied)}</span> · 알람{' '}
           <span className="font-mono">{agg.total}</span>건
         </div>
       </div>
@@ -206,42 +211,50 @@ function DashboardPage() {
         }}
       />
 
-      <div className="grid grid-cols-4 gap-3">
-        {kpis.map((k) => (
-          <KpiCard key={k.label} label={k.label} value={k.value} color={k.color} hint={k.hint} onClick={() => navigate(k.to)} />
-        ))}
-      </div>
+      {!hasDashboardResults(agg) ? (
+        <div className="mt-4 rounded-xl border border-line bg-white py-12">
+          <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            {kpis.map((k) => (
+              <KpiCard key={k.label} label={k.label} value={k.value} color={k.color} hint={k.hint} onClick={() => navigate(k.to)} />
+            ))}
+          </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <ChartCard title="일자별 알람 추이" note="OOS · OOC">
-          <TrendLine data={agg.daily} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="챔버별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.byChamber} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="설비별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.byEquipment} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="파라미터별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.bySensor} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="OOS / OOC 비율">
-          <Donut slices={agg.ratio} />
-        </ChartCard>
-        <ChartCard title="Fault 분류" note="Agent 실행 기준">
-          <Donut slices={agg.faults} />
-        </ChartCard>
-        <ChartCard title="조치별 분포">
-          <Donut slices={agg.actionSlices} />
-        </ChartCard>
-        <ChartCard title="알림 발송" note="채널별 SENT · 미발송">
-          <ValueBars data={agg.notify} />
-        </ChartCard>
-      </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <ChartCard title="일자별 알람 추이" note="OOS · OOC">
+              <TrendLine data={agg.daily} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="챔버별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.byChamber} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="설비별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.byEquipment} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="파라미터별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.bySensor} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="OOS / OOC 비율">
+              <Donut slices={agg.ratio} />
+            </ChartCard>
+            <ChartCard title="Fault 분류" note="Agent 실행 기준">
+              <Donut slices={agg.faults} />
+            </ChartCard>
+            <ChartCard title="조치별 분포">
+              <Donut slices={agg.actionSlices} />
+            </ChartCard>
+            <ChartCard title="알림 발송" note="채널별 SENT · 미발송">
+              <ValueBars data={agg.notify} />
+            </ChartCard>
+          </div>
+        </>
+      )}
     </div>
   )
 }
