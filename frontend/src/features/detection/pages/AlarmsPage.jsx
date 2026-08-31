@@ -24,6 +24,7 @@ import { detailNumbers, sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
 import { HistoryTrendCard } from '../components/HistoryTrendChart.jsx'
+import { partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
 // 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + TRACE/SUMMARY/R03 탭 + 테이블.
 // 탭 분리는 source(AlarmRef의 TRACE·SUMMARY·R03)로 한다 — judgement로 나누면 R03(OOS)이
@@ -45,17 +46,6 @@ function alarmValue(alarm, lim) {
 }
 
 const num = (v) => (v == null ? '—' : Number(v).toFixed(v % 1 === 0 ? 0 : 3))
-
-// POST /agent/runs 실패 상태 → 사용자 문구 (AgentRunPage.publicErrorMessage와 같은 패턴,
-// 409의 의미만 "이미 처리됨"이 아니라 "이미 진행 중인 분석이 있음"으로 다르다 — V5-A-3.4)
-const runErrorMessage = (error) => {
-  const status = error?.response?.status
-  const detail = error?.response?.data?.detail
-  if (status === 409) return detail || '이 incident는 이미 분석이 진행 중입니다.'
-  if (status === 422) return detail || '분석을 실행할 수 없는 알람입니다.'
-  if (status === 503) return detail || 'Agent 실행 서비스를 사용할 수 없습니다.'
-  return detail || '분석 실행 요청에 실패했습니다.'
-}
 
 function AlarmsPage() {
   const { alarmId } = useParams()
@@ -151,14 +141,7 @@ function AlarmsPage() {
       const d = dateOf(a.occurred_at)
       return (!applied.from || d >= applied.from) && (!applied.to || d <= applied.to)
     }
-    const list = data.alarms
-      .filter(inRange)
-      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id))
-    return {
-      trace: list.filter((a) => a.source === 'TRACE'),
-      summary: list.filter((a) => a.source === 'SUMMARY'),
-      r03: list.filter((a) => a.source === 'R03'),
-    }
+    return partitionAlarms(data.alarms.filter(inRange))
   }, [data, applied])
 
   const retry = () => {

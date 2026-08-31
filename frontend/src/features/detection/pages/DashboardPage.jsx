@@ -4,8 +4,10 @@ import { getAllAlarms, getDashboard } from '../../../shared/api/detection.js'
 import { getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
+import EmptyState from '../../../shared/components/EmptyState.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
+import { hasDashboardResults, periodLabel } from '../detection-screen-state.js'
 import {
   BLUE_HEX,
   ChartCard,
@@ -193,7 +195,7 @@ function DashboardPage() {
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">알람 대시보드</div>
         <div className="text-[11.5px] text-g2">
-          기간 <span className="font-mono">{applied.from} ~ {applied.to}</span> · 알람{' '}
+          기간 <span className="font-mono">{periodLabel(applied)}</span> · 알람{' '}
           <span className="font-mono">{agg.total}</span>건
         </div>
       </div>
@@ -209,42 +211,50 @@ function DashboardPage() {
         }}
       />
 
-      <div className="grid grid-cols-4 gap-3">
-        {kpis.map((k) => (
-          <KpiCard key={k.label} label={k.label} value={k.value} color={k.color} hint={k.hint} onClick={() => navigate(k.to)} />
-        ))}
-      </div>
+      {!hasDashboardResults(agg) ? (
+        <div className="mt-4 rounded-xl border border-line bg-white py-12">
+          <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            {kpis.map((k) => (
+              <KpiCard key={k.label} label={k.label} value={k.value} color={k.color} hint={k.hint} onClick={() => navigate(k.to)} />
+            ))}
+          </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <ChartCard title="일자별 알람 추이" note="OOS · OOC">
-          <TrendLine data={agg.daily} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="챔버별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.byChamber} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="설비별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.byEquipment} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="파라미터별 알람" note="OOS + OOC 누적">
-          <StackBars data={agg.bySensor} />
-          <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-        </ChartCard>
-        <ChartCard title="OOS / OOC 비율">
-          <Donut slices={agg.ratio} />
-        </ChartCard>
-        <ChartCard title="Fault 분류" note="Agent 실행 기준">
-          <Donut slices={agg.faults} />
-        </ChartCard>
-        <ChartCard title="조치별 분포">
-          <Donut slices={agg.actionSlices} />
-        </ChartCard>
-        <ChartCard title="알림 발송" note="채널별 SENT · 미발송">
-          <ValueBars data={agg.notify} />
-        </ChartCard>
-      </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <ChartCard title="일자별 알람 추이" note="OOS · OOC">
+              <TrendLine data={agg.daily} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="챔버별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.byChamber} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="설비별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.byEquipment} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="파라미터별 알람" note="OOS + OOC 누적">
+              <StackBars data={agg.bySensor} />
+              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
+            </ChartCard>
+            <ChartCard title="OOS / OOC 비율">
+              <Donut slices={agg.ratio} />
+            </ChartCard>
+            <ChartCard title="Fault 분류" note="Agent 실행 기준">
+              <Donut slices={agg.faults} />
+            </ChartCard>
+            <ChartCard title="조치별 분포">
+              <Donut slices={agg.actionSlices} />
+            </ChartCard>
+            <ChartCard title="알림 발송" note="채널별 SENT · 미발송">
+              <ValueBars data={agg.notify} />
+            </ChartCard>
+          </div>
+        </>
+      )}
     </div>
   )
 }

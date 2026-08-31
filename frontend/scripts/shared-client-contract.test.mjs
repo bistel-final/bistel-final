@@ -100,8 +100,24 @@ const {
   CORE_TRACE_POINT,
 } = await import('../src/shared/api/contractMocks.js')
 
-const responseFor = (method, url, data) => {
+const responseFor = (method, url, data, params = {}) => {
   const key = `${method.toUpperCase()} ${url}`
+  if (key === 'GET /alarms/paged' && params.equipment_id === 'EQP-PAGE') {
+    const page = Number(params.page ?? 1)
+    const count = page === 1 ? 100 : page === 2 ? 92 : 0
+    return {
+      items: Array.from({ length: count }, (_, index) => ({
+        ...CORE_ALARM,
+        alarm_id: `PAGE-${String((page - 1) * 100 + index + 1).padStart(3, '0')}`,
+      })),
+      total: 192,
+      page,
+      size: Number(params.size),
+    }
+  }
+  if (key === 'GET /alarms/R03/R03-DETAIL') {
+    return { ...CORE_ALARM, source: 'R03', alarm_id: 'R03-DETAIL' }
+  }
   const responses = {
     'GET /alarms': [CORE_ALARM],
     'GET /trace': [CORE_TRACE_POINT],
@@ -137,8 +153,18 @@ const captures = []
 apiClient.defaults.adapter = async (config) => {
   const data = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
   captures.push({ method: config.method.toUpperCase(), url: config.url, params: config.params ?? {}, data })
+  if (config.url.endsWith('/MISSING')) {
+    const error = new Error('not found')
+    error.response = { status: 404 }
+    throw error
+  }
+  if (config.url.endsWith('/BROKEN')) {
+    const error = new Error('service unavailable')
+    error.response = { status: 503 }
+    throw error
+  }
   return {
-    data: responseFor(config.method, config.url, data),
+    data: responseFor(config.method, config.url, data, config.params),
     status: config.url === '/agent/runs' && config.method === 'post' ? 202 : 200,
     statusText: 'OK',
     headers: {},
@@ -244,6 +270,25 @@ for (const result of pagedResults) {
   assert.deepEqual(Object.keys(result).sort(), ['items', 'page', 'size', 'total'])
   assert.ok(Array.isArray(result.items))
 }
+
+const allAlarmsCaptureStart = captures.length
+const allAlarms = await detection.getAllAlarms({ area: 'ETCH', equipment_id: 'EQP-PAGE' })
+const allAlarmsCaptures = captures.slice(allAlarmsCaptureStart)
+assert.equal(allAlarms.items.length, 192)
+assert.equal(allAlarms.total, 192)
+assert.deepEqual(allAlarmsCaptures.map(({ params }) => params.page), [1, 2])
+assert.ok(
+  allAlarmsCaptures.every(
+    ({ params }) => params.area === 'ETCH' && params.equipment_id === 'EQP-PAGE' && params.size === 100,
+  ),
+  '전체 페이지 순회 중 scope filter와 page size를 유지해야 합니다',
+)
+
+const sourceAlarm = await detection.getAlarm('R03-DETAIL', 'R03')
+assert.equal(captures.at(-1).url, '/alarms/R03/R03-DETAIL')
+assert.equal(sourceAlarm.source, 'R03')
+assert.equal(await detection.getAlarm('MISSING', 'TRACE'), null)
+await assert.rejects(() => detection.getAlarm('BROKEN', 'SUMMARY'), /service unavailable/)
 
 const legacyGraph = await knowledge.getChamberRelations('EQP01-PM1')
 assert.equal(captures.at(-1).url, '/relations/chambers/EQP01-PM1')
