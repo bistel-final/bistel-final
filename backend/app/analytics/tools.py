@@ -41,6 +41,11 @@ _EXCLUDED_COLUMN_PREFIXES: tuple[str, ...] = ("ground_truth",)
 
 _SQL_FENCE_RE = re.compile(r"```(?:sql)?\s*(.+?)```", re.IGNORECASE | re.DOTALL)
 
+#: 프롬프트 개정 버전 — 평가 artifact 에 기록되어 "어느 프롬프트로 난 성적인가"를
+#: 구별한다 (GET /analytics/evaluations 계약 필드). 규칙·스키마 힌트가 바뀜 때마다 bump.
+#:   v1 기본 6규칙 · v2 그룹 신호 3종 · v3 값 도메인 힌트+구성 질문 테이블 유도
+PROMPT_VERSION = "text2sql-v3"
+
 #: 값 도메인 힌트 대상 — 코드값 소속 혼동이 실측된 저카디널리티 컬럼만.
 #: (CD_AEI 사례: 값은 metrology.measure_type 소속인데 LLM 이
 #:  summary_data.parameter 로 오귀속 — 이름만으로는 판단 불가)

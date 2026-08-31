@@ -81,7 +81,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (176.5, 44.0, 220.5, 72.0)
+    assert (p0, p1, total, common) == (176.5, 46.0, 222.5, 72.0)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -156,8 +156,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "스물여덟"
-    assert len(listed) == 28
+    assert exception_section["count_word"] == "스물아홉"
+    assert len(listed) == 29
     assert listed == actual
 
 
@@ -231,12 +231,14 @@ def test_incident_batch_entrypoint_reaches_the_golden_flow(
 def test_golden_flow_effort_and_totals_are_pinned() -> None:
     fields = _task_fields()
     c_6_1 = next(row for row in fields if row[1] == "V5-C-6.1")
+    c_6_2 = next(row for row in fields if row[1] == "V5-C-6.2")
     p0 = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] == "P0")
     p1 = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] == "P1")
     total = sum(float(row[-2].removesuffix("h")) for row in fields if row[2] != "P2")
 
     assert c_6_1[-2] == "4.0h"
-    assert (p0, p1, total) == (176.5, 44.0, 220.5)
+    assert c_6_2[-2] == "4.0h"
+    assert (p0, p1, total) == (176.5, 46.0, 222.5)
 
 
 def test_c_5_2_detection_scaffold_keeps_a_endpoint_ownership() -> None:

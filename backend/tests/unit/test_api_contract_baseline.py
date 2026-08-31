@@ -463,6 +463,8 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
         ("GET", "/alarms/{source}/{alarm_id}"),
         ("GET", "/traces/catalog"),
         ("POST", "/traces/search"),
+        # V5-D-2.6 구현으로 optional 확장 집합에 합류 (팀 release fixture 와 정의 동일)
+        ("GET", "/analytics/evaluations"),
     }
 
 
@@ -659,7 +661,9 @@ def test_optional_missing_and_unknown_mutations_break_exact_set() -> None:
     ("mutation", "message"),
     [
         ("remove-operation", "팀 release operation 집합"),
-        ("weaken-field", "evaluation request 불일치"),
+        # evaluations 가 optional 과 팀 release 양쪽에 존재하는 지금(V5-D-2.6 이후)은
+        # 공통 operation 동일성 검사가 먼저 잡는다 — 두 검사 중 어느 경로든 fail-closed 임이 계약
+        ("weaken-field", "evaluation request 불일치|공통 operation 불일치"),
         ("delete-evaluation-component", "responses.200 ref가 없습니다"),
     ],
 )

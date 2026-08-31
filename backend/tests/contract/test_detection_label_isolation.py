@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from app.common import tool_contracts
 from app.detection import evaluation_loader, public_schemas, schemas
+from app.evaluation import predictions_repository
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
@@ -100,6 +101,23 @@ def test_evaluation_loader_actually_selects_fault_code() -> None:
 
     source = inspect.getsource(evaluation_loader.fetch_synthetic_fault_labels)
     assert "fault_code" in source
+    incident_source = inspect.getsource(evaluation_loader.fetch_incident_fault_labels)
+    assert "fault_code" in incident_source
+    assert "lot_id" in incident_source
+    assert "chamber_id" in incident_source
+
+
+def test_fault_evaluation_runtime_query_never_reads_ground_truth() -> None:
+    """prediction 연결은 LEFT JOIN을 유지하고 raw label column을 읽지 않는다."""
+
+    sql = str(predictions_repository.PREDICTIONS_SQL).lower()
+    assert "left join agent_prediction" in sql
+    assert "agent_prediction_review" not in sql
+    assert "evaluation" not in sql
+    assert "lot_history" not in sql
+    # ``predicted_fault_code``는 허용하지만 독립 token ``fault_code``는 금지한다.
+    assert " fault_code" not in sql
+    assert ".fault_code" not in sql
 
 
 #: `fault` alias를 가질 수 있는 유일한 공개 DTO다. API v3 §2.7이 고정한 참고
