@@ -45,6 +45,9 @@
       },
       "type": "object"
     },
+    "EvaluationListResponse": {
+      "type": "named"
+    },
     "NlQueryHistoryResponse": {
       "type": "named"
     },
@@ -236,6 +239,59 @@
       "sort": [
         "asked_at DESC",
         "nl_query_log_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "D",
+      "path": "/analytics/evaluations",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "latest": {
+            "default": true,
+            "nullable": false,
+            "required": false,
+            "type": "boolean"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          },
+          "size": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "EvaluationListResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "EvaluationListResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "executed_at DESC",
+        "run_id DESC"
       ],
       "success_status": 200
     },

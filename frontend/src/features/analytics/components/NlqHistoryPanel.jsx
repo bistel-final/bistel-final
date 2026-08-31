@@ -11,11 +11,23 @@ const reasonText = (reason) => {
   return s.split(':').slice(1).join(':').trim() || s
 }
 
-function NlqHistoryPanel({ items, activeQ, onRerun }) {
+function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready' }) {
   return (
     <Card className="w-[360px] flex-none">
       <CardHeader title="최근 질의" note="성공 · 거부 모두" />
       <div className="flex flex-col gap-2.5 px-4 pb-4">
+        {/* V5-D-2.6: 실 이력 hydrate 의 4상태 — Loading · Error · Empty · Success */}
+        {state === 'loading' && items.length === 0 && (
+          <div className="px-1 py-3 text-xs text-g2">질의 이력을 불러오는 중…</div>
+        )}
+        {state === 'error' && items.length === 0 && (
+          <div className="rounded-lg border border-line bg-soft px-3 py-2.5 text-xs text-g1">
+            이력을 불러오지 못했습니다. 이력 저장소가 미구성이거나 일시 장애일 수 있으며, 질의 기능은 정상 동작합니다.
+          </div>
+        )}
+        {state === 'ready' && items.length === 0 && (
+          <div className="px-1 py-3 text-xs text-g2">아직 질의 기록이 없습니다. 첫 질문을 던져 보세요.</div>
+        )}
         {items.map((h) => (
           <div
             key={h.question}

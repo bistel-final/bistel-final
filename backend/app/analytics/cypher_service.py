@@ -14,7 +14,7 @@ import time
 from typing import Any
 
 from neo4j import READ_ACCESS
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import DriverError, Neo4jError
 from neo4j.graph import Node, Path, Relationship
 
 from app.analytics.cypher_tools import generate_cypher_plan
@@ -101,7 +101,9 @@ def run_graph_query(question: str) -> GraphQueryResponse:
                 {key: _coerce_value(value) for key, value in record.items()}
                 for record in result
             ]
-    except Neo4jError as exc:
+    except (Neo4jError, DriverError) as exc:
+        # Neo4jError = 서버 오류, DriverError = 접속·라우팅 장애(ServiceUnavailable 등)
+        # — 어느 쪽이든 응답은 200 + error_msg 로 안전하게 접는다 (원문 비노출)
         return GraphQueryResponse(
             question=question,
             generated_cypher=validation.normalized_cypher,

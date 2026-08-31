@@ -19,10 +19,12 @@ from app.analytics.audit import (
     fetch_audit_logs_paged,
 )
 from app.analytics.cypher_service import run_graph_query
+from app.analytics.evaluation_store import list_evaluations
 from app.analytics.query_log import QueryHistoryUnavailableError, fetch_query_history
 from app.analytics.schemas import (
     AnalysisQueryRequest,
     AnalysisQueryResponse,
+    EvaluationListResponse,
     GraphQueryRequest,
     GraphQueryResponse,
     NlQueryHistoryResponse,
@@ -62,6 +64,19 @@ def get_query_history(
         )
     except QueryHistoryUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/analytics/evaluations", response_model=EvaluationListResponse)
+def get_evaluations(
+    latest: bool = True,  # canonical(api_spec_v3) 기본값 true — 최신 1건이 기본 조회
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> EvaluationListResponse:
+    """Text2SQL 평가 이력 (V5-D-2.6, FR-D-08) — artifact 의 read-only projection.
+
+    채점 로직은 재구현하지 않는다. 명세 정렬 executed_at DESC, run_id DESC.
+    """
+    return list_evaluations(latest=latest, page=page, size=size)
 
 
 @router.get("/audit-logs", response_model=list[AuditLogItem])

@@ -35,6 +35,12 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.analytics.service import run_analysis_query  # noqa: E402
+from app.analytics.tools import PROMPT_VERSION  # noqa: E402
+from app.common.config import (  # noqa: E402
+    LLM_MODEL_MAIN,
+    LLM_PROVIDER,
+    LLM_TEMPERATURE,
+)
 
 QUESTIONSET_PATH = (
     BACKEND_ROOT / "artifacts" / "analytics_eval" / "questionset_fdc_final.json"
@@ -301,6 +307,14 @@ def main() -> int:
         "questionset_id": spec["questionset_id"],
         "dataset_epoch": spec["dataset_epoch"],
         "executed_at": datetime.now(UTC).isoformat(),
+        # 실행 환경 미터 — GET /analytics/evaluations 계약(provider·model·temperature·
+        # prompt_version)의 근거. 이 단계 이전 artifact 는 adapter 가 unknown 으로 본다.
+        "llm": {
+            "provider": LLM_PROVIDER,
+            "model": LLM_MODEL_MAIN,
+            "temperature": LLM_TEMPERATURE,
+            "prompt_version": PROMPT_VERSION,
+        },
         "grading_criteria": spec["grading_criteria"],
         "total": total,
         "passed": passed,
