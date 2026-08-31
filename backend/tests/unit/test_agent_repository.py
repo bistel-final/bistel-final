@@ -1103,6 +1103,64 @@ class TestActionPersistenceSeams:
         assert exc.value.code == "INVALID_ACTION_CODE"
         assert connection.statements == []
 
+    def test_action_insert_normalizes_utc_to_legacy_kst_wall_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def insert_one(
+            _connection: Any, _statement: Any, params: dict[str, Any]
+        ) -> Any:
+            captured.update(params)
+            return SimpleNamespace(
+                action_id=params["action_id"],
+                lot_id=params["lot_id"],
+                chamber_id=params["chamber_id"],
+                action_code=params["action_code"],
+                reason=params["reason"],
+                approval_required=params["approval_required"],
+                approval_status=params["approval_status"],
+                approved_by=params["approved_by"],
+                approved_at=params["approved_at"],
+                created_at=params["created_at"],
+            )
+
+        monkeypatch.setattr(repo, "_insert_one", insert_one)
+        created_at = datetime(2026, 8, 29, 13, 0, tzinfo=UTC)
+
+        action = repo.insert_action_history(
+            _Connection(),
+            action_id="ACT-1",
+            lot_id="LOT-1",
+            chamber_id="EQP01-PM1",
+            action_code=ActionCode.WARNING,
+            reason="TRACE OOS",
+            created_at=created_at,
+        )
+
+        expected = datetime(2026, 8, 29, 22, 0)
+        assert captured["created_at"] == expected
+        assert captured["approved_at"] == expected
+        assert action.created_at == expected
+        assert action.approved_at == expected
+
+    def test_action_insert_rejects_naive_runtime_timestamp(self) -> None:
+        connection = _Connection()
+
+        with pytest.raises(repo.RepositoryContractError) as exc:
+            repo.insert_action_history(
+                connection,
+                action_id="ACT-1",
+                lot_id="LOT-1",
+                chamber_id="EQP01-PM1",
+                action_code=ActionCode.WARNING,
+                reason="TRACE OOS",
+                created_at=datetime(2026, 8, 29, 22, 0),
+            )
+
+        assert exc.value.code == "ACTION_TIMESTAMP_OFFSET_REQUIRED"
+        assert connection.statements == []
+
     def test_provenance_cannot_be_replaced_with_a_different_snapshot(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

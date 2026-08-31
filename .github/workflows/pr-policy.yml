@@ -112,6 +112,10 @@ jobs:
         working-directory: frontend
         run: npm run test:agent-screen
 
+      - name: Verify integration E2E frontend contract
+        working-directory: frontend
+        run: npm run test:integration-e2e
+
   # `V5-CM-1.6`이 corrected 계열을 삭제하면서 이 job에서 corrected step만 뺐다.
   # **job 자체는 남긴다** — rehearsal lifecycle·recovery lock·V5 artifact write·공용
   # 전환 argv 계약이 Windows에서 도는 곳은 여기뿐이라, 통째로 지우면 그 검증들이 함께
@@ -234,8 +238,11 @@ jobs:
           N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
         run: >-
           python -m pytest -q
+          tests/contract/test_api_sync_gate.py
+          tests/unit/test_alias_registry_judge.py
           tests/unit/test_compatibility_alias_registry.py
           tests/unit/test_api_contract_baseline.py
+          tests/unit/test_api_spec_v3.py
           tests/unit/test_agent_runtime_migration.py
           tests/unit/test_agent_ask.py
           tests/unit/test_agent_public_api.py
@@ -265,6 +272,8 @@ jobs:
           tests/unit/test_document_search.py
           tests/unit/test_evaluation_store.py
           tests/unit/test_final_profile_manifests.py
+          tests/unit/test_final_gate_fault_isolation.py
+          tests/unit/test_final_nonfunctional_gate.py
           tests/unit/test_generator_reproduction.py
           tests/unit/test_graph_context.py
           tests/unit/test_groupby_lint.py

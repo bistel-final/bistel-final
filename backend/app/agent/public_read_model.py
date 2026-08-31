@@ -98,6 +98,20 @@ class PublicDateRangeError(ValueError):
     """date query pair 또는 순서가 API v3 계약과 다르다."""
 
 
+def _public_datetime(value: datetime | None) -> datetime | None:
+    """Serialize public Agent timestamps as Asia/Seoul.
+
+    Final-data/legacy naive timestamps are already KST wall time. Runtime aware
+    timestamps are instants and are converted to KST.
+    """
+
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=_KST)
+    return value.astimezone(_KST)
+
+
 def public_run_date_bounds(
     date_from: date | None,
     date_to: date | None,
@@ -146,7 +160,7 @@ def _public_run(record: PublicAgentRunRecord) -> PublicAgentRunItem:
     predicted = record.predicted_fault_code
     return PublicAgentRunItem(
         agent_run_id=record.agent_run_id,
-        created_at=record.created_at,
+        created_at=_public_datetime(record.created_at),
         alarm_source=record.requested_alarm.source,
         alarm_id=record.requested_alarm.alarm_id,
         chamber_id=record.chamber_id,
@@ -209,7 +223,7 @@ def to_public_approval(record: PublicApprovalRecord) -> PublicApprovalItem:
         approval_id=record.approval_id,
         agent_run_id=record.agent_run_id,
         action_id=record.action_id,
-        created_at=record.created_at,
+        created_at=_public_datetime(record.created_at),
         lot_id=record.lot_id,
         lot=record.lot_id,
         equipment_id=record.equipment_id,
@@ -222,11 +236,11 @@ def to_public_approval(record: PublicApprovalRecord) -> PublicApprovalItem:
         reason=record.reason,
         status=status,
         decided_by=record.decided_by,
-        decided_at=record.decided_at,
+        decided_at=_public_datetime(record.decided_at),
         decision_comment=record.decision_comment,
         # REJECTED도 화면 alias는 canonical decision actor/time을 복사한다.
         approved_by=record.decided_by,
-        approved_at=record.decided_at,
+        approved_at=_public_datetime(record.decided_at),
     )
 
 
@@ -274,7 +288,7 @@ def _public_action(record: PublicActionRecord) -> ActionItem:
         reason=record.reason,
         approval_status=status,
         deliveries=[_action_delivery(delivery) for delivery in record.deliveries],
-        created_at=record.created_at,
+        created_at=_public_datetime(record.created_at),
     )
 
 
@@ -286,8 +300,8 @@ def _public_action_detail(record: PublicActionRecord) -> ActionDetailResponse:
             ActionDeliveryDetailItem(
                 channel=to_public_channel(delivery.channel),
                 status=delivery.status,
-                started_at=delivery.started_at,
-                completed_at=delivery.completed_at,
+                started_at=_public_datetime(delivery.started_at),
+                completed_at=_public_datetime(delivery.completed_at),
             )
             for delivery in record.deliveries
         ],
@@ -461,7 +475,7 @@ def load_public_agent_run_detail(
             agent_run_id=approval_record.agent_run_id,
             status=to_public_approval_status(approval_record.status),
             decided_by=approval_record.decided_by,
-            decided_at=approval_record.decided_at,
+            decided_at=_public_datetime(approval_record.decided_at),
             decision_comment=approval_record.decision_comment,
         )
     )

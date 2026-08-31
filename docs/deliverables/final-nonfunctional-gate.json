@@ -1,0 +1,360 @@
+{
+  "external_evidence": [
+    {
+      "kind": "marker",
+      "note": "저장소 밖 PostgreSQL 3-target closure bundle; stage 1에서는 탐색하지 않음",
+      "reference": ".fdc_final_20260818.GH-108.closure.json",
+      "result": "EVIDENCE_MISSING",
+      "sha256": null,
+      "target": "kosa_agent_e2e,kosa_agent,kosa_text2sql"
+    },
+    {
+      "kind": "marker",
+      "note": "저장소 밖 Neo4j backup/restore bundle; stage 1에서는 탐색하지 않음",
+      "reference": "neo4j_graph.neo4j.<timestamp>.manifest.json",
+      "result": "EVIDENCE_MISSING",
+      "sha256": null,
+      "target": "neo4j"
+    }
+  ],
+  "overall_verdict": "INCOMPLETE",
+  "rules": [
+    {
+      "evidence": [
+        {
+          "kind": "file",
+          "note": "tracked 전수 secret scan과 exact binary baseline",
+          "reference": "backend/scripts/final_nonfunctional_gate.py",
+          "result": null,
+          "sha256": "b22414be45bfdbbf7d8836eb8bdeba8e2338d92708bc75ab04dd3532cbe0597b",
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [],
+      "rule_id": "NFR-02",
+      "status": "PASS"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "file",
+          "note": "CM-4.8 Tool hard/soft timeout 판정 정본",
+          "reference": "docs/troubleshooting/tool-timeout-verdict.md",
+          "result": null,
+          "sha256": "9adca4ab2f79c6e8f2b6a775ad8ff31358fadcbd7ed985318803648178c3caa8",
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "HITL 전후 누적 Tool budget 상한",
+          "reference": "tests/unit/test_agent_tool_budget.py::test_budget_policy_uses_fixed_precedence_and_limits",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "미완료 sentinel 자동 회수 금지",
+          "reference": "tests/unit/test_tool_timeouts.py::test_reserved_tool_call_sentinel_has_no_automatic_recovery_writer",
+          "result": null,
+          "sha256": null,
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [
+        "embedding·anomaly model은 process hard cancellation이 없다.",
+        "/agent/ask에는 caller soft deadline이 없다.",
+        "예약 sentinel은 실행 identity가 없어 자동 회수하지 않는다."
+      ],
+      "rule_id": "NFR-03",
+      "status": "RESIDUAL"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "test",
+          "note": "명시 Origin 허용",
+          "reference": "tests/test_health.py::test_cors_preflight_allows_configured_origin",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "비허용 Origin 거부",
+          "reference": "tests/test_health.py::test_cors_preflight_rejects_unconfigured_origin",
+          "result": null,
+          "sha256": null,
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [],
+      "rule_id": "NFR-12",
+      "status": "PASS"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "file",
+          "note": "6테이블·10 timestamp 컬럼 logical type 정본",
+          "reference": "infra/bootstrap/source-manifest-v4.json",
+          "result": null,
+          "sha256": "888409de2d935eeccf47a80030c65f6cf49c541621a283907849e7332297f843",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "timestamp without time zone 물리 DDL 정본",
+          "reference": "infra/bootstrap/001_base_schema.sql",
+          "result": null,
+          "sha256": "ce8bc9b38fe4f4b915eb2bd76f8f3617977b282f8ef7112025a7930198df0fa2",
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "source wall time의 Asia/Seoul +09:00 투영",
+          "reference": "tests/unit/test_rehearsal_profile_verifier.py::test_naive_timestamp_projects_to_kst",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "source row count와 typed content hash 보존",
+          "reference": "tests/unit/test_rehearsal_profile_verifier.py::test_row_count_and_typed_hash_match",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "public API date-time +09:00 serialization",
+          "reference": "tests/unit/test_detection_public_api.py::test_alarm_projection_is_canonical_offset_aware_and_stably_queried",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Agent public API date-time +09:00 serialization",
+          "reference": "tests/unit/test_agent_public_api.py::test_public_run_json_has_exact_allowlist_and_canonical_aliases",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "평가 artifact executed_at 생성 지점(UTC 기록 — 잔여 근거)",
+          "reference": "backend/scripts/run_analytics_eval.py",
+          "result": null,
+          "sha256": "8f837140e11a3df19b4c9db74913fb9ecd1e5ec7304f60399e67920828a6a265",
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [
+        "V5-D-2.6 GET /analytics/evaluations의 EvaluationResponse.executed_at은 평가 artifact가 UTC로 기록한 값을 그대로 직렬화해 +09:00이 아니다. D 소유 경계이므로 이 Task에서 수정하지 않고 owner 확인 뒤 최종화 전 해소한다."
+      ],
+      "rule_id": "NFR-13",
+      "status": "RESIDUAL"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "file",
+          "note": "CM-2.6 GH-108 tracked marker",
+          "reference": "infra/bootstrap/markers/postgres_profile.kosa_agent_e2e.json",
+          "result": null,
+          "sha256": "47e2ff1282f584951d1d3c04a18a3e2784e73176c2237a83643d69c01fa69fef",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "CM-2.6 GH-108 tracked marker",
+          "reference": "infra/bootstrap/markers/postgres_profile.kosa_agent.json",
+          "result": null,
+          "sha256": "87dcbbeacd96bc4f509a92058c0ab4e4192246b74994c00ba7a14ff55db8455a",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "CM-2.6 GH-108 tracked marker",
+          "reference": "infra/bootstrap/markers/postgres_profile.kosa_text2sql.json",
+          "result": null,
+          "sha256": "4b718b42cd0b75883974d6d67e1d5ad938cf169b079f3aa987443af011e297b4",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "CM-2.7 GH-128 ADOPTED_EXISTING tracked marker",
+          "reference": "infra/bootstrap/markers/neo4j_graph.neo4j.json",
+          "result": null,
+          "sha256": "484f42916cdd4153069c7721fe055585f8688da92ca4780b237ddabb7ee95f23",
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [
+        "저장소 밖 CM-2.6·2.7 backup/restore receipt는 FINAL 단계에서 read-only 대조한다."
+      ],
+      "rule_id": "NFR-14",
+      "status": "EVIDENCE_MISSING"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "file",
+          "note": "Python exact pins",
+          "reference": "backend/requirements.txt",
+          "result": null,
+          "sha256": "55992e5ebd8dc1fb4343a5fb2c395c8793afd732768a03654f244c43929f6136",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "npm lockfile v3",
+          "reference": "frontend/package-lock.json",
+          "result": null,
+          "sha256": "355d576360563236f0f166e14b7ee8676b16f47e8d887a50bed11e729cdabaee",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "Python base image pin",
+          "reference": "backend/Dockerfile",
+          "result": null,
+          "sha256": "2105e1630e857287000fce61ec5b0536668226dfb1b24e190c7e3b2b62054ece",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "Node/nginx base image pins",
+          "reference": "frontend/Dockerfile",
+          "result": null,
+          "sha256": "0660b7a3a005a2b3cbeb052761283ee44a881d7a74f1c943b887fe3962f4637a",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "team app/Kafka image pin contract",
+          "reference": "deploy/compose/docker-compose.team.yml",
+          "result": null,
+          "sha256": "00258582c42608373f6ce49cdf9bdf7a61a860667e10652b595b28bfef20aced",
+          "target": null
+        },
+        {
+          "kind": "file",
+          "note": "E2E backend production override inventory",
+          "reference": "deploy/compose/docker-compose.e2e-backend.yml",
+          "result": null,
+          "sha256": "a5c21df70f6ec9533284af060b0e301daca0f9430557b99af74292bd70218993",
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [],
+      "rule_id": "NFR-15",
+      "status": "PASS"
+    },
+    {
+      "evidence": [
+        {
+          "kind": "test",
+          "note": "두 PostgreSQL readiness check 격리·복구",
+          "reference": "tests/unit/test_final_gate_fault_isolation.py::test_postgres_fault_keeps_process_alive_and_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Neo4j readiness 격리·복구",
+          "reference": "tests/unit/test_final_gate_fault_isolation.py::test_neo4j_fault_keeps_process_alive_and_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "LLM sanitized 503·동일 process 복구",
+          "reference": "tests/unit/test_final_gate_fault_isolation.py::test_llm_fault_returns_sanitized_503_then_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "n8n readiness 격리·복구",
+          "reference": "tests/unit/test_final_gate_fault_isolation.py::test_n8n_fault_keeps_process_alive_and_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Kafka readiness 격리·복구",
+          "reference": "tests/unit/test_final_gate_fault_isolation.py::test_kafka_fault_keeps_process_alive_and_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "PostgreSQL server timeout·pool 후속 성공 보조 증적",
+          "reference": "tests/unit/test_tool_timeout_postgres_container.py::test_registration_query_is_canceled_and_pool_state_is_clean",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Neo4j transaction timeout·driver 후속 성공 보조 증적",
+          "reference": "tests/unit/test_tool_timeout_neo4j_container.py::test_query_timeout_terminates_marker_transaction_and_driver_recovers",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "LLM preflight fail-closed 보조 증적",
+          "reference": "tests/unit/test_common_llm.py::test_preflight_fails_closed_when_configured_model_is_absent",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "n8n invalid origin fail-closed 보조 증적",
+          "reference": "tests/unit/test_readiness.py::test_n8n_readiness_fails_closed_before_network_for_invalid_origin",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Kafka stale lag fail-closed 보조 증적",
+          "reference": "tests/unit/test_readiness.py::test_kafka_lag_tracker_rejects_late_observation_and_tracks_stale_lag",
+          "result": null,
+          "sha256": null,
+          "target": null
+        },
+        {
+          "kind": "test",
+          "note": "Kafka 잘못된 credential 거부 보조 증적",
+          "reference": "tests/unit/test_mes_kafka_container.py::test_wrong_sasl_credential_cannot_publish",
+          "result": null,
+          "sha256": null,
+          "target": null
+        }
+      ],
+      "required": true,
+      "residual": [],
+      "rule_id": "NFR-16",
+      "status": "PASS"
+    }
+  ],
+  "stage": "SKELETON"
+}

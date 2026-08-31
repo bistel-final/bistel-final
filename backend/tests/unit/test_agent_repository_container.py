@@ -460,6 +460,7 @@ def test_the_named_check_refuses_a_broken_pair(
 def test_action_bundle_repository_seams_round_trip_on_postgres(engine: Any) -> None:
     """C-3.2의 action·optional link·bundle seam을 실제 schema에서 확인한다."""
 
+    created_instant = datetime(2026, 8, 29, 13, 0, tzinfo=UTC)
     with engine.begin() as connection:
         run = repo.create_agent_run(connection, _command())
         assert repo.find_run_action(connection, run.agent_run_id) is None
@@ -470,7 +471,7 @@ def test_action_bundle_repository_seams_round_trip_on_postgres(engine: Any) -> N
             chamber_id=run.chamber_id,
             action_code=ActionCode.WARNING,
             reason="TRACE OOS 알람이 존재해 경고 조치를 생성했습니다.",
-            created_at=datetime.now(UTC),
+            created_at=created_instant,
         )
         repo.link_run_action(
             connection,
@@ -494,6 +495,8 @@ def test_action_bundle_repository_seams_round_trip_on_postgres(engine: Any) -> N
     assert linked is not None and linked.action_id == ACTION_ID
     assert action.approval_status is ApprovalStatus.AUTO
     assert action.approved_by == "system"
+    assert action.created_at == datetime(2026, 8, 29, 22, 0)
+    assert action.approved_at == action.created_at
     assert bundle == repo.ActionBundle(
         action_id=ACTION_ID,
         action_code=ActionCode.WARNING,

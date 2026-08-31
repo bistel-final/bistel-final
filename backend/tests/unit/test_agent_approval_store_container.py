@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -36,6 +36,7 @@ from app.common.enums import (  # noqa: E402
 )
 from app.common.schemas import AlarmRef  # noqa: E402
 
+KST = ZoneInfo("Asia/Seoul")
 pytestmark = pytest.mark.container
 
 REPOSITORY_ROOT = BACKEND_ROOT.parent
@@ -220,7 +221,7 @@ def test_decision_updates_three_projections_and_one_audit_atomically(
     ]
     if decision is Decision.APPROVE:
         assert action.approved_by == "operator"
-        assert action.approved_at.replace(tzinfo=UTC) == approval.decided_at
+        assert action.approved_at.replace(tzinfo=KST) == approval.decided_at
     else:
         assert action.approved_by is None and action.approved_at is None
     assert len(audits) == 1

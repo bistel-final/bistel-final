@@ -155,6 +155,7 @@ def test_public_run_json_has_exact_allowlist_and_canonical_aliases(
     assert set(payload["deliveries"][0]) == {"channel", "status"}
     assert payload["chamber"] == payload["chamber_id"]
     assert payload["fault_code"] == payload["predicted_fault_code"]
+    assert payload["created_at"].endswith("+09:00")
     assert [delivery["channel"] for delivery in payload["deliveries"]] == [
         "EMAIL",
         "MES",
@@ -374,6 +375,8 @@ def test_rejected_approval_aliases_copy_canonical_decision_fields(
     assert payload["status"] == "REJECTED"
     assert payload["approved_by"] == payload["decided_by"] == "operator"
     assert payload["approved_at"] == payload["decided_at"]
+    assert payload["created_at"].endswith("+09:00")
+    assert payload["decided_at"].endswith("+09:00")
     assert payload["fault_code"] == payload["predicted_fault_code"] == "RFM"
 
 

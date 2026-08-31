@@ -260,12 +260,14 @@ def test_public_support_api_is_typed_and_import_side_effect_free() -> None:
         "load_optional_contract",
         "load_required_contract",
         "load_team_release_contract",
+        "normalize_fixture_semantic_contract",
         "normalize_openapi_contract",
     ]
     for function_name in (
         "load_required_contract",
         "load_optional_contract",
         "load_team_release_contract",
+        "normalize_fixture_semantic_contract",
         "normalize_openapi_contract",
     ):
         signature = inspect.signature(getattr(module, function_name))
@@ -310,7 +312,7 @@ def test_required_fixture_matches_markdown_and_csv_inventory() -> None:
     assert set(operations) == REQUIRED_KEYS == _markdown_required_keys(markdown)
 
     rows = _csv_rows()
-    assert len(rows) == 34
+    assert len(rows) == 35
     required_rows = [
         row
         for row in rows
@@ -455,6 +457,7 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
         ("GET", "/actions"),
         ("GET", "/actions/{action_id}"),
         ("GET", "/audit-logs/paged"),
+        ("POST", "/analytics/graph-query"),
         ("POST", "/analytics/query"),
         ("POST", "/analytics/validate"),
         ("GET", "/analytics/history"),
