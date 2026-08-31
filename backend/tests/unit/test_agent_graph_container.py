@@ -1798,7 +1798,13 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
     )
     ports = _AssemblyPorts()
     ports.generate_hypothesis = production_port()  # type: ignore[method-assign]
-    graph = build_agent_graph(_dependencies(engine, ports))
+    graph = build_agent_graph(
+        _dependencies(
+            engine,
+            ports,
+            configured_llm_model="provider-actual-model",
+        )
+    )
 
     state = graph.invoke(
         {
