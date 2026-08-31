@@ -692,6 +692,7 @@ jobs:
           tests/unit/test_send_action_tool.py
           tests/unit/test_run_pending_incidents.py
           tests/unit/test_golden_flow.py
+          tests/unit/test_fault_5class.py
           -rs --no-header
 
       # V5-C-4.1 n8n workflow repository 계약. JSON graph·exact schema·HMAC·callback
@@ -746,6 +747,7 @@ jobs:
           tests/unit/test_agent_graph_container.py
           tests/unit/test_run_pending_incidents_container.py
           tests/unit/test_golden_flow_container.py
+          tests/unit/test_fault_5class_container.py
           tests/unit/test_send_action_container.py
           tests/unit/test_agent_rehydration_container.py
           tests/unit/test_agent_resume_lock_container.py
