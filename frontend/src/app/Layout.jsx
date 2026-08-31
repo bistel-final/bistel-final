@@ -8,14 +8,9 @@ function Layout() {
   return (
     <div className="flex min-h-screen min-w-[1620px] items-stretch bg-bg text-[13px] text-ink">
       <nav className="sticky top-0 flex h-screen w-[232px] flex-none flex-col self-start bg-navy text-white">
-        <div className="flex items-center gap-2.5 px-[18px] pb-6 pt-[22px]">
-          <div className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] bg-blue text-[13px] font-extrabold text-white">
-            PE
-          </div>
-          <div className="min-w-0">
-            <div className="text-[17px] font-extrabold leading-tight tracking-[-.01em] text-white">Photo Etch</div>
-            <div className="mt-0.5 text-[8px] tracking-[.16em] text-side-dim">FDC ANOMALY AGENT PLATFORM</div>
-          </div>
+        <div className="flex items-center px-[18px] pb-6 pt-[22px]">
+          {/* 로고 — 흰 택스트 한 줄만 (아이콘·소제목 제거, #260) */}
+          <div className="text-[17px] font-extrabold leading-tight tracking-[-.01em] text-white">Photo Etch</div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
           {PRIMARY_MENUS.map((m, i) => (

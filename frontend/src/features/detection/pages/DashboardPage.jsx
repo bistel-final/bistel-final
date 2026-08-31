@@ -5,31 +5,35 @@ import { getActions, getRuns } from '../../../shared/api/agent.js'
 import LoadingState, { Skeleton } from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
+import Button from '../../../shared/components/ui/Button.jsx'
+import { Card } from '../../../shared/components/ui/Card.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
 import { hasDashboardResults, periodLabel } from '../detection-screen-state.js'
 import {
-  BLUE_HEX,
   ChartCard,
   Donut,
   GRAY_HEX,
-  GREEN_HEX,
   LegendRow,
+  MiniBars,
   OOC_HEX,
   OOS_HEX,
+  RatioBar,
+  SKY_HEX,
   StackBars,
   TrendLine,
-  ValueBars,
 } from '../components/DashCharts.jsx'
 
-// 알람 대시보드 — 라이트 시안 1번. KPI 4장(전부 클릭 이동형) + 차트 8장(2열 grid).
+// 알람 대시보드 — 라이트 시안 1번. #260 발표 스케일 재설계:
+//   히어로 밴드(전체·OOS/OOC 비율·조치) → 전폭 추이 → [분포(탭) | Agent 현황]
+// 정보 구조·집계 로직(V5-A-3.3 실 API 연동)은 그대로, 배치·크기·색만 재편했다.
 // 기간·유형 분리 집계는 summary 응답에 없다 — 알람을 넓게 받아 클라이언트에서 집계한다.
 // TODO(api): /dashboard/summary 에 기간·judgement 분리 집계 파라미터가 정의되면 서버 집계로 환원.
 const WIDE = 100
 
-// Fault 분류 도넛 색 — 시안 뱃지 색 대응 (RFM·CDX red / MFD amber / TMD sky / FOC violet / OTH gray)
-const FAULT_HEX = { RFM: OOS_HEX, CDX: OOS_HEX, MFD: OOC_HEX, TMD: '#0ea5e9', FOC: '#7c3aed', OTH: GRAY_HEX }
-// 조치 도넛 색 — 공개 ActionCode 3종
+// Fault 분류 도넛 색 — 대시보드 팔레트: 명도 위계 navy > blue > sky > gray
+const FAULT_HEX = { RFM: OOS_HEX, CDX: OOS_HEX, MFD: OOC_HEX, TMD: SKY_HEX, FOC: '#c7d4e6', OTH: GRAY_HEX }
+// 조치 도넛 색 — 공개 ActionCode 3종 (EQP_HOLD 가 가장 진함)
 const ACTION_HEX = { MONITORING: GRAY_HEX, WARNING: OOC_HEX, EQP_HOLD: OOS_HEX }
 
 const dayLabel = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
@@ -56,19 +60,108 @@ const stackOf = (rows, keyOf) => {
   return Object.values(map).sort((x, y) => y.oos + y.ooc - (x.oos + x.ooc) || x.label.localeCompare(y.label))
 }
 
-function KpiCard({ label, value, color, hint, onClick }) {
+// ── 히어로 밴드 — 이 화면에서 가장 먼저 읽혀야 하는 세 가지 ───────────
+function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
+  const stat = 'group cursor-pointer text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-blue-line rounded-lg'
+  const hint = 'mt-2 text-[12px] text-faint group-hover:text-blue transition-colors'
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="cursor-pointer rounded-xl border border-line bg-white px-5 py-4 text-left transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-tint-blue-line hover:shadow-[0_8px_20px_rgba(37,99,235,.14)]"
-    >
-      <div className="text-[11px] font-bold tracking-[.04em] text-g2">{label}</div>
-      <div className="mt-1 font-mono text-[26px] font-extrabold leading-tight" style={{ color }}>
-        {value}
+    <Card className="grid grid-cols-[1.05fr_2fr_1fr] divide-x divide-line px-0 py-0">
+      <button type="button" onClick={onTotal} className={`${stat} px-7 py-6`}>
+        <div className="text-[12.5px] font-bold tracking-[.06em] text-g2">전체 알람</div>
+        <div className="mt-1 font-mono text-[60px] font-extrabold leading-none tracking-[-.02em] text-navy">{agg.total}</div>
+        <div className={hint}>알람 히스토리 보기 →</div>
+      </button>
+
+      <div className="px-7 py-6">
+        <div className="flex items-end justify-between">
+          <button type="button" onClick={onOos} className={stat}>
+            <div className="flex items-center gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: OOS_HEX }} />
+              OOS
+            </div>
+            <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.oos}</div>
+          </button>
+          <button type="button" onClick={onOoc} className={`${stat} text-right`}>
+            <div className="flex items-center justify-end gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
+              OOC
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: OOC_HEX }} />
+            </div>
+            <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.ooc}</div>
+          </button>
+        </div>
+        <div className="mt-5">
+          <RatioBar oos={agg.oos} ooc={agg.ooc} />
+        </div>
       </div>
-      <div className="mt-1.5 text-[11px] text-faint">{hint}</div>
-    </button>
+
+      <button type="button" onClick={onAction} className={`${stat} px-7 py-6`}>
+        <div className="flex items-center gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: SKY_HEX }} />
+          조치 완료
+        </div>
+        <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.mesSent}</div>
+        <div className={hint}>Agent 분석 · 승인 보기 →</div>
+      </button>
+    </Card>
+  )
+}
+
+// ── 분포 카드 — 챔버 | 설비 | 파라미터 탭 (같은 그림 3장을 1장으로) ──
+const DIST_TABS = [
+  { key: 'chamber', label: '챔버' },
+  { key: 'equipment', label: '설비' },
+  { key: 'sensor', label: '파라미터' },
+]
+function DistributionCard({ agg }) {
+  const [tab, setTab] = useState('chamber')
+  const data = tab === 'chamber' ? agg.byChamber : tab === 'equipment' ? agg.byEquipment : agg.bySensor
+  return (
+    <ChartCard
+      title="알람 분포"
+      action={
+        <div className="flex gap-1.5">
+          {DIST_TABS.map((t) => (
+            <Button key={t.key} sm variant={tab === t.key ? 'primary' : 'outline'} onClick={() => setTab(t.key)}>
+              {t.label}
+            </Button>
+          ))}
+        </div>
+      }
+    >
+      <StackBars data={data} height={300} />
+      <LegendRow
+        items={[
+          { label: 'OOS', color: OOS_HEX },
+          { label: 'OOC', color: OOC_HEX },
+        ]}
+      />
+    </ChartCard>
+  )
+}
+
+// ── Agent 현황 카드 — Fault · 조치 · 알림을 한 장에 ────────────────────
+function AgentCard({ agg }) {
+  const col = 'flex min-w-0 flex-col items-center'
+  const head = 'mb-3 text-[12.5px] font-bold tracking-[.04em] text-g2'
+  return (
+    <ChartCard title="Agent 조치 현황" note="Agent 실행 기준">
+      <div className="grid grid-cols-3 divide-x divide-line pt-1">
+        <div className={`${col} px-3`}>
+          <div className={head}>FAULT 분류</div>
+          <Donut slices={agg.faults} />
+        </div>
+        <div className={`${col} px-3`}>
+          <div className={head}>조치</div>
+          <Donut slices={agg.actionSlices} />
+        </div>
+        <div className={`${col} px-4`}>
+          <div className={head}>알림 발송</div>
+          <div className="w-full pt-6">
+            <MiniBars data={agg.notify} />
+          </div>
+        </div>
+      </div>
+    </ChartCard>
   )
 }
 
@@ -140,8 +233,8 @@ function DashboardPage() {
       .map((c) => ({ label: c, value: actionMap[c], color: ACTION_HEX[c] }))
 
     const notify = [
-      { label: 'Email', value: actRows.filter((action) => delivered(action, 'EMAIL', 'SENT')).length, color: GREEN_HEX },
-      { label: 'MES', value: mesSent, color: BLUE_HEX },
+      { label: 'Email', value: actRows.filter((action) => delivered(action, 'EMAIL', 'SENT')).length, color: OOC_HEX },
+      { label: 'MES', value: mesSent, color: OOS_HEX },
       { label: 'None', value: actRows.filter((action) => !(action.deliveries ?? []).some((delivery) => delivery.status === 'SENT')).length, color: GRAY_HEX },
     ]
 
@@ -177,26 +270,20 @@ function DashboardPage() {
   if (!data || !agg)
     return (
       <LoadingState message="대시보드 데이터를 불러오는 중…">
-        <Skeleton className="h-[110px]" />
+        <Skeleton className="h-[150px]" />
         <Skeleton className="h-[360px]" />
       </LoadingState>
     )
 
   const hierarchy = data.summary.hierarchy ?? []
-  const kpis = [
-    { label: 'TOTAL', value: agg.total, color: 'var(--color-ink)', hint: '알람 히스토리 보기 →', to: '/alarms?tab=TRACE' },
-    { label: 'OOS', value: agg.oos, color: OOS_HEX, hint: 'TRACE 탭 보기 →', to: '/alarms?tab=TRACE' },
-    { label: 'OOC', value: agg.ooc, color: OOC_HEX, hint: 'SUMMARY 탭 보기 →', to: '/alarms?tab=SUMMARY' },
-    { label: '조치 완료', value: agg.mesSent, color: BLUE_HEX, hint: 'Agent 분석 · 승인 보기 →', to: '/agent-runs' },
-  ]
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
-        <div className="text-[20px] font-extrabold text-ink">알람 대시보드</div>
-        <div className="text-[11.5px] text-g2">
-          기간 <span className="font-mono">{periodLabel(applied)}</span> · 알람{' '}
-          <span className="font-mono">{agg.total}</span>건
+        <div className="text-[22px] font-extrabold tracking-[-.01em] text-ink">알람 대시보드</div>
+        <div className="text-[12.5px] text-g2">
+          <span className="font-mono">{periodLabel(applied)}</span> · 알람{' '}
+          <span className="font-mono font-bold text-navy">{agg.total}</span>건
         </div>
       </div>
 
@@ -216,44 +303,30 @@ function DashboardPage() {
           <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />
         </div>
       ) : (
-        <>
-          <div className="grid grid-cols-4 gap-3">
-            {kpis.map((k) => (
-              <KpiCard key={k.label} label={k.label} value={k.value} color={k.color} hint={k.hint} onClick={() => navigate(k.to)} />
-            ))}
-          </div>
+        <div className="mt-2 flex flex-col gap-5">
+          <HeroBand
+            agg={agg}
+            onTotal={() => navigate('/alarms?tab=TRACE')}
+            onOos={() => navigate('/alarms?tab=TRACE')}
+            onOoc={() => navigate('/alarms?tab=SUMMARY')}
+            onAction={() => navigate('/agent-runs')}
+          />
 
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <ChartCard title="일자별 알람 추이" note="OOS · OOC">
-              <TrendLine data={agg.daily} />
-              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-            </ChartCard>
-            <ChartCard title="챔버별 알람" note="OOS + OOC 누적">
-              <StackBars data={agg.byChamber} />
-              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-            </ChartCard>
-            <ChartCard title="설비별 알람" note="OOS + OOC 누적">
-              <StackBars data={agg.byEquipment} />
-              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-            </ChartCard>
-            <ChartCard title="파라미터별 알람" note="OOS + OOC 누적">
-              <StackBars data={agg.bySensor} />
-              <LegendRow items={[{ label: 'OOS', color: OOS_HEX }, { label: 'OOC', color: OOC_HEX }]} />
-            </ChartCard>
-            <ChartCard title="OOS / OOC 비율">
-              <Donut slices={agg.ratio} />
-            </ChartCard>
-            <ChartCard title="Fault 분류" note="Agent 실행 기준">
-              <Donut slices={agg.faults} />
-            </ChartCard>
-            <ChartCard title="조치별 분포">
-              <Donut slices={agg.actionSlices} />
-            </ChartCard>
-            <ChartCard title="알림 발송" note="채널별 SENT · 미발송">
-              <ValueBars data={agg.notify} />
-            </ChartCard>
+          <ChartCard title="일자별 알람 추이" note="OOS · OOC 일별 건수">
+            <TrendLine data={agg.daily} height={300} />
+            <LegendRow
+              items={[
+                { label: 'OOS', color: OOS_HEX },
+                { label: 'OOC', color: OOC_HEX },
+              ]}
+            />
+          </ChartCard>
+
+          <div className="grid grid-cols-2 gap-5">
+            <DistributionCard agg={agg} />
+            <AgentCard agg={agg} />
           </div>
-        </>
+        </div>
       )}
     </div>
   )
