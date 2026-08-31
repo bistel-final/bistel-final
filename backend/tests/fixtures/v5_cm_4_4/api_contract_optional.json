@@ -9,6 +9,12 @@
     "AgentRunDetailResponse": {
       "type": "named"
     },
+    "AlarmDetailResponse": {
+      "type": "named"
+    },
+    "AlarmPageEnvelope": {
+      "type": "named"
+    },
     "AnalysisQueryRequest": {
       "type": "named"
     },
@@ -16,6 +22,9 @@
       "type": "named"
     },
     "AuditLogPageResponse": {
+      "type": "named"
+    },
+    "DashboardSummaryResponse": {
       "type": "named"
     },
     "DocumentDetailResponse": {
@@ -52,6 +61,15 @@
       "type": "named"
     },
     "SqlValidateResponse": {
+      "type": "named"
+    },
+    "TraceCatalogResponse": {
+      "type": "named"
+    },
+    "TraceSearchRequest": {
+      "type": "named"
+    },
+    "TraceSearchResponse": {
       "type": "named"
     }
   },
@@ -455,6 +473,288 @@
       },
       "sort": [
         "single action"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "A",
+      "path": "/dashboard/summary",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "area": {
+            "enum": [
+              "Photo",
+              "Etch",
+              "ALL"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "chamber_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "equipment_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "DashboardSummaryResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "DashboardSummaryResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "recent_alarms: occurred_at DESC, source ASC, alarm_id DESC",
+        "daily_trend: date ASC",
+        "pending_approvals: requested_at DESC, approval_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "A",
+      "path": "/alarms/paged",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {
+          "area": {
+            "enum": [
+              "Photo",
+              "Etch",
+              "ALL"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "chamber_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "equipment_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "judgement": {
+            "enum": [
+              "OOS",
+              "OOC"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          },
+          "sensor_id": {
+            "nullable": false,
+            "required": false,
+            "type": "string"
+          },
+          "size": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": false,
+            "required": false,
+            "type": "integer"
+          }
+        }
+      },
+      "response_shape": {
+        "schema_ref": "AlarmPageEnvelope",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AlarmPageEnvelope",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "occurred_at DESC",
+        "source ASC",
+        "alarm_id DESC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "A",
+      "path": "/alarms/{source}/{alarm_id}",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {
+          "alarm_id": {
+            "min_length": 1,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "TRACE",
+              "SUMMARY",
+              "R03"
+            ],
+            "nullable": false,
+            "required": true,
+            "type": "string"
+          }
+        },
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AlarmDetailResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AlarmDetailResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "single alarm"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "A",
+      "path": "/traces/catalog",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "TraceCatalogResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "TraceCatalogResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "equipments: area_id ASC, equipment_id ASC",
+        "lots: lot_id ASC"
+      ],
+      "success_status": 200
+    },
+    {
+      "compatibility": [],
+      "method": "POST",
+      "owner": "A",
+      "path": "/traces/search",
+      "request": {
+        "body": {
+          "ref": "TraceSearchRequest"
+        },
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "TraceSearchResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "TraceSearchResponse",
+          "shape": "object"
+        },
+        "422": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        },
+        "503": {
+          "schema_ref": "ErrorResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [
+        "wafers: track_in_at ASC, lot_hist_id ASC, parameter_id ASC",
+        "points: measured_at ASC, seq_no ASC"
       ],
       "success_status": 200
     }

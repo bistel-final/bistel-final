@@ -102,6 +102,14 @@ def test_evaluation_loader_actually_selects_fault_code() -> None:
     assert "fault_code" in source
 
 
+#: `fault` alias를 가질 수 있는 유일한 공개 DTO다. API v3 §2.7이 고정한 참고
+#: React 호환 projection이며, 값은 Runtime Agent 예측(`agent_prediction`)의
+#: nullable 복사본이다 — 합성 GT(`lot_history.fault_code`)나 parameter→Fault
+#: 고정표에서 만드는 것은 §2.7이 명시적으로 금지한다. 이 집합 **밖의** 모든
+#: Detection DTO는 라벨 성격 필드를 가질 수 없다.
+_COMPAT_ALIAS_MODELS = frozenset({"AlarmItem", "TracePoint", "ParameterItem"})
+
+
 def _pydantic_models_in(module: object) -> list[type[BaseModel]]:
     return [
         obj
@@ -120,7 +128,9 @@ def test_detection_api_schemas_have_no_label_field() -> None:
     """
 
     checked = 0
-    for model in _pydantic_models_in(schemas):
+    for model in _pydantic_models_in(schemas) + _pydantic_models_in(public_schemas):
+        if model.__name__ in _COMPAT_ALIAS_MODELS:
+            continue
         checked += 1
         for field_name in model.model_fields:
             lowered = field_name.lower()

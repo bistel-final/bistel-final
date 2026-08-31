@@ -121,21 +121,25 @@ function HistoryTrendChart({ wafer, lim, emptyMessage = null }) {
 }
 
 // 트렌드 카드 래퍼 — 제목 `PARAM · WAFER · EQP-CH`
-export function HistoryTrendCard({ alarm, wafer, lim, loading, emptyMessage = null }) {
+// actions: 알람이 선택된 동안에만 헤더 우측에 얹는 버튼(예: 분석 실행) — V5-A-3.4
+export function HistoryTrendCard({ alarm, wafer, lim, loading, emptyMessage = null, actions = null }) {
   const parameter = alarm?.parameter_id ?? alarm?.sensor_id
   const waferLabel = alarm?.wafer_id ?? (alarm?.wafer_no != null ? `W${alarm.wafer_no}` : null)
   return (
     <Card className="px-5 pb-3 pt-4">
-      <div className="mb-2 flex items-baseline justify-between">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[14px] font-extrabold text-ink">
           {alarm ? `${parameter ?? 'PARAMETER 미제공'} · ${waferLabel ?? 'WAFER 미제공'} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
         </span>
-        <span className="text-[11.5px] text-g2">
-          {alarm
-            ? `${lim?.parameter_name ?? lim?.sensor_name ?? ''}${lim?.unit ? ` · 단위 ${lim.unit}` : ''}`
-            : emptyMessage
-              ? '실측 데이터 연결 대기'
-              : '행을 선택하면 트렌드가 표시됩니다'}
+        <span className="flex items-center gap-2.5">
+          <span className="text-[11.5px] text-g2">
+            {alarm
+              ? `${lim?.parameter_name ?? lim?.sensor_name ?? ''}${lim?.unit ? ` · 단위 ${lim.unit}` : ''}`
+              : emptyMessage
+                ? '실측 데이터 연결 대기'
+                : '행을 선택하면 트렌드가 표시됩니다'}
+          </span>
+          {alarm ? actions : null}
         </span>
       </div>
       {loading ? (

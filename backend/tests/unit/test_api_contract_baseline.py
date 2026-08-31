@@ -458,6 +458,11 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
         ("POST", "/analytics/query"),
         ("POST", "/analytics/validate"),
         ("GET", "/analytics/history"),
+        ("GET", "/dashboard/summary"),
+        ("GET", "/alarms/paged"),
+        ("GET", "/alarms/{source}/{alarm_id}"),
+        ("GET", "/traces/catalog"),
+        ("POST", "/traces/search"),
     }
 
 

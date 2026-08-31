@@ -181,6 +181,23 @@ export function getAlarms(params = {}) {
   return apiClient.get('/alarms/paged', { params }).then((r) => r.data)
 }
 
+// GET /alarms/paged 전체 페이지 순회 — 서버 size 상한(100)보다 총 건수가 많을 수 있어
+// (예: 전체 알람 192건) 대시보드·알람 히스토리 집계는 한 페이지만 받으면 조용히 undercount된다.
+// total을 기준으로 필요한 만큼 이어받아 하나의 items 배열로 합친다.
+const ALL_ALARMS_PAGE_SIZE = 100
+export function getAllAlarms(scope = {}) {
+  const step = (page, acc) =>
+    getAlarms({ ...scope, page, size: ALL_ALARMS_PAGE_SIZE }).then((res) => {
+      const items = acc.concat(res.items ?? [])
+      const total = res.total ?? items.length
+      if (items.length >= total || (res.items ?? []).length === 0) {
+        return { items, total, page: 1, size: items.length }
+      }
+      return step(page + 1, items)
+    })
+  return step(1, [])
+}
+
 // GET /alarms — core compatibility contract. The existing getAlarms() is the
 // deprecated paged UI adapter and intentionally uses /alarms/paged.
 export function getAlarmsCore(params = {}) {
@@ -226,10 +243,21 @@ export function getAlarm(alarmId, source = null) {
     )
     return mockResponse(a ? toItem(a) : null)
   }
-  return getAlarmsCore(source ? { source } : {}).then(
-    (alarms) => alarms.find(
-      (alarm) => alarm.alarm_id === alarmId && (!source || alarm.source === source),
-    ) ?? null,
+  // source가 있으면 상세 endpoint(GET /alarms/{source}/{alarm_id})를 직접 호출한다.
+  // getAlarmsCore()가 반환하는 core 호환 AlarmItem에는 sensor_id·wafer_no가 없어
+  // (parameter_id·wafer_id만 있음) 여기서 쓰면 이후 searchTraces() 호출이
+  // sensor_ids/wafer_nos에 undefined를 실어 보내 422가 난다.
+  if (source) {
+    return apiClient
+      .get(`/alarms/${encodeURIComponent(source)}/${encodeURIComponent(alarmId)}`)
+      .then((response) => response.data)
+      .catch((error) => {
+        if (error?.response?.status === 404) return null
+        throw error
+      })
+  }
+  return getAlarmsCore().then(
+    (alarms) => alarms.find((alarm) => alarm.alarm_id === alarmId) ?? null,
   )
 }
 
