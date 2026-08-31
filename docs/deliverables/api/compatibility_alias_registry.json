@@ -8,17 +8,86 @@
       "projection": "copy",
       "owner": "A",
       "symbol": "backend.app.detection.public_schemas.AlarmItem",
-      "canonical_fields": ["equipment_id", "chamber_id", "recipe_id", "lot_id", "wafer_id", "parameter_id", "recipe_step_no", "predicted_fault_code"],
-      "compatibility_fields": ["equipment", "chamber", "recipe", "lot", "wafer", "parameter", "step_no", "fault"],
+      "canonical_fields": [
+        "equipment_id",
+        "chamber_id",
+        "recipe_id",
+        "lot_id",
+        "wafer_id",
+        "parameter_id",
+        "recipe_step_no",
+        "predicted_fault_code"
+      ],
+      "compatibility_fields": [
+        "equipment",
+        "chamber",
+        "recipe",
+        "lot",
+        "wafer",
+        "parameter",
+        "step_no",
+        "fault"
+      ],
       "enforcement": "validator",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "`lot`·`wafer`는 metrology evidence fixture의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "`equipment`·`chamber`는 정규화된 graph evidence node의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/pages/AgentRunPage.jsx", "reason": "`parameter`는 Agent 화면의 parameter/approval 조립 상태의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "`equipment`는 알람 계층 filter selection state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace filter view state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 검색용 정규화 filter state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "`equipment`·`chamber`·`wafer`는 알람 화면 filter·trace view state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 화면 URL·filter state의 property이며 AlarmItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "`equipment`·`chamber`는 Neo4j relation graph object의 property이며 AlarmItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "A Detection 화면과 C Agent 통합 화면이 canonical alarm field만 소비한다."},
-        {"check": "canonical_contract_green", "criteria": "AlarmItem canonical-only projection과 실 API 화면 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "alias 제거 OpenAPI·fixture·Frontend 변경이 한 revision으로 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/agent/pages/AgentRunPage.jsx",
+          "reason": "`parameter`는 Agent 화면의 parameter/approval 조립 상태의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx",
+          "reason": "`equipment`는 알람 계층 filter selection state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx",
+          "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilterBar.jsx",
+          "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace filter view state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilters.js",
+          "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceModel.jsx",
+          "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 검색용 정규화 filter state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
+          "reason": "`equipment`·`chamber`·`wafer`는 알람 화면 filter·trace view state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
+          "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/TracePage.jsx",
+          "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 화면 URL·filter state의 property이며 AlarmItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/detection/public_api.py", "backend/app/detection/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "A Detection 화면과 C Agent 통합 화면이 canonical alarm field만 소비한다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "AlarmItem canonical-only projection과 실 API 화면 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "alias 제거 OpenAPI·fixture·Frontend 변경이 한 revision으로 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/detection/public_api.py",
+        "backend/app/detection/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -27,18 +96,43 @@
       "projection": "derived",
       "owner": "A",
       "symbol": "backend.app.detection.public_schemas.AlarmItem",
-      "canonical_fields": ["notify_status", "mes_status"],
-      "compatibility_fields": ["notify", "mes"],
+      "canonical_fields": [
+        "notify_status",
+        "mes_status"
+      ],
+      "compatibility_fields": [
+        "notify",
+        "mes"
+      ],
       "enforcement": "validator",
       "derivation": "notify is true only for notify_status=SENT; mes is empty for null mes_status and otherwise its public status string.",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "`notify`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Alarm 화면이 notify_status와 mes_status만 소비한다."},
-        {"check": "canonical_contract_green", "criteria": "상태별 canonical delivery 표시 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "notify·mes 제거 contract revision이 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
+          "reason": "`notify`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/detection/public_api.py", "backend/app/detection/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "Alarm 화면이 notify_status와 mes_status만 소비한다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "상태별 canonical delivery 표시 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "notify·mes 제거 contract revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/detection/public_api.py",
+        "backend/app/detection/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -47,17 +141,61 @@
       "projection": "copy",
       "owner": "A",
       "symbol": "backend.app.detection.public_schemas.ParameterItem",
-      "canonical_fields": ["parameter_name", "spec_lower", "ctrl_lower", "target_value", "ctrl_upper", "spec_upper"],
-      "compatibility_fields": ["name", "LSL", "LCL", "TARGET", "UCL", "USL"],
-      "enforcement": "validator",
-      "consumers": ["frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage"],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "`name`는 Agent run·fault 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx", "reason": "`name`는 recipe step 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "`name`는 파라미터 집계 카드 item의 property이며 ParameterItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/ontology-focus-state.js", "reason": "`name`는 ontology graph node의 property이며 ParameterItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "AgentRunPage의 TARGET fallback을 포함해 uppercase parameter alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "parameter canonical 5선 렌더 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "ParameterItem alias 제거 revision이 준비된다."}
+      "canonical_fields": [
+        "parameter_name",
+        "spec_lower",
+        "ctrl_lower",
+        "target_value",
+        "ctrl_upper",
+        "spec_upper"
       ],
-      "change_points": ["backend/app/detection/public_api.py", "backend/app/detection/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/features/agent/pages/AgentRunPage.jsx", "frontend/src/shared/api/contractMocks.js"],
+      "compatibility_fields": [
+        "name",
+        "LSL",
+        "LCL",
+        "TARGET",
+        "UCL",
+        "USL"
+      ],
+      "enforcement": "validator",
+      "consumers": [
+        "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage"
+      ],
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx",
+          "reason": "`name`는 Agent run·fault 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx",
+          "reason": "`name`는 recipe step 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/DashParamCard.jsx",
+          "reason": "`name`는 파라미터 집계 카드 item의 property이며 ParameterItem compatibility 소비가 아님"
+        }
+      ],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "AgentRunPage의 TARGET fallback을 포함해 uppercase parameter alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "parameter canonical 5선 렌더 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "ParameterItem alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/detection/public_api.py",
+        "backend/app/detection/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/features/agent/pages/AgentRunPage.jsx",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -68,14 +206,31 @@
       "symbol": "frontend/src/shared/api/detection.js#getAlarms",
       "replacement": "frontend/src/shared/api/detection.js#getAlarmsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/detection/pages/TracePage.jsx#TracePage", "frontend/src/shared/api/detection.js#getAllAlarms"],
+      "consumers": [
+        "frontend/src/features/detection/pages/TracePage.jsx#TracePage",
+        "frontend/src/shared/api/detection.js#getAllAlarms"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "getAlarms legacy paged adapter 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "A 화면이 bare-array core 또는 정식 server paging으로 전환된다."},
-        {"check": "baseline_revision_ready", "criteria": "adapter 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "getAlarms legacy paged adapter 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "A 화면이 bare-array core 또는 정식 server paging으로 전환된다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "adapter 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/detection/pages/AlarmsPage.jsx", "frontend/src/features/detection/pages/DashboardPage.jsx", "frontend/src/features/detection/pages/TracePage.jsx", "frontend/src/shared/api/detection.js"],
+      "change_points": [
+        "frontend/src/features/detection/pages/AlarmsPage.jsx",
+        "frontend/src/features/detection/pages/DashboardPage.jsx",
+        "frontend/src/features/detection/pages/TracePage.jsx",
+        "frontend/src/shared/api/detection.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -84,18 +239,36 @@
       "projection": "copy",
       "owner": "B",
       "symbol": "backend.app.knowledge.schemas.DocumentHit",
-      "canonical_fields": ["document_id"],
-      "compatibility_fields": ["doc_id"],
+      "canonical_fields": [
+        "document_id"
+      ],
+      "compatibility_fields": [
+        "doc_id"
+      ],
       "enforcement": "producer",
       "producer": "backend.app.knowledge.schemas.DocumentHit.from_tool_hit",
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "문서 화면과 Agent 근거가 document_id만 소비한다."},
-        {"check": "canonical_contract_green", "criteria": "DocumentHit canonical-only 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "doc_id 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "문서 화면과 Agent 근거가 document_id만 소비한다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "DocumentHit canonical-only 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "doc_id 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/knowledge/router.py", "backend/app/knowledge/schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "change_points": [
+        "backend/app/knowledge/router.py",
+        "backend/app/knowledge/schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -106,14 +279,26 @@
       "symbol": "frontend/src/shared/api/knowledge.js#getChamberRelations",
       "replacement": "frontend/src/shared/api/knowledge.js#getChamberRelationsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/knowledge/pages/KnowledgePage.jsx#KnowledgePage"],
+      "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "legacy relation shape 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "Knowledge 화면이 ChamberGraphResponse를 직접 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "legacy graph projection 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "legacy relation shape 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "Knowledge 화면이 ChamberGraphResponse를 직접 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "legacy graph projection 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/knowledge/pages/KnowledgePage.jsx", "frontend/src/shared/api/knowledge.js"],
+      "change_points": [
+        "frontend/src/features/knowledge/pages/OntologyPage.jsx",
+        "frontend/src/shared/api/knowledge.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -124,14 +309,29 @@
       "symbol": "frontend/src/shared/api/knowledge.js#searchDocuments",
       "replacement": "frontend/src/shared/api/knowledge.js#searchDocumentsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/knowledge/pages/DocumentsPage.jsx#DocumentsPage", "frontend/src/features/knowledge/pages/KnowledgePage.jsx#KnowledgePage"],
+      "consumers": [
+        "frontend/src/features/knowledge/pages/DocumentsPage.jsx#DocumentsPage"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "legacy query/hits/count envelope 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "문서 화면이 bare DocumentHit 배열을 직접 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "legacy search projection 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "legacy query/hits/count envelope 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "문서 화면이 bare DocumentHit 배열을 직접 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "legacy search projection 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/knowledge/pages/DocumentsPage.jsx", "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "frontend/src/shared/api/knowledge.js"],
+      "change_points": [
+        "frontend/src/features/knowledge/pages/DocumentsPage.jsx",
+        "frontend/src/features/knowledge/pages/OntologyPage.jsx",
+        "frontend/src/shared/api/knowledge.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -140,17 +340,79 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.ActionItem",
-      "canonical_fields": ["agent_run_id", "lot_id", "equipment_id", "chamber_id"],
-      "compatibility_fields": ["created_by_agent_run_id", "lot", "equipment", "chamber"],
-      "enforcement": "validator",
-      "consumers": ["backend/app/agent/public_schemas.py#ActionDetailResponse", "frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage"],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "`lot`는 metrology evidence fixture의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "`equipment`·`chamber`는 정규화된 graph evidence node의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "`equipment`는 알람 계층 filter selection state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace filter view state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "`lot`·`equipment`·`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 ActionItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "`equipment`·`chamber`는 Neo4j relation graph object의 property이며 ActionItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Action 화면의 created_by_agent_run_id 등 alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "ActionItem canonical identity 렌더 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "Action alias 제거 optional fixture revision이 준비된다."}
+      "canonical_fields": [
+        "agent_run_id",
+        "lot_id",
+        "equipment_id",
+        "chamber_id"
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_optional.json", "frontend/src/features/agent/components/ActionDetailPanel.jsx", "frontend/src/features/agent/pages/ActionsPage.jsx"],
+      "compatibility_fields": [
+        "created_by_agent_run_id",
+        "lot",
+        "equipment",
+        "chamber"
+      ],
+      "enforcement": "validator",
+      "consumers": [
+        "backend/app/agent/public_schemas.py#ActionDetailResponse",
+        "frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel",
+        "frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage"
+      ],
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx",
+          "reason": "`equipment`는 알람 계층 filter selection state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx",
+          "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilterBar.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace filter view state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilters.js",
+          "reason": "`lot`·`equipment`·`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceModel.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
+          "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
+          "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/TracePage.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 ActionItem compatibility 소비가 아님"
+        }
+      ],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "Action 화면의 created_by_agent_run_id 등 alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "ActionItem canonical identity 렌더 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "Action alias 제거 optional fixture revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_optional.json",
+        "frontend/src/features/agent/components/ActionDetailPanel.jsx",
+        "frontend/src/features/agent/pages/ActionsPage.jsx"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -159,18 +421,38 @@
       "projection": "derived",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.AgentAskResponse",
-      "canonical_fields": ["evidence_items", "limitations"],
-      "compatibility_fields": ["evidence", "limit"],
+      "canonical_fields": [
+        "evidence_items",
+        "limitations"
+      ],
+      "compatibility_fields": [
+        "evidence",
+        "limit"
+      ],
       "enforcement": "validator",
       "derivation": "evidence is the first DOCUMENT evidence summary or null; limit joins limitations with '; '.",
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Agent chat 소비자가 evidence_items와 limitations만 사용한다."},
-        {"check": "canonical_contract_green", "criteria": "AgentAskResponse canonical-only 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "evidence·limit 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "Agent chat 소비자가 evidence_items와 limitations만 사용한다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "AgentAskResponse canonical-only 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "evidence·limit 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/agent/ask.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "change_points": [
+        "backend/app/agent/ask.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -179,17 +461,78 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.PublicAgentRunItem",
-      "canonical_fields": ["chamber_id", "predicted_fault_code"],
-      "compatibility_fields": ["chamber", "fault_code"],
-      "enforcement": "validator",
-      "consumers": ["frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/components/RunDetailModal.jsx#RunDetailModal", "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard", "frontend/src/features/agent/components/RunListPanel.jsx#RunListPanel", "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard", "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard", "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "`chamber`는 정규화된 graph evidence node의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "`chamber`는 조회 범위 filter draft state의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "`chamber`는 trace filter view state의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "`chamber`는 알람 화면 filter·trace view state의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "`chamber`는 trace 화면 URL·filter state의 property이며 PublicAgentRunItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "`chamber`는 Neo4j relation graph object의 property이며 PublicAgentRunItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "run chamber·fault alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "Agent/Detection 화면이 chamber_id·predicted_fault_code만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "run alias 제거 revision이 준비된다."}
+      "canonical_fields": [
+        "chamber_id",
+        "predicted_fault_code"
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/features/agent/components/RunDetailModal.jsx", "frontend/src/features/agent/components/RunHeaderCard.jsx", "frontend/src/features/agent/components/RunListPanel.jsx", "frontend/src/features/agent/components/RunSummaryCard.jsx", "frontend/src/features/agent/components/RunVerdictCard.jsx", "frontend/src/features/agent/pages/AgentRunPage.jsx", "frontend/src/features/detection/components/AlarmDetailPanel.jsx", "frontend/src/features/detection/pages/DashboardPage.jsx"],
+      "compatibility_fields": [
+        "chamber",
+        "fault_code"
+      ],
+      "enforcement": "validator",
+      "consumers": [
+        "frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel",
+        "frontend/src/features/agent/components/RunDetailModal.jsx#RunDetailModal",
+        "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard",
+        "frontend/src/features/agent/components/RunListPanel.jsx#RunListPanel",
+        "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard",
+        "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard",
+        "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel",
+        "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
+      ],
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx",
+          "reason": "`chamber`는 조회 범위 filter draft state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilterBar.jsx",
+          "reason": "`chamber`는 trace filter view state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilters.js",
+          "reason": "`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceModel.jsx",
+          "reason": "`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
+          "reason": "`chamber`는 알람 화면 filter·trace view state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/TracePage.jsx",
+          "reason": "`chamber`는 trace 화면 URL·filter state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
+        }
+      ],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "run chamber·fault alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "Agent/Detection 화면이 chamber_id·predicted_fault_code만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "run alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/features/agent/components/RunDetailModal.jsx",
+        "frontend/src/features/agent/components/RunHeaderCard.jsx",
+        "frontend/src/features/agent/components/RunListPanel.jsx",
+        "frontend/src/features/agent/components/RunSummaryCard.jsx",
+        "frontend/src/features/agent/components/RunVerdictCard.jsx",
+        "frontend/src/features/agent/pages/AgentRunPage.jsx",
+        "frontend/src/features/detection/components/AlarmDetailPanel.jsx",
+        "frontend/src/features/detection/pages/DashboardPage.jsx"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -199,17 +542,46 @@
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.PublicAgentRunItem",
       "canonical_fields": [],
-      "compatibility_fields": ["fault_name", "fault_color"],
+      "compatibility_fields": [
+        "fault_name",
+        "fault_color"
+      ],
       "enforcement": "validator",
       "derivation": "Both fields are required-null placeholders and must always be null until removed.",
-      "consumers": ["frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel", "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard", "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard", "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard", "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage", "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel"],
+      "consumers": [
+        "frontend/src/features/agent/components/ActionDetailPanel.jsx#ActionDetailPanel",
+        "frontend/src/features/agent/components/RunHeaderCard.jsx#RunHeaderCard",
+        "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard",
+        "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard",
+        "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage",
+        "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "fault_name·fault_color placeholder 참조가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "화면이 predicted_fault_code만으로 정상 렌더된다."},
-        {"check": "baseline_revision_ready", "criteria": "placeholder 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "fault_name·fault_color placeholder 참조가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "화면이 predicted_fault_code만으로 정상 렌더된다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "placeholder 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/features/agent/components/ActionDetailPanel.jsx", "frontend/src/features/agent/components/RunHeaderCard.jsx", "frontend/src/features/agent/components/RunSummaryCard.jsx", "frontend/src/features/agent/components/RunVerdictCard.jsx", "frontend/src/features/agent/pages/AgentRunPage.jsx", "frontend/src/features/detection/components/AlarmDetailPanel.jsx"],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/features/agent/components/ActionDetailPanel.jsx",
+        "frontend/src/features/agent/components/RunHeaderCard.jsx",
+        "frontend/src/features/agent/components/RunSummaryCard.jsx",
+        "frontend/src/features/agent/components/RunVerdictCard.jsx",
+        "frontend/src/features/agent/pages/AgentRunPage.jsx",
+        "frontend/src/features/detection/components/AlarmDetailPanel.jsx"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -218,17 +590,37 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.PublicApprovalItem",
-      "canonical_fields": ["decided_by", "decided_at"],
-      "compatibility_fields": ["approved_by", "approved_at"],
+      "canonical_fields": [
+        "decided_by",
+        "decided_at"
+      ],
+      "compatibility_fields": [
+        "approved_by",
+        "approved_at"
+      ],
       "enforcement": "validator",
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "approved_by·approved_at 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "결정 UI가 decided_by·decided_at만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "approval decision alias 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "approved_by·approved_at 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "결정 UI가 decided_by·decided_at만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "approval decision alias 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -237,17 +629,102 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.PublicApprovalItem",
-      "canonical_fields": ["lot_id", "equipment_id", "chamber_id", "predicted_fault_code"],
-      "compatibility_fields": ["lot", "equipment", "chamber", "fault_code"],
+      "canonical_fields": [
+        "lot_id",
+        "equipment_id",
+        "chamber_id",
+        "predicted_fault_code"
+      ],
+      "compatibility_fields": [
+        "lot",
+        "equipment",
+        "chamber",
+        "fault_code"
+      ],
       "enforcement": "validator",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "`fault_code`는 Agent run·fault 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunDetailModal.jsx", "reason": "`fault_code`는 PublicAgentRunItem 상세 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunEvidencePanel.jsx", "reason": "`lot`는 metrology evidence fixture의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunGraphEvidenceTab.jsx", "reason": "`equipment`·`chamber`는 정규화된 graph evidence node의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunHeaderCard.jsx", "reason": "`fault_code`는 PublicAgentRunItem 헤더 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunListPanel.jsx", "reason": "`fault_code`는 PublicAgentRunItem 목록 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunSummaryCard.jsx", "reason": "`fault_code`는 PublicAgentRunItem 요약 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/components/RunVerdictCard.jsx", "reason": "`fault_code`는 PublicAgentRunItem 판정 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmDetailPanel.jsx", "reason": "`fault_code`는 알람 상세의 PublicAgentRunItem 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx", "reason": "`equipment`는 알람 계층 filter selection state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx", "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilterBar.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace filter view state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "`lot`·`equipment`·`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceModel.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/AlarmsPage.jsx", "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/DashboardPage.jsx", "reason": "`equipment`·`chamber`·`fault_code`는 대시보드 filter·집계 view model의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/pages/TracePage.jsx", "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/pages/KnowledgePage.jsx", "reason": "`equipment`·`chamber`는 Neo4j relation graph object의 property이며 PublicApprovalItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "approval identity alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "승인 UI가 canonical identity만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "approval identity alias 제거 revision이 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx",
+          "reason": "`fault_code`는 Agent run·fault 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/RunDetailModal.jsx",
+          "reason": "`fault_code`는 PublicAgentRunItem 상세 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/RunHeaderCard.jsx",
+          "reason": "`fault_code`는 PublicAgentRunItem 헤더 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/RunListPanel.jsx",
+          "reason": "`fault_code`는 PublicAgentRunItem 목록 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/RunSummaryCard.jsx",
+          "reason": "`fault_code`는 PublicAgentRunItem 요약 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/RunVerdictCard.jsx",
+          "reason": "`fault_code`는 PublicAgentRunItem 판정 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/AlarmDetailPanel.jsx",
+          "reason": "`fault_code`는 알람 상세의 PublicAgentRunItem 표시 객체의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx",
+          "reason": "`equipment`는 알람 계층 filter selection state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/ScopeFilterBar.jsx",
+          "reason": "`equipment`·`chamber`는 조회 범위 filter draft state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilterBar.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace filter view state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilters.js",
+          "reason": "`lot`·`equipment`·`chamber`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceModel.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
+          "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
+          "reason": "`equipment`·`chamber`·`fault_code`는 대시보드 filter·집계 view model의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/pages/TracePage.jsx",
+          "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "approval identity alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "승인 UI가 canonical identity만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "approval identity alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -256,17 +733,35 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.AskDocumentEvidenceAlias",
-      "canonical_fields": ["document_id"],
-      "compatibility_fields": ["doc_id"],
+      "canonical_fields": [
+        "document_id"
+      ],
+      "compatibility_fields": [
+        "doc_id"
+      ],
       "enforcement": "validator",
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Agent chat의 doc_id 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "문서 근거가 document_id로만 연결된다."},
-        {"check": "baseline_revision_ready", "criteria": "nested doc_id 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "Agent chat의 doc_id 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "문서 근거가 document_id로만 연결된다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "nested doc_id 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/agent/ask.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "change_points": [
+        "backend/app/agent/ask.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -275,17 +770,54 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.AskToolItem",
-      "canonical_fields": ["tool_name", "result_summary"],
-      "compatibility_fields": ["name", "result"],
+      "canonical_fields": [
+        "tool_name",
+        "result_summary"
+      ],
+      "compatibility_fields": [
+        "name",
+        "result"
+      ],
       "enforcement": "validator",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx", "reason": "`name`는 Agent run·fault 표시 객체의 property이며 AskToolItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/agent/pages/AgentRunPage.jsx", "reason": "`result`는 Agent 화면의 parameter/approval 조립 상태의 property이며 AskToolItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx", "reason": "`name`는 recipe step 표시 객체의 property이며 AskToolItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "`name`는 파라미터 집계 카드 item의 property이며 AskToolItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/knowledge/ontology-focus-state.js", "reason": "`name`는 ontology graph node의 property이며 AskToolItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Chat Tool name·result 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "Chat UI가 tool_name·status·result_summary만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "Chat Tool alias 제거 revision이 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx",
+          "reason": "`name`는 Agent run·fault 표시 객체의 property이며 AskToolItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/pages/AgentRunPage.jsx",
+          "reason": "`result`는 Agent 화면의 parameter/approval 조립 상태의 property이며 AskToolItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx",
+          "reason": "`name`는 recipe step 표시 객체의 property이며 AskToolItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/DashParamCard.jsx",
+          "reason": "`name`는 파라미터 집계 카드 item의 property이며 AskToolItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/agent/ask.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "Chat Tool name·result 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "Chat UI가 tool_name·status·result_summary만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "Chat Tool alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/agent/ask.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -294,17 +826,50 @@
       "projection": "copy",
       "owner": "C",
       "symbol": "backend.app.agent.public_schemas.PublicToolCallItem",
-      "canonical_fields": ["tool_name", "status"],
-      "compatibility_fields": ["n", "s"],
+      "canonical_fields": [
+        "tool_name",
+        "status"
+      ],
+      "compatibility_fields": [
+        "n",
+        "s"
+      ],
       "enforcement": "validator",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/detection/components/DashEquipCard.jsx", "reason": "`n`는 설비 집계 카드 item의 property이며 PublicToolCallItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/DashParamCard.jsx", "reason": "`n`는 파라미터 집계 카드 item의 property이며 PublicToolCallItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceSidePanel.jsx", "reason": "`n`는 trace 통계 item의 property이며 PublicToolCallItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "Auto Analysis Tool n·s 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "실행 화면이 tool_name·status·result_summary만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "Auto Tool alias 제거 revision이 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/detection/components/DashEquipCard.jsx",
+          "reason": "`n`는 설비 집계 카드 item의 property이며 PublicToolCallItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/DashParamCard.jsx",
+          "reason": "`n`는 파라미터 집계 카드 item의 property이며 PublicToolCallItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceSidePanel.jsx",
+          "reason": "`n`는 trace 통계 item의 property이며 PublicToolCallItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/agent/public_read_model.py", "backend/app/agent/public_schemas.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "Auto Analysis Tool n·s 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "실행 화면이 tool_name·status·result_summary만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "Auto Tool alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/agent/public_read_model.py",
+        "backend/app/agent/public_schemas.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -319,11 +884,22 @@
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "decideApproval 재수출 alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "승인 UI가 canonical decision enum만 전송한다."},
-        {"check": "baseline_revision_ready", "criteria": "재수출 alias 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "decideApproval 재수출 alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "승인 UI가 canonical decision enum만 전송한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "재수출 alias 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/shared/api/agent.js"],
+      "change_points": [
+        "frontend/src/shared/api/agent.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -337,11 +913,22 @@
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "APPROVE|REJECT UI adapter 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "모든 승인 호출자가 APPROVED|REJECTED를 사용한다."},
-        {"check": "baseline_revision_ready", "criteria": "enum adapter 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "APPROVE|REJECT UI adapter 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "모든 승인 호출자가 APPROVED|REJECTED를 사용한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "enum adapter 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/shared/api/agent.js"],
+      "change_points": [
+        "frontend/src/shared/api/agent.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -352,14 +939,32 @@
       "symbol": "frontend/src/shared/api/agent.js#getActions",
       "replacement": "frontend/src/shared/api/agent.js#getActionsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage", "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage", "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumers": [
+        "frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage",
+        "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage",
+        "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "getActions legacy page adapter 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "Action 소비 화면이 bare core 또는 정식 paging을 사용한다."},
-        {"check": "baseline_revision_ready", "criteria": "page adapter 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "getActions legacy page adapter 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "Action 소비 화면이 bare core 또는 정식 paging을 사용한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "page adapter 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/agent/pages/ActionsPage.jsx", "frontend/src/features/detection/pages/AlarmsPage.jsx", "frontend/src/features/detection/pages/DashboardPage.jsx", "frontend/src/shared/api/agent.js"],
+      "change_points": [
+        "frontend/src/features/agent/pages/ActionsPage.jsx",
+        "frontend/src/features/detection/pages/AlarmsPage.jsx",
+        "frontend/src/features/detection/pages/DashboardPage.jsx",
+        "frontend/src/shared/api/agent.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -370,14 +975,32 @@
       "symbol": "frontend/src/shared/api/detection.js#getAlarm",
       "replacement": "GET /alarms/{source}/{alarm_id}",
       "replacement_kind": "endpoint",
-      "consumers": ["frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage", "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage"],
+      "consumers": [
+        "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage",
+        "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "목록 조회 후 client find 구현이 더 이상 호출되지 않는다."},
-        {"check": "canonical_contract_green", "criteria": "A source-aware 단건 endpoint와 Frontend transport 회귀가 통과한다."},
-        {"check": "baseline_revision_ready", "criteria": "getAlarm transport 교체 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "목록 조회 후 client find 구현이 더 이상 호출되지 않는다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "A source-aware 단건 endpoint와 Frontend transport 회귀가 통과한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "getAlarm transport 교체 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/detection/router.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_optional.json", "frontend/src/features/agent/pages/AgentRunPage.jsx", "frontend/src/features/detection/pages/AlarmsPage.jsx", "frontend/src/shared/api/detection.js"],
+      "change_points": [
+        "backend/app/detection/router.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_optional.json",
+        "frontend/src/features/agent/pages/AgentRunPage.jsx",
+        "frontend/src/features/detection/pages/AlarmsPage.jsx",
+        "frontend/src/shared/api/detection.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -391,11 +1014,22 @@
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "미구현 /approvals/paged adapter 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "승인 화면이 bare core 또는 정식 paging을 사용한다."},
-        {"check": "baseline_revision_ready", "criteria": "잠복 404 adapter 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "미구현 /approvals/paged adapter 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "승인 화면이 bare core 또는 정식 paging을 사용한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "잠복 404 adapter 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/shared/api/agent.js"],
+      "change_points": [
+        "frontend/src/shared/api/agent.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -406,14 +1040,28 @@
       "symbol": "frontend/src/shared/api/agent.js#getRuns",
       "replacement": "frontend/src/shared/api/agent.js#getRunsCore",
       "replacement_kind": "export",
-      "consumers": ["frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"],
+      "consumers": [
+        "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "getRuns legacy page adapter 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "run 소비 화면이 bare core 또는 정식 paging을 사용한다."},
-        {"check": "baseline_revision_ready", "criteria": "run page adapter 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "getRuns legacy page adapter 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "run 소비 화면이 bare core 또는 정식 paging을 사용한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "run page adapter 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/detection/pages/DashboardPage.jsx", "frontend/src/shared/api/agent.js"],
+      "change_points": [
+        "frontend/src/features/detection/pages/DashboardPage.jsx",
+        "frontend/src/shared/api/agent.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -422,18 +1070,50 @@
       "projection": "copy",
       "owner": "D",
       "symbol": "backend.app.analytics.audit.AuditLogItem",
-      "canonical_fields": ["occurred_at", "actor_type"],
-      "compatibility_fields": ["at", "actor"],
+      "canonical_fields": [
+        "occurred_at",
+        "actor_type"
+      ],
+      "compatibility_fields": [
+        "at",
+        "actor"
+      ],
       "enforcement": "producer",
       "producer": "backend.app.analytics.audit._to_item",
       "consumers": [],
-      "consumer_scan_ignores": [{"reference": "frontend/src/features/analytics/components/AuditFilterBar.jsx", "reason": "`actor`는 감사로그 filter state의 property이며 AuditLogItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/analytics/pages/AuditLogPage.jsx", "reason": "`actor`는 감사로그 요청 filter state의 property이며 AuditLogItem compatibility 소비가 아님"}, {"reference": "frontend/src/features/detection/components/TraceFilters.js", "reason": "`at`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 AuditLogItem compatibility 소비가 아님"}],
-      "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "감사 화면의 at·actor 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "감사 화면이 occurred_at·actor_type만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "audit copy alias 제거 revision이 준비된다."}
+      "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/analytics/components/AuditFilterBar.jsx",
+          "reason": "`actor`는 감사로그 filter state의 property이며 AuditLogItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/analytics/pages/AuditLogPage.jsx",
+          "reason": "`actor`는 감사로그 요청 filter state의 property이며 AuditLogItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/detection/components/TraceFilters.js",
+          "reason": "`at`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 AuditLogItem compatibility 소비가 아님"
+        }
       ],
-      "change_points": ["backend/app/analytics/audit.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "removal_conditions": [
+        {
+          "check": "consumer_zero",
+          "criteria": "감사 화면의 at·actor 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "감사 화면이 occurred_at·actor_type만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "audit copy alias 제거 revision이 준비된다."
+        }
+      ],
+      "change_points": [
+        "backend/app/analytics/audit.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -442,19 +1122,40 @@
       "projection": "derived",
       "owner": "D",
       "symbol": "backend.app.analytics.audit.AuditLogItem",
-      "canonical_fields": ["event_type", "after", "entity_type", "entity_id"],
-      "compatibility_fields": ["event", "entity"],
+      "canonical_fields": [
+        "event_type",
+        "after",
+        "entity_type",
+        "entity_id"
+      ],
+      "compatibility_fields": [
+        "event",
+        "entity"
+      ],
       "enforcement": "producer",
       "producer": "backend.app.analytics.audit._to_item",
       "derivation": "event maps selected canonical events using after status/channel; entity joins entity_type and entity_id with ':'.",
       "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "감사 화면의 event·entity 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "감사 화면이 canonical event/entity fields만 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "audit derived alias 제거 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "감사 화면의 event·entity 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "감사 화면이 canonical event/entity fields만 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "audit derived alias 제거 revision이 준비된다."
+        }
       ],
-      "change_points": ["backend/app/analytics/audit.py", "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json", "frontend/src/shared/api/contractMocks.js"],
+      "change_points": [
+        "backend/app/analytics/audit.py",
+        "backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json",
+        "frontend/src/shared/api/contractMocks.js"
+      ],
       "gate": "V5-CM-5.1"
     },
     {
@@ -466,14 +1167,28 @@
       "replacement": "frontend/src/shared/api/analytics.js#getAuditLogsCore",
       "replacement_kind": "export",
       "export_alias_of": "frontend/src/shared/api/analytics.js#getAuditLogsPaged",
-      "consumers": ["frontend/src/features/analytics/pages/AuditLogPage.jsx#AuditLogPage"],
+      "consumers": [
+        "frontend/src/features/analytics/pages/AuditLogPage.jsx#AuditLogPage"
+      ],
       "consumer_scan_ignores": [],
       "removal_conditions": [
-        {"check": "consumer_zero", "criteria": "getAuditLogs paged export alias 소비가 0건이다."},
-        {"check": "canonical_contract_green", "criteria": "AuditLogPage가 canonical core 또는 정식 paged export를 명시 소비한다."},
-        {"check": "baseline_revision_ready", "criteria": "export alias 삭제 revision이 준비된다."}
+        {
+          "check": "consumer_zero",
+          "criteria": "getAuditLogs paged export alias 소비가 0건이다."
+        },
+        {
+          "check": "canonical_contract_green",
+          "criteria": "AuditLogPage가 canonical core 또는 정식 paged export를 명시 소비한다."
+        },
+        {
+          "check": "baseline_revision_ready",
+          "criteria": "export alias 삭제 revision이 준비된다."
+        }
       ],
-      "change_points": ["frontend/src/features/analytics/pages/AuditLogPage.jsx", "frontend/src/shared/api/analytics.js"],
+      "change_points": [
+        "frontend/src/features/analytics/pages/AuditLogPage.jsx",
+        "frontend/src/shared/api/analytics.js"
+      ],
       "gate": "V5-CM-5.1"
     }
   ]
