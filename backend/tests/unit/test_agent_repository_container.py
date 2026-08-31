@@ -149,6 +149,7 @@ def _command(**overrides: Any) -> repo.CreateAgentRunCommand:
         "requested_alarm": members[0],
         "representative_alarm": members[0],
         "member_alarms": members,
+        "llm_model": "test-model",
     }
     payload.update(overrides)
     return repo.CreateAgentRunCommand(**payload)
