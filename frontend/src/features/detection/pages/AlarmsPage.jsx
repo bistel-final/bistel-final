@@ -10,6 +10,8 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import Pagination from '../../../shared/components/ui/Pagination.jsx'
+import { HistoryTrendCard } from '../../../shared/components/trace/HistoryTrendChart.jsx'
+import { detailNumbers } from '../../../shared/trace/traceModel.js'
 import {
   CELL_DIM,
   CELL_ID,
@@ -20,10 +22,9 @@ import {
   rowClass,
   ruleVariant,
 } from '../../../shared/components/ui/statusStyles.js'
-import { detailNumbers, sensorLimit } from '../components/TraceModel.jsx'
+import { sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
-import { HistoryTrendCard } from '../components/HistoryTrendChart.jsx'
 import { partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
 // 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + TRACE/SUMMARY/R03 탭 + 테이블.

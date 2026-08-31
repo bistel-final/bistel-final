@@ -1,15 +1,12 @@
 import { Link } from 'react-router-dom'
 import { fmtDateTime } from '../../../shared/api/format.js'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
-import { detailNumbers, limitLines } from '../../detection/components/TraceModel.jsx'
+import { detailNumbers, limitLines } from '../../../shared/trace/traceModel.js'
 import { alarmJudgement, measuredText } from '../agent-run-view-state.js'
 
 // 알람 요약 카드 — 라이트 시안 3번 우측 스택 3번
 // 상단 요약 문장(블루 soft 박스) + 4열 KV 그리드 12항목
 // 값은 전부 응답 실측에서만 만든다 — 없는 값은 "실측 미제공"
-const AREA_BY_PREFIX = { PHO: 'PHOTO', ETC: 'ETCH' }
-const areaOf = (id) => AREA_BY_PREFIX[String(id ?? '').slice(0, 3)] ?? '—'
-
 const measuredOf = (alarm) => {
   if (!alarm) return null
   if (alarm.value != null) return Number(alarm.value)
@@ -42,7 +39,7 @@ function RunSummaryCard({ run, repAlarm, lim, action, alarmHref = null }) {
 
   const items = [
     ['발생 시각', measuredText(fmtDateTime(run.incident_first_at))],
-    ['AREA', repAlarm?.area ?? areaOf(run.equipment_id)],
+    ['AREA', measuredText(repAlarm?.area)],
     ['설비 · 챔버', [run.equipment_id, run.incident?.chamber_id].filter(Boolean).join(' · ') || '실측 미제공'],
     ['RECIPE STEP', measuredText(run.recipe_step_name)],
     ['LOT · WAFER', measuredText(lotWafer)],
