@@ -185,13 +185,24 @@ export function getAlarms(params = {}) {
 // (예: 전체 알람 192건) 대시보드·알람 히스토리 집계는 한 페이지만 받으면 조용히 undercount된다.
 // total을 기준으로 필요한 만큼 이어받아 하나의 items 배열로 합친다.
 const ALL_ALARMS_PAGE_SIZE = 100
+const ALL_ALARMS_MAX_PAGES = 20
 export function getAllAlarms(scope = {}) {
   const step = (page, acc) =>
     getAlarms({ ...scope, page, size: ALL_ALARMS_PAGE_SIZE }).then((res) => {
-      const items = acc.concat(res.items ?? [])
+      const pageItems = res.items ?? []
+      const items = acc.concat(pageItems)
       const total = res.total ?? items.length
-      if (items.length >= total || (res.items ?? []).length === 0) {
-        return { items, total, page: 1, size: items.length }
+      const complete = items.length >= total
+      const exhausted = pageItems.length === 0
+      if (complete || exhausted || page >= ALL_ALARMS_MAX_PAGES) {
+        return {
+          items,
+          total,
+          page: 1,
+          size: items.length,
+          partial: items.length < total,
+          mock: USE_MOCK,
+        }
       }
       return step(page + 1, items)
     })

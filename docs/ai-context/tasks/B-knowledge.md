@@ -6,7 +6,7 @@
 > 담당: 강연권 · 모듈 `backend/app/knowledge/` · `frontend/src/features/knowledge/`
 
 Neo4j 44/85 안전 검증, RAG 원본 보존·정정본 적재, 임베딩 검색, 근거 provenance와 화면 4·5를
-책임진다. B의 WBS 범위는 **13 Task / 21.5h**이며, P0 기능 구현과 P1 운영 검증을 분리한다.
+책임진다. B의 WBS 범위는 **13 Task / 23.5h**이며, P0 기능 구현과 P1 운영 검증을 분리한다.
 corpus revision Task는 만들지 않는다.
 
 ---
@@ -42,10 +42,10 @@ NFR-11(API 계약), NFR-14(적재 안전성), NFR-17(UI 상태)다.
 | V5-B-3.2 | P0 | GraphService·`get_equipment_context(chamber_id)` Tool. 완료: CM-2.7이 적용·marker한 graph를 읽는 GraphRepository·Service를 만들고 exact signature로 장비·모델·AREA·Process Step·인접 Step·파라미터·형제 chamber와 stable relation/graph provenance를 반환한다. 0건·timeout·오류는 공통 `ok`·`reason`·빈 payload 계약과 공통 reason prefix를 따르며 elementId·고정 설비 upstream·LOT routing 추정은 노출하지 않는다 | FR-B-03, NFR-09 | V5-CM-2.7 | 1.5h |
 | V5-B-3.3 | P0 | 단일 `GET /relations/chambers/{chamber_id}`. 완료: CM-2.7 marker가 가리키는 graph의 chamber 중심 read-only 응답을 B-3.2 `GraphService`에서 만들고 Neo4j 자격증명·Cypher·elementId를 노출하지 않는다. 같은 Method+Path의 다른 DTO를 만들지 않으며 노드 타입 확장은 같은 응답 shape의 `/relations/{node_type}/{node_id}`로만 확장한다 | FR-B-06, NFR-02, NFR-11 | V5-CM-2.7, V5-B-3.2 | 1.5h |
 | V5-B-4.1 | P1 | 화면 4 Documents. 완료: `POST /documents/search`를 실제 연동해 근거·deep link와 Loading·Error·Empty·Success를 표시한다 | FR-B-06, FR-I-02, NFR-17 | V5-B-2.3 | 2.0h |
-| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: chamber를 선택해 단일 관계 API의 장비·모델·AREA·Process Step·인접 Step·파라미터를 시각화하고 Loading·Error·Empty·Success를 검증한다. Neo4j Browser iframe·비밀정보 노출은 0건이다 | FR-B-06, NFR-02, NFR-17 | V5-B-3.3 | 2.0h |
+| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: Graph 정본 12개 chamber selector와 단일 관계 API로 장비·모델·AREA·Process Step·인접 Step·파라미터를 xyflow에 시각화하고 Loading·Error·Empty·Success를 검증한다. 같은 shared Ontology·Trace 표현을 Agent·Detection이 재사용하며 feature 교차 import, Neo4j Browser iframe·URI·Cypher·비공개 property 노출은 0건이다 | FR-B-06, NFR-02, NFR-17 | V5-B-3.3 | 4.0h |
 | V5-B-4.3 | P1 | 최소 검증·평가. 완료: B-1.4 운영 검증 artifact, RAG 검색 contract·embedding singleton·Neo4j 44/85·chamber 관계 fixture를 검증하고 **Recall@4 ≥ 0.80, MRR ≥ 0.70, 관계 질문 100%**와 실패 사례를 artifact에 기록한다. 이 Task는 B-2/B-3/B-4 기능 구현의 착수 gate가 아니라 최종 인수 gate다 | FR-B-07 | V5-B-1.4, V5-B-2.2, V5-B-3.2 | 2.0h |
 
-**합계 13 Task / 21.5h** (P0 기능 13.5h / P1 화면·운영 검증 8.0h, P2 없음)
+**합계 13 Task / 23.5h** (P0 기능 13.5h / P1 화면·운영 검증 10.0h, P2 없음)
 
 ---
 

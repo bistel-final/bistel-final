@@ -1,3 +1,5 @@
+import { normalizeOntologyGraph } from '../../shared/graph/ontology-graph.js'
+
 const valueOf = (params, key) => params.get(key)?.trim() ?? ''
 
 export function parseOntologyFocus(params) {
@@ -13,32 +15,6 @@ export function parseOntologyFocus(params) {
     }
   }
   return { phase: 'ready', chamberId, relationId, graphRevision }
-}
-
-const normalizedNode = (node) => ({
-  ...node,
-  id: node.node_id ?? node.id,
-  display_name: node.name ?? node.display_name ?? node.business_id,
-})
-
-const normalizedRelation = (relation) => ({
-  ...relation,
-  id: relation.relation_id ?? relation.id,
-  source: relation.from_node_id ?? relation.source,
-  target: relation.to_node_id ?? relation.target,
-})
-
-export function normalizeOntologyGraph(graph) {
-  if (!graph) return null
-  const nodes = (graph.nodes ?? []).map(normalizedNode)
-  const relationships = (graph.relationships ?? []).map(normalizedRelation)
-  const chamberId = graph.context?.chamber_id
-  return {
-    ...graph,
-    root_node_id: graph.root_node_id ?? (chamberId ? `Chamber:${chamberId}` : nodes[0]?.id),
-    nodes,
-    relationships,
-  }
 }
 
 export function resolveOntologyFocus(graph, focus) {

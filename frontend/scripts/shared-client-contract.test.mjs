@@ -115,6 +115,18 @@ const responseFor = (method, url, data, params = {}) => {
       size: Number(params.size),
     }
   }
+  if (key === 'GET /alarms/paged' && params.equipment_id === 'EQP-ENDLESS') {
+    const page = Number(params.page ?? 1)
+    return {
+      items: Array.from({ length: 100 }, (_, index) => ({
+        ...CORE_ALARM,
+        alarm_id: `ENDLESS-${String((page - 1) * 100 + index + 1).padStart(4, '0')}`,
+      })),
+      total: 3000,
+      page,
+      size: Number(params.size),
+    }
+  }
   if (key === 'GET /alarms/R03/R03-DETAIL') {
     return { ...CORE_ALARM, source: 'R03', alarm_id: 'R03-DETAIL' }
   }
@@ -276,12 +288,27 @@ const allAlarms = await detection.getAllAlarms({ area: 'ETCH', equipment_id: 'EQ
 const allAlarmsCaptures = captures.slice(allAlarmsCaptureStart)
 assert.equal(allAlarms.items.length, 192)
 assert.equal(allAlarms.total, 192)
+assert.equal(allAlarms.partial, false)
+assert.equal(allAlarms.mock, false)
 assert.deepEqual(allAlarmsCaptures.map(({ params }) => params.page), [1, 2])
 assert.ok(
   allAlarmsCaptures.every(
     ({ params }) => params.area === 'ETCH' && params.equipment_id === 'EQP-PAGE' && params.size === 100,
   ),
   '전체 페이지 순회 중 scope filter와 page size를 유지해야 합니다',
+)
+
+const cappedAlarmsCaptureStart = captures.length
+const cappedAlarms = await detection.getAllAlarms({ equipment_id: 'EQP-ENDLESS' })
+const cappedAlarmsCaptures = captures.slice(cappedAlarmsCaptureStart)
+assert.equal(cappedAlarms.items.length, 2000)
+assert.equal(cappedAlarms.total, 3000)
+assert.equal(cappedAlarms.partial, true)
+assert.equal(cappedAlarms.mock, false)
+assert.deepEqual(
+  cappedAlarmsCaptures.map(({ params }) => params.page),
+  Array.from({ length: 20 }, (_, index) => index + 1),
+  '전체 알람 조회는 20페이지에서 반드시 중단해야 합니다',
 )
 
 const sourceAlarm = await detection.getAlarm('R03-DETAIL', 'R03')

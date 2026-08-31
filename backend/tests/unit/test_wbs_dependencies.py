@@ -81,7 +81,7 @@ def test_wbs_hours_and_cm_3_5_contract_are_aligned() -> None:
     )
     cm_3_5 = next(row for row in fields if row[1] == "V5-CM-3.5")
 
-    assert (p0, p1, total, common) == (176.5, 48.0, 224.5, 74.0)
+    assert (p0, p1, total, common) == (176.5, 50.0, 226.5, 74.0)
     summary = re.search(
         r"\| Common \|[^\n]*\| (?P<common>[0-9.]+)h \|[^\n]*\n"
         r"(?:\|[^\n]*\n){4}"
@@ -156,8 +156,8 @@ def test_effort_exception_prose_matches_the_task_rows() -> None:
         if float(row[-2].removesuffix("h")) > 2.0
     }
 
-    assert exception_section["count_word"] == "서른"
-    assert len(listed) == 30
+    assert exception_section["count_word"] == "서른한"
+    assert len(listed) == 31
     assert listed == actual
 
 
@@ -238,7 +238,21 @@ def test_golden_flow_effort_and_totals_are_pinned() -> None:
 
     assert c_6_1[-2] == "4.0h"
     assert c_6_2[-2] == "4.0h"
-    assert (p0, p1, total) == (176.5, 48.0, 224.5)
+    assert (p0, p1, total) == (176.5, 50.0, 226.5)
+
+
+def test_b_4_2_shared_ontology_effort_is_pinned() -> None:
+    row = next(item for item in _task_fields() if item[1] == "V5-B-4.2")
+
+    assert row[-2] == "4.0h"
+    for phrase in (
+        "12개 chamber selector",
+        "xyflow",
+        "shared Ontology·Trace",
+        "feature 교차 import",
+        "비공개 property",
+    ):
+        assert phrase in row[3]
 
 
 def test_c_5_2_detection_scaffold_keeps_a_endpoint_ownership() -> None:

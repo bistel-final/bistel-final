@@ -6,40 +6,93 @@ import { RELATIONS } from '../../features/knowledge/mock/relations.js'
 
 const USE_MOCK = mockEnabledFor('KNOWLEDGE')
 
+const mockGraphNode = (label, businessId, displayName = businessId, properties = {}) => ({
+  node_id: `${label}:${businessId}`,
+  label,
+  business_id: businessId,
+  name: displayName,
+  properties,
+})
+
+const mockGraphRelationship = (relation_id, type, from_node_id, to_node_id) => ({
+  relation_id,
+  type,
+  from_node_id,
+  to_node_id,
+})
+
 const mockCoreGraphFor = (chamberId) => {
   if (chamberId === CORE_CHAMBER_GRAPH.context.chamber_id) return CORE_CHAMBER_GRAPH
-  const originalNodeId = `Chamber:${CORE_CHAMBER_GRAPH.context.chamber_id}`
-  const nextNodeId = `Chamber:${chamberId}`
   const equipmentId = chamberId.replace(/-PM\d+$/, '')
-  const relation = CORE_CHAMBER_GRAPH.relationships[0]
-  const parameterId = 'ET_REFL'
-  const parameterNodeId = `Parameter:${parameterId}`
+  const equipmentNumber = Number(equipmentId.replace('EQP', ''))
+  const isPhoto = equipmentNumber <= 3
+  const area = isPhoto ? 'Photo' : 'Etch'
+  const areaName = isPhoto ? 'Photolithography' : 'Dry Etch'
+  const modelCode = isPhoto ? 'PH-9000' : 'ET-7500'
+  const modelName = isPhoto ? 'Photo Scanner' : 'Dry Etcher'
+  const processStepId = isPhoto ? 'CT-PHOTO' : 'CT-ETCH'
+  const adjacentStepId = isPhoto ? 'CT-ETCH' : 'CT-PHOTO'
+  const parameters = isPhoto ? ['PH_DEV', 'PH_DOSE', 'PH_FOCUS', 'PH_PEB'] : ['ET_PRES', 'ET_REFL', 'ET_CF4', 'ET_ESC']
+  const focusParameter = isPhoto ? 'PH_FOCUS' : 'ET_REFL'
+  const focusRelationId = CORE_CHAMBER_GRAPH.relationships.find(
+    (relationship) => relationship.from_node_id === 'Parameter:PH_FOCUS',
+  ).relation_id
+  const siblingChamber = `${equipmentId}-${chamberId.endsWith('PM1') ? 'PM2' : 'PM1'}`
+  const rootId = `Chamber:${chamberId}`
+  const equipmentNodeId = `Equipment:${equipmentId}`
+  const currentStepId = `ProcessStep:${processStepId}`
+  const adjacentNodeId = `ProcessStep:${adjacentStepId}`
+  const measuredRelationships = parameters.map((parameterId, index) =>
+    mockGraphRelationship(
+      parameterId === focusParameter ? focusRelationId : `MOCK-${chamberId}-MEASURED-${index + 1}`,
+      'MEASURED_ON',
+      `Parameter:${parameterId}`,
+      rootId,
+    ),
+  )
+  const structuralRelationships = [
+    mockGraphRelationship(`MOCK-${chamberId}-PART`, 'PART_OF', rootId, equipmentNodeId),
+    mockGraphRelationship(`MOCK-${siblingChamber}-PART`, 'PART_OF', `Chamber:${siblingChamber}`, equipmentNodeId),
+    mockGraphRelationship(`MOCK-${equipmentId}-MODEL`, 'OF_MODEL', equipmentNodeId, `EquipmentModel:${modelCode}`),
+    mockGraphRelationship(`MOCK-${equipmentId}-STEP`, 'PERFORMS', equipmentNodeId, currentStepId),
+    mockGraphRelationship(`MOCK-${processStepId}-AREA`, 'IN_AREA', currentStepId, `Area:${area}`),
+    mockGraphRelationship(
+      `MOCK-${processStepId}-ADJACENT`,
+      'NEXT_STEP',
+      isPhoto ? currentStepId : adjacentNodeId,
+      isPhoto ? adjacentNodeId : currentStepId,
+    ),
+  ]
+  const relationships = [...measuredRelationships, ...structuralRelationships]
+  const nodes = [
+    mockGraphNode('Chamber', chamberId, chamberId, { chamber_id: chamberId }),
+    mockGraphNode('Chamber', siblingChamber, siblingChamber, { chamber_id: siblingChamber }),
+    mockGraphNode('Equipment', equipmentId, equipmentId, { equipment_id: equipmentId, area, model_code: modelCode }),
+    mockGraphNode('EquipmentModel', modelCode, modelName, { model_code: modelCode, model_name: modelName }),
+    mockGraphNode('Area', area, areaName, { area_id: area, area_name: areaName }),
+    mockGraphNode('ProcessStep', processStepId, processStepId, { step_id: processStepId, step_seq: isPhoto ? 1 : 2 }),
+    mockGraphNode('ProcessStep', adjacentStepId, adjacentStepId, { step_id: adjacentStepId, step_seq: isPhoto ? 2 : 1 }),
+    ...parameters.map((parameterId) =>
+      mockGraphNode('Parameter', parameterId, parameterId, { parameter_id: parameterId }),
+    ),
+  ]
   return {
-    ...CORE_CHAMBER_GRAPH,
     context: {
-      ...CORE_CHAMBER_GRAPH.context,
-      area: 'Etch',
+      area,
       equipment_id: equipmentId,
       chamber_id: chamberId,
-      model_code: 'ET-7500',
-      process_step_id: 'CT-ETCH',
-      adjacent_process_step_ids: ['CT-PHOTO'],
-      parameter_ids: [parameterId],
-      relation_ids: [relation.relation_id],
+      model_code: modelCode,
+      process_step_id: processStepId,
+      adjacent_process_step_ids: [adjacentStepId],
+      parameter_ids: parameters,
+      relation_ids: relationships.map((relationship) => relationship.relation_id),
     },
-    nodes: [
-      { node_id: nextNodeId, label: 'Chamber', business_id: chamberId, name: chamberId, properties: {} },
-      { node_id: parameterNodeId, label: 'Parameter', business_id: parameterId, name: parameterId, properties: {} },
-    ],
-    relationships: [
-      {
-        ...relation,
-        from_node_id: relation.from_node_id === originalNodeId ? nextNodeId : parameterNodeId,
-        to_node_id: relation.to_node_id === originalNodeId ? nextNodeId : parameterNodeId,
-      },
-    ],
-    node_count: 2,
-    relationship_count: 1,
+    root_node_id: rootId,
+    graph_revision: CORE_CHAMBER_GRAPH.graph_revision,
+    nodes,
+    relationships,
+    node_count: nodes.length,
+    relationship_count: relationships.length,
   }
 }
 
