@@ -572,6 +572,7 @@ def test_the_result_builds_a_valid_run_command(db: Any) -> None:
         requested_alarm=result.requested_alarm,
         representative_alarm=result.representative_alarm,
         member_alarms=result.member_alarms,
+        llm_model="test-model",
     )
     normalized = repo._validate_create_command(command)
     assert normalized.representative_alarm == _ref(SUMMARY, "SA-01")

@@ -422,6 +422,7 @@ def test_the_partial_unique_fallback_actually_fires(db: Any) -> None:
                     requested_alarm=_ref("TA-01"),
                     representative_alarm=_ref("TA-01"),
                     member_alarms=(_ref("TA-01"),),
+                    llm_model="test-model",
                 ),
             )
         proceed.set()

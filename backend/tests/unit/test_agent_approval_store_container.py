@@ -98,6 +98,7 @@ def _seed(lot_id: str, chamber_id: str) -> RehydrationSeed:
                 requested_alarm=ALARM,
                 representative_alarm=ALARM,
                 member_alarms=(ALARM,),
+                llm_model="test-model",
             ),
             wafer_routes=(),
             graph_evidence=(),
@@ -405,6 +406,7 @@ def test_same_run_terminal_bundle_replays_but_another_run_cannot_reuse_it(
                 representative_alarm=ALARM,
                 member_alarms=(ALARM,),
                 retry_of_run_id=run_id,
+                llm_model="test-model",
             ),
         )
     with pytest.raises(repo.RepositoryConflict) as caught:

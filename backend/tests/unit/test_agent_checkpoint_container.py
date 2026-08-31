@@ -238,6 +238,7 @@ def _create_run(endpoint: Any, thread_id: str) -> str:
                     requested_alarm=alarm,
                     representative_alarm=alarm,
                     member_alarms=(alarm,),
+                    llm_model="test-model",
                 ),
             )
         return run.agent_run_id
