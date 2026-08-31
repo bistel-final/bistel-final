@@ -3,8 +3,8 @@
 //   {question, sql, columns, rows(dict[]), row_count, metric, metric_result, group_by, visualization, latency_ms}
 // 거부 응답은 {question, rejected, reason, latency_ms} 뿐이다 (sql·rows 없음).
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { postQuery, validateSql } from '../../../shared/api/analytics.js'
-import { NL_CHIPS, NL_INITIAL_HISTORY } from '../mock/queries.js'
+import { getEvaluations, getQueryHistory, postQuery, validateSql } from '../../../shared/api/analytics.js'
+import { NL_CHIPS } from '../mock/queries.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
@@ -12,6 +12,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
+import NlqEvaluationPanel from '../components/NlqEvaluationPanel.jsx'
 
 // 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
@@ -46,7 +47,11 @@ function AnalyticsPage() {
   const [phase, setPhase] = useState(null) // gen | unknown | rejected | run | done
   const [tab, setTab] = useState('table')
   const [sortAsc, setSortAsc] = useState(false)
-  const [history, setHistory] = useState(NL_INITIAL_HISTORY)
+  // 이력은 GET /analytics/history 실응답으로 hydrate 한다 (V5-D-2.6, Mock 0).
+  // 세션 내 신규 질의는 pushHistory 로 즉시 반영 — 서버 기록과 question 기준 dedupe.
+  const [history, setHistory] = useState([])
+  const [historyState, setHistoryState] = useState('loading') // loading | error | ready
+  const [sideTab, setSideTab] = useState('history') // history | evaluation — 보조 탭(8번째 메뉴 아님)
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
   const [editing, setEditing] = useState(false)
@@ -58,6 +63,33 @@ function AnalyticsPage() {
   useEffect(() => {
     const t = timers.current
     return () => t.forEach(clearTimeout)
+  }, [])
+
+  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다
+  useEffect(() => {
+    let cancelled = false
+    getQueryHistory({ size: 20 })
+      .then((res) => {
+        if (cancelled) return
+        const items = (res?.items ?? []).map((it) => ({
+          question: it.question,
+          ok: !it.is_rejected && !it.error_msg,
+          row_count: it.row_cnt ?? 0,
+          latency_ms: it.latency_ms ?? 0,
+          reason: it.reject_reason ?? it.error_msg ?? null,
+        }))
+        setHistory((h) => {
+          const seen = new Set(h.map((x) => x.question))
+          return [...h, ...items.filter((it) => !seen.has(it.question))]
+        })
+        setHistoryState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setHistoryState('error')
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
   const after = (ms, fn) => timers.current.push(setTimeout(fn, ms))
   const clearTimers = () => {
@@ -324,7 +356,21 @@ function AnalyticsPage() {
           )}
         </div>
 
-        <NlqHistoryPanel items={history} activeQ={activeQ} onRerun={ask} />
+        <div className="flex w-[360px] flex-none flex-col gap-2.5">
+          <div className="flex gap-2">
+            <Button sm variant={sideTab === 'history' ? 'primary' : 'outline'} onClick={() => setSideTab('history')}>
+              최근 질의
+            </Button>
+            <Button sm variant={sideTab === 'evaluation' ? 'primary' : 'outline'} onClick={() => setSideTab('evaluation')}>
+              평가
+            </Button>
+          </div>
+          {sideTab === 'history' ? (
+            <NlqHistoryPanel items={history} activeQ={activeQ} onRerun={ask} state={historyState} />
+          ) : (
+            <NlqEvaluationPanel fetchEvaluations={getEvaluations} />
+          )}
+        </div>
       </div>
     </div>
   )
