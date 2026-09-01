@@ -36,6 +36,14 @@ from app.agent.golden_flow_repository import (  # noqa: E402
     GoldenFlowTargetMismatch,
     read_golden_flow_snapshot,
 )
+from app.agent.golden_summary import (  # noqa: E402
+    GoldenSummaryContractError,
+    build_golden_summary,
+)
+from scripts.fault_evaluation_artifact import (  # noqa: E402
+    FaultArtifactWriteError,
+    write_fault_evaluation_artifact,
+)
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -104,6 +112,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--database", required=True, choices=(TARGET_DATABASE,))
     parser.add_argument("--evidence-file", required=True, type=Path)
     parser.add_argument("--phase", choices=tuple(item.value for item in GoldenPhase))
+    parser.add_argument("--summary-output", type=Path)
     return parser
 
 
@@ -487,6 +496,11 @@ def main(
     except _UsageError:
         _stderr("USAGE_INVALID")
         return EXIT_USAGE
+    if args.summary_output is not None and (
+        args.phase is not None or not args.summary_output.is_absolute()
+    ):
+        _stderr("USAGE_INVALID")
+        return EXIT_USAGE
     try:
         evidence = load_evidence_bundle(args.evidence_file)
         oracle = _load_oracle()
@@ -513,6 +527,20 @@ def main(
     except GoldenFlowContractError:
         _stderr("EVIDENCE_INVALID")
         return EXIT_EVIDENCE
+    if args.summary_output is not None:
+        try:
+            source_hash = hashlib.sha256(SOURCE_MANIFEST_PATH.read_bytes()).hexdigest()
+            evidence_hash = hashlib.sha256(args.evidence_file.read_bytes()).hexdigest()
+            summary = build_golden_summary(
+                result,
+                dataset_epoch=DATASET_EPOCH,
+                source_manifest_sha256=source_hash,
+                evidence_manifest_sha256=evidence_hash,
+            )
+            write_fault_evaluation_artifact(args.summary_output, summary)
+        except (OSError, FaultArtifactWriteError, GoldenSummaryContractError):
+            _stderr("GOLDEN_SUMMARY_WRITE_FAILED")
+            return EXIT_FAILED
     for item in result.phases:
         _emit(
             {
