@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -9,8 +9,6 @@ import DocumentSearchResultCard from '../components/DocumentSearchResultCard.jsx
 import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
 
 const ALL_MODELS = '전체'
-const HISTORY_KEY = 'bistel.documents.searchHistory'
-const MAX_HISTORY = 8
 const DOCUMENT_LIBRARY = [
   {
     group: 'Troubleshooting',
@@ -39,28 +37,18 @@ const DOCUMENT_LIBRARY = [
   },
 ]
 
-function loadSearchHistory() {
-  try {
-    const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-    return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, MAX_HISTORY) : []
-  } catch {
-    return []
-  }
-}
-
-function saveSearchHistory(history) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
-}
-
 // 문서 검색 — 라이트 시안 4번
-// 좌 280px: 추천 질의 + 검색 기록(localStorage) / 우측: 결과 카드 / 하단: 입력 + [검색]
+// 좌 280px: 추천 질의 + 문서 라이브러리 / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const documentRequestRef = useRef(0)
-  const [input, setInput] = useState('')
+  const urlQuery = searchParams.get('query') ?? ''
+  const urlModelCode = searchParams.get('model_code')
+  const urlDocumentId = searchParams.get('document_id')
+  const urlChunkId = searchParams.get('chunk_id')
+  const [input, setInput] = useState(urlQuery)
   const [result, setResult] = useState(null) // { query, hits }
-  const [modelCode, setModelCode] = useState(ALL_MODELS)
-  const [history, setHistory] = useState(loadSearchHistory)
+  const [modelCode, setModelCode] = useState(DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [selectedHit, setSelectedHit] = useState(null)
@@ -68,20 +56,63 @@ function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
-  const deepLinkKey = `${searchParams.get('document_id') ?? ''}:${searchParams.get('chunk_id') ?? ''}`
+  const urlSearchLoadedRef = useRef(false)
+  const urlDocumentHandledRef = useRef('')
+
+  const syncUrl = useCallback(
+    ({
+      query,
+      model_code,
+      document_id,
+      chunk_id,
+      clearDocument = false,
+    }) => {
+      const next = new URLSearchParams(searchParams)
+      if (query !== undefined) {
+        const normalizedQuery = query.trim()
+        if (normalizedQuery) next.set('query', normalizedQuery)
+        else next.delete('query')
+      }
+      if (model_code !== undefined) {
+        if (model_code && model_code !== ALL_MODELS) next.set('model_code', model_code)
+        else next.delete('model_code')
+      }
+      if (clearDocument) {
+        next.delete('document_id')
+        next.delete('chunk_id')
+      }
+      if (document_id !== undefined) {
+        if (document_id) next.set('document_id', document_id)
+        else next.delete('document_id')
+      }
+      if (chunk_id !== undefined) {
+        if (chunk_id) next.set('chunk_id', chunk_id)
+        else next.delete('chunk_id')
+      }
+      setSearchParams(next, { replace: false })
+    },
+    [searchParams, setSearchParams],
+  )
 
   useEffect(() => {
-    const documentId = searchParams.get('document_id')
-    const chunkId = searchParams.get('chunk_id')
-    if (!documentId || !chunkId) return
+    if (!urlDocumentId) setDetailOpen(false)
+  }, [urlDocumentId])
+
+  useEffect(() => {
+    if (!urlDocumentId) return
+    const urlDocumentKey = `${urlDocumentId}:${urlChunkId ?? ''}`
+    if (urlDocumentHandledRef.current === urlDocumentKey) {
+      return
+    }
+    urlDocumentHandledRef.current = urlDocumentKey
     const requestToken = ++documentRequestRef.current
     Promise.resolve().then(() => {
       if (documentRequestRef.current !== requestToken) return
-      setSelectedHit({ document_id: documentId, chunk_id: chunkId, title: documentId })
+      setSelectedHit({ document_id: urlDocumentId, chunk_id: urlChunkId, title: urlDocumentId })
       setDetailOpen(true)
       setDetailLoading(true)
       setDetailError(null)
-      return getDocument(documentId)
+      return getDocument(urlDocumentId)
         .then(
           (detail) => {
             if (documentRequestRef.current !== requestToken) return
@@ -102,35 +133,49 @@ function DocumentsPage() {
     return () => {
       if (documentRequestRef.current === requestToken) documentRequestRef.current += 1
     }
-  }, [deepLinkKey, searchParams])
+  }, [urlDocumentId, urlChunkId])
 
-  const run = (query) => {
+  const run = useCallback((query, options = {}) => {
     const q = query.trim()
     if (!q || loading) return
+    const nextModelCode = options.modelCodeOverride ?? modelCode
     setLoading(true)
     documentRequestRef.current += 1
     setDetailOpen(false)
     setSelectedHit(null)
     setDocumentDetail(null)
+    setDetailLoading(false)
     setDetailError(null)
+    if (options.syncUrl !== false) {
+      syncUrl({
+        query: q,
+        model_code: nextModelCode,
+        clearDocument: true,
+      })
+    }
     searchDocuments({
       query: q,
-      model_code: modelCode === ALL_MODELS ? undefined : modelCode,
+      model_code: nextModelCode === ALL_MODELS ? undefined : nextModelCode,
       top_k: 4,
     })
       .then((res) => {
-        setResult({ ...res, model_code: modelCode })
-        setHistory((prev) => {
-          const next = [q, ...prev.filter((h) => h !== q)].slice(0, MAX_HISTORY)
-          saveSearchHistory(next)
-          return next
-        })
+        setResult({ ...res, model_code: nextModelCode })
         setInput('')
         setError(null)
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }
+  }, [loading, modelCode, syncUrl])
+
+  useEffect(() => {
+    const q = urlQuery.trim()
+    if (urlSearchLoadedRef.current || !q || urlDocumentId) return
+    urlSearchLoadedRef.current = true
+    run(q, {
+      modelCodeOverride: DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS,
+      syncUrl: false,
+    })
+  }, [run, urlDocumentId, urlModelCode, urlQuery])
 
   const openDocument = (hit) => {
     const requestToken = ++documentRequestRef.current
@@ -138,6 +183,11 @@ function DocumentsPage() {
     setDetailOpen(true)
     setDetailLoading(true)
     setDetailError(null)
+    urlDocumentHandledRef.current = `${hit.document_id}:${hit.chunk_id ?? ''}`
+    syncUrl({
+      document_id: hit.document_id,
+      chunk_id: hit.chunk_id,
+    })
     getDocument(hit.document_id)
       .then((detail) => {
         if (documentRequestRef.current !== requestToken) return
@@ -165,6 +215,11 @@ function DocumentsPage() {
     setDetailOpen(true)
     setDetailLoading(true)
     setDetailError(null)
+    urlDocumentHandledRef.current = `${document.document_id}:`
+    syncUrl({
+      document_id: document.document_id,
+      chunk_id: null,
+    })
     getDocument(document.document_id)
       .then((detail) => {
         if (documentRequestRef.current !== requestToken) return
@@ -184,6 +239,14 @@ function DocumentsPage() {
 
   const closeDocument = () => {
     setDetailOpen(false)
+    setSelectedHit(null)
+    setDocumentDetail(null)
+    setDetailError(null)
+    urlDocumentHandledRef.current = ''
+    syncUrl({
+      document_id: null,
+      chunk_id: null,
+    })
   }
 
   if (error)
@@ -249,26 +312,6 @@ function DocumentsPage() {
             </div>
           </div>
 
-          <div className="mt-4 border-t border-cell-line px-4 pb-4 pt-3">
-            <div className="mb-2 text-[11px] font-bold text-g2">검색 기록</div>
-            {history.length === 0 ? (
-              <div className="text-[11.5px] text-faint">아직 검색 기록이 없습니다</div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {history.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => run(q)}
-                    className="cursor-pointer truncate text-left text-[12px] text-g1 hover:text-blue"
-                    title={q}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </Card>
 
         <div className="flex min-w-0 flex-1 flex-col">
