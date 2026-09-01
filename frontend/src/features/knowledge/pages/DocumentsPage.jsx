@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getDocument, searchDocuments } from '../../../shared/api/knowledge.js'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -9,6 +9,17 @@ import DocumentSearchResultCard from '../components/DocumentSearchResultCard.jsx
 import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
 
 const ALL_MODELS = '전체'
+const ALL_DOC_TYPES = '전체'
+const DOC_TYPE_FILTERS = ['전체', 'SPEC', 'TROUBLESHOOT']
+const TOP_K_OPTIONS = [4, 6, 10]
+const DOCUMENT_TYPE_BY_ID = {
+  'DOC-TROUBLE-FDC': 'TROUBLESHOOT',
+  TROUBLE_FDC_FaultGuide: 'TROUBLESHOOT',
+  'DOC-SPEC-PH9000': 'SPEC',
+  'SPEC_PH-9000_PhotoScanner': 'SPEC',
+  'DOC-SPEC-ET7500': 'SPEC',
+  'SPEC_ET-7500_DryEtcher': 'SPEC',
+}
 const DOCUMENT_LIBRARY = [
   {
     group: 'Troubleshooting',
@@ -17,6 +28,7 @@ const DOCUMENT_LIBRARY = [
         document_id: 'DOC-TROUBLE-FDC',
         title: 'FDC Fault Guide',
         meta: 'COMMON · 조치 기준',
+        doc_type: 'TROUBLESHOOT',
       },
     ],
   },
@@ -27,11 +39,13 @@ const DOCUMENT_LIBRARY = [
         document_id: 'DOC-SPEC-PH9000',
         title: 'PH-9000 Photo Scanner',
         meta: 'PH-9000 · Photo',
+        doc_type: 'SPEC',
       },
       {
         document_id: 'DOC-SPEC-ET7500',
         title: 'ET-7500 Dry Etcher',
         meta: 'ET-7500 · Etch',
+        doc_type: 'SPEC',
       },
     ],
   },
@@ -44,11 +58,15 @@ function DocumentsPage() {
   const documentRequestRef = useRef(0)
   const urlQuery = searchParams.get('query') ?? ''
   const urlModelCode = searchParams.get('model_code')
+  const urlDocType = searchParams.get('doc_type')
+  const urlTopK = Number(searchParams.get('top_k'))
   const urlDocumentId = searchParams.get('document_id')
   const urlChunkId = searchParams.get('chunk_id')
   const [input, setInput] = useState(urlQuery)
   const [result, setResult] = useState(null) // { query, hits }
   const [modelCode, setModelCode] = useState(DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS)
+  const [docType, setDocType] = useState(DOC_TYPE_FILTERS.includes(urlDocType) ? urlDocType : ALL_DOC_TYPES)
+  const [topK, setTopK] = useState(TOP_K_OPTIONS.includes(urlTopK) ? urlTopK : TOP_K_OPTIONS[0])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [selectedHit, setSelectedHit] = useState(null)
@@ -63,6 +81,8 @@ function DocumentsPage() {
     ({
       query,
       model_code,
+      doc_type,
+      top_k,
       document_id,
       chunk_id,
       clearDocument = false,
@@ -76,6 +96,14 @@ function DocumentsPage() {
       if (model_code !== undefined) {
         if (model_code && model_code !== ALL_MODELS) next.set('model_code', model_code)
         else next.delete('model_code')
+      }
+      if (doc_type !== undefined) {
+        if (doc_type && doc_type !== ALL_DOC_TYPES) next.set('doc_type', doc_type)
+        else next.delete('doc_type')
+      }
+      if (top_k !== undefined) {
+        if (top_k && top_k !== TOP_K_OPTIONS[0]) next.set('top_k', String(top_k))
+        else next.delete('top_k')
       }
       if (clearDocument) {
         next.delete('document_id')
@@ -139,6 +167,8 @@ function DocumentsPage() {
     const q = query.trim()
     if (!q || loading) return
     const nextModelCode = options.modelCodeOverride ?? modelCode
+    const nextDocType = options.docTypeOverride ?? docType
+    const nextTopK = options.topKOverride ?? topK
     setLoading(true)
     documentRequestRef.current += 1
     setDetailOpen(false)
@@ -150,22 +180,24 @@ function DocumentsPage() {
       syncUrl({
         query: q,
         model_code: nextModelCode,
+        doc_type: nextDocType,
+        top_k: nextTopK,
         clearDocument: true,
       })
     }
     searchDocuments({
       query: q,
       model_code: nextModelCode === ALL_MODELS ? undefined : nextModelCode,
-      top_k: 4,
+      top_k: nextTopK,
     })
       .then((res) => {
-        setResult({ ...res, model_code: nextModelCode })
+        setResult({ ...res, model_code: nextModelCode, doc_type: nextDocType, top_k: nextTopK })
         setInput('')
         setError(null)
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [loading, modelCode, syncUrl])
+  }, [docType, loading, modelCode, syncUrl, topK])
 
   useEffect(() => {
     const q = urlQuery.trim()
@@ -173,9 +205,11 @@ function DocumentsPage() {
     urlSearchLoadedRef.current = true
     run(q, {
       modelCodeOverride: DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS,
+      docTypeOverride: DOC_TYPE_FILTERS.includes(urlDocType) ? urlDocType : ALL_DOC_TYPES,
+      topKOverride: TOP_K_OPTIONS.includes(urlTopK) ? urlTopK : TOP_K_OPTIONS[0],
       syncUrl: false,
     })
-  }, [run, urlDocumentId, urlModelCode, urlQuery])
+  }, [run, urlDocType, urlDocumentId, urlModelCode, urlQuery, urlTopK])
 
   const openDocument = (hit) => {
     const requestToken = ++documentRequestRef.current
@@ -265,6 +299,21 @@ function DocumentsPage() {
     })
   }
 
+  const filteredHits = useMemo(() => {
+    if (!result?.hits) return []
+    if (docType === ALL_DOC_TYPES) return result.hits
+    return result.hits.filter((hit) => DOCUMENT_TYPE_BY_ID[hit.document_id] === docType)
+  }, [docType, result])
+
+  const filteredLibrary = useMemo(
+    () =>
+      DOCUMENT_LIBRARY.map((group) => ({
+        ...group,
+        items: group.items.filter((document) => docType === ALL_DOC_TYPES || document.doc_type === docType),
+      })).filter((group) => group.items.length),
+    [docType],
+  )
+
   if (error)
     return (
       <ErrorState
@@ -299,9 +348,57 @@ function DocumentsPage() {
           </div>
 
           <div className="mt-3 border-t border-cell-line px-4 pb-3 pt-3">
+            <div className="mb-2 text-[11px] font-bold text-g2">검색 필터</div>
+            <div className="flex flex-col gap-2.5">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10.5px] font-bold text-faint">설비 모델</span>
+                <select
+                  value={modelCode}
+                  onChange={(e) => setModelCode(e.target.value)}
+                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+                >
+                  {DOC_FILTERS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10.5px] font-bold text-faint">문서 유형</span>
+                <select
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+                >
+                  {DOC_TYPE_FILTERS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10.5px] font-bold text-faint">결과 수</span>
+                <select
+                  value={topK}
+                  onChange={(e) => setTopK(Number(e.target.value))}
+                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+                >
+                  {TOP_K_OPTIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}개
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-3 border-t border-cell-line px-4 pb-3 pt-3">
             <div className="mb-2 text-[11px] font-bold text-g2">문서 라이브러리</div>
             <div className="flex flex-col gap-3">
-              {DOCUMENT_LIBRARY.map((group) => (
+              {filteredLibrary.map((group) => (
                 <div key={group.group}>
                   <div className="mb-1.5 font-mono text-[10px] font-bold uppercase text-faint">{group.group}</div>
                   <div className="flex flex-col gap-1.5">
@@ -344,14 +441,20 @@ function DocumentsPage() {
                 <div className="text-[14px] font-extrabold text-ink">검색 결과가 없습니다</div>
                 <div className="text-[12px] text-g1">다른 표현으로 다시 검색해 주세요.</div>
               </DashedCard>
+            ) : filteredHits.length === 0 ? (
+              <DashedCard className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
+                <div className="text-[14px] font-extrabold text-ink">필터와 일치하는 결과가 없습니다</div>
+                <div className="text-[12px] text-g1">문서 유형을 전체로 바꾸거나 검색어를 다시 입력해 주세요.</div>
+              </DashedCard>
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="text-[12px] text-g1">
                   <span className="font-semibold text-ink">“{result.query}”</span> 검색 결과{' '}
-                  <span className="font-mono">{result.count ?? result.hits.length}</span>건
+                  <span className="font-mono">{filteredHits.length}</span>건
                   <span className="ml-2 font-mono text-[11px] text-faint">model {result.model_code}</span>
+                  {docType !== ALL_DOC_TYPES && <span className="ml-2 font-mono text-[11px] text-faint">type {docType}</span>}
                 </div>
-                {result.hits.map((h) => (
+                {filteredHits.map((h) => (
                   <DocumentSearchResultCard
                     key={h.chunk_id}
                     hit={h}
@@ -364,17 +467,6 @@ function DocumentsPage() {
           </div>
 
           <div className="mt-3 flex flex-none items-center gap-2">
-            <select
-              value={modelCode}
-              onChange={(e) => setModelCode(e.target.value)}
-              className="h-10 w-[120px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
-            >
-              {DOC_FILTERS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
