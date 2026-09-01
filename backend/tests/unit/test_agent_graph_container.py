@@ -1847,5 +1847,7 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
         run.prompt_version == prediction.prompt_version == graph_module.PROMPT_VERSION
     )
     assert (run.input_tokens, run.output_tokens) == (31, 12)
-    assert prediction.evidence["schema_version"] == "agent-evidence-v1"
+    # 확장에서 진단 snapshot이 붙으면서 evidence schema가 v2로 올라갔다(graph.py `_prediction_evidence`).
+    # v1 기대값은 낡은 계약이다. 읽기 계층은 v1·v2를 모두 수용하므로 기존 run 호환은 유지된다.
+    assert prediction.evidence["schema_version"] == "agent-evidence-v2"
     assert state["hypothesis"].supporting_relation_ids == ("REL-PART",)
