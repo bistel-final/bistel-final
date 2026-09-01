@@ -28,6 +28,7 @@ const DOCUMENT_LIBRARY = [
         document_id: 'DOC-TROUBLE-FDC',
         title: 'FDC Fault Guide',
         meta: 'COMMON · 조치 기준',
+        model_code: 'COMMON',
         doc_type: 'TROUBLESHOOT',
       },
     ],
@@ -39,12 +40,14 @@ const DOCUMENT_LIBRARY = [
         document_id: 'DOC-SPEC-PH9000',
         title: 'PH-9000 Photo Scanner',
         meta: 'PH-9000 · Photo',
+        model_code: 'PH-9000',
         doc_type: 'SPEC',
       },
       {
         document_id: 'DOC-SPEC-ET7500',
         title: 'ET-7500 Dry Etcher',
         meta: 'ET-7500 · Etch',
+        model_code: 'ET-7500',
         doc_type: 'SPEC',
       },
     ],
@@ -199,6 +202,17 @@ function DocumentsPage() {
       .finally(() => setLoading(false))
   }, [docType, loading, modelCode, syncUrl, topK])
 
+  const runRecommendedSearch = (item) => {
+    const nextModelCode = modelCode === ALL_MODELS ? item.model_codes[0] : modelCode
+    const nextDocType = docType === ALL_DOC_TYPES ? item.doc_types[0] : docType
+    setModelCode(nextModelCode)
+    setDocType(nextDocType)
+    run(item.query, {
+      modelCodeOverride: nextModelCode,
+      docTypeOverride: nextDocType,
+    })
+  }
+
   useEffect(() => {
     const q = urlQuery.trim()
     if (urlSearchLoadedRef.current || !q || urlDocumentId) return
@@ -309,9 +323,27 @@ function DocumentsPage() {
     () =>
       DOCUMENT_LIBRARY.map((group) => ({
         ...group,
-        items: group.items.filter((document) => docType === ALL_DOC_TYPES || document.doc_type === docType),
+        items: group.items.filter((document) => {
+          const matchesModel =
+            modelCode === ALL_MODELS || document.model_code === 'COMMON' || document.model_code === modelCode
+          const matchesDocType = docType === ALL_DOC_TYPES || document.doc_type === docType
+          return matchesModel && matchesDocType
+        }),
       })).filter((group) => group.items.length),
-    [docType],
+    [docType, modelCode],
+  )
+
+  const filteredRecommendedGroups = useMemo(
+    () =>
+      DOC_CHIPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          const matchesModel = modelCode === ALL_MODELS || item.model_codes.includes(modelCode)
+          const matchesDocType = docType === ALL_DOC_TYPES || item.doc_types.includes(docType)
+          return matchesModel && matchesDocType
+        }),
+      })).filter((group) => group.items.length),
+    [docType, modelCode],
   )
 
   if (error)
@@ -332,22 +364,9 @@ function DocumentsPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 items-stretch gap-4">
-        <Card className="flex w-[280px] flex-none flex-col overflow-hidden">
-          <CardHeader title="추천 질의" />
-          <div className="flex flex-col gap-2 px-4 pb-1">
-            {DOC_CHIPS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => run(q)}
-                className="cursor-pointer rounded-lg border border-tint-blue-line bg-tint-blue px-3 py-2 text-left text-[12px] font-semibold text-blue-hover hover:bg-white"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3 border-t border-cell-line px-4 pb-3 pt-3">
+        <Card className="flex w-[280px] flex-none flex-col overflow-y-auto">
+          <CardHeader title="문서 탐색" />
+          <div className="px-4 pb-3">
             <div className="mb-2 text-[11px] font-bold text-g2">검색 필터</div>
             <div className="flex flex-col gap-2.5">
               <label className="flex flex-col gap-1">
@@ -395,6 +414,22 @@ function DocumentsPage() {
             </div>
           </div>
 
+          <div className="border-t border-cell-line px-4 pb-3 pt-3">
+            <div className="mb-2 text-[11px] font-bold text-g2">추천 질문</div>
+            <div className="flex flex-col divide-y divide-cell-line border-y border-cell-line">
+              {filteredRecommendedGroups.flatMap((group) => group.items).map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => runRecommendedSearch(item)}
+                  className="cursor-pointer px-0.5 py-2.5 text-left text-[12px] font-semibold leading-5 text-ink transition hover:bg-tint-blue hover:text-blue-hover"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-3 border-t border-cell-line px-4 pb-3 pt-3">
             <div className="mb-2 text-[11px] font-bold text-g2">문서 라이브러리</div>
             <div className="flex flex-col gap-3">
@@ -431,9 +466,9 @@ function DocumentsPage() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {!result ? (
               <DashedCard className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center">
-                <div className="text-[14px] font-extrabold text-ink">무엇이 궁금하신가요?</div>
+                <div className="text-[14px] font-extrabold text-ink">관련 문서 근거를 찾아보세요</div>
                 <div className="text-[12px] text-g1">
-                  왼쪽 추천 질의를 누르거나 아래 입력창에 질문을 입력해 주세요.
+                  설비 증상, 센서명, 조치 기준을 입력하면 관련 청크를 검색합니다.
                 </div>
               </DashedCard>
             ) : result.hits.length === 0 ? (
@@ -473,7 +508,7 @@ function DocumentsPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') run(input)
               }}
-              placeholder="예) 반사파가 올라가면 무슨 문제인가"
+              placeholder="예) 반사파가 올라가면 무슨 문제인가?"
               className="h-10 min-w-0 flex-1 rounded-lg border border-field-line bg-white px-3.5 text-[13px] text-ink placeholder:text-faint"
             />
             <Button onClick={() => run(input)} disabled={loading || !input.trim()}>

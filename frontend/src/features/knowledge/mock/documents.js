@@ -2,9 +2,34 @@
 export const DOC_FILTERS = ['전체', 'PH-9000', 'ET-7500']
 
 export const DOC_CHIPS = [
-  '반사파가 올라가면 무슨 문제인가',
-  '포커스가 벗어나면 CD가 어떻게 되나',
-  '장비를 세우려면 승인이 필요한가',
+  {
+    group: 'Troubleshooting',
+    items: [
+      {
+        label: '반사파가 올라가면 무슨 문제인가?',
+        query: '반사파가 올라가면 무슨 문제인가',
+        model_codes: ['ET-7500'],
+        doc_types: ['TROUBLESHOOT', 'SPEC'],
+      },
+      {
+        label: '장비를 세우려면 승인이 필요한가?',
+        query: '장비를 세우려면 승인이 필요한가',
+        model_codes: ['PH-9000', 'ET-7500'],
+        doc_types: ['TROUBLESHOOT'],
+      },
+    ],
+  },
+  {
+    group: 'Equipment SPEC',
+    items: [
+      {
+        label: '포커스가 벗어나면 CD가 어떻게 되나?',
+        query: '포커스가 벗어나면 CD가 어떻게 되나',
+        model_codes: ['PH-9000'],
+        doc_types: ['SPEC', 'TROUBLESHOOT'],
+      },
+    ],
+  },
 ]
 
 export const DOC_SCORES = [0.88, 0.83, 0.79, 0.74]
