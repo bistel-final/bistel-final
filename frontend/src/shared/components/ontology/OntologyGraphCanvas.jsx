@@ -206,7 +206,7 @@ function OntologyGraphCanvas({
   return (
     <div className={`flex w-full flex-col gap-2.5 ${modalViewport ? 'h-full min-h-0' : ''}`} data-testid="ontology-graph-canvas">
       <div
-        className={`${viewport === 'page' ? 'h-[760px] min-h-[620px]' : modalViewport ? 'h-full min-h-[500px]' : 'h-[540px] min-h-[440px]'} w-full overflow-hidden bg-white ${modalViewport ? '' : 'rounded-[10px] border border-line'}`}
+        className={`${viewport === 'page' ? 'h-[760px] min-h-[620px]' : modalViewport ? 'h-full min-h-[500px]' : 'h-[400px] min-h-[340px]'} w-full overflow-hidden bg-white ${modalViewport ? '' : 'rounded-[10px] border border-line'}`}
       >
         <ReactFlow
           nodes={nodes}

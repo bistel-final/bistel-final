@@ -4,10 +4,18 @@ import { Controls, Handle, MarkerType, Panel, Position, ReactFlow } from '@xyflo
 import '@xyflow/react/dist/style.css'
 import { getAuditLogsCore } from '../../../shared/api/analytics.js'
 import { fmtDateTime } from '../../../shared/api/format.js'
+import { getChamberRelationsCore } from '../../../shared/api/knowledge.js'
 import { auditTargetsOf, mergeAuditItems } from '../../../shared/components/audit/run-audit-view-state.js'
 import { auditActorLabel, auditEntityLabel, auditEventLabel, auditValueLabel } from '../../../shared/components/audit/auditLabels.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import {
+  layoutOntologyNodes,
+  normalizeOntologyGraph,
+  ONTOLOGY_RELATION_LABELS,
+  ONTOLOGY_REVERSED_RELATION_LABELS,
+  orientOntologyRelationships,
+} from '../../../shared/graph/ontology-graph.js'
 import { evidenceHref } from '../agent-run-view-state.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
 import {
@@ -23,10 +31,10 @@ import {
 
 const STEP_META = Object.freeze({
   alarm: ['알람 incident', '#6b849d', '입력'],
-  fdc: ['FDC 규칙 근거', '#6b849d', '근거 수집'],
-  rag: ['RAG 문서 근거', '#6b849d', '근거 수집'],
-  graph: ['Graph 관계 근거', '#6b849d', '근거 수집'],
-  tools: ['Tool 호출', '#6b849d', '근거 수집'],
+  fdc: ['측정 데이터 근거', '#6b849d', '근거 수집'],
+  rag: ['매뉴얼 문서 근거', '#6b849d', '근거 수집'],
+  graph: ['설비 관계 근거', '#6b849d', '근거 수집'],
+  tools: ['분석 근거 조회', '#6b849d', '근거 수집'],
   assessment: ['근거 충분성 판단', '#846f9d', '조건 분기'],
   react: ['부족 근거 Tool 재선택', '#846f9d', 'C-7.1 실험'],
   diagnosis: ['Incident 종합 진단', '#47769d', '분석'],
@@ -194,24 +202,163 @@ const TOOL_LABELS = Object.freeze({
   send_action: '조치 전달',
 })
 
+const TOOL_GUIDES = Object.freeze({
+  get_fdc_summary: {
+    purpose: '알람이 난 LOT의 측정 추세와 관리 한계 초과 여부를 확인했습니다.',
+    success: '측정 데이터와 FDC 판정 근거를 확보했습니다.',
+    failure: '측정 데이터 근거를 확보하지 못했습니다.',
+  },
+  get_equipment_context: {
+    purpose: '해당 챔버의 설비·공정·파라미터 연결 관계와 영향 범위를 확인했습니다.',
+    success: '설비와 공정의 연결 관계 근거를 확보했습니다.',
+    failure: '설비 관계 근거를 확보하지 못했습니다.',
+  },
+  search_documents: {
+    purpose: '매뉴얼과 SOP에서 가능한 원인 및 권고 조치 근거를 검색했습니다.',
+    success: '관련 매뉴얼 문서 근거를 확보했습니다.',
+    failure: '관련 매뉴얼 문서 근거를 확보하지 못했습니다.',
+  },
+  send_action: {
+    purpose: '확정된 조치를 담당 채널로 전달하고 결과를 확인했습니다.',
+    success: '조치 전달 결과를 확인했습니다.',
+    failure: '조치를 전달하지 못했습니다.',
+  },
+})
+
+const EVIDENCE_GUIDES = Object.freeze({
+  ALARM: ['기준 알람', '분석을 시작한 알람의 발생 대상과 시각을 확인했습니다.'],
+  TRACE: ['측정 추세', '실측값과 관리 한계를 비교해 이상 흐름을 확인했습니다.'],
+  METROLOGY: ['계측 결과', '웨이퍼 계측값에서 공정 이상 신호를 확인했습니다.'],
+  DOCUMENT: ['매뉴얼 근거', '관련 문서에서 원인 후보와 권고 조치를 확인했습니다.'],
+  GRAPH: ['설비 관계', '장비·챔버·파라미터의 연결 관계와 영향 대상을 확인했습니다.'],
+})
+
+function GraphEvidenceList({ detail, items }) {
+  const [relations, setRelations] = useState({
+    chamberId: detail.chamber_id,
+    phase: 'loading',
+    values: new Map(),
+  })
+
+  useEffect(() => {
+    let active = true
+    getChamberRelationsCore(detail.chamber_id).then(
+      (response) => {
+        if (!active) return
+        const graph = normalizeOntologyGraph(response)
+        const nodeById = new Map((graph?.nodes ?? []).map((node) => [node.id, node]))
+        const layout = layoutOntologyNodes(graph)
+        const values = new Map(
+          orientOntologyRelationships(graph, layout).map((relationship) => {
+            const source = nodeById.get(relationship.display_source)
+            const target = nodeById.get(relationship.display_target)
+            const labelMap = relationship.display_reversed
+              ? ONTOLOGY_REVERSED_RELATION_LABELS
+              : ONTOLOGY_RELATION_LABELS
+            return [relationship.id, {
+              source: source?.display_name ?? source?.business_id,
+              label: labelMap[relationship.type] ?? relationship.type,
+              target: target?.display_name ?? target?.business_id,
+            }]
+          }),
+        )
+        setRelations({ chamberId: detail.chamber_id, phase: 'success', values })
+      },
+      () => {
+        if (active) setRelations({ chamberId: detail.chamber_id, phase: 'error', values: new Map() })
+      },
+    )
+    return () => { active = false }
+  }, [detail.chamber_id])
+
+  const currentRelations = relations.chamberId === detail.chamber_id
+    ? relations
+    : { phase: 'loading', values: new Map() }
+  const relationOf = (item) => {
+    const relationId = String(item.source_id ?? '').match(/(?:relation=)?(REL-[^;\s]+)/)?.[1]
+    return relationId ? currentRelations.values.get(relationId) : null
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-soft px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <strong className="text-[12px] text-navy">설비 관계 근거</strong>
+        <Badge variant="t-blue">연결 {items.length}건 확인</Badge>
+      </div>
+      <div className="mt-2 text-[11.5px] font-semibold leading-5 text-g1">
+        이 챔버에서 설비·공정 단계·파라미터로 이어지는 관계를 확인해 영향 범위 판단에 사용했습니다.
+      </div>
+      <div className="mt-3 space-y-2">
+        {items.map((item, index) => {
+          const relation = relationOf(item)
+          return (
+            <div key={`relation-summary:${item.source_id}`} className="rounded-md border border-cell-line bg-white px-3 py-2.5">
+              <div className="text-[10px] font-extrabold text-g2">확인 관계 {index + 1}</div>
+              {relation ? (
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink">
+                  <strong className="text-navy">{relation.source}</strong>
+                  <span className="font-bold text-blue">— {relation.label} →</span>
+                  <strong className="text-navy">{relation.target}</strong>
+                </div>
+              ) : (
+                <div className="mt-1 text-[11.5px] text-g1">
+                  {currentRelations.phase === 'loading'
+                    ? '연결된 노드를 확인하고 있습니다.'
+                    : '연결 노드 정보는 아래 직접 보기에서 확인할 수 있습니다.'}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {items.map((item, index) => {
+          const href = evidenceHref(item, { chamberId: detail.chamber_id })
+          if (!href) return null
+          return (
+            <a
+              key={item.source_id}
+              href={href}
+              title={item.source_id}
+              className="rounded-md border border-tint-blue-line bg-white px-3 py-2 text-[11px] font-extrabold text-blue hover:bg-tint-blue"
+            >
+              연결 {index + 1} 직접 보기 →
+            </a>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function EvidenceList({ detail, items }) {
   if (!items?.length) return <div className="text-[12px] text-g2">근거 없음</div>
+  if (items.every((item) => item.type === 'GRAPH')) {
+    return <GraphEvidenceList detail={detail} items={items} />
+  }
   return (
     <div className="flex flex-col gap-2">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const href = evidenceHref(item, { chamberId: detail.chamber_id })
+        const [label, guide] = EVIDENCE_GUIDES[item.type] ?? ['분석 근거', '에이전트가 확인한 근거입니다.']
+        const graphEvidence = item.type === 'GRAPH'
+        const excerpt = graphEvidence
+          ? '현재 챔버에서 설비·공정 단계·파라미터로 이어지는 연결을 분석 근거로 사용했습니다.'
+          : item.excerpt
         const metadata = [
-          item.section,
-          item.graph_revision ? `revision ${item.graph_revision}` : null,
-          item.relation_id ? `relation ${item.relation_id}` : null,
-          item.alarm?.source ? `source ${item.alarm.source}` : null,
+          item.section ? `문서 위치 ${item.section}` : null,
+          item.alarm?.source ? `알람 종류 ${item.alarm.source}` : null,
         ].filter(Boolean)
         const body = (
           <div className="rounded-lg border border-line bg-soft px-3 py-2">
-            <div className="font-mono text-[10.5px] font-bold text-navy">{item.source_id}</div>
-            <div className="mt-1 text-[11.5px] text-g1">{item.excerpt}</div>
-            {metadata.length > 0 && <div className="mt-1.5 font-mono text-[10px] text-g2">{metadata.join(' · ')}</div>}
-            {href && <div className="mt-2 text-[11px] font-extrabold text-blue">관련 화면에서 보기 →</div>}
+            <div className="flex items-center justify-between gap-2">
+              <strong className="text-[12px] text-navy">{label}</strong>
+              <span className="text-[10px] font-bold text-g2" title={item.source_id}>사용 근거 {index + 1}</span>
+            </div>
+            <div className="mt-1 text-[11px] font-semibold text-g1">{guide}</div>
+            <div className="mt-2 rounded-md border border-cell-line bg-white px-2.5 py-2 text-[11.5px] leading-5 text-ink">{excerpt}</div>
+            {metadata.length > 0 && <div className="mt-1.5 text-[10px] text-g2">{metadata.join(' · ')}</div>}
+            {href && <div className="mt-2 text-[11px] font-extrabold text-blue">{graphEvidence ? '연결 관계 직접 보기' : '근거 화면에서 확인'} →</div>}
           </div>
         )
         return href ? <a key={item.source_id} href={href}>{body}</a> : <div key={item.source_id}>{body}</div>
@@ -451,18 +598,27 @@ function StepPanel({ detail, step, alarm }) {
   if (['fdc', 'rag', 'graph'].includes(step.id)) content = <EvidenceList detail={detail} items={step.value} />
   if (step.id === 'tools') content = step.value.length ? (
     <div className="space-y-2">
-      {step.value.map((tool, index) => (
-        <div key={`${tool.tool_name}:${index}`} className="rounded-lg border border-line bg-soft px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>{TOOL_LABELS[tool.tool_name] ?? tool.tool_name} · {toolStatusText(tool.status)}</Badge>
-            <span className="font-mono text-[10px] text-g2">{tool.tool_name}</span>
+      {step.value.map((tool, index) => {
+        const guide = TOOL_GUIDES[tool.tool_name]
+        const succeeded = tool.status === 'SUCCESS'
+        return (
+          <div key={`${tool.tool_name}:${index}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong className="text-[12px] text-navy">{TOOL_LABELS[tool.tool_name] ?? '분석 근거 조회'}</strong>
+              <Badge variant={succeeded ? 't-green' : 't-red'}>{toolStatusText(tool.status)}</Badge>
+            </div>
+            <div className="mt-2 text-[11.5px] leading-5 text-g1">
+              {guide?.purpose ?? '분석에 필요한 외부 근거를 확인했습니다.'}
+            </div>
+            <div className="mt-2 rounded-md border border-cell-line bg-white px-2.5 py-2 text-[11.5px] font-semibold text-ink">
+              {succeeded ? guide?.success : guide?.failure}
+            </div>
+            <div className="mt-1.5 text-[10px] text-g2" data-result-summary={tool.result_summary}>
+              처리 시간 · {tool.latency_ms == null ? '개별 latency 미제공' : `${tool.latency_ms.toLocaleString()}ms`}
+            </div>
           </div>
-          <div className="mt-1.5 text-[11.5px] text-g1">{tool.result_summary}</div>
-          <div className="mt-1 font-mono text-[10px] text-g2">
-            {tool.latency_ms == null ? '개별 latency 미제공' : `${tool.latency_ms.toLocaleString()}ms`}
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   ) : <div className="text-[12px] text-g2">미수행</div>
   if (step.id === 'assessment') {
@@ -595,7 +751,7 @@ function AgentExecutionFlow({ detail, alarm }) {
             <div className="grid grid-cols-4 items-center gap-2">
               {[
                 ['입력', '알람 incident'],
-                ['근거 수집', 'FDC · RAG · Graph'],
+                ['근거 수집', '측정값 · 매뉴얼 · 설비 관계'],
                 ['분석', '충분성 · 원인 · 영향'],
                 ['조치', '규칙 판정 · 승인 · 전달'],
               ].map(([phase, label], index) => (

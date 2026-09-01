@@ -285,6 +285,7 @@ for (const contract of [
   'root && !selectedNodeId',
   "viewport === 'page'",
   "viewport === 'modal'",
+  "'h-[400px] min-h-[340px]'",
   'padding={modalViewport ? 0.08 : 0.65}',
   'maxZoom={modalViewport ? 1.25 : 1.05}',
 ]) {

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -227,6 +228,18 @@ def _r03(
     그게 R03 raw key drift이고, View가 그것을 숨기지 않는다는 것이 이 파일의 축 하나다.
     """
 
+    member_wafer_refs = [
+        {
+            "lot_hist_id": lot_hist_id if index == 1 else f"{lot_hist_id}-M{index}",
+            "wafer_id": f"{lot_id}W{index:03d}",
+        }
+        for index in range(1, 4)
+    ]
+    member_alarm_refs = [
+        {"source": TRACE.value, "alarm_id": f"TA-R03-{index:02d}"}
+        for index in range(1, 10)
+    ]
+
     connection.execute(
         text(
             "INSERT INTO r03_alarm_history "
@@ -234,7 +247,8 @@ def _r03(
             "  chamber_id, parameter_id, recipe_step_no, trigger_wafer_no,"
             "  member_wafer_refs, member_alarm_refs, policy_version) "
             "VALUES (:a, :t, :h, :l, 'EQP01', :c, 'PARAM01', :s, 1,"
-            "        '[1,2,3]'::jsonb, '[]'::jsonb, 'R03_CONSEC_V1')"
+            "        CAST(:wafers AS jsonb), CAST(:alarms AS jsonb),"
+            "        'R03_CONSEC_V1')"
         ),
         {
             "a": alarm_id,
@@ -243,6 +257,8 @@ def _r03(
             "l": lot_id,
             "c": chamber_id,
             "s": step_no,
+            "wafers": json.dumps(member_wafer_refs),
+            "alarms": json.dumps(member_alarm_refs),
         },
     )
     return alarm_id
