@@ -74,7 +74,6 @@ function AnalyticsPage() {
   // 페이지가 바뀜 때마다 서버에서 그 페이지만 받아 교체한다 (세션 push 항목은 1페이지 상단에만 유지).
   useEffect(() => {
     let cancelled = false
-    setHistoryState('loading')
     getQueryHistory({ page: histPage, size: HIST_SIZE })
       .then((res) => {
         if (cancelled) return
@@ -393,7 +392,10 @@ function AnalyticsPage() {
               page={histPage}
               pageCount={Math.max(1, Math.ceil(histTotal / HIST_SIZE))}
               total={histTotal}
-              onPage={setHistPage}
+              onPage={(p) => {
+                setHistoryState('loading') // 로딩 표시는 이벤트에서 — effect 안 동기 setState 회피(react-hooks 규칙)
+                setHistPage(p)
+              }}
             />
           ) : (
             <NlqEvaluationPanel fetchEvaluations={getEvaluations} />

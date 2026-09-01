@@ -1,7 +1,6 @@
 // 결과 — 표 / 통계 / 차트 3개 탭 (디자인 v2 06)
 // 명세 AnalysisQueryResponse: rows 는 객체 배열이라 컬럼 접근은 row[columns[i]] 다.
 // 차트는 visualization.chart_type · x · y 를 그대로 읽는다.
-import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'

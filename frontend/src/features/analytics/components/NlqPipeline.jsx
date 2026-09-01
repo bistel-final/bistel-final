@@ -14,8 +14,8 @@ const STEPS = [
 
 const LLM_REFUSED = 'POLICY_REJECTED: 조회 질문으로 판정되지'
 
-// phase·응답 → 단계별 상태: pending | active | done | fail | skip
-export function deriveSteps({ phase, def, rejected }) {
+// phase·응답 → 단계별 상태: pending | active | done | fail | skip (컴포넌트 내부 전용 — fast refresh 규칙)
+function deriveSteps({ phase, def, rejected }) {
   const s = { ask: 'pending', plan: 'pending', verify: 'pending', run: 'pending', cross: 'pending' }
   if (!phase) return s
   s.ask = 'done'
