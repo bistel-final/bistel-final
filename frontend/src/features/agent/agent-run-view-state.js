@@ -73,6 +73,21 @@ export function evidenceHref(item, context = {}) {
   return null
 }
 
+export const documentHitsOf = (evidenceItems = []) => ({
+  hits: evidenceItems
+    .filter((item) => item.type === 'DOCUMENT')
+    .map((item) => ({
+      source_id: item.source_id,
+      title: item.title,
+      document_id: item.document_id,
+      chunk_id: item.chunk_id,
+      section: item.section,
+      content: item.excerpt,
+      score: null,
+      href: evidenceHref(item),
+    })),
+})
+
 const IMPACT_NODE_LABEL = Object.freeze({
   CHAMBER: 'Chamber',
   SIBLING_CHAMBER: 'Chamber',

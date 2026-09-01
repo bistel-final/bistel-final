@@ -15,8 +15,10 @@ from app.agent.diagnostics import (
     EvidenceAssessmentBlock,
     ImpactScopeBlock,
     IncidentDiagnosticSnapshot,
+    WaferParameterObservation,
 )
 from app.agent.routing import ResolvedIncidentRoute
+from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     DocumentSearchToolResult,
     EquipmentContextToolResult,
@@ -26,6 +28,8 @@ from app.common.tool_contracts import (
 PROMPT_VERSION: Final = "agent-hypothesis-v2-ko1"
 MAX_PROMPT_CHARS: Final = 12_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
+MAX_PROMPT_MEMBER_ALARMS: Final = 12
+MAX_PROMPT_WAFER_OBSERVATIONS: Final = 6
 TRUNCATION_MARKER: Final = "…[truncated]"
 
 # `_`는 regex word 문자이므로 predicted_fault_code 안의 부분 문자열은
@@ -67,7 +71,44 @@ def _excerpt(content: str) -> str:
     return content[:MAX_DOCUMENT_EXCERPT_CHARS] + TRUNCATION_MARKER
 
 
+def _prompt_member_alarms(route: ResolvedIncidentRoute) -> list[AlarmRef]:
+    """LLM 인용 후보를 결정론적으로 제한하되 핵심 incident identity는 보존한다.
+
+    Runtime incident는 같은 LOT·chamber의 TRACE·SUMMARY 전체를 포함할 수 있어 최종
+    데이터의 R03 사례에서는 49건까지 커진다. 전체 목록은 DB·State·조치 규칙에 그대로
+    유지하고, prompt에는 요청·대표·source 양끝과 원래 순서 표본만 싣는다.
+    """
+
+    members = tuple(route.incident.member_alarms)
+    selected: list[AlarmRef] = []
+    seen: set[str] = set()
+
+    def add(alarm: AlarmRef) -> None:
+        token = alarm.to_token()
+        if token in seen or len(selected) >= MAX_PROMPT_MEMBER_ALARMS:
+            return
+        seen.add(token)
+        selected.append(alarm)
+
+    add(route.incident.requested_alarm)
+    add(route.incident.representative_alarm)
+    for source in ("R03", "TRACE", "SUMMARY"):
+        candidates = [alarm for alarm in members if alarm.source.value == source]
+        if candidates:
+            add(candidates[0])
+            add(candidates[-1])
+    for alarm in members:
+        add(alarm)
+    return selected
+
+
 def _route_payload(route: ResolvedIncidentRoute) -> dict[str, Any]:
+    member_alarms = tuple(route.incident.member_alarms)
+    source_counts = {
+        source: sum(alarm.source.value == source for alarm in member_alarms)
+        for source in ("TRACE", "SUMMARY", "R03")
+    }
+    prompt_members = _prompt_member_alarms(route)
     return {
         "incident": {
             "lot_id": route.incident.lot_id,
@@ -77,8 +118,11 @@ def _route_payload(route: ResolvedIncidentRoute) -> dict[str, Any]:
                 mode="json"
             ),
             "member_alarms": [
-                alarm.model_dump(mode="json") for alarm in route.incident.member_alarms
+                alarm.model_dump(mode="json") for alarm in prompt_members
             ],
+            "member_alarm_count": len(member_alarms),
+            "member_alarm_source_counts": source_counts,
+            "member_alarms_omitted_count": len(member_alarms) - len(prompt_members),
         },
         "route_consistency": route.route_consistency,
         "graph_evidence": [
@@ -107,6 +151,94 @@ def _route_payload(route: ResolvedIncidentRoute) -> dict[str, Any]:
             for item in route.mismatches
         ],
     }
+
+
+def _observation_rank(observation: WaferParameterObservation) -> tuple[Any, ...]:
+    severity = {"OOS": 0, "OOC": 1, "IN": 2}[observation.alarm_type.value]
+    magnitude = (
+        -1.0
+        if observation.deviation is None or observation.deviation.magnitude is None
+        else observation.deviation.magnitude
+    )
+    return (
+        severity,
+        -observation.oos_point_count,
+        -observation.ooc_point_count,
+        -magnitude,
+        observation.lot_hist_id,
+        observation.wafer_id,
+        observation.recipe_step_no,
+        observation.parameter_id,
+    )
+
+
+def _prompt_wafer_observations(
+    snapshot: IncidentDiagnosticSnapshot,
+) -> list[WaferParameterObservation]:
+    """WAFER별 대표를 먼저 보존하고 나머지는 이상 심각도 순으로 제한한다."""
+
+    observations = tuple(snapshot.wafer_observations)
+    selected: list[WaferParameterObservation] = []
+    seen: set[tuple[str, str, int, str]] = set()
+
+    def identity(item: WaferParameterObservation) -> tuple[str, str, int, str]:
+        return (
+            item.lot_hist_id,
+            item.wafer_id,
+            item.recipe_step_no,
+            item.parameter_id,
+        )
+
+    def add(item: WaferParameterObservation) -> None:
+        key = identity(item)
+        if key in seen or len(selected) >= MAX_PROMPT_WAFER_OBSERVATIONS:
+            return
+        seen.add(key)
+        selected.append(item)
+
+    wafer_keys = sorted({(item.lot_hist_id, item.wafer_id) for item in observations})
+    for wafer_key in wafer_keys:
+        candidates = [
+            item
+            for item in observations
+            if (item.lot_hist_id, item.wafer_id) == wafer_key
+        ]
+        add(min(candidates, key=_observation_rank))
+    for observation in sorted(observations, key=_observation_rank):
+        add(observation)
+    return selected
+
+
+def _diagnostic_payload(
+    snapshot: IncidentDiagnosticSnapshot,
+    route: ResolvedIncidentRoute,
+) -> dict[str, Any]:
+    """전체 진단은 유지하고 LLM에만 대표 관측·인용 가능한 ID를 싣는다."""
+
+    payload = snapshot.model_dump(mode="json")
+    observations = tuple(snapshot.wafer_observations)
+    prompt_observations = _prompt_wafer_observations(snapshot)
+    payload["wafer_observations"] = [
+        item.model_dump(mode="json") for item in prompt_observations
+    ]
+    payload["wafer_observation_count"] = len(observations)
+    payload["wafer_observations_omitted_count"] = len(observations) - len(
+        prompt_observations
+    )
+
+    source_ids = dict(payload["source_ids"])
+    alarm_refs = tuple(snapshot.source_ids.alarm_refs)
+    allowed_alarm_refs = set(alarm_refs)
+    prompt_alarm_refs = [
+        alarm.to_token()
+        for alarm in _prompt_member_alarms(route)
+        if alarm.to_token() in allowed_alarm_refs
+    ]
+    source_ids["alarm_refs"] = prompt_alarm_refs
+    source_ids["alarm_ref_count"] = len(alarm_refs)
+    source_ids["alarm_refs_omitted_count"] = len(alarm_refs) - len(prompt_alarm_refs)
+    payload["source_ids"] = source_ids
+    return payload
 
 
 def _document_payload(result: DocumentSearchToolResult | None) -> Any:
@@ -147,7 +279,7 @@ def build_hypothesis_messages(
         "diagnostic_snapshot": (
             None
             if diagnostic_snapshot is None
-            else diagnostic_snapshot.model_dump(mode="json")
+            else _diagnostic_payload(diagnostic_snapshot, route)
         ),
         "document": _document_payload(document_evidence),
         "evidence_assessment": (
@@ -186,10 +318,13 @@ def build_hypothesis_messages(
         '{"source":"TRACE|SUMMARY|R03","alarm_id":"..."}. '
         "제공된 식별자만 인용하세요. member alarm은 최소 하나 인용하고, 문서 hit나 "
         "관계 식별자가 존재하면 각각 최소 하나를 인용하세요. 알람은 "
-        "route.incident.member_alarms, 문서 chunk는 document.hits[].chunk_id, "
+        "route.incident.member_alarms의 제공된 인용 후보, 문서 chunk는 "
+        "document.hits[].chunk_id, "
         "관계는 route.graph_evidence[].relation_ids의 값을 정확히 복사하세요. "
         "lot history와 parameter 식별자는 diagnostic_snapshot.source_ids에서만 "
         "복사하세요. 측정값, 설비, 공정 단계, 문서 또는 관계를 만들어내지 마세요. "
+        "diagnostic_snapshot.wafer_observations는 WAFER별 대표 관측이며 전체 건수와 "
+        "생략 건수는 같은 객체의 count 필드로 확인하세요. "
         "impact_scope.check_required는 확인 대상이며 확정 피해가 아닙니다. "
         "모든 설명형 문자열은 한국어로 작성하세요. 영어는 근거에서 그대로 복사한 "
         "식별자, enum 코드, 모델명, parameter 이름과 단위에만 허용됩니다. 이 규칙은 "
@@ -239,6 +374,8 @@ def scan_hypothesis_messages(messages: list[dict[str, str]]) -> None:
 
 __all__ = [
     "MAX_DOCUMENT_EXCERPT_CHARS",
+    "MAX_PROMPT_MEMBER_ALARMS",
+    "MAX_PROMPT_WAFER_OBSERVATIONS",
     "MAX_PROMPT_CHARS",
     "PROMPT_VERSION",
     "TRUNCATION_MARKER",

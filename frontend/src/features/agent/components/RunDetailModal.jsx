@@ -95,7 +95,7 @@ function RunDetailModal({
         </div>
 
         <div className="overflow-y-auto px-6 py-5">
-          {tab === 'rag' && <RunRagEvidenceTab hits={hits} />}
+          {tab === 'rag' && <RunRagEvidenceTab hits={hits} diagnosis={detail?.diagnosis} />}
 
           {tab === 'graph' && (
             <RunGraphEvidenceTab

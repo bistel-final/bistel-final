@@ -6,6 +6,7 @@ import { detailNumbers, limitLines } from '../../../shared/trace/traceModel.js'
 import { alarmJudgement, impactOntologySelection, measuredText } from '../agent-run-view-state.js'
 import AgentImpactGraphModal from './AgentImpactGraphModal.jsx'
 import {
+  alarmDisplayLabel,
   approvalStatusSummary,
   deliveryStatusSummary,
   impactLabelOf,
@@ -72,8 +73,15 @@ const SummaryFact = ({ label, value }) => (
 
 function RepresentativeAlarmModal({ alarm, run, measured, wafer, lim, judgement, onClose }) {
   const waferLabel = alarm?.wafer_no != null ? `W${Number(alarm.wafer_no)}` : measuredText(alarm?.wafer_id)
+  const alarmLabel = alarmDisplayLabel({
+    source: alarm?.source ?? run.representative_alarm_source,
+    alarmId: alarm?.alarm_id ?? run.representative_alarm_id,
+    chamberId: alarm?.chamber_id ?? run.incident?.chamber_id,
+    lotId: alarm?.lot_id ?? run.incident?.lot_id,
+    waferNo: alarm?.wafer_no,
+  })
   const rows = [
-    ['알람 ID', measuredText(alarm?.alarm_id ?? run.representative_alarm_id)],
+    ['분석 대상', alarmLabel],
     ['판정', judgement ?? '판정 미제공'],
     ['발생 시각', measuredText(fmtDateTime(alarm?.occurred_at ?? run.incident_first_at))],
     ['LOT · WAFER', `${measuredText(alarm?.lot_id ?? run.incident?.lot_id)} · ${waferLabel}`],
@@ -90,7 +98,7 @@ function RepresentativeAlarmModal({ alarm, run, measured, wafer, lim, judgement,
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div>
             <div className="text-[16px] font-extrabold text-navy">대표 알람 상세</div>
-            <div className="mt-1 font-mono text-[11px] text-g2">{measuredText(alarm?.source ?? run.representative_alarm_source)} · {measuredText(alarm?.alarm_id ?? run.representative_alarm_id)}</div>
+            <div className="mt-1 text-[11px] font-semibold text-g2">{alarmLabel}</div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] font-bold text-g1 hover:bg-soft">닫기 ✕</button>
         </div>

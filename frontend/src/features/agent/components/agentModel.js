@@ -38,6 +38,25 @@ const ALARM_SOURCE_LABEL = Object.freeze({
 
 export const alarmSourceText = (source) => ALARM_SOURCE_LABEL[source] ?? '알람'
 
+// R03의 hash ID는 시스템 내부 식별자이므로 화면 제목으로는 의미가 없다.
+// 감사/API 계약은 원본 alarm_id를 그대로 유지하고 사용자 화면만 incident 문맥으로 표시한다.
+export const alarmDisplayLabel = ({
+  source,
+  alarmId,
+  chamberId,
+  lotId,
+  waferNo,
+} = {}) => {
+  if (source === 'R03') {
+    const scope = [chamberId, lotId, waferNo == null ? null : `W${Number(waferNo)}`].filter(Boolean)
+    return ['반복 OOS 알람', ...scope].join(' · ')
+  }
+  return [alarmSourceText(source), alarmId].filter(Boolean).join(' · ') || '알람 정보 미제공'
+}
+
+export const supportingAlarmLabel = (alarm) =>
+  alarmDisplayLabel({ source: alarm?.source, alarmId: alarm?.alarm_id })
+
 const DIAGNOSTIC_STATUS_LABEL = Object.freeze({
   AVAILABLE: '분석 완료',
   EMPTY: '정보 없음',

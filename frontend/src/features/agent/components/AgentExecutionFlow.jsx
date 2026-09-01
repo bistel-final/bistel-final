@@ -18,7 +18,9 @@ import {
 } from '../../../shared/graph/ontology-graph.js'
 import { evidenceHref } from '../agent-run-view-state.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
+import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 import {
+  alarmDisplayLabel,
   approvalStatusSummary,
   approvalText,
   deliveryStatusSummary,
@@ -26,6 +28,7 @@ import {
   diagnosticStatusText,
   impactLabelOf,
   impactSourceOf,
+  supportingAlarmLabel,
   toolStatusText,
 } from './agentModel.js'
 
@@ -336,6 +339,19 @@ function GraphEvidenceList({ detail, items }) {
 
 function EvidenceList({ detail, items }) {
   if (!items?.length) return <div className="text-[12px] text-g2">근거 없음</div>
+  if (items.every((item) => item.type === 'DOCUMENT')) {
+    const hits = items.map((item) => ({
+      source_id: item.source_id,
+      title: item.title,
+      document_id: item.document_id,
+      chunk_id: item.chunk_id,
+      section: item.section,
+      content: item.excerpt,
+      score: null,
+      href: evidenceHref(item),
+    }))
+    return <RunRagEvidenceTab hits={hits} diagnosis={detail.diagnosis} compact />
+  }
   if (items.every((item) => item.type === 'GRAPH')) {
     return <GraphEvidenceList detail={detail} items={items} />
   }
@@ -374,9 +390,12 @@ function PredictionPanel({ detail }) {
   const prediction = detail.prediction
   if (!prediction) return <div className="text-[12px] font-semibold text-g2">AI 판단 미완료</div>
   const citations = [
-    ...prediction.supporting_alarms.map((item) => `${item.source}:${item.alarm_id}`),
-    ...prediction.supporting_chunk_ids,
-    ...prediction.supporting_relation_ids,
+    ...prediction.supporting_alarms.map((item) => ({
+      key: `${item.source}:${item.alarm_id}`,
+      label: supportingAlarmLabel(item),
+    })),
+    ...prediction.supporting_chunk_ids.map((id) => ({ key: id, label: id })),
+    ...prediction.supporting_relation_ids.map((id) => ({ key: id, label: id })),
   ]
   const evidence = new Map((detail.evidence_items ?? []).map((item) => [item.source_id, item]))
   return (
@@ -389,11 +408,11 @@ function PredictionPanel({ detail }) {
       <div>
         <div className="mb-1 text-[10.5px] font-bold text-g2">검증된 인용 근거</div>
         <div className="flex flex-wrap gap-1.5">
-          {citations.map((id) => {
-            const item = evidence.get(id)
+          {citations.map(({ key, label }) => {
+            const item = evidence.get(key)
             const href = item ? evidenceHref(item, { chamberId: detail.chamber_id }) : null
-            const chip = <Badge variant={item ? 't-green' : 't-gray'}>{item ? id : `${id} · 근거 연결 불가`}</Badge>
-            return href ? <a key={id} href={href}>{chip}</a> : <span key={id}>{chip}</span>
+            const chip = <Badge variant={item ? 't-green' : 't-gray'}>{item ? label : `${label} · 근거 연결 불가`}</Badge>
+            return href ? <a key={key} href={href}>{chip}</a> : <span key={key}>{chip}</span>
           })}
           {citations.length === 0 && <span className="text-[11px] text-g2">인용 근거 없음</span>}
         </div>
@@ -433,12 +452,19 @@ function AlarmPreview({ detail, alarm, items }) {
   const evidenceAlarm = items?.[0]?.alarm
   const source = alarm?.source ?? evidenceAlarm?.source ?? detail.alarm_source
   const alarmId = alarm?.alarm_id ?? evidenceAlarm?.alarm_id ?? detail.alarm_id
+  const alarmLabel = alarmDisplayLabel({
+    source,
+    alarmId,
+    chamberId: alarm?.chamber_id ?? detail.chamber_id,
+    lotId: alarm?.lot_id ?? detail.lot_id,
+    waferNo: alarm?.wafer_no,
+  })
   const wafer = alarm?.wafer_id ?? (alarm?.wafer_no != null ? `W${alarm.wafer_no}` : null)
   const step = [alarm?.recipe_step_name, alarm?.recipe_step_no].filter((value) => value != null && value !== '').join(' · ')
   return (
     <div className="space-y-3">
       <PreviewGrid items={[
-        ['알람', [source, alarmId].filter(Boolean).join(':')],
+        ['분석 대상', alarmLabel],
         ['발생 시각', alarm?.occurred_at ? fmtDateTime(alarm.occurred_at) : null],
         ['LOT · WAFER', [alarm?.lot_id, wafer].filter(Boolean).join(' · ')],
         ['설비 · 챔버', [alarm?.equipment_id, alarm?.chamber_id ?? detail.chamber_id].filter(Boolean).join(' · ')],

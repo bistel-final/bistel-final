@@ -11,7 +11,7 @@ import { alarmTrendScope } from '../../../shared/trace/incidentTrace.js'
 import {
   adaptRunForLegacyPage,
   approvalViewState,
-  evidenceHref,
+  documentHitsOf,
   selectInitialRun,
   shouldPollAgentRun,
 } from '../agent-run-view-state.js'
@@ -88,19 +88,6 @@ const legacyRunOf = (detail, alarm) => {
     action_reason: detail.action?.reason ?? null,
   }
 }
-
-const documentHitsOf = (detail) => ({
-  hits: detail.evidence_items
-    .filter((item) => item.type === 'DOCUMENT')
-    .map((item) => ({
-      document_id: item.document_id,
-      chunk_id: item.chunk_id,
-      section: item.section,
-      content: item.excerpt,
-      score: null,
-      href: evidenceHref(item),
-    })),
-})
 
 function AgentRunDetailPage({ runId }) {
   const navigate = useNavigate()
@@ -221,7 +208,7 @@ function AgentRunDetailPage({ runId }) {
       (item) => item.sensor_id === parameterId && Number(item.wafer_no) === Number(state.alarm?.wafer_no),
     ) ?? state.traceResponse?.wafers?.[0] ?? null
     const lim = state.traceResponse?.limits?.[parameterId] ?? null
-    return { run, wafer, lim, docs: documentHitsOf(state.detail) }
+    return { run, wafer, lim, docs: documentHitsOf(state.detail.evidence_items) }
   }, [state])
 
   const decide = (decision, decidedBy, comment) => {

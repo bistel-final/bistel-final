@@ -12,6 +12,7 @@ import {
   adaptActionForLegacyPage,
   alarmJudgement,
   approvalViewState,
+  documentHitsOf,
   evidenceHref,
   hasDeliveryStatus,
   impactOntologyHref,
@@ -34,7 +35,7 @@ import {
   mergeAuditItems,
 } from '../src/shared/components/audit/run-audit-view-state.js'
 import { runStatusVariant } from '../src/shared/components/ui/statusStyles.js'
-import { alarmSourceText } from '../src/features/agent/components/agentModel.js'
+import { alarmDisplayLabel, alarmSourceText } from '../src/features/agent/components/agentModel.js'
 
 const action = {
   action_id: 'ACT-2',
@@ -66,6 +67,23 @@ assert.equal(alarmSourceText('TRACE'), 'TRACE 알람')
 assert.equal(alarmSourceText('SUMMARY'), 'SUMMARY 알람')
 assert.equal(alarmSourceText('R03'), 'R03 연속 알람')
 assert.equal(alarmSourceText('UNKNOWN'), '알람')
+assert.equal(
+  alarmDisplayLabel({
+    source: 'R03',
+    alarmId: 'R03-043312a49ccff7127b93',
+    chamberId: 'EQP04-PM2',
+    lotId: 'LOT004',
+  }),
+  '반복 OOS 알람 · EQP04-PM2 · LOT004',
+)
+assert.doesNotMatch(
+  alarmDisplayLabel({ source: 'R03', alarmId: 'R03-043312a49ccff7127b93' }),
+  /043312a49ccff7127b93/,
+)
+assert.equal(
+  alarmDisplayLabel({ source: 'TRACE', alarmId: 'TAL-0138' }),
+  'TRACE 알람 · TAL-0138',
+)
 assert.equal(alarmJudgement({ alarm_source: 'SUMMARY' }, null), 'OOC')
 assert.equal(alarmJudgement({ alarm_source: 'TRACE' }, null), 'OOS')
 assert.equal(alarmJudgement({ alarm_source: 'R03' }, null), 'OOS')
@@ -201,6 +219,32 @@ assert.equal(
 assert.equal(
   evidenceHref({ type: 'DOCUMENT', document_id: 'DOC 1', chunk_id: 'DOC 1:cs1:0001' }),
   '/documents?document_id=DOC+1&chunk_id=DOC+1%3Acs1%3A0001&view=agent-evidence',
+)
+assert.deepEqual(
+  documentHitsOf([
+    {
+      type: 'DOCUMENT',
+      source_id: 'DOC 1:cs1:0001',
+      title: 'FDC 조치 가이드',
+      document_id: 'DOC 1',
+      chunk_id: 'DOC 1:cs1:0001',
+      section: '3.1',
+      excerpt: '점검 절차',
+    },
+    { type: 'GRAPH', source_id: 'REL-1' },
+  ]),
+  {
+    hits: [{
+      source_id: 'DOC 1:cs1:0001',
+      title: 'FDC 조치 가이드',
+      document_id: 'DOC 1',
+      chunk_id: 'DOC 1:cs1:0001',
+      section: '3.1',
+      content: '점검 절차',
+      score: null,
+      href: '/documents?document_id=DOC+1&chunk_id=DOC+1%3Acs1%3A0001&view=agent-evidence',
+    }],
+  },
 )
 
 const documentsPageSource = readFileSync(
@@ -480,7 +524,8 @@ const impactModalSource = readFileSync(
   'utf8',
 )
 assert.match(runHeaderSource, /runStatusVariant\(run\.status\)/)
-assert.match(runHeaderSource, /alarmSourceText\(alarmSource\)/)
+assert.match(runHeaderSource, /alarmDisplayLabel\(\{/)
+assert.doesNotMatch(runHeaderSource, /\{alarmId\}/, 'R03 내부 hash ID를 헤더 제목에 직접 렌더링하면 안 됩니다')
 assert.match(runHeaderSource, /data-agent-run-id=\{run\.agent_run_id\}/, 'run ID는 화면 제목이 아니라 진단 속성으로만 남겨야 합니다')
 assert.match(runHeaderSource, /title=\{`실행 ID: \$\{run\.agent_run_id\}`\}/)
 assert.match(runListSource, /runStatusVariant\(r\.status\)/)

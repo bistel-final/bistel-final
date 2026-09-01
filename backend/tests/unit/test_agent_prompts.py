@@ -6,17 +6,26 @@ import json
 
 import pytest
 
+from app.agent.diagnostics import (
+    BoundaryDeviation,
+    DiagnosticSourceIds,
+    DirectScope,
+    IncidentDiagnosticSnapshot,
+    WaferParameterObservation,
+)
 from app.agent.incident import ResolvedIncident
 from app.agent.prompts import (
     MAX_DOCUMENT_EXCERPT_CHARS,
     MAX_PROMPT_CHARS,
+    MAX_PROMPT_MEMBER_ALARMS,
+    MAX_PROMPT_WAFER_OBSERVATIONS,
     TRUNCATION_MARKER,
     HypothesisPromptError,
     build_hypothesis_messages,
     scan_hypothesis_messages,
 )
 from app.agent.routing import GraphRouteEvidence, ResolvedIncidentRoute
-from app.common.enums import AlarmSource
+from app.common.enums import AlarmSource, AlarmType
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import DocumentHit, DocumentSearchToolResult
 
@@ -80,6 +89,132 @@ def test_document_hits_are_sorted_and_content_is_bounded() -> None:
     hits = payload["document"]["hits"]
     assert [hit["chunk_id"] for hit in hits] == ["C-1", "C-2"]
     assert hits[0]["content"] == "x" * MAX_DOCUMENT_EXCERPT_CHARS + TRUNCATION_MARKER
+
+
+def test_large_incident_uses_bounded_citation_candidates_without_losing_counts() -> (
+    None
+):
+    representative = AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-00")
+    requested = AlarmRef(source=AlarmSource.R03, alarm_id="R03-01")
+    members = (
+        representative,
+        *(
+            AlarmRef(source=AlarmSource.TRACE, alarm_id=f"TA-{index:02d}")
+            for index in range(1, 31)
+        ),
+        *(
+            AlarmRef(source=AlarmSource.SUMMARY, alarm_id=f"SA-{index:02d}")
+            for index in range(1, 18)
+        ),
+        requested,
+    )
+    base = _route()
+    route = ResolvedIncidentRoute(
+        incident=ResolvedIncident(
+            lot_id="LOT-1",
+            chamber_id="EQP-1-PM1",
+            requested_alarm=requested,
+            representative_alarm=representative,
+            member_alarms=members,
+        ),
+        wafer_routes=(),
+        graph_evidence=base.graph_evidence,
+        route_consistency=True,
+        mismatches=(),
+    )
+
+    messages = build_hypothesis_messages(None, None, _docs(("C-1", "safe")), route)
+    payload = json.loads(messages[1]["content"].removeprefix("Evidence JSON:\n"))
+    incident = payload["route"]["incident"]
+    candidates = {
+        f"{alarm['source']}:{alarm['alarm_id']}" for alarm in incident["member_alarms"]
+    }
+
+    assert len(incident["member_alarms"]) == MAX_PROMPT_MEMBER_ALARMS
+    assert representative.to_token() in candidates
+    assert requested.to_token() in candidates
+    assert incident["member_alarm_count"] == 49
+    assert incident["member_alarm_source_counts"] == {
+        "TRACE": 31,
+        "SUMMARY": 17,
+        "R03": 1,
+    }
+    assert incident["member_alarms_omitted_count"] == 37
+
+    observations = tuple(
+        WaferParameterObservation(
+            lot_hist_id=f"LH-{wafer_no}",
+            wafer_id=f"W{wafer_no}",
+            wafer_no=wafer_no,
+            step_id="STEP-1",
+            recipe_step_no=1,
+            recipe_step_name="ETCH",
+            parameter_id=f"P{parameter_no}",
+            parameter_name=f"Parameter {parameter_no}",
+            alarm_type=AlarmType.OOS if parameter_no == 1 else AlarmType.IN,
+            point_count=3,
+            ooc_point_count=0,
+            oos_point_count=1 if parameter_no == 1 else 0,
+            value_mean=float(parameter_no),
+            value_min=float(parameter_no - 1),
+            value_max=float(parameter_no + 1),
+            deviation=(
+                BoundaryDeviation(level="OOS", direction="UPPER", magnitude=1.0)
+                if parameter_no == 1
+                else None
+            ),
+        )
+        for wafer_no in (1, 2, 3)
+        for parameter_no in range(1, 9)
+    )
+    snapshot = IncidentDiagnosticSnapshot(
+        lot_id="LOT-1",
+        chamber_id="EQP-1-PM1",
+        representative_alarm_ref=representative.to_token(),
+        member_alarm_count=len(members),
+        target_wafer_count=3,
+        observed_wafer_count=3,
+        wafer_observations=observations,
+        parameter_patterns=(),
+        step_patterns=(),
+        direct_scope=DirectScope(
+            lot_ids=("LOT-1",),
+            wafer_ids=("W1", "W2", "W3"),
+            chamber_ids=("EQP-1-PM1",),
+            parameter_ids=tuple(f"P{index}" for index in range(1, 9)),
+            model_codes=("MODEL-1",),
+        ),
+        data_gaps=(),
+        source_ids=DiagnosticSourceIds(
+            alarm_refs=tuple(alarm.to_token() for alarm in members),
+            lot_hist_ids=("LH-1", "LH-2", "LH-3"),
+            parameter_ids=tuple(f"P{index}" for index in range(1, 9)),
+            relation_ids=("REL-1",),
+            graph_revisions=("rev-1",),
+        ),
+    )
+
+    messages = build_hypothesis_messages(
+        None,
+        None,
+        _docs(("C-1", "safe")),
+        route,
+        diagnostic_snapshot=snapshot,
+    )
+    payload = json.loads(messages[1]["content"].removeprefix("Evidence JSON:\n"))
+    diagnostic = payload["diagnostic_snapshot"]
+
+    assert len(diagnostic["wafer_observations"]) == MAX_PROMPT_WAFER_OBSERVATIONS
+    assert {item["wafer_id"] for item in diagnostic["wafer_observations"]} == {
+        "W1",
+        "W2",
+        "W3",
+    }
+    assert diagnostic["wafer_observation_count"] == 24
+    assert diagnostic["wafer_observations_omitted_count"] == 18
+    assert len(diagnostic["source_ids"]["alarm_refs"]) == MAX_PROMPT_MEMBER_ALARMS
+    assert diagnostic["source_ids"]["alarm_ref_count"] == 49
+    assert diagnostic["source_ids"]["alarm_refs_omitted_count"] == 37
 
 
 def test_system_prompt_requires_korean_narratives() -> None:

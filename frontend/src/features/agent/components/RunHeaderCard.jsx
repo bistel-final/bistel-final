@@ -3,7 +3,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { actionCodeVariant, runStatusVariant } from '../../../shared/components/ui/statusStyles.js'
 import { FaultBadge } from './faultStyles.jsx'
-import { alarmSourceText, approvalStatusSummary, runStatusText } from './agentModel.js'
+import { alarmDisplayLabel, approvalStatusSummary, runStatusText } from './agentModel.js'
 
 // 헤더 카드 — 라이트 시안 3번 우측 스택 1번
 // 상단: run id·챔버·발생시각 / 모델명·지연시간(우측)
@@ -13,13 +13,18 @@ function RunHeaderCard({ run, action, approval }) {
   const hasConfidence = run.confidence != null
   const conf = hasConfidence ? Math.round(run.confidence * 100) : null
   const alarmSource = run.representative_alarm_source ?? run.alarm_source
-  const alarmId = run.representative_alarm_id ?? run.alarm_id ?? 'ID 미제공'
+  const alarmLabel = alarmDisplayLabel({
+    source: alarmSource,
+    alarmId: run.representative_alarm_id ?? run.alarm_id,
+    chamberId: run.incident?.chamber_id,
+    lotId: run.incident?.lot_id,
+  })
   return (
     <Card className="agent-main-readable px-5 py-4" data-agent-run-id={run.agent_run_id}>
       <div className="flex items-start justify-between">
         <div>
           <div className="text-[15px] font-extrabold text-ink" title={`실행 ID: ${run.agent_run_id}`}>
-            {alarmSourceText(alarmSource)} <span className="font-mono">{alarmId}</span> 분석
+            {alarmLabel} 분석
           </div>
           <div className="mt-1 font-mono text-[11.5px] text-g1">
             {run.incident?.chamber_id} · 발생 {fmtDateTime(run.incident_first_at)}
