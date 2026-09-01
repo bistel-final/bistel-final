@@ -17,7 +17,7 @@ function DocumentDetailDrawer({
   const selectedChunkRef = useRef(null)
   const chunkRefs = useRef({})
   const [activeChunkId, setActiveChunkId] = useState(null)
-  const chunks = detail?.chunks ?? []
+  const chunks = useMemo(() => detail?.chunks ?? [], [detail])
   const selectedChunkId = hit?.chunk_id ?? null
   const activeChunk = useMemo(
     () =>
@@ -34,11 +34,6 @@ function DocumentDetailDrawer({
     const target = selectedChunkRef.current
     body.scrollTop = target.offsetTop - body.clientHeight / 2 + target.clientHeight / 2
   }, [open, detail, hit])
-
-  useEffect(() => {
-    if (!open || !chunks.length) return
-    setActiveChunkId(selectedChunkId ?? chunks[0].chunk_id)
-  }, [chunks, open, selectedChunkId])
 
   useEffect(() => {
     const body = detailBodyRef.current

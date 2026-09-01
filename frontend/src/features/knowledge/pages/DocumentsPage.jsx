@@ -126,7 +126,8 @@ function DocumentsPage() {
   )
 
   useEffect(() => {
-    if (!urlDocumentId) setDetailOpen(false)
+    if (urlDocumentId) return
+    Promise.resolve().then(() => setDetailOpen(false))
   }, [urlDocumentId])
 
   useEffect(() => {
@@ -201,7 +202,22 @@ function DocumentsPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [docType, loading, modelCode, syncUrl, topK])
+  }, [
+    docType,
+    loading,
+    modelCode,
+    setDetailError,
+    setDetailLoading,
+    setDetailOpen,
+    setDocumentDetail,
+    setError,
+    setInput,
+    setLoading,
+    setResult,
+    setSelectedHit,
+    syncUrl,
+    topK,
+  ])
 
   const runRecommendedSearch = (item) => {
     const nextModelCode = modelCode === ALL_MODELS ? item.model_codes[0] : modelCode
