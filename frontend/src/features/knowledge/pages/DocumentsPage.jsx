@@ -249,6 +249,22 @@ function DocumentsPage() {
     })
   }
 
+  const navigateDetailChunk = (chunk) => {
+    if (!selectedHit || !documentDetail) return
+    const nextHit = {
+      ...selectedHit,
+      document_id: documentDetail.document_id,
+      chunk_id: chunk.chunk_id,
+      section: chunk.section_title ?? selectedHit.section,
+    }
+    setSelectedHit(nextHit)
+    urlDocumentHandledRef.current = `${documentDetail.document_id}:${chunk.chunk_id}`
+    syncUrl({
+      document_id: documentDetail.document_id,
+      chunk_id: chunk.chunk_id,
+    })
+  }
+
   if (error)
     return (
       <ErrorState
@@ -383,6 +399,7 @@ function DocumentsPage() {
         error={detailError}
         onClose={closeDocument}
         onRetry={() => selectedHit && openDocument(selectedHit)}
+        onNavigateChunk={navigateDetailChunk}
       />
     </div>
   )
