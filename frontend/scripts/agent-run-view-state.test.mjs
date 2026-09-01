@@ -34,6 +34,7 @@ import {
   mergeAuditItems,
 } from '../src/shared/components/audit/run-audit-view-state.js'
 import { runStatusVariant } from '../src/shared/components/ui/statusStyles.js'
+import { alarmSourceText } from '../src/features/agent/components/agentModel.js'
 
 const action = {
   action_id: 'ACT-2',
@@ -61,6 +62,10 @@ assert.equal(runStatusVariant('RUNNING'), 't-blue')
 assert.equal(runStatusVariant('WAITING_APPROVAL'), 't-amber')
 assert.equal(runStatusVariant('COMPLETED'), 't-green')
 assert.equal(runStatusVariant('FAILED'), 't-red')
+assert.equal(alarmSourceText('TRACE'), 'TRACE 알람')
+assert.equal(alarmSourceText('SUMMARY'), 'SUMMARY 알람')
+assert.equal(alarmSourceText('R03'), 'R03 연속 알람')
+assert.equal(alarmSourceText('UNKNOWN'), '알람')
 assert.equal(alarmJudgement({ alarm_source: 'SUMMARY' }, null), 'OOC')
 assert.equal(alarmJudgement({ alarm_source: 'TRACE' }, null), 'OOS')
 assert.equal(alarmJudgement({ alarm_source: 'R03' }, null), 'OOS')
@@ -458,6 +463,9 @@ const impactModalSource = readFileSync(
   'utf8',
 )
 assert.match(runHeaderSource, /runStatusVariant\(run\.status\)/)
+assert.match(runHeaderSource, /alarmSourceText\(alarmSource\)/)
+assert.match(runHeaderSource, /data-agent-run-id=\{run\.agent_run_id\}/, 'run ID는 화면 제목이 아니라 진단 속성으로만 남겨야 합니다')
+assert.match(runHeaderSource, /title=\{`실행 ID: \$\{run\.agent_run_id\}`\}/)
 assert.match(runListSource, /runStatusVariant\(r\.status\)/)
 assert.match(runSummarySource, /alarmJudgement\(run, repAlarm\)/)
 assert.match(runSummarySource, /detail\?\.prediction\?\.cause_summary/, '알람 요약은 저장된 LLM 원인 분석을 우선 사용해야 합니다')

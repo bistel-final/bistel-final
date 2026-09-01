@@ -30,6 +30,14 @@ const RUN_STATUS_LABEL = Object.freeze({
 
 export const runStatusText = (status) => RUN_STATUS_LABEL[status] ?? status ?? '상태 미제공'
 
+const ALARM_SOURCE_LABEL = Object.freeze({
+  TRACE: 'TRACE 알람',
+  SUMMARY: 'SUMMARY 알람',
+  R03: 'R03 연속 알람',
+})
+
+export const alarmSourceText = (source) => ALARM_SOURCE_LABEL[source] ?? '알람'
+
 const DIAGNOSTIC_STATUS_LABEL = Object.freeze({
   AVAILABLE: '분석 완료',
   EMPTY: '정보 없음',
