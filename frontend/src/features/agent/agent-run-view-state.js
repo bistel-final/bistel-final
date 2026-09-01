@@ -51,7 +51,11 @@ export function trendUnavailableMessage({
 
 export function evidenceHref(item, context = {}) {
   if (item.type === 'DOCUMENT') {
-    const query = new URLSearchParams({ document_id: item.document_id, chunk_id: item.chunk_id })
+    const query = new URLSearchParams({
+      document_id: item.document_id,
+      chunk_id: item.chunk_id,
+      view: 'agent-evidence',
+    })
     return `/documents?${query}`
   }
   if (item.type === 'ALARM') {

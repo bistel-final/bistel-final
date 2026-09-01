@@ -195,11 +195,15 @@ assert.equal(
 )
 assert.equal(
   evidenceHref({ type: 'DOCUMENT', document_id: 'DOC 1', chunk_id: 'DOC 1:cs1:0001' }),
-  '/documents?document_id=DOC+1&chunk_id=DOC+1%3Acs1%3A0001',
+  '/documents?document_id=DOC+1&chunk_id=DOC+1%3Acs1%3A0001&view=agent-evidence',
 )
 
 const documentsPageSource = readFileSync(
   new URL('../src/features/knowledge/pages/DocumentsPage.jsx', import.meta.url),
+  'utf8',
+)
+const documentDetailDrawerSource = readFileSync(
+  new URL('../src/features/knowledge/components/DocumentDetailDrawer.jsx', import.meta.url),
   'utf8',
 )
 assert.match(
@@ -207,6 +211,12 @@ assert.match(
   /urlDocumentHandledRef\.current === urlDocumentKey\) urlDocumentHandledRef\.current = ''/,
   'React Strict Mode에서 취소된 문서 딥링크는 다음 effect가 다시 처리할 수 있어야 합니다',
 )
+assert.match(
+  documentDetailDrawerSource,
+  /wide \? 'left-\[296px\]' : 'w-\[1008px\] max-w-\[calc\(100%-296px\)\]'/,
+  'Agent 근거 상세만 넓게 표시하고 일반 문서 검색 Drawer 폭은 유지해야 합니다',
+)
+assert.match(documentsPageSource, /wide=\{urlDetailView === 'agent-evidence'\}/)
 const graphEvidence = {
   type: 'GRAPH',
   relation_id: 'REL-9687560b5876022b2512',

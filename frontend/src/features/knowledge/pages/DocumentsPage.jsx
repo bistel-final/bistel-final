@@ -57,6 +57,7 @@ function DocumentsPage() {
   const urlTopK = Number(searchParams.get('top_k'))
   const urlDocumentId = searchParams.get('document_id')
   const urlChunkId = searchParams.get('chunk_id')
+  const urlDetailView = searchParams.get('view')
   const [input, setInput] = useState(urlQuery)
   const [result, setResult] = useState(null) // { query, hits }
   const [modelCode, setModelCode] = useState(DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS)
@@ -80,6 +81,7 @@ function DocumentsPage() {
       top_k,
       document_id,
       chunk_id,
+      detail_view,
       clearDocument = false,
     }) => {
       const next = new URLSearchParams(searchParams)
@@ -103,6 +105,7 @@ function DocumentsPage() {
       if (clearDocument) {
         next.delete('document_id')
         next.delete('chunk_id')
+        next.delete('view')
       }
       if (document_id !== undefined) {
         if (document_id) next.set('document_id', document_id)
@@ -111,6 +114,10 @@ function DocumentsPage() {
       if (chunk_id !== undefined) {
         if (chunk_id) next.set('chunk_id', chunk_id)
         else next.delete('chunk_id')
+      }
+      if (detail_view !== undefined) {
+        if (detail_view) next.set('view', detail_view)
+        else next.delete('view')
       }
       setSearchParams(next, { replace: false })
     },
@@ -245,6 +252,7 @@ function DocumentsPage() {
     syncUrl({
       document_id: hit.document_id,
       chunk_id: hit.chunk_id,
+      detail_view: null,
     })
     getDocument(hit.document_id)
       .then((detail) => {
@@ -277,6 +285,7 @@ function DocumentsPage() {
     syncUrl({
       document_id: document.document_id,
       chunk_id: null,
+      detail_view: null,
     })
     getDocument(document.document_id)
       .then((detail) => {
@@ -301,10 +310,7 @@ function DocumentsPage() {
     setDocumentDetail(null)
     setDetailError(null)
     urlDocumentHandledRef.current = ''
-    syncUrl({
-      document_id: null,
-      chunk_id: null,
-    })
+    syncUrl({ clearDocument: true })
   }
 
   const navigateDetailChunk = (chunk) => {
@@ -548,9 +554,10 @@ function DocumentsPage() {
         loading={detailLoading}
         error={detailError}
         onClose={closeDocument}
-        onRetry={() => selectedHit && openDocument(selectedHit)}
-        onNavigateChunk={navigateDetailChunk}
-      />
+      onRetry={() => selectedHit && openDocument(selectedHit)}
+      onNavigateChunk={navigateDetailChunk}
+      wide={urlDetailView === 'agent-evidence'}
+    />
     </div>
   )
 }
