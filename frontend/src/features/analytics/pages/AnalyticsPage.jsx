@@ -13,6 +13,7 @@ import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 import NlqEvaluationPanel from '../components/NlqEvaluationPanel.jsx'
+import NlqPipeline from '../components/NlqPipeline.jsx'
 
 // 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
 const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
@@ -51,6 +52,10 @@ function AnalyticsPage() {
   // 세션 내 신규 질의는 pushHistory 로 즉시 반영 — 서버 기록과 question 기준 dedupe.
   const [history, setHistory] = useState([])
   const [historyState, setHistoryState] = useState('loading') // loading | error | ready
+  // 이력 서버 pagination — 공용 로그(nl_query_log)가 수백 건이라 한 페이지 8건, 감사로그와 같은 페이저
+  const [histPage, setHistPage] = useState(1)
+  const [histTotal, setHistTotal] = useState(0)
+  const HIST_SIZE = 8
   const [sideTab, setSideTab] = useState('history') // history | evaluation — 보조 탭(8번째 메뉴 아님)
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
@@ -65,10 +70,11 @@ function AnalyticsPage() {
     return () => t.forEach(clearTimeout)
   }, [])
 
-  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다
+  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다.
+  // 페이지가 바뀜 때마다 서버에서 그 페이지만 받아 교체한다 (세션 push 항목은 1페이지 상단에만 유지).
   useEffect(() => {
     let cancelled = false
-    getQueryHistory({ size: 20 })
+    getQueryHistory({ page: histPage, size: HIST_SIZE })
       .then((res) => {
         if (cancelled) return
         const items = (res?.items ?? []).map((it) => ({
@@ -77,10 +83,15 @@ function AnalyticsPage() {
           row_count: it.row_cnt ?? 0,
           latency_ms: it.latency_ms ?? 0,
           reason: it.reject_reason ?? it.error_msg ?? null,
+          logged: true,
         }))
+        setHistTotal(res?.total ?? items.length)
         setHistory((h) => {
-          const seen = new Set(h.map((x) => x.question))
-          return [...h, ...items.filter((it) => !seen.has(it.question))]
+          if (histPage !== 1) return items
+          // 1페이지: 서버가 모르는 세션 항목(기록 실패 등)을 위에 유지하고 dedupe
+          const session = h.filter((x) => x.logged === false)
+          const seen = new Set(session.map((x) => x.question))
+          return [...session, ...items.filter((it) => !seen.has(it.question))]
         })
         setHistoryState('ready')
       })
@@ -90,15 +101,17 @@ function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [histPage])
   const after = (ms, fn) => timers.current.push(setTimeout(fn, ms))
   const clearTimers = () => {
     timers.current.forEach(clearTimeout)
     timers.current = []
   }
 
-  const pushHistory = (entry) =>
+  const pushHistory = (entry) => {
     setHistory((h) => (h.some((x) => x.question === entry.question) ? h : [entry, ...h]))
+    setHistPage(1) // 새 질의는 항상 1페이지 상단에서 보인다
+  }
 
   // SQL 생성 직후 1회 자동 검증 (useEffect 아님 — 응답 콜백에서 수행)
   const verify = (sql, notice) => {
@@ -225,11 +238,13 @@ function AnalyticsPage() {
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
-        <div className="text-[22px] font-extrabold text-navy">자연어 분석</div>
-        <div className="text-xs text-g1">읽기 전용 · 허용 테이블 16종</div>
+        <div className="text-[22px] font-extrabold tracking-[-.01em] text-ink">자연어 분석</div>
+        <div className="text-[12.5px] text-g2">
+          읽기 전용 · 허용 테이블 <span className="font-mono font-bold text-navy">16</span>종 · LLM <span className="font-mono">gpt-4o-mini</span>
+        </div>
       </div>
 
-      <Card className="px-5 py-[18px]">
+      <Card className="px-6 py-5">
         <div className="flex gap-3">
           <input
             type="text"
@@ -238,32 +253,32 @@ function AnalyticsPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') ask(e.target.value)
             }}
-            placeholder="데이터에 대해 질문하세요 (예: 챔버별 알람 건수)"
-            className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-white px-3 font-mono text-sm text-ink focus:border-blue focus:outline-none"
+            placeholder="데이터에 대해 질문하세요 — 예: 챔버별 알람 건수, EQP01에 챔버가 몇 개야?"
+            className="h-[52px] min-w-0 flex-1 rounded-lg border border-line bg-white px-4 text-[15px] text-ink placeholder:text-faint focus:border-blue focus:outline-none focus:ring-2 focus:ring-tint-blue"
           />
-          <Button onClick={() => ask(question)} className="flex-none" style={{ height: 44, padding: '0 34px' }}>
+          <Button onClick={() => ask(question)} className="flex-none text-[14px]" style={{ height: 52, padding: '0 36px' }}>
             질문
           </Button>
         </div>
-        {/* 예시 칩 — 클릭 = 질문 실행. '지워줘'(거부 유도)만 적색 틴트 */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {NL_CHIPS.map((q) => {
-            const danger = q.includes('지워줘')
-            return (
-              <button
-                key={q}
-                type="button"
-                onClick={() => ask(q)}
-                className={`inline-flex h-7 cursor-pointer items-center rounded-full border px-4 font-sans text-[11.5px] font-semibold ${
-                  danger ? 'border-tint-red-line bg-tint-red text-red' : 'border-tint-blue-line bg-tint-blue text-blue'
-                }`}
-              >
-                {q}
-              </button>
-            )
-          })}
+        {/* 예시 칩 — 클릭 = 질문 실행. 거부 유도 칩도 같은 색 — 거부는 결과에서 보여주는 것이지 입력에서 예고하지 않는다 */}
+        <div className="mt-3.5 flex flex-wrap gap-2">
+          {NL_CHIPS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => ask(q)}
+              className="inline-flex h-8 cursor-pointer items-center rounded-full border border-tint-blue-line bg-tint-blue px-4 font-sans text-[12.5px] font-semibold text-blue transition-colors hover:bg-blue hover:text-white"
+            >
+              {q}
+            </button>
+          ))}
         </div>
       </Card>
+
+      {/* 파이프라인 트래커 — 질문 전에도 구조가 보이고, 질의 중엔 단계가 순서대로 켜진다 */}
+      <div className="mt-4">
+        <NlqPipeline phase={phase} def={def} rejected={rejected} />
+      </div>
 
       {hasSql && (
         <div className="mt-[18px]">
@@ -369,7 +384,19 @@ function AnalyticsPage() {
             </Button>
           </div>
           {sideTab === 'history' ? (
-            <NlqHistoryPanel items={history} activeQ={activeQ} onRerun={ask} state={historyState} />
+            <NlqHistoryPanel
+              items={history}
+              activeQ={activeQ}
+              onRerun={ask}
+              state={historyState}
+              page={histPage}
+              pageCount={Math.max(1, Math.ceil(histTotal / HIST_SIZE))}
+              total={histTotal}
+              onPage={(p) => {
+                setHistoryState('loading') // 로딩 표시는 이벤트에서 — effect 안 동기 setState 회피(react-hooks 규칙)
+                setHistPage(p)
+              }}
+            />
           ) : (
             <NlqEvaluationPanel fetchEvaluations={getEvaluations} />
           )}
