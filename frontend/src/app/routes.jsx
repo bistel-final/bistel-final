@@ -7,7 +7,7 @@ import AnalyticsPage from '../features/analytics/pages/AnalyticsPage.jsx'
 import AuditLogPage from '../features/analytics/pages/AuditLogPage.jsx'
 import DocumentsPage from '../features/knowledge/pages/DocumentsPage.jsx'
 import OntologyPage from '../features/knowledge/pages/OntologyPage.jsx'
-import KnowledgePage from '../features/knowledge/pages/KnowledgePage.jsx'
+import KnowledgeRedirect from './KnowledgeRedirect.jsx'
 
 // 라이트 테마 개편 — 네비 7개 (알람 히스토리 · 문서 검색 · 온톨로지 포함).
 // 트레이스 뷰어(/traces) · 조치 목록(/actions)은 라우트를 제거해 URL 접근도 막는다 (팀 합의,
@@ -28,8 +28,8 @@ export const router = createBrowserRouter([
       { path: 'ontology', element: <OntologyPage /> },
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'audit-logs', element: <AuditLogPage /> },
-      // B 화면 노출 여부 팀 결정 대기 — 사이드바 숨김, 라우트 유지
-      { path: 'knowledge', element: <KnowledgePage /> },
+      // 과거 숨김 deep-link는 query를 보존해 정식 Ontology 화면으로 흡수한다.
+      { path: 'knowledge', element: <KnowledgeRedirect /> },
       { path: '*', element: <Navigate to="/dashboard" replace /> },
     ],
   },

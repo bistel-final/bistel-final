@@ -55,13 +55,13 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 |---|---|---:|---|
 | Common | 4명 공동, 통합 관리 방대혁 | 74.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
-| B Knowledge | 강연권 | 21.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
+| B Knowledge | 강연권 | 23.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
 | C Agent/HITL | 방대혁 | 82.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
 | D Analytics·Audit | 천승현 | 18.5h | 자연어 분석·질의/평가 이력·화면 6, 전역 감사 화면 7 |
-| **합계** | | **224.5h** | P2 도전 과제 제외 |
+| **합계** | | **226.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 176.5h / P1 48.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른 개다.
+우선순위별 공수는 **P0 176.5h / P1 50.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른한 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -95,6 +95,9 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
   35개를 full-schema semantic으로 대조하고, 단일 canonical JSON에서 Markdown·CSV·PDF를
   재생성한다. alias 25개의 소비·대체체·수동 증거 판정기와 drift 변이 회귀를 같은
   계약 Gate로 닫는다.
+- `V5-B-4.2` **4.0h** — 12개 정본 chamber selector·관계 API 4상태와 xyflow Ontology를
+  구현하고, 같은 그래프·Trace 표현을 Agent·Detection이 재사용하도록 shared 경계를
+  승격한다. iframe·Cypher·비공개 property·feature 교차 import 재유입도 CI에서 함께 막는다.
 - `V5-C-0.1` **4.0h** — Runtime 9-table Repository, ID·상태 전이, action/severity pair와
   append-only 감사를 실제 PostgreSQL 저장·동시성 경계까지 한 기반 구현으로 닫는다.
 - `V5-C-2.1` **6.5h** — State 20개 계약, Tool 예약·종료 감사와 soft deadline,
@@ -265,10 +268,10 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-B-3.2 | P0 | GraphService·`get_equipment_context(chamber_id)` Tool. 완료: CM-2.7이 적용·marker한 graph를 읽는 GraphRepository·Service를 만들고 exact signature로 장비·모델·AREA·Process Step·인접 Step·파라미터·형제 chamber와 stable relation/graph provenance를 반환한다. 0건·timeout·오류는 공통 `ok`·`reason`·빈 payload 계약과 공통 reason prefix를 따르며 elementId·고정 설비 upstream·LOT routing 추정은 노출하지 않는다 | FR-B-03, NFR-09 | V5-CM-2.7 | 1.5h |
 | V5-B-3.3 | P0 | 단일 `GET /relations/chambers/{chamber_id}`. 완료: CM-2.7 marker가 가리키는 graph의 chamber 중심 read-only 응답을 B-3.2 `GraphService`에서 만들고 Neo4j 자격증명·Cypher·elementId를 노출하지 않는다. 같은 Method+Path의 다른 DTO를 만들지 않으며 노드 타입 확장은 같은 응답 shape의 `/relations/{node_type}/{node_id}`로만 확장한다 | FR-B-06, NFR-02, NFR-11 | V5-CM-2.7, V5-B-3.2 | 1.5h |
 | V5-B-4.1 | P1 | 화면 4 Documents. 완료: `POST /documents/search`를 실제 연동해 근거·deep link와 Loading·Error·Empty·Success를 표시한다 | FR-B-06, FR-I-02, NFR-17 | V5-B-2.3 | 2.0h |
-| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: chamber를 선택해 단일 관계 API의 장비·모델·AREA·Process Step·인접 Step·파라미터를 시각화하고 Loading·Error·Empty·Success를 검증한다. Neo4j Browser iframe·비밀정보 노출은 0건이다 | FR-B-06, NFR-02, NFR-17 | V5-B-3.3 | 2.0h |
+| V5-B-4.2 | P1 | 화면 5 Ontology. 완료: Graph 정본 12개 chamber selector와 단일 관계 API로 장비·모델·AREA·Process Step·인접 Step·파라미터를 xyflow에 시각화하고 Loading·Error·Empty·Success를 검증한다. 같은 shared Ontology·Trace 표현을 Agent·Detection이 재사용하며 feature 교차 import, Neo4j Browser iframe·URI·Cypher·비공개 property 노출은 0건이다 | FR-B-06, NFR-02, NFR-17 | V5-B-3.3 | 4.0h |
 | V5-B-4.3 | P1 | 최소 검증·평가. 완료: B-1.4 운영 검증 artifact, RAG 검색 contract·embedding singleton·Neo4j 44/85·chamber 관계 fixture를 검증하고 **Recall@4 ≥ 0.80, MRR ≥ 0.70, 관계 질문 100%**와 실패 사례를 artifact에 기록한다. 이 Task는 B-2/B-3/B-4 기능 구현의 착수 gate가 아니라 최종 인수 gate다 | FR-B-07 | V5-B-1.4, V5-B-2.2, V5-B-3.2 | 2.0h |
 
-**B 합계: 21.5h** (P0 기능 13.5h / P1 화면·운영 검증 8.0h, P2 없음)
+**B 합계: 23.5h** (P0 기능 13.5h / P1 화면·운영 검증 10.0h, P2 없음)
 
 > 출처 규칙은 `docs/reference/배포패키지_기준.md`를 따른다 — **③에 있으면 ③, ③에 없는 것만 ①**.
 > `document`·`document_chunk` 스키마와 `load_documents.py`·`bge-m3` 1024만 ①에서 가져오고,
