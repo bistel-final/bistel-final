@@ -28,12 +28,19 @@ import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
 import { analysisActionOf, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
-// 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + TRACE/SUMMARY/R03 탭 + 테이블.
+// 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + 전체/TRACE/SUMMARY/R03 탭 + 테이블.
 // 탭 분리는 source(AlarmRef의 TRACE·SUMMARY·R03)로 한다 — judgement로 나누면 R03(OOS)이
 // TRACE 탭에 섞여 보이지 않는 것처럼 된다.
 // 기간·탭 분리 목록 파라미터가 명세에 없어 넓게 받아 클라이언트에서 나눈다. TODO(api): 기간·source 파라미터
 const WIDE = 100
 const PAGE_SIZE = 12
+const ALARM_TABS = Object.freeze(['ALL', 'TRACE', 'SUMMARY', 'R03'])
+const TAB_TITLE = Object.freeze({
+  ALL: '전체 알람',
+  TRACE: 'TRACE 알람',
+  SUMMARY: 'SUMMARY 알람',
+  R03: 'R03 알람',
+})
 
 const dateOf = (iso) => String(iso ?? '').slice(0, 10)
 
@@ -63,7 +70,7 @@ function AlarmsPage() {
   const [runPending, setRunPending] = useState(false)
   const [runError, setRunError] = useState(null)
   const tabParam = searchParams.get('tab')
-  const tab = ['TRACE', 'SUMMARY', 'R03'].includes(tabParam) ? tabParam : 'TRACE'
+  const tab = ALARM_TABS.includes(tabParam) ? tabParam : 'ALL'
   const sourceQuery = searchParams.get('source')
   const source = ['TRACE', 'SUMMARY', 'R03'].includes(sourceQuery) ? sourceQuery : null
   const invalidSource = sourceQuery !== null && source === null
@@ -144,7 +151,7 @@ function AlarmsPage() {
   }
 
   const rows = useMemo(() => {
-    if (!data) return { trace: [], summary: [], r03: [] }
+    if (!data) return { all: [], trace: [], summary: [], r03: [] }
     const inRange = (a) => {
       const d = dateOf(a.occurred_at)
       return (!applied.from || d >= applied.from) && (!applied.to || d <= applied.to)
@@ -161,8 +168,8 @@ function AlarmsPage() {
   if (error) return <ErrorState detail={error} onRetry={retry} />
   if (!data) return <LoadingState message="알람 히스토리를 불러오는 중…" />
 
-  const list = tab === 'TRACE' ? rows.trace : tab === 'SUMMARY' ? rows.summary : rows.r03
-  const useSpecLimits = tab !== 'SUMMARY'
+  const list = tab === 'ALL' ? rows.all : tab === 'TRACE' ? rows.trace : tab === 'SUMMARY' ? rows.summary : rows.r03
+  const limitHeaders = tab === 'SUMMARY' ? ['LCL', 'UCL'] : tab === 'ALL' ? ['LOWER', 'UPPER'] : ['LSL', 'USL']
   const pageCnt = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCnt)
   const paged = list.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
@@ -196,7 +203,7 @@ function AlarmsPage() {
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">알람 히스토리</div>
         <div className="text-[11.5px] text-g2">
-          기간 내 <span className="font-mono">{rows.trace.length + rows.summary.length + rows.r03.length}</span>건
+          기간 내 <span className="font-mono">{rows.all.length}</span>건
         </div>
       </div>
 
@@ -240,6 +247,9 @@ function AlarmsPage() {
       </div>
 
       <div className="mb-3 flex items-center gap-2">
+        <button type="button" className={tabCls(tab === 'ALL')} onClick={() => setTab('ALL')}>
+          전체 ({rows.all.length})
+        </button>
         <button type="button" className={tabCls(tab === 'TRACE')} onClick={() => setTab('TRACE')}>
           TRACE · OOS ({rows.trace.length})
         </button>
@@ -253,7 +263,7 @@ function AlarmsPage() {
 
       <Card>
         <CardHeader
-          title={tab === 'TRACE' ? 'TRACE 알람' : tab === 'SUMMARY' ? 'SUMMARY 알람' : 'R03 알람'}
+          title={TAB_TITLE[tab]}
           note="청색 행은 기준 알람 · 행 클릭 시 기준 변경"
         />
         {paged.length === 0 ? (
@@ -263,7 +273,21 @@ function AlarmsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {['TIME', 'ALARM', 'LOT', 'W', 'EQP-CH', 'PARAMETER', 'STEP', 'RULE', 'HIT', 'VALUE', useSpecLimits ? 'LSL' : 'LCL', useSpecLimits ? 'USL' : 'UCL', 'NOTIFY'].map((h) => (
+                  {[
+                    'TIME',
+                    'ALARM',
+                    ...(tab === 'ALL' ? ['SOURCE'] : []),
+                    'LOT',
+                    'W',
+                    'EQP-CH',
+                    'PARAMETER',
+                    'STEP',
+                    'RULE',
+                    'HIT',
+                    'VALUE',
+                    ...limitHeaders,
+                    'NOTIFY',
+                  ].map((h) => (
                     <th key={h} className={TH_CLS}>
                       {h}
                     </th>
@@ -283,6 +307,11 @@ function AlarmsPage() {
                     >
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.occurred_at)}</td>
                       <td className={`${TD_CLS} ${CELL_ID}`}>{a.alarm_id}</td>
+                      {tab === 'ALL' && (
+                        <td className={TD_CLS}>
+                          <Badge variant={a.source === 'SUMMARY' ? 't-amber' : a.source === 'R03' ? 't-red' : 't-blue'}>{a.source}</Badge>
+                        </td>
+                      )}
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.lot_id}</td>
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.wafer_no}</td>
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{a.chamber_id}</td>
@@ -293,8 +322,8 @@ function AlarmsPage() {
                       </td>
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.hit_cnt}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} font-bold ${judgementClass(a.judgement)}`}>{num(value)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(useSpecLimits ? lim?.spec_lower : lim?.ctrl_lower)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(useSpecLimits ? lim?.spec_upper : lim?.ctrl_upper)}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_lower : lim?.spec_lower)}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_upper : lim?.spec_upper)}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} text-[11px] text-g1`}>
                         {act?.deliveries?.length
                           ? act.deliveries.map((delivery) => `${delivery.channel} · ${delivery.status}`).join(' / ')

@@ -43,6 +43,7 @@ export function partitionAlarms(alarms) {
     (a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id),
   )
   return {
+    all: rows,
     trace: rows.filter((alarm) => alarm.source === 'TRACE'),
     summary: rows.filter((alarm) => alarm.source === 'SUMMARY'),
     r03: rows.filter((alarm) => alarm.source === 'R03'),

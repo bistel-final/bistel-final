@@ -291,7 +291,7 @@ function DashboardPage() {
         <div className="mt-2 flex flex-col gap-5">
           <HeroBand
             agg={agg}
-            onTotal={() => navigate('/alarms?tab=TRACE')}
+            onTotal={() => navigate('/alarms?tab=ALL')}
             onOos={() => navigate('/alarms?tab=TRACE')}
             onOoc={() => navigate('/alarms?tab=SUMMARY')}
             onAction={() => navigate('/agent-runs')}

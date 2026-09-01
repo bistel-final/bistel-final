@@ -43,6 +43,7 @@ const alarms = [
   { alarm_id: 'SUMMARY-1', source: 'SUMMARY', occurred_at: '2026-06-02T00:00:00+09:00' },
 ]
 const partitioned = partitionAlarms(alarms)
+assert.deepEqual(partitioned.all.map((alarm) => alarm.alarm_id), ['R03-1', 'SUMMARY-1', 'TRACE-1'])
 assert.deepEqual(partitioned.trace.map((alarm) => alarm.alarm_id), ['TRACE-1'])
 assert.deepEqual(partitioned.summary.map((alarm) => alarm.alarm_id), ['SUMMARY-1'])
 assert.deepEqual(partitioned.r03.map((alarm) => alarm.alarm_id), ['R03-1'])
@@ -74,6 +75,12 @@ assert.equal(finalTrend.wafers.every((item) => item.points.length === 6), true)
 assert.equal(finalTrend.limits.ET_REFL.spec_upper, 30)
 
 const alarmsPageSource = await readFile(new URL('../src/features/detection/pages/AlarmsPage.jsx', import.meta.url), 'utf8')
+const dashboardPageSource = await readFile(new URL('../src/features/detection/pages/DashboardPage.jsx', import.meta.url), 'utf8')
+assert.match(dashboardPageSource, /onTotal=\{\(\) => navigate\('\/alarms\?tab=ALL'\)\}/, '대시보드 전체 알람은 전체 히스토리로 이동해야 합니다')
+assert.match(alarmsPageSource, /ALARM_TABS = Object\.freeze\(\['ALL', 'TRACE', 'SUMMARY', 'R03'\]\)/)
+assert.match(alarmsPageSource, /전체 \(\{rows\.all\.length\}\)/)
+assert.match(alarmsPageSource, /\.\.\.\(tab === 'ALL' \? \['SOURCE'\] : \[\]\)/, '혼합 목록은 알람 source를 구분해야 합니다')
+assert.match(alarmsPageSource, /a\.source === 'SUMMARY' \? lim\?\.ctrl_lower : lim\?\.spec_lower/, '전체 목록의 하한은 source별 계약을 사용해야 합니다')
 const handlerStart = alarmsPageSource.indexOf('  const handleRunAnalysis = () => {')
 const handlerEnd = alarmsPageSource.indexOf('\n  const rows = useMemo', handlerStart)
 const runHandler = alarmsPageSource.slice(handlerStart, handlerEnd)
