@@ -1093,6 +1093,10 @@
         {
           "reference": "frontend/src/features/detection/components/TraceFilters.js",
           "reason": "`at`는 trace filter 정규화 입력 또는 Array.at 호출의 property이며 AuditLogItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/knowledge/components/DocumentDetailDrawer.jsx",
+          "reason": "`at`는 문서 상세 목차에서 현재 청크를 고르는 Array.at 호출이며 AuditLogItem compatibility 소비가 아님"
         }
       ],
       "removal_conditions": [
