@@ -9,14 +9,14 @@
 
   --color-navy: #1c3150; /* 사이드바 배경 */
   --color-navy2: #2a4467; /* 사이드바 활성 메뉴 배경 */
-  --color-blue: #2563eb; /* 포인트: 버튼, 링크, 차트, 선택 */
-  --color-blue-hover: #1d4ed8; /* 포인트 hover · 탭 활성 텍스트 */
-  --color-accent-bar: #3b82f6; /* 사이드바 활성 좌측 3px 바 */
+  --color-blue: #2f5fa8; /* 포인트: 버튼, 링크, 차트, 선택 — navy 가족의 스틸바루(채도↓) */
+  --color-blue-hover: #274f8c; /* 포인트 hover · 탭 활성 텍스트 */
+  --color-accent-bar: #4a7fd1; /* 사이드바 활성 좌측 3px 바 */
   --color-red: #dc2626; /* OOS · 거부 · EQP_HOLD */
   --color-amber: #f59e0b; /* OOC · WARNING */
   --color-amber-dark: #d97706; /* OOC 텍스트 강조 */
-  --color-green: #16a34a; /* 성공 · 승인 · SENT */
-  --color-green-dark: #15803d; /* 성공 텍스트 강조 */
+  --color-green: #2e8b63; /* 성공 · 승인 · SENT — 채도를 낮춘 차분한 녹색 */
+  --color-green-dark: #256f4f; /* 성공 텍스트 강조 */
   --color-ink: #0f172a; /* 본문 */
   --color-g1: #475569; /* 보조 텍스트 · 범례 */
   --color-g2: #64748b; /* dim 텍스트 · 축라벨 */
@@ -26,17 +26,17 @@
   --color-field-line: #dbe2ea; /* 입력 · 셀렉트 · 고스트 버튼 테두리 */
 
   /* 틴트(soft 배경) */
-  --color-tint-red: #fee2e2;
-  --color-tint-red-line: #fecdd3;
+  --color-tint-red: #fbecea;
+  --color-tint-red-line: #efc7c2;
   --color-tint-amber: #fef3c7;
   --color-tint-amber-line: #fde68a;
   --color-tint-amber-text: #92400e;
-  --color-tint-green: #dcfce7;
-  --color-tint-green-line: #bbf7d0;
+  --color-tint-green: #e6f2ec;
+  --color-tint-green-line: #bfdccb;
   --color-tint-gray: #f1f5f9;
   --color-tint-gray-line: #e2e8f0;
-  --color-tint-blue: #eff6ff;
-  --color-tint-blue-line: #93c5fd;
+  --color-tint-blue: #edf2fa;
+  --color-tint-blue-line: #a9c0e4;
   --color-tint-navy: #e8eef7;
   --color-tint-navy-line: #c7d4e6;
 
