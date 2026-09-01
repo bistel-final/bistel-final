@@ -222,6 +222,12 @@ assert.match(
   'Agent 근거 상세만 넓게 표시하고 일반 문서 검색 Drawer 폭은 유지해야 합니다',
 )
 assert.match(documentsPageSource, /wide=\{urlDetailView === 'agent-evidence'\}/)
+assert.match(documentsPageSource, /function FilterChips/)
+assert.match(documentsPageSource, /aria-pressed=\{selected\}/)
+assert.doesNotMatch(documentsPageSource, /<select/)
+assert.match(documentsPageSource, /format=\{\(item\) => `\$\{item\}개`\}/)
+assert.match(documentsPageSource, /setInput\(nextQuery\)/)
+assert.match(documentsPageSource, /clearInput: false/)
 const graphEvidence = {
   type: 'GRAPH',
   relation_id: 'REL-9687560b5876022b2512',
