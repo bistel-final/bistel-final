@@ -72,6 +72,9 @@ def test_ollama_downgrades_requested_json_schema_to_json_object(monkeypatch) -> 
 
 def test_openai_preserves_requested_json_schema(monkeypatch) -> None:
     monkeypatch.setattr(llm, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        llm, "LLM_MODEL_MAIN", "gpt-4o-mini"
+    )  # 기존(비추론) 경로로 고정 — 환경 독립
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     requests: list[dict[str, object]] = []
 
@@ -105,6 +108,49 @@ def test_openai_preserves_requested_json_schema(monkeypatch) -> None:
             "response_format": {"type": "json_schema", "json_schema": schema},
         }
     ]
+
+
+def test_reasoning_model_uses_gpt5_parameter_contract(monkeypatch) -> None:
+    """gpt-5 계열: max_completion_tokens + reasoning_effort,
+    temperature/max_tokens 없음 (보내면 400)."""
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "gpt-5.6-luna")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.delenv("LLM_REASONING_EFFORT", raising=False)
+    requests: list[dict[str, object]] = []
+
+    def post(*args, **kwargs):
+        requests.append(kwargs["json"])
+        return _response()
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    llm.chat_with_usage([{"role": "user", "content": "q"}])
+
+    body = requests[0]
+    assert body["model"] == "gpt-5.6-luna"
+    assert body["max_completion_tokens"] == llm.LLM_MAX_TOKENS
+    assert body["reasoning_effort"] == "low"
+    assert "temperature" not in body and "max_tokens" not in body
+
+
+def test_legacy_model_keeps_existing_parameter_contract(monkeypatch) -> None:
+    """gpt-4o 계열·ollama 경로는 바이트 단위로 기존 그대로 — C파트 Agent 호출 무영향."""
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "gpt-4o-mini")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    requests: list[dict[str, object]] = []
+
+    def post(*args, **kwargs):
+        requests.append(kwargs["json"])
+        return _response()
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    llm.chat_with_usage([{"role": "user", "content": "q"}])
+
+    body = requests[0]
+    assert body["temperature"] == llm.LLM_TEMPERATURE
+    assert body["max_tokens"] == llm.LLM_MAX_TOKENS
+    assert "max_completion_tokens" not in body and "reasoning_effort" not in body
 
 
 def test_chat_with_usage_rejects_ambiguous_response_formats(monkeypatch) -> None:

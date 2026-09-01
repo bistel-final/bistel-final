@@ -91,6 +91,17 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 _RETRY_BACKOFF_BASE_SEC = 1.0
 
 
+def _is_reasoning_model(model: str) -> bool:
+    """OpenAI 추론 계열 판별 — 채팅 파라미터 계약이 다르다.
+
+    gpt-5* (5.x 가족: sol/terra/luna, mini/nano 포함)·o1·o3·o4 는
+    max_completion_tokens 를 쓰고 temperature 를 거부한다.
+    gpt-4o 계열·ollama·openai-compatible 은 기존 경로.
+    """
+    name = (model or "").strip().lower()
+    return name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def _retry_max() -> int:
     """최대 재시도 회수. env(LLM_RETRY_MAX)로 조정, 기본 2회."""
     raw = (os.getenv("LLM_RETRY_MAX") or "").strip()
@@ -187,9 +198,18 @@ def _request(
             request_body: dict[str, Any] = {
                 "model": LLM_MODEL_MAIN,
                 "messages": messages,
-                "temperature": LLM_TEMPERATURE,
-                "max_tokens": LLM_MAX_TOKENS,
             }
+            if _is_reasoning_model(LLM_MODEL_MAIN):
+                # GPT-5 계열(gpt-5*, o-series)은 max_tokens 대신 max_completion_tokens,
+                # temperature 는 기본값 외 거부(보내면 400). 추론 강도는 SQL/Cypher
+                # 한 줄 생성에 과하지 않게 낮게 — LLM_REASONING_EFFORT(기본 low)로 제어.
+                request_body["max_completion_tokens"] = LLM_MAX_TOKENS
+                request_body["reasoning_effort"] = (
+                    os.getenv("LLM_REASONING_EFFORT", "low").strip() or "low"
+                )
+            else:
+                request_body["temperature"] = LLM_TEMPERATURE
+                request_body["max_tokens"] = LLM_MAX_TOKENS
             if json_schema is not None:
                 # OpenAI 외 provider의 /v1 호환 endpoint는 json_schema를 거부하거나
                 # 무시할 수 있다. 그 경로에서는 JSON object만 요청하고 호출부의
