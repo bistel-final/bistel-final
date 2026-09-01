@@ -92,7 +92,33 @@ function RelationSummary({ graph }) {
   )
 }
 
-function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
+function GraphNarrativeSummary({ diagnosis, graphItems }) {
+  const synthesis = diagnosis?.status === 'AVAILABLE' ? diagnosis.evidence_synthesis?.trim() : ''
+  const relationEvidence = graphItems
+    .map((item) => item.excerpt?.trim())
+    .filter(Boolean)
+
+  return (
+    <div className="rounded-[10px] border border-tint-blue-line bg-tint-blue px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-extrabold text-blue-hover">AI 근거 해석</div>
+        <span className="rounded-md border border-tint-blue-line bg-white px-2 py-0.5 text-[10px] font-bold text-blue">
+          {synthesis ? 'LLM 근거 종합' : '요약 미제공'}
+        </span>
+      </div>
+      <div className="mt-2 text-[12.5px] font-semibold leading-6 text-ink">
+        {synthesis || '이 실행에는 Graph 관계를 해석한 LLM 자연어 요약이 제공되지 않았습니다.'}
+      </div>
+      {relationEvidence.length > 0 && (
+        <div className="mt-2 border-t border-tint-blue-line pt-2 text-[11.5px] leading-5 text-g1">
+          <strong className="text-navy">관계 근거:</strong> {relationEvidence.join(' · ')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RunGraphEvidenceTab({ run, evidenceItems = [], diagnosis = null }) {
   const chamberId = run.incident?.chamber_id
   const graphItems = evidenceItems.filter((item) => item.type === 'GRAPH')
   const focusedRelationIds = useMemo(
@@ -154,6 +180,7 @@ function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
   return (
     <div className="flex flex-col gap-4">
       <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
+      <GraphNarrativeSummary diagnosis={diagnosis} graphItems={graphItems} />
       <GraphSummary graph={state.graph} selectedNode={selectedNode} />
       <OntologyGraphCanvas
         graph={state.graph}

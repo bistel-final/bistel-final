@@ -10,8 +10,9 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import Pagination from '../../../shared/components/ui/Pagination.jsx'
-import { HistoryTrendCard } from '../../../shared/components/trace/HistoryTrendChart.jsx'
+import AlarmTracePanel from '../../../shared/components/trace/AlarmTracePanel.jsx'
 import { detailNumbers } from '../../../shared/trace/traceModel.js'
+import { alarmTrendScope } from '../../../shared/trace/incidentTrace.js'
 import {
   CELL_DIM,
   CELL_ID,
@@ -25,7 +26,7 @@ import {
 import { sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
-import { partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
+import { analysisActionOf, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
 // 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + TRACE/SUMMARY/R03 탭 + 테이블.
 // 탭 분리는 source(AlarmRef의 TRACE·SUMMARY·R03)로 한다 — judgement로 나누면 R03(OOS)이
@@ -105,17 +106,17 @@ function AlarmsPage() {
   )
   const loadTrace = useCallback(() => {
     if (!selected) return
-    searchTraces({
-      chamber_id: selected.chamber_id,
-      sensor_ids: [selected.sensor_id],
-      lot_id: selected.lot_id,
-      wafer_nos: [selected.wafer_no],
-    })
+    const scope = alarmTrendScope(selected)
+    const request = scope ? searchTraces(scope) : Promise.resolve(null)
+    request
       .then((res) =>
         setTrace({
           forId: selected.alarm_id,
-          wafer: res.wafers?.[0] ?? null,
-          lim: res.limits?.[selected.sensor_id] ?? null,
+          response: res,
+          wafer: res?.wafers?.find(
+            (item) => item.sensor_id === selected.sensor_id && Number(item.wafer_no) === Number(selected.wafer_no),
+          ) ?? res?.wafers?.[0] ?? null,
+          lim: res?.limits?.[selected.sensor_id] ?? null,
         }),
       )
       .catch((e) => setError(e.message))
@@ -126,6 +127,12 @@ function AlarmsPage() {
 
   const handleRunAnalysis = () => {
     if (!selected || runPending) return
+    const analysisAction = analysisActionOf(selected)
+    if (analysisAction.mode === 'OPEN') {
+      setRunError(null)
+      navigate(`/agent-runs/${encodeURIComponent(analysisAction.runId)}`)
+      return
+    }
     setRunPending(true)
     setRunError(null)
     createRun({ alarm: { source: selected.source, alarm_id: selected.alarm_id } })
@@ -177,6 +184,7 @@ function AlarmsPage() {
 
   const limOf = (sensorId) => sensorLimit(null, data.catalog, sensorId)
   const shownTrace = trace?.forId === alarmId ? trace : null
+  const analysisAction = analysisActionOf(selected)
 
   const tabCls = (on) =>
     `inline-flex h-8 cursor-pointer items-center rounded-lg border px-3.5 font-mono text-[12px] font-bold ${
@@ -192,16 +200,23 @@ function AlarmsPage() {
         </div>
       </div>
 
-      <HistoryTrendCard
+      <AlarmTracePanel
         alarm={selected}
         wafer={shownTrace?.wafer}
         lim={shownTrace?.lim ?? (selected ? limOf(selected.sensor_id) : null)}
+        response={shownTrace?.response}
         loading={Boolean(selected) && !shownTrace}
+        allowWaferSelection
+        lotWaferCount={
+          selected
+            ? data.catalog?.lots?.find((lot) => lot.lot_id === selected.lot_id)?.wafer_nos?.length ?? null
+            : null
+        }
         actions={
           <span className="flex items-center gap-2">
             {runError && <span className="text-[11px] font-semibold text-red">{runError}</span>}
             <Button sm onClick={handleRunAnalysis} disabled={runPending}>
-              {runPending ? '분석 실행 중…' : '분석 실행'}
+              {runPending ? '분석 실행 중…' : analysisAction.label}
             </Button>
           </span>
         }
@@ -239,7 +254,7 @@ function AlarmsPage() {
       <Card>
         <CardHeader
           title={tab === 'TRACE' ? 'TRACE 알람' : tab === 'SUMMARY' ? 'SUMMARY 알람' : 'R03 알람'}
-          note="발생 시각 내림차순 · 행 클릭 시 트렌드 갱신"
+          note="청색 행은 기준 알람 · 행 클릭 시 기준 변경"
         />
         {paged.length === 0 ? (
           <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />

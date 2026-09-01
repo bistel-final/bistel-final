@@ -10,6 +10,7 @@ import {
 import { toIso } from './format.js'
 import { APPROVALS } from '../../features/agent/mock/actions.js'
 import { adaptActionForLegacyPage, adaptRunForLegacyPage, hasDeliveryStatus } from '../../features/agent/agent-run-view-state.js'
+import { AGENT_EVALUATIONS } from '../../features/agent/mock/evaluations.js'
 import { PUBLIC_ACTIONS } from '../../features/agent/mock/publicActions.js'
 
 // 백엔드 agent 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
@@ -39,7 +40,7 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     },
     {
       type: 'TRACE',
-      source_id: 'LH-000004',
+      source_id: 'LH-00177',
       title: '대표 Trace',
       excerpt: '대표 알람의 측정 Trace를 판정에 사용했습니다.',
     },
@@ -69,7 +70,81 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     action_code: CORE_AGENT_RUN.recommended_action,
     reason: CORE_APPROVAL.reason,
     approval_status: CORE_APPROVAL.status,
-    deliveries: CORE_AGENT_RUN.deliveries,
+    deliveries: CORE_AGENT_RUN.deliveries.map((delivery) => ({
+      ...delivery,
+      started_at: CORE_AGENT_RUN.created_at,
+      completed_at: delivery.status === 'SENT' ? CORE_AGENT_RUN.created_at : null,
+    })),
+  },
+  prediction: {
+    predicted_fault_code: CORE_AGENT_RUN.predicted_fault_code,
+    confidence: CORE_AGENT_RUN.confidence,
+    cause_summary: '반사파 상승과 RF 정합 이상 가능성이 가장 높습니다.',
+    supporting_alarms: [{ source: 'R03', alarm_id: 'R03-f41e6518529e8ed5e6a9' }],
+    supporting_chunk_ids: ['DOC-TROUBLE-FDC:cs2:0006'],
+    supporting_relation_ids: [GRAPH_EVIDENCE_RELATION_ID],
+    uncertainty: '추가 계측과 엔지니어 확인이 필요합니다.',
+    llm_model: CORE_AGENT_RUN.llm_model,
+    prompt_version: 'agent-hypothesis-v2',
+    input_tokens: 1250,
+    output_tokens: 210,
+    generated_at: CORE_AGENT_RUN.created_at,
+  },
+  diagnosis: {
+    status: 'AVAILABLE',
+    reason_code: null,
+    predicted_fault_code: CORE_AGENT_RUN.predicted_fault_code,
+    confidence: CORE_AGENT_RUN.confidence,
+    observations: [
+      '3개 진단 대상 WAFER에서 ET_REFL 상한 초과가 반복되었습니다.',
+      '같은 Recipe Step에 OOS가 집중되었습니다.',
+    ],
+    evidence_synthesis: 'FDC 반복 패턴을 Graph 관계와 RAG 점검 가이드가 함께 지지합니다.',
+    cause_summary: '반사파 상승과 RF 정합 이상 가능성이 가장 높습니다.',
+    alternative_hypotheses: [
+      {
+        summary: '계측 센서 편차 가능성',
+        lower_rank_reason: '여러 WAFER에 같은 방향으로 반복되어 단일 센서 오차보다 우선순위가 낮습니다.',
+      },
+    ],
+    verification_steps: ['RF match 상태 확인', '상류 공정 Step 이력 확인', '다음 WAFER 실측 확인'],
+    limitations: ['조치 이후 공정 관측값은 최종 정적 데이터에 없습니다.'],
+    diagnostic_coverage: '상세 진단 3 / 대상 WAFER 3 · incident 연결 Alarm 10',
+  },
+  evidence_assessment: {
+    status: 'SUFFICIENT',
+    reason_codes: [],
+    available_sources: ['FDC', 'POSTGRES_ROUTE', 'GRAPH', 'RAG'],
+    missing_sources: [],
+    conflicting_source_ids: [],
+  },
+  impact_scope: {
+    status: 'AVAILABLE',
+    reason_code: null,
+    direct: [
+      { kind: 'LOT', source_id: 'LOT004', relation: null },
+      { kind: 'WAFER', source_id: 'LOT004:W2', relation: null },
+      { kind: 'WAFER', source_id: 'LOT004:W4', relation: null },
+      { kind: 'WAFER', source_id: 'LOT004:W6', relation: null },
+      { kind: 'CHAMBER', source_id: CORE_AGENT_RUN.chamber_id, relation: null },
+      { kind: 'PARAMETER', source_id: 'ET_REFL', relation: null },
+    ],
+    check_required: [
+      { kind: 'PROCESS_STEP', source_id: 'CT-ETCH', relation: 'UPSTREAM' },
+      { kind: 'SIBLING_CHAMBER', source_id: 'EQP04-PM1', relation: null },
+    ],
+    summary: '직접 포함된 LOT·WAFER를 우선 확인하고 Graph 인접 공정은 잠재 확인 범위로 봅니다.',
+    graph_conflict: false,
+  },
+  similar_incidents: {
+    status: 'EMPTY',
+    reason_code: 'NOT_ENOUGH_RUNTIME_HISTORY',
+    label: '고정 시연 데이터 내 비교 결과',
+    items: [],
+  },
+  post_action_observation: {
+    status: 'NOT_AVAILABLE_STATIC_DATASET',
+    message: '최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음',
   },
 })
 
@@ -129,6 +204,13 @@ export function getRun(agentRunId, options = {}) {
   }
   return apiClient
     .get(`/agent/runs/${encodeURIComponent(normalizedId)}`, { signal: options.signal })
+    .then((response) => response.data)
+}
+
+export function getAgentEvaluations(options = {}) {
+  if (USE_MOCK) return mockResponse(AGENT_EVALUATIONS)
+  return apiClient
+    .get('/agent/evaluations', { signal: options.signal })
     .then((response) => response.data)
 }
 
@@ -196,8 +278,13 @@ export function createRun(input) {
 
 // POST /agent/ask — read-only Agent chat boundary.
 export function askAgent(input) {
-  assertExactObject(input, ['question'], 'askAgent input')
-  const body = { question: requireNonEmptyString(input.question, 'question') }
+  assertExactObject(input, ['question', 'agent_run_id'], 'askAgent input')
+  const body = compactParams({
+    question: requireNonEmptyString(input.question, 'question'),
+    agent_run_id: input.agent_run_id == null
+      ? undefined
+      : requireNonEmptyString(input.agent_run_id, 'agent_run_id'),
+  })
   if (USE_MOCK) return mockResponse(CORE_AGENT_ASK)
   return apiClient.post('/agent/ask', body).then((response) => response.data)
 }

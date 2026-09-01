@@ -100,6 +100,20 @@ export const CORE_AGENT_RUN = Object.freeze({
       n: 'get_fdc_summary',
       s: 'SUCCESS',
     },
+    {
+      tool_name: 'get_equipment_context',
+      status: 'SUCCESS',
+      result_summary: 'Equipment context loaded',
+      n: 'get_equipment_context',
+      s: 'SUCCESS',
+    },
+    {
+      tool_name: 'search_documents',
+      status: 'SUCCESS',
+      result_summary: 'Document search completed',
+      n: 'search_documents',
+      s: 'SUCCESS',
+    },
   ],
   deliveries: [
     { channel: 'EMAIL', status: 'SENT' },

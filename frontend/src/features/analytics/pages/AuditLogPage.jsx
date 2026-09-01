@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getAuditLogs } from '../../../shared/api/analytics.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -15,13 +16,21 @@ import Pagination from '../../../shared/components/ui/Pagination.jsx'
 const PAGE_SIZE = 10 // 감사 이벤트 규모(수십건)에 맞춘 페이지 크기 — 서버 pagination
 
 function AuditLogPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
-  const [filter, setFilter] = useState(DEFAULT_AUDIT_FILTER)
+  const [filter, setFilter] = useState(() => ({
+    ...DEFAULT_AUDIT_FILTER,
+    target: searchParams.get('entity_id')?.trim() ?? '',
+  }))
   // 서버 pagination (V5-D-1.4) — 정렬은 서버가 occurred_at DESC, audit_id DESC 로 보증한다.
   // 필터가 바뀌면 1페이지로 돌아간다 (직전 페이지가 새 조건에서는 범위 밖일 수 있다).
   const [page, setPage] = useState(1)
   const changeFilter = (next) => {
+    const nextParams = new URLSearchParams(searchParams)
+    if (next.target.trim()) nextParams.set('entity_id', next.target.trim())
+    else nextParams.delete('entity_id')
+    setSearchParams(nextParams, { replace: true })
     setFilter(next)
     setPage(1)
   }

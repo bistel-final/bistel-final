@@ -56,10 +56,12 @@ function DashRecentTable({ recents }) {
                   </td>
                   <td className={`${TD_CLS} font-mono font-bold ${judgementClass(a.judgement)}`}>{a.judgement}</td>
                   <td className={TD_CLS}>
-                    {a.action_id ? (
-                      <Link to={`/actions?action=${a.action_id}`} className="font-mono">
+                    {a.action_id && a.latest_agent_run_id ? (
+                      <Link to={`/agent-runs/${a.latest_agent_run_id}`} className="font-mono">
                         {a.action_id}
                       </Link>
+                    ) : a.action_id ? (
+                      <span className="font-mono">{a.action_id}</span>
                     ) : (
                       <span className="font-mono text-g2">—</span>
                     )}

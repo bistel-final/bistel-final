@@ -13,9 +13,10 @@ import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 import NlqEvaluationPanel from '../components/NlqEvaluationPanel.jsx'
+import { GRAPH_CHAMBERS } from '../../../shared/graph/ontology-chambers.js'
 
-// 0건 그룹 각주용 전체 챔버 목록 (설비 마스터 기준 4종)
-const ALL_CHAMBERS = ['PHO-01-C1', 'PHO-01-C2', 'ETC-01-C1', 'ETC-01-C2']
+// 0건 그룹 각주용 전체 챔버 목록은 온톨로지 정본과 공유한다.
+const ALL_CHAMBERS = GRAPH_CHAMBERS
 
 // reason 은 "POLICY_REJECTED: 사유" 형태다 — 접두어는 배지로, 뒤 문장은 사유로 나눠 쓴다
 const reasonCode = (reason) => String(reason ?? '').split(':')[0].trim()

@@ -2,7 +2,7 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import { severityClass } from '../../../shared/components/ui/statusStyles.js'
 
 // 공개 조치 코드 solid 배지 — EQP_HOLD 적 · WARNING 황 · MONITORING 녹
-const CODE_VARIANT = { EQP_HOLD: 'bg-red', WARNING: 'bg-amber', MONITORING: 'bg-green' }
+const CODE_VARIANT = { EQP_HOLD: 't-red', WARNING: 't-amber', MONITORING: 't-green' }
 
 // 권고 조치 섹션 — t-amber 톤 박스. 값은 run 응답의 recommended_action · severity · action_reason
 function RunActionCard({ run, consec, rules }) {

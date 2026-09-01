@@ -27,6 +27,11 @@ export const measuredText = (value, fallback = '실측 미제공') => {
 export const selectInitialRun = (runs) =>
   runs.find((run) => run.status === 'WAITING_APPROVAL') ?? runs[0] ?? null
 
+export const shouldPollAgentRun = (run) =>
+  run?.status === 'RUNNING' ||
+  (run?.action?.deliveries ?? []).some((delivery) =>
+    delivery.status === 'WAITING' || delivery.status === 'SENDING')
+
 export function trendUnavailableMessage({
   hasAlarmEvidence,
   alarmFound,
@@ -62,6 +67,50 @@ export function evidenceHref(item, context = {}) {
     return `/ontology?${query}`
   }
   return null
+}
+
+const IMPACT_NODE_LABEL = Object.freeze({
+  CHAMBER: 'Chamber',
+  SIBLING_CHAMBER: 'Chamber',
+  PARAMETER: 'Parameter',
+  PROCESS_STEP: 'ProcessStep',
+  EQUIPMENT: 'Equipment',
+  AREA: 'Area',
+  MODEL: 'EquipmentModel',
+  EQUIPMENT_MODEL: 'EquipmentModel',
+})
+
+const impactNodeIds = (items) => [...new Set((items ?? []).flatMap((item) => {
+  const label = IMPACT_NODE_LABEL[item.kind]
+  return label && item.source_id ? [`${label}:${item.source_id}`] : []
+}))]
+
+export function impactOntologySelection(detail, chamberId) {
+  const graphEvidence = detail?.evidence_items?.find(
+    (item) => item.type === 'GRAPH' && item.graph_revision,
+  )
+  if (!chamberId || !graphEvidence || detail?.impact_scope?.status !== 'AVAILABLE') return null
+  const directNodeIds = impactNodeIds(detail.impact_scope.direct)
+  const checkNodeIds = impactNodeIds(detail.impact_scope.check_required)
+  if (directNodeIds.length + checkNodeIds.length === 0) return null
+  return {
+    chamberId,
+    graphRevision: graphEvidence.graph_revision,
+    directNodeIds,
+    checkNodeIds,
+  }
+}
+
+export function impactOntologyHref(detail, chamberId) {
+  const selection = impactOntologySelection(detail, chamberId)
+  if (!selection) return null
+  const query = new URLSearchParams({
+    chamber_id: selection.chamberId,
+    graph_revision: selection.graphRevision,
+  })
+  if (selection.directNodeIds.length > 0) query.set('direct_node_ids', selection.directNodeIds.join(','))
+  if (selection.checkNodeIds.length > 0) query.set('check_node_ids', selection.checkNodeIds.join(','))
+  return `/ontology?${query}`
 }
 
 export function approvalViewState(state, event) {

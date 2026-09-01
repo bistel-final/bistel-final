@@ -10,12 +10,6 @@ export { detailNumbers, judgeValue, limitLines } from '../../../shared/trace/tra
 // 한계선은 센서별로 다르다. 전역 상수를 두지 말고 반드시 search 응답의 limits[sensor_id]
 // (없으면 catalog.sensors) 를 쓴다 — ET_CF4 에 PH_FOCUS 한계선을 쓰면 판정이 뒤집힌다.
 
-// 설비 prefix → 공정(AREA) 폴백. catalog.equipments 로 못 찾을 때만 쓴다.
-const AREA_BY_PREFIX = { PHO: 'PHOTO', ETC: 'ETCH' }
-
-export const areaOf = (chamberId) => AREA_BY_PREFIX[String(chamberId ?? '').slice(0, 3)] ?? '기타'
-export const equipmentOf = (chamberId) => String(chamberId ?? '').replace(/-C\d+$/, '')
-
 export const uniq = (arr) => [...new Set(arr)]
 export const numAsc = (a, b) => Number(a) - Number(b)
 export const dateOf = (iso) => String(iso ?? '').slice(0, 10)
@@ -30,7 +24,7 @@ export const areaOfSensor = (sensorId) => AREA_BY_SENSOR_PREFIX[String(sensorId 
 
 /**
  * search 응답의 wafers 를 화면용으로 정리한다.
- * - area: catalog.equipments 의 area_id (없으면 챔버 prefix 폴백)
+ * - area: catalog.equipments 또는 응답의 area. ID 접두어로 추측하지 않는다.
  * - steps: points[] 를 스텝별로 묶은 { [step]: { no, points } } — missing_steps 는 points: null
  */
 export function decorateWafers(wafers, catalog) {
@@ -45,8 +39,8 @@ export function decorateWafers(wafers, catalog) {
     for (const step of w.missing_steps ?? []) steps[step] ??= { no: null, points: null }
     return {
       ...w,
-      area: areaByEqp[w.equipment_id] ?? areaOf(w.chamber_id),
-      equipment_id: w.equipment_id ?? equipmentOf(w.chamber_id),
+      area: areaByEqp[w.equipment_id] ?? w.area ?? null,
+      equipment_id: w.equipment_id ?? null,
       steps,
     }
   })
