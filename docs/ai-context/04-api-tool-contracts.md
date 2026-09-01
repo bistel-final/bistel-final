@@ -65,7 +65,7 @@ POST /traces/search                  area?, equipment_id?, chamber_id?, sensor_i
 # B Knowledge
 GET  /relations/chambers/{chamber_id}
 GET  /relations/equipment/{equipment_id}
-POST /documents/search               query, model_code?, top_k=4
+POST /documents/search               query, model_code?, doc_type?, top_k=4
 GET  /documents/{document_id}
 
 # C Agent
@@ -126,6 +126,10 @@ Agent 실행 식별자는 모든 응답에서 `agent_run_id` 다. `run_id` 로 �
 
 모델명은 `FdcSummaryToolInput/Result` 형태로 고정한다.
 
+REST `POST /documents/search`는 Documents 화면 필터를 위해 `doc_type?(SPEC|MANUAL|TROUBLESHOOT)`를
+추가로 받을 수 있다. Agent Tool `search_documents(query, model_code=None, top_k=4)` signature는
+멘토 원안 Tool 계약으로 유지한다.
+
 **앞 4종이 멘토 원안의 Agent Tool이다.** `generate_analysis_plan`은 D의 독립 Analytics Tool로 추가한 5번째이며, 초기 범위에서 LangGraph가 호출하지 않으므로 `AGENT_MAX_TOOL_CALLS=8`과 `agent_tool_call` 집계에서 제외한다.
 
 ### 원안 대비 변경 사유
@@ -174,6 +178,7 @@ TraceSearchResponse    wafers[], limits{sensor_id: 한계선 5개 + unit + upper
 ChamberRelationResponse   chamber, equipment, area?, step?, sibling_chambers[], upstream[], downstream[]
 EquipmentRelationResponse equipment, chambers[], area?, step?, upstream[], downstream[]
 DocumentHit               chunk_id, document_id, title, section?, score(-1..1), content, model_code?
+DocumentSearchRequest     query, model_code?, doc_type?(SPEC|MANUAL|TROUBLESHOOT), top_k=4
 DocumentSearchResponse    query, hits[], count
 DocumentDetailResponse    document_id, title, doc_type?(SPEC|MANUAL|TROUBLESHOOT), model_code?,
                           source_path?, version?, chunks[]
