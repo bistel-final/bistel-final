@@ -131,7 +131,9 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
     || run.cause_summary?.trim()
     || null
   const incidentWafers = incidentWafersOf(detail, repAlarm)
-  const incidentWaferText = incidentWafers.length > 0 ? incidentWafers.join(' · ') : '실측 미제공'
+  const incidentWaferText = incidentWafers.length > 0
+    ? incidentWafers.map((wafer) => impactSourceOf({ kind: 'WAFER', source_id: wafer })).join(' · ')
+    : '실측 미제공'
   const incidentLot = repAlarm?.lot_id ?? run.incident?.lot_id
   const impact = detail?.impact_scope
   const verificationSteps = detail?.diagnosis?.verification_steps?.join(' → ') || '추가 확인 절차 미제공'
@@ -185,7 +187,7 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
               {llmSummary ?? '이 실행에는 저장된 LLM 원인 분석 결과가 없습니다.'}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <SummaryFact label="발생 LOT" value={measuredText(incidentLot)} />
+              <SummaryFact label="대상 LOT" value={measuredText(incidentLot)} />
               <SummaryFact label="발생 WAFER" value={incidentWaferText} />
               <SummaryFact label="발생 챔버" value={measuredText(run.incident?.chamber_id)} />
               <SummaryFact label="이상 파라미터" value={measuredText(run.sensor_id, '미제공')} />
