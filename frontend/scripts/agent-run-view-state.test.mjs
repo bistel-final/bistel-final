@@ -197,6 +197,16 @@ assert.equal(
   evidenceHref({ type: 'DOCUMENT', document_id: 'DOC 1', chunk_id: 'DOC 1:cs1:0001' }),
   '/documents?document_id=DOC+1&chunk_id=DOC+1%3Acs1%3A0001',
 )
+
+const documentsPageSource = readFileSync(
+  new URL('../src/features/knowledge/pages/DocumentsPage.jsx', import.meta.url),
+  'utf8',
+)
+assert.match(
+  documentsPageSource,
+  /urlDocumentHandledRef\.current === urlDocumentKey\) urlDocumentHandledRef\.current = ''/,
+  'React Strict Mode에서 취소된 문서 딥링크는 다음 effect가 다시 처리할 수 있어야 합니다',
+)
 const graphEvidence = {
   type: 'GRAPH',
   relation_id: 'REL-9687560b5876022b2512',

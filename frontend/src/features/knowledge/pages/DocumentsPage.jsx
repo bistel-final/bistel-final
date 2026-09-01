@@ -155,7 +155,11 @@ function DocumentsPage() {
         })
     })
     return () => {
-      if (documentRequestRef.current === requestToken) documentRequestRef.current += 1
+      if (documentRequestRef.current === requestToken) {
+        documentRequestRef.current += 1
+        // React Strict Mode가 첫 effect를 정리했으면 같은 딥링크를 다음 effect에서 다시 처리해야 한다.
+        if (urlDocumentHandledRef.current === urlDocumentKey) urlDocumentHandledRef.current = ''
+      }
     }
   }, [urlDocumentId, urlChunkId])
 
