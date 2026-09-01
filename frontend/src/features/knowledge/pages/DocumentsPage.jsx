@@ -212,13 +212,10 @@ function DocumentsPage() {
   ])
 
   const runRecommendedSearch = (item) => {
-    const nextModelCode = modelCode === ALL_MODELS ? item.model_codes[0] : modelCode
-    const nextDocType = docType === ALL_DOC_TYPES ? item.doc_types[0] : docType
-    setModelCode(nextModelCode)
-    setDocType(nextDocType)
-    run(item.query, {
-      modelCodeOverride: nextModelCode,
-      docTypeOverride: nextDocType,
+    const nextQuery = modelCode === ALL_MODELS ? item.query : (item.scoped_query ?? item.query)
+    run(nextQuery, {
+      modelCodeOverride: modelCode,
+      docTypeOverride: docType,
     })
   }
 
@@ -339,15 +336,26 @@ function DocumentsPage() {
   )
 
   const filteredRecommendedGroups = useMemo(
-    () =>
-      DOC_CHIPS.map((group) => ({
+    () => {
+      const matchScore = (item) => {
+        const matchesModel = modelCode === ALL_MODELS || item.model_codes.includes(modelCode)
+        const matchesDocType = docType === ALL_DOC_TYPES || item.doc_types.includes(docType)
+        if (!matchesModel || !matchesDocType) return -1
+        const modelScore = modelCode === ALL_MODELS ? 0 : 20
+        const docTypeScore = docType === ALL_DOC_TYPES ? 0 : item.doc_types.length === 1 ? 30 : 10
+        return (item.priority ?? 0) + modelScore + docTypeScore
+      }
+      const recommendedItems = DOC_CHIPS.flatMap((group) => group.items)
+        .map((item) => ({ ...item, score: matchScore(item) }))
+        .filter((item) => item.score >= 0)
+        .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
+        .slice(0, 3)
+
+      return DOC_CHIPS.map((group) => ({
         ...group,
-        items: group.items.filter((item) => {
-          const matchesModel = modelCode === ALL_MODELS || item.model_codes.includes(modelCode)
-          const matchesDocType = docType === ALL_DOC_TYPES || item.doc_types.includes(docType)
-          return matchesModel && matchesDocType
-        }),
-      })).filter((group) => group.items.length),
+        items: recommendedItems.filter((item) => group.items.some((source) => source.label === item.label)),
+      })).filter((group) => group.items.length)
+    },
     [docType, modelCode],
   )
 
@@ -429,7 +437,7 @@ function DocumentsPage() {
                   onClick={() => runRecommendedSearch(item)}
                   className="cursor-pointer px-0.5 py-2.5 text-left text-[12px] font-semibold leading-5 text-ink transition hover:bg-tint-blue hover:text-blue-hover"
                 >
-                  {item.label}
+                  {modelCode === ALL_MODELS ? item.label : (item.scoped_label ?? item.label)}
                 </button>
               ))}
             </div>
