@@ -12,14 +12,6 @@ const ALL_MODELS = '전체'
 const ALL_DOC_TYPES = '전체'
 const DOC_TYPE_FILTERS = ['전체', 'SPEC', 'TROUBLESHOOT']
 const TOP_K_OPTIONS = [4, 6, 10]
-const DOCUMENT_TYPE_BY_ID = {
-  'DOC-TROUBLE-FDC': 'TROUBLESHOOT',
-  TROUBLE_FDC_FaultGuide: 'TROUBLESHOOT',
-  'DOC-SPEC-PH9000': 'SPEC',
-  'SPEC_PH-9000_PhotoScanner': 'SPEC',
-  'DOC-SPEC-ET7500': 'SPEC',
-  'SPEC_ET-7500_DryEtcher': 'SPEC',
-}
 const DOCUMENT_LIBRARY = [
   {
     group: 'Troubleshooting',
@@ -330,11 +322,7 @@ function DocumentsPage() {
     })
   }
 
-  const filteredHits = useMemo(() => {
-    if (!result?.hits) return []
-    if (docType === ALL_DOC_TYPES) return result.hits
-    return result.hits.filter((hit) => (hit.doc_type ?? DOCUMENT_TYPE_BY_ID[hit.document_id]) === docType)
-  }, [docType, result])
+  const filteredHits = result?.hits ?? []
 
   const filteredLibrary = useMemo(
     () =>

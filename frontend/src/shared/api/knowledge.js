@@ -179,6 +179,15 @@ const DOCUMENT_TYPE_BY_ID = Object.freeze({
   'SPEC_ET-7500_DryEtcher': 'SPEC',
 })
 
+const DOCUMENT_MODEL_BY_ID = Object.freeze({
+  'DOC-TROUBLE-FDC': 'COMMON',
+  TROUBLE_FDC_FaultGuide: 'COMMON',
+  'DOC-SPEC-PH9000': 'PH-9000',
+  'SPEC_PH-9000_PhotoScanner': 'PH-9000',
+  'DOC-SPEC-ET7500': 'ET-7500',
+  'SPEC_ET-7500_DryEtcher': 'ET-7500',
+})
+
 // Deprecated page projection. B migrates to the raw graph contract in its own Task.
 export function getChamberRelations(chamberId) {
   if (USE_MOCK) return mockResponse(chamberRelation(chamberId))
@@ -253,6 +262,8 @@ export function searchDocumentsCore(input) {
 export function getDocument(documentId) {
   if (USE_MOCK) {
     const alias = MOCK_DOCUMENT_ALIASES[documentId] ?? { legacy: documentId, firstChunk: 1 }
+    const docType = DOCUMENT_TYPE_BY_ID[documentId] ?? DOCUMENT_TYPE_BY_ID[alias.legacy] ?? null
+    const modelCode = DOCUMENT_MODEL_BY_ID[documentId] ?? DOCUMENT_MODEL_BY_ID[alias.legacy] ?? null
     const seen = new Set()
     const chunks = Object.values(DOC_DB)
       .flat()
@@ -274,8 +285,8 @@ export function getDocument(documentId) {
         ? {
             document_id: documentId,
             title: documentId,
-            doc_type: null,
-            model_code: null,
+            doc_type: docType,
+            model_code: modelCode,
             source_path: null,
             version: null,
             chunks,
