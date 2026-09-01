@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "dataset_epoch": "fdc_final_20260818",
+  "source_archive_sha256": "e5ce2c551613e37d49d45afaec9563e17105d69b436ec22e660b302abb5dabe3",
+  "canonical_incident_count": 12,
+  "strict_r03_count": 3,
+  "r03_member_wafer_count": 3,
+  "r03_member_alarm_count": 9,
+  "max_fdc_targets_per_run": 3,
+  "max_base_read_calls_per_run": 5,
+  "max_read_retry_per_run": 1,
+  "max_read_calls_per_run": 6,
+  "reserved_send_calls_per_run": 2,
+  "incidents": [
+    {"lot_id": "LOT002", "chamber_id": "EQP05-PM2", "strict_r03": false},
+    {"lot_id": "LOT004", "chamber_id": "EQP01-PM2", "strict_r03": false},
+    {"lot_id": "LOT004", "chamber_id": "EQP04-PM2", "strict_r03": true},
+    {"lot_id": "LOT005", "chamber_id": "EQP02-PM1", "strict_r03": true},
+    {"lot_id": "LOT006", "chamber_id": "EQP06-PM1", "strict_r03": false},
+    {"lot_id": "LOT006", "chamber_id": "EQP06-PM2", "strict_r03": false},
+    {"lot_id": "LOT007", "chamber_id": "EQP01-PM1", "strict_r03": false},
+    {"lot_id": "LOT007", "chamber_id": "EQP04-PM1", "strict_r03": false},
+    {"lot_id": "LOT009", "chamber_id": "EQP03-PM1", "strict_r03": false},
+    {"lot_id": "LOT009", "chamber_id": "EQP06-PM1", "strict_r03": false},
+    {"lot_id": "LOT010", "chamber_id": "EQP01-PM1", "strict_r03": false},
+    {"lot_id": "LOT011", "chamber_id": "EQP05-PM1", "strict_r03": true}
+  ]
+}

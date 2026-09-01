@@ -13,7 +13,7 @@ from fastapi import (
 )
 from sqlalchemy.engine import Connection
 
-from app.agent.ask import AgentAskUnavailable
+from app.agent.ask import AgentAskUnavailable, extract_ask_identifiers
 from app.agent.delivery_callback import (
     DeliveryCallbackService,
     DeliveryResult,
@@ -23,6 +23,8 @@ from app.agent.delivery_callback import (
     parse_callback_body,
     validate_json_content_type,
 )
+from app.agent.evaluation_read_model import load_agent_evaluations
+from app.agent.evaluation_schemas import AgentEvaluationResponse
 from app.agent.public_read_model import (
     PublicDateRangeError,
     list_public_actions,
@@ -32,10 +34,12 @@ from app.agent.public_read_model import (
     load_public_agent_run_detail,
 )
 from app.agent.public_schemas import (
+    ASK_EVIDENCE_ADAPTER,
     ActionDetailResponse,
     ActionItem,
     AgentAskRequest,
     AgentAskResponse,
+    AgentRunAskEvidence,
     AgentRunDetailResponse,
     PublicAgentRunItem,
     PublicApprovalItem,
@@ -56,13 +60,14 @@ from app.agent.schemas import (
     AgentRunCreateRequest,
     ApprovalDecisionRequest,
 )
-from app.common.db import get_db_connection
+from app.common.db import get_app_engine, get_db_connection
 from app.common.enums import ActionCode, FaultHypothesis, RunStatus
 from app.common.exceptions import (
     AppError,
     DependencyNotReadyError,
     ErrorResponse,
     IdempotencyConflictError,
+    InvalidRequestError,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,6 +90,59 @@ def _agent_read_contract_error(exc: RepositoryContractError) -> AppError:
     if isinstance(mapped, AppError):
         return mapped
     return AppError()
+
+
+def _ask_run_context(detail: AgentRunDetailResponse) -> tuple[object, ...]:
+    """공개 run DTO만으로 후속 질문 citation allowlist를 만든다."""
+
+    diagnosis = detail.diagnosis
+    parts = [
+        diagnosis.cause_summary,
+        diagnosis.evidence_synthesis,
+        *diagnosis.observations,
+        *diagnosis.verification_steps,
+        *diagnosis.limitations,
+    ]
+    context = [
+        AgentRunAskEvidence(
+            type="AGENT_RUN",
+            source_id=detail.agent_run_id,
+            title="저장된 Agent 종합 진단",
+            excerpt="\n".join(value for value in parts if value)[:4000]
+            or "저장된 v2 종합 진단 내용이 없습니다.",
+        )
+    ]
+    for item in detail.evidence_items:
+        payload = item.model_dump(mode="json")
+        payload.pop("alarm", None)
+        context.append(ASK_EVIDENCE_ADAPTER.validate_python(payload))
+    return tuple(context)
+
+
+def _validate_ask_context_identifiers(
+    question: str,
+    detail: AgentRunDetailResponse,
+) -> None:
+    identifiers = extract_ask_identifiers(question)
+    values = {
+        detail.chamber_id.upper(),
+        *(item.source_id.upper() for item in detail.impact_scope.direct),
+        *(item.source_id.upper() for item in detail.evidence_items),
+    }
+    requested = {
+        value.upper()
+        for value in (
+            identifiers.lot_hist_id,
+            identifiers.lot_id,
+            identifiers.chamber_id,
+            identifiers.model_code,
+        )
+        if value is not None
+    }
+    if not requested <= values:
+        raise InvalidRequestError(
+            details={"reason": "AGENT_RUN_CONTEXT_IDENTIFIER_CONFLICT"}
+        )
 
 
 @router.post(
@@ -151,6 +209,13 @@ def read_agent_runs(
         raise _agent_read_unavailable() from exc
     except RepositoryContractError as exc:
         raise _agent_read_contract_error(exc) from exc
+
+
+@router.get("/agent/evaluations", response_model=AgentEvaluationResponse)
+def read_agent_evaluations() -> AgentEvaluationResponse:
+    """검증 완료된 두 immutable artifact를 독립 Empty 상태로 projection한다."""
+
+    return load_agent_evaluations()
 
 
 @router.get(
@@ -230,7 +295,15 @@ def read_action_detail(
         raise _agent_read_contract_error(exc) from exc
 
 
-@router.post("/agent/ask", response_model=AgentAskResponse)
+@router.post(
+    "/agent/ask",
+    response_model=AgentAskResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
 def ask_agent(
     payload: AgentAskRequest,
     runtime: Annotated[AgentRuntime, Depends(get_agent_runtime)],
@@ -238,7 +311,23 @@ def ask_agent(
     """A/B 읽기 Tool 근거만 사용하는 Chat facade."""
 
     try:
-        return runtime.ask_public(payload.question)
+        if payload.agent_run_id is None:
+            return runtime.ask_public(payload.question)
+        with get_app_engine().connect() as connection:
+            detail = load_public_agent_run_detail(connection, payload.agent_run_id)
+        _validate_ask_context_identifiers(payload.question, detail)
+        return runtime.ask_public(
+            payload.question,
+            context_evidence=_ask_run_context(detail),
+        )
+    except RepositoryNotFound as exc:
+        raise HTTPException(
+            status_code=404, detail="Agent 실행을 찾을 수 없습니다."
+        ) from exc
+    except (RepositoryRetryable, RepositoryUnavailable) as exc:
+        raise _agent_read_unavailable() from exc
+    except RepositoryContractError as exc:
+        raise _agent_read_contract_error(exc) from exc
     except AgentAskUnavailable as exc:
         raise DependencyNotReadyError() from exc
     except Exception as exc:

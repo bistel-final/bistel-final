@@ -11,7 +11,7 @@
 | 버전 | v3 작업본 |
 | 작성일 | 2026.08.19 |
 | 기준 | 멘토님 제공 최종 `project.zip`의 실제 React 5화면과 팀 합의 7화면, `검토질문_답변.html`, 최종 CSV·Generator |
-| 목적 | 멘토 기준 public 필수 11개와 팀 release 필수 확장 5개의 독립 계약·수용 경계를 고정 |
+| 목적 | 멘토 기준 public 필수 11개와 팀 release 필수 확장 6개(D 5개 + Agent 평가 1개)의 독립 계약·수용 경계를 고정 |
 | OpenAPI 상태 | 구현·Pydantic 동기화 전 작업 계약 |
 
 ### 1.1 계약 우선순위
@@ -31,7 +31,8 @@ stale이다. 실제 `frontend/src/lib/api.js`가 노출하는 9개 wrapper를 �
 API 없이 Neo4j Browser iframe과 기본 계정을 직접 노출하므로 이를 대체하는 read-only API 1개를
 보안 필수로 추가한다. Alarm 화면의 source-aware `POST /agent/runs`는 프로젝트 실행 필수로
 추가한다. 따라서 멘토 기준 public 필수는 11개다. 팀 최종 제품은 여기에 자연어 분석·이력·평가와
-전역 감사 화면을 더한 7개 주 navigation으로 확정했으며, 이를 위한 5개 API는 5.3의
+전역 감사 화면을 더한 7개 주 navigation으로 확정했으며, 이를 위한 D API 5개와 Agent 평가
+API 1개는 5.3의
 **팀 release 필수 확장**으로 별도 승격한다. 나머지 상세 조회·페이지 조회·재시도 API는 선택 확장이다.
 확장 기능이 필수 endpoint의 path·요청·응답 의미를 바꾸면 안 된다.
 
@@ -632,11 +633,14 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 
 ```json
 {
-  "question": "Why was EQP04-PM2 held?"
+  "question": "Why was EQP04-PM2 held?",
+  "agent_run_id": "RUN-000001"
 }
 ```
 
-`question`은 공백 제거 후 1..1000자다.
+`question`은 공백 제거 후 1..1000자다. `agent_run_id`는 선택 field이며, 지정하면 같은 Runtime
+DB에서 해당 실행의 공개 상세를 읽어 저장된 종합 진단·citation을 질의 문맥에 우선 포함한다.
+질문에 명시한 lot·chamber·model 식별자가 저장된 실행 근거와 충돌하면 422로 거부한다.
 
 #### Response 200 — `AgentAskResponse`
 
@@ -690,7 +694,9 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
   넣지 않는다.
 - `evidence_items`는 `type`을 discriminator로 쓰는 union이다. 공통 필수 field는 `type`,
   `source_id`, `title`, `excerpt`다. type은
-  `ALARM|TRACE|GRAPH|DOCUMENT|METROLOGY`다. DOCUMENT는 `document_id`·`chunk_id`가
+  `ALARM|TRACE|GRAPH|DOCUMENT|METROLOGY|AGENT_RUN`이다. `AGENT_RUN`은
+  `agent_run_id`를 `source_id`로 쓰고 저장된 공개 종합 진단만 최대 4000자로 요약한다.
+  DOCUMENT는 `document_id`·`chunk_id`가
   필수이고 `section`은 required-nullable이다. GRAPH는 `relation_id`·`graph_revision`이
   필수다. 해당 type이 아닌 provenance field는 직렬화하지 않으며 unknown field를 임의로
   추가하지 않는다.
@@ -705,7 +711,9 @@ Agent 화면의 Chat 모드가 호출하는 읽기 전용 질의다. 질문에 �
 - 예시의 chunk ID는 3.4에 선언한 결정론적 형식의 문서 표기용 placeholder며 실제 응답은 적재
   검증 artifact에 기록된 chunk ID를 사용한다.
 - 승인 대기 질문은 조회 결과만 반환하며 승인 상태를 바꾸지 않는다.
-- 의존성 실패는 503, 요청 형식 오류는 422다.
+- 실행 문맥을 지정하지 않은 기존 질문은 이전과 같은 Tool 선택 계약을 유지한다. 실행 문맥 조회는
+  read-only이며 run·action·approval·delivery를 변경하지 않는다.
+- 존재하지 않는 `agent_run_id`는 404, 의존성 실패는 503, 요청 형식·문맥 식별자 충돌은 422다.
 
 ---
 
@@ -1004,6 +1012,7 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | A | POST | `/traces/search` | 복합 Trace 검색 | `TraceSearchResponse` | 422, 503 |
 | B | GET | `/relations/equipment/{equipment_id}` | 설비 관계 | `EquipmentRelationsResponse` | 404, 422, 503 |
 | B | GET | `/documents/{document_id}` | 문서 상세 | `DocumentDetailResponse` | 404, 422, 503 |
+| C | GET | `/agent/evaluations` | Agent 합성 Fault 평가·Golden flow 7단 요약 | `AgentEvaluationResponse` | - |
 | C | GET | `/agent/runs/{run_id}` | 실행 상세 | `AgentRunDetailResponse` | 404, 422, 503 |
 | C | POST | `/agent/runs/{run_id}/retry` | 실패 실행 재시도 | 202 `AgentRunAccepted` | 404, 409, 422, 503 |
 | C | GET | `/agent/runs/paged` | 페이지 실행 이력 | `PageEnvelope<AgentRunItem>` | 422, 503 |
@@ -1020,12 +1029,14 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 
 ### 5.3 팀 release 필수 확장 API
 
-다음 5개는 멘토 기준 분류상 확장이지만 팀의 7개 주 navigation과 최종 시연에서는 필수다.
+다음 6개(D 확장 5개 + Agent 평가 1개)는 멘토 기준 분류상 확장이지만 팀의 7개 주
+navigation과 최종 시연에서는 필수다.
 구현 유무와 분리된 `api_contract_team_release.json`을 기준으로 수용하며, 이 표의 정확한 집합을
 줄이거나 다른 선택 확장으로 대체하지 않는다.
 
 | 담당 | Method | Path | 용도 | 성공 응답 | 기타 상태 |
 |---|---|---|---|---|---|
+| C | GET | `/agent/evaluations` | 합성 Fault 평가·Golden flow 7단 요약 | `AgentEvaluationResponse` | - |
 | D | POST | `/analytics/query` | 자연어 Text2SQL | `AnalysisQueryResponse` | 422, 503 |
 | D | POST | `/analytics/validate` | SQL 실행 없는 검증 | `SqlValidateResponse` | 422 |
 | D | GET | `/analytics/history` | 질의 이력·재실행 원본 | `NlQueryHistoryResponse` | 422 |

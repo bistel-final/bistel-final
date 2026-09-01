@@ -10,6 +10,13 @@ from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter, model_validator
 
+from app.agent.diagnostics import (
+    DiagnosisBlock,
+    EvidenceAssessmentBlock,
+    ImpactScopeBlock,
+    PostActionObservationBlock,
+    SimilarIncidentsBlock,
+)
 from app.common.enums import (
     ActionCode,
     AlarmSource,
@@ -228,7 +235,7 @@ class AgentRunActionItem(ApiModel):
     action_code: ActionCode
     reason: str = Field(min_length=1)
     approval_status: PublicApprovalStatus | None
-    deliveries: list[ActionDeliveryItem]
+    deliveries: list[ActionDeliveryDetailItem]
 
     @model_validator(mode="after")
     def validate_action_matrix(self) -> "AgentRunActionItem":
@@ -240,8 +247,35 @@ class AgentRunActionItem(ApiModel):
         return self
 
 
+class AgentPredictionDetailItem(ApiModel):
+    predicted_fault_code: FaultHypothesis
+    confidence: float = Field(ge=0.0, le=1.0)
+    cause_summary: str = Field(min_length=1, max_length=2000)
+    supporting_alarms: list[AlarmRef]
+    supporting_chunk_ids: list[NonEmptyId]
+    supporting_relation_ids: list[NonEmptyId]
+    uncertainty: str = Field(max_length=1000)
+    llm_model: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    generated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_citations(self) -> "AgentPredictionDetailItem":
+        groups = (
+            [item.to_token() for item in self.supporting_alarms],
+            self.supporting_chunk_ids,
+            self.supporting_relation_ids,
+        )
+        if any(len(items) != len(set(items)) for items in groups):
+            raise ValueError("prediction citation은 중복될 수 없습니다")
+        return self
+
+
 class AgentAskRequest(ApiModel):
     question: str = Field(min_length=1, max_length=1000)
+    agent_run_id: NonEmptyId | None = None
 
 
 class AskToolItem(ApiModel):
@@ -309,6 +343,13 @@ class MetrologyAskEvidence(ApiModel):
     excerpt: str = Field(min_length=1)
 
 
+class AgentRunAskEvidence(ApiModel):
+    type: Literal["AGENT_RUN"]
+    source_id: NonEmptyId
+    title: str = Field(min_length=1)
+    excerpt: str = Field(min_length=1, max_length=4000)
+
+
 class RunAlarmEvidence(ApiModel):
     type: Literal["ALARM"]
     source_id: NonEmptyId
@@ -328,7 +369,8 @@ AskEvidenceItem = Annotated[
     | TraceAskEvidence
     | GraphAskEvidence
     | DocumentAskEvidence
-    | MetrologyAskEvidence,
+    | MetrologyAskEvidence
+    | AgentRunAskEvidence,
     Field(discriminator="type"),
 ]
 ASK_EVIDENCE_ADAPTER = TypeAdapter(AskEvidenceItem)
@@ -346,14 +388,37 @@ RUN_EVIDENCE_ADAPTER = TypeAdapter(RunEvidenceItem)
 
 class AgentRunDetailResponse(PublicAgentRunItem):
     evidence_items: list[RunEvidenceItem]
+    prediction: AgentPredictionDetailItem | None
     approval: AgentRunApprovalItem | None
     action: AgentRunActionItem | None
+    diagnosis: DiagnosisBlock
+    evidence_assessment: EvidenceAssessmentBlock
+    impact_scope: ImpactScopeBlock
+    similar_incidents: SimilarIncidentsBlock
+    post_action_observation: PostActionObservationBlock
 
     @model_validator(mode="after")
     def validate_detail_identity(self) -> "AgentRunDetailResponse":
         source_ids = [item.source_id for item in self.evidence_items]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("evidence source_id는 중복될 수 없습니다")
+        if self.prediction is None:
+            if self.predicted_fault_code is not None or self.confidence is not None:
+                raise ValueError("prediction이 없으면 판단 요약도 null이어야 합니다")
+        else:
+            if (
+                self.prediction.predicted_fault_code is not self.predicted_fault_code
+                or self.prediction.confidence != self.confidence
+                or self.prediction.llm_model != self.llm_model
+            ):
+                raise ValueError("prediction provenance가 실행 요약과 다릅니다")
+            citation_ids = {
+                *(item.to_token() for item in self.prediction.supporting_alarms),
+                *self.prediction.supporting_chunk_ids,
+                *self.prediction.supporting_relation_ids,
+            }
+            if not citation_ids <= set(source_ids):
+                raise ValueError("prediction citation이 공개 evidence에 없습니다")
         if self.action is None:
             if self.action_id is not None or self.approval is not None:
                 raise ValueError(
@@ -460,6 +525,8 @@ __all__ = [
     "AgentRunActionItem",
     "AgentRunApprovalItem",
     "AgentRunDetailResponse",
+    "AgentRunAskEvidence",
+    "AgentPredictionDetailItem",
     "AgentAskRequest",
     "AgentAskResponse",
     "AlarmAskEvidence",

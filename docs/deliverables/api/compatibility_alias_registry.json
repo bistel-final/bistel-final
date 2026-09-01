@@ -32,10 +32,6 @@
       "consumers": [],
       "consumer_scan_ignores": [
         {
-          "reference": "frontend/src/features/agent/pages/AgentRunPage.jsx",
-          "reason": "`parameter`는 Agent 화면의 parameter/approval 조립 상태의 property이며 AlarmItem compatibility 소비가 아님"
-        },
-        {
           "reference": "frontend/src/features/detection/components/AlarmHierarchyFilter.jsx",
           "reason": "`equipment`는 알람 계층 filter selection state의 property이며 AlarmItem compatibility 소비가 아님"
         },
@@ -158,9 +154,7 @@
         "USL"
       ],
       "enforcement": "validator",
-      "consumers": [
-        "frontend/src/features/agent/pages/AgentRunPage.jsx#AgentRunPage"
-      ],
+      "consumers": [],
       "consumer_scan_ignores": [
         {
           "reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx",
@@ -178,7 +172,7 @@
       "removal_conditions": [
         {
           "check": "consumer_zero",
-          "criteria": "AgentRunPage의 TARGET fallback을 포함해 uppercase parameter alias 소비가 0건이다."
+          "criteria": "uppercase parameter alias의 제품 코드 소비가 0건이다."
         },
         {
           "check": "canonical_contract_green",
@@ -1082,6 +1076,14 @@
       "producer": "backend.app.analytics.audit._to_item",
       "consumers": [],
       "consumer_scan_ignores": [
+        {
+          "reference": "frontend/src/features/agent/components/RunSummaryCard.jsx",
+          "reason": "`at`은 `source_id.split(':').at(-1)`의 Array.at 호출이며 AuditItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/agentModel.js",
+          "reason": "`at`은 `source_id.split(':').at(-1)`의 Array.at 호출이며 AuditItem compatibility 소비가 아님"
+        },
         {
           "reference": "frontend/src/features/analytics/components/AuditFilterBar.jsx",
           "reason": "`actor`는 감사로그 filter state의 property이며 AuditLogItem compatibility 소비가 아님"

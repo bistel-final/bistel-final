@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from app.agent.approval_store import (
     HitlResumeError,
 )
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
+from app.agent.diagnostics import ANALYSIS_VERSION
 from app.agent.hypothesis import HypothesisGenerationError
 from app.agent.mes_delivery import MesDeliveryError
 from app.agent.prompts import PROMPT_VERSION
@@ -71,6 +73,7 @@ from app.common.tool_contracts import (
     DocumentSearchToolInput,
     EquipmentContextToolInput,
     FdcSummaryToolInput,
+    FdcSummaryToolResult,
     SendActionToolInput,
     SendActionToolResult,
     ToolResult,
@@ -94,6 +97,21 @@ CANONICAL_NODES: Final[tuple[str, ...]] = (
 )
 INTERNAL_NODES: Final[tuple[str, ...]] = ("fail_run",)
 logger = logging.getLogger(__name__)
+
+
+def _wafer_order(value: str) -> tuple[int, str]:
+    """final WAFER ID의 숫자값 우선·문자열 ASC 정렬."""
+
+    match = re.search(r"(\d+)$", value)
+    return (int(match.group(1)) if match is not None else 2_147_483_647, value)
+
+
+def _retryable_read_result(result: ToolResult | None) -> bool:
+    return (
+        result is not None
+        and not result.ok
+        and result.reason.startswith(("TIMEOUT:", "DEPENDENCY_ERROR:"))
+    )
 
 
 def _utc_now() -> datetime:
@@ -355,7 +373,10 @@ def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
     """DB prediction과 compact evidence를 canonical Hypothesis로 복원한다."""
 
     evidence = row.evidence
-    if evidence.get("schema_version") != "agent-evidence-v1":
+    if evidence.get("schema_version") not in {
+        "agent-evidence-v1",
+        "agent-evidence-v2",
+    }:
         raise RepositoryConflict("PREDICTION_CONFLICT")
     try:
         return Hypothesis(
@@ -368,21 +389,58 @@ def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
             ),
             supporting_chunk_ids=tuple(evidence.get("supporting_chunk_ids", ())),
             supporting_relation_ids=tuple(evidence.get("supporting_relation_ids", ())),
+            supporting_lot_hist_ids=tuple(evidence.get("supporting_lot_hist_ids", ())),
+            supporting_parameter_ids=tuple(
+                evidence.get("supporting_parameter_ids", ())
+            ),
             uncertainty=evidence.get("uncertainty", ""),
+            observations=tuple(evidence.get("observations", ())),
+            evidence_synthesis=evidence.get("evidence_synthesis", ""),
+            alternative_hypotheses=tuple(evidence.get("alternative_hypotheses", ())),
+            impact_summary=evidence.get("impact_summary", ""),
+            verification_steps=tuple(evidence.get("verification_steps", ())),
+            limitations=tuple(evidence.get("limitations", ())),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RepositoryConflict("PREDICTION_CONFLICT") from exc
 
 
-def _prediction_evidence(hypothesis: Hypothesis) -> dict[str, Any]:
+def _prediction_evidence(outcome: HypothesisOutcome) -> dict[str, Any]:
+    hypothesis = outcome.hypothesis
     return {
-        "schema_version": "agent-evidence-v1",
+        "schema_version": "agent-evidence-v2",
+        "analysis_version": ANALYSIS_VERSION,
         "supporting_alarms": [
             alarm.model_dump(mode="json") for alarm in hypothesis.supporting_alarms
         ],
         "supporting_chunk_ids": list(hypothesis.supporting_chunk_ids),
         "supporting_relation_ids": list(hypothesis.supporting_relation_ids),
+        "supporting_lot_hist_ids": list(hypothesis.supporting_lot_hist_ids),
+        "supporting_parameter_ids": list(hypothesis.supporting_parameter_ids),
         "uncertainty": hypothesis.uncertainty,
+        "observations": list(hypothesis.observations),
+        "evidence_synthesis": hypothesis.evidence_synthesis,
+        "alternative_hypotheses": [
+            item.model_dump(mode="json") for item in hypothesis.alternative_hypotheses
+        ],
+        "impact_summary": hypothesis.impact_summary,
+        "verification_steps": list(hypothesis.verification_steps),
+        "limitations": list(hypothesis.limitations),
+        "diagnostic_snapshot": (
+            None
+            if outcome.diagnostic_snapshot is None
+            else outcome.diagnostic_snapshot.model_dump(mode="json")
+        ),
+        "evidence_assessment": (
+            None
+            if outcome.evidence_assessment is None
+            else outcome.evidence_assessment.model_dump(mode="json")
+        ),
+        "impact_scope": (
+            None
+            if outcome.impact_scope is None
+            else outcome.impact_scope.model_dump(mode="json")
+        ),
     }
 
 
@@ -527,8 +585,26 @@ def build_agent_graph(
             )
             bound = read_route_snapshot(connection, started.incident)
             representative = started.incident.representative_alarm
-            fdc_lot_hist_id = bound.snapshot.lot_hist_id_of_member.get(
-                (AlarmSource(representative.source), representative.alarm_id)
+            target_by_wafer: dict[str, str] = {}
+            if bound.snapshot.diagnostic_wafer_refs:
+                target_by_wafer.update(
+                    {
+                        wafer_id: lot_hist_id
+                        for lot_hist_id, wafer_id in (
+                            bound.snapshot.diagnostic_wafer_refs
+                        )
+                    }
+                )
+            else:
+                for alarm in started.incident.member_alarms:
+                    key = (AlarmSource(alarm.source), alarm.alarm_id)
+                    wafer_id = bound.snapshot.wafer_of_member.get(key)
+                    lot_hist_id = bound.snapshot.lot_hist_id_of_member.get(key)
+                    if wafer_id is not None and lot_hist_id is not None:
+                        target_by_wafer.setdefault(wafer_id, lot_hist_id)
+            ordered_targets = tuple(
+                target_by_wafer[wafer_id]
+                for wafer_id in sorted(target_by_wafer, key=_wafer_order)
             )
 
         base: dict[str, Any] = {
@@ -557,8 +633,10 @@ def build_agent_graph(
             "terminal_error": None,
             "approval_decision": None,
             "pending_llm_usage": None,
+            "fdc_evidence_set": (),
+            "read_retry_used": 0,
         }
-        if fdc_lot_hist_id is None:
+        if not ordered_targets:
             error = _terminal(
                 RepositoryContractError("ROUTE_INCIDENT_MISMATCH"),
                 "load_incident",
@@ -566,7 +644,16 @@ def build_agent_graph(
             base["terminal_error"] = error
             base["errors"] = (error,)
             return base
-        base["fdc_lot_hist_id"] = fdc_lot_hist_id
+        base["fdc_lot_hist_id"] = ordered_targets[0]
+        base["fdc_lot_hist_ids"] = ordered_targets[:3]
+        if len(ordered_targets) > 3:
+            base["errors"] = (
+                AgentError(
+                    code="FDC_TARGET_BUDGET_EXCEEDED",
+                    node="load_incident",
+                    terminal=False,
+                ),
+            )
         try:
             base["route"] = combine_route(bound, graph=dependencies.routing_graph)
         except Exception as exc:
@@ -576,20 +663,45 @@ def build_agent_graph(
         return base
 
     def collect_fdc(state: AgentGraphState) -> dict[str, Any]:
-        result, tool_budget, errors = _collect_tool_result(
-            state,
-            node="collect_fdc",
-            invoke=lambda: dependencies.tools.fdc_summary(
-                state["run_id"],
-                FdcSummaryToolInput(lot_hist_id=state["fdc_lot_hist_id"]),
-            ),
-            budget=lambda: dependencies.tools.budget(state["run_id"]),
-        )
+        results: list[FdcSummaryToolResult | None] = []
+        errors = state.get("errors", ())
+        tool_budget = state["tool_budget"]
+        retry_used = state.get("read_retry_used", 0)
+        for lot_hist_id in state["fdc_lot_hist_ids"]:
+
+            def invoke_fdc(
+                target_lot_hist_id: str = lot_hist_id,
+            ) -> FdcSummaryToolResult | None:
+                return dependencies.tools.fdc_summary(
+                    state["run_id"],
+                    FdcSummaryToolInput(lot_hist_id=target_lot_hist_id),
+                )
+
+            local_state = {**state, "errors": errors}
+            result, tool_budget, errors = _collect_tool_result(
+                local_state,
+                node="collect_fdc",
+                invoke=invoke_fdc,
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            if _retryable_read_result(result) and retry_used == 0:
+                retry_used = 1
+                local_state = {**state, "errors": errors}
+                result, tool_budget, errors = _collect_tool_result(
+                    local_state,
+                    node="collect_fdc",
+                    invoke=invoke_fdc,
+                    budget=lambda: dependencies.tools.budget(state["run_id"]),
+                )
+            results.append(result if isinstance(result, FdcSummaryToolResult) else None)
+        primary = next((item for item in results if item is not None), None)
         return {
-            "fdc_evidence": result,
-            "optional_anomaly_evidence": None if result is None else result.anomaly,
+            "fdc_evidence": primary,
+            "fdc_evidence_set": tuple(results),
+            "optional_anomaly_evidence": (None if primary is None else primary.anomaly),
             "tool_budget": tool_budget,
             "errors": errors,
+            "read_retry_used": retry_used,
         }
 
     def collect_equipment(state: AgentGraphState) -> dict[str, Any]:
@@ -602,10 +714,23 @@ def build_agent_graph(
             ),
             budget=lambda: dependencies.tools.budget(state["run_id"]),
         )
+        retry_used = state.get("read_retry_used", 0)
+        if _retryable_read_result(result) and retry_used == 0:
+            retry_used = 1
+            result, tool_budget, errors = _collect_tool_result(
+                {**state, "errors": errors},
+                node="collect_equipment",
+                invoke=lambda: dependencies.tools.equipment_context(
+                    state["run_id"],
+                    EquipmentContextToolInput(chamber_id=state["chamber_id"]),
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
         return {
             "graph_evidence": result,
             "tool_budget": tool_budget,
             "errors": errors,
+            "read_retry_used": retry_used,
         }
 
     def collect_documents(state: AgentGraphState) -> dict[str, Any]:
@@ -634,10 +759,26 @@ def build_agent_graph(
             ),
             budget=lambda: dependencies.tools.budget(state["run_id"]),
         )
+        retry_used = state.get("read_retry_used", 0)
+        if _retryable_read_result(result) and retry_used == 0:
+            retry_used = 1
+            result, tool_budget, errors = _collect_tool_result(
+                {**state, "errors": errors},
+                node="collect_documents",
+                invoke=lambda: dependencies.tools.document_search(
+                    state["run_id"],
+                    DocumentSearchToolInput(
+                        query=_document_query(state),
+                        model_code=model_code,
+                    ),
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
         return {
             "document_evidence": result,
             "tool_budget": tool_budget,
             "errors": errors,
+            "read_retry_used": retry_used,
         }
 
     def generate_hypothesis(state: AgentGraphState) -> dict[str, Any]:
@@ -663,10 +804,15 @@ def build_agent_graph(
         try:
             outcome = HypothesisOutcome.model_validate(
                 ports.generate_hypothesis(
-                    state.get("fdc_evidence"),
+                    state.get("fdc_evidence_set", (state.get("fdc_evidence"),)),
                     state.get("graph_evidence"),
                     state.get("document_evidence"),
                     state["route"],
+                    tuple(
+                        error.code
+                        for error in state.get("errors", ())
+                        if error.code == "FDC_TARGET_BUDGET_EXCEEDED"
+                    ),
                 )
             )
         except HypothesisGenerationError as exc:
@@ -695,7 +841,7 @@ def build_agent_graph(
                         predicted_fault_code=outcome.hypothesis.predicted_fault_code,
                         confidence=outcome.hypothesis.confidence,
                         cause_summary=outcome.hypothesis.cause_summary,
-                        evidence=_prediction_evidence(outcome.hypothesis),
+                        evidence=_prediction_evidence(outcome),
                         llm_model=outcome.llm_usage.model,
                         prompt_version=outcome.llm_usage.prompt_version,
                     )

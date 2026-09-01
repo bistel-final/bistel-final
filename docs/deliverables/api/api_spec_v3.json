@@ -518,6 +518,14 @@
     "AgentAskRequest": {
       "additional_properties": false,
       "fields": {
+        "agent_run_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
         "question": {
           "nullable": false,
           "required": true,
@@ -954,6 +962,682 @@
       ],
       "type": "object"
     },
+    "AgentEvaluationResponse": {
+      "additional_properties": false,
+      "fields": {
+        "fault_5class": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "classification": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "accuracy": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "additional_properties": false,
+                        "fields": {
+                          "denominator": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "minimum": 0.0,
+                              "type": "integer"
+                            }
+                          },
+                          "numerator": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "minimum": 0.0,
+                              "type": "integer"
+                            }
+                          },
+                          "rate": {
+                            "nullable": false,
+                            "required": true,
+                            "schema": {
+                              "maximum": 1.0,
+                              "minimum": 0.0,
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "by_class": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "additional_properties": {
+                          "additional_properties": false,
+                          "fields": {
+                            "f1": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            },
+                            "false_negative": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "false_positive": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "precision": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            },
+                            "recall": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            },
+                            "support": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "true_positive": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "fields": {},
+                        "type": "object"
+                      }
+                    },
+                    "macro_f1_5class": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    },
+                    "observed_class_macro_f1": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    },
+                    "population_count": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "unclassified_count": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "evidence_valid_run": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "denominator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "numerator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "rate": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "exclusions": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "meaning": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "reason": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "AMBIGUOUS_LABEL",
+                            "NO_INJECTED_FAULT"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "hard_gate_passed": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "hard_gate_reasons": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "label_source": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "metrology_observed_count": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "metrology_total_lot_hist_count": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "production_ground_truth_available": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "production_performance_disclaimer": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "public_fault_ground_truth_available": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "rule_action_agreement": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "denominator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "numerator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "rate": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "structured_prediction": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "denominator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "numerator": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "rate": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "usage_scope": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "versions": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "dataset_epoch": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
+                    },
+                    "model_version": {
+                      "nullable": true,
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    "policy_version": {
+                      "nullable": true,
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    "prompt_version": {
+                      "nullable": true,
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "fault_5class_empty_reason": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "enum": [
+              "CONTRACT_VIOLATION",
+              "NOT_CONFIGURED",
+              "NOT_FOUND"
+            ],
+            "type": "string"
+          }
+        },
+        "golden_flow": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "dataset_epoch": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "phases": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "metrics": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": true,
+                          "fields": {},
+                          "type": "object"
+                        }
+                      },
+                      "phase": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "BATCH_BASELINE",
+                            "DECISIONS",
+                            "MANUAL_RETRY",
+                            "PREFLIGHT",
+                            "PRE_APPROVAL",
+                            "SECOND_BATCH",
+                            "UNKNOWN"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "reasons": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "EVIDENCE_INCOMPLETE",
+                            "FAIL",
+                            "PASS"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "EVIDENCE_INCOMPLETE",
+                    "FAIL",
+                    "PASS"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "golden_flow_empty_reason": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "enum": [
+              "CONTRACT_VIOLATION",
+              "NOT_CONFIGURED",
+              "NOT_FOUND"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "AgentPredictionDetailItem": {
+      "additional_properties": false,
+      "fields": {
+        "cause_summary": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "max_length": 2000,
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "generated_at": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "input_tokens": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "llm_model": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "output_tokens": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "predicted_fault_code": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "FOC",
+              "MFD",
+              "OTH",
+              "RFM",
+              "TMD"
+            ],
+            "type": "string"
+          }
+        },
+        "prompt_version": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "supporting_alarms": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "alarm_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "source": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "R03",
+                      "SUMMARY",
+                      "TRACE"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "supporting_chunk_ids": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "min_length": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "supporting_relation_ids": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "min_length": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "uncertainty": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "max_length": 1000,
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "AgentRunAccepted": {
       "additional_properties": false,
       "fields": {
@@ -1120,6 +1804,22 @@
                     "type": "string"
                   }
                 },
+                "completed_at": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "started_at": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
                 "status": {
                   "nullable": false,
                   "required": true,
@@ -1211,6 +1911,44 @@
               "PENDING",
               "REJECTED"
             ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "AgentRunAskEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "max_length": 4000,
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "source_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "title": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "type": {
+          "nullable": false,
+          "required": true,
+          "schema": {
             "type": "string"
           }
         }
@@ -1317,6 +2055,22 @@
                             "EMAIL",
                             "MES"
                           ],
+                          "type": "string"
+                        }
+                      },
+                      "completed_at": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "started_at": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "format": "date-time",
                           "type": "string"
                         }
                       },
@@ -1537,6 +2291,217 @@
               "type": "object"
             },
             "type": "array"
+          }
+        },
+        "diagnosis": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "alternative_hypotheses": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "lower_rank_reason": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 1000,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "summary": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 1000,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "cause_summary": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "max_length": 2000,
+                  "type": "string"
+                }
+              },
+              "confidence": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                }
+              },
+              "diagnostic_coverage": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "evidence_synthesis": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "max_length": 2000,
+                  "type": "string"
+                }
+              },
+              "limitations": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "observations": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "predicted_fault_code": {
+                "nullable": true,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "FOC",
+                    "MFD",
+                    "OTH",
+                    "RFM",
+                    "TMD"
+                  ],
+                  "type": "string"
+                }
+              },
+              "reason_code": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "pattern": "^[A-Z0-9_]+$",
+                  "type": "string"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "AVAILABLE",
+                    "EMPTY"
+                  ],
+                  "type": "string"
+                }
+              },
+              "verification_steps": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "evidence_assessment": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "available_sources": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "enum": [
+                      "FDC",
+                      "GRAPH",
+                      "POSTGRES_ROUTE",
+                      "RAG"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "conflicting_source_ids": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "missing_sources": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "enum": [
+                      "FDC",
+                      "GRAPH",
+                      "POSTGRES_ROUTE",
+                      "RAG"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "reason_codes": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "CONFLICT",
+                    "EMPTY",
+                    "PARTIAL",
+                    "SUFFICIENT"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
           }
         },
         "evidence_items": {
@@ -1834,6 +2799,137 @@
             "type": "null"
           }
         },
+        "impact_scope": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "check_required": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "kind": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "CHAMBER",
+                            "LOT",
+                            "PARAMETER",
+                            "PROCESS_STEP",
+                            "SIBLING_CHAMBER",
+                            "WAFER"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "relation": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "source_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "direct": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "kind": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "CHAMBER",
+                            "LOT",
+                            "PARAMETER",
+                            "PROCESS_STEP",
+                            "SIBLING_CHAMBER",
+                            "WAFER"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "relation": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "source_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "graph_conflict": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": false,
+                  "type": "boolean"
+                }
+              },
+              "reason_code": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "pattern": "^[A-Z0-9_]+$",
+                  "type": "string"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "AVAILABLE",
+                    "EMPTY"
+                  ],
+                  "type": "string"
+                }
+              },
+              "summary": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "max_length": 2000,
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
         "latency_ms": {
           "nullable": false,
           "required": true,
@@ -1850,6 +2946,32 @@
             "type": "string"
           }
         },
+        "post_action_observation": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "message": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+                  "type": "string"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE_STATIC_DATASET",
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
         "predicted_fault_code": {
           "nullable": true,
           "required": true,
@@ -1864,6 +2986,151 @@
             "type": "string"
           }
         },
+        "prediction": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "cause_summary": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "max_length": 2000,
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "confidence": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                }
+              },
+              "generated_at": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "input_tokens": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "llm_model": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "output_tokens": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "predicted_fault_code": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "FOC",
+                    "MFD",
+                    "OTH",
+                    "RFM",
+                    "TMD"
+                  ],
+                  "type": "string"
+                }
+              },
+              "prompt_version": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "supporting_alarms": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "alarm_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "source": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "R03",
+                            "SUMMARY",
+                            "TRACE"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "supporting_chunk_ids": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "min_length": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "supporting_relation_ids": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "min_length": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "uncertainty": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "max_length": 1000,
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
         "recommended_action": {
           "nullable": true,
           "required": true,
@@ -1874,6 +3141,124 @@
               "WARNING"
             ],
             "type": "string"
+          }
+        },
+        "similar_incidents": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "items": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "agent_run_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "chamber_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "lot_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "parameter_jaccard": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      },
+                      "predicted_fault_code": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "FOC",
+                            "MFD",
+                            "OTH",
+                            "RFM",
+                            "TMD"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "recommended_action": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "EQP_HOLD",
+                            "MONITORING",
+                            "WARNING"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "score": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 100.0,
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "label": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "고정 시연 데이터 내 비교 결과",
+                  "type": "string"
+                }
+              },
+              "reason_code": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "pattern": "^[A-Z0-9_]+$",
+                  "type": "string"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "AVAILABLE",
+                    "EMPTY"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
           }
         },
         "status": {
@@ -4192,6 +5577,138 @@
       ],
       "type": "string"
     },
+    "DiagnosisBlock": {
+      "additional_properties": false,
+      "fields": {
+        "alternative_hypotheses": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "lower_rank_reason": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 1000,
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "summary": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 1000,
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "cause_summary": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 2000,
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "diagnostic_coverage": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        "evidence_synthesis": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 2000,
+            "type": "string"
+          }
+        },
+        "limitations": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "observations": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "predicted_fault_code": {
+          "nullable": true,
+          "required": true,
+          "schema": {
+            "enum": [
+              "FOC",
+              "MFD",
+              "OTH",
+              "RFM",
+              "TMD"
+            ],
+            "type": "string"
+          }
+        },
+        "reason_code": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "pattern": "^[A-Z0-9_]+$",
+            "type": "string"
+          }
+        },
+        "status": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "AVAILABLE",
+              "EMPTY"
+            ],
+            "type": "string"
+          }
+        },
+        "verification_steps": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "type": "object"
+    },
     "DocumentAskEvidence": {
       "additional_properties": false,
       "fields": {
@@ -4899,6 +6416,77 @@
           "schema": {
             "minimum": 0,
             "type": "integer"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "EvidenceAssessmentBlock": {
+      "additional_properties": false,
+      "fields": {
+        "available_sources": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "enum": [
+                "FDC",
+                "GRAPH",
+                "POSTGRES_ROUTE",
+                "RAG"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "conflicting_source_ids": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "missing_sources": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "enum": [
+                "FDC",
+                "GRAPH",
+                "POSTGRES_ROUTE",
+                "RAG"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "reason_codes": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "status": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "CONFLICT",
+              "EMPTY",
+              "PARTIAL",
+              "SUFFICIENT"
+            ],
+            "type": "string"
           }
         }
       },
@@ -5637,6 +7225,169 @@
       },
       "type": "object"
     },
+    "ImpactScopeBlock": {
+      "additional_properties": false,
+      "fields": {
+        "check_required": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "kind": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CHAMBER",
+                      "LOT",
+                      "PARAMETER",
+                      "PROCESS_STEP",
+                      "SIBLING_CHAMBER",
+                      "WAFER"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "relation": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "source_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "direct": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "kind": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CHAMBER",
+                      "LOT",
+                      "PARAMETER",
+                      "PROCESS_STEP",
+                      "SIBLING_CHAMBER",
+                      "WAFER"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "relation": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "source_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "graph_conflict": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "reason_code": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "pattern": "^[A-Z0-9_]+$",
+            "type": "string"
+          }
+        },
+        "status": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "AVAILABLE",
+              "EMPTY"
+            ],
+            "type": "string"
+          }
+        },
+        "summary": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 2000,
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "ImpactScopeItem": {
+      "additional_properties": false,
+      "fields": {
+        "kind": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "CHAMBER",
+              "LOT",
+              "PARAMETER",
+              "PROCESS_STEP",
+              "SIBLING_CHAMBER",
+              "WAFER"
+            ],
+            "type": "string"
+          }
+        },
+        "relation": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        "source_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "MetricPlan": {
       "additional_properties": false,
       "fields": {
@@ -6109,6 +7860,28 @@
           "required": true,
           "schema": {
             "type": "boolean"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "PostActionObservationBlock": {
+      "additional_properties": false,
+      "fields": {
+        "message": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+            "type": "string"
+          }
+        },
+        "status": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE_STATIC_DATASET",
+            "type": "string"
           }
         }
       },
@@ -7364,6 +9137,194 @@
       ],
       "type": "string"
     },
+    "SimilarIncidentItem": {
+      "additional_properties": false,
+      "fields": {
+        "agent_run_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "chamber_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "lot_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "parameter_jaccard": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "predicted_fault_code": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "FOC",
+              "MFD",
+              "OTH",
+              "RFM",
+              "TMD"
+            ],
+            "type": "string"
+          }
+        },
+        "recommended_action": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "EQP_HOLD",
+              "MONITORING",
+              "WARNING"
+            ],
+            "type": "string"
+          }
+        },
+        "score": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "SimilarIncidentsBlock": {
+      "additional_properties": false,
+      "fields": {
+        "items": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "agent_run_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "chamber_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "lot_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "parameter_jaccard": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                },
+                "predicted_fault_code": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "FOC",
+                      "MFD",
+                      "OTH",
+                      "RFM",
+                      "TMD"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "recommended_action": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "EQP_HOLD",
+                      "MONITORING",
+                      "WARNING"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "score": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 100.0,
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "label": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "고정 시연 데이터 내 비교 결과",
+            "type": "string"
+          }
+        },
+        "reason_code": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "pattern": "^[A-Z0-9_]+$",
+            "type": "string"
+          }
+        },
+        "status": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "AVAILABLE",
+              "EMPTY"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "SqlValidateRequest": {
       "additional_properties": false,
       "fields": {
@@ -7698,9 +9659,9 @@
       "API명세서.csv",
       "API명세서.pdf"
     ],
-    "operation_count": 35,
-    "release_required_count": 19,
-    "semantic_operation_count": 29,
+    "operation_count": 36,
+    "release_required_count": 20,
+    "semantic_operation_count": 30,
     "title": "BISTel FDC Agent API 명세서",
     "version": "3.0"
   },
@@ -9309,10 +11270,10 @@
         "category": "필수",
         "constraints": "읽기 전용",
         "description": "근거 기반 Agent 질의",
-        "notes": "tools·evidence_items·limitations와 predicted_fault_code·confidence·recommended_action은 항상 존재(후 3개 required-nullable); Chat Tool alias는 name/result만; fault_code 없음; DOCUMENT document_id·chunk_id 필수/section required-nullable; GRAPH relation_id·graph_revision 필수; METROLOGY alarm_result 미노출; evidence·limit·doc_id는 deprecated alias; action·approval write 없음",
-        "other_statuses": "422,503",
+        "notes": "agent_run_id 지정 시 같은 Runtime DB의 저장된 종합 진단·citation 우선; 식별자 충돌 422; evidence type AGENT_RUN 추가; tools·evidence_items·limitations와 predicted_fault_code·confidence·recommended_action은 항상 존재(후 3개 required-nullable); Chat Tool alias는 name/result만; fault_code 없음; DOCUMENT document_id·chunk_id 필수/section required-nullable; GRAPH relation_id·graph_revision 필수; METROLOGY alarm_result 미노출; evidence·limit·doc_id는 deprecated alias; action·approval write 없음",
+        "other_statuses": "404,422,503",
         "owner": "C",
-        "request_summary": "body: question 1..1000",
+        "request_summary": "body: question 1..1000; agent_run_id 선택",
         "response_summary": "AgentAskResponse"
       },
       "contract_level": "semantic",
@@ -9330,6 +11291,14 @@
           "body": {
             "additional_properties": false,
             "fields": {
+              "agent_run_id": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
               "question": {
                 "nullable": false,
                 "required": true,
@@ -9417,6 +11386,44 @@
                       "discriminator": "type",
                       "type": "discriminated_union",
                       "variants": {
+                        "AGENT_RUN": {
+                          "additional_properties": false,
+                          "fields": {
+                            "excerpt": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "max_length": 4000,
+                                "min_length": 1,
+                                "type": "string"
+                              }
+                            },
+                            "source_id": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "min_length": 1,
+                                "type": "string"
+                              }
+                            },
+                            "title": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "min_length": 1,
+                                "type": "string"
+                              }
+                            },
+                            "type": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        },
                         "ALARM": {
                           "additional_properties": false,
                           "fields": {
@@ -9759,53 +11766,140 @@
             },
             "shape": "object"
           },
-          "422": {
+          "404": {
             "schema": {
-              "additional_properties": true,
+              "additional_properties": false,
               "fields": {
-                "detail": {
+                "code": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "APPROVAL_ALREADY_DECIDED",
+                      "DEPENDENCY_NOT_READY",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INCIDENT_ALREADY_PROCESSED",
+                      "INCIDENT_ALREADY_RUNNING",
+                      "INTERNAL_ERROR",
+                      "LEGACY_APPROVAL_NOT_LINKED",
+                      "LLM_NOT_READY",
+                      "MODEL_NOT_READY",
+                      "POLICY_REJECTED",
+                      "RESOURCE_NOT_FOUND",
+                      "UNAUTHORIZED",
+                      "VALIDATION_ERROR"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "details": {
                   "nullable": false,
                   "required": false,
                   "schema": {
-                    "items": {
-                      "additional_properties": true,
-                      "fields": {
-                        "loc": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "items": {
-                              "type": "union",
-                              "variants": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "integer"
-                                }
-                              ]
-                            },
-                            "type": "array"
-                          }
-                        },
-                        "msg": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "type": "string"
-                          }
-                        },
-                        "type": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "type": "string"
-                          }
-                        }
-                      },
-                      "type": "object"
-                    },
-                    "type": "array"
+                    "additional_properties": true,
+                    "fields": {},
+                    "type": "object"
+                  }
+                },
+                "message": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "shape": "object"
+          },
+          "422": {
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "code": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "APPROVAL_ALREADY_DECIDED",
+                      "DEPENDENCY_NOT_READY",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INCIDENT_ALREADY_PROCESSED",
+                      "INCIDENT_ALREADY_RUNNING",
+                      "INTERNAL_ERROR",
+                      "LEGACY_APPROVAL_NOT_LINKED",
+                      "LLM_NOT_READY",
+                      "MODEL_NOT_READY",
+                      "POLICY_REJECTED",
+                      "RESOURCE_NOT_FOUND",
+                      "UNAUTHORIZED",
+                      "VALIDATION_ERROR"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "details": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "additional_properties": true,
+                    "fields": {},
+                    "type": "object"
+                  }
+                },
+                "message": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "shape": "object"
+          },
+          "503": {
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "code": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "APPROVAL_ALREADY_DECIDED",
+                      "DEPENDENCY_NOT_READY",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INCIDENT_ALREADY_PROCESSED",
+                      "INCIDENT_ALREADY_RUNNING",
+                      "INTERNAL_ERROR",
+                      "LEGACY_APPROVAL_NOT_LINKED",
+                      "LLM_NOT_READY",
+                      "MODEL_NOT_READY",
+                      "POLICY_REJECTED",
+                      "RESOURCE_NOT_FOUND",
+                      "UNAUTHORIZED",
+                      "VALIDATION_ERROR"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "details": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "additional_properties": true,
+                    "fields": {},
+                    "type": "object"
+                  }
+                },
+                "message": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
                   }
                 }
               },
@@ -13137,7 +15231,7 @@
         "category": "확장",
         "constraints": "단건",
         "description": "Agent 실행 상세",
-        "notes": "근거 ID provenance",
+        "notes": "근거 ID provenance; diagnosis·evidence_assessment·impact_scope·similar_incidents·post_action_observation 5블록 필수, 구버전은 명시적 Empty",
         "other_statuses": "404,422,503",
         "owner": "C",
         "request_summary": "path: run_id",
@@ -13232,6 +15326,22 @@
                                     "EMAIL",
                                     "MES"
                                   ],
+                                  "type": "string"
+                                }
+                              },
+                              "completed_at": {
+                                "nullable": true,
+                                "required": true,
+                                "schema": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "started_at": {
+                                "nullable": true,
+                                "required": true,
+                                "schema": {
+                                  "format": "date-time",
                                   "type": "string"
                                 }
                               },
@@ -13452,6 +15562,217 @@
                       "type": "object"
                     },
                     "type": "array"
+                  }
+                },
+                "diagnosis": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "alternative_hypotheses": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "lower_rank_reason": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "max_length": 1000,
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "summary": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "max_length": 1000,
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "cause_summary": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "max_length": 2000,
+                          "type": "string"
+                        }
+                      },
+                      "confidence": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      },
+                      "diagnostic_coverage": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "evidence_synthesis": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "max_length": 2000,
+                          "type": "string"
+                        }
+                      },
+                      "limitations": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "observations": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "predicted_fault_code": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "FOC",
+                            "MFD",
+                            "OTH",
+                            "RFM",
+                            "TMD"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "reason_code": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "pattern": "^[A-Z0-9_]+$",
+                          "type": "string"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "AVAILABLE",
+                            "EMPTY"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "verification_steps": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "evidence_assessment": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "available_sources": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "enum": [
+                              "FDC",
+                              "GRAPH",
+                              "POSTGRES_ROUTE",
+                              "RAG"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "conflicting_source_ids": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "missing_sources": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "enum": [
+                              "FDC",
+                              "GRAPH",
+                              "POSTGRES_ROUTE",
+                              "RAG"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "reason_codes": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "CONFLICT",
+                            "EMPTY",
+                            "PARTIAL",
+                            "SUFFICIENT"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
                   }
                 },
                 "evidence_items": {
@@ -13749,6 +16070,137 @@
                     "type": "null"
                   }
                 },
+                "impact_scope": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "check_required": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "kind": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "CHAMBER",
+                                    "LOT",
+                                    "PARAMETER",
+                                    "PROCESS_STEP",
+                                    "SIBLING_CHAMBER",
+                                    "WAFER"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "relation": {
+                                "nullable": true,
+                                "required": false,
+                                "schema": {
+                                  "type": "string"
+                                }
+                              },
+                              "source_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "direct": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "kind": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "CHAMBER",
+                                    "LOT",
+                                    "PARAMETER",
+                                    "PROCESS_STEP",
+                                    "SIBLING_CHAMBER",
+                                    "WAFER"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "relation": {
+                                "nullable": true,
+                                "required": false,
+                                "schema": {
+                                  "type": "string"
+                                }
+                              },
+                              "source_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "graph_conflict": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "reason_code": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "pattern": "^[A-Z0-9_]+$",
+                          "type": "string"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "AVAILABLE",
+                            "EMPTY"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "summary": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "max_length": 2000,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
                 "latency_ms": {
                   "nullable": false,
                   "required": true,
@@ -13765,6 +16217,32 @@
                     "type": "string"
                   }
                 },
+                "post_action_observation": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "message": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+                          "type": "string"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE_STATIC_DATASET",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
                 "predicted_fault_code": {
                   "nullable": true,
                   "required": true,
@@ -13779,6 +16257,151 @@
                     "type": "string"
                   }
                 },
+                "prediction": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "cause_summary": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 2000,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "confidence": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      },
+                      "generated_at": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "format": "date-time",
+                          "type": "string"
+                        }
+                      },
+                      "input_tokens": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "llm_model": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "output_tokens": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "predicted_fault_code": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "FOC",
+                            "MFD",
+                            "OTH",
+                            "RFM",
+                            "TMD"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "prompt_version": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "supporting_alarms": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "alarm_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "source": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "R03",
+                                    "SUMMARY",
+                                    "TRACE"
+                                  ],
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "supporting_chunk_ids": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "min_length": 1,
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "supporting_relation_ids": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "min_length": 1,
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "uncertainty": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 1000,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
                 "recommended_action": {
                   "nullable": true,
                   "required": true,
@@ -13789,6 +16412,124 @@
                       "WARNING"
                     ],
                     "type": "string"
+                  }
+                },
+                "similar_incidents": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "items": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "agent_run_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "chamber_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "lot_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "parameter_jaccard": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "maximum": 1.0,
+                                  "minimum": 0.0,
+                                  "type": "number"
+                                }
+                              },
+                              "predicted_fault_code": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "FOC",
+                                    "MFD",
+                                    "OTH",
+                                    "RFM",
+                                    "TMD"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "recommended_action": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "EQP_HOLD",
+                                    "MONITORING",
+                                    "WARNING"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "score": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "maximum": 100.0,
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "label": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "고정 시연 데이터 내 비교 결과",
+                          "type": "string"
+                        }
+                      },
+                      "reason_code": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "pattern": "^[A-Z0-9_]+$",
+                          "type": "string"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "AVAILABLE",
+                            "EMPTY"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
                   }
                 },
                 "status": {
@@ -14016,6 +16757,576 @@
     },
     {
       "catalog": {
+        "category": "팀필수",
+        "constraints": "read-only immutable artifact projection",
+        "description": "Agent 합성 Fault 평가·Golden flow 7단 요약 조회",
+        "notes": "두 artifact는 독립 Empty 상태; aggregate allowlist만 공개; raw label·hash·경로 비노출",
+        "other_statuses": "",
+        "owner": "C",
+        "request_summary": "없음",
+        "response_summary": "AgentEvaluationResponse"
+      },
+      "contract_level": "semantic",
+      "implemented": true,
+      "method": "GET",
+      "order": 21,
+      "path": "/agent/evaluations",
+      "release_required": true,
+      "rules": [
+        "fault_5class와 golden_flow는 서로 독립적인 Empty 상태다",
+        "원본 artifact 경로·hash·incident label은 공개하지 않는다"
+      ],
+      "semantic": {
+        "request": {
+          "body": null,
+          "header": {},
+          "path": {},
+          "query": {}
+        },
+        "responses": {
+          "200": {
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "fault_5class": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "classification": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "accuracy": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "additional_properties": false,
+                                "fields": {
+                                  "denominator": {
+                                    "nullable": false,
+                                    "required": true,
+                                    "schema": {
+                                      "minimum": 0.0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "numerator": {
+                                    "nullable": false,
+                                    "required": true,
+                                    "schema": {
+                                      "minimum": 0.0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "rate": {
+                                    "nullable": false,
+                                    "required": true,
+                                    "schema": {
+                                      "maximum": 1.0,
+                                      "minimum": 0.0,
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "type": "object"
+                              }
+                            },
+                            "by_class": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "additional_properties": {
+                                  "additional_properties": false,
+                                  "fields": {
+                                    "f1": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "maximum": 1.0,
+                                        "minimum": 0.0,
+                                        "type": "number"
+                                      }
+                                    },
+                                    "false_negative": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "minimum": 0.0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "false_positive": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "minimum": 0.0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "precision": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "maximum": 1.0,
+                                        "minimum": 0.0,
+                                        "type": "number"
+                                      }
+                                    },
+                                    "recall": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "maximum": 1.0,
+                                        "minimum": 0.0,
+                                        "type": "number"
+                                      }
+                                    },
+                                    "support": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "minimum": 0.0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "true_positive": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "minimum": 0.0,
+                                        "type": "integer"
+                                      }
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "fields": {},
+                                "type": "object"
+                              }
+                            },
+                            "macro_f1_5class": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            },
+                            "observed_class_macro_f1": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            },
+                            "population_count": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "unclassified_count": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "evidence_valid_run": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "denominator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "numerator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "rate": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "exclusions": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "count": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "meaning": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "reason": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "AMBIGUOUS_LABEL",
+                                    "NO_INJECTED_FAULT"
+                                  ],
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "hard_gate_passed": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "boolean"
+                        }
+                      },
+                      "hard_gate_reasons": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "label_source": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "metrology_observed_count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "metrology_total_lot_hist_count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "production_ground_truth_available": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "boolean"
+                        }
+                      },
+                      "production_performance_disclaimer": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "public_fault_ground_truth_available": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "boolean"
+                        }
+                      },
+                      "rule_action_agreement": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "denominator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "numerator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "rate": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "structured_prediction": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "denominator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "numerator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "rate": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "usage_scope": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "versions": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "dataset_epoch": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "min_length": 1,
+                                "type": "string"
+                              }
+                            },
+                            "model_version": {
+                              "nullable": true,
+                              "required": true,
+                              "schema": {
+                                "type": "string"
+                              }
+                            },
+                            "policy_version": {
+                              "nullable": true,
+                              "required": true,
+                              "schema": {
+                                "type": "string"
+                              }
+                            },
+                            "prompt_version": {
+                              "nullable": true,
+                              "required": true,
+                              "schema": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "fault_5class_empty_reason": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CONTRACT_VIOLATION",
+                      "NOT_CONFIGURED",
+                      "NOT_FOUND"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "golden_flow": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "dataset_epoch": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "phases": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "metrics": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "additional_properties": true,
+                                  "fields": {},
+                                  "type": "object"
+                                }
+                              },
+                              "phase": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "BATCH_BASELINE",
+                                    "DECISIONS",
+                                    "MANUAL_RETRY",
+                                    "PREFLIGHT",
+                                    "PRE_APPROVAL",
+                                    "SECOND_BATCH",
+                                    "UNKNOWN"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "reasons": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "status": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "EVIDENCE_INCOMPLETE",
+                                    "FAIL",
+                                    "PASS"
+                                  ],
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "EVIDENCE_INCOMPLETE",
+                            "FAIL",
+                            "PASS"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "golden_flow_empty_reason": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CONTRACT_VIOLATION",
+                      "NOT_CONFIGURED",
+                      "NOT_FOUND"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "shape": "object"
+          }
+        }
+      }
+    },
+    {
+      "catalog": {
         "category": "확장",
         "constraints": "재시도 정책",
         "description": "실패 실행 재시도",
@@ -14028,7 +17339,7 @@
       "contract_level": "inventory",
       "implemented": false,
       "method": "POST",
-      "order": 21,
+      "order": 22,
       "path": "/agent/runs/{run_id}/retry",
       "release_required": false,
       "rules": [],
@@ -14048,7 +17359,7 @@
       "contract_level": "inventory",
       "implemented": false,
       "method": "GET",
-      "order": 22,
+      "order": 23,
       "path": "/agent/runs/paged",
       "release_required": false,
       "rules": [],
@@ -14068,7 +17379,7 @@
       "contract_level": "inventory",
       "implemented": false,
       "method": "GET",
-      "order": 23,
+      "order": 24,
       "path": "/approvals/paged",
       "release_required": false,
       "rules": [],
@@ -14088,7 +17399,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 24,
+      "order": 25,
       "path": "/actions",
       "release_required": false,
       "rules": [],
@@ -14388,7 +17699,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 25,
+      "order": 26,
       "path": "/actions/{action_id}",
       "release_required": false,
       "rules": [],
@@ -14744,7 +18055,7 @@
       "contract_level": "inventory",
       "implemented": false,
       "method": "POST",
-      "order": 26,
+      "order": 27,
       "path": "/actions/{action_id}/deliveries/{channel}/retry",
       "release_required": false,
       "rules": [],
@@ -14764,7 +18075,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "POST",
-      "order": 27,
+      "order": 28,
       "path": "/internal/actions/{action_id}/delivery",
       "release_required": true,
       "rules": [
@@ -15023,7 +18334,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "POST",
-      "order": 28,
+      "order": 29,
       "path": "/analytics/query",
       "release_required": true,
       "rules": [],
@@ -15398,7 +18709,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "POST",
-      "order": 29,
+      "order": 30,
       "path": "/analytics/graph-query",
       "release_required": false,
       "rules": [],
@@ -15584,7 +18895,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "POST",
-      "order": 30,
+      "order": 31,
       "path": "/analytics/validate",
       "release_required": true,
       "rules": [],
@@ -15747,7 +19058,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 31,
+      "order": 32,
       "path": "/analytics/history",
       "release_required": true,
       "rules": [],
@@ -16014,7 +19325,7 @@
       "contract_level": "semantic",
       "implemented": false,
       "method": "GET",
-      "order": 32,
+      "order": 33,
       "path": "/analytics/evaluations",
       "release_required": true,
       "rules": [],
@@ -16424,7 +19735,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 33,
+      "order": 34,
       "path": "/audit-logs/paged",
       "release_required": true,
       "rules": [],
@@ -16739,7 +20050,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 34,
+      "order": 35,
       "path": "/health",
       "release_required": true,
       "rules": [],
@@ -16784,7 +20095,7 @@
       "contract_level": "semantic",
       "implemented": true,
       "method": "GET",
-      "order": 35,
+      "order": 36,
       "path": "/health/ready",
       "release_required": true,
       "rules": [

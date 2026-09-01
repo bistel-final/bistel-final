@@ -38,6 +38,7 @@ __all__ = [
     "IncidentSnapshot",
     "RESOLVED_ALARM_SELECT_SQL",
     "fetch_incident_snapshot",
+    "parse_r03_member_contract",
 ]
 
 
@@ -61,6 +62,9 @@ class IncidentSnapshot:
     lot_id: str
     chamber_id: str
     members: tuple[IncidentAlarmEvent, ...]
+    r03_member_wafer_refs: tuple[tuple[str, str], ...] = ()
+    r03_member_alarm_refs: tuple[AlarmRef, ...] = ()
+    r03_contract_checked: bool = False
 
 
 #: incident snapshot과 C-5.3 pending batch가 공유하는 **유일한 resolved SELECT**.
@@ -141,6 +145,17 @@ _SNAPSHOT = text(
                 OR raw_chamber_id IS DISTINCT FROM canonical_chamber_id
             ))
                             AS drift_count,
+        (SELECT count(*) FROM r03_alarm_history AS r03
+          WHERE r03.lot_id = s.lot_id AND r03.chamber_id = s.chamber_id)
+                            AS r03_count,
+        (SELECT r03.member_wafer_refs FROM r03_alarm_history AS r03
+          WHERE r03.lot_id = s.lot_id AND r03.chamber_id = s.chamber_id
+          ORDER BY r03.alarm_id LIMIT 1)
+                            AS r03_member_wafer_refs,
+        (SELECT r03.member_alarm_refs FROM r03_alarm_history AS r03
+          WHERE r03.lot_id = s.lot_id AND r03.chamber_id = s.chamber_id
+          ORDER BY r03.alarm_id LIMIT 1)
+                            AS r03_member_alarm_refs,
         m.source            AS member_source,
         m.alarm_id          AS member_alarm_id,
         m.occurred_at       AS member_occurred_at,
@@ -160,6 +175,47 @@ _REQUESTED_MISSING: Final = "ALARM_NOT_FOUND"
 _REQUESTED_AMBIGUOUS: Final = "REQUESTED_ALARM_AMBIGUOUS"
 _OWNER_UNRESOLVED: Final = "ALARM_OWNER_UNRESOLVED"
 _KEY_MISMATCH: Final = "INCIDENT_KEY_MISMATCH"
+
+
+def parse_r03_member_contract(
+    raw_wafers: object,
+    raw_alarms: object,
+) -> tuple[tuple[tuple[str, str], ...], tuple[AlarmRef, ...]]:
+    """final R03의 persisted 3 WAFER·9 TRACE AlarmRef를 exact 검증한다."""
+
+    if not isinstance(raw_wafers, list) or not isinstance(raw_alarms, list):
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    if len(raw_wafers) != 3 or len(raw_alarms) != 9:
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    wafer_refs: list[tuple[str, str]] = []
+    alarm_refs: list[AlarmRef] = []
+    try:
+        for item in raw_wafers:
+            if not isinstance(item, dict) or set(item) != {
+                "lot_hist_id",
+                "wafer_id",
+            }:
+                raise ValueError("R03_WAFER_REF_INVALID")
+            lot_hist_id = item["lot_hist_id"]
+            wafer_id = item["wafer_id"]
+            if (
+                not isinstance(lot_hist_id, str)
+                or not lot_hist_id.strip()
+                or not isinstance(wafer_id, str)
+                or not wafer_id.strip()
+            ):
+                raise ValueError("R03_WAFER_REF_INVALID")
+            wafer_refs.append((lot_hist_id, wafer_id))
+        alarm_refs = [AlarmRef.model_validate(item) for item in raw_alarms]
+    except (TypeError, ValueError) as exc:
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH") from exc
+    if (
+        len(set(wafer_refs)) != 3
+        or len({item.to_token() for item in alarm_refs}) != 9
+        or any(item.source is not AlarmSource.TRACE for item in alarm_refs)
+    ):
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    return tuple(wafer_refs), tuple(alarm_refs)
 
 
 def fetch_incident_snapshot(
@@ -197,10 +253,24 @@ def fetch_incident_snapshot(
         # R03만 raw key와 owner key가 갈릴 수 있다. canonical로 조용히 덮지 않는다.
         raise RepositoryContractError(_KEY_MISMATCH)
 
+    r03_contract_checked = hasattr(head, "r03_count")
+    r03_count = int(getattr(head, "r03_count", 0))
+    if r03_count > 1:
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    wafer_refs: tuple[tuple[str, str], ...] = ()
+    alarm_refs: tuple[AlarmRef, ...] = ()
+    if r03_count == 1:
+        raw_wafers = getattr(head, "r03_member_wafer_refs", None)
+        raw_alarms = getattr(head, "r03_member_alarm_refs", None)
+        wafer_refs, alarm_refs = parse_r03_member_contract(raw_wafers, raw_alarms)
+
     return IncidentSnapshot(
         lot_id=head.lot_id,
         chamber_id=head.chamber_id,
         members=tuple(_member(row) for row in rows if row.member_alarm_id is not None),
+        r03_member_wafer_refs=wafer_refs,
+        r03_member_alarm_refs=alarm_refs,
+        r03_contract_checked=r03_contract_checked,
     )
 
 

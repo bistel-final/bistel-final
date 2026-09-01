@@ -32,6 +32,12 @@
     "AgentAskRequest": {
       "additional_properties": false,
       "fields": {
+        "agent_run_id": {
+          "min_length": 1,
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "question": {
           "max_length": 1000,
           "min_length": 1,
@@ -157,6 +163,39 @@
           "nullable": false,
           "ref": "AlarmRef",
           "required": true
+        }
+      },
+      "type": "object"
+    },
+    "AgentRunEvidence": {
+      "additional_properties": false,
+      "fields": {
+        "excerpt": {
+          "max_length": 4000,
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "source_id": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "title": {
+          "min_length": 1,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "AGENT_RUN"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
         }
       },
       "type": "object"
@@ -1292,6 +1331,7 @@
       "discriminator": "type",
       "type": "discriminated_union",
       "variants": {
+        "AGENT_RUN": "AgentRunEvidence",
         "ALARM": "AlarmEvidence",
         "DOCUMENT": "DocumentEvidence",
         "GRAPH": "GraphEvidence",
@@ -2347,6 +2387,10 @@
       "responses": {
         "200": {
           "schema_ref": "AgentAskResponse",
+          "shape": "object"
+        },
+        "404": {
+          "schema_ref": "ErrorResponse",
           "shape": "object"
         },
         "422": {

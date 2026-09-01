@@ -25,7 +25,7 @@
 | 500 | 예상하지 못한 서버 오류 |
 | 503 | 외부 의존성 준비 실패 |
 
-## 3. API inventory — 35개
+## 3. API inventory — 36개
 
 | # | 구분 | 담당 | Method | Path | 요약 | 계약 |
 |---:|---|---|---|---|---|---|
@@ -49,21 +49,22 @@
 | 18 | 확장 | B | GET | `/documents/{document_id}` | 문서 상세 | semantic |
 | 19 | 실행필수 | C | POST | `/agent/runs` | Agent 분석 시작 | semantic |
 | 20 | 확장 | C | GET | `/agent/runs/{run_id}` | Agent 실행 상세 | semantic |
-| 21 | 확장 | C | POST | `/agent/runs/{run_id}/retry` | 실패 실행 재시도 | inventory |
-| 22 | 확장 | C | GET | `/agent/runs/paged` | 페이지 실행 이력 | inventory |
-| 23 | 확장 | C | GET | `/approvals/paged` | 페이지 승인 이력 | inventory |
-| 24 | 확장 | C | GET | `/actions` | action 목록 | semantic |
-| 25 | 확장 | C | GET | `/actions/{action_id}` | action·delivery 상세 | semantic |
-| 26 | 확장 | C | POST | `/actions/{action_id}/deliveries/{channel}/retry` | 실패 channel 재전송 | inventory |
-| 27 | 내부 | C | POST | `/internal/actions/{action_id}/delivery` | delivery 상태 write-back | semantic |
-| 28 | 팀필수 | D | POST | `/analytics/query` | 자연어 Text2SQL | semantic |
-| 29 | 확장 | D | POST | `/analytics/graph-query` | 자연어 Graph 질의 | semantic |
-| 30 | 팀필수 | D | POST | `/analytics/validate` | SQL 실행 없는 검증 | semantic |
-| 31 | 팀필수 | D | GET | `/analytics/history` | 질의 이력·재실행 원본 | semantic |
-| 32 | 팀필수 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | semantic |
-| 33 | 팀필수 | D | GET | `/audit-logs/paged` | 전역 페이지 감사 조회 | semantic |
-| 34 | 운영 | Common | GET | `/health` | process liveness | semantic |
-| 35 | 운영 | Common | GET | `/health/ready` | 통합 readiness | semantic |
+| 21 | 팀필수 | C | GET | `/agent/evaluations` | Agent 합성 Fault 평가·Golden flow 7단 요약 조회 | semantic |
+| 22 | 확장 | C | POST | `/agent/runs/{run_id}/retry` | 실패 실행 재시도 | inventory |
+| 23 | 확장 | C | GET | `/agent/runs/paged` | 페이지 실행 이력 | inventory |
+| 24 | 확장 | C | GET | `/approvals/paged` | 페이지 승인 이력 | inventory |
+| 25 | 확장 | C | GET | `/actions` | action 목록 | semantic |
+| 26 | 확장 | C | GET | `/actions/{action_id}` | action·delivery 상세 | semantic |
+| 27 | 확장 | C | POST | `/actions/{action_id}/deliveries/{channel}/retry` | 실패 channel 재전송 | inventory |
+| 28 | 내부 | C | POST | `/internal/actions/{action_id}/delivery` | delivery 상태 write-back | semantic |
+| 29 | 팀필수 | D | POST | `/analytics/query` | 자연어 Text2SQL | semantic |
+| 30 | 확장 | D | POST | `/analytics/graph-query` | 자연어 Graph 질의 | semantic |
+| 31 | 팀필수 | D | POST | `/analytics/validate` | SQL 실행 없는 검증 | semantic |
+| 32 | 팀필수 | D | GET | `/analytics/history` | 질의 이력·재실행 원본 | semantic |
+| 33 | 팀필수 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | semantic |
+| 34 | 팀필수 | D | GET | `/audit-logs/paged` | 전역 페이지 감사 조회 | semantic |
+| 35 | 운영 | Common | GET | `/health` | process liveness | semantic |
+| 36 | 운영 | Common | GET | `/health/ready` | 통합 readiness | semantic |
 
 ## 4. Operation 상세
 
@@ -1635,11 +1636,11 @@
 ### 4.7 `POST /agent/ask`
 
 - 구분/담당: 필수 / C
-- 요청: body: question 1..1000
+- 요청: body: question 1..1000; agent_run_id 선택
 - 성공 응답: AgentAskResponse
-- 기타 상태: 422,503
+- 기타 상태: 404,422,503
 - 정렬·제약: 읽기 전용
-- 호환·경계: tools·evidence_items·limitations와 predicted_fault_code·confidence·recommended_action은 항상 존재(후 3개 required-nullable); Chat Tool alias는 name/result만; fault_code 없음; DOCUMENT document_id·chunk_id 필수/section required-nullable; GRAPH relation_id·graph_revision 필수; METROLOGY alarm_result 미노출; evidence·limit·doc_id는 deprecated alias; action·approval write 없음
+- 호환·경계: agent_run_id 지정 시 같은 Runtime DB의 저장된 종합 진단·citation 우선; 식별자 충돌 422; evidence type AGENT_RUN 추가; tools·evidence_items·limitations와 predicted_fault_code·confidence·recommended_action은 항상 존재(후 3개 required-nullable); Chat Tool alias는 name/result만; fault_code 없음; DOCUMENT document_id·chunk_id 필수/section required-nullable; GRAPH relation_id·graph_revision 필수; METROLOGY alarm_result 미노출; evidence·limit·doc_id는 deprecated alias; action·approval write 없음
 - 계약 규칙:
   - fault_code and ground_truth_fault_code are forbidden
   - metrology.alarm_result is forbidden
@@ -1650,6 +1651,14 @@
     "body": {
       "additional_properties": false,
       "fields": {
+        "agent_run_id": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "min_length": 1,
+            "type": "string"
+          }
+        },
         "question": {
           "nullable": false,
           "required": true,
@@ -1737,6 +1746,44 @@
                 "discriminator": "type",
                 "type": "discriminated_union",
                 "variants": {
+                  "AGENT_RUN": {
+                    "additional_properties": false,
+                    "fields": {
+                      "excerpt": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 4000,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "source_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "title": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "type": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
                   "ALARM": {
                     "additional_properties": false,
                     "fields": {
@@ -2079,53 +2126,140 @@
       },
       "shape": "object"
     },
-    "422": {
+    "404": {
       "schema": {
-        "additional_properties": true,
+        "additional_properties": false,
         "fields": {
-          "detail": {
+          "code": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
+              "type": "string"
+            }
+          },
+          "details": {
             "nullable": false,
             "required": false,
             "schema": {
-              "items": {
-                "additional_properties": true,
-                "fields": {
-                  "loc": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "items": {
-                        "type": "union",
-                        "variants": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "integer"
-                          }
-                        ]
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "msg": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "type": "string"
-                    }
-                  },
-                  "type": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "type": "object"
-              },
-              "type": "array"
+              "additional_properties": true,
+              "fields": {},
+              "type": "object"
+            }
+          },
+          "message": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "422": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "code": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
+              "type": "string"
+            }
+          },
+          "details": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "additional_properties": true,
+              "fields": {},
+              "type": "object"
+            }
+          },
+          "message": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    },
+    "503": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "code": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "APPROVAL_ALREADY_DECIDED",
+                "DEPENDENCY_NOT_READY",
+                "IDEMPOTENCY_CONFLICT",
+                "INCIDENT_ALREADY_PROCESSED",
+                "INCIDENT_ALREADY_RUNNING",
+                "INTERNAL_ERROR",
+                "LEGACY_APPROVAL_NOT_LINKED",
+                "LLM_NOT_READY",
+                "MODEL_NOT_READY",
+                "POLICY_REJECTED",
+                "RESOURCE_NOT_FOUND",
+                "UNAUTHORIZED",
+                "VALIDATION_ERROR"
+              ],
+              "type": "string"
+            }
+          },
+          "details": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "additional_properties": true,
+              "fields": {},
+              "type": "object"
+            }
+          },
+          "message": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         },
@@ -5392,7 +5526,7 @@
 - 성공 응답: AgentRunDetailResponse
 - 기타 상태: 404,422,503
 - 정렬·제약: 단건
-- 호환·경계: 근거 ID provenance
+- 호환·경계: 근거 ID provenance; diagnosis·evidence_assessment·impact_scope·similar_incidents·post_action_observation 5블록 필수, 구버전은 명시적 Empty
 - 계약 규칙:
   - 없음
 
@@ -5479,6 +5613,22 @@
                               "EMAIL",
                               "MES"
                             ],
+                            "type": "string"
+                          }
+                        },
+                        "completed_at": {
+                          "nullable": true,
+                          "required": true,
+                          "schema": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "started_at": {
+                          "nullable": true,
+                          "required": true,
+                          "schema": {
+                            "format": "date-time",
                             "type": "string"
                           }
                         },
@@ -5699,6 +5849,217 @@
                 "type": "object"
               },
               "type": "array"
+            }
+          },
+          "diagnosis": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "alternative_hypotheses": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "lower_rank_reason": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "max_length": 1000,
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "summary": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "max_length": 1000,
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "cause_summary": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 2000,
+                    "type": "string"
+                  }
+                },
+                "confidence": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                },
+                "diagnostic_coverage": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "evidence_synthesis": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 2000,
+                    "type": "string"
+                  }
+                },
+                "limitations": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "observations": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "predicted_fault_code": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "FOC",
+                      "MFD",
+                      "OTH",
+                      "RFM",
+                      "TMD"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "reason_code": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "pattern": "^[A-Z0-9_]+$",
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "AVAILABLE",
+                      "EMPTY"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "verification_steps": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "evidence_assessment": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "available_sources": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "enum": [
+                        "FDC",
+                        "GRAPH",
+                        "POSTGRES_ROUTE",
+                        "RAG"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "conflicting_source_ids": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "missing_sources": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "enum": [
+                        "FDC",
+                        "GRAPH",
+                        "POSTGRES_ROUTE",
+                        "RAG"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "reason_codes": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CONFLICT",
+                      "EMPTY",
+                      "PARTIAL",
+                      "SUFFICIENT"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
             }
           },
           "evidence_items": {
@@ -5996,6 +6357,137 @@
               "type": "null"
             }
           },
+          "impact_scope": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "check_required": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "kind": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "CHAMBER",
+                              "LOT",
+                              "PARAMETER",
+                              "PROCESS_STEP",
+                              "SIBLING_CHAMBER",
+                              "WAFER"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "relation": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "type": "string"
+                          }
+                        },
+                        "source_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "direct": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "kind": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "CHAMBER",
+                              "LOT",
+                              "PARAMETER",
+                              "PROCESS_STEP",
+                              "SIBLING_CHAMBER",
+                              "WAFER"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "relation": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "type": "string"
+                          }
+                        },
+                        "source_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "graph_conflict": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "reason_code": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "pattern": "^[A-Z0-9_]+$",
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "AVAILABLE",
+                      "EMPTY"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "summary": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 2000,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
           "latency_ms": {
             "nullable": false,
             "required": true,
@@ -6012,6 +6504,32 @@
               "type": "string"
             }
           },
+          "post_action_observation": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "message": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE_STATIC_DATASET",
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
           "predicted_fault_code": {
             "nullable": true,
             "required": true,
@@ -6026,6 +6544,151 @@
               "type": "string"
             }
           },
+          "prediction": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "cause_summary": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 2000,
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "confidence": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                },
+                "generated_at": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "input_tokens": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "llm_model": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "output_tokens": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "predicted_fault_code": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "FOC",
+                      "MFD",
+                      "OTH",
+                      "RFM",
+                      "TMD"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "prompt_version": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "supporting_alarms": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "alarm_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "source": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "R03",
+                              "SUMMARY",
+                              "TRACE"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "supporting_chunk_ids": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "min_length": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "supporting_relation_ids": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "min_length": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "uncertainty": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 1000,
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
           "recommended_action": {
             "nullable": true,
             "required": true,
@@ -6036,6 +6699,124 @@
                 "WARNING"
               ],
               "type": "string"
+            }
+          },
+          "similar_incidents": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "items": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "agent_run_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "chamber_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "lot_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "parameter_jaccard": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "type": "number"
+                          }
+                        },
+                        "predicted_fault_code": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "FOC",
+                              "MFD",
+                              "OTH",
+                              "RFM",
+                              "TMD"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "recommended_action": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "EQP_HOLD",
+                              "MONITORING",
+                              "WARNING"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "score": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "maximum": 100.0,
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "label": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "고정 시연 데이터 내 비교 결과",
+                    "type": "string"
+                  }
+                },
+                "reason_code": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "pattern": "^[A-Z0-9_]+$",
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "AVAILABLE",
+                      "EMPTY"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
             }
           },
           "status": {
@@ -6262,7 +7043,570 @@
 }
 ```
 
-### 4.21 `POST /agent/runs/{run_id}/retry`
+### 4.21 `GET /agent/evaluations`
+
+- 구분/담당: 팀필수 / C
+- 요청: 없음
+- 성공 응답: AgentEvaluationResponse
+- 기타 상태: -
+- 정렬·제약: read-only immutable artifact projection
+- 호환·경계: 두 artifact는 독립 Empty 상태; aggregate allowlist만 공개; raw label·hash·경로 비노출
+- 계약 규칙:
+  - fault_5class와 golden_flow는 서로 독립적인 Empty 상태다
+  - 원본 artifact 경로·hash·incident label은 공개하지 않는다
+
+```json
+{
+  "request": {
+    "body": null,
+    "header": {},
+    "path": {},
+    "query": {}
+  },
+  "responses": {
+    "200": {
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "fault_5class": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "classification": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "accuracy": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "denominator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "numerator": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "minimum": 0.0,
+                                "type": "integer"
+                              }
+                            },
+                            "rate": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "by_class": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": {
+                            "additional_properties": false,
+                            "fields": {
+                              "f1": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "maximum": 1.0,
+                                  "minimum": 0.0,
+                                  "type": "number"
+                                }
+                              },
+                              "false_negative": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "false_positive": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "precision": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "maximum": 1.0,
+                                  "minimum": 0.0,
+                                  "type": "number"
+                                }
+                              },
+                              "recall": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "maximum": 1.0,
+                                  "minimum": 0.0,
+                                  "type": "number"
+                                }
+                              },
+                              "support": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "true_positive": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "fields": {},
+                          "type": "object"
+                        }
+                      },
+                      "macro_f1_5class": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      },
+                      "observed_class_macro_f1": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      },
+                      "population_count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "unclassified_count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "evidence_valid_run": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "denominator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "numerator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "rate": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "exclusions": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "count": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        },
+                        "meaning": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "reason": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "AMBIGUOUS_LABEL",
+                              "NO_INJECTED_FAULT"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "hard_gate_passed": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "boolean"
+                  }
+                },
+                "hard_gate_reasons": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "label_source": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "metrology_observed_count": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "metrology_total_lot_hist_count": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "production_ground_truth_available": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "boolean"
+                  }
+                },
+                "production_performance_disclaimer": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "public_fault_ground_truth_available": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "boolean"
+                  }
+                },
+                "rule_action_agreement": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "denominator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "numerator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "rate": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "structured_prediction": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "denominator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "numerator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "rate": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "usage_scope": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "versions": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "dataset_epoch": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "model_version": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "policy_version": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      },
+                      "prompt_version": {
+                        "nullable": true,
+                        "required": true,
+                        "schema": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "fault_5class_empty_reason": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "enum": [
+                "CONTRACT_VIOLATION",
+                "NOT_CONFIGURED",
+                "NOT_FOUND"
+              ],
+              "type": "string"
+            }
+          },
+          "golden_flow": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "dataset_epoch": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "phases": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "metrics": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "additional_properties": true,
+                            "fields": {},
+                            "type": "object"
+                          }
+                        },
+                        "phase": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "BATCH_BASELINE",
+                              "DECISIONS",
+                              "MANUAL_RETRY",
+                              "PREFLIGHT",
+                              "PRE_APPROVAL",
+                              "SECOND_BATCH",
+                              "UNKNOWN"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "reasons": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "status": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "EVIDENCE_INCOMPLETE",
+                              "FAIL",
+                              "PASS"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "status": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "EVIDENCE_INCOMPLETE",
+                      "FAIL",
+                      "PASS"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "golden_flow_empty_reason": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "enum": [
+                "CONTRACT_VIOLATION",
+                "NOT_CONFIGURED",
+                "NOT_FOUND"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "shape": "object"
+    }
+  }
+}
+```
+
+### 4.22 `POST /agent/runs/{run_id}/retry`
 
 - 구분/담당: 확장 / C
 - 요청: path: run_id
@@ -6275,7 +7619,7 @@
 
 > deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
 
-### 4.22 `GET /agent/runs/paged`
+### 4.23 `GET /agent/runs/paged`
 
 - 구분/담당: 확장 / C
 - 요청: query: page,size,filters
@@ -6288,7 +7632,7 @@
 
 > deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
 
-### 4.23 `GET /approvals/paged`
+### 4.24 `GET /approvals/paged`
 
 - 구분/담당: 확장 / C
 - 요청: query: page,size,filters
@@ -6301,7 +7645,7 @@
 
 > deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
 
-### 4.24 `GET /actions`
+### 4.25 `GET /actions`
 
 - 구분/담당: 확장 / C
 - 요청: query filters
@@ -6596,7 +7940,7 @@
 }
 ```
 
-### 4.25 `GET /actions/{action_id}`
+### 4.26 `GET /actions/{action_id}`
 
 - 구분/담당: 확장 / C
 - 요청: path: action_id
@@ -6947,7 +8291,7 @@
 }
 ```
 
-### 4.26 `POST /actions/{action_id}/deliveries/{channel}/retry`
+### 4.27 `POST /actions/{action_id}/deliveries/{channel}/retry`
 
 - 구분/담당: 확장 / C
 - 요청: path: action_id; channel=EMAIL|MES
@@ -6960,7 +8304,7 @@
 
 > deferred inventory: semantic schema는 owner 구현 Task에서 비준한다.
 
-### 4.27 `POST /internal/actions/{action_id}/delivery`
+### 4.28 `POST /internal/actions/{action_id}/delivery`
 
 - 구분/담당: 내부 / C
 - 요청: HMAC timestamp/signature; body: event_id,channel=EMAIL|MES_MOCK,status=SENT|FAILED,provider_message_id,request_hash,completed_at,error_code
@@ -7212,7 +8556,7 @@
 }
 ```
 
-### 4.28 `POST /analytics/query`
+### 4.29 `POST /analytics/query`
 
 - 구분/담당: 팀필수 / D
 - 요청: body: question 1..1000
@@ -7582,7 +8926,7 @@
 }
 ```
 
-### 4.29 `POST /analytics/graph-query`
+### 4.30 `POST /analytics/graph-query`
 
 - 구분/담당: 확장 / D
 - 요청: body: question 1..1000
@@ -7763,7 +9107,7 @@
 }
 ```
 
-### 4.30 `POST /analytics/validate`
+### 4.31 `POST /analytics/validate`
 
 - 구분/담당: 팀필수 / D
 - 요청: body: sql 1..20000
@@ -7921,7 +9265,7 @@
 }
 ```
 
-### 4.31 `GET /analytics/history`
+### 4.32 `GET /analytics/history`
 
 - 구분/담당: 팀필수 / D
 - 요청: query: page,size,filters
@@ -8183,7 +9527,7 @@
 }
 ```
 
-### 4.32 `GET /analytics/evaluations`
+### 4.33 `GET /analytics/evaluations`
 
 - 구분/담당: 팀필수 / D
 - 요청: query: latest,page,size
@@ -8588,7 +9932,7 @@
 }
 ```
 
-### 4.33 `GET /audit-logs/paged`
+### 4.34 `GET /audit-logs/paged`
 
 - 구분/담당: 팀필수 / D
 - 요청: query: page,size,filters
@@ -8898,7 +10242,7 @@
 }
 ```
 
-### 4.34 `GET /health`
+### 4.35 `GET /health`
 
 - 구분/담당: 운영 / Common
 - 요청: 없음
@@ -8938,7 +10282,7 @@
 }
 ```
 
-### 4.35 `GET /health/ready`
+### 4.36 `GET /health/ready`
 
 - 구분/담당: 운영 / Common
 - 요청: 없음
@@ -10062,6 +11406,14 @@
 {
   "additional_properties": false,
   "fields": {
+    "agent_run_id": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
     "question": {
       "nullable": false,
       "required": true,
@@ -10505,7 +11857,693 @@
 }
 ```
 
-### 5.9 `AgentRunAccepted`
+### 5.9 `AgentEvaluationResponse`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "fault_5class": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "classification": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "accuracy": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "denominator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "numerator": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "rate": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 1.0,
+                          "minimum": 0.0,
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "by_class": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": {
+                      "additional_properties": false,
+                      "fields": {
+                        "f1": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "type": "number"
+                          }
+                        },
+                        "false_negative": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        },
+                        "false_positive": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        },
+                        "precision": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "type": "number"
+                          }
+                        },
+                        "recall": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "type": "number"
+                          }
+                        },
+                        "support": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        },
+                        "true_positive": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "fields": {},
+                    "type": "object"
+                  }
+                },
+                "macro_f1_5class": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                },
+                "observed_class_macro_f1": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                },
+                "population_count": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "unclassified_count": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "evidence_valid_run": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "denominator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "numerator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "rate": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "exclusions": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "count": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "meaning": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "reason": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "AMBIGUOUS_LABEL",
+                        "NO_INJECTED_FAULT"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "hard_gate_passed": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "hard_gate_reasons": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "label_source": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "metrology_observed_count": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "metrology_total_lot_hist_count": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "production_ground_truth_available": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "production_performance_disclaimer": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "public_fault_ground_truth_available": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "rule_action_agreement": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "denominator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "numerator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "rate": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "structured_prediction": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "denominator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "numerator": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "rate": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "usage_scope": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "versions": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "dataset_epoch": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "model_version": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "policy_version": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "prompt_version": {
+                  "nullable": true,
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "fault_5class_empty_reason": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "enum": [
+          "CONTRACT_VIOLATION",
+          "NOT_CONFIGURED",
+          "NOT_FOUND"
+        ],
+        "type": "string"
+      }
+    },
+    "golden_flow": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "dataset_epoch": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "phases": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "metrics": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "additional_properties": true,
+                      "fields": {},
+                      "type": "object"
+                    }
+                  },
+                  "phase": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "BATCH_BASELINE",
+                        "DECISIONS",
+                        "MANUAL_RETRY",
+                        "PREFLIGHT",
+                        "PRE_APPROVAL",
+                        "SECOND_BATCH",
+                        "UNKNOWN"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "reasons": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "status": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "EVIDENCE_INCOMPLETE",
+                        "FAIL",
+                        "PASS"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "EVIDENCE_INCOMPLETE",
+                "FAIL",
+                "PASS"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "golden_flow_empty_reason": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "enum": [
+          "CONTRACT_VIOLATION",
+          "NOT_CONFIGURED",
+          "NOT_FOUND"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.10 `AgentPredictionDetailItem`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "cause_summary": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "max_length": 2000,
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 1.0,
+        "minimum": 0.0,
+        "type": "number"
+      }
+    },
+    "generated_at": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "input_tokens": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    },
+    "llm_model": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "output_tokens": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    },
+    "predicted_fault_code": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "FOC",
+          "MFD",
+          "OTH",
+          "RFM",
+          "TMD"
+        ],
+        "type": "string"
+      }
+    },
+    "prompt_version": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "supporting_alarms": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "alarm_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "source": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "R03",
+                  "SUMMARY",
+                  "TRACE"
+                ],
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "supporting_chunk_ids": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "min_length": 1,
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "supporting_relation_ids": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "min_length": 1,
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "uncertainty": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "max_length": 1000,
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.11 `AgentRunAccepted`
 
 ```json
 {
@@ -10564,7 +12602,7 @@
 }
 ```
 
-### 5.10 `AgentRunAcceptedResponse`
+### 5.12 `AgentRunAcceptedResponse`
 
 ```json
 {
@@ -10620,7 +12658,7 @@
 }
 ```
 
-### 5.11 `AgentRunActionItem`
+### 5.13 `AgentRunActionItem`
 
 ```json
 {
@@ -10684,6 +12722,22 @@
                 "type": "string"
               }
             },
+            "completed_at": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "started_at": {
+              "nullable": true,
+              "required": true,
+              "schema": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
             "status": {
               "nullable": false,
               "required": true,
@@ -10719,7 +12773,7 @@
 }
 ```
 
-### 5.12 `AgentRunApprovalItem`
+### 5.14 `AgentRunApprovalItem`
 
 ```json
 {
@@ -10788,7 +12842,50 @@
 }
 ```
 
-### 5.13 `AgentRunCreateRequest`
+### 5.15 `AgentRunAskEvidence`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "excerpt": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "max_length": 4000,
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "source_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "title": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "type": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.16 `AgentRunCreateRequest`
 
 ```json
 {
@@ -10829,7 +12926,7 @@
 }
 ```
 
-### 5.14 `AgentRunDetailResponse`
+### 5.17 `AgentRunDetailResponse`
 
 ```json
 {
@@ -10896,6 +12993,22 @@
                         "EMAIL",
                         "MES"
                       ],
+                      "type": "string"
+                    }
+                  },
+                  "completed_at": {
+                    "nullable": true,
+                    "required": true,
+                    "schema": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "started_at": {
+                    "nullable": true,
+                    "required": true,
+                    "schema": {
+                      "format": "date-time",
                       "type": "string"
                     }
                   },
@@ -11116,6 +13229,217 @@
           "type": "object"
         },
         "type": "array"
+      }
+    },
+    "diagnosis": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "alternative_hypotheses": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "lower_rank_reason": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "max_length": 1000,
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "summary": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "max_length": 1000,
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "cause_summary": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "max_length": 2000,
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            }
+          },
+          "diagnostic_coverage": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          "evidence_synthesis": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "max_length": 2000,
+              "type": "string"
+            }
+          },
+          "limitations": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "observations": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "predicted_fault_code": {
+            "nullable": true,
+            "required": true,
+            "schema": {
+              "enum": [
+                "FOC",
+                "MFD",
+                "OTH",
+                "RFM",
+                "TMD"
+              ],
+              "type": "string"
+            }
+          },
+          "reason_code": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Z0-9_]+$",
+              "type": "string"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "AVAILABLE",
+                "EMPTY"
+              ],
+              "type": "string"
+            }
+          },
+          "verification_steps": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "evidence_assessment": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "available_sources": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "enum": [
+                  "FDC",
+                  "GRAPH",
+                  "POSTGRES_ROUTE",
+                  "RAG"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "conflicting_source_ids": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "missing_sources": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "enum": [
+                  "FDC",
+                  "GRAPH",
+                  "POSTGRES_ROUTE",
+                  "RAG"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "reason_codes": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "CONFLICT",
+                "EMPTY",
+                "PARTIAL",
+                "SUFFICIENT"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
       }
     },
     "evidence_items": {
@@ -11413,6 +13737,137 @@
         "type": "null"
       }
     },
+    "impact_scope": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "check_required": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "kind": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "CHAMBER",
+                        "LOT",
+                        "PARAMETER",
+                        "PROCESS_STEP",
+                        "SIBLING_CHAMBER",
+                        "WAFER"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "relation": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "source_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "direct": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "kind": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "CHAMBER",
+                        "LOT",
+                        "PARAMETER",
+                        "PROCESS_STEP",
+                        "SIBLING_CHAMBER",
+                        "WAFER"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "relation": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "source_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "graph_conflict": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "reason_code": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Z0-9_]+$",
+              "type": "string"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "AVAILABLE",
+                "EMPTY"
+              ],
+              "type": "string"
+            }
+          },
+          "summary": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "max_length": 2000,
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
     "latency_ms": {
       "nullable": false,
       "required": true,
@@ -11429,6 +13884,32 @@
         "type": "string"
       }
     },
+    "post_action_observation": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "message": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+              "type": "string"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE_STATIC_DATASET",
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
     "predicted_fault_code": {
       "nullable": true,
       "required": true,
@@ -11443,6 +13924,151 @@
         "type": "string"
       }
     },
+    "prediction": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "cause_summary": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "max_length": 2000,
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            }
+          },
+          "generated_at": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "input_tokens": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "llm_model": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "output_tokens": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "predicted_fault_code": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "FOC",
+                "MFD",
+                "OTH",
+                "RFM",
+                "TMD"
+              ],
+              "type": "string"
+            }
+          },
+          "prompt_version": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "min_length": 1,
+              "type": "string"
+            }
+          },
+          "supporting_alarms": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "alarm_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "source": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "R03",
+                        "SUMMARY",
+                        "TRACE"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "supporting_chunk_ids": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "min_length": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "supporting_relation_ids": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "min_length": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "uncertainty": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "max_length": 1000,
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
     "recommended_action": {
       "nullable": true,
       "required": true,
@@ -11453,6 +14079,124 @@
           "WARNING"
         ],
         "type": "string"
+      }
+    },
+    "similar_incidents": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "items": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "agent_run_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "chamber_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "lot_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "parameter_jaccard": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "number"
+                    }
+                  },
+                  "predicted_fault_code": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "FOC",
+                        "MFD",
+                        "OTH",
+                        "RFM",
+                        "TMD"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "recommended_action": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "EQP_HOLD",
+                        "MONITORING",
+                        "WARNING"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "score": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "maximum": 100.0,
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "label": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "고정 시연 데이터 내 비교 결과",
+              "type": "string"
+            }
+          },
+          "reason_code": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Z0-9_]+$",
+              "type": "string"
+            }
+          },
+          "status": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "AVAILABLE",
+                "EMPTY"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
       }
     },
     "status": {
@@ -11534,7 +14278,7 @@
 }
 ```
 
-### 5.15 `AgentRunItem`
+### 5.18 `AgentRunItem`
 
 ```json
 {
@@ -11806,7 +14550,7 @@
 }
 ```
 
-### 5.16 `AlarmAskEvidence`
+### 5.19 `AlarmAskEvidence`
 
 ```json
 {
@@ -11848,7 +14592,7 @@
 }
 ```
 
-### 5.17 `AlarmEvidence`
+### 5.20 `AlarmEvidence`
 
 ```json
 {
@@ -11892,7 +14636,7 @@
 }
 ```
 
-### 5.18 `AlarmItem`
+### 5.21 `AlarmItem`
 
 ```json
 {
@@ -12210,7 +14954,7 @@
 }
 ```
 
-### 5.19 `AlarmRef`
+### 5.22 `AlarmRef`
 
 ```json
 {
@@ -12241,7 +14985,7 @@
 }
 ```
 
-### 5.20 `AlarmSource`
+### 5.23 `AlarmSource`
 
 ```json
 {
@@ -12254,7 +14998,7 @@
 }
 ```
 
-### 5.21 `AnalysisQueryRequest`
+### 5.24 `AnalysisQueryRequest`
 
 ```json
 {
@@ -12274,7 +15018,7 @@
 }
 ```
 
-### 5.22 `AnalysisQueryResponse`
+### 5.25 `AnalysisQueryResponse`
 
 ```json
 {
@@ -12554,7 +15298,7 @@
 }
 ```
 
-### 5.23 `ApprovalDecisionRequest`
+### 5.26 `ApprovalDecisionRequest`
 
 ```json
 {
@@ -12593,7 +15337,7 @@
 }
 ```
 
-### 5.24 `ApprovalItem`
+### 5.27 `ApprovalItem`
 
 ```json
 {
@@ -12790,7 +15534,7 @@
 }
 ```
 
-### 5.25 `AskDocumentEvidenceAlias`
+### 5.28 `AskDocumentEvidenceAlias`
 
 ```json
 {
@@ -12832,7 +15576,7 @@
 }
 ```
 
-### 5.26 `AskToolItem`
+### 5.29 `AskToolItem`
 
 ```json
 {
@@ -12887,7 +15631,7 @@
 }
 ```
 
-### 5.27 `AuditLogItem`
+### 5.30 `AuditLogItem`
 
 ```json
 {
@@ -13010,7 +15754,7 @@
 }
 ```
 
-### 5.28 `AuditLogPageResponse`
+### 5.31 `AuditLogPageResponse`
 
 ```json
 {
@@ -13180,7 +15924,7 @@
 }
 ```
 
-### 5.29 `AutoToolCallItem`
+### 5.32 `AutoToolCallItem`
 
 ```json
 {
@@ -13239,7 +15983,7 @@
 }
 ```
 
-### 5.30 `ChamberGraphResponse`
+### 5.33 `ChamberGraphResponse`
 
 ```json
 {
@@ -13467,7 +16211,7 @@
 }
 ```
 
-### 5.31 `ChamberRelationResponse`
+### 5.34 `ChamberRelationResponse`
 
 ```json
 {
@@ -13593,7 +16337,7 @@
 }
 ```
 
-### 5.32 `ChartType`
+### 5.35 `ChartType`
 
 ```json
 {
@@ -13607,7 +16351,7 @@
 }
 ```
 
-### 5.33 `ChatToolCallItem`
+### 5.36 `ChatToolCallItem`
 
 ```json
 {
@@ -13662,7 +16406,7 @@
 }
 ```
 
-### 5.34 `CrossCheck`
+### 5.37 `CrossCheck`
 
 ```json
 {
@@ -13699,7 +16443,7 @@
 }
 ```
 
-### 5.35 `DeliveryCallbackRequest`
+### 5.38 `DeliveryCallbackRequest`
 
 ```json
 {
@@ -13778,7 +16522,7 @@
 }
 ```
 
-### 5.36 `DeliveryChannel`
+### 5.39 `DeliveryChannel`
 
 ```json
 {
@@ -13790,7 +16534,7 @@
 }
 ```
 
-### 5.37 `DeliveryResult`
+### 5.40 `DeliveryResult`
 
 ```json
 {
@@ -13876,7 +16620,7 @@
 }
 ```
 
-### 5.38 `DeliveryStatus`
+### 5.41 `DeliveryStatus`
 
 ```json
 {
@@ -13893,7 +16637,144 @@
 }
 ```
 
-### 5.39 `DocumentAskEvidence`
+### 5.42 `DiagnosisBlock`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "alternative_hypotheses": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "lower_rank_reason": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "max_length": 1000,
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "summary": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "max_length": 1000,
+                "min_length": 1,
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "cause_summary": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 2000,
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "maximum": 1.0,
+        "minimum": 0.0,
+        "type": "number"
+      }
+    },
+    "diagnostic_coverage": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "type": "string"
+      }
+    },
+    "evidence_synthesis": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 2000,
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "observations": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "predicted_fault_code": {
+      "nullable": true,
+      "required": true,
+      "schema": {
+        "enum": [
+          "FOC",
+          "MFD",
+          "OTH",
+          "RFM",
+          "TMD"
+        ],
+        "type": "string"
+      }
+    },
+    "reason_code": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "pattern": "^[A-Z0-9_]+$",
+        "type": "string"
+      }
+    },
+    "status": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "AVAILABLE",
+          "EMPTY"
+        ],
+        "type": "string"
+      }
+    },
+    "verification_steps": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.43 `DocumentAskEvidence`
 
 ```json
 {
@@ -13958,7 +16839,7 @@
 }
 ```
 
-### 5.40 `DocumentChunkItem`
+### 5.44 `DocumentChunkItem`
 
 ```json
 {
@@ -13999,7 +16880,7 @@
 }
 ```
 
-### 5.41 `DocumentDetailResponse`
+### 5.45 `DocumentDetailResponse`
 
 ```json
 {
@@ -14102,7 +16983,7 @@
 }
 ```
 
-### 5.42 `DocumentEvidence`
+### 5.46 `DocumentEvidence`
 
 ```json
 {
@@ -14169,7 +17050,7 @@
 }
 ```
 
-### 5.43 `DocumentHit`
+### 5.47 `DocumentHit`
 
 ```json
 {
@@ -14244,7 +17125,7 @@
 }
 ```
 
-### 5.44 `DocumentSearchRequest`
+### 5.48 `DocumentSearchRequest`
 
 ```json
 {
@@ -14282,7 +17163,7 @@
 }
 ```
 
-### 5.45 `DocumentType`
+### 5.49 `DocumentType`
 
 ```json
 {
@@ -14295,7 +17176,7 @@
 }
 ```
 
-### 5.46 `ErrorCode`
+### 5.50 `ErrorCode`
 
 ```json
 {
@@ -14318,7 +17199,7 @@
 }
 ```
 
-### 5.47 `ErrorResponse`
+### 5.51 `ErrorResponse`
 
 ```json
 {
@@ -14354,7 +17235,7 @@
 }
 ```
 
-### 5.48 `EvaluationListResponse`
+### 5.52 `EvaluationListResponse`
 
 ```json
 {
@@ -14655,7 +17536,83 @@
 }
 ```
 
-### 5.49 `EvidenceItem`
+### 5.53 `EvidenceAssessmentBlock`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "available_sources": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "enum": [
+            "FDC",
+            "GRAPH",
+            "POSTGRES_ROUTE",
+            "RAG"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "conflicting_source_ids": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "missing_sources": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "enum": [
+            "FDC",
+            "GRAPH",
+            "POSTGRES_ROUTE",
+            "RAG"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "reason_codes": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "status": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "CONFLICT",
+          "EMPTY",
+          "PARTIAL",
+          "SUFFICIENT"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.54 `EvidenceItem`
 
 ```json
 {
@@ -14903,7 +17860,7 @@
 }
 ```
 
-### 5.50 `FaultHypothesis`
+### 5.55 `FaultHypothesis`
 
 ```json
 {
@@ -14918,7 +17875,7 @@
 }
 ```
 
-### 5.51 `GraphAskEvidence`
+### 5.56 `GraphAskEvidence`
 
 ```json
 {
@@ -14976,7 +17933,7 @@
 }
 ```
 
-### 5.52 `GraphContext`
+### 5.57 `GraphContext`
 
 ```json
 {
@@ -15060,7 +18017,7 @@
 }
 ```
 
-### 5.53 `GraphEvidence`
+### 5.58 `GraphEvidence`
 
 ```json
 {
@@ -15120,7 +18077,7 @@
 }
 ```
 
-### 5.54 `GraphNode`
+### 5.59 `GraphNode`
 
 ```json
 {
@@ -15179,7 +18136,7 @@
 }
 ```
 
-### 5.55 `GraphQueryRequest`
+### 5.60 `GraphQueryRequest`
 
 ```json
 {
@@ -15199,7 +18156,7 @@
 }
 ```
 
-### 5.56 `GraphQueryResponse`
+### 5.61 `GraphQueryResponse`
 
 ```json
 {
@@ -15290,7 +18247,7 @@
 }
 ```
 
-### 5.57 `GraphRelationship`
+### 5.62 `GraphRelationship`
 
 ```json
 {
@@ -15333,7 +18290,7 @@
 }
 ```
 
-### 5.58 `GroupedMetricResult`
+### 5.63 `GroupedMetricResult`
 
 ```json
 {
@@ -15371,7 +18328,7 @@
 }
 ```
 
-### 5.59 `HTTPValidationError`
+### 5.64 `HTTPValidationError`
 
 ```json
 {
@@ -15427,7 +18384,7 @@
 }
 ```
 
-### 5.60 `HealthResponse`
+### 5.65 `HealthResponse`
 
 ```json
 {
@@ -15448,7 +18405,180 @@
 }
 ```
 
-### 5.61 `MetricPlan`
+### 5.66 `ImpactScopeBlock`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "check_required": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "kind": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "CHAMBER",
+                  "LOT",
+                  "PARAMETER",
+                  "PROCESS_STEP",
+                  "SIBLING_CHAMBER",
+                  "WAFER"
+                ],
+                "type": "string"
+              }
+            },
+            "relation": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "source_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "direct": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "kind": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "CHAMBER",
+                  "LOT",
+                  "PARAMETER",
+                  "PROCESS_STEP",
+                  "SIBLING_CHAMBER",
+                  "WAFER"
+                ],
+                "type": "string"
+              }
+            },
+            "relation": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "source_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "graph_conflict": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": false,
+        "type": "boolean"
+      }
+    },
+    "reason_code": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "pattern": "^[A-Z0-9_]+$",
+        "type": "string"
+      }
+    },
+    "status": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "AVAILABLE",
+          "EMPTY"
+        ],
+        "type": "string"
+      }
+    },
+    "summary": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 2000,
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.67 `ImpactScopeItem`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "kind": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "CHAMBER",
+          "LOT",
+          "PARAMETER",
+          "PROCESS_STEP",
+          "SIBLING_CHAMBER",
+          "WAFER"
+        ],
+        "type": "string"
+      }
+    },
+    "relation": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "type": "string"
+      }
+    },
+    "source_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.68 `MetricPlan`
 
 ```json
 {
@@ -15493,7 +18623,7 @@
 }
 ```
 
-### 5.62 `MetrologyAskEvidence`
+### 5.69 `MetrologyAskEvidence`
 
 ```json
 {
@@ -15535,7 +18665,7 @@
 }
 ```
 
-### 5.63 `MetrologyEvidence`
+### 5.70 `MetrologyEvidence`
 
 ```json
 {
@@ -15582,7 +18712,7 @@
 }
 ```
 
-### 5.64 `NlQueryHistoryResponse`
+### 5.71 `NlQueryHistoryResponse`
 
 ```json
 {
@@ -15718,7 +18848,7 @@
 }
 ```
 
-### 5.65 `NlQueryLogItem`
+### 5.72 `NlQueryLogItem`
 
 ```json
 {
@@ -15816,7 +18946,7 @@
 }
 ```
 
-### 5.66 `NlQueryOutcome`
+### 5.73 `NlQueryOutcome`
 
 ```json
 {
@@ -15830,7 +18960,7 @@
 }
 ```
 
-### 5.67 `ParameterItem`
+### 5.74 `ParameterItem`
 
 ```json
 {
@@ -15960,7 +19090,34 @@
 }
 ```
 
-### 5.68 `PublicAgentRunItem`
+### 5.75 `PostActionObservationBlock`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "message": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "최종 정적 데이터셋에는 조치 이후 공정 관측값이 없어 효과를 평가할 수 없음",
+        "type": "string"
+      }
+    },
+    "status": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE_STATIC_DATASET",
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.76 `PublicAgentRunItem`
 
 ```json
 {
@@ -16232,7 +19389,7 @@
 }
 ```
 
-### 5.69 `PublicApprovalDecision`
+### 5.77 `PublicApprovalDecision`
 
 ```json
 {
@@ -16244,7 +19401,7 @@
 }
 ```
 
-### 5.70 `PublicApprovalItem`
+### 5.78 `PublicApprovalItem`
 
 ```json
 {
@@ -16432,7 +19589,7 @@
 }
 ```
 
-### 5.71 `PublicApprovalStatus`
+### 5.79 `PublicApprovalStatus`
 
 ```json
 {
@@ -16445,7 +19602,7 @@
 }
 ```
 
-### 5.72 `PublicDeliveryChannel`
+### 5.80 `PublicDeliveryChannel`
 
 ```json
 {
@@ -16457,7 +19614,7 @@
 }
 ```
 
-### 5.73 `PublicDeliveryItem`
+### 5.81 `PublicDeliveryItem`
 
 ```json
 {
@@ -16495,7 +19652,7 @@
 }
 ```
 
-### 5.74 `PublicToolCallItem`
+### 5.82 `PublicToolCallItem`
 
 ```json
 {
@@ -16554,7 +19711,7 @@
 }
 ```
 
-### 5.75 `ReadinessCheck`
+### 5.83 `ReadinessCheck`
 
 ```json
 {
@@ -16599,7 +19756,7 @@
 }
 ```
 
-### 5.76 `ReadinessChecks`
+### 5.84 `ReadinessChecks`
 
 ```json
 {
@@ -16874,7 +20031,7 @@
 }
 ```
 
-### 5.77 `ReadinessResponse`
+### 5.85 `ReadinessResponse`
 
 ```json
 {
@@ -17184,7 +20341,7 @@
 }
 ```
 
-### 5.78 `RunAlarmEvidence`
+### 5.86 `RunAlarmEvidence`
 
 ```json
 {
@@ -17256,7 +20413,7 @@
 }
 ```
 
-### 5.79 `RunStatus`
+### 5.87 `RunStatus`
 
 ```json
 {
@@ -17270,7 +20427,205 @@
 }
 ```
 
-### 5.80 `SqlValidateRequest`
+### 5.88 `SimilarIncidentItem`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "agent_run_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "chamber_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "lot_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "parameter_jaccard": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 1.0,
+        "minimum": 0.0,
+        "type": "number"
+      }
+    },
+    "predicted_fault_code": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "FOC",
+          "MFD",
+          "OTH",
+          "RFM",
+          "TMD"
+        ],
+        "type": "string"
+      }
+    },
+    "recommended_action": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "EQP_HOLD",
+          "MONITORING",
+          "WARNING"
+        ],
+        "type": "string"
+      }
+    },
+    "score": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.89 `SimilarIncidentsBlock`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "items": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "agent_run_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "chamber_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "lot_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "parameter_jaccard": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              }
+            },
+            "predicted_fault_code": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "FOC",
+                  "MFD",
+                  "OTH",
+                  "RFM",
+                  "TMD"
+                ],
+                "type": "string"
+              }
+            },
+            "recommended_action": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "EQP_HOLD",
+                  "MONITORING",
+                  "WARNING"
+                ],
+                "type": "string"
+              }
+            },
+            "score": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "label": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "고정 시연 데이터 내 비교 결과",
+        "type": "string"
+      }
+    },
+    "reason_code": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "pattern": "^[A-Z0-9_]+$",
+        "type": "string"
+      }
+    },
+    "status": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "AVAILABLE",
+          "EMPTY"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.90 `SqlValidateRequest`
 
 ```json
 {
@@ -17290,7 +20645,7 @@
 }
 ```
 
-### 5.81 `SqlValidateResponse`
+### 5.91 `SqlValidateResponse`
 
 ```json
 {
@@ -17358,7 +20713,7 @@
 }
 ```
 
-### 5.82 `ToolCallStatus`
+### 5.92 `ToolCallStatus`
 
 ```json
 {
@@ -17371,7 +20726,7 @@
 }
 ```
 
-### 5.83 `TraceAskEvidence`
+### 5.93 `TraceAskEvidence`
 
 ```json
 {
@@ -17413,7 +20768,7 @@
 }
 ```
 
-### 5.84 `TraceEvidence`
+### 5.94 `TraceEvidence`
 
 ```json
 {
@@ -17457,7 +20812,7 @@
 }
 ```
 
-### 5.85 `TracePoint`
+### 5.95 `TracePoint`
 
 ```json
 {
@@ -17499,7 +20854,7 @@
 }
 ```
 
-### 5.86 `ValidationCheck`
+### 5.96 `ValidationCheck`
 
 ```json
 {
@@ -17533,7 +20888,7 @@
 }
 ```
 
-### 5.87 `ValidationError`
+### 5.97 `ValidationError`
 
 ```json
 {
@@ -17576,7 +20931,7 @@
 }
 ```
 
-### 5.88 `VisualizationPlan`
+### 5.98 `VisualizationPlan`
 
 ```json
 {

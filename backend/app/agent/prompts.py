@@ -8,8 +8,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import Any, Final
 
+from app.agent.diagnostics import (
+    EvidenceAssessmentBlock,
+    ImpactScopeBlock,
+    IncidentDiagnosticSnapshot,
+)
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.tool_contracts import (
     DocumentSearchToolResult,
@@ -17,7 +23,7 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-PROMPT_VERSION: Final = "agent-hypothesis-v1"
+PROMPT_VERSION: Final = "agent-hypothesis-v2-ko1"
 MAX_PROMPT_CHARS: Final = 12_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
 TRUNCATION_MARKER: Final = "…[truncated]"
@@ -122,21 +128,43 @@ def _document_payload(result: DocumentSearchToolResult | None) -> Any:
 
 
 def build_hypothesis_messages(
-    fdc_evidence: FdcSummaryToolResult | None,
+    fdc_evidence: FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
     graph_evidence: EquipmentContextToolResult | None,
     document_evidence: DocumentSearchToolResult | None,
     route: ResolvedIncidentRoute,
     *,
     correction_reason: str | None = None,
+    diagnostic_snapshot: IncidentDiagnosticSnapshot | None = None,
+    evidence_assessment: EvidenceAssessmentBlock | None = None,
+    impact_scope: ImpactScopeBlock | None = None,
 ) -> list[dict[str, str]]:
     """초도·보정 시도가 같은 근거 builder를 쓰는 messages를 만든다."""
 
+    fdc_items = (
+        list(fdc_evidence) if isinstance(fdc_evidence, Sequence) else [fdc_evidence]
+    )
     evidence = {
+        "diagnostic_snapshot": (
+            None
+            if diagnostic_snapshot is None
+            else diagnostic_snapshot.model_dump(mode="json")
+        ),
         "document": _document_payload(document_evidence),
+        "evidence_assessment": (
+            None
+            if evidence_assessment is None
+            else evidence_assessment.model_dump(mode="json")
+        ),
         "equipment": (
             None if graph_evidence is None else graph_evidence.model_dump(mode="json")
         ),
-        "fdc": (None if fdc_evidence is None else fdc_evidence.model_dump(mode="json")),
+        "fdc": [
+            None if item is None else item.model_dump(mode="json")
+            for item in (() if diagnostic_snapshot is not None else fdc_items)
+        ],
+        "impact_scope": (
+            None if impact_scope is None else impact_scope.model_dump(mode="json")
+        ),
         "route": _route_payload(route),
     }
     evidence_json = json.dumps(
@@ -147,32 +175,46 @@ def build_hypothesis_messages(
         allow_nan=False,
     )
     system = (
-        "You generate one semiconductor FDC cause hypothesis from supplied evidence. "
-        "Return one JSON object only with keys predicted_fault_code, confidence, "
-        "cause_summary, supporting_alarms, supporting_chunk_ids, "
-        "supporting_relation_ids, uncertainty. predicted_fault_code must be one of "
-        "FOC, RFM, MFD, TMD, OTH. supporting_alarms entries use "
+        "제공된 근거만 사용해 반도체 FDC 원인 가설 하나를 생성하세요. "
+        "응답은 JSON 객체 하나만 반환하고 다음 키를 모두 포함하세요: "
+        "predicted_fault_code, confidence, cause_summary, supporting_alarms, "
+        "supporting_chunk_ids, supporting_relation_ids, supporting_lot_hist_ids, "
+        "supporting_parameter_ids, uncertainty, observations, evidence_synthesis, "
+        "alternative_hypotheses, impact_summary, verification_steps, limitations. "
+        "predicted_fault_code는 FOC, RFM, MFD, TMD, OTH 중 하나여야 합니다. "
+        "supporting_alarms 항목은 다음 형식을 사용하세요: "
         '{"source":"TRACE|SUMMARY|R03","alarm_id":"..."}. '
-        "Cite only supplied identifiers. Cite at least one member alarm; when "
-        "document hits or relation identifiers exist, cite at least one of each. "
-        "Copy alarm entries from route.incident.member_alarms, chunk strings from "
-        "document.hits[].chunk_id, "
-        "and relation strings from route.graph_evidence[].relation_ids exactly. "
-        "Use this exact value shape with all seven keys and no extra keys: "
+        "제공된 식별자만 인용하세요. member alarm은 최소 하나 인용하고, 문서 hit나 "
+        "관계 식별자가 존재하면 각각 최소 하나를 인용하세요. 알람은 "
+        "route.incident.member_alarms, 문서 chunk는 document.hits[].chunk_id, "
+        "관계는 route.graph_evidence[].relation_ids의 값을 정확히 복사하세요. "
+        "lot history와 parameter 식별자는 diagnostic_snapshot.source_ids에서만 "
+        "복사하세요. 측정값, 설비, 공정 단계, 문서 또는 관계를 만들어내지 마세요. "
+        "impact_scope.check_required는 확인 대상이며 확정 피해가 아닙니다. "
+        "모든 설명형 문자열은 한국어로 작성하세요. 영어는 근거에서 그대로 복사한 "
+        "식별자, enum 코드, 모델명, parameter 이름과 단위에만 허용됩니다. 이 규칙은 "
+        "cause_summary, uncertainty, observations, evidence_synthesis, "
+        "alternative_hypotheses의 summary와 lower_rank_reason, impact_summary, "
+        "verification_steps, limitations에 모두 적용됩니다. "
+        "추가 키 없이 다음 15개 키와 값 형태를 정확히 사용하세요: "
         '{"predicted_fault_code":"OTH","confidence":0.0,"cause_summary":"...",'
         '"supporting_alarms":[{"source":"SUMMARY","alarm_id":"..."}],'
         '"supporting_chunk_ids":["..."],"supporting_relation_ids":["..."],'
-        '"uncertainty":"..."}. confidence is a number from 0 to 1; all supporting '
-        "fields are JSON arrays and uncertainty is a string."
+        '"supporting_lot_hist_ids":["..."],"supporting_parameter_ids":["..."],'
+        '"uncertainty":"...","observations":["..."],'
+        '"evidence_synthesis":"...","alternative_hypotheses":['
+        '{"summary":"...","lower_rank_reason":"..."}],'
+        '"impact_summary":"...","verification_steps":["..."],'
+        '"limitations":["..."]}. confidence는 0부터 1 사이의 숫자이며 모든 '
+        "supporting 필드는 JSON 배열입니다."
     )
     user = f"Evidence JSON:\n{evidence_json}"
     if correction_reason is not None:
         user += (
-            "\nThe previous output was rejected for sanitized reason "
-            f"{correction_reason}. Rebuild the JSON from the same evidence. Copy "
-            "citation identifiers exactly from the arrays named in the system "
-            "instruction; do not "
-            "substitute document_id, title, chamber_id, or any inferred identifier."
+            "\n이전 출력은 다음 안전 사유 코드로 거부되었습니다: "
+            f"{correction_reason}. 같은 근거로 JSON을 다시 작성하세요. 인용 "
+            "식별자는 시스템 지시에 명시된 배열에서 정확히 복사하고 document_id, "
+            "title, chamber_id 또는 추론한 식별자로 대체하지 마세요."
         )
     messages = [
         {"role": "system", "content": system},

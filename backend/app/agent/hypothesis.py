@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Final
 
 from pydantic import ValidationError
 
+from app.agent.diagnostics import (
+    IncidentDiagnosticSnapshot,
+    assess_evidence,
+    build_diagnostic_snapshot,
+    build_impact_scope,
+)
 from app.agent.prompts import (
     PROMPT_VERSION,
     HypothesisPromptError,
@@ -61,7 +68,35 @@ HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "supporting_lot_hist_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "supporting_parameter_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
             "uncertainty": {"type": "string"},
+            "observations": {"type": "array", "items": {"type": "string"}},
+            "evidence_synthesis": {"type": "string"},
+            "alternative_hypotheses": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "lower_rank_reason": {"type": "string"},
+                    },
+                    "required": ["summary", "lower_rank_reason"],
+                },
+            },
+            "impact_summary": {"type": "string"},
+            "verification_steps": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "limitations": {"type": "array", "items": {"type": "string"}},
         },
         "required": [
             "predicted_fault_code",
@@ -70,10 +105,37 @@ HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
             "supporting_alarms",
             "supporting_chunk_ids",
             "supporting_relation_ids",
+            "supporting_lot_hist_ids",
+            "supporting_parameter_ids",
             "uncertainty",
+            "observations",
+            "evidence_synthesis",
+            "alternative_hypotheses",
+            "impact_summary",
+            "verification_steps",
+            "limitations",
         ],
     },
 }
+HYPOTHESIS_OUTPUT_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "predicted_fault_code",
+        "confidence",
+        "cause_summary",
+        "supporting_alarms",
+        "supporting_chunk_ids",
+        "supporting_relation_ids",
+        "supporting_lot_hist_ids",
+        "supporting_parameter_ids",
+        "uncertainty",
+        "observations",
+        "evidence_synthesis",
+        "alternative_hypotheses",
+        "impact_summary",
+        "verification_steps",
+        "limitations",
+    }
+)
 ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
         "LLM_NOT_READY",
@@ -132,6 +194,7 @@ _JSON_FENCE_PATTERN: Final = re.compile(
     r"\A```(?:json)?[ \t]*\r?\n(?P<body>.*?)\r?\n```[ \t]*\Z",
     re.IGNORECASE | re.DOTALL,
 )
+_HANGUL_PATTERN: Final = re.compile(r"[가-힣]")
 
 
 def _json_content(content: str) -> str:
@@ -156,10 +219,35 @@ def _completion_usage(completion: llm.ChatCompletion) -> LlmUsage:
         raise HypothesisGenerationError("LLM_DEPENDENCY") from exc
 
 
+def _korean_output_reason(hypothesis: Hypothesis) -> str | None:
+    """식별자·enum이 아닌 설명 문장이 한국어인지 저장 전에 확인한다."""
+
+    narratives = (
+        hypothesis.cause_summary,
+        hypothesis.uncertainty,
+        *hypothesis.observations,
+        hypothesis.evidence_synthesis,
+        *(
+            text
+            for alternative in hypothesis.alternative_hypotheses
+            for text in (alternative.summary, alternative.lower_rank_reason)
+        ),
+        hypothesis.impact_summary,
+        *hypothesis.verification_steps,
+        *hypothesis.limitations,
+    )
+    if any(
+        value.strip() and _HANGUL_PATTERN.search(value) is None for value in narratives
+    ):
+        return "KOREAN_OUTPUT_REQUIRED"
+    return None
+
+
 def _citation_reason(
     hypothesis: Hypothesis,
     document_evidence: DocumentSearchToolResult | None,
     route: ResolvedIncidentRoute,
+    diagnostic_snapshot: IncidentDiagnosticSnapshot,
 ) -> str | None:
     allowed_alarms = {alarm.to_token() for alarm in route.incident.member_alarms}
     cited_alarms = {alarm.to_token() for alarm in hypothesis.supporting_alarms}
@@ -189,17 +277,50 @@ def _citation_reason(
         return "RELATION_CITATION_REQUIRED"
     if not cited_relations <= allowed_relations:
         return "RELATION_CITATION_OUTSIDE_EVIDENCE"
+    allowed_lot_history = set(diagnostic_snapshot.source_ids.lot_hist_ids)
+    cited_lot_history = set(hypothesis.supporting_lot_hist_ids)
+    if not cited_lot_history <= allowed_lot_history:
+        return "LOT_HISTORY_CITATION_OUTSIDE_EVIDENCE"
+
+    allowed_parameters = set(diagnostic_snapshot.source_ids.parameter_ids)
+    cited_parameters = set(hypothesis.supporting_parameter_ids)
+    if not cited_parameters <= allowed_parameters:
+        return "PARAMETER_CITATION_OUTSIDE_EVIDENCE"
     return None
 
 
 def generate_hypothesis(
-    fdc_evidence: FdcSummaryToolResult | None,
+    fdc_evidence: FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
     graph_evidence: EquipmentContextToolResult | None,
     document_evidence: DocumentSearchToolResult | None,
     route: ResolvedIncidentRoute,
+    extra_data_gaps: Sequence[str] = (),
 ) -> HypothesisOutcome:
     """최대 2회 생성하고 구조·실제 근거 인용을 fail-closed 검증한다."""
 
+    fdc_items = (
+        tuple(fdc_evidence) if isinstance(fdc_evidence, Sequence) else (fdc_evidence,)
+    )
+    try:
+        diagnostic_snapshot = build_diagnostic_snapshot(
+            fdc_items,
+            route,
+            target_count=max(1, len(fdc_items)),
+            extra_data_gaps=extra_data_gaps,
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise HypothesisGenerationError("HYPOTHESIS_STRUCTURE_INVALID") from exc
+    evidence_assessment = assess_evidence(
+        diagnostic_snapshot,
+        route,
+        graph_evidence,
+        document_evidence,
+    )
+    impact_scope = build_impact_scope(
+        diagnostic_snapshot,
+        route,
+        graph_evidence,
+    )
     accumulated: LlmUsage | None = None
     correction_reason: str | None = None
     for _round in range(MAX_GENERATION_ROUNDS):
@@ -210,6 +331,9 @@ def generate_hypothesis(
                 document_evidence,
                 route,
                 correction_reason=correction_reason,
+                diagnostic_snapshot=diagnostic_snapshot,
+                evidence_assessment=evidence_assessment,
+                impact_scope=impact_scope,
             )
         except HypothesisPromptError as exc:
             raise HypothesisGenerationError(exc.code, usage=accumulated) from exc
@@ -240,9 +364,20 @@ def generate_hypothesis(
                 ) from exc
 
         try:
-            hypothesis = Hypothesis.model_validate_json(
-                _json_content(completion.content)
-            )
+            payload = json.loads(_json_content(completion.content))
+            if not isinstance(payload, dict) or set(payload) != HYPOTHESIS_OUTPUT_KEYS:
+                expected = HYPOTHESIS_OUTPUT_KEYS
+                actual = set(payload) if isinstance(payload, dict) else set()
+                missing = sorted(expected - actual)
+                extra = sorted(actual - expected)
+                correction_reason = "STRUCTURE_INVALID:" + ",".join(
+                    [
+                        *(f"missing.{item}" for item in missing),
+                        *(f"extra.{item}" for item in extra),
+                    ]
+                )
+                continue
+            hypothesis = Hypothesis.model_validate(payload)
         except ValidationError as exc:
             fields = sorted(
                 {
@@ -252,13 +387,29 @@ def generate_hypothesis(
             )
             correction_reason = "STRUCTURE_INVALID:" + ",".join(fields)
             continue
-        except ValueError:
+        except (json.JSONDecodeError, TypeError, ValueError):
             correction_reason = "JSON_INVALID"
             continue
 
-        correction_reason = _citation_reason(hypothesis, document_evidence, route)
+        correction_reason = _korean_output_reason(hypothesis)
         if correction_reason is None:
-            return HypothesisOutcome(hypothesis=hypothesis, llm_usage=accumulated)
+            correction_reason = _citation_reason(
+                hypothesis,
+                document_evidence,
+                route,
+                diagnostic_snapshot,
+            )
+        if correction_reason is None:
+            impact_scope = impact_scope.model_copy(
+                update={"summary": hypothesis.impact_summary or None}
+            )
+            return HypothesisOutcome(
+                hypothesis=hypothesis,
+                llm_usage=accumulated,
+                diagnostic_snapshot=diagnostic_snapshot,
+                evidence_assessment=evidence_assessment,
+                impact_scope=impact_scope,
+            )
 
     logger.warning(
         "hypothesis output rejected after correction (reason=%s)",
@@ -270,7 +421,7 @@ def generate_hypothesis(
 def production_port() -> (
     Callable[
         [
-            FdcSummaryToolResult | None,
+            FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
             EquipmentContextToolResult | None,
             DocumentSearchToolResult | None,
             ResolvedIncidentRoute,
@@ -286,6 +437,7 @@ def production_port() -> (
 __all__ = [
     "ERROR_CODES",
     "MAX_GENERATION_ROUNDS",
+    "HYPOTHESIS_OUTPUT_KEYS",
     "HypothesisGenerationError",
     "generate_hypothesis",
     "production_port",

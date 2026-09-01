@@ -27,6 +27,7 @@ from typing import Any, Final
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Row
 
+from app.agent.incident_repository import parse_r03_member_contract
 from app.agent.repository import (
     RepositoryContractError,
     RepositoryNotFound,
@@ -91,6 +92,7 @@ class RouteSnapshot:
     #: `(source, alarm_id)` → 해당 alarm의 `lot_hist_id`. 읽기 전용이다.
     lot_hist_id_of_member: Mapping[tuple[AlarmSource, str], str]
     steps: tuple[RouteStep, ...]
+    diagnostic_wafer_refs: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         """**불변성을 타입이 보장한다.** factory가 아니라.
@@ -195,6 +197,12 @@ _SNAPSHOT = text(
         'member'::text AS row_kind,
         s.missing_count, s.unresolved_count, s.drift_count,
         s.wafer_missing_count, s.duplicate_count,
+        (SELECT member_wafer_refs FROM r03_alarm_history
+          WHERE lot_id = :lot_id AND chamber_id = :chamber_id
+          ORDER BY alarm_id LIMIT 1) AS r03_member_wafer_refs,
+        (SELECT member_alarm_refs FROM r03_alarm_history
+          WHERE lot_id = :lot_id AND chamber_id = :chamber_id
+          ORDER BY alarm_id LIMIT 1) AS r03_member_alarm_refs,
         r.source            AS member_source,
         r.alarm_id          AS member_alarm_id,
         r.owner_wafer_id    AS wafer_id,
@@ -217,6 +225,12 @@ _SNAPSHOT = text(
         'step'::text AS row_kind,
         s.missing_count, s.unresolved_count, s.drift_count,
         s.wafer_missing_count, s.duplicate_count,
+        (SELECT member_wafer_refs FROM r03_alarm_history
+          WHERE lot_id = :lot_id AND chamber_id = :chamber_id
+          ORDER BY alarm_id LIMIT 1) AS r03_member_wafer_refs,
+        (SELECT member_alarm_refs FROM r03_alarm_history
+          WHERE lot_id = :lot_id AND chamber_id = :chamber_id
+          ORDER BY alarm_id LIMIT 1) AS r03_member_alarm_refs,
         NULL::varchar(10)   AS member_source,
         NULL::varchar(24)   AS member_alarm_id,
         h.wafer_id,
@@ -293,6 +307,19 @@ def fetch_route_snapshot(
         # owner가 resolve됐다면 그 owner 행 자체가 route의 최소 1행이다. 여기 오면
         # query·mapping 계약이 깨진 것이지 "route가 없는 정상 상태"가 아니다.
         raise RepositoryContractError(_ROUTE_INCOMPLETE)
+    diagnostic_refs: list[tuple[str, str]] = []
+    if any(AlarmSource(alarm.source) is AlarmSource.R03 for alarm in member_alarms):
+        raw_wafers = getattr(head, "r03_member_wafer_refs", None)
+        raw_alarms = getattr(head, "r03_member_alarm_refs", None)
+        if raw_wafers is not None or raw_alarms is not None:
+            parsed_refs, _alarm_refs = parse_r03_member_contract(
+                raw_wafers,
+                raw_alarms,
+            )
+            diagnostic_refs = list(parsed_refs)
+            step_refs = {(step.lot_hist_id, step.wafer_id) for step in steps}
+            if not set(diagnostic_refs) <= step_refs:
+                raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
     return RouteSnapshot(
         lot_id=lot_id,
         chamber_id=chamber_id,
@@ -303,6 +330,7 @@ def fetch_route_snapshot(
         wafer_of_member=wafer_mapping,
         lot_hist_id_of_member=lot_hist_mapping,
         steps=steps,
+        diagnostic_wafer_refs=tuple(diagnostic_refs),
     )
 
 

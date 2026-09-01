@@ -109,6 +109,19 @@ def resolve_incident(
         # View join fan-out이든 drift든, 어느 행을 버릴지 이 계층이 정하지 않는다.
         raise RepositoryContractError(_DUPLICATE_MEMBER_ALARM)
 
+    has_r03 = any(alarm.source is AlarmSource.R03 for alarm in members)
+    if snapshot.r03_contract_checked and has_r03 != bool(
+        snapshot.r03_member_wafer_refs
+    ):
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    if has_r03:
+        member_tokens = set(tokens)
+        if (
+            not {alarm.to_token() for alarm in snapshot.r03_member_alarm_refs}
+            <= member_tokens
+        ):
+            raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+
     # 요청 행은 canonical key가 곧 필터 조건이라 **항상** member에 포함된다.
     # 그래서 "요청이 member에 없다" 분기를 두지 않는다 — 도달할 수 없는 code다.
     return ResolvedIncident(
