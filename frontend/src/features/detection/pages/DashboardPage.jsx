@@ -18,7 +18,6 @@ import {
   MiniBars,
   OOC_HEX,
   OOS_HEX,
-  RatioBar,
   SKY_HEX,
   StackBars,
   TrendLine,
@@ -62,46 +61,32 @@ const stackOf = (rows, keyOf) => {
 
 // ── 히어로 밴드 — 이 화면에서 가장 먼저 읽혀야 하는 세 가지 ───────────
 function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
-  const stat = 'group cursor-pointer text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-blue-line rounded-lg'
-  const hint = 'mt-2 text-[12px] text-faint group-hover:text-blue transition-colors'
+  // 4칸 같은 문법: 전체 | OOS | OOC | 조치 완료 — 누르면 그 목록으로 (호버에 힌트가 파랑으로)
+  const tiles = [
+    { label: '전체 알람', value: agg.total, color: null, hint: '알람 히스토리 보기 →', onClick: onTotal, hero: true },
+    { label: 'OOS', value: agg.oos, color: OOS_HEX, hint: 'TRACE 알람 보기 →', onClick: onOos },
+    { label: 'OOC', value: agg.ooc, color: OOC_HEX, hint: 'SUMMARY 알람 보기 →', onClick: onOoc },
+    { label: '조치 완료', value: agg.mesSent, color: SKY_HEX, hint: 'Agent 분석 · 승인 보기 →', onClick: onAction },
+  ]
   return (
-    <Card className="grid grid-cols-[1.05fr_2fr_1fr] divide-x divide-line px-0 py-0">
-      <button type="button" onClick={onTotal} className={`${stat} px-7 py-6`}>
-        <div className="text-[12.5px] font-bold tracking-[.06em] text-g2">전체 알람</div>
-        <div className="mt-1 font-mono text-[60px] font-extrabold leading-none tracking-[-.02em] text-navy">{agg.total}</div>
-        <div className={hint}>알람 히스토리 보기 →</div>
-      </button>
-
-      <div className="px-7 py-6">
-        <div className="flex items-end justify-between">
-          <button type="button" onClick={onOos} className={stat}>
-            <div className="flex items-center gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: OOS_HEX }} />
-              OOS
-            </div>
-            <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.oos}</div>
-          </button>
-          <button type="button" onClick={onOoc} className={`${stat} text-right`}>
-            <div className="flex items-center justify-end gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
-              OOC
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: OOC_HEX }} />
-            </div>
-            <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.ooc}</div>
-          </button>
-        </div>
-        <div className="mt-5">
-          <RatioBar oos={agg.oos} ooc={agg.ooc} />
-        </div>
-      </div>
-
-      <button type="button" onClick={onAction} className={`${stat} px-7 py-6`}>
-        <div className="flex items-center gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
-          <span className="h-2.5 w-2.5 rounded-full" style={{ background: SKY_HEX }} />
-          조치 완료
-        </div>
-        <div className="mt-1 font-mono text-[36px] font-extrabold leading-none text-navy">{agg.mesSent}</div>
-        <div className={hint}>Agent 분석 · 승인 보기 →</div>
-      </button>
+    <Card className="grid grid-cols-[1.15fr_1fr_1fr_1fr] divide-x divide-line">
+      {tiles.map((t) => (
+        <button
+          key={t.label}
+          type="button"
+          onClick={t.onClick}
+          className="group cursor-pointer px-7 py-6 text-left transition-colors first:rounded-l-[10px] last:rounded-r-[10px] hover:bg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-tint-blue-line"
+        >
+          <div className="flex items-center gap-2 text-[12.5px] font-bold tracking-[.06em] text-g2">
+            {t.color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />}
+            {t.label}
+          </div>
+          <div className={`mt-1 font-mono font-extrabold leading-none tracking-[-.02em] text-navy ${t.hero ? 'text-[60px]' : 'text-[44px]'}`}>
+            {t.value}
+          </div>
+          <div className="mt-2.5 text-[12px] text-faint transition-colors group-hover:text-blue">{t.hint}</div>
+        </button>
+      ))}
     </Card>
   )
 }
