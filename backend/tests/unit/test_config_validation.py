@@ -56,12 +56,12 @@ class TestCorsOrigins:
     def test_explicit_origins_are_loaded(self, monkeypatch: pytest.MonkeyPatch) -> None:
         config = load_config(
             monkeypatch,
-            CORS_ORIGINS="https://fdc.example.com,http://10.0.0.5:53080",
+            CORS_ORIGINS="https://fdc.example.com,http://10.0.0.5:8080",
         )
 
         assert config.CORS_ORIGINS == [
             "https://fdc.example.com",
-            "http://10.0.0.5:53080",
+            "http://10.0.0.5:8080",
         ]
 
     @pytest.mark.parametrize(

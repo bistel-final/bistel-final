@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from neo4j import Query
+from neo4j import unit_of_work
 
 DATASET_EPOCH = "fdc_final_20260818"
 EXPECTED_NODE_COUNT = 44
@@ -294,10 +294,11 @@ def read_live_snapshot(
 ) -> GraphSnapshot:
     with driver.session(database=database, default_access_mode="READ") as session:
 
+        @unit_of_work(timeout=timeout_seconds)
         def read(tx: Any) -> GraphSnapshot:
             return snapshot_from_rows(
-                _rows(tx.run(Query(NODE_QUERY, timeout=timeout_seconds))),
-                _rows(tx.run(Query(RELATIONSHIP_QUERY, timeout=timeout_seconds))),
+                _rows(tx.run(NODE_QUERY)),
+                _rows(tx.run(RELATIONSHIP_QUERY)),
             )
 
         return session.execute_read(read)

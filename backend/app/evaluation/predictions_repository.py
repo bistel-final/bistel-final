@@ -224,7 +224,10 @@ def _prediction_record(row: Any) -> PredictionRecord:
         supporting_relations: tuple[str, ...] = ()
     else:
         evidence = _mapping(row.prediction_evidence, "PREDICTION_EVIDENCE_INVALID")
-        if evidence.get("schema_version") != "agent-evidence-v1":
+        if evidence.get("schema_version") not in {
+            "agent-evidence-v1",
+            "agent-evidence-v2",
+        }:
             raise PredictionRepositoryError("PREDICTION_EVIDENCE_INVALID")
         supporting_alarms = tuple(
             _alarm_token(item)

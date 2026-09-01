@@ -113,8 +113,8 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
             "N8N_WF3_URL": "http://10.20.30.40:5678/webhook/fdc-mes-hold",
             "N8N_BASE_URL": "http://10.20.30.40:5678",
             "N8N_WEBHOOK_SECRET": "webhook-secret-value",
-            "CORS_ORIGINS": "http://10.20.30.40:53080",
-            "BACKEND_BASE_URL": "http://10.20.30.40:53080/api",
+            "CORS_ORIGINS": "http://10.20.30.40:8080,http://10.20.30.40:53000",
+            "BACKEND_BASE_URL": "http://10.20.30.40:8080/api",
             "LLM_API_KEY": "llm-secret-value",
             "LLM_BASE_URL": "http://10.20.30.41:11434/v1",
             "RAG_MODEL_CACHE_DIR": str(cache_dir),
@@ -255,7 +255,7 @@ def test_frontend_proxy_and_production_build_args_are_fixed() -> None:
     frontend = _load_yaml()["services"]["frontend"]
     nginx = (REPOSITORY_ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
 
-    assert frontend["ports"] == ["53080:80"]
+    assert frontend["ports"] == ["8080:80"]
     assert frontend["build"]["args"] == {
         "VITE_API_BASE_URL": "/api",
         "VITE_USE_MOCK": "false",
@@ -404,7 +404,7 @@ def test_preflight_accepts_a_complete_nonlocal_contract(tmp_path: Path) -> None:
         ("TEAM_IMAGE_TAG", "latest", "INVALID_FIXED_TAG"),
         ("POSTGRES_HOST", "localhost", "LOCALHOST_FORBIDDEN"),
         ("CORS_ORIGINS", "*", "WILDCARD_OR_NULL"),
-        ("BACKEND_BASE_URL", "http://10.20.30.40:53080/backend", "ORIGIN_MISMATCH"),
+        ("BACKEND_BASE_URL", "http://10.20.30.40:8080/backend", "ORIGIN_MISMATCH"),
         ("KAFKA_ADVERTISED_HOST", "host.docker.internal", "LOCALHOST_FORBIDDEN"),
         ("LLM_PROVIDER", "ollama", "CONTAINER_LOCAL_PROVIDER_FORBIDDEN"),
     ],

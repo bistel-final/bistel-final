@@ -8,7 +8,7 @@ checkpointer pool과 설정을 확인하고, 그 뒤 같은 graph·pool·executo
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -538,7 +538,12 @@ class AgentRuntime:
             self._fail_run(resources, run_id, "APPROVAL_RESUME_FAILED")
             logger.error("agent approval resume failed")
 
-    def ask_public(self, question: str) -> ask.AgentAskResponse:
+    def ask_public(
+        self,
+        question: str,
+        *,
+        context_evidence: Sequence[ask.AskEvidenceItem] = (),
+    ) -> ask.AgentAskResponse:
         """checkpoint·run DML 없이 Ask 전용 A/B read Tool만 조립한다."""
 
         self._require_open()
@@ -553,7 +558,7 @@ class AgentRuntime:
                     except Exception as exc:
                         raise AgentRuntimeError("AGENT_ASK_NOT_READY") from exc
                     self._ask_service = service
-        return service.ask(question)
+        return service.ask(question, context_evidence=context_evidence)
 
     def close(self) -> None:
         with self._lock:

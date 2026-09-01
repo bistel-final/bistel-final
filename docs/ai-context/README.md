@@ -95,7 +95,8 @@ callback이며 Frontend 업무 API가 아니다. `/health`·`/health/ready`도 �
 제외한 내부 운영·진단 scope다. 팀 release는 `POST /analytics/query`,
 `POST /analytics/validate`, `GET /analytics/history`, `GET /analytics/evaluations`,
 `GET /audit-logs/paged` 5개를 추가 필수 계약으로 고정한다. 자연어 이력·평가는 `/analytics`
-보조 탭이고, Agent 감사는 문맥 조회·독립 감사 화면은 전역 조회로 목적을 분리한다.
+보조 탭이다. `GET /agent/evaluations`는 Agent 합성 평가·Golden flow 보조 탭용 여섯 번째
+release 확장이다. Agent 감사는 문맥 조회·독립 감사 화면은 전역 조회로 목적을 분리한다.
 
 ## 5. 데이터·인프라 전환 상태
 

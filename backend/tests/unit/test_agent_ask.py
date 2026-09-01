@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -470,8 +471,16 @@ def test_structured_adapter_invokes_only_three_read_tools_with_dto_payloads() ->
 
 
 class _AskRuntime:
-    def ask_public(self, question: str) -> AgentAskResponse:
-        return AgentAskService(tools=_ReadTools(), synthesizer=_synthesis).ask(question)
+    def ask_public(
+        self,
+        question: str,
+        *,
+        context_evidence: tuple[object, ...] = (),
+    ) -> AgentAskResponse:
+        return AgentAskService(tools=_ReadTools(), synthesizer=_synthesis).ask(
+            question,
+            context_evidence=context_evidence,  # type: ignore[arg-type]
+        )
 
 
 def _client(runtime: object) -> tuple[FastAPI, TestClient]:
@@ -509,6 +518,68 @@ def test_post_ask_maps_dependency_failure_to_sanitized_503() -> None:
 
     assert getattr(caught.value, "status_code", None) == 503
     assert "secret" not in str(caught.value)
+
+
+def test_run_context_ask_uses_saved_public_detail_before_read_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detail = SimpleNamespace(
+        agent_run_id="RUN-1",
+        chamber_id="EQP01-PM1",
+        diagnosis=SimpleNamespace(
+            cause_summary="RFM 가능성이 가장 높습니다.",
+            evidence_synthesis="FDC와 문서 근거가 일치합니다.",
+            observations=("세 WAFER에서 같은 이상이 반복되었습니다.",),
+            verification_steps=("RF match를 확인합니다.",),
+            limitations=("조치 후 관측값은 없습니다.",),
+        ),
+        impact_scope=SimpleNamespace(direct=()),
+        evidence_items=(),
+    )
+
+    class _Connection:
+        def __enter__(self) -> object:
+            return object()
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _Engine:
+        def connect(self) -> _Connection:
+            return _Connection()
+
+    monkeypatch.setattr(agent_router, "get_app_engine", lambda: _Engine())
+    monkeypatch.setattr(
+        agent_router,
+        "load_public_agent_run_detail",
+        lambda _connection, run_id: detail if run_id == "RUN-1" else None,
+    )
+
+    response = agent_router.ask_agent(
+        agent_router.AgentAskRequest(
+            question="Explain this stored run",
+            agent_run_id="RUN-1",
+        ),
+        _AskRuntime(),  # type: ignore[arg-type]
+    )
+
+    assert [item.type for item in response.evidence_items] == ["AGENT_RUN"]
+    assert response.evidence_items[0].source_id == "RUN-1"
+    assert "FDC와 문서 근거" in response.evidence_items[0].excerpt
+
+
+def test_run_context_rejects_an_explicit_identifier_outside_saved_evidence() -> None:
+    detail = SimpleNamespace(
+        chamber_id="EQP01-PM1",
+        impact_scope=SimpleNamespace(direct=(SimpleNamespace(source_id="LOT001"),)),
+        evidence_items=(),
+    )
+
+    with pytest.raises(Exception) as caught:
+        agent_router._validate_ask_context_identifiers("Explain LOT999", detail)
+
+    assert getattr(caught.value, "code", None).value == "VALIDATION_ERROR"
+    assert caught.value.details == {"reason": "AGENT_RUN_CONTEXT_IDENTIFIER_CONFLICT"}
 
 
 def test_response_rejects_prediction_without_evidence() -> None:

@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 from app.common.readiness_markers import DATASET_EPOCH, RUNTIME_DATABASE
 
-if TYPE_CHECKING:  # 순수 수집 경계(Windows contract job)에 sqlalchemy를 끌어들이지 않는다
+if TYPE_CHECKING:
+    # 순수 수집 경계(Windows contract job)에 sqlalchemy를 끌어들이지 않는다.
     from sqlalchemy.engine import Connection
 
 R03_COLUMNS = (
@@ -154,11 +155,19 @@ def _table_columns(
     rows = _rows(
         connection.exec_driver_sql(
             """
-            SELECT table_name, column_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = ANY (%(table_names)s)
-             ORDER BY table_name, ordinal_position
+            SELECT cls.relname AS table_name,
+                   attr.attname AS column_name
+              FROM pg_catalog.pg_class AS cls
+              JOIN pg_catalog.pg_namespace AS ns
+                ON ns.oid = cls.relnamespace
+              JOIN pg_catalog.pg_attribute AS attr
+                ON attr.attrelid = cls.oid
+               AND attr.attnum > 0
+               AND NOT attr.attisdropped
+             WHERE ns.nspname = 'public'
+               AND cls.relkind IN ('r', 'p')
+               AND cls.relname = ANY (%(table_names)s)
+             ORDER BY cls.relname, attr.attnum
             """,
             {"table_names": table_names},
         )
@@ -167,6 +176,95 @@ def _table_columns(
     for row in rows:
         result[str(row["table_name"])].append(str(row["column_name"]))
     return result
+
+
+def _verify_runtime_select_privileges(
+    connection: Connection,
+    *,
+    table_names: list[str],
+    lot_history_columns: list[str],
+) -> None:
+    """kosa_app 최소권한을 실제 final role matrix와 exact 대조한다.
+
+    ``information_schema.columns``는 현재 role이 읽을 수 없는 column/table을
+    숨긴다. 따라서 catalog inventory와 privilege 검증을 분리해야 한다. Runtime
+    app은 평가 전용 ``metrology``와 D 전용 ``nl_query_log``를 읽지 못하고,
+    ``lot_history``는 합성 label ``fault_code``를 제외한 column만 읽는다.
+    """
+
+    column_scoped = "lot_history"
+    denied_tables = {"metrology", "nl_query_log"}
+    expected_table_select = set(table_names) - denied_tables - {column_scoped}
+    rows = _rows(
+        connection.exec_driver_sql(
+            """
+            SELECT name,
+                   has_table_privilege(
+                       current_user,
+                       'public.' || quote_ident(name),
+                       'SELECT'
+                   ) AS selectable
+              FROM unnest(%(table_names)s::text[]) AS names(name)
+             ORDER BY name
+            """,
+            {"table_names": table_names},
+        )
+    )
+    observed_table_select = {str(row["name"]): bool(row["selectable"]) for row in rows}
+    if observed_table_select != {
+        name: name in expected_table_select for name in table_names
+    }:
+        raise PostgresReadinessError("Runtime kosa_app table privilege가 다릅니다")
+
+    rows = _rows(
+        connection.exec_driver_sql(
+            """
+            SELECT attr.attname AS column_name,
+                   has_column_privilege(
+                       current_user,
+                       cls.oid,
+                       attr.attname,
+                       'SELECT'
+                   ) AS selectable
+              FROM pg_catalog.pg_class AS cls
+              JOIN pg_catalog.pg_namespace AS ns
+                ON ns.oid = cls.relnamespace
+              JOIN pg_catalog.pg_attribute AS attr
+                ON attr.attrelid = cls.oid
+               AND attr.attnum > 0
+               AND NOT attr.attisdropped
+             WHERE ns.nspname = 'public'
+               AND cls.relname = 'lot_history'
+             ORDER BY attr.attnum
+            """
+        )
+    )
+    observed_lot_select = {
+        str(row["column_name"]): bool(row["selectable"]) for row in rows
+    }
+    expected_lot_select = {name: name != "fault_code" for name in lot_history_columns}
+    if observed_lot_select != expected_lot_select:
+        raise PostgresReadinessError("Runtime kosa_app label privilege가 다릅니다")
+
+    rows = _rows(
+        connection.exec_driver_sql(
+            """
+            SELECT name,
+                   has_any_column_privilege(
+                       current_user,
+                       'public.' || quote_ident(name),
+                       'SELECT'
+                   ) AS selectable
+              FROM unnest(%(table_names)s::text[]) AS names(name)
+             ORDER BY name
+            """,
+            {"table_names": sorted(denied_tables)},
+        )
+    )
+    if {str(row["name"]): bool(row["selectable"]) for row in rows} != {
+        name: False for name in sorted(denied_tables)
+    }:
+        raise PostgresReadinessError("Runtime kosa_app 격리 privilege가 다릅니다")
 
 
 def verify_postgresql_runtime(
@@ -218,32 +316,11 @@ def verify_postgresql_runtime(
     }:
         raise PostgresReadinessError("Runtime schema inventory가 manifest와 다릅니다")
 
-    selectable = bool(
-        _scalar(
-            connection,
-            """
-            SELECT bool_and(
-                       has_table_privilege(
-                           current_user, format('public.%I', name), 'SELECT'
-                       )
-                   )
-              FROM unnest(%(table_names)s::text[]) AS names(name)
-            """,
-            {"table_names": sorted(expected_columns)},
-        )
+    _verify_runtime_select_privileges(
+        connection,
+        table_names=sorted(expected_columns),
+        lot_history_columns=expected_columns["lot_history"],
     )
-    label_denied = not bool(
-        _scalar(
-            connection,
-            """
-            SELECT has_column_privilege(
-                current_user, 'public.lot_history', 'fault_code', 'SELECT'
-            )
-            """,
-        )
-    )
-    if not selectable or not label_denied:
-        raise PostgresReadinessError("Runtime kosa_app privilege 계약이 다릅니다")
 
 
 def verify_reference_migration(connection: Connection) -> None:

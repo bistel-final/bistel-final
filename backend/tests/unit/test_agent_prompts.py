@@ -82,6 +82,13 @@ def test_document_hits_are_sorted_and_content_is_bounded() -> None:
     assert hits[0]["content"] == "x" * MAX_DOCUMENT_EXCERPT_CHARS + TRUNCATION_MARKER
 
 
+def test_system_prompt_requires_korean_narratives() -> None:
+    messages = build_hypothesis_messages(None, None, _docs(), _route())
+
+    assert "모든 설명형 문자열은 한국어로 작성하세요" in messages[0]["content"]
+    assert "제공된 근거만 사용해" in messages[0]["content"]
+
+
 @pytest.mark.parametrize(
     "token",
     ["fault_code", "FAULTCODE", "FAULTS", "is_fault", "fault_of", "faulty_lots", "NRM"],

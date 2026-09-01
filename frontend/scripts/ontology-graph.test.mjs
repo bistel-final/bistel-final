@@ -229,6 +229,14 @@ const focus = parseOntologyFocus(
 )
 assert.equal(resolveOntologyFocus(CORE_CHAMBER_GRAPH, focus).phase, 'found')
 assert.equal(resolveOntologyFocus(CORE_CHAMBER_GRAPH, { ...focus, graphRevision: 'stale' }).phase, 'revision-mismatch')
+const impactFocus = parseOntologyFocus(new URLSearchParams(
+  `chamber_id=EQP01-PM1&graph_revision=${CORE_CHAMBER_GRAPH.graph_revision}&direct_node_ids=Chamber%3AEQP01-PM1,Parameter%3APH_FOCUS&check_node_ids=ProcessStep%3ACT-ETCH,Chamber%3AEQP01-PM2`,
+))
+assert.equal(impactFocus.kind, 'impact')
+const resolvedImpact = resolveOntologyFocus(CORE_CHAMBER_GRAPH, impactFocus)
+assert.equal(resolvedImpact.phase, 'found')
+assert.deepEqual(resolvedImpact.directNodes.map((node) => node.id), ['Chamber:EQP01-PM1', 'Parameter:PH_FOCUS'])
+assert.deepEqual(resolvedImpact.checkNodes.map((node) => node.id), ['ProcessStep:CT-ETCH', 'Chamber:EQP01-PM2'])
 
 const scopedDirectories = [
   resolve(SOURCE_ROOT, 'features/knowledge'),
@@ -272,21 +280,32 @@ for (const contract of [
   '<Controls position="top-right"',
   'onPaneClick',
   'selectedNodeId',
+  'impactNodeIds',
+  'checkRequiredNodeIds',
   'root && !selectedNodeId',
   "viewport === 'page'",
+  "viewport === 'modal'",
+  'padding={modalViewport ? 0.08 : 0.65}',
+  'maxZoom={modalViewport ? 1.25 : 1.05}',
 ]) {
   assert.ok(canvasSource.includes(contract), `xyflow read-only 계약 누락: ${contract}`)
 }
 
 const ontologyPageSource = await readFile(resolve(SOURCE_ROOT, 'features/knowledge/pages/OntologyPage.jsx'), 'utf8')
-assert.ok(ontologyPageSource.includes('Promise.all(orderedChambers.map'))
+assert.ok(ontologyPageSource.includes('Promise.allSettled(orderedChambers.map'))
+assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
+assert.ok(ontologyPageSource.includes('일부 보조 챔버 관계를 불러오지 못해'))
 assert.ok(ontologyPageSource.includes('전체 구조 안내'))
 assert.ok(ontologyPageSource.includes('buildOntologyOverviewLanes([graph])'))
-assert.ok(ontologyPageSource.includes('onSelectChamber={changeChamber}'))
+assert.ok(ontologyPageSource.includes('onSelectNode={selectOverviewNode}'))
+assert.ok(ontologyPageSource.includes("setSelectedChamber('')"), '전체 구조 노드 선택은 챔버 필터를 해제해야 합니다')
+assert.ok(ontologyPageSource.includes("focus.phase === 'ready' ? focus.chamberId : ''"), '일반 진입은 선택·포커스 없는 전체 구조여야 합니다')
 assert.ok(ontologyPageSource.includes('xl:grid-cols-[minmax(0,1fr)_360px]'))
-assert.ok(ontologyPageSource.includes('<GraphSummary graph={graph} compact />'))
+assert.ok(ontologyPageSource.includes("<GraphSummary graph={graph} compact scopeLabel={explicitChamber ? null : '전체 온톨로지'} />"))
+assert.ok(ontologyPageSource.includes('<option value="">전체 구조</option>'))
 assert.ok(ontologyPageSource.includes('viewport="page"'), '독립 Ontology 화면만 확장 viewport를 사용해야 합니다')
+assert.ok(ontologyPageSource.includes('emphasizeRoot={Boolean(explicitChamber)}'), '전체 구조 첫 진입에서는 기본 챔버 root를 강조하면 안 됩니다')
 assert.ok(ontologyPageSource.includes("setSearchParams({}, { replace: true })"), 'selector 변경은 focus query를 모두 제거해야 합니다')
 assert.ok(ontologyPageSource.includes("status: hasDisplayableRelationships(merged) ? 'success' : 'empty'"))
 assert.ok(ontologyPageSource.includes('현재 선택'), '선택한 node의 상태 badge가 필요합니다')
@@ -296,6 +315,10 @@ assert.ok(ontologyPageSource.includes('선택 노드 운영 요약'))
 assert.ok(ontologyPageSource.includes("['ACTION', summary.actions"))
 assert.ok(ontologyPageSource.includes("timeZone: 'Asia/Seoul'"))
 assert.ok(ontologyPageSource.includes('MOCK 대응 데이터 없음'))
+assert.ok(ontologyPageSource.includes('Agent 영향 범위'))
+assert.ok(!ontologyPageSource.includes('직접 · {node.business_id}'))
+assert.ok(ontologyPageSource.includes('확인 필요 · {node.business_id}'))
+assert.ok(ontologyPageSource.includes('impactNodeIds={focusedImpactNodeIds}'))
 assert.ok(ontologyPageSource.includes('실 API 결과가 아닙니다'))
 assert.ok(ontologyPageSource.includes('state.partial'))
 assert.doesNotMatch(ontologyPageSource, /error\.message/, 'API 원문 오류를 화면에 노출하면 안 됩니다')

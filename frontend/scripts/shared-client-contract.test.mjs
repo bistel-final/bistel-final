@@ -5,6 +5,8 @@ process.env.VITE_USE_MOCK = 'false'
 
 const fixtureUrl = new URL('../../backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json', import.meta.url)
 const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'))
+const teamReleaseFixtureUrl = new URL('../../backend/tests/fixtures/v5_cm_4_4/api_contract_team_release.json', import.meta.url)
+const teamReleaseFixture = JSON.parse(await readFile(teamReleaseFixtureUrl, 'utf8'))
 const components = fixture.components
 const agentSource = await readFile(new URL('../src/shared/api/agent.js', import.meta.url), 'utf8')
 assert.doesNotMatch(
@@ -26,6 +28,10 @@ const coreOperations = fixture.operations.filter(
   (operation) => !operation.path.startsWith('/internal/') && !operation.path.startsWith('/health'),
 )
 assert.equal(coreOperations.length, 11, 'core public operation count drifted')
+assert.ok(
+  teamReleaseFixture.operations.some((operation) => operation.method === 'GET' && operation.path === '/agent/evaluations'),
+  'Agent 평가 release 확장이 baseline에 있어야 합니다',
+)
 
 const validateScalar = (schema, value, label) => {
   if (value === null) {
@@ -255,6 +261,15 @@ assert.deepEqual(captures[0].params, {}, 'undefined query fields must be removed
 assert.deepEqual(Object.keys(captures[3].data).sort(), ['query', 'top_k'])
 assert.deepEqual(captures[8].data, { decision: 'APPROVED', decided_by: 'operator' })
 assert.deepEqual(captures[10].data, { alarm: { source: 'TRACE', alarm_id: 'TAL-0001' } })
+
+await agent.askAgent({
+  question: 'Explain this stored run',
+  agent_run_id: 'RUN-000001',
+})
+assert.deepEqual(captures.at(-1).data, {
+  question: 'Explain this stored run',
+  agent_run_id: 'RUN-000001',
+})
 
 await agent.decideApproval('APR-000001', {
   decision: 'REJECT',

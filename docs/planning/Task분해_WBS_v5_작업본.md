@@ -22,7 +22,7 @@ v4까지의 `kosa_0813` epoch Task는 이력으로만 남긴다. 이 문서의 `
 | 임베딩 | 벡터 검색 채택. 교육생 배포패키지 ①의 `BAAI/bge-m3`·1024차원을 고정하고 process당 1회 재사용한다 | 설계 §5.3, 역할 §7.1 |
 | n8n | 실행 시작은 `POST /agent/runs`가 소유하며, delivery·write-back workflow 3종은 **팀 산출물**로 학원 공용 n8n에 import·연결한다. 팀 compose에는 n8n 서비스를 만들지 않는다 | 설계 §7.3, 역할 §8.1 |
 | Kafka | **필수 범위. C 담당.** 팀 compose의 Kafka·MES Mock으로 구현한다 | 설계 §7.4, 역할 §8 |
-| Text2SQL·전역 감사 | **팀 release 필수 확장.** 멘토 기준 core 5화면·11 API는 보존하되 팀 최종 7화면·5개 확장 API 수용 Gate에 포함 | 요구사항 §5.4, §5.5 |
+| Text2SQL·전역 감사·Agent 평가 | **팀 release 필수 확장.** 멘토 기준 core 5화면·11 API는 보존하되 팀 최종 7화면·6개 확장 API(D 5종 + Agent 평가 1종) 수용 Gate에 포함 | 요구사항 §5.4, §5.5 |
 
 ### 1.2 fresh 재구축이 필요한 이유
 
@@ -56,12 +56,12 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | Common | 4명 공동, 통합 관리 방대혁 | 74.0h | 최종 intake·epoch·fresh bootstrap·safe graph·Runtime schema·계약·통합 gate·배포 |
 | A Detection | 신동원 | 28.0h | 재계산·알람·R03·score·격리 평가·화면 1·2 |
 | B Knowledge | 강연권 | 23.5h | Neo4j 44/85·RAG 정정·임베딩 검색·화면 4·5·후속 운영 검증 |
-| C Agent/HITL | 방대혁 | 82.5h | LangGraph·조치·승인·n8n·Kafka·delivery·화면 3 |
+| C Agent/HITL | 방대혁 | 107.5h | LangGraph·종합 진단·영향 분석·조치·승인·n8n·Kafka·delivery·화면 3·평가 보조 탭 |
 | D Analytics·Audit | 천승현 | 18.5h | 자연어 분석·질의/평가 이력·화면 6, 전역 감사 화면 7 |
-| **합계** | | **226.5h** | P2 도전 과제 제외 |
+| **합계** | | **251.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 176.5h / P1 50.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른한 개다.
+우선순위별 공수는 **P0 176.5h / P1 75.0h**이며 P2 3.5h는 합계에서 제외한다.
+Task 수는 100건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른두 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -80,7 +80,7 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
   RAG single-flight warmup·Kafka lag sampler·복구 판정표를 별도 실행 자원과 회귀로
   함께 고정한다. liveness는 이 과정과 분리해 dependency 장애에도 process 생존을 보장한다.
 - `V5-CM-4.4-1` **3.0h** — 7개 primary navigation·숨김 호환/상세 route를 기계 계약으로
-  고정하고, 팀 release 필수 API 5종의 구현 독립 fixture와 정본 문서·WBS·Frontend CI를 한
+  고정하고, 팀 release 필수 API 6종(D 5종 + Agent 평가 1종)의 구현 독립 fixture와 정본 문서·WBS·Frontend CI를 한
   제품 범위 전환으로 동기화한다.
 - `V5-CM-4.4-2` **3.0h** — core public 11개의 bare-array·paged 경계를 shared client에서
   분리하고 source-aware 실행·승인 enum adapter, canonical-only projection, fixture oracle·
@@ -91,8 +91,8 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 - `V5-CM-4.8` **3.0h** — PostgreSQL·Neo4j의 server-side timeout을 세 Agent read Tool에
   연결하고, 두 digest-pinned 격리 컨테이너의 실제 종료·세션 정리·후속 query와 exact 예외
   사상을 검증한다. CPU soft 구간·sentinel 비회수 판정과 CM-5.3 인용표까지 한 Gate로 닫는다.
-- `V5-CM-5.1` **4.0h** — release 19개·classified live 29개·문서 inventory
-  35개를 full-schema semantic으로 대조하고, 단일 canonical JSON에서 Markdown·CSV·PDF를
+- `V5-CM-5.1` **4.0h** — release 20개·classified live 30개·문서 inventory
+  36개를 full-schema semantic으로 대조하고, 단일 canonical JSON에서 Markdown·CSV·PDF를
   재생성한다. alias 25개의 소비·대체체·수동 증거 판정기와 drift 변이 회귀를 같은
   계약 Gate로 닫는다.
 - `V5-B-4.2` **4.0h** — 12개 정본 chamber selector·관계 API 4상태와 xyflow Ontology를
@@ -150,6 +150,14 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
   승인·다중 delivery·run-scoped 감사 subview, A/B deep-link 수신과 4상태 화면을 한 조립
   경계로 닫는다. GRAPH 근거는 `chamber_id·relation_id·graph_revision` deep-link로 Ontology에서
   동일 revision의 관계를 복원한다.
+- `V5-C-5.2-1` **25.0h** — final 12 incident와 R03 persisted WAFER 3개·AlarmRef 9개,
+  non-R03 고유 WAFER 전체, run당 target 최대 3을 구조 계약으로 고정한다. 예상 분포
+  `1 WAFER×5·2×4·3×3`과 FDC 22회는 CM-5.2 실제 증적으로 확정한다. FDC·Graph·RAG 근거
+  충분성/충돌, 구조화 LLM의 1차·대안
+  가설·영향 확인 범위·검증 절차와 규칙 조치·7상태 delivery를 한 화면에서 분리한다. 실행 문맥
+  Ask, 현재 Runtime DB의 canonical v2 run 유사 비교, 정적 데이터 사후 효과 불가 상태,
+  bounded polling·incident Trace·attempt별 평가 artifact와 시연 PC preflight, canonical 36개
+  계약을 함께 닫는다.
 - `V5-C-5.3` **3.0h** — 미실행 incident 선택·대표 AlarmRef 결정, production Runtime 수명,
   target/confirm CLI와 incident별 실패 격리·exact run 보상, batch-scoped run·action·delivery
   관측 집계 및 격리 PostgreSQL 2회차 무변경 검증을 하나의 일회성 관리 명령 경계로 닫는다.
@@ -208,7 +216,7 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-CM-4.2 | P0 | 감사 쓰기 계약. 완료: event enum·entity mapping·append-only helper와 트랜잭션 규칙을 제공한다. UPDATE·DELETE 경로를 만들지 않는다 | FR-D-07, NFR-05 | V5-CM-4.1 | 1.0h |
 | V5-CM-4.3 | P0 | profile 통합 검증기. 완료: 공용 3 DB의 epoch·stage·table·행 수·hash·권한·marker를 한 번에 검사하고 target별 결과를 보존한다. 한 target 실패가 전체 report를 지우지 않고 다른 DB 변경은 0건이다 | FR-I-04, NFR-14, NFR-18 | V5-CM-3.5 | 3.0h |
 | V5-CM-4.4 | P0 | API contract fixture baseline. 완료: 필수 public 11개(호환 9개·단일 chamber 관계 API·`POST /agent/runs`) + internal delivery 1개 + health 2개, **합계 14개**의 canonical DTO/OpenAPI 기대값과 오류·bare-array 규칙을 구현과 독립된 fixture로 고정한다. 구현된 선택 확장만 별도 fixture에 포함하고 deferred 확장은 OpenAPI 존재를 요구하지 않는다. **실제 endpoint PASS는 후속 최종 API gate에서 판정한다** | FR-I-01, FR-I-07, NFR-09~11 | V5-CM-4.1 | 2.0h |
-| V5-CM-4.4-1 | P0 | **7화면 navigation·release 계약 확정**. 완료: `/dashboard`·`/alarms`·`/agent-runs`·`/documents`·`/ontology`·`/analytics`·`/audit-logs`의 순서·라벨을 exact contract로 고정한다. `/knowledge`는 숨김 호환 route, alarm/run 상세와 index·catchall은 유지하며 `/traces`·`/actions`는 route·메뉴에서 제외한다. 멘토 core 14 operation과 별개로 Analytics 4개+전역 Audit 1개의 구현 독립 team release fixture를 추가하고 Frontend lint·build·navigation test를 CI에 등록한다 | FR-D-01~09, FR-I-02, FR-I-07 | V5-CM-4.4 | 3.0h |
+| V5-CM-4.4-1 | P0 | **7화면 navigation·release 계약 확정**. 완료: `/dashboard`·`/alarms`·`/agent-runs`·`/documents`·`/ontology`·`/analytics`·`/audit-logs`의 순서·라벨을 exact contract로 고정한다. `/knowledge`는 숨김 호환 route, alarm/run 상세와 index·catchall은 유지하며 `/traces`·`/actions`는 route·메뉴에서 제외한다. 멘토 core 14 operation과 별개로 Analytics 4개+전역 Audit 1개+Agent 평가 1개의 구현 독립 team release fixture를 추가하고 Frontend lint·build·navigation test를 CI에 등록한다 | FR-D-01~09, FR-C-15, FR-I-02, FR-I-07 | V5-CM-4.4 | 3.0h |
 | V5-CM-4.4-2 | P0 | **shared client·projection 기반**. 완료: 필수 public 11개의 core client와 paged·화면 adapter를 method·path·shape로 분리하고 source-aware `POST /agent/runs`와 public 승인 enum을 exact 전송한다. Frontend는 canonical-only projection과 fixture 기반 test oracle·동형 runtime mock을 제공하며 deprecated alias 파생은 Backend Router 단독 소유다. domain 페이지의 실소비는 A/B/C/D Task에 두고 Common shell의 감사 UI 호출은 0건이다 | FR-I-02, FR-I-03, NFR-11 | V5-CM-4.4-1 | 3.0h |
 | V5-CM-4.4-3 | P1 | alias 제거 조건. 완료: compatibility alias 목록과 모든 `features/**` 소비자의 core client·canonical projection 전환을 정적 import/call·alias 속성 스캔과 alias 미포함 실서버 동형 fixture 회귀로 증명한다. 등록부 `consumers`가 실제 소비자와 exact 일치하고 deprecated adapter 참조 0건일 때만 alias 제거 추적 항목을 최종 gate에 연결한다 | FR-I-03 | V5-CM-4.4-2 | 1.5h |
 | V5-CM-4.5 | P1 | compose·배포 통합. 완료: PostgreSQL·Neo4j·n8n은 학원 공용 외부 서비스로 환경변수 연결하고 팀 compose에는 Backend·Frontend·Kafka·MES Mock consumer만 둔다. `/api` proxy·명시 CORS Origin·고정 image tag를 적용하며 DB/Neo4j/n8n 컨테이너와 reference `00_load.sh` 호출은 0건이다 | FR-I-04, FR-I-06, NFR-02, NFR-12, NFR-15 | V5-CM-4.3, V5-C-4.2 | 3.0h |
@@ -220,8 +228,8 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 
 | ID | P | 완료 기준 | 요구사항 | 선행 | 공수 |
 |---|---|---|---|---|---:|
-| V5-CM-5.1 | P1 | 실제 API·산출물 sync gate. 완료: core public 11개 + internal delivery 1개 + health 2개와 team release Analytics 4개+전역 Audit 1개, **합계 19 operation**의 release 계약과 구현된 선택 API를 합친 **classified live 29 operation**의 route/OpenAPI/contract를 두 독립 baseline과 대조하고 동일 Method+Path 중복 0을 확인한다. 미구현 deferred 선택 확장은 OpenAPI를 요구하지 않는다. API Markdown·CSV·PDF를 같은 schema에서 재생성해 path·request·response·status diff 0을 기록한다 | FR-I-01, FR-I-07, NFR-10~11 | V5-CM-4.4, V5-CM-4.4-3, V5-A-3.2, V5-B-2.3, V5-B-3.3, V5-C-4.4, V5-C-5.1, V5-D-1.2, V5-D-1.4, V5-D-2.6, V5-CM-4.6 | 4.0h |
-| V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 7화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. Analytics가 query·validate·history·evaluations를, 전역 Audit가 paged API를 **실제 소비**하며 route-level Mock 0과 Loading·Error·Empty·Success를 검증한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, label 비누수와 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.4, V5-D-2.6 | 2.0h |
+| V5-CM-5.1 | P1 | 실제 API·산출물 sync gate. 완료: core public 11개 + internal delivery 1개 + health 2개와 team release Analytics 4개+전역 Audit 1개+Agent 평가 1개, **합계 20 operation**의 release 계약과 구현된 선택 API를 합친 **classified live 30 operation**의 route/OpenAPI/contract를 두 독립 baseline과 대조하고 동일 Method+Path 중복 0을 확인한다. 미구현 deferred 선택 확장은 OpenAPI를 요구하지 않는다. API Markdown·CSV·PDF를 같은 schema에서 재생성해 path·request·response·status diff 0을 기록한다 | FR-I-01, FR-I-07, NFR-10~11 | V5-CM-4.4, V5-CM-4.4-3, V5-A-3.2, V5-B-2.3, V5-B-3.3, V5-C-4.4, V5-C-5.1, V5-C-5.2-1, V5-D-1.2, V5-D-1.4, V5-D-2.6, V5-CM-4.6 | 4.0h |
+| V5-CM-5.2 | P1 | 통합 E2E gate. 완료: React 7화면+FastAPI+3 DB+Neo4j+RAG+n8n SMTP+Kafka MES Mock를 `kosa_agent_e2e`에서 실행한다. Analytics가 query·validate·history·evaluations를, 전역 Audit가 paged API를, Agent가 fault 5-class·golden-flow immutable artifact를 **실제 소비**하며 route-level Mock 0과 Loading·Error·Empty·Success를 검증한다. 12 incident 5/4/3, 승인 전 Kafka 0, 승인·반려·UNKNOWN·중복 효과 최대 1, label 비누수와 다른 DB 변경 0건을 남긴다 | FR-I-01~05, NFR-16~20 | V5-CM-5.1, V5-CM-4.7, V5-A-3.4, V5-B-4.1, V5-B-4.2, V5-C-5.2, V5-C-6.1, V5-D-1.4, V5-D-2.6 | 2.0h |
 | V5-CM-5.3 | P1 | 최종 비기능·증적 gate. 완료: Docker·Python·Node·lockfile pin, CORS 허용/거부, `+09:00`, secret scan, DB·Neo4j·LLM·n8n·Kafka 장애 격리를 검증한다. public DTO의 DB 유래 non-nullable 필드를 DDL `NOT NULL`·서버 기본값·write 경계 필수값 중 하나와 대조해 저장 시 NULL 생성 사각을 막는다. 공용 전환을 다시 수행하거나 새 승인을 받지 않고 CM-2.6·2.7에서 생성한 backup/restore·팀 change approval 증적의 존재·대상·결과를 최종 report에 인용한다. CM-4.8의 Tool별 hard/soft 판정·종료 postcondition·잔여 미충족도 같은 report에 인용한다 | NFR-02, NFR-03, NFR-10, NFR-12~16 | V5-CM-5.2, V5-CM-1.6, V5-CM-1.7, V5-CM-4.8 | 2.0h |
 
 **Common 합계: 74.0h**
@@ -304,12 +312,13 @@ Task 수는 99건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예
 | V5-C-4.6-1 | P0 | `send_action(action_id)` Tool. 완료: 단일 `action_id`의 저장된 delivery plan·승인 상태를 검증해 실행 가능한 EMAIL·MES_MOCK adapter만 호출하고 조치를 재결정하지 않는다. 예약은 `AuditedToolExecutor`의 공용 예산 guard를 경유하고 `reserve_tool_call()`을 직접 호출하지 않는다. graph node는 공용 nonterminal Tool 수집 경계를 경유하며 예산 차단으로 run을 FAILED 처리하지 않는다. 0건·정책 거부·timeout·중복은 공통 `ok`·`reason`·빈 deliveries 계약과 공통 reason prefix를 따른다 | FR-C-06, NFR-09, NFR-20 | V5-C-4.6 | 1.5h |
 | V5-C-5.1 | P0 | 필수 API 5종. 완료: `GET /agent/runs`, `POST /agent/runs`, `POST /agent/ask`, `GET /approvals`, `POST /approvals/{approval_id}/decision`을 canonical DTO로 제공한다. 실행 시작은 `{alarm:{source,alarm_id}}`만 받아 202로 run을 만들고, run 응답의 `deliveries`는 action link에서 public `EMAIL\|MES` projection으로 만든다. 목록은 안정 정렬·bare array, 공개 승인 body는 `APPROVED\|REJECTED`다. Chat은 명시된 `lot_hist_id`·`lot_id`·`chamber_id`·`model_code`로만 A/B 읽기 Tool을 선택하고, 근거 ID citation·required-nullable 판단·5종 evidence union을 검증하며 Runtime·감사·action·approval 쓰기는 0이다 | FR-C-01, FR-C-05, FR-I-03, FR-I-07, NFR-10~11, NFR-19 | V5-C-3.3, V5-C-2.3, V5-C-1.3, V5-B-2.2, V5-CM-4.1 | 4.0h |
 | V5-C-5.2 | P1 | 화면 3 Agent 조립. 완료: 실행·승인·action·delivery와 A/B 근거 deep link를 연결하고, D의 bare 감사 API를 소비하는 run-scoped 감사 subview를 공유 경계에 구현한다. GRAPH는 `chamber_id·relation_id·graph_revision`으로 Ontology에 이동해 동일 revision의 관계를 복원한다. Loading·Error·Empty·Success와 승인 충돌·오류 상태를 검증한다. 화면 실행을 위해 추가한 Detection 3 route는 A-3.1·A-3.2 승계 전 scaffold이며 이 Task에서 A Task 완료로 간주하지 않는다 | FR-C-13, FR-I-02, NFR-17 | V5-C-5.1 | 6.0h |
+| V5-C-5.2-1 | P1 | Agent 종합 진단·판단·조치 전달과 평가 보조 탭. 완료: final epoch의 canonical 12 incident와 R03 3건·persisted WAFER 3·AlarmRef 9·non-R03 고유 WAFER 전체·run당 target 최대 3을 구조 fixture로 고정하고 기존 FDC Tool로 조회한다. `1 WAFER×5·2×4·3×3`과 FDC 22회는 CM-5.2 실제 증적으로 확정한다. PG 실제 route·Neo4j·RAG의 충분성/충돌과 LLM 1차·대안 가설·영향 확인 범위·검증 절차를 저장하되 `ACTION-POLICY-V1` 규칙 조치와 HITL을 바꾸지 않는다. 유사 incident는 현재 Runtime DB의 canonical v2 최초 run 안에서 exact score로 비교하고, 사후 효과는 정적 데이터 한계 `NOT_AVAILABLE_STATIC_DATASET`으로 공개한다. rehearsal은 `kosa_agent_e2e`, 시연은 승인·백업·Runtime reset 뒤 v2 12건을 준비한 `kosa_agent`를 사용한다. 실행 문맥 Ask, 종합 진단 UI·7상태 delivery·bounded polling·화면 2·3 공용 Trace·aggregate-only 평가 API를 제공하며 v2 artifact는 attempt별 새 identity로 게시하고 시연 PC env·hash를 확인한다. canonical 36 operation을 유지하고 raw prompt·정답 label·credential·내부 hash·가짜 운영 성과는 노출하지 않는다 | FR-C-01~03, FR-C-07~08, FR-C-10, FR-C-13, FR-C-15, FR-I-02, NFR-03, NFR-17, NFR-19 | V5-C-5.2, V5-B-4.2 | 25.0h |
 | V5-C-5.3 | P0 | incident 일회성 자동 배치 관리 명령. 완료: Runtime run 이력이 전혀 없는 incident만 stable order로 선택해 대표 `AlarmRef`로 기존 Agent runtime을 incident당 1회 실행하는 `run_pending_incidents.py --once`를 제공한다. start 뒤 continue 실패는 exact run을 FAILED로 보상하고 postcondition을 재조회하며, 이전 `RUNNING` run은 `INCOMPLETE_RUN`으로 정상 race와 구분한다. 기존 이력이 있으면 FAILED를 포함해 자동 재선택하지 않고 public 수동 재실행에 맡기며, 즉시 2회차 실행의 신규 run·action·delivery가 모두 0임을 검증한다. 상시 scheduler·public batch API/UI·n8n WF1은 만들지 않는다 | FR-C-09, FR-C-14 | V5-C-5.1 | 3.0h |
 | V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`에서 C-5.3 batch command 1회로 incident 12개를 실행해 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 2회차 batch 신규 run·action·delivery 0, 수동 재실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-5.3, V5-C-3.4, V5-CM-4.7 | 4.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: C-6.1 원 evidence의 round-2 baseline run 12건에서 Runtime prediction hash를 label 접근 전에 고정한다. evaluation role로 각 incident 전체 member를 읽어 distinct non-NRM 1종 7건만 Accuracy·고정 5-class Macro-F1·class별 Precision/Recall/F1로 보고하고, 0종 5건은 `NO_INJECTED_FAULT`, 2종 이상은 `AMBIGUOUS_LABEL`로 제외한다. 구조화 prediction·run-scoped 근거·규칙 조치 일치 12/12만 hard Gate로 삼고 합성 GT metadata 4종·두 DB provenance/shared-key hash·분모·제외 사유를 불변 artifact에 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 4.0h |
 | V5-C-7.1 | P2 | Level 3 ReAct 비교 | FR-C-11 | V5-C-6.2 | 2.0h |
 
-**C 합계: 82.5h** (P2 2.0h 제외)
+**C 합계: 107.5h** (P2 2.0h 제외)
 
 ---
 
@@ -397,7 +406,7 @@ preflight → rehearse → apply → 재실행 no-op → 검증을 통과해야 
 |---|---|---|
 | 임베딩 provider·model·차원 | **확정:** ① `BAAI/bge-m3`·1024, process singleton. 정확한 model revision·weights hash gate는 기능 구현을 막지 않고 B-1.4에서 닫는다 | `V5-B-1.3`·`V5-B-2.1`·`V5-B-1.4` |
 | Kafka broker 운영 위치 | **확정:** 팀 compose의 Kafka·MES Mock. PostgreSQL·Neo4j·n8n만 공용 외부 서비스 | `V5-CM-4.5` |
-| Text2SQL·전역 감사 활성 여부 | **확정:** 팀 release 7화면과 5개 확장 API의 필수 인수 기준 | `V5-D-1.4`, `V5-D-2.1~2.6`, `V5-CM-5.1~5.2` |
+| Text2SQL·전역 감사·Agent 평가 활성 여부 | **확정:** 팀 release 7화면과 6개 확장 API(D 5종 + Agent 평가 1종)의 필수 인수 기준 | `V5-C-5.2-1`, `V5-D-1.4`, `V5-D-2.1~2.6`, `V5-CM-5.1~5.2` |
 | v4 corrected/bootstrap 코드 삭제 | `V5-CM-1.6`·`V5-CM-1.7`로 분리 | 공용 profile 전환 뒤, 최종 gate 전 |
 | compatibility alias 제거 | `V5-CM-4.4-3`이 조건을 고정하고 최종 API gate가 충족 여부를 기록 | 모든 화면 canonical 전환 후 |
 | ~~`V5-CM-1.2` skip 중 graph 2건(`test_master_cypher`)~~ | **해제 완료.** `V5-B-3.1`(#106)이 offline parser·fixture를 넣으면서 literal skip이 0이 됐고, `V5-CM-2.7`이 최종 artifact 재기준화와 safe apply로 계약을 닫았다 | 해소 |
