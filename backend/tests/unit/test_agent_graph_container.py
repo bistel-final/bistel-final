@@ -1775,15 +1775,30 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
 
     _endpoint, engine = runtime
     _seed_runtime(engine)
+    # `agent-hypothesis-v2-ko1`의 구조화 계약을 그대로 만족시킨다. v1 7필드만 주면
+    # STRUCTURE_INVALID로 거부돼 prediction이 저장되지 않고, 아래 조회가 NoResultFound가 된다.
     content = json.dumps(
         {
             "predicted_fault_code": "OTH",
             "confidence": 0.6,
-            "cause_summary": "pressure pattern",
+            "cause_summary": "압력 이상 패턴이 관측되었습니다.",
             "supporting_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
             "supporting_chunk_ids": [],
             "supporting_relation_ids": ["REL-PART"],
-            "uncertainty": "limited history",
+            "supporting_lot_hist_ids": [],
+            "supporting_parameter_ids": [],
+            "uncertainty": "이력 범위가 제한적입니다.",
+            "observations": ["압력 이상 패턴 한 건이 관측되었습니다."],
+            "evidence_synthesis": "FDC와 Graph 근거를 함께 비교했습니다.",
+            "alternative_hypotheses": [
+                {
+                    "summary": "다른 원인 가능성이 있습니다.",
+                    "lower_rank_reason": "직접 근거가 상대적으로 부족합니다.",
+                }
+            ],
+            "impact_summary": "현재 incident의 직접 범위를 우선 확인해야 합니다.",
+            "verification_steps": ["인용된 근거를 다시 확인합니다."],
+            "limitations": ["이력 범위가 제한적입니다."],
         }
     )
     monkeypatch.setattr(
