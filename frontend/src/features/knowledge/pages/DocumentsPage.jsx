@@ -11,6 +11,33 @@ import { DOC_CHIPS, DOC_FILTERS } from '../mock/documents.js'
 const ALL_MODELS = '전체'
 const HISTORY_KEY = 'bistel.documents.searchHistory'
 const MAX_HISTORY = 8
+const DOCUMENT_LIBRARY = [
+  {
+    group: 'Troubleshooting',
+    items: [
+      {
+        document_id: 'DOC-TROUBLE-FDC',
+        title: 'FDC Fault Guide',
+        meta: 'COMMON · 조치 기준',
+      },
+    ],
+  },
+  {
+    group: 'Equipment SPEC',
+    items: [
+      {
+        document_id: 'DOC-SPEC-PH9000',
+        title: 'PH-9000 Photo Scanner',
+        meta: 'PH-9000 · Photo',
+      },
+      {
+        document_id: 'DOC-SPEC-ET7500',
+        title: 'ET-7500 Dry Etcher',
+        meta: 'ET-7500 · Etch',
+      },
+    ],
+  },
+]
 
 function loadSearchHistory() {
   try {
@@ -128,6 +155,33 @@ function DocumentsPage() {
       })
   }
 
+  const openLibraryDocument = (document) => {
+    const requestToken = ++documentRequestRef.current
+    setSelectedHit({
+      document_id: document.document_id,
+      chunk_id: null,
+      title: document.title,
+    })
+    setDetailOpen(true)
+    setDetailLoading(true)
+    setDetailError(null)
+    getDocument(document.document_id)
+      .then((detail) => {
+        if (documentRequestRef.current !== requestToken) return
+        setDocumentDetail(detail)
+        if (!detail) setDetailError('문서를 찾을 수 없습니다.')
+      })
+      .catch((e) => {
+        if (documentRequestRef.current !== requestToken) return
+        setDocumentDetail(null)
+        setDetailError(e.message)
+      })
+      .finally(() => {
+        if (documentRequestRef.current !== requestToken) return
+        setDetailLoading(false)
+      })
+  }
+
   const closeDocument = () => {
     setDetailOpen(false)
   }
@@ -150,9 +204,9 @@ function DocumentsPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 items-stretch gap-4">
-        <Card className="flex w-[280px] flex-none flex-col">
+        <Card className="flex w-[280px] flex-none flex-col overflow-hidden">
           <CardHeader title="추천 질의" />
-          <div className="flex flex-col gap-2 px-4">
+          <div className="flex flex-col gap-2 px-4 pb-1">
             {DOC_CHIPS.map((q) => (
               <button
                 key={q}
@@ -164,6 +218,37 @@ function DocumentsPage() {
               </button>
             ))}
           </div>
+
+          <div className="mt-3 border-t border-cell-line px-4 pb-3 pt-3">
+            <div className="mb-2 text-[11px] font-bold text-g2">문서 라이브러리</div>
+            <div className="flex flex-col gap-3">
+              {DOCUMENT_LIBRARY.map((group) => (
+                <div key={group.group}>
+                  <div className="mb-1.5 font-mono text-[10px] font-bold uppercase text-faint">{group.group}</div>
+                  <div className="flex flex-col gap-1.5">
+                    {group.items.map((document) => (
+                      <button
+                        key={document.document_id}
+                        type="button"
+                        onClick={() => openLibraryDocument(document)}
+                        className={`cursor-pointer rounded-lg border px-3 py-2 text-left transition ${
+                          selectedHit?.document_id === document.document_id && detailOpen
+                            ? 'border-blue bg-row-sel'
+                            : 'border-cell-line bg-white hover:border-blue hover:bg-tint-blue'
+                        }`}
+                      >
+                        <div className="truncate text-[12px] font-extrabold text-ink" title={document.title}>
+                          {document.title}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[10.5px] font-bold text-g2">{document.meta}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-4 border-t border-cell-line px-4 pb-4 pt-3">
             <div className="mb-2 text-[11px] font-bold text-g2">검색 기록</div>
             {history.length === 0 ? (

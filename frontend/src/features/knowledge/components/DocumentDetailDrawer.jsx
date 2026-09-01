@@ -3,9 +3,18 @@ import ErrorState from '../../../shared/components/ErrorState.jsx'
 import MarkdownContent from '../../../shared/components/MarkdownContent.jsx'
 import { DashedCard } from '../../../shared/components/ui/Card.jsx'
 
-function DocumentDetailDrawer({ open, hit, detail, loading, error, onClose, onRetry }) {
+function DocumentDetailDrawer({
+  open,
+  hit,
+  detail,
+  loading,
+  error,
+  onClose,
+  onRetry,
+}) {
   const detailBodyRef = useRef(null)
   const selectedChunkRef = useRef(null)
+  const chunkRefs = useRef({})
 
   useEffect(() => {
     if (!open || !detail || !detailBodyRef.current || !selectedChunkRef.current) return
@@ -55,30 +64,64 @@ function DocumentDetailDrawer({ open, hit, detail, loading, error, onClose, onRe
             <div className="text-[13px] font-extrabold text-ink">문서를 선택해 주세요</div>
           </DashedCard>
         ) : (
-          <div className="flex flex-col gap-3">
-            {detail.chunks.map((chunk) => {
-              const selected = chunk.chunk_id === hit?.chunk_id
-              return (
-                <section
-                  key={chunk.chunk_id}
-                  ref={selected ? selectedChunkRef : null}
-                  className={`rounded-xl border p-4 ${selected ? 'border-blue bg-tint-blue shadow-sm' : 'border-line bg-white'}`}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-mono text-[10.5px] font-bold text-g2">chunk {chunk.chunk_seq}</div>
-                      {chunk.section_title && (
-                        <div className="mt-0.5 truncate text-[13px] font-extrabold text-ink" title={chunk.section_title}>
-                          {chunk.section_title}
-                        </div>
-                      )}
+          <div className="grid min-h-0 grid-cols-[220px_minmax(0,1fr)] gap-4">
+            <nav className="sticky top-0 max-h-[calc(100vh-210px)] overflow-y-auto rounded-[10px] border border-line bg-soft p-3">
+              <div className="mb-2 text-[11px] font-extrabold text-g2">문서 목차</div>
+              <div className="flex flex-col gap-1">
+                {detail.chunks.map((chunk) => {
+                  const selected = chunk.chunk_id === hit?.chunk_id
+                  return (
+                    <button
+                      key={chunk.chunk_id}
+                      type="button"
+                      onClick={() => {
+                        const body = detailBodyRef.current
+                        const target = chunkRefs.current[chunk.chunk_id]
+                        if (!body || !target) return
+                        body.scrollTop = target.offsetTop - 96
+                      }}
+                      className={`cursor-pointer rounded-md px-2.5 py-2 text-left transition ${
+                        selected ? 'bg-tint-blue text-blue-hover' : 'hover:bg-white'
+                      }`}
+                    >
+                      <div className="font-mono text-[10px] font-bold text-g2">chunk {chunk.chunk_seq}</div>
+                      <div className="mt-0.5 line-clamp-2 text-[11.5px] font-bold text-ink">
+                        {chunk.section_title ?? chunk.chunk_id}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </nav>
+
+            <div className="flex min-w-0 flex-col gap-3">
+              {detail.chunks.map((chunk) => {
+                const selected = chunk.chunk_id === hit?.chunk_id
+                return (
+                  <section
+                    key={chunk.chunk_id}
+                    ref={(node) => {
+                      if (node) chunkRefs.current[chunk.chunk_id] = node
+                      if (selected) selectedChunkRef.current = node
+                    }}
+                    className={`rounded-[10px] border p-4 ${selected ? 'border-blue bg-tint-blue shadow-sm' : 'border-line bg-white'}`}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-mono text-[10.5px] font-bold text-g2">chunk {chunk.chunk_seq}</div>
+                        {chunk.section_title && (
+                          <div className="mt-0.5 truncate text-[13px] font-extrabold text-ink" title={chunk.section_title}>
+                            {chunk.section_title}
+                          </div>
+                        )}
+                      </div>
+                      {selected && <span className="flex-none rounded-full bg-blue px-2.5 py-1 text-[10px] font-bold text-white">선택 청크</span>}
                     </div>
-                    {selected && <span className="flex-none rounded-full bg-blue px-2.5 py-1 text-[10px] font-bold text-white">선택 청크</span>}
-                  </div>
-                  <MarkdownContent content={chunk.content} className="text-[12.5px] text-g1" />
-                </section>
-              )
-            })}
+                    <MarkdownContent content={chunk.content} className="text-[12.5px] text-g1" />
+                  </section>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
