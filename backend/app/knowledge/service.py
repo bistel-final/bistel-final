@@ -32,9 +32,13 @@ class DocumentSearchService:
         *,
         top_k: int = 4,
         model_code: str | None = None,
+        doc_type: str | None = None,
     ) -> list[DocumentHit]:
         normalized_model_code = (
             model_code.strip().upper() if model_code and model_code.strip() else None
+        )
+        normalized_doc_type = (
+            doc_type.strip().upper() if doc_type and doc_type.strip() else None
         )
 
         query_vector = embed_query(query)
@@ -42,6 +46,7 @@ class DocumentSearchService:
             query_vector,
             top_k=top_k,
             model_code=normalized_model_code,
+            doc_type=normalized_doc_type,
         )
         return [DocumentHit.model_validate(row) for row in rows]
 

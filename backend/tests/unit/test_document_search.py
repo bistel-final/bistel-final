@@ -31,7 +31,7 @@ from app.knowledge.tools import search_documents as search_documents_tool
 
 class FakeRepository:
     def __init__(self) -> None:
-        self.arguments: tuple[list[float], int, str | None] | None = None
+        self.arguments: tuple[list[float], int, str | None, str | None] | None = None
 
     def search(
         self,
@@ -39,8 +39,9 @@ class FakeRepository:
         *,
         top_k: int,
         model_code: str | None,
+        doc_type: str | None,
     ) -> list[dict[str, object]]:
-        self.arguments = (query_vector, top_k, model_code)
+        self.arguments = (query_vector, top_k, model_code, doc_type)
         return [
             {
                 "chunk_id": "DOC-SPEC-ET7500:cs2:0001",
@@ -62,9 +63,10 @@ def test_service_embeds_query_and_returns_document_hits(monkeypatch: Any) -> Non
         "etch",
         top_k=4,
         model_code=" et-7500 ",
+        doc_type=" spec ",
     )
 
-    assert repository.arguments == ([0.1, 0.2], 4, "ET-7500")
+    assert repository.arguments == ([0.1, 0.2], 4, "ET-7500", "SPEC")
     assert hits == [
         ToolDocumentHit(
             chunk_id="DOC-SPEC-ET7500:cs2:0001",
@@ -246,6 +248,57 @@ def test_repository_search_without_model_code_searches_all_documents(
     assert captured["params"] == {
         "query_vector": "[0.1]",
         "top_k": 4,
+    }
+    assert connection.closed is True
+
+
+def test_repository_search_filters_by_doc_type(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResult:
+        def mappings(self) -> FakeResult:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return []
+
+    class FakeConnection:
+        connection = SimpleNamespace(driver_connection=object())
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+        def execute(self, sql: object, params: dict[str, object]) -> FakeResult:
+            captured["sql"] = str(sql)
+            captured["params"] = params
+            return FakeResult()
+
+    connection = FakeConnection()
+    engine = SimpleNamespace(connect=lambda: connection)
+
+    monkeypatch.setattr("app.knowledge.document_search.register_vector", lambda _: None)
+
+    assert (
+        DocumentSearchRepository(engine).search(
+            [0.1],
+            top_k=6,
+            model_code="PH-9000",
+            doc_type="SPEC",
+        )
+        == []
+    )
+
+    normalized_sql = sub(r"\s+", " ", str(captured["sql"]))
+    assert "d.model_code = :model_code OR d.model_code = 'COMMON'" in normalized_sql
+    assert "d.doc_type = :doc_type" in normalized_sql
+    assert captured["params"] == {
+        "query_vector": "[0.1]",
+        "top_k": 6,
+        "model_code": "PH-9000",
+        "doc_type": "SPEC",
     }
     assert connection.closed is True
 
@@ -538,8 +591,14 @@ def test_documents_search_api_returns_bare_array_with_doc_id_alias(
             *,
             top_k: int,
             model_code: str | None,
+            doc_type: str | None,
         ) -> list[ToolDocumentHit]:
-            assert (query, top_k, model_code) == ("check", 4, "ET-7500")
+            assert (query, top_k, model_code, doc_type) == (
+                "check",
+                4,
+                "ET-7500",
+                "SPEC",
+            )
             return [
                 ToolDocumentHit(
                     chunk_id="DOC-SPEC-ET7500:cs2:0001",
@@ -556,7 +615,7 @@ def test_documents_search_api_returns_bare_array_with_doc_id_alias(
     monkeypatch.setattr("app.knowledge.router.DocumentSearchService", FakeService)
 
     response = search_documents_api(
-        DocumentSearchRequest(query="check", model_code="ET-7500")
+        DocumentSearchRequest(query="check", model_code="ET-7500", doc_type="SPEC")
     )
 
     assert [hit.model_dump() for hit in response] == [
@@ -602,8 +661,14 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
             *,
             top_k: int,
             model_code: str | None,
+            doc_type: str | None,
         ) -> list[ToolDocumentHit]:
-            assert (query, top_k, model_code) == ("check", 4, "ET-7500")
+            assert (query, top_k, model_code, doc_type) == (
+                "check",
+                4,
+                "ET-7500",
+                "SPEC",
+            )
             return [
                 ToolDocumentHit(
                     chunk_id="DOC-SPEC-ET7500:cs2:0001",
@@ -623,7 +688,7 @@ def test_documents_search_http_response_is_bare_array_with_doc_id_alias(
 
     response = TestClient(app).post(
         "/documents/search",
-        json={"query": "check", "model_code": "ET-7500"},
+        json={"query": "check", "model_code": "ET-7500", "doc_type": "SPEC"},
     )
 
     assert response.status_code == 200
@@ -658,6 +723,7 @@ def test_documents_search_http_returns_model_not_ready(
             *,
             top_k: int,
             model_code: str | None,
+            doc_type: str | None,
         ) -> list[ToolDocumentHit]:
             raise EmbeddingModelNotReadyError()
 

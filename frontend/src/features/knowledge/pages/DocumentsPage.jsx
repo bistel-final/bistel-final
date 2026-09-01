@@ -191,6 +191,7 @@ function DocumentsPage() {
     searchDocuments({
       query: q,
       model_code: nextModelCode === ALL_MODELS ? undefined : nextModelCode,
+      doc_type: nextDocType === ALL_DOC_TYPES ? undefined : nextDocType,
       top_k: nextTopK,
     })
       .then((res) => {
@@ -316,7 +317,7 @@ function DocumentsPage() {
   const filteredHits = useMemo(() => {
     if (!result?.hits) return []
     if (docType === ALL_DOC_TYPES) return result.hits
-    return result.hits.filter((hit) => DOCUMENT_TYPE_BY_ID[hit.document_id] === docType)
+    return result.hits.filter((hit) => (hit.doc_type ?? DOCUMENT_TYPE_BY_ID[hit.document_id]) === docType)
   }, [docType, result])
 
   const filteredLibrary = useMemo(
