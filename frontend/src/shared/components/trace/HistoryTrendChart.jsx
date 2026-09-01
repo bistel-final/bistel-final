@@ -149,7 +149,7 @@ function sensorGroups(response, fallbackWafer, fallbackLimit) {
 export function HistoryTrendChart({ wafer, lim, response = null, emptyMessage = null, highlightWaferNo = null, viewMode = 'context' }) {
   const groups = sensorGroups(response, wafer, lim)
   if (!groups.length) {
-    return <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">{emptyMessage ?? '선택한 incident의 trace 실측이 응답에 없습니다'}</div>
+    return <div className={`flex items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2 ${viewMode === 'selected' ? 'h-full min-h-[500px]' : 'h-[300px]'}`}>{emptyMessage ?? '선택한 incident의 trace 실측이 응답에 없습니다'}</div>
   }
   const fillsContainer = viewMode === 'selected'
   return (
@@ -213,6 +213,7 @@ export function HistoryTrendCard({ alarm, wafer, lim, response = null, loading, 
   const scopeLabel = lotWaferCount
     ? `동일 챔버 ${groupCount}장 / LOT 전체 ${lotWaferCount}장`
     : `동일 챔버 ${groupCount}장`
+  const bodyHeight = allowWaferSelection ? 'h-[500px]' : 'h-[300px]'
   return (
     <Card className="px-5 pb-3 pt-4">
       <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -224,7 +225,7 @@ export function HistoryTrendCard({ alarm, wafer, lim, response = null, loading, 
           {alarm ? actions : null}
         </span>
       </div>
-      {loading ? <div className="flex h-[300px] items-center justify-center text-[12.5px] text-g2">트렌드를 불러오는 중…</div> : alarm ? (
+      {loading ? <div className={`flex items-center justify-center text-[12.5px] text-g2 ${bodyHeight}`}>트렌드를 불러오는 중…</div> : alarm ? (
         allowWaferSelection ? (
           <div className="grid gap-3 lg:h-[500px] lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-w-0 lg:h-full">
@@ -239,7 +240,7 @@ export function HistoryTrendCard({ alarm, wafer, lim, response = null, loading, 
             />
           </div>
         ) : <HistoryTrendChart wafer={selectedWafer} lim={lim} response={response} emptyMessage={emptyMessage} highlightWaferNo={alarm.wafer_no} viewMode="context" />
-      ) : <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">{emptyMessage ?? '테이블에서 알람 행을 선택해 주세요'}</div>}
+      ) : <div className={`flex items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2 ${bodyHeight}`}>{emptyMessage ?? '테이블에서 알람 행을 선택해 주세요'}</div>}
     </Card>
   )
 }

@@ -219,9 +219,10 @@ assert.match(
 assert.match(
   documentDetailDrawerSource,
   /wide \? 'left-\[296px\]' : 'w-\[1008px\] max-w-\[calc\(100%-296px\)\]'/,
-  'Agent 근거 상세만 넓게 표시하고 일반 문서 검색 Drawer 폭은 유지해야 합니다',
+  '넓은 문서 상세는 탐색 패널을 제외한 나머지 영역을 채워야 합니다',
 )
-assert.match(documentsPageSource, /wide=\{urlDetailView === 'agent-evidence'\}/)
+assert.match(documentsPageSource, /detail_view: 'library'/)
+assert.match(documentsPageSource, /wide=\{urlDetailView === 'agent-evidence' \|\| urlDetailView === 'library'\}/)
 assert.match(documentsPageSource, /function FilterChips/)
 assert.match(documentsPageSource, /aria-pressed=\{selected\}/)
 assert.doesNotMatch(documentsPageSource, /<select/)
@@ -428,6 +429,9 @@ assert.match(executionFlowSource, /proOptions=\{\{ hideAttribution: true \}\}/, 
 assert.doesNotMatch(agentRunPageSource, /<RunContextAsk/, '시연 핵심 흐름을 흐리는 자유형 후속 질문 UI는 Agent 상세에 노출하지 않습니다')
 assert.doesNotMatch(executionFlowSource, /<Background/, '복잡해 보이는 점 배경을 사용하지 않아야 합니다')
 assert.doesNotMatch(executionFlowSource, /index \* 172/, '11개 노드를 한 줄 너비로 펼쳐 축소하면 안 됩니다')
+assert.match(executionFlowSource, /detail\.chamber_id \?\? alarm\?\.chamber_id/)
+assert.match(executionFlowSource, /detail\.lot_id \?\? alarm\?\.lot_id/)
+assert.match(executionFlowSource, /\(\{incidentScopeLabel\} 기준\)/)
 
 const runContextAskSource = readFileSync(
   new URL('../src/features/agent/components/RunContextAsk.jsx', import.meta.url),
@@ -451,6 +455,13 @@ assert.match(traceChartSource, /type="linear"/)
 assert.doesNotMatch(traceChartSource, /type="monotone"/)
 assert.match(traceChartSource, /selectedView \? '측정 시각' : 'WAFER'/)
 assert.match(traceChartSource, /selectedWaferChartModel\(wafers\[0\]\)/)
+
+const historyTrendSource = readFileSync(
+  new URL('../src/shared/components/trace/HistoryTrendChart.jsx', import.meta.url),
+  'utf8',
+)
+assert.match(historyTrendSource, /const bodyHeight = allowWaferSelection \? 'h-\[500px\]' : 'h-\[300px\]'/)
+assert.match(historyTrendSource, /viewMode === 'selected' \? 'h-full min-h-\[500px\]' : 'h-\[300px\]'/)
 
 const runHeaderSource = readFileSync(
   new URL('../src/features/agent/components/RunHeaderCard.jsx', import.meta.url),

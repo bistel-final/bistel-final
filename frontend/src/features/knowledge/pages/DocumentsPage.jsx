@@ -315,7 +315,7 @@ function DocumentsPage() {
     syncUrl({
       document_id: document.document_id,
       chunk_id: null,
-      detail_view: null,
+      detail_view: 'library',
     })
     getDocument(document.document_id)
       .then((detail) => {
@@ -551,10 +551,12 @@ function DocumentsPage() {
         loading={detailLoading}
         error={detailError}
         onClose={closeDocument}
-      onRetry={() => selectedHit && openDocument(selectedHit)}
-      onNavigateChunk={navigateDetailChunk}
-      wide={urlDetailView === 'agent-evidence'}
-    />
+        onRetry={() =>
+          selectedHit && (urlDetailView === 'library' ? openLibraryDocument(selectedHit) : openDocument(selectedHit))
+        }
+        onNavigateChunk={navigateDetailChunk}
+        wide={urlDetailView === 'agent-evidence' || urlDetailView === 'library'}
+      />
     </div>
   )
 }

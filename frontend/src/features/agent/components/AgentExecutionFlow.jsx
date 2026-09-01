@@ -30,7 +30,7 @@ import {
 } from './agentModel.js'
 
 const STEP_META = Object.freeze({
-  alarm: ['알람 incident', '#6b849d', '입력'],
+  alarm: ['알람 Incident', '#6b849d', '입력'],
   fdc: ['측정 데이터 근거', '#6b849d', '근거 수집'],
   rag: ['매뉴얼 문서 근거', '#6b849d', '근거 수집'],
   graph: ['설비 관계 근거', '#6b849d', '근거 수집'],
@@ -67,12 +67,15 @@ const executionStepsOf = (detail) => [
 const isAvailable = (step) =>
   Array.isArray(step.value) ? step.value.length > 0 : step.value != null
 
-const nodeLabel = (step, selected) => {
+const nodeLabel = (step, selected, incidentScopeLabel = null) => {
   const [label, color, phase] = STEP_META[step.id]
   return (
     <div className="text-center">
       <div className="text-[11.5px] font-extrabold tracking-[.08em]" style={{ color }}>{phase}</div>
       <div className="mt-1 text-[15px] font-extrabold text-ink">{label}</div>
+      {step.id === 'alarm' && incidentScopeLabel && (
+        <div className="mt-1 whitespace-nowrap font-mono text-[10.5px] font-bold text-g1">({incidentScopeLabel} 기준)</div>
+      )}
       <div className="mt-1 text-[11.5px] font-semibold text-g2">
         {step.experimental ? '비교 실험 확장' : isAvailable(step) ? (selected ? '선택됨' : '완료') : '미수행'}
       </div>
@@ -681,6 +684,10 @@ function StepPanel({ detail, step, alarm }) {
 
 function AgentExecutionFlow({ detail, alarm }) {
   const steps = useMemo(() => executionStepsOf(detail), [detail])
+  const incidentScopeLabel = useMemo(
+    () => [detail.chamber_id ?? alarm?.chamber_id, detail.lot_id ?? alarm?.lot_id].filter(Boolean).join(' · ') || null,
+    [alarm?.chamber_id, alarm?.lot_id, detail.chamber_id, detail.lot_id],
+  )
   const defaultId = useMemo(() => {
     if (detail.status === 'WAITING_APPROVAL') return 'approval'
     if (detail.status === 'COMPLETED' || detail.status === 'FAILED') return 'audit'
@@ -706,14 +713,14 @@ function AgentExecutionFlow({ detail, alarm }) {
     return {
       id: step.id,
       position: { x: layout.x, y: layout.y },
-      data: { label: nodeLabel(step, selected), color },
+      data: { label: nodeLabel(step, selected, incidentScopeLabel), color },
       type: decision ? 'decision' : toolPlan ? 'toolPlan' : routedStep ?? 'default',
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       draggable: false,
       style: decision || toolPlan || routedStep ? undefined : { width: 180, minHeight: 84, borderRadius: 10, border: `${selected ? 2.5 : 1.25}px ${layout.experimental ? 'dashed' : 'solid'} ${selected ? color : '#cad5df'}`, background: selected ? `${color}12` : layout.experimental ? '#faf8fc' : '#fff', boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
     }
-  }), [selectedId, steps])
+  }), [incidentScopeLabel, selectedId, steps])
   const selected = steps.find((step) => step.id === selectedId) ?? steps[0]
 
   useEffect(() => {
@@ -750,7 +757,7 @@ function AgentExecutionFlow({ detail, alarm }) {
           <div className="border-t border-cell-line px-5 py-4">
             <div className="grid grid-cols-4 items-center gap-2">
               {[
-                ['입력', '알람 incident'],
+                ['입력', incidentScopeLabel ? `알람 Incident (${incidentScopeLabel} 기준)` : '알람 Incident'],
                 ['근거 수집', '측정값 · 매뉴얼 · 설비 관계'],
                 ['분석', '충분성 · 원인 · 영향'],
                 ['조치', '규칙 판정 · 승인 · 전달'],
