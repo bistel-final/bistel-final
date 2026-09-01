@@ -41,6 +41,7 @@ export const DETAIL_KEY_LABEL = {
   equipment_id: '설비',
   status: '상태',
   representative_alarm_id: '대표 알람',
+  representative_alarm: '대표 알람',
   alarm_id: '알람',
   confidence: '신뢰도',
   predicted_fault_code: '예측 Fault',
@@ -83,11 +84,16 @@ export function parseDetail(detail) {
   return pairs.filter(([k]) => k).length >= Math.ceil(pairs.length / 2) ? pairs : [[null, text]]
 }
 
-// 대상 열의 주 표시 — 알람 ID 가 있으면 그것, 없으면 entity_id
+// 대상 열의 주 표시 — 알람 ID 가 있으면 그것, 없으면 entity_id.
+// 값이 'TRACE:TAL-0001' 처럼 소스 접두어를 가질 수 있어 알람 ID 부분을 주로, 소스는 보조로 낸다.
+export const ALARM_KEYS = new Set(['representative_alarm', 'representative_alarm_id', 'alarm_id'])
 export function primaryTargetOf(e) {
-  const pairs = parseDetail(e.detail)
-  const alarm = pairs.find(([k]) => k === 'representative_alarm_id' || k === 'alarm_id')?.[1]
-  return { primary: alarm ?? e.entity_id, secondary: alarm ? e.entity_id : null }
+  // 알람 ID 는 detail 이 아니라 after(변경 후 상태)에 실려 오는 경우가 많다 — 세 곳 모두 본다
+  const pairs = [...parseDetail(e.detail), ...parseDetail(e.after), ...parseDetail(e.before)]
+  const raw = pairs.find(([k]) => ALARM_KEYS.has(k))?.[1]
+  if (!raw) return { primary: e.entity_id, secondary: null, source: null }
+  const [source, id] = raw.includes(':') ? raw.split(':', 2) : [null, raw]
+  return { primary: id, secondary: e.entity_id, source }
 }
 
 // ── 색 — 4톤 틴트 (앱 팔레트). 시작·탐지 navy / 가설·승인 blue / 완료·전송 green / 실패 red ──

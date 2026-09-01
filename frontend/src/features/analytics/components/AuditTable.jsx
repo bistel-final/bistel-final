@@ -2,6 +2,7 @@ import { fmtDateTime } from '../../../shared/api/format.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { CELL_DIM, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 import {
+  ALARM_KEYS,
   TONE_BADGE,
   actorLabel,
   detailKeyLabel,
@@ -20,7 +21,9 @@ const ACTOR_BADGE = { AGENT: 't-navy', HUMAN: 't-blue', USER: 't-blue', SYSTEM: 
 const stateText = (v) => {
   if (v == null) return null
   if (typeof v !== 'object' || Array.isArray(v)) return detailValueLabel(v)
+  // 대표 알람은 대상 열로 올라갔으니 상태 줄에서는 제외
   return Object.entries(v)
+    .filter(([k]) => !ALARM_KEYS.has(k))
     .map(([k, val]) => `${detailKeyLabel(k)} ${detailValueLabel(val)}`)
     .join(' · ')
 }
@@ -39,7 +42,7 @@ function DetailChips({ detail }) {
   const pairs = parseDetail(detail)
   if (pairs.length === 0) return null
   // 대표 알람은 대상 열로 올라갔으니 상세에서는 중복 표시하지 않는다
-  const shown = pairs.filter(([k]) => k !== 'representative_alarm_id' && k !== 'alarm_id')
+  const shown = pairs.filter(([k]) => !ALARM_KEYS.has(k))
   if (shown.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" title={typeof detail === 'string' ? detail : ''}>
@@ -93,7 +96,10 @@ function AuditTable({ items }) {
                   <Badge variant={TONE_BADGE[eventTone(e.event_type)]}>{eventLabel(e.event_type)}</Badge>
                 </td>
                 <td className={TD_CLS}>
-                  <div className="font-mono text-[12.5px] font-bold text-navy">{target.primary}</div>
+                  <div className="flex items-center gap-1.5 font-mono text-[12.5px] font-bold text-navy">
+                    {target.primary}
+                    {target.source && <span className="rounded-[3px] bg-tint-gray px-1 py-[1px] text-[9.5px] font-bold text-g1">{target.source}</span>}
+                  </div>
                   {target.secondary && <div className="font-mono text-[10.5px] text-g2">{target.secondary}</div>}
                 </td>
                 <td className={`${TD_CLS} max-w-[420px]`}>
