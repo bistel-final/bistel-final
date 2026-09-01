@@ -59,7 +59,7 @@ function NlqSqlPanel({
               검증 중…
             </span>
           ) : list.length > 0 ? (
-            <Badge variant={valid === false ? 'bg-red' : 't-green'}>
+            <Badge variant={valid === false ? 't-red' : 't-green'}>
               {valid === false ? `검증 실패 · ${passed}/${list.length}` : `검증 통과 · ${passed}/${list.length}`}
             </Badge>
           ) : null}

@@ -61,7 +61,7 @@ function NlqEvaluationPanel({ fetchEvaluations }) {
                     <span className="text-[15px] font-bold text-g2"> / {run.total}</span>
                   </div>
                 </div>
-                <Badge variant={run.accuracy >= 0.7 ? 't-green' : 'bg-red'}>
+                <Badge variant={run.accuracy >= 0.7 ? 't-green' : 't-red'}>
                   정확도 {Math.round(run.accuracy * 100)}%
                 </Badge>
               </div>
@@ -89,7 +89,7 @@ function NlqEvaluationPanel({ fetchEvaluations }) {
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[11px] font-bold text-navy">{it.case_id}</span>
-                    <Badge variant={it.passed ? 't-green' : 'bg-red'}>{it.passed ? 'PASS' : 'FAIL'}</Badge>
+                    <Badge variant={it.passed ? 't-green' : 't-red'}>{it.passed ? 'PASS' : 'FAIL'}</Badge>
                     {it.case_type === 'DEFENSE' && <Badge variant="t-gray">방어</Badge>}
                     <span className="ml-auto font-mono text-[10.5px] text-g2">
                       {it.latency_ms != null ? `${it.latency_ms.toLocaleString()}ms` : ''}

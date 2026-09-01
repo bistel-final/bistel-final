@@ -52,6 +52,10 @@ function AnalyticsPage() {
   // 세션 내 신규 질의는 pushHistory 로 즉시 반영 — 서버 기록과 question 기준 dedupe.
   const [history, setHistory] = useState([])
   const [historyState, setHistoryState] = useState('loading') // loading | error | ready
+  // 이력 서버 pagination — 공용 로그(nl_query_log)가 수백 건이라 한 페이지 8건, 감사로그와 같은 페이저
+  const [histPage, setHistPage] = useState(1)
+  const [histTotal, setHistTotal] = useState(0)
+  const HIST_SIZE = 8
   const [sideTab, setSideTab] = useState('history') // history | evaluation — 보조 탭(8번째 메뉴 아님)
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
@@ -66,10 +70,12 @@ function AnalyticsPage() {
     return () => t.forEach(clearTimeout)
   }, [])
 
-  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다
+  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다.
+  // 페이지가 바뀜 때마다 서버에서 그 페이지만 받아 교체한다 (세션 push 항목은 1페이지 상단에만 유지).
   useEffect(() => {
     let cancelled = false
-    getQueryHistory({ size: 20 })
+    setHistoryState('loading')
+    getQueryHistory({ page: histPage, size: HIST_SIZE })
       .then((res) => {
         if (cancelled) return
         const items = (res?.items ?? []).map((it) => ({
@@ -78,10 +84,15 @@ function AnalyticsPage() {
           row_count: it.row_cnt ?? 0,
           latency_ms: it.latency_ms ?? 0,
           reason: it.reject_reason ?? it.error_msg ?? null,
+          logged: true,
         }))
+        setHistTotal(res?.total ?? items.length)
         setHistory((h) => {
-          const seen = new Set(h.map((x) => x.question))
-          return [...h, ...items.filter((it) => !seen.has(it.question))]
+          if (histPage !== 1) return items
+          // 1페이지: 서버가 모르는 세션 항목(기록 실패 등)을 위에 유지하고 dedupe
+          const session = h.filter((x) => x.logged === false)
+          const seen = new Set(session.map((x) => x.question))
+          return [...session, ...items.filter((it) => !seen.has(it.question))]
         })
         setHistoryState('ready')
       })
@@ -91,15 +102,17 @@ function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [histPage])
   const after = (ms, fn) => timers.current.push(setTimeout(fn, ms))
   const clearTimers = () => {
     timers.current.forEach(clearTimeout)
     timers.current = []
   }
 
-  const pushHistory = (entry) =>
+  const pushHistory = (entry) => {
     setHistory((h) => (h.some((x) => x.question === entry.question) ? h : [entry, ...h]))
+    setHistPage(1) // 새 질의는 항상 1페이지 상단에서 보인다
+  }
 
   // SQL 생성 직후 1회 자동 검증 (useEffect 아님 — 응답 콜백에서 수행)
   const verify = (sql, notice) => {
@@ -248,25 +261,18 @@ function AnalyticsPage() {
             질문
           </Button>
         </div>
-        {/* 예시 칩 — 클릭 = 질문 실행. '지워줘'(거부 유도)만 적색 틴트 */}
+        {/* 예시 칩 — 클릭 = 질문 실행. 거부 유도 칩도 같은 색 — 거부는 결과에서 보여주는 것이지 입력에서 예고하지 않는다 */}
         <div className="mt-3.5 flex flex-wrap gap-2">
-          {NL_CHIPS.map((q) => {
-            const danger = q.includes('지워줘')
-            return (
-              <button
-                key={q}
-                type="button"
-                onClick={() => ask(q)}
-                className={`inline-flex h-8 cursor-pointer items-center rounded-full border px-4 font-sans text-[12.5px] font-semibold transition-colors ${
-                  danger
-                    ? 'border-tint-red-line bg-tint-red text-red hover:bg-red hover:text-white'
-                    : 'border-tint-blue-line bg-tint-blue text-blue hover:bg-blue hover:text-white'
-                }`}
-              >
-                {q}
-              </button>
-            )
-          })}
+          {NL_CHIPS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => ask(q)}
+              className="inline-flex h-8 cursor-pointer items-center rounded-full border border-tint-blue-line bg-tint-blue px-4 font-sans text-[12.5px] font-semibold text-blue transition-colors hover:bg-blue hover:text-white"
+            >
+              {q}
+            </button>
+          ))}
         </div>
       </Card>
 
@@ -379,7 +385,16 @@ function AnalyticsPage() {
             </Button>
           </div>
           {sideTab === 'history' ? (
-            <NlqHistoryPanel items={history} activeQ={activeQ} onRerun={ask} state={historyState} />
+            <NlqHistoryPanel
+              items={history}
+              activeQ={activeQ}
+              onRerun={ask}
+              state={historyState}
+              page={histPage}
+              pageCount={Math.max(1, Math.ceil(histTotal / HIST_SIZE))}
+              total={histTotal}
+              onPage={setHistPage}
+            />
           ) : (
             <NlqEvaluationPanel fetchEvaluations={getEvaluations} />
           )}

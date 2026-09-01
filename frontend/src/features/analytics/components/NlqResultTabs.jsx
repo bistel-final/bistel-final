@@ -86,18 +86,18 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
           </span>
         </div>
         {crossStatus === 'MATCH' && (
-          <div className="flex items-center gap-2.5 rounded-full border border-tint-green-line bg-tint-green px-3.5 py-1.5">
-            <Badge variant="bg-green">✓ 교차 확인</Badge>
-            <span className="text-[12.5px] font-semibold text-green">PostgreSQL · Neo4j 두 저장소가 같은 답</span>
+          <div className="flex items-center gap-2.5 rounded-full border border-tint-green-line bg-tint-green px-4 py-1.5">
+            <span className="text-[12.5px] font-extrabold text-green">✓ 교차 확인</span>
+            <span className="text-[12.5px] text-green">PostgreSQL · Neo4j 두 저장소가 같은 답</span>
             {def.cross_check?.summary && (
               <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
             )}
           </div>
         )}
         {crossStatus === 'MISMATCH' && (
-          <div className="flex items-center gap-2.5 rounded-full border border-tint-red-line bg-tint-red px-3.5 py-1.5">
-            <Badge variant="bg-red">⚠ 저장소 불일치</Badge>
-            <span className="text-[12.5px] font-semibold text-red">두 저장소의 답이 다릅니다 — 정합성 점검 필요</span>
+          <div className="flex items-center gap-2.5 rounded-full border border-tint-red-line bg-tint-red px-4 py-1.5">
+            <span className="text-[12.5px] font-extrabold text-red">⚠ 저장소 불일치</span>
+            <span className="text-[12.5px] text-red">두 저장소의 답이 다릅니다 — 정합성 점검 필요</span>
             {def.cross_check?.summary && (
               <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
             )}

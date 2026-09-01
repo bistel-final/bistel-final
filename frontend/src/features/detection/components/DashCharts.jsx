@@ -11,10 +11,10 @@
 import { Card } from '../../../shared/components/ui/Card.jsx'
 
 export const OOS_HEX = '#1c3150' // navy — OOS(심각)
-export const OOC_HEX = '#2563eb' // blue — OOC(주의)
-export const BLUE_HEX = '#2563eb'
-export const SKY_HEX = '#93c5fd' // tint-blue-line — 3순위 범주
-export const GREEN_HEX = '#2563eb' // (하위 호환) 대시보드에서 초록은 퇴장 — blue 로 수렴
+export const OOC_HEX = '#2f5fa8' // steel blue — OOC(주의) = --color-blue
+export const BLUE_HEX = '#2f5fa8'
+export const SKY_HEX = '#a9c0e4' // = --color-tint-blue-line — 3순위 범주
+export const GREEN_HEX = '#2f5fa8' // (하위 호환) 대시보드에서 초록은 퇴장 — blue 로 수렴
 export const GRAY_HEX = '#94a3b8'
 
 const niceMax = (m) => Math.max(4, Math.ceil(m / 4) * 4)
