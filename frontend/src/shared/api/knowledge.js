@@ -170,6 +170,24 @@ const legacyRelationProjection = (graph) => ({
   downstream: [],
 })
 
+const DOCUMENT_TYPE_BY_ID = Object.freeze({
+  'DOC-TROUBLE-FDC': 'TROUBLESHOOT',
+  TROUBLE_FDC_FaultGuide: 'TROUBLESHOOT',
+  'DOC-SPEC-PH9000': 'SPEC',
+  'SPEC_PH-9000_PhotoScanner': 'SPEC',
+  'DOC-SPEC-ET7500': 'SPEC',
+  'SPEC_ET-7500_DryEtcher': 'SPEC',
+})
+
+const DOCUMENT_MODEL_BY_ID = Object.freeze({
+  'DOC-TROUBLE-FDC': 'COMMON',
+  TROUBLE_FDC_FaultGuide: 'COMMON',
+  'DOC-SPEC-PH9000': 'PH-9000',
+  'SPEC_PH-9000_PhotoScanner': 'PH-9000',
+  'DOC-SPEC-ET7500': 'ET-7500',
+  'SPEC_ET-7500_DryEtcher': 'ET-7500',
+})
+
 // Deprecated page projection. B migrates to the raw graph contract in its own Task.
 export function getChamberRelations(chamberId) {
   if (USE_MOCK) return mockResponse(chamberRelation(chamberId))
@@ -199,6 +217,7 @@ export function getEquipmentRelations(equipmentId) {
 const documentHit = (document, index) => ({
   chunk_id: `CHK-MOCK-${String(index + 1).padStart(4, '0')}`,
   document_id: document.doc,
+  doc_type: DOCUMENT_TYPE_BY_ID[document.doc] ?? null,
   title: document.doc,
   section: document.section ?? null,
   score: DOC_SCORES[index] ?? 0,
@@ -206,8 +225,9 @@ const documentHit = (document, index) => ({
   model_code: document.model ?? null,
 })
 
-export function searchDocuments({ query, model_code, top_k = 4 }) {
+export function searchDocuments({ query, model_code, doc_type, top_k = 4 }) {
   const normalizedModelCode = model_code === '전체' ? undefined : model_code
+  const normalizedDocType = doc_type === '전체' ? undefined : doc_type
   if (USE_MOCK) {
     const hits = (DOC_DB[query] ?? [])
       .map(documentHit)
@@ -215,11 +235,12 @@ export function searchDocuments({ query, model_code, top_k = 4 }) {
         (document) =>
           !normalizedModelCode || document.model_code === 'COMMON' || document.model_code === normalizedModelCode,
       )
+      .filter((document) => !normalizedDocType || document.doc_type === normalizedDocType)
       .slice(0, top_k)
     return mockResponse({ query, hits, count: hits.length })
   }
   return apiClient
-    .post('/documents/search', { query, model_code: normalizedModelCode, top_k })
+    .post('/documents/search', { query, model_code: normalizedModelCode, doc_type: normalizedDocType, top_k })
     .then((response) => ({
       query,
       hits: response.data,
@@ -241,6 +262,8 @@ export function searchDocumentsCore(input) {
 export function getDocument(documentId) {
   if (USE_MOCK) {
     const alias = MOCK_DOCUMENT_ALIASES[documentId] ?? { legacy: documentId, firstChunk: 1 }
+    const docType = DOCUMENT_TYPE_BY_ID[documentId] ?? DOCUMENT_TYPE_BY_ID[alias.legacy] ?? null
+    const modelCode = DOCUMENT_MODEL_BY_ID[documentId] ?? DOCUMENT_MODEL_BY_ID[alias.legacy] ?? null
     const seen = new Set()
     const chunks = Object.values(DOC_DB)
       .flat()
@@ -262,8 +285,8 @@ export function getDocument(documentId) {
         ? {
             document_id: documentId,
             title: documentId,
-            doc_type: null,
-            model_code: null,
+            doc_type: docType,
+            model_code: modelCode,
             source_path: null,
             version: null,
             chunks,

@@ -4521,6 +4521,18 @@
     "DocumentSearchRequest": {
       "additional_properties": false,
       "fields": {
+        "doc_type": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "enum": [
+              "MANUAL",
+              "SPEC",
+              "TROUBLESHOOT"
+            ],
+            "type": "string"
+          }
+        },
         "model_code": {
           "nullable": true,
           "required": false,
@@ -8500,10 +8512,10 @@
         "category": "필수",
         "constraints": "score DESC; document_id ASC; chunk_id ASC",
         "description": "RAG 문서 검색",
-        "notes": "검증된 corrected RAG source만; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; doc_id는 document_id alias; ① schema·loader·bge-m3 1024 + ③ RAG",
+        "notes": "검증된 corrected RAG source만; model_code는 COMMON 포함; doc_type은 top_k 전 서버 필터; Tool search_documents(query, model_code=None, top_k=4) 시그니처 유지; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; doc_id는 document_id alias; ① schema·loader·bge-m3 1024 + ③ RAG",
         "other_statuses": "422,503",
         "owner": "B",
-        "request_summary": "body: query 1..1000; model_code 선택; top_k 1..10 기본4",
+        "request_summary": "body: query 1..1000; model_code 선택; doc_type 선택; top_k 1..10 기본4",
         "response_summary": "DocumentHit[]"
       },
       "contract_level": "semantic",
@@ -8518,6 +8530,18 @@
           "body": {
             "additional_properties": false,
             "fields": {
+              "doc_type": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "enum": [
+                    "MANUAL",
+                    "SPEC",
+                    "TROUBLESHOOT"
+                  ],
+                  "type": "string"
+                }
+              },
               "model_code": {
                 "nullable": true,
                 "required": false,

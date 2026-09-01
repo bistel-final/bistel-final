@@ -40,6 +40,7 @@ class DocumentSearchRepository:
         *,
         top_k: int = 4,
         model_code: str | None = None,
+        doc_type: str | None = None,
     ) -> list[dict[str, Any]]:
         sql = """
             SELECT c.chunk_id,
@@ -63,6 +64,12 @@ class DocumentSearchRepository:
                AND (d.model_code = :model_code OR d.model_code = 'COMMON')
             """
             params["model_code"] = model_code
+
+        if doc_type is not None:
+            sql += """
+               AND d.doc_type = :doc_type
+            """
+            params["doc_type"] = doc_type
 
         sql += """
              ORDER BY c.embedding <=> CAST(:query_vector AS vector),
