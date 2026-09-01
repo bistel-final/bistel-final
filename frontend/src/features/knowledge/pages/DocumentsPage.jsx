@@ -477,6 +477,12 @@ function DocumentsPage() {
               className="h-10 min-w-0 flex-1 rounded-lg border border-field-line bg-white px-3.5 text-[13px] text-ink placeholder:text-faint"
             />
             <Button onClick={() => run(input)} disabled={loading || !input.trim()}>
+              {loading && (
+                <span
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  aria-hidden="true"
+                />
+              )}
               {loading ? '검색 중…' : '검색'}
             </Button>
           </div>
