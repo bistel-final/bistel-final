@@ -58,6 +58,10 @@ RUNTIME_MANIFEST_PATH = (
 _DIALECT = "postgres"
 _MAX_ROWS = 500
 
+#: 조회 차단 컬럼 (NFR-19 — 합성 GT 라벨 비노출). (테이블, 컬럼) 쌍.
+#: 프롬프트(tools._schema_context)와 검증기가 같은 집합을 본다 — 한 곳에서만 관리.
+DENIED_COLUMNS: frozenset[tuple[str, str]] = frozenset({("lot_history", "fault_code")})
+
 #: Text2SQL 이 조회할 수 있는 객체. base 9 table + 조회 reference 4종.
 #: 감사로그(audit_log)·질의 이력(nl_query_log)·runtime 계열(agent_run 등)은
 #: 여기 없다 — 모두 전용 API 소관이다. 특히 nl_query_log는 evaluation-only
@@ -494,6 +498,46 @@ def validate_sql(sql: str) -> ValidationResult:
     # ── 6. 컬럼 allowlist (manifest 기반) ──────────────────────────────
     alias_names = _collect_alias_names(statement)
     physical_names = set(alias_to_table.values())
+
+    # ── 6-0. 차단 컬럼(NFR-19) — 직접 참조·bare * 모두 거부 ────────────
+    denied_tables = {t for t, _ in DENIED_COLUMNS}
+    for column in statement.find_all(exp.Column):
+        col_name = column.name.lower()
+        qualifier = (column.table or "").lower()
+        if qualifier:
+            target = alias_to_table.get(qualifier)
+            targets = [target] if target else []
+        else:
+            targets = [name for name in physical_names]
+        hit = next(
+            ((t, col_name) for t in targets if (t, col_name) in DENIED_COLUMNS), None
+        )
+        if hit:
+            return _fail(
+                "column_allowlist",
+                f"조회가 차단된 컬럼이다: {hit[0]}.{hit[1]}"
+                " (합성 GT 라벨 — 분석 대상 아님). 다른 컬럼을 사용하라.",
+                passed,
+            )
+    # bare * 는 exp.Column 이 아니라 컬럼 검사를 건너뛴다 — 차단 컬럼이 있는 테이블은
+    # 전체 선택을 거부한다. count(*) 등 집계 인자의 * 는 행을 노출하지 않으므로 허용.
+    for star in statement.find_all(exp.Star):
+        parent = star.parent
+        if isinstance(parent, exp.AggFunc):
+            continue
+        if isinstance(parent, exp.Column):
+            target = alias_to_table.get((parent.table or "").lower())
+            star_tables = {target} if target else set()
+        else:
+            star_tables = physical_names
+        blocked = sorted(star_tables & denied_tables)
+        if blocked:
+            return _fail(
+                "column_allowlist",
+                f"SELECT * 는 차단 컬럼이 있는 테이블({', '.join(blocked)})에"
+                " 허용되지 않는다. 컬럼을 명시하라.",
+                passed,
+            )
 
     for column in statement.find_all(exp.Column):
         col_name = column.name.lower()

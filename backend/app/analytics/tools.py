@@ -25,7 +25,11 @@ from sqlalchemy import text
 from sqlglot import expressions as exp
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
-from app.analytics.sql_validator import ALLOWED_OBJECTS, _manifest_columns
+from app.analytics.sql_validator import (
+    ALLOWED_OBJECTS,
+    DENIED_COLUMNS,
+    _manifest_columns,
+)
 from app.common import llm
 from app.common.enums import ChartType
 from app.common.tool_contracts import (
@@ -100,6 +104,8 @@ def _schema_context() -> str:
             col
             for col in sorted(columns.get(name, frozenset()))
             if not col.startswith(_EXCLUDED_COLUMN_PREFIXES)
+            and (name, col)
+            not in DENIED_COLUMNS  # NFR-19 차단 컬럼은 LLM 에 존재 자체를 알리지 않는다
         ]
         if table_columns:
             lines.append(f"- {name}({', '.join(table_columns)})")
