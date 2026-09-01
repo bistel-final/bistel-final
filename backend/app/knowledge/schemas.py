@@ -44,6 +44,7 @@ class ChamberRelationResponse(ApiModel):
 class DocumentSearchRequest(ApiModel):
     query: str = Field(min_length=1, max_length=1000)
     model_code: NonEmptyId | None = None
+    doc_type: DocumentType | None = None
     top_k: int = Field(default=4, ge=1, le=10)
 
 

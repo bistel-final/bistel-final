@@ -1279,6 +1279,16 @@
     "DocumentSearchRequest": {
       "additional_properties": false,
       "fields": {
+        "doc_type": {
+          "enum": [
+            "MANUAL",
+            "SPEC",
+            "TROUBLESHOOT"
+          ],
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "model_code": {
           "min_length": 1,
           "nullable": true,

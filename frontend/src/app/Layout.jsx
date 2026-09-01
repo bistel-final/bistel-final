@@ -8,11 +8,9 @@ function Layout() {
   return (
     <div className="flex min-h-screen min-w-[1620px] items-stretch bg-bg text-[13px] text-ink">
       <nav className="sticky top-0 flex h-screen w-[232px] flex-none flex-col self-start border-r border-line bg-white text-ink shadow-[2px_0_16px_rgba(44,92,134,0.06)]">
-        <div className="flex items-center px-[22px] pb-6 pt-[22px]">
-          <div className="min-w-0">
-            <div className="text-[17px] font-extrabold leading-tight tracking-[-.01em] text-navy">Photo Etch</div>
-            <div className="mt-0.5 text-[8px] tracking-[.16em] text-g2">FDC ANOMALY AGENT PLATFORM</div>
-          </div>
+        <div className="flex items-center px-[18px] pb-6 pt-[22px]">
+          {/* #260 로고 단순화는 유지하고 #269 라이트 셸의 네이비 텍스트를 적용한다. */}
+          <div className="text-[17px] font-extrabold leading-tight tracking-[-.01em] text-navy">Photo Etch</div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
           {PRIMARY_MENUS.map((m, i) => (

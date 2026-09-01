@@ -246,7 +246,7 @@ const scopedDirectories = [
   resolve(SOURCE_ROOT, 'shared/trace'),
   resolve(SOURCE_ROOT, 'shared/components/trace'),
 ]
-const scopedFiles = (await Promise.all(scopedDirectories.map(sourceFiles))).flat().filter((path) => !path.includes('/mock/'))
+const scopedFiles = (await Promise.all(scopedDirectories.map(sourceFiles))).flat().filter((path) => !/[\\/]mock[\\/]/.test(path))
 const scopedSource = (await Promise.all(scopedFiles.map((path) => readFile(path, 'utf8')))).join('\n')
 assert.doesNotMatch(scopedSource, /PHO-|ETC-|AREA_BY_PREFIX/, 'B-4.2 소유 경로에 구 ID·AREA 접두 추측을 둘 수 없습니다')
 assert.doesNotMatch(scopedSource, /<iframe|bolt:\/\/|neo4j:\/\/|MATCH \(/, '브라우저 iframe·Neo4j URI·Cypher를 노출할 수 없습니다')

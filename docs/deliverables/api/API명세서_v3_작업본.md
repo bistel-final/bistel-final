@@ -389,12 +389,15 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
 {
   "query": "포커스 이상 원인과 점검 절차",
   "model_code": "PH-9000",
+  "doc_type": "SPEC",
   "top_k": 4
 }
 ```
 
 - `query`: 1..1000자
 - `model_code`: 선택, 빈 문자열 불가
+- `doc_type`: 선택, `SPEC | TROUBLESHOOT | MANUAL`. REST 검색 화면용 필터이며 Agent Tool
+  `search_documents(query, model_code=None, top_k=4)` signature는 변경하지 않는다.
 - `top_k`: 기본 4, 범위 1..10
 
 #### Response 200 — `DocumentHit[]`
@@ -425,6 +428,8 @@ R03 상세 `AlarmDetailResponse`는 다음 두 member 목록을 분리해 반환
   실제 응답은 적재 검증 artifact에 기록된 결정론적 chunk ID를 사용하고 placeholder 문자열을
   반환하지 않는다.
 - 안정 정렬: `score DESC, document_id ASC, chunk_id ASC`.
+- `model_code`가 있으면 해당 모델과 `COMMON` 문서를 함께 검색하고, `doc_type`이 있으면
+  해당 문서 유형으로 제한한 뒤 `top_k`를 적용한다.
 - 검증된 corrected RAG source만 검색하며 구 조치·수치나 고정 설비 상하류 표현을 반환하지 않는다.
 - `document`·`document_chunk`·vector extension과 loader·`BAAI/bge-m3`·1024는 교육생
   배포패키지①에서, RAG 원문 3종은 최종 패키지③에서 가져온다. loader adapter는 명시적 정정본

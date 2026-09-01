@@ -1,6 +1,6 @@
 // fdc.css .btn / .btn-primary / .btn-outline / .btn-outline-red / .btn-sm
 const VARIANTS = {
-  primary: 'bg-blue text-white hover:bg-navy border-transparent',
+  primary: 'bg-blue text-white hover:bg-blue-hover border-transparent',
   outline: 'bg-white border-line text-navy',
   'outline-red': 'bg-white border-red text-red',
 }

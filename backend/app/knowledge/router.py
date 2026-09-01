@@ -44,6 +44,7 @@ def search_documents(request: DocumentSearchRequest) -> list[DocumentHit]:
         request.query,
         top_k=request.top_k,
         model_code=request.model_code,
+        doc_type=request.doc_type,
     )
     return [DocumentHit.from_tool_hit(hit) for hit in hits]
 

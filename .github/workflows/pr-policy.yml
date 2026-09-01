@@ -289,6 +289,7 @@ jobs:
           tests/unit/test_generator_reproduction.py
           tests/unit/test_graph_context.py
           tests/unit/test_groupby_lint.py
+          tests/unit/test_gt_denylist.py
           tests/unit/test_intake_final_zip.py
           tests/unit/test_issue_final_epoch.py
           tests/unit/test_evaluate_rag_search.py
