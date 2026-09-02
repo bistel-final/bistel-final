@@ -76,13 +76,16 @@ def _run_stage2(
     golden: str = PREV_GOLDEN,
     previous_revision: str = PREVIOUS_REVISION,
     running_revision: str = PREVIOUS_REVISION,
+    extra_args: tuple[str, ...] = (),
+    reuse_attempt: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     env_file = tmp_path / ".env.team"
-    _env_file(env_file, fault=fault, golden=golden)
     report_root = tmp_path / "reports"
     attempt_dir = report_root / "cm-5.2" / ATTEMPT
-    attempt_dir.mkdir(parents=True)
-    _write_observer_baseline(attempt_dir / "observer-baseline.json")
+    if not reuse_attempt:
+        _env_file(env_file, fault=fault, golden=golden)
+        attempt_dir.mkdir(parents=True)
+        _write_observer_baseline(attempt_dir / "observer-baseline.json")
     environment = {
         **os.environ,
         "CM52_ENV_FILE": str(env_file),
@@ -97,7 +100,7 @@ def _run_stage2(
         "CM52_TEST_RUNNING_REV": running_revision,
     }
     completed = subprocess.run(
-        ["bash", str(STAGE2), "--attempt-id", ATTEMPT],
+        ["bash", str(STAGE2), *extra_args, "--attempt-id", ATTEMPT],
         cwd=REPOSITORY_ROOT,
         env=environment,
         check=False,
@@ -476,3 +479,115 @@ def test_stage2_postcondition_requires_v2_complete_exact_distribution() -> None:
     assert "prompt_version='agent-hypothesis-v2-ko1'" in stage
     assert "status IN ('RUNNING','FAILED')" in stage
     assert "grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'" in stage
+
+
+def _hold_records(log: Path) -> list[dict[str, object]]:
+    if not log.exists():
+        return []
+    lines = [json.loads(line) for line in log.read_text().splitlines() if line]
+    return [line for line in lines if line.get("step") == "hold"]
+
+
+def test_hold_after_5d_keeps_e2e_and_previous_paths_without_cleanup(
+    tmp_path: Path,
+) -> None:
+    """--hold-after 5d 는 복구·게시 없이 HELD_FOR_GOLDEN_FLOW 만 남기고 0으로 끝난다."""
+
+    completed, env_file, log = _run_stage2(tmp_path, extra_args=("--hold-after", "5d"))
+
+    assert completed.returncode == 0, completed.stderr
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
+    assert _cleanup_records(log) == []
+    (hold,) = _hold_records(log)
+    assert hold["outcome"] == "HELD_FOR_GOLDEN_FLOW"
+    assert hold["attempt"] == ATTEMPT
+    assert hold["running_rev"] == PREVIOUS_REVISION
+    assert hold["last_ok_step"] == "5d"
+    assert (hold["prev_fault"], hold["prev_golden"]) == (PREV_FAULT, PREV_GOLDEN)
+    assert "do-not-print-this-secret" not in completed.stdout + completed.stderr
+
+
+def test_hold_with_failure_before_5d_still_restores(tmp_path: Path) -> None:
+    completed, env_file, log = _run_stage2(
+        tmp_path, extra_args=("--hold-after", "5d"), original_rc=4
+    )
+
+    assert completed.returncode == 4
+    assert _hold_records(log) == []
+    assert _outcome(log) == "RESTORED"
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
+
+
+def test_hold_record_write_failure_falls_back_to_restore(tmp_path: Path) -> None:
+    completed, env_file, log = _run_stage2(
+        tmp_path, extra_args=("--hold-after", "5d"), fail_at="log_hold"
+    )
+
+    assert completed.returncode == 1
+    assert "HOLD_RECORD_WRITE_FAILED" in completed.stderr
+    assert _hold_records(log) == []
+    # hold 포기 → E2E down → 이전 production 복원. rc 1은 hold 실패를 그대로 전달한다.
+    assert _outcome(log) == "RESTORED"
+    assert _cleanup_records(log)[-1]["original_rc"] == 1
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
+
+
+def test_resume_from_6_requires_a_matching_hold_record(tmp_path: Path) -> None:
+    completed, env_file, log = _run_stage2(tmp_path, extra_args=("--resume-from", "6"))
+
+    assert completed.returncode == 1
+    assert "HOLD_RECORD_REQUIRED" in completed.stderr
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
+    assert not log.exists()
+
+
+def test_hold_then_resume_publishes_with_the_held_running_revision(
+    tmp_path: Path,
+) -> None:
+    held, env_file, log = _run_stage2(tmp_path, extra_args=("--hold-after", "5d"))
+    assert held.returncode == 0, held.stderr
+
+    resumed, _env, _log = _run_stage2(
+        tmp_path,
+        extra_args=("--resume-from", "6"),
+        reuse_attempt=True,
+        running_revision="",  # production은 내려가 있어 조회 불가 — hold 기록만 쓴다
+    )
+
+    assert resumed.returncode == 0, resumed.stderr
+    assert _values(env_file) == (NEW_FAULT, NEW_GOLDEN)
+    assert len(_hold_records(log)) == 1
+    assert _outcome(log) == "PUBLISHED"
+
+
+def test_resume_rejects_a_hold_record_whose_previous_paths_changed(
+    tmp_path: Path,
+) -> None:
+    held, env_file, log = _run_stage2(tmp_path, extra_args=("--hold-after", "5d"))
+    assert held.returncode == 0, held.stderr
+    _env_file(env_file, fault="", golden="")
+
+    resumed, _env, _log = _run_stage2(
+        tmp_path, extra_args=("--resume-from", "6"), reuse_attempt=True
+    )
+
+    assert resumed.returncode == 1
+    assert "HOLD_RECORD_REQUIRED" in resumed.stderr
+    assert _cleanup_records(log) == []
+
+
+def test_hold_and_resume_flags_are_exclusive_and_exact() -> None:
+    for args in (
+        ("--hold-after", "6"),
+        ("--resume-from", "5d"),
+        ("--hold-after", "5d", "--resume-from", "6"),
+    ):
+        completed = subprocess.run(
+            ["bash", str(STAGE2), *args, "--attempt-id", ATTEMPT],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 2, args
+        assert "usage:" in completed.stderr
