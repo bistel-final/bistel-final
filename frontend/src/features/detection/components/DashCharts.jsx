@@ -8,6 +8,7 @@
 // 팔레트는 앱 정체성(navy 사이드바 + blue 포인트) 단색 계열 — 위계는 색상이 아니라 명도로.
 //   navy(심각·OOS) > blue(주의·OOC) > sky(3순위) > gray(중립)
 // 빨강은 데이터 범주가 아니라 시스템 이상(거부·실패 배지)에만 쓴다.
+import { useState } from 'react'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 
 export const OOS_HEX = '#1c3150' // navy — OOS(심각)
@@ -74,8 +75,52 @@ export function RatioBar({ oos, ooc }) {
   )
 }
 
+// ── hover 툴팁 셸 ─────────────────────────────────────────────────────
+// SVG 를 직접 그리는 대시보드 차트에 붙이는 HTML 오버레이.
+// 카드 모양은 trace 차트 툴팁(shared/components/trace/TraceChart.jsx)과 같은 문법을 쓴다.
+// x·y 는 래퍼 기준 커서 픽셀 좌표 — viewBox 좌표가 아니다(아래 pointerAt 참조).
+function ChartTooltip({ x, y, width, children }) {
+  const half = 82
+  const left = width > half * 2 ? Math.min(Math.max(x, half), width - half) : x
+  const below = y < 120 // 위로 띄울 공간이 없으면 커서 아래로 뒤집는다
+  return (
+    <div
+      className="pointer-events-none absolute z-10 min-w-[150px] rounded-xl border border-line bg-white px-3.5 py-2.5 shadow-xl"
+      style={{ left, top: below ? y + 20 : y - 14, transform: `translate(-50%, ${below ? '0' : '-100%'})` }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function TooltipRow({ color, label, value }) {
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-[12px] text-g1">
+      <span className="h-2.5 w-2.5 flex-none rounded-[3px]" style={{ background: color }} />
+      <span className="font-semibold">{label}</span>
+      <span className="ml-auto font-mono font-bold text-navy">{value}</span>
+    </div>
+  )
+}
+
+// viewBox 는 preserveAspectRatio 기본값(meet)으로 균등 축소되고 남는 축은 여백이 된다.
+// 그래서 마우스 좌표 → viewBox 좌표 변환에 실제 배율과 letterbox 여백을 함께 써야 한다.
+// px·py 는 툴팁을 놓을 래퍼 기준 커서 좌표, vx 는 데이터 인덱스를 찾을 viewBox 좌표.
+function pointerAt(event, VW, VH) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+  const scale = Math.min(rect.width / VW, rect.height / VH)
+  const ox = (rect.width - VW * scale) / 2
+  const oy = (rect.height - VH * scale) / 2
+  const px = event.clientX - rect.left
+  const py = event.clientY - rect.top
+  return { vx: (px - ox) / scale, px, py, scale, ox, oy, width: rect.width }
+}
+
 // ── 일자별 추이 — 전폭 메인 차트 ──────────────────────────────────────
 // area 한 겹(OOS navy 6%) + 마지막 점 강조·값 라벨. 자연어 분석 line 차트와 같은 문법.
+// hover: 차트 어디에 올려도 가장 가까운 일자를 잡는다(점 위가 아니어도 된다).
+//   가이드선·강조점은 해당 일자에 고정되고 툴팁만 커서를 따라간다 — recharts Tooltip 과 같은 거동.
 export function TrendLine({ data, height = 300 }) {
   const VW = 1280
   const VH = height
@@ -83,6 +128,7 @@ export function TrendLine({ data, height = 300 }) {
   const R = VW - 24
   const T = 24
   const B = VH - 36
+  const [hover, setHover] = useState(null)
   const max = niceMax(Math.max(1, ...data.map((d) => Math.max(d.oos, d.ooc))))
   const n = data.length
   const x = (i) => (n > 1 ? L + (i * (R - L)) / (n - 1) : (L + R) / 2)
@@ -90,40 +136,82 @@ export function TrendLine({ data, height = 300 }) {
   const pts = (k) => data.map((d, i) => `${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(' ')
   const last = n - 1
   const area = n ? `${L},${B} ${pts('oos')} ${x(last).toFixed(1)},${B}` : ''
+
+  const handleMove = (event) => {
+    if (!n) return
+    const at = pointerAt(event, VW, VH)
+    if (!at) return
+    let i = 0
+    for (let k = 1; k < n; k += 1) if (Math.abs(x(k) - at.vx) < Math.abs(x(i) - at.vx)) i = k
+    setHover({ i, px: at.px, py: at.py, width: at.width })
+  }
+
+  const point = hover ? data[hover.i] : null
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} className="block w-full font-mono" style={{ height }}>
-      {[0, max / 2, max].map((t) => (
-        <g key={t}>
-          <line x1={L} y1={y(t)} x2={R} y2={y(t)} stroke="var(--color-cell-line)" />
-          <text x={L - 10} y={y(t) + 4} fontSize="12" fill="var(--color-g2)" textAnchor="end">
-            {t}
-          </text>
-        </g>
-      ))}
-      <line x1={L} y1={B} x2={R} y2={B} stroke="var(--color-line)" />
-      {n > 0 && <polygon points={area} fill={OOS_HEX} opacity="0.06" />}
-      <polyline points={pts('ooc')} fill="none" stroke={OOC_HEX} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      <polyline points={pts('oos')} fill="none" stroke={OOS_HEX} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      {data.map((d, i) => (
-        <g key={d.label}>
-          <circle cx={x(i)} cy={y(d.ooc)} r={i === last ? 5.5 : 4} fill="#fff" stroke={OOC_HEX} strokeWidth="2.5" />
-          <circle cx={x(i)} cy={y(d.oos)} r={i === last ? 5.5 : 4} fill="#fff" stroke={OOS_HEX} strokeWidth="2.5" />
-          <text x={x(i)} y={VH - 12} fontSize="12" fill="var(--color-g2)" textAnchor="middle">
-            {d.label}
-          </text>
-        </g>
-      ))}
-      {n > 0 && (
-        <>
-          <text x={x(last) + 12} y={y(data[last].oos) + 4} fontSize="13" fontWeight="700" fill={OOS_HEX} textAnchor="start" fontFamily={MONO}>
-            {data[last].oos}
-          </text>
-          <text x={x(last) + 12} y={y(data[last].ooc) + 4} fontSize="13" fontWeight="700" fill={OOC_HEX} textAnchor="start" fontFamily={MONO}>
-            {data[last].ooc}
-          </text>
-        </>
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${VW} ${VH}`}
+        className="block w-full font-mono"
+        style={{ height }}
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        {/* hover 판정면 — 선·점이 그려지지 않은 빈 영역에서도 이벤트를 받게 하는 투명 레이어.
+            SVG 기본 pointer-events(visiblePainted)는 칠해진 자리에서만 hit test 되므로 필요하다. */}
+        <rect x="0" y="0" width={VW} height={VH} fill="transparent" pointerEvents="all" />
+        {[0, max / 2, max].map((t) => (
+          <g key={t}>
+            <line x1={L} y1={y(t)} x2={R} y2={y(t)} stroke="var(--color-cell-line)" />
+            <text x={L - 10} y={y(t) + 4} fontSize="12" fill="var(--color-g2)" textAnchor="end">
+              {t}
+            </text>
+          </g>
+        ))}
+        <line x1={L} y1={B} x2={R} y2={B} stroke="var(--color-line)" />
+        {n > 0 && <polygon points={area} fill={OOS_HEX} opacity="0.06" />}
+        {point && (
+          <line x1={x(hover.i)} y1={T - 10} x2={x(hover.i)} y2={B} stroke="var(--color-line)" strokeDasharray="4 4" />
+        )}
+        <polyline points={pts('ooc')} fill="none" stroke={OOC_HEX} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <polyline points={pts('oos')} fill="none" stroke={OOS_HEX} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {data.map((d, i) => (
+          <g key={d.label}>
+            <circle cx={x(i)} cy={y(d.ooc)} r={i === last ? 5.5 : 4} fill="#fff" stroke={OOC_HEX} strokeWidth="2.5" />
+            <circle cx={x(i)} cy={y(d.oos)} r={i === last ? 5.5 : 4} fill="#fff" stroke={OOS_HEX} strokeWidth="2.5" />
+            <text x={x(i)} y={VH - 12} fontSize="12" fill="var(--color-g2)" textAnchor="middle">
+              {d.label}
+            </text>
+          </g>
+        ))}
+        {point && (
+          <g>
+            <circle cx={x(hover.i)} cy={y(point.ooc)} r="7" fill="#fff" stroke={OOC_HEX} strokeWidth="3" />
+            <circle cx={x(hover.i)} cy={y(point.oos)} r="7" fill="#fff" stroke={OOS_HEX} strokeWidth="3" />
+          </g>
+        )}
+        {n > 0 && (
+          <>
+            <text x={x(last) + 12} y={y(data[last].oos) + 4} fontSize="13" fontWeight="700" fill={OOS_HEX} textAnchor="start" fontFamily={MONO}>
+              {data[last].oos}
+            </text>
+            <text x={x(last) + 12} y={y(data[last].ooc) + 4} fontSize="13" fontWeight="700" fill={OOC_HEX} textAnchor="start" fontFamily={MONO}>
+              {data[last].ooc}
+            </text>
+          </>
+        )}
+      </svg>
+      {point && (
+        <ChartTooltip x={hover.px} y={hover.py} width={hover.width}>
+          <div className="font-mono text-[12.5px] font-extrabold text-ink">{point.date ?? point.label}</div>
+          <TooltipRow color={OOS_HEX} label="OOS" value={point.oos} />
+          <TooltipRow color={OOC_HEX} label="OOC" value={point.ooc} />
+          <div className="mt-2 flex items-center gap-2 border-t border-cell-line pt-1.5 text-[12px] text-g2">
+            <span className="font-semibold">합계</span>
+            <span className="ml-auto font-mono font-bold text-navy">{point.oos + point.ooc}</span>
+          </div>
+        </ChartTooltip>
       )}
-    </svg>
+    </div>
   )
 }
 
