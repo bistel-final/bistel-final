@@ -40,6 +40,14 @@
   --color-tint-navy: #e8eef7;
   --color-tint-navy-line: #c7d4e6;
 
+  /* navy 명도 램프 — CIELCh h=277°(navy와 같은 색상)에서 L만 88/72/50으로 균등 분할.
+     순서가 있는 상태(생명주기 단계)를 hue 아닌 lightness 로 코딩할 때 쓴다 (Brewer sequential). */
+  --color-navy-1: #d6ddef; /* L88 */
+  --color-navy-2: #a5b1cd; /* L72 */
+  --color-navy-3: #65779c; /* L50 */
+  /* red 와 같은 L·C, h만 14°로 정리해 갈색기를 뺀 실패 표시색 (OOS·EQP_HOLD 와 같은 가족) */
+  --color-fail: #ab5965;
+
   /* Trace 판정은 그래프 영역·경고·우측 요약에서 동일한 색을 쓴다. */
   --color-trace-oos: #8f5360;
   --color-trace-ooc: #a96500;
