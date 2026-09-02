@@ -3147,6 +3147,28 @@ def settle_email_delivery(
     return _delivery_row(_write(connection, _run))
 
 
+def _same_decision_instant(
+    action_decided_at: datetime | None,
+    approval_decided_at: datetime | None,
+) -> bool:
+    """naive ``timestamp``와 aware ``timestamptz``를 세션 TimeZone 기준으로 비교한다.
+
+    ``approved_at``은 ``decided_at`` 값을 ``timestamp`` 컬럼에 쓴 것이라 PostgreSQL이
+    **세션 TimeZone**의 local naive로 저장한다. psycopg는 ``timestamptz``를 같은 세션
+    TimeZone의 aware datetime으로 돌려주므로 tzinfo만 떼면 두 값의 기준이 일치한다.
+    naive 값을 UTC로 가정하면 공용 DB(``TimeZone=Asia/Seoul``)에서 9시간 어긋나 승인된
+    EQP_HOLD가 ``MES_APPROVAL_IDENTITY_MISMATCH``로 거부된다.
+    """
+
+    if action_decided_at is None or approval_decided_at is None:
+        return False
+    if approval_decided_at.tzinfo is None:
+        return False
+    if action_decided_at.tzinfo is not None:
+        return action_decided_at == approval_decided_at
+    return action_decided_at == approval_decided_at.replace(tzinfo=None)
+
+
 def begin_mes_delivery(
     connection: Connection, *, action_id: str
 ) -> MesDeliveryClaim | None:
@@ -3195,13 +3217,7 @@ def begin_mes_delivery(
     # legacy ``action_history.approved_at``은 timestamp, Runtime
     # ``approval_request.decided_at``은 timestamptz다. 둘은 같은 DB 값이어도 psycopg가
     # 각각 naive/aware datetime으로 돌려주므로 직접 equality는 항상 거짓이다.
-    action_decided_at = action.approved_at
-    approval_decided_at = approval.decided_at
-    same_decision_time = (
-        action_decided_at is not None
-        and approval_decided_at is not None
-        and action_decided_at.replace(tzinfo=UTC) == approval_decided_at.astimezone(UTC)
-    )
+    same_decision_time = _same_decision_instant(action.approved_at, approval.decided_at)
 
     if (
         action.action_code is not ActionCode.EQP_HOLD

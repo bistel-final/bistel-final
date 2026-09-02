@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from app.agent import approval_store
 from app.agent import repository as repo
@@ -87,6 +87,36 @@ def test_approved_hold_claims_once_with_unique_equipment(engine: Any) -> None:
     with engine.begin() as connection:
         assert repo.begin_mes_delivery(connection, action_id=action_id) is None
     assert _delivery(engine, action_id).attempt_count == 1
+
+
+def test_approved_hold_claims_under_non_utc_session_timezone(engine: Any) -> None:
+    """공용 DB처럼 세션 TimeZone이 UTC가 아니어도 승인 시각 정합성이 성립해야 한다.
+
+    ``approved_at``(timestamp)은 세션 TimeZone의 local naive로 저장되므로 이를 UTC로
+    가정하면 ``decided_at``(timestamptz)과 9시간 어긋나 claim이 거부된다.
+    """
+
+    kst_engine = create_engine(
+        engine.url,
+        connect_args={"options": "-c TimeZone=Asia/Seoul"},
+    )
+    try:
+        with kst_engine.connect() as connection:
+            assert connection.execute(text("SHOW TimeZone")).scalar() == "Asia/Seoul"
+        _equipment(kst_engine)
+        _run_id, action_id, approval_id = _create_waiting_bundle(kst_engine)
+        _approve(kst_engine, approval_id)
+
+        with kst_engine.begin() as connection:
+            claim = repo.begin_mes_delivery(connection, action_id=action_id)
+        assert claim is not None
+        assert claim.delivery.status is DeliveryStatus.SENDING
+        assert claim.approval.decided_at is not None
+        assert claim.action.approved_at is not None
+        decided_local = claim.approval.decided_at.replace(tzinfo=None)
+        assert claim.action.approved_at == decided_local
+    finally:
+        kst_engine.dispose()
 
 
 @pytest.mark.parametrize("decision", [None, Decision.REJECT])
