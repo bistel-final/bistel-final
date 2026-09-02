@@ -48,15 +48,29 @@ _SQL_FENCE_RE = re.compile(r"```(?:sql)?\s*(.+?)```", re.IGNORECASE | re.DOTALL)
 #: 프롬프트 개정 버전 — 평가 artifact 에 기록되어 "어느 프롬프트로 난 성적인가"를
 #: 구별한다 (GET /analytics/evaluations 계약 필드). 규칙·스키마 힌트가 바뀜 때마다 bump.
 #:   v1 기본 6규칙 · v2 그룹 신호 3종 · v3 값 도메인 힌트+구성 질문 테이블 유도
-PROMPT_VERSION = "text2sql-v3"
+#:   v4 alarm-table value domains (alarm_type/chamber/equipment/parameter) + rule 5 (alarm type <-> table, id formats)
+PROMPT_VERSION = "text2sql-v4"
 
 #: 값 도메인 힌트 대상 — 코드값 소속 혼동이 실측된 저카디널리티 컬럼만.
 #: (CD_AEI 사례: 값은 metrology.measure_type 소속인데 LLM 이
 #:  summary_data.parameter 로 오귀속 — 이름만으로는 판단 불가)
 _VALUE_DOMAIN_COLUMNS: tuple[tuple[str, str], ...] = (
     ("summary_data", "parameter"),
+    ("summary_data", "chamber"),
+    ("summary_data", "equipment"),
     ("metrology", "measure_type"),
     ("fdc_trace", "parameter_id"),
+    # v4: EQP04-PM2 case. OOS alarms were looked up in summary_alarm_history and the
+    # chamber id in the `equipment` column -> 0 rows. alarm_type values (OOS/OOC) point
+    # to the right table; chamber/equipment value formats point to the right column.
+    ("trace_alarm_history", "alarm_type"),
+    ("trace_alarm_history", "chamber"),
+    ("trace_alarm_history", "equipment"),
+    ("trace_alarm_history", "parameter"),
+    ("summary_alarm_history", "alarm_type"),
+    ("summary_alarm_history", "chamber"),
+    ("summary_alarm_history", "equipment"),
+    ("summary_alarm_history", "parameter"),
 )
 #: 이보다 값이 많으면 저카디널리티가 아니다 — 힌트 생략.
 _VALUE_DOMAIN_MAX = 24
@@ -134,8 +148,13 @@ _SYSTEM_PROMPT = """당신은 반도체 FDC 데이터의 PostgreSQL Text2SQL 변
    기록이라 구성 전체를 담지 않는다.
 4. '~별'(예: 챔버별, 파라미터별)·'각 ~마다'·'~ 단위로' 표현은 그룹별
    집계를 의미한다 — 해당 컬럼을 SELECT 에 포함하고 그 컬럼으로 GROUP BY 한다.
-5. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
-6. 설명 없이 SQL 만 출력한다. 코드 블록(```sql) 사용 가능.
+5. 알람 유형과 테이블: OOS(규격 이탈)는 trace_alarm_history, OOC(관리한계 이탈)는
+   summary_alarm_history, 반복 OOS(R03)는 r03_alarm_history 다 — alarm_type 값 목록으로
+   확인한다. 식별자 형식: 챔버는 'EQP04-PM2' 처럼 설비-챔버 결합 문자열이며 chamber
+   컬럼에, 설비는 'EQP04' 처럼 접두어만이며 equipment 컬럼에 있다 — 챔버 ID 를
+   equipment 컬럼과 비교하지 않는다.
+6. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
+7. 설명 없이 SQL 만 출력한다. 코드 블록(```sql) 사용 가능.
 
 사용 가능한 테이블:
 {schema}"""

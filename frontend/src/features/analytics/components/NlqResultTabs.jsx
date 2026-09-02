@@ -5,6 +5,7 @@ import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
 import { BarChart, HistogramChart, LineChart } from './NlqCharts.jsx'
+import { inferUnit } from './nlqUnits.js'
 import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 
 const TABS = [
@@ -63,16 +64,15 @@ function Footnote({ text }) {
   return <div className="rounded-lg border border-line bg-soft px-4 py-3.5 text-xs text-g1">{text}</div>
 }
 
-function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, footnote }) {
+function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, footnote }) {
   const { type, x, y, rawY } = readViz(def)
   const stats = buildStats(def, y)
-  const viz = def.visualization
   const columns = def.columns ?? []
   const groupBy = def.group_by ?? []
   // 교차확인 배지(#240) — MATCH·MISMATCH 만 표시 (SKIPPED 는 무표시)
   const crossStatus = def.cross_check?.status
   // 단위는 응답의 y 컬럼명이 근거다 (창작 금지) — raw 히스토그램은 값 컬럼 빈도
-  const unitLabel = viz?.y ?? (type === 'histogram' && viz?.x ? `${viz.x} 빈도` : null)
+  const unit = inferUnit(def, y) // COUNT 계열만 건/장/개, 모르면 null
 
   return (
     <Card className="animate-[om-fadein_.25s]">
@@ -112,11 +112,6 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
             </Button>
           ))}
         </div>
-        {unitLabel && (
-          <span className="font-mono text-[12.5px] text-g1">
-            단위 · <span className="font-bold text-navy">{unitLabel}</span>
-          </span>
-        )}
       </div>
 
       {tab === 'table' && (
@@ -136,10 +131,12 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
                     <th
                       key={c}
                       onClick={sortable ? onToggleSort : undefined}
-                      className={`${TH_CLS} font-mono ${sortable ? 'cursor-pointer' : ''}`}
+                      title={sortable ? (sortDir ? '클릭: 다음 정렬 (마지막은 원래 순서)' : '클릭: 큰 값부터 정렬') : undefined}
+                      className={`${TH_CLS} font-mono ${sortable ? 'cursor-pointer select-none' : ''}`}
                     >
                       {c}
-                      {sortable && <span className="ml-1 text-[9px] text-g2">{sortAsc ? '▲' : '▼'}</span>}
+                      {c === y && unit && <span className="ml-1 font-sans font-medium text-g2">({unit})</span>}
+                      {sortable && sortDir && <span className="ml-1 text-[9px] text-g2">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                     </th>
                   )
                 })}
@@ -191,9 +188,9 @@ function NlqResultTabs({ def, tab, onTab, sortAsc, onToggleSort, sortKey, rows, 
       {tab === 'chart' && (
         <div className="flex flex-col gap-[22px] px-6 pb-5 pt-1.5">
           {type === 'bar' ? (
-            <BarChart rows={rows} x={x} y={y} />
+            <BarChart rows={rows} x={x} y={y} unit={unit} />
           ) : type === 'line' ? (
-            <LineChart rows={rows} x={x} y={y} />
+            <LineChart rows={rows} x={x} y={y} unit={unit} />
           ) : type === 'histogram' ? (
             <HistogramChart rows={rows} x={x} y={rawY} />
           ) : (

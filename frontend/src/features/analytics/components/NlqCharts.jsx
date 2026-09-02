@@ -26,7 +26,7 @@ function shortLabel(v) {
 // ── 가로 막대 (HTML) — 범주 비교. 라벨이 길고 범주가 많은 데이터 특성상 가로가 정석. ──
 // 얇은 막대 + 아주 연한 트랙 + 값 열 정렬. 최댓값 행은 navy 로 한 톤 진하게 — 12행이 같은
 // 그림으로 보이지 않게 "어디가 가장 큰가"만 살린다. 축 눈금은 트랙 아래 한 줄.
-export function BarChart({ rows, x, y }) {
+export function BarChart({ rows, x, y, unit }) {
   const values = rows.map((r) => Number(r[y]) || 0)
   const max = niceMax(Math.max(1, ...values))
   const peak = Math.max(...values)
@@ -50,7 +50,10 @@ export function BarChart({ rows, x, y }) {
                   />
                 )}
               </div>
-              <span className={`text-right text-[17px] font-bold ${isPeak ? 'text-navy' : 'text-g1'}`}>{v}</span>
+              <span className={`text-right text-[17px] font-bold ${isPeak ? 'text-navy' : 'text-g1'}`}>
+                {v}
+                {unit && <span className="ml-0.5 font-sans text-[12px] font-semibold text-g2">{unit}</span>}
+              </span>
             </div>
           )
         })}
@@ -87,7 +90,7 @@ function Grid({ max, y }) {
 }
 
 // ── 추이 (SVG) — 단일 시리즈 라인. 표 탭 정렬과 무관하게 시간축 오름차순으로 그린다. ──
-export function LineChart({ rows, x, y }) {
+export function LineChart({ rows, x, y, unit }) {
   const ordered = [...rows].sort((a, b) => (String(a[x]) < String(b[x]) ? -1 : 1))
   const values = ordered.map((r) => Number(r[y]) || 0)
   const max = niceMax(Math.max(1, ...values))
@@ -109,6 +112,7 @@ export function LineChart({ rows, x, y }) {
       {n > 0 && (
         <text x={px(last) + 14} y={py(values[last]) + 5} fontSize="16" fontWeight="700" fill="var(--color-navy)" textAnchor="start">
           {values[last]}
+          {unit ? <tspan fontSize="12" fontWeight="600" fill="var(--color-g2)" fontFamily="Pretendard Variable, Pretendard, sans-serif">{unit}</tspan> : null}
         </text>
       )}
       {ordered.map((r, i) =>

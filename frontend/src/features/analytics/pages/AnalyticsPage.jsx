@@ -10,6 +10,7 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import NlqSqlPanel from '../components/NlqSqlPanel.jsx'
+import { formatSql } from '../components/sqlFormat.js'
 import NlqResultTabs from '../components/NlqResultTabs.jsx'
 import NlqHistoryPanel from '../components/NlqHistoryPanel.jsx'
 import NlqEvaluationPanel from '../components/NlqEvaluationPanel.jsx'
@@ -48,15 +49,19 @@ function AnalyticsPage() {
   const [rejected, setRejected] = useState(null) // 거부 응답 원본 {question, rejected, reason, latency_ms}
   const [phase, setPhase] = useState(null) // gen | unknown | rejected | run | done
   const [tab, setTab] = useState('table')
-  const [sortAsc, setSortAsc] = useState(false)
+  // 표 정렬 — null 이면 서버가 준 순서(SQL ORDER BY) 그대로. 정렬은 답의 일부라 임의로 바꾸지 않고,
+  // 사용자가 헤더를 클릭했을 때만 desc → asc → 원래 순서로 순환한다.
+  const [sortDir, setSortDir] = useState(null)
   // 이력은 GET /analytics/history 실응답으로 hydrate 한다 (V5-D-2.6, Mock 0).
   // 세션 내 신규 질의는 pushHistory 로 즉시 반영 — 서버 기록과 question 기준 dedupe.
   const [history, setHistory] = useState([])
   const [historyState, setHistoryState] = useState('loading') // loading | error | ready
-  // 이력 서버 pagination — 공용 로그(nl_query_log)가 수백 건이라 한 페이지 8건, 감사로그와 같은 페이저
+  // 이력 — 서버 로그는 같은 질문이 수십 번 반복되므로 한 번에 넘치게 받아 질문 기준으로 접고(최신 1건만),
+  // 고유 질문 20개를 4개씩 5페이지로 보인다. 페이지는 클라이언트에서 자른다.
   const [histPage, setHistPage] = useState(1)
-  const [histTotal, setHistTotal] = useState(0)
-  const HIST_SIZE = 8
+  const HIST_PAGE = 4
+  const HIST_MAX = 20
+  const HIST_FETCH = 100 // 서버 size 상한
   const [sideTab, setSideTab] = useState('history') // history | evaluation — 보조 탭(8번째 메뉴 아님)
   // 생성 SQL을 textarea로 수정 후 POST /analytics/validate 재호출
   const [sqlText, setSqlText] = useState('')
@@ -71,28 +76,29 @@ function AnalyticsPage() {
     return () => t.forEach(clearTimeout)
   }, [])
 
-  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, row_count, latency_ms, reason} 으로 접는다.
-  // 페이지가 바뀜 때마다 서버에서 그 페이지만 받아 교체한다 (세션 push 항목은 1페이지 상단에만 유지).
+  // 이력 hydrate — 응답 계약(NlQueryLogItem)을 패널 항목 {question, ok, reason} 으로 접고 질문 기준 dedupe.
   useEffect(() => {
     let cancelled = false
-    getQueryHistory({ page: histPage, size: HIST_SIZE })
+    getQueryHistory({ page: 1, size: HIST_FETCH })
       .then((res) => {
         if (cancelled) return
-        const items = (res?.items ?? []).map((it) => ({
-          question: it.question,
-          ok: !it.is_rejected && !it.error_msg,
-          row_count: it.row_cnt ?? 0,
-          latency_ms: it.latency_ms ?? 0,
-          reason: it.reject_reason ?? it.error_msg ?? null,
-          logged: true,
-        }))
-        setHistTotal(res?.total ?? items.length)
+        const seen = new Set()
+        const items = []
+        for (const it of res?.items ?? []) {
+          if (seen.has(it.question)) continue
+          seen.add(it.question)
+          items.push({
+            question: it.question,
+            ok: !it.is_rejected && !it.error_msg,
+            reason: it.reject_reason ?? it.error_msg ?? null,
+            logged: true,
+          })
+        }
         setHistory((h) => {
-          if (histPage !== 1) return items
-          // 1페이지: 서버가 모르는 세션 항목(기록 실패 등)을 위에 유지하고 dedupe
+          // 서버가 모르는 세션 항목(기록 실패 등)을 위에 유지하고 dedupe
           const session = h.filter((x) => x.logged === false)
-          const seen = new Set(session.map((x) => x.question))
-          return [...session, ...items.filter((it) => !seen.has(it.question))]
+          const own = new Set(session.map((x) => x.question))
+          return [...session, ...items.filter((it) => !own.has(it.question))].slice(0, HIST_MAX)
         })
         setHistoryState('ready')
       })
@@ -102,16 +108,17 @@ function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [histPage])
+  }, [])
   const after = (ms, fn) => timers.current.push(setTimeout(fn, ms))
   const clearTimers = () => {
     timers.current.forEach(clearTimeout)
     timers.current = []
   }
 
+  // 새 질의는 목록 맨 위로. 같은 질문이 이미 있으면 그것을 위로 올린다 (중복 항목 생성 없음).
   const pushHistory = (entry) => {
-    setHistory((h) => (h.some((x) => x.question === entry.question) ? h : [entry, ...h]))
-    setHistPage(1) // 새 질의는 항상 1페이지 상단에서 보인다
+    setHistory((h) => [entry, ...h.filter((x) => x.question !== entry.question)].slice(0, HIST_MAX))
+    setHistPage(1)
   }
 
   // SQL 생성 직후 1회 자동 검증 (useEffect 아님 — 응답 콜백에서 수행)
@@ -136,7 +143,7 @@ function AnalyticsPage() {
     setActiveQ(query)
     setPhase('gen')
     setTab('table')
-    setSortAsc(false)
+    setSortDir(null)
     setEditing(false)
     setValidation(null)
     setVerifyNotice(null)
@@ -162,7 +169,7 @@ function AnalyticsPage() {
           } else if (d.error_msg) {
             // 검증은 통과했으나 DB 실행에서 실패 — 거부와 구분되는 상태
             setDef(d)
-            setSqlText(d.generated_sql ?? '')
+            setSqlText(formatSql(d.generated_sql ?? ''))
             setPhase('exec_error')
             pushHistory({
               question: query,
@@ -174,7 +181,9 @@ function AnalyticsPage() {
             })
           } else {
             setDef(d)
-            setSqlText(d.generated_sql ?? '')
+            setSqlText(formatSql(d.generated_sql ?? ''))
+            // 기본 탭은 서버가 정한 차트 유형을 따른다 — 그릴 수 있는 유형(line/bar/histogram)이면 차트 부터
+            setTab(['line', 'bar', 'histogram'].includes(d.visualization?.chart_type) ? 'chart' : 'table')
             setPhase('run')
             verify(d.generated_sql, false)
             after(800, () => {
@@ -211,17 +220,17 @@ function AnalyticsPage() {
 
   const cancelEdit = () => {
     setEditing(false)
-    if (def) setSqlText(def.generated_sql ?? '')
+    if (def) setSqlText(formatSql(def.generated_sql ?? ''))
   }
 
   // rows 는 객체 배열이다 — 정렬 키는 컬럼명으로 접근한다
   const sortKey = yColumnOf(def)
   const rows = useMemo(() => {
     const list = def?.rows ?? []
-    if (!sortKey || list.length < 2) return list
+    if (!sortDir || !sortKey || list.length < 2) return list
     if (!list.every((r) => typeof r[sortKey] === 'number')) return list
-    return [...list].sort((a, b) => (sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
-  }, [def, sortAsc, sortKey])
+    return [...list].sort((a, b) => (sortDir === 'asc' ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
+  }, [def, sortDir, sortKey])
 
   // 0건 그룹 각주 — 그룹 컬럼 값이 전부 챔버 ID일 때만 계산
   const footnote = useMemo(() => {
@@ -238,11 +247,8 @@ function AnalyticsPage() {
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
-      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+      <div className="flex min-h-16 items-center pb-1.5 pt-3.5">
         <div className="text-[22px] font-extrabold tracking-[-.01em] text-ink">자연어 분석</div>
-        <div className="text-[12.5px] text-g2">
-          읽기 전용 · 허용 테이블 <span className="font-mono font-bold text-navy">16</span>종 · LLM <span className="font-mono">gpt-4o-mini</span>
-        </div>
       </div>
 
       <Card className="px-6 py-5">
@@ -254,25 +260,35 @@ function AnalyticsPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') ask(e.target.value)
             }}
-            placeholder="데이터에 대해 질문하세요 — 예: 챔버별 알람 건수, EQP01에 챔버가 몇 개야?"
+            placeholder="데이터에 대해 질문하세요"
             className="h-[52px] min-w-0 flex-1 rounded-lg border border-line bg-white px-4 text-[15px] text-ink placeholder:text-faint focus:border-blue focus:outline-none focus:ring-2 focus:ring-tint-blue"
           />
           <Button onClick={() => ask(question)} className="flex-none text-[14px]" style={{ height: 52, padding: '0 36px' }}>
             질문
           </Button>
         </div>
-        {/* 예시 칩 — 클릭 = 질문 실행. 거부 유도 칩도 같은 색 — 거부는 결과에서 보여주는 것이지 입력에서 예고하지 않는다 */}
-        <div className="mt-3.5 flex flex-wrap gap-2">
-          {NL_CHIPS.map((q) => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => ask(q)}
-              className="inline-flex h-8 cursor-pointer items-center rounded-full border border-tint-blue-line bg-tint-blue px-4 font-sans text-[12.5px] font-semibold text-blue transition-colors hover:bg-blue hover:text-white"
-            >
-              {q}
-            </button>
-          ))}
+        {/* 예시 질문 — 알약 대신 네 칸 카드. 역할 라벨(숫자·비교·추이·구조) + 질문 한 줄. 클릭 = 질문 실행.
+            지금 보고 있는 질문은 선택 표시만 하고 다시 돌리지 않는다. */}
+        <div className="mt-4 grid grid-cols-4 gap-2.5">
+          {NL_CHIPS.map(({ kind, q }) => {
+            const on = q === activeQ
+            return (
+              <button
+                key={q}
+                type="button"
+                onClick={() => {
+                  if (!on) ask(q)
+                }}
+                aria-pressed={on}
+                className={`group flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+                  on ? 'border-blue bg-row-sel' : 'cursor-pointer border-line bg-white hover:border-tint-blue-line hover:bg-soft'
+                }`}
+              >
+                <span className={`text-[10.5px] font-semibold tracking-[.02em] ${on ? 'text-blue' : 'text-g2'}`}>{kind}</span>
+                <span className={`break-keep text-[12.5px] leading-[1.4] ${on ? 'font-semibold text-navy' : 'text-ink'}`}>{q}</span>
+              </button>
+            )
+          })}
         </div>
       </Card>
 
@@ -366,8 +382,8 @@ function AnalyticsPage() {
               def={def}
               tab={tab}
               onTab={setTab}
-              sortAsc={sortAsc}
-              onToggleSort={() => setSortAsc((s) => !s)}
+              sortDir={sortDir}
+              onToggleSort={() => setSortDir((d) => (d === null ? 'desc' : d === 'desc' ? 'asc' : null))}
               sortKey={sortKey}
               rows={rows}
               footnote={footnote}
@@ -386,17 +402,16 @@ function AnalyticsPage() {
           </div>
           {sideTab === 'history' ? (
             <NlqHistoryPanel
-              items={history}
+              items={history.slice((histPage - 1) * HIST_PAGE, histPage * HIST_PAGE)}
               activeQ={activeQ}
-              onRerun={ask}
+              onRerun={(q) => {
+                if (q === activeQ) return // 이미 보고 있는 질의는 다시 돌리지 않는다
+                ask(q)
+              }}
               state={historyState}
               page={histPage}
-              pageCount={Math.max(1, Math.ceil(histTotal / HIST_SIZE))}
-              total={histTotal}
-              onPage={(p) => {
-                setHistoryState('loading') // 로딩 표시는 이벤트에서 — effect 안 동기 setState 회피(react-hooks 규칙)
-                setHistPage(p)
-              }}
+              pageCount={Math.max(1, Math.ceil(history.length / HIST_PAGE))}
+              onPage={setHistPage}
             />
           ) : (
             <NlqEvaluationPanel fetchEvaluations={getEvaluations} />
