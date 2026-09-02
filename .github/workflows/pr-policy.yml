@@ -128,6 +128,10 @@ jobs:
         working-directory: frontend
         run: npm run test:ontology
 
+      - name: Verify integration E2E frontend contract
+        working-directory: frontend
+        run: npm run test:integration-e2e
+
   # `V5-CM-1.6`이 corrected 계열을 삭제하면서 이 job에서 corrected step만 뺐다.
   # **job 자체는 남긴다** — rehearsal lifecycle·recovery lock·V5 artifact write·공용
   # 전환 argv 계약이 Windows에서 도는 곳은 여기뿐이라, 통째로 지우면 그 검증들이 함께

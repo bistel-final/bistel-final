@@ -69,6 +69,8 @@ services:
         VITE_USE_MOCK: "false"
         VITE_USE_MOCK_DETECTION: "false"
         VITE_USE_MOCK_AGENT: "false"
+        VITE_USE_MOCK_KNOWLEDGE: "false"
+        VITE_USE_MOCK_ANALYTICS: "false"
     restart: unless-stopped
     depends_on:
       backend:
@@ -83,7 +85,7 @@ services:
     entrypoint: ["/opt/team/start_kafka.sh"]
     restart: unless-stopped
     ports:
-      - "9092:9094"
+      - "53005:9094"
     environment:
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: "1"
