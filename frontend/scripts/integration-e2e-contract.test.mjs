@@ -12,6 +12,29 @@ const agent = await import('../src/shared/api/agent.js?cm-5-2-real')
 const knowledge = await import('../src/shared/api/knowledge.js?cm-5-2-real')
 const analytics = await import('../src/shared/api/analytics.js?cm-5-2-real')
 
+const contractFixtureUrls = [
+  new URL('../../backend/tests/fixtures/v5_cm_4_4/api_contract_baseline.json', import.meta.url),
+  new URL('../../backend/tests/fixtures/v5_cm_4_4/api_contract_optional.json', import.meta.url),
+]
+const contractOperations = (
+  await Promise.all(contractFixtureUrls.map(async (url) => JSON.parse(await readFile(url, 'utf8')).operations))
+).flat()
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const operationIsDeclared = (actualOperation) => {
+  const separator = actualOperation.indexOf(' ')
+  const method = actualOperation.slice(0, separator)
+  const path = actualOperation.slice(separator + 1)
+  return contractOperations.some((operation) => {
+    if (operation.method !== method) return false
+    const pathPattern = operation.path
+      .split(/(\{[^}]+\})/)
+      .map((part) => (part.startsWith('{') ? '[^/]+' : escapeRegex(part)))
+      .join('')
+    return new RegExp(`^${pathPattern}$`).test(path)
+  })
+}
+
 const requests = [
   ['dashboard', 'GET /dashboard/summary', () => detection.getDashboard()],
   ['alarms', 'GET /alarms/paged', () => detection.getAlarms()],
@@ -29,6 +52,14 @@ const requests = [
   ['analytics', 'POST /analytics/query', () => analytics.postQuery('설비별 알람 수')],
   ['audit-logs', 'GET /audit-logs/paged', () => analytics.getAuditLogsPaged()],
 ]
+
+for (const [, operation] of requests) {
+  assert.equal(
+    operationIsDeclared(operation),
+    true,
+    `${operation} is not declared in the Backend baseline or optional API fixture`,
+  )
+}
 
 const responseData = (url) => {
   const page = { items: [], total: 0, page: 1, size: 20 }
@@ -184,4 +215,4 @@ for (const [relativePath, expectedNames] of primaryPageImports) {
 // V5-D-2.6 머지 후에는 지연 mock import가 남아 있지 않아야 한다.
 assert.deepEqual(deferredRuntimeImports, [])
 
-console.log('OK integration E2E contract: mock=false real transport · delay/network/422 · 7-screen states')
+console.log('OK integration E2E contract: Backend fixture · mock=false real transport · delay/network/422 · 7-screen states')

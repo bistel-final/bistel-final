@@ -12,6 +12,13 @@
 지연·network·4xx 회귀와 이 runbook까지다. 1단 PR은 게시할 수 있지만 CM-5.2 완료 표시와
 Issue 종료는 금지한다.
 
+자동 `integration-e2e-contract` gate는 7개 대표 요청이 Backend baseline·optional API
+fixture에 선언돼 있고, `VITE_USE_MOCK=false`에서 실제 transport 분기를 타며,
+지연·network·422와 화면의 Loading·Error·Empty·Success source 계약을 유지하는지 확인한다.
+adapter를 주입하는 1단 계약이므로 실행 중인 Backend, 실제 HTTP 응답 schema, Nginx·LAN
+연결까지 검증하지는 않는다. 그 범위는 2단에서 browser Network와 실
+`kosa_agent_e2e` 응답으로만 PASS 처리한다.
+
 2단은 다음 조건을 모두 충족한 뒤 한 번만 실행한다.
 
 - CM-5.1의 release 20·classified live 30·API spec operations 36과 semantic drift 0이

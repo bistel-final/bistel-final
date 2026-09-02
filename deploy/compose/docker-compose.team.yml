@@ -67,6 +67,10 @@ services:
       args:
         VITE_API_BASE_URL: /api
         VITE_USE_MOCK: "false"
+        VITE_USE_MOCK_DETECTION: "false"
+        VITE_USE_MOCK_AGENT: "false"
+        VITE_USE_MOCK_KNOWLEDGE: "false"
+        VITE_USE_MOCK_ANALYTICS: "false"
     restart: unless-stopped
     depends_on:
       backend:

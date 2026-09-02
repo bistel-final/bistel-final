@@ -256,20 +256,28 @@ def test_frontend_proxy_and_production_build_args_are_fixed() -> None:
     frontend = _load_yaml()["services"]["frontend"]
     nginx = (REPOSITORY_ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
     dockerfile = FRONTEND_DOCKERFILE_PATH.read_text(encoding="utf-8")
+    domain_mock_args = {
+        "VITE_USE_MOCK_DETECTION": "false",
+        "VITE_USE_MOCK_AGENT": "false",
+        "VITE_USE_MOCK_KNOWLEDGE": "false",
+        "VITE_USE_MOCK_ANALYTICS": "false",
+    }
 
     assert frontend["ports"] == ["8080:80"]
     assert frontend["build"]["args"] == {
         "VITE_API_BASE_URL": "/api",
         "VITE_USE_MOCK": "false",
+        **domain_mock_args,
     }
     assert "ARG VITE_API_BASE_URL=/api" in dockerfile
     assert "ARG VITE_USE_MOCK=false" in dockerfile
     assert "ENV VITE_USE_MOCK=${VITE_USE_MOCK}" in dockerfile
     assert 'test "$VITE_USE_MOCK" = "false"' in dockerfile
-    assert "VITE_USE_MOCK_DETECTION" not in COMPOSE_PATH.read_text(encoding="utf-8")
-    assert "VITE_USE_MOCK_AGENT" not in COMPOSE_PATH.read_text(encoding="utf-8")
-    assert "VITE_USE_MOCK_DETECTION" not in dockerfile
-    assert "VITE_USE_MOCK_AGENT" not in dockerfile
+    for name, value in domain_mock_args.items():
+        assert frontend["build"]["args"][name] == value
+        assert f"ARG {name}=false" in dockerfile
+        assert f"ENV {name}=${{{name}}}" in dockerfile
+        assert f'test "${name}" = "false"' in dockerfile
     assert "location /api/" in nginx
     assert "proxy_pass http://backend:8000/;" in nginx
     assert "try_files $uri $uri/ /index.html;" in nginx
