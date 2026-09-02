@@ -844,11 +844,11 @@
 ### 4.4 `POST /documents/search`
 
 - 구분/담당: 필수 / B
-- 요청: body: query 1..1000; model_code 선택; top_k 1..10 기본4
+- 요청: body: query 1..1000; model_code 선택; doc_type 선택; top_k 1..10 기본4
 - 성공 응답: DocumentHit[]
 - 기타 상태: 422,503
 - 정렬·제약: score DESC; document_id ASC; chunk_id ASC
-- 호환·경계: 검증된 corrected RAG source만; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; doc_id는 document_id alias; ① schema·loader·bge-m3 1024 + ③ RAG
+- 호환·경계: 검증된 corrected RAG source만; model_code는 COMMON 포함; doc_type은 top_k 전 서버 필터; Tool search_documents(query, model_code=None, top_k=4) 시그니처 유지; 0건=[]; chunk_id=<document_id>:<chunk_schema_version>:<4자리 순번>, 최초 cs1; doc_id는 document_id alias; ① schema·loader·bge-m3 1024 + ③ RAG
 - 계약 규칙:
   - 없음
 
@@ -858,6 +858,18 @@
     "body": {
       "additional_properties": false,
       "fields": {
+        "doc_type": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "enum": [
+              "MANUAL",
+              "SPEC",
+              "TROUBLESHOOT"
+            ],
+            "type": "string"
+          }
+        },
         "model_code": {
           "nullable": true,
           "required": false,
@@ -17131,6 +17143,18 @@
 {
   "additional_properties": false,
   "fields": {
+    "doc_type": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "enum": [
+          "MANUAL",
+          "SPEC",
+          "TROUBLESHOOT"
+        ],
+        "type": "string"
+      }
+    },
     "model_code": {
       "nullable": true,
       "required": false,
