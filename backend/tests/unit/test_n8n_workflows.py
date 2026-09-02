@@ -1083,13 +1083,74 @@ def test_result_validator_accepts_exact_sent_and_failed_shapes() -> None:
         assert result["evidence"]["reason_code"] is None
 
 
+def _real_n8n_result_record(status: str = "SENT") -> dict[str, Any]:
+    """n8n 2.32.7 Kafka Trigger 실측 출력 — `message`·`topic`만 있다."""
+
+    return {
+        "json": {
+            "message": {
+                "action_id": "ACT-0002",
+                "error_code": None if status == "SENT" else "MES_DEVICE_REJECTED",
+                "request_hash": "b" * 64,
+                "status": status,
+            },
+            "topic": "fdc.actions.result",
+        }
+    }
+
+
+@pytest.mark.parametrize("status", ["SENT", "FAILED"])
+def test_result_validator_accepts_real_kafka_trigger_record_without_metadata(
+    status: str,
+) -> None:
+    """공용 n8n에서 partition·offset·key 부재로 거부되던 결함 회귀."""
+
+    workflow = _load_workflows()["WF4-result-writeback.json"]
+    result = _result_json(
+        _run_code(
+            workflow,
+            "Validate MES Result",
+            input_item=_real_n8n_result_record(status),
+        )
+    )
+    assert result["valid"] is True
+    assert result["evidence"]["reason_code"] is None
+    assert result["metadata"] == {
+        "topic": "fdc.actions.result",
+        "partition": None,
+        "offset": None,
+    }
+
+    callback_item = _result_json(
+        _run_code(
+            workflow,
+            "Build Result Callback",
+            input_item={"json": result},
+            env={
+                "N8N_WEBHOOK_SECRET": "unit-test-secret",
+                "BACKEND_BASE_URL": "https://backend.example.invalid",
+            },
+        )
+    )
+    assert callback_item["config_ok"] is True
+    callback = json.loads(callback_item["callback_raw_body"])
+    assert callback["status"] == status
+    if status == "SENT":
+        assert callback["provider_message_id"] == (
+            "kafka:fdc.actions.result:ACT-0002:" + "b" * 64
+        )
+    else:
+        assert callback["provider_message_id"] is None
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
         lambda record: record["json"].update(topic="other"),
-        lambda record: record["json"].update(partition=None),
-        lambda record: record["json"].update(offset=""),
+        lambda record: record["json"].update(partition=-1),
+        lambda record: record["json"].update(offset="4x2"),
         lambda record: record["json"].update(key="ACT-other"),
+        lambda record: record["json"].update(key=""),
         lambda record: record["json"]["message"].update(request_hash="B" * 64),
         lambda record: record["json"]["message"].update(error_code="unexpected"),
         lambda record: record["json"]["message"].update(extra="unexpected"),
@@ -1259,6 +1320,6 @@ def test_r12_code_nodes_do_not_depend_on_sandbox_missing_globals() -> None:
                 continue
             code = node["parameters"]["jsCode"]
             assert "new URL(" not in code, f"{filename}:{name} uses the URL global"
-            assert "URLSearchParams" not in code, (
-                f"{filename}:{name} uses URLSearchParams"
-            )
+            assert (
+                "URLSearchParams" not in code
+            ), f"{filename}:{name} uses URLSearchParams"
