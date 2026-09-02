@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { fmtDateTime } from '../../../shared/api/format.js'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import RunAuditSubview from '../../../shared/components/audit/RunAuditSubview.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
 import { approvalText } from './agentModel.js'
+import DeliveryFlow from './DeliveryFlow.jsx'
 import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 
@@ -34,11 +34,11 @@ function RunDetailModal({
   open,
   onClose,
   run,
+  detail,
   action,
   approval,
   docs,
   evidenceItems = [],
-  tools = [],
   approvalState,
   onDecide,
 }) {
@@ -51,10 +51,11 @@ function RunDetailModal({
 
   const status = approvalState?.status ?? approval?.status ?? action?.approval_status
   const ap = approvalText(status)
-  const isHold = action?.action_code === 'EQP_HOLD'
-  const steps = CHECKLIST[action?.action_code] ?? CHECKLIST.MONITORING
-  const mesDelivery = action?.deliveries?.find((delivery) => delivery.channel === 'MES')
-  const mesSent = mesDelivery?.status === 'SENT'
+  const actionCode = action?.action_code ?? run.recommended_action
+  const actionReason = action?.reason ?? '규칙 기반 조치 사유 미제공'
+  const verificationSteps = detail?.diagnosis?.verification_steps ?? []
+  const isHold = actionCode === 'EQP_HOLD'
+  const steps = CHECKLIST[actionCode] ?? CHECKLIST.MONITORING
   const deciding = approvalState?.phase === 'pending'
 
   const tabCls = (on) =>
@@ -77,7 +78,7 @@ function RunDetailModal({
           <div>
             <div className="text-[15px] font-extrabold text-ink">근거 · 조치 상세</div>
             <div className="mt-0.5 font-mono text-[11px] text-g2">
-              {run.agent_run_id} · {run.fault_code} · {run.recommended_action}
+              {run.agent_run_id} · {run.fault_code} · {actionCode}
             </div>
           </div>
           <button type="button" onClick={onClose} className="cursor-pointer text-[20px] leading-none text-g2 hover:text-ink">
@@ -94,32 +95,33 @@ function RunDetailModal({
         </div>
 
         <div className="overflow-y-auto px-6 py-5">
-          {tools.length > 0 && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[10px] border border-line bg-soft px-3.5 py-3">
-              <span className="mr-1 text-[11px] font-bold text-g2">Tool 실행</span>
-              {tools.map((tool, index) => (
-                <Badge key={`${tool.tool_name}:${index}`} variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>
-                  {tool.tool_name} · {tool.status}
-                </Badge>
-              ))}
-            </div>
+          {tab === 'rag' && <RunRagEvidenceTab hits={hits} diagnosis={detail?.diagnosis} />}
+
+          {tab === 'graph' && (
+            <RunGraphEvidenceTab
+              run={run}
+              evidenceItems={evidenceItems}
+              diagnosis={detail?.diagnosis}
+            />
           )}
-
-          {tab === 'rag' && <RunRagEvidenceTab hits={hits} />}
-
-          {tab === 'graph' && <RunGraphEvidenceTab run={run} evidenceItems={evidenceItems} />}
 
           {tab === 'act' && !action && <EmptyState title="아직 결정된 조치가 없습니다" />}
 
           {tab === 'act' && action && (
             <div className="flex flex-col gap-5">
-              <div className="flex items-center gap-3">
-                <Badge variant={actionCodeVariant(action.action_code)}>{action.action_code}</Badge>
-                <span className="text-[12.5px] text-g1">{action.reason}</span>
+              <div className="rounded-[10px] border border-tint-blue-line bg-tint-blue px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <Badge variant={actionCodeVariant(actionCode)}>{actionCode}</Badge>
+                  <span className="text-[12.5px] font-semibold text-ink">{actionReason}</span>
+                </div>
+                <div className="mt-3 border-t border-tint-blue-line pt-2.5 text-[11.5px] leading-6 text-g1">
+                  <strong className="text-navy">다음 확인:</strong>{' '}
+                  {verificationSteps.length > 0 ? verificationSteps.join(' → ') : '추가 확인 절차 미제공'}
+                </div>
               </div>
 
               <div>
-                <div className="mb-2 text-[11px] font-bold text-g2">조치 절차</div>
+                <div className="mb-2 text-[11px] font-bold text-g2">조치 실행 절차</div>
                 <div className="flex flex-col gap-2.5">
                   {steps.map((s, i) => (
                     <div key={s} className="flex items-center gap-3">
@@ -133,22 +135,8 @@ function RunDetailModal({
               </div>
 
               <div>
-                <div className="mb-1.5 text-[11px] font-bold text-g2">채널 전송 상태</div>
-                <div className="flex flex-wrap gap-2">
-                  {(action.deliveries ?? []).map((delivery) => (
-                    <Badge key={delivery.channel} variant={delivery.status === 'SENT' ? 't-green' : 't-gray'}>
-                      {delivery.channel} · {delivery.status}
-                    </Badge>
-                  ))}
-                  {(action.deliveries ?? []).length === 0 && <span className="text-[12px] text-g2">전송 채널 없음</span>}
-                </div>
-                {mesDelivery && (
-                  <div
-                    className={`mt-2 font-mono text-[11.5px] font-bold ${mesSent ? 'text-green-dark' : status === 'REJECTED' ? 'text-red' : 'text-g1'}`}
-                  >
-                    {`${mesDelivery.status}${mesDelivery.completed_at ? ` · ${fmtDateTime(mesDelivery.completed_at)}` : ''} (MES)${status === 'REJECTED' ? ' · 승인 반려' : ''}`}
-                  </div>
-                )}
+                <div className="mb-1.5 text-[11px] font-bold text-g2">조치 전달 흐름</div>
+                <DeliveryFlow action={action} />
               </div>
 
               {isHold ? (

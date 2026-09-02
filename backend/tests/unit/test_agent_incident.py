@@ -113,6 +113,42 @@ def _resolve(rows: list[Any], requested: AlarmRef) -> inc.ResolvedIncident:
     return inc.resolve_incident(_Connection(rows), requested)
 
 
+def _r03_contract() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    wafers = [
+        {"lot_hist_id": f"LH-{index}", "wafer_id": f"W{index}"} for index in range(1, 4)
+    ]
+    alarms = [
+        {"source": "TRACE", "alarm_id": f"TA-{index:02d}"} for index in range(1, 10)
+    ]
+    return wafers, alarms
+
+
+def test_r03_persisted_member_contract_is_exact_and_unique() -> None:
+    wafers, alarms = _r03_contract()
+    parsed_wafers, parsed_alarms = inc_repo.parse_r03_member_contract(
+        wafers,
+        alarms,
+    )
+
+    assert parsed_wafers == (("LH-1", "W1"), ("LH-2", "W2"), ("LH-3", "W3"))
+    assert len(parsed_alarms) == 9
+
+
+@pytest.mark.parametrize("mutation", ["extra_key", "duplicate_wafer", "r03_alarm"])
+def test_r03_persisted_member_contract_rejects_shape_drift(mutation: str) -> None:
+    wafers, alarms = _r03_contract()
+    if mutation == "extra_key":
+        wafers[0]["unexpected"] = "x"
+    elif mutation == "duplicate_wafer":
+        wafers[1] = dict(wafers[0])
+    else:
+        alarms[0]["source"] = "R03"
+
+    with pytest.raises(repo.RepositoryContractError) as exc:
+        inc_repo.parse_r03_member_contract(wafers, alarms)
+    assert exc.value.code == "FINAL_DATASET_CONTRACT_MISMATCH"
+
+
 # --- 대표 선정 --------------------------------------------------------------
 
 

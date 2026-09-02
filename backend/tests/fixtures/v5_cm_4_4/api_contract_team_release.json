@@ -1,5 +1,8 @@
 {
   "components": {
+    "AgentEvaluationResponse": {
+      "type": "named"
+    },
     "AnalysisQueryRequest": {
       "type": "named"
     },
@@ -48,6 +51,30 @@
   },
   "format_version": 1,
   "operations": [
+    {
+      "compatibility": [],
+      "method": "GET",
+      "owner": "C",
+      "path": "/agent/evaluations",
+      "request": {
+        "body": null,
+        "header": {},
+        "path": {},
+        "query": {}
+      },
+      "response_shape": {
+        "schema_ref": "AgentEvaluationResponse",
+        "type": "object"
+      },
+      "responses": {
+        "200": {
+          "schema_ref": "AgentEvaluationResponse",
+          "shape": "object"
+        }
+      },
+      "sort": [],
+      "success_status": 200
+    },
     {
       "compatibility": [],
       "method": "POST",

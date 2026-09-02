@@ -264,9 +264,18 @@ class _Ports:
     def __post_init__(self) -> None:
         self.calls: list[str] = []
         self.persisted_decisions: list[ActionDecision] = []
+        self.hypothesis_extra_data_gaps: tuple[str, ...] = ()
 
-    def generate_hypothesis(self, fdc: Any, graph: Any, docs: Any, route: Any) -> Any:
+    def generate_hypothesis(
+        self,
+        fdc: Any,
+        graph: Any,
+        docs: Any,
+        route: Any,
+        extra_data_gaps: tuple[str, ...],
+    ) -> Any:
         self.calls.append("generate_hypothesis")
+        self.hypothesis_extra_data_gaps = extra_data_gaps
         if self.generation_error:
             raise HypothesisGenerationError(
                 "LLM_TIMEOUT",
@@ -432,6 +441,7 @@ def _build(
     require_bound_thread: bool = False,
     configured_llm_model: str | None = None,
     start_calls: list[dict[str, Any]] | None = None,
+    diagnostic_wafer_refs: tuple[tuple[str, str], ...] = (),
 ) -> tuple[Any, _FakeTools, _Ports | None, list[tuple[str, Any]], list[str]]:
     route = level_route or _route()
     tool_set = tools or _FakeTools()
@@ -474,6 +484,7 @@ def _build(
             else lot_hist_id_of_member
         ),
         steps=(),
+        diagnostic_wafer_refs=diagnostic_wafer_refs,
     )
 
     def start(*_args: Any, **kwargs: Any) -> Any:
@@ -702,6 +713,51 @@ def test_level_one_warning_calls_all_read_tools_and_email(
         "approval_decision",
         "pending_llm_usage",
     } & set(state)
+
+
+def test_more_than_three_fdc_targets_are_bounded_and_mark_diagnosis_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _TargetAwareTools(_FakeTools):
+        def fdc_summary(self, run_id: str, request: Any) -> FdcSummaryToolResult:
+            self.calls.append(("fdc", request))
+            result = _fdc(ok=True)
+            assert result.wafer is not None
+            return result.model_copy(
+                update={
+                    "wafer": result.wafer.model_copy(
+                        update={"lot_hist_id": request.lot_hist_id}
+                    )
+                }
+            )
+
+    ports = _Ports(action=ActionCode.WARNING)
+    graph, tools, _, finishes, _ = _build(
+        monkeypatch,
+        ports=ports,
+        tools=_TargetAwareTools(),
+        diagnostic_wafer_refs=(
+            ("LH-10", "W10"),
+            ("LH-2", "W2"),
+            ("LH-1", "W1"),
+            ("LH-3", "W3"),
+        ),
+    )
+
+    state = _invoke(graph)
+
+    assert [request.lot_hist_id for name, request in tools.calls if name == "fdc"] == [
+        "LH-1",
+        "LH-2",
+        "LH-3",
+    ]
+    assert ports.hypothesis_extra_data_gaps == ("FDC_TARGET_BUDGET_EXCEEDED",)
+    assert any(
+        error.code == "FDC_TARGET_BUDGET_EXCEEDED" and not error.terminal
+        for error in state["errors"]
+    )
+    assert state.get("terminal_error") is None, state
+    assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
 
 def test_production_decision_reaches_persist_port_with_exact_value(
@@ -969,11 +1025,16 @@ def test_failed_read_tools_do_not_skip_document_search(
     state = _invoke(graph)
     assert [name for name, _ in tools.calls] == [
         "fdc",
+        "fdc",
         "equipment",
         "documents",
         "send_action",
     ]
-    assert [error.code for error in state["errors"]] == ["TIMEOUT", "DEPENDENCY_ERROR"]
+    assert [error.code for error in state["errors"]] == [
+        "TIMEOUT",
+        "TIMEOUT",
+        "DEPENDENCY_ERROR",
+    ]
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
 
 

@@ -1,18 +1,34 @@
 const DEFAULT_RUN_ERROR = '분석 실행 요청에 실패했습니다.'
 
-const detailMessage = (error) => {
-  const detail = error?.response?.data?.detail
-  return typeof detail === 'string' && detail.trim() ? detail : null
+const responseMessage = (error) => {
+  const data = error?.response?.data
+  for (const value of [data?.message, data?.detail]) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
 }
 
 // FastAPI 422 detail은 객체 배열일 수 있으므로 문자열만 화면에 전달한다.
 export function runErrorMessage(error) {
   const status = error?.response?.status
-  const detail = detailMessage(error)
-  if (status === 409) return detail ?? '이 incident는 이미 분석이 진행 중입니다.'
-  if (status === 422) return detail ?? '분석을 실행할 수 없는 알람입니다.'
-  if (status === 503) return detail ?? 'Agent 실행 서비스를 사용할 수 없습니다.'
-  return detail ?? DEFAULT_RUN_ERROR
+  const message = responseMessage(error)
+  if (status === 409) return message ?? '이 incident에는 기존 분석 실행이 있습니다.'
+  if (status === 422) return message ?? '분석을 실행할 수 없는 알람입니다.'
+  if (status === 503) return message ?? 'Agent 실행 서비스를 사용할 수 없습니다.'
+  return message ?? DEFAULT_RUN_ERROR
+}
+
+export function analysisActionOf(alarm) {
+  const runId = typeof alarm?.latest_agent_run_id === 'string' ? alarm.latest_agent_run_id.trim() : ''
+  if (!runId) return { mode: 'CREATE', label: '분석 실행', runId: null }
+
+  const status = alarm?.agent_run_status
+  const label = ['RUNNING', 'WAITING_APPROVAL'].includes(status)
+    ? '진행 중인 분석 보기'
+    : status === 'FAILED'
+      ? '실패 분석 보기'
+      : '분석 결과 보기'
+  return { mode: 'OPEN', label, runId }
 }
 
 export function periodLabel({ from, to }) {
@@ -27,6 +43,7 @@ export function partitionAlarms(alarms) {
     (a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id),
   )
   return {
+    all: rows,
     trace: rows.filter((alarm) => alarm.source === 'TRACE'),
     summary: rows.filter((alarm) => alarm.source === 'SUMMARY'),
     r03: rows.filter((alarm) => alarm.source === 'R03'),

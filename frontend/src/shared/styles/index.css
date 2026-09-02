@@ -9,40 +9,46 @@
 
   --color-navy: #1c3150; /* 사이드바 배경 */
   --color-navy2: #2a4467; /* 사이드바 활성 메뉴 배경 */
-  --color-blue: #2f5fa8; /* 포인트: 버튼, 링크, 차트, 선택 — navy 가족의 스틸바루(채도↓) */
-  --color-blue-hover: #274f8c; /* 포인트 hover · 탭 활성 텍스트 */
-  --color-accent-bar: #4a7fd1; /* 사이드바 활성 좌측 3px 바 */
-  --color-red: #dc2626; /* OOS · 거부 · EQP_HOLD */
-  --color-amber: #f59e0b; /* OOC · WARNING */
-  --color-amber-dark: #d97706; /* OOC 텍스트 강조 */
-  --color-green: #2e8b63; /* 성공 · 승인 · SENT — 채도를 낮춘 차분한 녹색 */
-  --color-green-dark: #256f4f; /* 성공 텍스트 강조 */
+  --color-blue: #3b78b3; /* 회사 청색: 버튼, 링크, 선택 */
+  --color-blue-hover: #2f6598; /* 회사 청색 hover · 탭 활성 텍스트 */
+  --color-accent-bar: #6ba3d3; /* 라이트 사이드바 활성 좌측 3px 바 */
+  --color-red: #9f5965; /* OOS · 거부 · EQP_HOLD — 저채도 적갈 */
+  --color-amber: #b97918; /* OOC · WARNING — OOS와 분리되는 저채도 골드 */
+  --color-amber-dark: #915e12; /* OOC 텍스트 강조 */
+  --color-green: #4e786a; /* 성공 · 승인 · SENT — 저채도 청록 */
+  --color-green-dark: #3d6257; /* 성공 텍스트 강조 */
   --color-ink: #0f172a; /* 본문 */
   --color-g1: #475569; /* 보조 텍스트 · 범례 */
   --color-g2: #64748b; /* dim 텍스트 · 축라벨 */
   --color-faint: #94a3b8; /* faint 텍스트 · 라벨 */
   --color-line: #e2e8f0; /* 카드 테두리 · 축선 */
-  --color-bg: #f4f6f9; /* 앱 배경 */
+  --color-bg: #f7f9fc; /* 앱 배경 */
   --color-field-line: #dbe2ea; /* 입력 · 셀렉트 · 고스트 버튼 테두리 */
 
   /* 틴트(soft 배경) */
-  --color-tint-red: #fbecea;
-  --color-tint-red-line: #efc7c2;
-  --color-tint-amber: #fef3c7;
-  --color-tint-amber-line: #fde68a;
-  --color-tint-amber-text: #92400e;
-  --color-tint-green: #e6f2ec;
-  --color-tint-green-line: #bfdccb;
+  --color-tint-red: #f8eff1;
+  --color-tint-red-line: #dfc8ce;
+  --color-tint-amber: #f8f3e8;
+  --color-tint-amber-line: #e2d4b8;
+  --color-tint-amber-text: #875b19;
+  --color-tint-green: #eef5f2;
+  --color-tint-green-line: #c9dbd3;
   --color-tint-gray: #f1f5f9;
   --color-tint-gray-line: #e2e8f0;
-  --color-tint-blue: #edf2fa;
-  --color-tint-blue-line: #a9c0e4;
+  --color-tint-blue: #eef5fb;
+  --color-tint-blue-line: #aec9df;
   --color-tint-navy: #e8eef7;
   --color-tint-navy-line: #c7d4e6;
 
+  /* Trace 판정은 그래프 영역·경고·우측 요약에서 동일한 색을 쓴다. */
+  --color-trace-oos: #8f5360;
+  --color-trace-ooc: #a96500;
+  --color-trace-oos-zone: #fbf0f2;
+  --color-trace-ooc-zone: #fbf1dc;
+
   /* 파생 서피스 */
-  --color-row-red: #fef2f2; /* 거부 카드 등 red soft 서피스 */
-  --color-row-sel: #eff6ff; /* 선택 행 · 선택 카드 */
+  --color-row-red: #faf3f4; /* 거부 카드 등 red soft 서피스 */
+  --color-row-sel: #eef5fb; /* 선택 행 · 선택 카드 */
   --color-alt: #f8fafc;
   --color-soft: #f7f9fb;
   --color-cell-line: #eef2f7; /* 차트 그리드선 · 셀 구분선 */
@@ -51,9 +57,9 @@
   --color-side-num: #7d92ab;
   --color-side-num-on: #b9c7d8;
   --color-side-foot: #9fb0c5;
-  --color-dot-green: #22c55e;
+  --color-dot-green: #6a9b84;
   --color-dash-line: #cbd5e1; /* 스텝 경계 세로선 */
-  --color-state-green-bg: #dcfce7;
+  --color-state-green-bg: #eef5f2;
 }
 
 /* 전역 요소 스타일은 @layer base 안에 둔다 —
@@ -66,7 +72,7 @@
     height: 100%;
     font-family: var(--font-sans);
     color: #0f172a;
-    background: #f4f6f9;
+    background: #f7f9fc;
   }
 
   #root {
@@ -74,11 +80,11 @@
   }
 
   a {
-    color: #2563eb;
+    color: #3b78b3;
     text-decoration: none;
   }
   a:hover {
-    color: #1d4ed8;
+    color: #2f6598;
   }
 }
 
@@ -189,4 +195,43 @@
   100% {
     background-position: 400px 0;
   }
+}
+
+/* Agent 분석·승인 본화면은 발표 거리에서도 목록·근거·요약을 읽을 수 있게 한다. */
+.agent-main-readable [class*="text-[9"] {
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+}
+
+.agent-main-readable [class*="text-[10"] {
+  font-size: 11.5px !important;
+  line-height: 1.5 !important;
+}
+
+.agent-main-readable [class*="text-[11"] {
+  font-size: 12.5px !important;
+  line-height: 1.55 !important;
+}
+
+.agent-main-readable [class*="text-[12"] {
+  font-size: 13.5px !important;
+  line-height: 1.6 !important;
+}
+
+/* 확대 Agent 흐름의 근거 패널은 발표 거리에서도 읽히는 최소 크기를 보장한다. */
+.agent-step-panel {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.agent-step-panel [class*="text-[9"],
+.agent-step-panel [class*="text-[10"] {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+
+.agent-step-panel [class*="text-[11"],
+.agent-step-panel [class*="text-[12"] {
+  font-size: 13.5px !important;
+  line-height: 1.65 !important;
 }

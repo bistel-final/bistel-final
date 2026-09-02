@@ -28,7 +28,7 @@ const controlledFocus = (params) => {
   return focus
 }
 
-function GraphSummary({ graph, compact = false }) {
+function GraphSummary({ graph, compact = false, scopeLabel = null }) {
   const counts = graph.nodes.reduce((result, node) => {
     result[node.label] = (result[node.label] ?? 0) + 1
     return result
@@ -37,7 +37,7 @@ function GraphSummary({ graph, compact = false }) {
     <div className={`rounded-[10px] border border-line bg-white px-4 py-3 ${compact ? '' : 'flex flex-wrap items-center gap-2'}`}>
       {compact && <div className="mb-2 text-[10px] font-extrabold text-faint">현재 그래프</div>}
       <div className={compact ? 'break-all font-mono text-[12px] font-extrabold text-navy' : 'contents'}>
-        <span className={compact ? '' : 'font-mono text-[12px] font-extrabold text-navy'}>{graph.root_node_id}</span>
+        <span className={compact ? '' : 'font-mono text-[12px] font-extrabold text-navy'}>{scopeLabel ?? graph.root_node_id}</span>
       </div>
       <div className={`${compact ? 'mt-2' : ''} flex flex-wrap items-center gap-2`}>
         <span className="text-[11.5px] text-g2">관계 {graph.relationships.length}건</span>
@@ -192,6 +192,21 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
 function FocusNotice({ focus }) {
   if (!focus || ['none', 'ready'].includes(focus.phase)) return null
   if (focus.phase === 'found') {
+    if (focus.kind === 'impact') {
+      return (
+        <div className="rounded-[10px] border border-tint-blue-line bg-tint-blue px-4 py-3">
+          <div className="text-[12px] font-extrabold text-blue">Agent 영향 범위</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[10.5px] font-bold">
+            {focus.directNodes.map((node) => (
+              <span key={node.id} className="rounded-md border border-blue/20 bg-white px-2 py-1 text-blue">{node.business_id}</span>
+            ))}
+            {focus.checkNodes.map((node) => (
+              <span key={node.id} className="rounded-md border border-tint-amber-line bg-white px-2 py-1 text-tint-amber-text">확인 필요 · {node.business_id}</span>
+            ))}
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="rounded-[10px] border border-tint-blue-line bg-tint-blue px-4 py-3">
         <div className="text-[12px] font-extrabold text-blue">Agent 근거 관계 복원 완료</div>
@@ -211,28 +226,26 @@ function FocusNotice({ focus }) {
   )
 }
 
-const OverviewGroup = ({ nodes, selectedChamber, onSelectChamber, emphasis = false }) => (
-  <div className={`flex min-h-14 min-w-0 flex-wrap content-center justify-center gap-1.5 rounded-lg px-2 py-2 ${
-    emphasis ? 'border border-violet-200 bg-white' : ''
-  }`}>
+const OverviewGroup = ({ nodes, selectedNodeId, onSelectNode }) => (
+  <div className="flex min-h-14 min-w-0 flex-wrap content-center justify-center gap-1.5 rounded-lg px-2 py-2">
       {nodes.map((node) => {
-        const selectable = node.label === 'Chamber'
-        const selected = selectable && node.business_id === selectedChamber
-        const className = `rounded-md px-2 py-1.5 text-center font-mono text-[9.5px] font-bold transition ${
+        const selected = node.id === selectedNodeId
+        const color = ONTOLOGY_NODE_META[node.label]?.color ?? '#64748b'
+        const className = `rounded-md border px-2 py-1.5 text-center font-mono text-[9.5px] font-bold transition ${
           selected
             ? 'bg-blue text-white shadow-sm'
-            : selectable
-              ? 'border border-cell-line bg-white text-g1 hover:border-blue/40 hover:bg-tint-blue'
-              : emphasis
-                ? 'text-violet-700'
-                : 'text-ink'
+            : 'hover:border-blue/50 hover:bg-tint-blue'
         }`
-        return selectable ? (
-          <button key={node.id} type="button" className={className} onClick={() => onSelectChamber(node.business_id)}>
+        return (
+          <button
+            key={node.id}
+            type="button"
+            className={className}
+            style={selected ? undefined : { borderColor: `${color}55`, backgroundColor: `${color}0d`, color }}
+            onClick={() => onSelectNode(node)}
+          >
             {node.business_id}
           </button>
-        ) : (
-          <span key={node.id} className={className}>{node.business_id}</span>
         )
       })}
   </div>
@@ -242,7 +255,7 @@ const OverviewArrow = () => <div className="text-center text-[17px] font-extrabo
 
 const OVERVIEW_GRID = 'grid min-w-[1120px] grid-cols-[1.15fr_28px_1fr_28px_.9fr_28px_1.45fr_28px_1.55fr_28px_1.5fr] items-center gap-2'
 
-function OntologyOverview({ graph, selectedChamber, onSelectChamber }) {
+function OntologyOverview({ graph, selectedNodeId, onSelectNode }) {
   const lanes = useMemo(() => buildOntologyOverviewLanes([graph]), [graph])
   if (lanes.length === 0) return null
   return (
@@ -263,17 +276,17 @@ function OntologyOverview({ graph, selectedChamber, onSelectChamber }) {
         <div className="flex min-w-[1120px] flex-col gap-2.5">
           {lanes.map((lane) => (
             <div key={lane.model.id} className={`${OVERVIEW_GRID} rounded-[10px] border border-cell-line bg-soft/60 px-3 py-2.5`}>
-              <OverviewGroup nodes={[lane.model]} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} emphasis />
+              <OverviewGroup nodes={[lane.model]} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
               <OverviewArrow />
-              <OverviewGroup nodes={lane.steps} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} />
+              <OverviewGroup nodes={lane.steps} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
               <OverviewArrow />
-              <OverviewGroup nodes={lane.areas} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} />
+              <OverviewGroup nodes={lane.areas} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
               <OverviewArrow />
-              <OverviewGroup nodes={lane.equipments} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} />
+              <OverviewGroup nodes={lane.equipments} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
               <OverviewArrow />
-              <OverviewGroup nodes={lane.chambers} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} />
+              <OverviewGroup nodes={lane.chambers} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
               <OverviewArrow />
-              <OverviewGroup nodes={lane.parameters} selectedChamber={selectedChamber} onSelectChamber={onSelectChamber} />
+              <OverviewGroup nodes={lane.parameters} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
             </div>
           ))}
         </div>
@@ -286,47 +299,55 @@ function OntologyPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const focus = useMemo(() => controlledFocus(searchParams), [searchParams])
   const [selectedChamber, setSelectedChamber] = useState(
-    focus.phase === 'ready' ? focus.chamberId : DEFAULT_GRAPH_CHAMBER,
+    focus.phase === 'ready' ? focus.chamberId : '',
   )
   const [attempt, setAttempt] = useState(0)
-  const [state, setState] = useState({ status: 'loading', graph: null })
+  const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
   const [selectedNode, setSelectedNode] = useState(null)
   const [alarmAttempt, setAlarmAttempt] = useState(0)
   const [alarmState, setAlarmState] = useState({ requestKey: null, status: 'idle', summary: null, basis: null })
-  const requestChamber = focus.phase === 'ready' ? focus.chamberId : selectedChamber
+  const explicitChamber = focus.phase === 'ready' ? focus.chamberId : selectedChamber
+  const requestChamber = explicitChamber || DEFAULT_GRAPH_CHAMBER
   const graph = useMemo(() => {
     if (!state.graph) return null
-    const rootNodeId = `Chamber:${requestChamber}`
+    if (!explicitChamber) return state.graph
+    const rootNodeId = `Chamber:${explicitChamber}`
     return state.graph.nodes.some((node) => node.id === rootNodeId)
       ? { ...state.graph, root_node_id: rootNodeId }
       : state.graph
-  }, [requestChamber, state.graph])
+  }, [explicitChamber, state.graph])
   const activeSelectedNode = focus.phase === 'ready' ? null : selectedNode
 
   useEffect(() => {
     if (focus.phase === 'invalid') return undefined
     let active = true
     const orderedChambers = [requestChamber, ...GRAPH_CHAMBERS.filter((chamberId) => chamberId !== requestChamber)]
-    Promise.all(orderedChambers.map((chamberId) => getChamberRelationsCore(chamberId))).then(
-      (responses) => {
-        if (!active) return
-        const merged = mergeOntologyGraphs(responses, `Chamber:${requestChamber}`)
-        setState({
-          status: hasDisplayableRelationships(merged) ? 'success' : 'empty',
-          graph: merged,
-        })
-        if (focus.phase !== 'ready') {
-          setSelectedNode(merged?.nodes.find((node) => node.id === merged.root_node_id) ?? null)
-        }
-      },
-      () => {
-        if (active) setState({ status: 'error', graph: null })
-      },
-    )
+    Promise.allSettled(orderedChambers.map((chamberId) => getChamberRelationsCore(chamberId))).then((results) => {
+      if (!active) return
+      const requestedResult = results[0]
+      if (requestedResult.status !== 'fulfilled') {
+        setState({ status: 'error', graph: null, partial: false })
+        return
+      }
+      const responses = results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value)
+      const merged = mergeOntologyGraphs(responses, `Chamber:${requestChamber}`)
+      setState({
+        status: hasDisplayableRelationships(merged) ? 'success' : 'empty',
+        graph: merged,
+        partial: responses.length !== orderedChambers.length,
+      })
+      if (focus.phase !== 'ready') {
+        setSelectedNode(explicitChamber
+          ? merged?.nodes.find((node) => node.id === `Chamber:${explicitChamber}`) ?? null
+          : null)
+      }
+    })
     return () => {
       active = false
     }
-  }, [attempt, focus.phase, requestChamber])
+  }, [attempt, explicitChamber, focus.phase, requestChamber])
 
   useEffect(() => {
     const scope = ontologyAlarmScope(graph, activeSelectedNode)
@@ -377,17 +398,33 @@ function OntologyPage() {
     return resolveOntologyFocus(graph, focus)
   }, [focus, graph, state.status])
   const focusedRelationIds = useMemo(
-    () => new Set(resolvedFocus.phase === 'found' ? [resolvedFocus.relation.id] : []),
+    () => new Set(resolvedFocus.phase === 'found' && resolvedFocus.kind === 'relation' ? [resolvedFocus.relation.id] : []),
+    [resolvedFocus],
+  )
+  const focusedImpactNodeIds = useMemo(
+    () => new Set(resolvedFocus.phase === 'found' && resolvedFocus.kind === 'impact'
+      ? resolvedFocus.directNodes.map((node) => node.id)
+      : []),
+    [resolvedFocus],
+  )
+  const checkRequiredNodeIds = useMemo(
+    () => new Set(resolvedFocus.phase === 'found' && resolvedFocus.kind === 'impact'
+      ? resolvedFocus.checkNodes.map((node) => node.id)
+      : []),
     [resolvedFocus],
   )
   const status = focus.phase === 'invalid' ? 'invalid' : state.status
   const displayedNode = activeSelectedNode && graph?.nodes.some((node) => node.id === activeSelectedNode.id)
     ? activeSelectedNode
-    : graph?.nodes.find((node) => node.id === graph.root_node_id) ?? null
+    : focus.phase === 'ready'
+      ? graph?.nodes.find((node) => node.id === graph.root_node_id) ?? null
+      : null
 
   const changeChamber = (chamberId) => {
     setSelectedChamber(chamberId)
-    setSelectedNode(state.graph?.nodes.find((node) => node.id === `Chamber:${chamberId}`) ?? null)
+    setSelectedNode(chamberId
+      ? state.graph?.nodes.find((node) => node.id === `Chamber:${chamberId}`) ?? null
+      : null)
     setSearchParams({}, { replace: true })
   }
 
@@ -398,21 +435,28 @@ function OntologyPage() {
     if (node && focus.phase === 'ready') setSearchParams({}, { replace: true })
   }
 
+  const selectOverviewNode = (node) => {
+    setSelectedChamber('')
+    setSelectedNode(node)
+    setSearchParams({}, { replace: true })
+  }
+
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div>
           <div className="text-[20px] font-extrabold text-ink">온톨로지</div>
-          <div className="mt-1 text-[11.5px] text-g2">챔버 중심 설비·공정·파라미터 관계</div>
+          <div className="mt-1 text-[11.5px] text-g2">전체 설비·공정·파라미터 관계에서 필요한 챔버를 탐색합니다</div>
         </div>
         <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
           CHAMBER
           <select
-            value={requestChamber}
+            value={explicitChamber}
             onChange={selectChamber}
             className="h-9 min-w-[180px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
             aria-label="온톨로지 챔버 선택"
           >
+            <option value="">전체 구조</option>
             {GRAPH_CHAMBERS.map((chamberId) => (
               <option key={chamberId} value={chamberId}>
                 {chamberId}
@@ -425,29 +469,36 @@ function OntologyPage() {
       {status === 'invalid' && (
         <ErrorState title="올바르지 않은 온톨로지 링크입니다" detail={focus.message} />
       )}
-      {status === 'loading' && <LoadingState message={`${requestChamber} 관계를 불러오는 중…`} />}
+      {status === 'loading' && <LoadingState message={`${explicitChamber || '전체'} 관계를 불러오는 중…`} />}
       {status === 'error' && (
         <ErrorState
           title="온톨로지 조회 오류"
           detail={LOAD_ERROR}
           onRetry={() => {
-            setState({ status: 'loading', graph: null })
+            setState({ status: 'loading', graph: null, partial: false })
             setAttempt((value) => value + 1)
           }}
         />
       )}
       {status === 'empty' && (
-        <EmptyState title="표시 가능한 관계가 없습니다" description={`${requestChamber}의 관계 데이터가 없습니다.`} />
+        <EmptyState title="표시 가능한 관계가 없습니다" description={`${explicitChamber || '전체 구조'}의 관계 데이터가 없습니다.`} />
       )}
       {status === 'success' && graph && (
         <div className="flex flex-col gap-4">
           <FocusNotice focus={resolvedFocus} />
-          <OntologyOverview graph={graph} selectedChamber={requestChamber} onSelectChamber={changeChamber} />
+          {state.partial && (
+            <div className="rounded-[10px] border border-tint-amber-line bg-tint-amber px-4 py-3 text-[12px] font-bold text-tint-amber-text">
+              일부 보조 챔버 관계를 불러오지 못해 조회한 챔버와 확인 가능한 관계만 표시합니다.
+            </div>
+          )}
+          <OntologyOverview graph={graph} selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectOverviewNode} />
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <OntologyGraphCanvas graph={graph} focusedRelationIds={focusedRelationIds}
-              selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page" />
+              impactNodeIds={focusedImpactNodeIds} checkRequiredNodeIds={checkRequiredNodeIds}
+              selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page"
+              emphasizeRoot={Boolean(explicitChamber)} />
             <div className="flex flex-col gap-3 xl:sticky xl:top-4">
-              <GraphSummary graph={graph} compact />
+              <GraphSummary graph={graph} compact scopeLabel={explicitChamber ? null : '전체 온톨로지'} />
               <NodeDetail graph={graph} node={displayedNode} isSelected={Boolean(activeSelectedNode)}
                 alarmState={displayedAlarmState} onRetryAlarms={() => setAlarmAttempt((value) => value + 1)} />
             </div>

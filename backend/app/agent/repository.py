@@ -3557,6 +3557,16 @@ class PublicAgentRunRecord:
     deliveries: tuple[PublicDeliveryRecord, ...]
     latency_ms: int
     llm_model: str
+    prompt_version: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    prediction_cause_summary: str | None = None
+    prediction_evidence: dict[str, Any] | None = None
+    prediction_llm_model: str | None = None
+    prediction_prompt_version: str | None = None
+    prediction_created_at: datetime | None = None
+    lot_id: str | None = None
+    retry_of_run_id: str | None = None
 
 
 # API v3가 bare array를 유지하므로 DB가 무한히 자라도 한 요청이 모두 읽지 않는다.
@@ -3599,6 +3609,8 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
     """
     SELECT r.agent_run_id,
            r.started_at AS created_at,
+           r.lot_id,
+           r.retry_of_run_id,
            r.requested_alarm_source,
            r.requested_alarm_id,
            r.chamber_id,
@@ -3615,7 +3627,15 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
            r.latency_ms,
            r.evidence -> 'active_timing' AS active_timing,
            clock_timestamp() AS observed_at,
-           r.llm_model
+           r.llm_model,
+           r.prompt_version,
+           r.input_tokens,
+           r.output_tokens,
+           p.cause_summary AS prediction_cause_summary,
+           p.evidence AS prediction_evidence,
+           p.llm_model AS prediction_llm_model,
+           p.prompt_version AS prediction_prompt_version,
+           p.created_at AS prediction_created_at
     FROM agent_run AS r
     LEFT JOIN agent_prediction AS p
       ON p.agent_run_id = r.agent_run_id
@@ -3873,6 +3893,20 @@ def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
         deliveries=_public_delivery_records(row.deliveries),
         latency_ms=latency_ms,
         llm_model=llm_model,
+        prompt_version=getattr(row, "prompt_version", None),
+        input_tokens=getattr(row, "input_tokens", None),
+        output_tokens=getattr(row, "output_tokens", None),
+        prediction_cause_summary=getattr(row, "prediction_cause_summary", None),
+        prediction_evidence=(
+            None
+            if getattr(row, "prediction_evidence", None) is None
+            else dict(row.prediction_evidence)
+        ),
+        prediction_llm_model=getattr(row, "prediction_llm_model", None),
+        prediction_prompt_version=getattr(row, "prediction_prompt_version", None),
+        prediction_created_at=getattr(row, "prediction_created_at", None),
+        lot_id=getattr(row, "lot_id", None),
+        retry_of_run_id=getattr(row, "retry_of_run_id", None),
     )
 
 

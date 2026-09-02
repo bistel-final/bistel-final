@@ -97,8 +97,8 @@ def validate_spec(spec: Mapping[str, Any]) -> None:
     operations = spec["operations"]
     if not isinstance(metadata, Mapping):
         raise ApiSpecError("metadata must be an object")
-    if not isinstance(operations, list) or len(operations) != 35:
-        raise ApiSpecError("operations must contain exactly 35 entries")
+    if not isinstance(operations, list) or len(operations) != 36:
+        raise ApiSpecError("operations must contain exactly 36 entries")
 
     keys: set[tuple[str, str]] = set()
     orders: list[int] = []
@@ -142,15 +142,15 @@ def validate_spec(spec: Mapping[str, Any]) -> None:
         elif level != "inventory" or semantic is not None:
             raise ApiSpecError(f"invalid contract level: {method} {path}")
         release_count += int(operation["release_required"] is True)
-    if orders != list(range(1, 36)):
-        raise ApiSpecError("operation order must be the exact sequence 1..35")
+    if orders != list(range(1, 37)):
+        raise ApiSpecError("operation order must be the exact sequence 1..36")
     if (metadata.get("operation_count"), metadata.get("semantic_operation_count")) != (
-        35,
+        36,
         semantic_count,
     ):
         raise ApiSpecError("metadata operation counts drift")
-    if metadata.get("release_required_count") != release_count or release_count != 19:
-        raise ApiSpecError("release-required operation count must be 19")
+    if metadata.get("release_required_count") != release_count or release_count != 20:
+        raise ApiSpecError("release-required operation count must be 20")
 
     components = spec["components"]
     if not isinstance(components, Mapping) or not components:
@@ -331,7 +331,7 @@ def render_markdown(spec: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## 3. API inventory — 35개",
+            "## 3. API inventory — 36개",
             "",
             "| # | 구분 | 담당 | Method | Path | 요약 | 계약 |",
             "|---:|---|---|---|---|---|---|",
@@ -341,15 +341,18 @@ def render_markdown(spec: Mapping[str, Any]) -> str:
         catalog = operation["catalog"]
         lines.append(
             f"| {operation['order']} | {catalog['category']} | {catalog['owner']} | "
-            f"{operation['method']} | `{operation['path']}` | {catalog['description']} | "
+            f"{operation['method']} | "
+            f"`{operation['path']}` | "
+            f"{catalog['description']} | "
             f"{operation['contract_level']} |"
         )
     lines.extend(["", "## 4. Operation 상세", ""])
     for operation in spec["operations"]:
         catalog = operation["catalog"]
+        operation_label = f"{operation['method']} {operation['path']}"
         lines.extend(
             [
-                f"### 4.{operation['order']} `{operation['method']} {operation['path']}`",
+                f"### 4.{operation['order']} `{operation_label}`",
                 "",
                 f"- 구분/담당: {catalog['category']} / {catalog['owner']}",
                 f"- 요청: {catalog['request_summary']}",
@@ -510,7 +513,7 @@ def write_pdf(spec: Mapping[str, Any], path: Path = PDF_PATH) -> None:
 def validate_outputs(spec: Mapping[str, Any]) -> None:
     with CSV_PATH.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
-    if len(rows) != 35 or not all(row["Method"] and row["Path"] for row in rows):
+    if len(rows) != 36 or not all(row["Method"] and row["Path"] for row in rows):
         raise ApiSpecError("generated CSV inventory drift")
     markdown = MARKDOWN_PATH.read_text(encoding="utf-8")
     for operation in spec["operations"]:
@@ -545,9 +548,8 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     build(check=args.check)
-    print(
-        f"API spec {'validated' if args.check else 'generated'}: 35 operations; source={CANONICAL_PATH.name}"
-    )
+    state = "validated" if args.check else "generated"
+    print(f"API spec {state}: 36 operations; source={CANONICAL_PATH.name}")
 
 
 if __name__ == "__main__":

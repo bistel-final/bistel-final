@@ -12,6 +12,7 @@ function DocumentDetailDrawer({
   onClose,
   onRetry,
   onNavigateChunk,
+  wide = false,
 }) {
   const detailBodyRef = useRef(null)
   const selectedChunkRef = useRef(null)
@@ -64,7 +65,9 @@ function DocumentDetailDrawer({
 
   return (
     <aside
-      className={`absolute bottom-0 right-0 top-16 z-20 flex w-[1008px] max-w-[calc(100%-296px)] flex-col border-l border-line bg-white shadow-2xl transition-transform duration-200 ease-out ${
+      className={`absolute bottom-0 right-0 top-16 z-20 flex flex-col border-l border-line bg-white shadow-2xl transition-transform duration-200 ease-out ${
+        wide ? 'left-[296px]' : 'w-[1008px] max-w-[calc(100%-296px)]'
+      } ${
         open ? 'translate-x-0' : 'translate-x-full'
       }`}
       aria-hidden={!open}

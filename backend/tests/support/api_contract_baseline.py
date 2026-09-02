@@ -97,7 +97,7 @@ _REQUIRED_OPERATION_CONTRACT: dict[OperationKey, tuple[str, int, set[int]]] = {
         {200, 404, 422, 503},
     ),
     ("GET", "/agent/runs"): ("C", 200, {200, 422, 503}),
-    ("POST", "/agent/ask"): ("C", 200, {200, 422, 503}),
+    ("POST", "/agent/ask"): ("C", 200, {200, 404, 422, 503}),
     ("GET", "/approvals"): ("C", 200, {200, 503}),
     ("POST", "/approvals/{approval_id}/decision"): (
         "C",
@@ -124,6 +124,7 @@ _BARE_ARRAYS = {
     ("GET", "/audit-logs"),
 }
 _TEAM_RELEASE_OPERATION_CONTRACT: dict[OperationKey, tuple[str, int, set[int]]] = {
+    ("GET", "/agent/evaluations"): ("C", 200, {200}),
     ("POST", "/analytics/query"): ("D", 200, {200, 422, 503}),
     ("POST", "/analytics/validate"): ("D", 200, {200, 422}),
     ("GET", "/analytics/history"): ("D", 200, {200, 422}),
@@ -131,6 +132,7 @@ _TEAM_RELEASE_OPERATION_CONTRACT: dict[OperationKey, tuple[str, int, set[int]]] 
     ("GET", "/audit-logs/paged"): ("D", 200, {200, 422, 503}),
 }
 _TEAM_RELEASE_SUCCESS_REFS: dict[OperationKey, str] = {
+    ("GET", "/agent/evaluations"): "AgentEvaluationResponse",
     ("POST", "/analytics/query"): "AnalysisQueryResponse",
     ("POST", "/analytics/validate"): "SqlValidateResponse",
     ("GET", "/analytics/history"): "NlQueryHistoryResponse",
@@ -161,7 +163,7 @@ def load_optional_contract(path: Path | None = None) -> ContractFixture:
 
 
 def load_team_release_contract(path: Path | None = None) -> ContractFixture:
-    """Load the five-operation team release contract independently of routers."""
+    """Load the six-operation team release contract independently of routers."""
 
     team_release = _load_contract(path or _TEAM_RELEASE_FIXTURE)
     required = load_required_contract()
@@ -660,16 +662,27 @@ def _validate_required_semantics(fixture: ContractFixture) -> None:
         raise ContractValidationError(
             "DocumentSearchRequest.top_k 범위가 올바르지 않습니다"
         )
-    ask_request = components["AgentAskRequest"]["fields"]["question"]
-    if (ask_request.get("min_length"), ask_request.get("max_length")) != (1, 1000):
+    ask_request = components["AgentAskRequest"]["fields"]
+    question = ask_request["question"]
+    if (question.get("min_length"), question.get("max_length")) != (1, 1000):
         raise ContractValidationError(
             "AgentAskRequest.question 범위가 올바르지 않습니다"
+        )
+    if ask_request["agent_run_id"] != {
+        "min_length": 1,
+        "nullable": True,
+        "required": False,
+        "type": "string",
+    }:
+        raise ContractValidationError(
+            "AgentAskRequest.agent_run_id 선택 문맥 계약이 올바르지 않습니다"
         )
     evidence = components["EvidenceItem"]
     if evidence != {
         "type": "discriminated_union",
         "discriminator": "type",
         "variants": {
+            "AGENT_RUN": "AgentRunEvidence",
             "ALARM": "AlarmEvidence",
             "DOCUMENT": "DocumentEvidence",
             "GRAPH": "GraphEvidence",
@@ -678,7 +691,7 @@ def _validate_required_semantics(fixture: ContractFixture) -> None:
         },
     }:
         raise ContractValidationError(
-            "AgentAsk evidence 5종 discriminator 계약이 다릅니다"
+            "AgentAsk evidence 6종 discriminator 계약이 다릅니다"
         )
 
     delivery = components["DeliveryCallbackRequest"]["fields"]

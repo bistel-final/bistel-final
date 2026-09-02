@@ -74,6 +74,7 @@ DEFERRED_AGENT_DETAIL_KEYS = {
     ("GET", "/actions/{action_id}"),
 }
 TEAM_RELEASE_KEYS = {
+    ("GET", "/agent/evaluations"),
     ("POST", "/analytics/query"),
     ("POST", "/analytics/validate"),
     ("GET", "/analytics/history"),
@@ -312,7 +313,7 @@ def test_required_fixture_matches_markdown_and_csv_inventory() -> None:
     assert set(operations) == REQUIRED_KEYS == _markdown_required_keys(markdown)
 
     rows = _csv_rows()
-    assert len(rows) == 35
+    assert len(rows) == 36
     required_rows = [
         row
         for row in rows
@@ -453,6 +454,8 @@ def test_optional_fixture_is_exact_implemented_allowlist() -> None:
     _assert_optional_exact_set(fixture)
     assert set(_operation_map(fixture)) == {
         ("GET", "/documents/{document_id}"),
+        # V5-C-5.2-1: optional과 team release에 동일 정의로 포함
+        ("GET", "/agent/evaluations"),
         ("GET", "/agent/runs/{run_id}"),
         ("GET", "/actions"),
         ("GET", "/actions/{action_id}"),

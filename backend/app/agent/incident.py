@@ -109,6 +109,21 @@ def resolve_incident(
         # View join fan-out이든 drift든, 어느 행을 버릴지 이 계층이 정하지 않는다.
         raise RepositoryContractError(_DUPLICATE_MEMBER_ALARM)
 
+    has_r03 = any(alarm.source is AlarmSource.R03 for alarm in members)
+    if snapshot.r03_contract_checked and has_r03 != bool(
+        snapshot.r03_member_wafer_refs
+    ):
+        raise RepositoryContractError("FINAL_DATASET_CONTRACT_MISMATCH")
+    # R03가 인용한 TRACE AlarmRef가 이 incident 안에 전부 들어 있다고 강제하지 않는다.
+    # 최종 데이터 기준표 §4가 "R03는 같은 (chamber, parameter, recipe step)에서
+    # chamber_wafer_cum 오름차순으로 **LOT 경계를 넘어** 계산한다"고 못박았기 때문이다.
+    # incident는 (lot_id, chamber_id) 키이므로 연속 3 WAFER가 두 LOT에 걸치면 인용 일부가
+    # 이 incident 밖에 있는 것이 **정상**이다. subset을 요구하면 정상 데이터가 red가 된다.
+    #
+    # WAFER 3·AlarmRef 9라는 최종 epoch 계약은 dataset 수준에서 지킨다 —
+    # `tests/fixtures/v5_c_5_2_1/final_diagnostic_contract.json`과
+    # `test_agent_diagnostics.py`의 fixture 대조가 그 자리다.
+
     # 요청 행은 canonical key가 곧 필터 조건이라 **항상** member에 포함된다.
     # 그래서 "요청이 member에 없다" 분기를 두지 않는다 — 도달할 수 없는 code다.
     return ResolvedIncident(

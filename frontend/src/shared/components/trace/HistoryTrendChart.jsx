@@ -1,162 +1,246 @@
+import { useState } from 'react'
 import { Card } from '../ui/Card.jsx'
-import { judgeValue, limitLines } from '../../trace/traceModel.js'
+import { judgeValue } from '../../trace/traceModel.js'
+import TraceChart from './TraceChart.jsx'
 
-const W = 1000
-const H = 300
-const L = 56
-const R = 940
-const T = 20
-const B = 258
+// 웨이퍼 격자에서도 채도는 이상 신호에만 쓴다.
+// 정상까지 점을 찍으면 수십 개 버튼이 전부 색을 갖게 돼 OOS·OOC가 묻힌다.
+// 정상은 점 없음(자리만 유지), 미확인은 빈 링으로 "측정 없음"과 구분한다.
+const WAFER_STATUS = {
+  OOS: { label: 'OOS', text: 'text-trace-oos', dot: 'bg-trace-oos' },
+  OOC: { label: 'OOC', text: 'text-trace-ooc', dot: 'bg-trace-ooc' },
+  OK: { label: '정상', text: 'text-navy', dot: '' },
+  UNKNOWN: { label: '미확인', text: 'text-g2', dot: 'border border-dash-line' },
+}
 
-const LIMIT_HEX = { USL: '#dc2626', LSL: '#dc2626', UCL: '#f59e0b', LCL: '#f59e0b', TARGET: '#16a34a' }
-const POINT_HEX = { OOS: '#dc2626', OOC: '#f59e0b' }
+function statusOfWafer(wafer, limit) {
+  const statuses = (wafer?.points ?? []).map((point) => judgeValue(point.value, limit))
+  if (statuses.includes('OOS')) return 'OOS'
+  if (statuses.includes('OOC')) return 'OOC'
+  if (statuses.includes('OK')) return 'OK'
+  return 'UNKNOWN'
+}
 
-const KST_MS = 9 * 60 * 60 * 1000
-const hhmm = (ms) => new Date(ms + KST_MS).toISOString().slice(11, 16)
-
-function HistoryTrendChart({ wafer, lim, emptyMessage = null }) {
-  const points = [...(wafer?.points ?? [])]
-    .map((point) => ({ ...point, ms: Date.parse(point.measured_at) }))
-    .filter((point) => Number.isFinite(point.ms))
-    .sort((a, b) => a.ms - b.ms)
-  const limits = limitLines(lim)
-
-  if (points.length === 0) {
-    return (
-      <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">
-        {emptyMessage ?? '선택한 알람의 trace 실측이 응답에 없습니다'}
-      </div>
-    )
+function waferSummary(wafer, limit) {
+  const counts = { OOS: 0, OOC: 0, OK: 0, UNKNOWN: 0 }
+  const values = []
+  for (const point of wafer?.points ?? []) {
+    counts[judgeValue(point.value, limit) ?? 'UNKNOWN'] += 1
+    if (Number.isFinite(point.value)) values.push(point.value)
   }
+  const status = statusOfWafer(wafer, limit)
+  const unit = limit?.unit ? ` ${limit.unit}` : ''
+  const range = values.length ? `${Math.min(...values)} ~ ${Math.max(...values)}${unit}` : '실측 미제공'
+  return { counts, range, status }
+}
 
-  const t0 = points[0].ms
-  const t1 = Math.max(points[points.length - 1].ms, t0 + 1)
-  const x = (ms) => L + ((ms - t0) / (t1 - t0)) * (R - L)
+function boundaryAlert(wafer, limit) {
+  const values = (wafer?.points ?? []).map((point) => point?.value).filter(Number.isFinite)
+  const upperOos = values.filter((value) => Number.isFinite(limit?.spec_upper) && value > limit.spec_upper).length
+  const lowerOos = values.filter((value) => Number.isFinite(limit?.spec_lower) && value < limit.spec_lower).length
+  if (upperOos) return { status: 'OOS', text: `USL ${limit.spec_upper} 초과 · OOS ${upperOos} point` }
+  if (lowerOos) return { status: 'OOS', text: `LSL ${limit.spec_lower} 미만 · OOS ${lowerOos} point` }
+  const upperOoc = values.filter((value) => Number.isFinite(limit?.ctrl_upper) && value > limit.ctrl_upper).length
+  const lowerOoc = values.filter((value) => Number.isFinite(limit?.ctrl_lower) && value < limit.ctrl_lower).length
+  if (upperOoc) return { status: 'OOC', text: `UCL ${limit.ctrl_upper} 초과 · OOC ${upperOoc} point` }
+  if (lowerOoc) return { status: 'OOC', text: `LCL ${limit.ctrl_lower} 미만 · OOC ${lowerOoc} point` }
+  return null
+}
 
-  const values = points.map((point) => point.value)
-  const limitValues = limits.map((line) => line.value)
-  let valueMax = Math.max(...values, ...(limitValues.length ? limitValues : [Math.max(...values)]))
-  let valueMin = Math.min(...values, ...(limitValues.length ? limitValues : [Math.min(...values)]))
-  if (valueMax === valueMin) {
-    valueMax += 1
-    valueMin -= 1
+function LotWaferPanel({ alarm, wafers, limit, selectedWafer, onSelect }) {
+  const counts = { OOS: 0, OOC: 0, OK: 0, UNKNOWN: 0 }
+  const chamberGroups = new Map()
+  for (const item of wafers) {
+    counts[statusOfWafer(item, limit)] += 1
+    if (!chamberGroups.has(item.chamber_id)) chamberGroups.set(item.chamber_id, [])
+    chamberGroups.get(item.chamber_id).push(item)
   }
-  const pad = (valueMax - valueMin) * 0.08
-  valueMax += pad
-  valueMin -= pad
-  const y = (value) => B - ((value - valueMin) / (valueMax - valueMin)) * (B - T)
-
-  const bounds = []
-  for (let index = 1; index < points.length; index += 1) {
-    if (points[index].recipe_step_no !== points[index - 1].recipe_step_no) {
-      bounds.push({ ms: points[index].ms, no: points[index].recipe_step_no })
-    }
-  }
-
-  const polyline = points.map((point) => `${x(point.ms).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ')
-
+  const selectedSummary = waferSummary(selectedWafer, limit)
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="block w-full" fontFamily="IBM Plex Mono, monospace">
-      {limits.map((line) => (
-        <g key={line.label}>
-          <line
-            x1={L}
-            y1={y(line.value)}
-            x2={R}
-            y2={y(line.value)}
-            stroke={LIMIT_HEX[line.label]}
-            strokeWidth="1"
-            strokeDasharray="5 4"
-            opacity="0.85"
-          />
-          <text x={L - 8} y={y(line.value) + 3} fontSize="9" fill="var(--color-g2)" textAnchor="end">
-            {line.value}
-          </text>
-          <text x={R + 6} y={y(line.value) + 3} fontSize="9" fill={LIMIT_HEX[line.label]}>
-            {line.label === 'TARGET' ? 'TGT' : line.label}
-          </text>
-        </g>
-      ))}
-
-      {bounds.map((bound) => (
-        <g key={bound.ms}>
-          <line x1={x(bound.ms)} y1={T} x2={x(bound.ms)} y2={B} stroke="#cbd5e1" strokeWidth="1" />
-          <text x={x(bound.ms) + 5} y={T + 10} fontSize="9.5" fill="var(--color-g2)">
-            Step {bound.no}
-          </text>
-        </g>
-      ))}
-      <text x={L + 4} y={T + 10} fontSize="9.5" fill="var(--color-g2)">
-        Step {points[0].recipe_step_no}
-      </text>
-
-      <polyline points={polyline} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" />
-      {points.map((point) => {
-        const judgement = judgeValue(point.value, lim)
-        const outOfLimit = judgement === 'OOS' || judgement === 'OOC'
-        return (
-          <circle
-            key={`${point.ms}-${point.seq_no ?? point.value}`}
-            cx={x(point.ms)}
-            cy={y(point.value)}
-            r={outOfLimit ? 5.5 : 2.6}
-            fill={outOfLimit ? POINT_HEX[judgement] : '#fff'}
-            stroke={outOfLimit ? POINT_HEX[judgement] : '#2563eb'}
-            strokeWidth={outOfLimit ? 2 : 1.4}
-          >
-            <title>{`${point.recipe_step_name ?? ''} · ${point.value}${lim?.unit ? ` ${lim.unit}` : ''}${outOfLimit ? ` · ${judgement}` : ''}`}</title>
-          </circle>
-        )
-      })}
-
-      <g fontSize="9.5" fill="var(--color-g2)">
-        <text x={L} y={H - 14}>
-          {hhmm(t0)}
-        </text>
-        <text x={(L + R) / 2} y={H - 14} textAnchor="middle">
-          {hhmm((t0 + t1) / 2)}
-        </text>
-        <text x={R} y={H - 14} textAnchor="end">
-          {hhmm(t1)}
-        </text>
-      </g>
-    </svg>
+    <aside className="h-full min-h-0 overflow-y-auto rounded-xl border border-line bg-soft p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="font-mono text-[12px] font-extrabold text-navy">{alarm.lot_id} · {alarm.sensor_id ?? alarm.parameter_id}</div>
+          <div className="mt-0.5 text-[10.5px] text-g2">LOT 웨이퍼 현황 · 선택은 그래프만 변경</div>
+        </div>
+        <span className="rounded-md border border-tint-blue-line bg-tint-blue px-2 py-1 font-mono text-[10px] font-bold text-blue">전체 {wafers.length}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        {['OOS', 'OOC', 'OK'].map((status) => (
+          <div key={status} className="rounded-md border border-line bg-white px-2 py-2 text-center">
+            <div className={`font-mono text-[16px] font-extrabold ${WAFER_STATUS[status].text}`}>{counts[status]}</div>
+            <div className="text-[9.5px] font-bold text-g2">{WAFER_STATUS[status].label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2.5 rounded-lg border border-tint-blue-line bg-tint-blue px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[9.5px] font-bold text-g2">현재 그래프</div>
+            <div className="mt-0.5 font-mono text-[14px] font-extrabold text-blue">W{selectedWafer?.wafer_no}</div>
+          </div>
+          <span className={`text-[10px] font-extrabold ${WAFER_STATUS[selectedSummary.status].text}`}>
+            {WAFER_STATUS[selectedSummary.status].label}
+          </span>
+        </div>
+        <div className="mt-2 text-[10px] text-g2">
+          <span className="font-mono text-g1">{selectedWafer?.chamber_id}</span>
+          <span> · {selectedWafer?.points?.length ?? 0} point · {selectedSummary.range}</span>
+        </div>
+        <div className="mt-1.5 flex gap-3 font-mono text-[9.5px] text-g2">
+          <span>OOS <strong className={selectedSummary.counts.OOS ? WAFER_STATUS.OOS.text : 'text-g1'}>{selectedSummary.counts.OOS}</strong></span>
+          <span>OOC <strong className={selectedSummary.counts.OOC ? WAFER_STATUS.OOC.text : 'text-g1'}>{selectedSummary.counts.OOC}</strong></span>
+          <span>정상 <strong className="text-g1">{selectedSummary.counts.OK}</strong></span>
+        </div>
+      </div>
+      <div className="my-3 h-px bg-line" />
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10.5px] font-bold text-g1">웨이퍼 선택</span>
+        <span className="font-mono text-[10px] text-g2">기준 알람 W{alarm.wafer_no}</span>
+      </div>
+      <div className="space-y-2.5">
+        {[...chamberGroups].map(([chamber, items]) => (
+          <div key={chamber} className="rounded-lg border border-line bg-white p-2.5">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[10px] font-bold text-navy">{chamber}</span>
+              <span className="text-[9.5px] text-g2">{items.length}장</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {items.map((item) => {
+                const status = statusOfWafer(item, limit)
+                const selected = item.lot_hist_id === selectedWafer?.lot_hist_id
+                return (
+                  <button
+                    key={item.lot_hist_id}
+                    type="button"
+                    aria-pressed={selected}
+                    title={`W${item.wafer_no} · ${item.chamber_id} · ${WAFER_STATUS[status].label}`}
+                    className={`flex h-8 items-center justify-center rounded-lg border font-mono text-[10.5px] font-bold transition ${selected ? 'border-blue bg-tint-blue text-blue' : 'border-line bg-white text-g1 hover:border-blue hover:text-blue'}`}
+                    onClick={() => onSelect(item.lot_hist_id)}
+                  >
+                    <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${WAFER_STATUS[status].dot}`} aria-hidden="true" />
+                    W{item.wafer_no}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
   )
 }
 
-export function HistoryTrendCard({ alarm, wafer, lim, loading, emptyMessage = null, actions = null }) {
+function sensorGroups(response, fallbackWafer, fallbackLimit) {
+  const wafers = response?.wafers ?? (fallbackWafer ? [fallbackWafer] : [])
+  const groups = new Map()
+  for (const wafer of wafers) {
+    const sensor = wafer.sensor_id ?? fallbackWafer?.sensor_id ?? 'PARAMETER'
+    if (!groups.has(sensor)) groups.set(sensor, [])
+    groups.get(sensor).push(wafer)
+  }
+  return [...groups].map(([sensor, items]) => ({
+    sensor,
+    wafers: items,
+    limit: response ? response.limits?.[sensor] ?? null : fallbackLimit ?? null,
+  }))
+}
+
+export function HistoryTrendChart({ wafer, lim, response = null, emptyMessage = null, highlightWaferNo = null, viewMode = 'context' }) {
+  const groups = sensorGroups(response, wafer, lim)
+  if (!groups.length) {
+    return <div className={`flex items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2 ${viewMode === 'selected' ? 'h-full min-h-[500px]' : 'h-[300px]'}`}>{emptyMessage ?? '선택한 incident의 trace 실측이 응답에 없습니다'}</div>
+  }
+  const fillsContainer = viewMode === 'selected'
+  return (
+    <div className={`flex flex-col gap-3${fillsContainer ? ' h-full min-h-0' : ''}`}>
+      {groups.map((group) => {
+        const selected = group.wafers.find((item) =>
+          wafer?.lot_hist_id
+            ? item.lot_hist_id === wafer.lot_hist_id
+            : Number(item.wafer_no) === Number(wafer?.wafer_no),
+        ) ?? wafer
+        const chartWafers = viewMode === 'selected' ? [selected].filter(Boolean) : group.wafers
+        const pointCount = selected?.points?.length ?? 0
+        const alert = viewMode === 'selected' ? boundaryAlert(selected, group.limit) : null
+        return (
+          <div key={group.sensor} className={`rounded-lg border border-cell-line bg-white px-2 pt-2${fillsContainer ? ' flex h-full min-h-0 flex-col' : ''}`}>
+            <div className="flex items-center justify-between gap-3 px-2">
+              <span className="font-mono text-[11px] font-bold text-navy">
+                {group.sensor} · {viewMode === 'selected' ? `W${selected?.wafer_no ?? '—'} · ${selected?.chamber_id ?? 'CHAMBER 미제공'} · ${pointCount} point` : `${group.wafers.length} wafer`}
+                {group.limit?.unit ? ` · ${group.limit.unit}` : ''}
+              </span>
+              <span className="flex items-center gap-2">
+                {alert && (
+                  <span className={`rounded-md border px-2 py-1 text-[10px] font-bold ${
+                    alert.status === 'OOS'
+                      ? 'border-tint-red-line bg-trace-oos-zone text-trace-oos'
+                      : 'border-tint-amber-line bg-trace-ooc-zone text-trace-ooc'
+                  }`}>
+                    {alert.text}
+                  </span>
+                )}
+                <span className="text-[10.5px] text-g2">
+                  {viewMode === 'selected' ? 'X축: 실제 측정 시각 · 툴팁: 공정/seq' : 'X축: 웨이퍼 · 색상선: 공정 단계별 측정 순번'}
+                </span>
+              </span>
+            </div>
+            {fillsContainer ? (
+              <div className="min-h-[280px] flex-1">
+                <TraceChart wafers={chartWafers} limit={group.limit} height="100%" syncId="incident-trace" highlightWaferNo={highlightWaferNo} viewMode={viewMode} />
+              </div>
+            ) : (
+              <TraceChart wafers={chartWafers} limit={group.limit} height={groups.length > 1 ? 245 : 300} syncId="incident-trace" highlightWaferNo={highlightWaferNo} viewMode={viewMode} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function HistoryTrendCard({ alarm, wafer, lim, response = null, loading, emptyMessage = null, actions = null, lotWaferCount = null, allowWaferSelection = false }) {
+  const [waferSelection, setWaferSelection] = useState({ alarmId: alarm?.alarm_id ?? null, lotHistId: wafer?.lot_hist_id ?? null })
   const parameter = alarm?.parameter_id ?? alarm?.sensor_id
   const waferLabel = alarm?.wafer_id ?? (alarm?.wafer_no != null ? `W${alarm.wafer_no}` : null)
+  const groupCount = response?.wafers?.length ?? (wafer ? 1 : 0)
+  const selectableWafers = response?.wafers ?? (wafer ? [wafer] : [])
+  const defaultWafer = selectableWafers.find((item) => item.lot_hist_id === wafer?.lot_hist_id) ?? wafer ?? selectableWafers[0] ?? null
+  const selectedLotHistId = waferSelection.alarmId === alarm?.alarm_id
+    ? waferSelection.lotHistId
+    : defaultWafer?.lot_hist_id
+  const selectedWafer = selectableWafers.find((item) => item.lot_hist_id === selectedLotHistId) ?? defaultWafer
+  const scopeLabel = lotWaferCount
+    ? `동일 챔버 ${groupCount}장 / LOT 전체 ${lotWaferCount}장`
+    : `동일 챔버 ${groupCount}장`
+  const bodyHeight = allowWaferSelection ? 'h-[500px]' : 'h-[300px]'
   return (
     <Card className="px-5 pb-3 pt-4">
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[14px] font-extrabold text-ink">
-          {alarm ? `${parameter ?? 'PARAMETER 미제공'} · ${waferLabel ?? 'WAFER 미제공'} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
+          {alarm ? `${allowWaferSelection ? '기준 알람 · ' : ''}${parameter ?? 'PARAMETER 미제공'} · ${waferLabel ?? 'WAFER 미제공'} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
         </span>
         <span className="flex items-center gap-2.5">
-          <span className="text-[11.5px] text-g2">
-            {alarm
-              ? `${lim?.parameter_name ?? lim?.sensor_name ?? ''}${lim?.unit ? ` · 단위 ${lim.unit}` : ''}`
-              : emptyMessage
-                ? '실측 데이터 연결 대기'
-                : '행을 선택하면 트렌드가 표시됩니다'}
-          </span>
+          {!allowWaferSelection && <span className="text-[11.5px] text-g2">{alarm ? scopeLabel : emptyMessage ?? '행을 선택하면 트렌드가 표시됩니다'}</span>}
           {alarm ? actions : null}
         </span>
       </div>
-      {loading ? (
-        <div className="flex h-[300px] items-center justify-center text-[12.5px] text-g2">트렌드를 불러오는 중…</div>
-      ) : alarm ? (
-        <HistoryTrendChart wafer={wafer} lim={lim} emptyMessage={emptyMessage} />
-      ) : emptyMessage ? (
-        <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line px-6 text-center text-[12.5px] text-g2">
-          {emptyMessage}
-        </div>
-      ) : (
-        <div className="flex h-[300px] items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2">
-          테이블에서 알람 행을 선택해 주세요
-        </div>
-      )}
+      {loading ? <div className={`flex items-center justify-center text-[12.5px] text-g2 ${bodyHeight}`}>트렌드를 불러오는 중…</div> : alarm ? (
+        allowWaferSelection ? (
+          <div className="grid gap-3 lg:h-[500px] lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 lg:h-full">
+              <HistoryTrendChart wafer={selectedWafer} lim={lim} response={response} emptyMessage={emptyMessage} highlightWaferNo={alarm.wafer_no} viewMode="selected" />
+            </div>
+            <LotWaferPanel
+              alarm={alarm}
+              wafers={selectableWafers}
+              limit={lim}
+              selectedWafer={selectedWafer}
+              onSelect={(lotHistId) => setWaferSelection({ alarmId: alarm.alarm_id, lotHistId })}
+            />
+          </div>
+        ) : <HistoryTrendChart wafer={selectedWafer} lim={lim} response={response} emptyMessage={emptyMessage} highlightWaferNo={alarm.wafer_no} viewMode="context" />
+      ) : <div className={`flex items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-dash-line text-[12.5px] text-g2 ${bodyHeight}`}>{emptyMessage ?? '테이블에서 알람 행을 선택해 주세요'}</div>}
     </Card>
   )
 }

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -14,6 +15,12 @@ from fastapi.testclient import TestClient
 from app.agent import public_read_model as subject
 from app.agent import repository as repo
 from app.agent import router as agent_router
+from app.agent.diagnostics import (
+    DiagnosticSourceIds,
+    DirectScope,
+    IncidentDiagnosticSnapshot,
+    ParameterPattern,
+)
 from app.agent.public_schemas import (
     ActionDetailResponse,
     ActionItem,
@@ -60,6 +67,100 @@ def _run() -> repo.PublicAgentRunRecord:
         ),
         latency_ms=100,
         llm_model="model",
+        prompt_version="agent-hypothesis-v1",
+        input_tokens=100,
+        output_tokens=40,
+        prediction_cause_summary="RFM 가능성이 가장 높습니다.",
+        prediction_evidence={
+            "schema_version": "agent-evidence-v1",
+            "supporting_alarms": [{"source": "TRACE", "alarm_id": "TRACE-1"}],
+            "supporting_chunk_ids": [],
+            "supporting_relation_ids": [],
+            "uncertainty": "추가 계측 확인이 필요합니다.",
+        },
+        prediction_llm_model="model",
+        prediction_prompt_version="agent-hypothesis-v1",
+        prediction_created_at=NOW,
+    )
+
+
+def _snapshot(
+    *,
+    lot_id: str,
+    chamber_id: str,
+    parameters: tuple[str, ...] = ("P1",),
+    models: tuple[str, ...] = ("MODEL-1",),
+) -> IncidentDiagnosticSnapshot:
+    return IncidentDiagnosticSnapshot(
+        lot_id=lot_id,
+        chamber_id=chamber_id,
+        representative_alarm_ref="TRACE:TRACE-1",
+        member_alarm_count=1,
+        target_wafer_count=1,
+        observed_wafer_count=0,
+        wafer_observations=(),
+        parameter_patterns=tuple(
+            ParameterPattern(
+                parameter_id=parameter,
+                affected_wafer_count=1,
+                ooc_point_count=0,
+                oos_point_count=1,
+                maximum_deviation=1,
+                directions=("UPPER",),
+            )
+            for parameter in parameters
+        ),
+        step_patterns=(),
+        direct_scope=DirectScope(
+            lot_ids=(lot_id,),
+            wafer_ids=(),
+            chamber_ids=(chamber_id,),
+            parameter_ids=parameters,
+            model_codes=models,
+        ),
+        data_gaps=(),
+        source_ids=DiagnosticSourceIds(
+            alarm_refs=("TRACE:TRACE-1",),
+            lot_hist_ids=(),
+            parameter_ids=parameters,
+            relation_ids=(),
+            graph_revisions=(),
+        ),
+    )
+
+
+def _v2_run(
+    run_id: str,
+    *,
+    lot_id: str,
+    chamber_id: str,
+    created_at: datetime,
+    parameters: tuple[str, ...] = ("P1",),
+    models: tuple[str, ...] = ("MODEL-1",),
+    retry_of_run_id: str | None = None,
+) -> repo.PublicAgentRunRecord:
+    snapshot = _snapshot(
+        lot_id=lot_id,
+        chamber_id=chamber_id,
+        parameters=parameters,
+        models=models,
+    )
+    return replace(
+        _run(),
+        agent_run_id=run_id,
+        created_at=created_at,
+        chamber_id=chamber_id,
+        status=RunStatus.COMPLETED,
+        action_id=None,
+        approval_id=None,
+        prompt_version="agent-hypothesis-v2",
+        prediction_evidence={
+            "schema_version": "agent-evidence-v2",
+            "diagnostic_snapshot": snapshot.model_dump(mode="json"),
+        },
+        prediction_prompt_version="agent-hypothesis-v2",
+        lot_id=lot_id,
+        retry_of_run_id=retry_of_run_id,
     )
 
 
@@ -160,23 +261,6 @@ def test_run_detail_uses_only_valid_stored_outputs_and_deduplicates(
     )
     monkeypatch.setattr(
         subject,
-        "get_prediction_or_none",
-        counted(
-            "prediction",
-            SimpleNamespace(
-                evidence={
-                    "supporting_alarms": [
-                        {"source": "TRACE", "alarm_id": "TRACE-1"},
-                        {"source": "TRACE", "alarm_id": ""},
-                        {"source": "R03", "alarm_id": "R03-1"},
-                    ],
-                    "supporting_relation_ids": ["REL-1", None],
-                },
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        subject,
         "list_tool_calls",
         counted(
             "tools",
@@ -201,7 +285,6 @@ def test_run_detail_uses_only_valid_stored_outputs_and_deduplicates(
     assert set(payload) == set(AgentRunDetailResponse.model_fields)
     assert [item["source_id"] for item in payload["evidence_items"]] == [
         "TRACE:TRACE-1",
-        "R03:R03-1",
     ]
     assert "secret" not in str(payload)
     assert payload["action"]["action_id"] == payload["action_id"]
@@ -214,6 +297,21 @@ def test_run_detail_uses_only_valid_stored_outputs_and_deduplicates(
         "approval_status",
         "deliveries",
     }
+    assert payload["prediction"] == {
+        "predicted_fault_code": "RFM",
+        "confidence": 0.91,
+        "cause_summary": "RFM 가능성이 가장 높습니다.",
+        "supporting_alarms": [{"source": "TRACE", "alarm_id": "TRACE-1"}],
+        "supporting_chunk_ids": [],
+        "supporting_relation_ids": [],
+        "uncertainty": "추가 계측 확인이 필요합니다.",
+        "llm_model": "model",
+        "prompt_version": "agent-hypothesis-v1",
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "generated_at": NOW.isoformat().replace("+00:00", "Z"),
+    }
+    assert payload["action"]["deliveries"][0]["started_at"] is not None
     assert set(payload["approval"]) == {
         "approval_id",
         "action_id",
@@ -225,12 +323,216 @@ def test_run_detail_uses_only_valid_stored_outputs_and_deduplicates(
     }
     assert calls == Counter(
         run=1,
-        prediction=1,
         alarms=1,
         tools=1,
         action=1,
         approval=1,
     )
+
+
+def test_v2_snapshot_projects_graph_evidence_when_level2_skips_redundant_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot(lot_id="LOT004", chamber_id="EQP04-PM2")
+    snapshot = snapshot.model_copy(
+        update={
+            "source_ids": snapshot.source_ids.model_copy(
+                update={
+                    "relation_ids": ("REL-1",),
+                    "graph_revisions": ("REV-1",),
+                }
+            )
+        }
+    )
+    monkeypatch.setattr(subject, "list_tool_calls", lambda *_args: [])
+
+    items = subject._stored_tool_evidence(
+        object(),
+        "RUN-1",
+        supporting_relation_ids=("REL-1",),
+        diagnostic_snapshot=snapshot,
+    )
+
+    assert [item.model_dump(mode="json") for item in items] == [
+        {
+            "type": "GRAPH",
+            "source_id": "REL-1",
+            "title": "Graph relation REL-1",
+            "excerpt": "relation=REL-1; revision=REV-1",
+            "relation_id": "REL-1",
+            "graph_revision": "REV-1",
+        }
+    ]
+
+
+def test_v2_snapshot_does_not_project_relation_outside_stored_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot(lot_id="LOT004", chamber_id="EQP04-PM2")
+    snapshot = snapshot.model_copy(
+        update={
+            "source_ids": snapshot.source_ids.model_copy(
+                update={
+                    "relation_ids": ("REL-OTHER",),
+                    "graph_revisions": ("REV-1",),
+                }
+            )
+        }
+    )
+    monkeypatch.setattr(subject, "list_tool_calls", lambda *_args: [])
+
+    assert (
+        subject._stored_tool_evidence(
+            object(),
+            "RUN-1",
+            supporting_relation_ids=("REL-1",),
+            diagnostic_snapshot=snapshot,
+        )
+        == []
+    )
+
+
+def test_v1_detail_omits_unverifiable_graph_citation_and_marks_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy = replace(
+        _run(),
+        prediction_evidence={
+            **(_run().prediction_evidence or {}),
+            "supporting_relation_ids": ["REL-LEGACY"],
+        },
+    )
+    monkeypatch.setattr(subject, "get_agent_run_public", lambda *_args: legacy)
+    monkeypatch.setattr(
+        subject,
+        "list_run_alarms",
+        lambda *_args: [AlarmRef(source="TRACE", alarm_id="TRACE-1")],
+    )
+    monkeypatch.setattr(subject, "list_tool_calls", lambda *_args: [])
+    monkeypatch.setattr(subject, "get_action_public", lambda *_args: _action())
+    monkeypatch.setattr(subject, "get_approval_public", lambda *_args: _approval())
+
+    detail = subject.load_public_agent_run_detail(object(), "RUN-1")
+
+    assert detail.prediction is not None
+    assert detail.prediction.supporting_relation_ids == []
+    assert detail.evidence_assessment.status == "PARTIAL"
+    assert detail.evidence_assessment.reason_codes == (
+        "LEGACY_CITATION_PROVENANCE_NOT_AVAILABLE",
+    )
+    assert detail.evidence_assessment.missing_sources == ("GRAPH",)
+    assert detail.evidence_assessment.available_sources == ("POSTGRES_ROUTE",)
+
+
+def test_run_detail_rejects_non_list_prediction_citations_as_contract_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corrupted = replace(
+        _run(),
+        prediction_evidence={
+            "schema_version": "agent-evidence-v1",
+            "supporting_alarms": "TRACE:TRACE-1",
+            "supporting_chunk_ids": [],
+            "supporting_relation_ids": [],
+            "uncertainty": "",
+        },
+    )
+    monkeypatch.setattr(subject, "get_agent_run_public", lambda *_args: corrupted)
+    monkeypatch.setattr(
+        subject,
+        "list_run_alarms",
+        lambda *_args: [AlarmRef(source="TRACE", alarm_id="TRACE-1")],
+    )
+    monkeypatch.setattr(subject, "list_tool_calls", lambda *_args: [])
+    monkeypatch.setattr(subject, "get_action_public", lambda *_args: _action())
+    monkeypatch.setattr(subject, "get_approval_public", lambda *_args: _approval())
+
+    with pytest.raises(
+        repo.RepositoryContractError,
+        match="PUBLIC_PREDICTION_EVIDENCE_INVALID",
+    ):
+        subject.load_public_agent_run_detail(object(), "RUN-1")
+
+
+def test_similar_incidents_use_first_completed_v2_run_and_exclude_current_and_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = _v2_run(
+        "RUN-CURRENT",
+        lot_id="LOT004",
+        chamber_id="EQP04-PM2",
+        created_at=NOW,
+        parameters=("P1", "P2"),
+    )
+    first = _v2_run(
+        "RUN-FIRST",
+        lot_id="LOT005",
+        chamber_id="EQP02-PM1",
+        created_at=NOW - timedelta(hours=3),
+        parameters=("P1", "P2"),
+    )
+    duplicate_later = _v2_run(
+        "RUN-LATER",
+        lot_id="LOT005",
+        chamber_id="EQP02-PM1",
+        created_at=NOW - timedelta(hours=2),
+        parameters=("P1", "P2"),
+    )
+    same_incident = _v2_run(
+        "RUN-SAME-INCIDENT",
+        lot_id="LOT004",
+        chamber_id="EQP04-PM2",
+        created_at=NOW - timedelta(hours=4),
+    )
+    retry = _v2_run(
+        "RUN-RETRY",
+        lot_id="LOT006",
+        chamber_id="EQP06-PM1",
+        created_at=NOW - timedelta(hours=1),
+        retry_of_run_id="RUN-ORIGINAL",
+    )
+    legacy = replace(
+        _v2_run(
+            "RUN-V1",
+            lot_id="LOT007",
+            chamber_id="EQP01-PM1",
+            created_at=NOW - timedelta(minutes=30),
+        ),
+        prompt_version="agent-hypothesis-v1",
+    )
+    outside_final_population = _v2_run(
+        "RUN-OUTSIDE",
+        lot_id="LOT999",
+        chamber_id="EQP99-PM1",
+        created_at=NOW - timedelta(minutes=10),
+    )
+    monkeypatch.setattr(
+        subject,
+        "list_agent_runs_public",
+        lambda *_args, **_kwargs: [
+            duplicate_later,
+            retry,
+            current,
+            legacy,
+            outside_final_population,
+            first,
+            same_incident,
+        ],
+    )
+
+    result = subject._similar_incidents(
+        object(),
+        current,
+        _snapshot(
+            lot_id="LOT004",
+            chamber_id="EQP04-PM2",
+            parameters=("P1", "P2"),
+        ),
+    )
+
+    assert result.status == "AVAILABLE"
+    assert [item.agent_run_id for item in result.items] == ["RUN-FIRST"]
+    assert result.items[0].score == 100
 
 
 def test_public_routes_are_bare_and_not_found_is_sanitized(

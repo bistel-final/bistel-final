@@ -29,10 +29,10 @@ def test_canonical_model_is_sorted_full_schema_and_has_three_populations() -> No
     raw = CANONICAL.read_text(encoding="utf-8")
     value = json.loads(raw)
     assert raw == json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    assert len(value["operations"]) == 35
-    assert sum(item["release_required"] for item in value["operations"]) == 19
-    assert sum(item["semantic"] is not None for item in value["operations"]) == 29
-    assert sum(item["implemented"] for item in value["operations"]) == 28
+    assert len(value["operations"]) == 36
+    assert sum(item["release_required"] for item in value["operations"]) == 20
+    assert sum(item["semantic"] is not None for item in value["operations"]) == 30
+    assert sum(item["implemented"] for item in value["operations"]) == 29
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
     assert "discriminated_union" in encoded
     assert "^[0-9a-f]{64}$" in encoded
@@ -78,14 +78,14 @@ def test_generator_is_offline_and_summary_projection_is_exact() -> None:
     generator.validate_summary_projection(canonical)
     rendered = generator.render_csv(canonical)
     rows = list(csv.DictReader(io.StringIO(rendered.removeprefix("\ufeff"))))
-    assert len(rows) == 35
+    assert len(rows) == 36
     assert rows[-7]["Path"] == "/analytics/graph-query"
 
 
 def test_generated_markdown_keeps_schema_errors_audit_and_deferred_inventory() -> None:
     generator = _load_generator()
     rendered = generator.render_markdown(generator.load_spec())
-    assert "API inventory — 35개" in rendered
+    assert "API inventory — 36개" in rendered
     assert "discriminated_union" in rendered
     assert "^[0-9a-f]{64}$" in rendered
     assert "ACTION_SEND_FAILED" in rendered

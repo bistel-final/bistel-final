@@ -13,6 +13,12 @@ from typing import TYPE_CHECKING, Final, Literal, NotRequired, Protocol, TypedDi
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
+from app.agent.diagnostics import (
+    AlternativeHypothesis,
+    EvidenceAssessmentBlock,
+    ImpactScopeBlock,
+    IncidentDiagnosticSnapshot,
+)
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.config import AGENT_MAX_TOOL_CALLS
 from app.common.enums import (
@@ -99,7 +105,17 @@ class Hypothesis(StateModel):
     supporting_alarms: tuple[AlarmRef, ...] = ()
     supporting_chunk_ids: tuple[NonEmptyId, ...] = ()
     supporting_relation_ids: tuple[NonEmptyId, ...] = ()
+    supporting_lot_hist_ids: tuple[NonEmptyId, ...] = ()
+    supporting_parameter_ids: tuple[NonEmptyId, ...] = ()
     uncertainty: str = Field(max_length=1000)
+    observations: tuple[str, ...] = Field(default=(), max_length=20)
+    evidence_synthesis: str = Field(default="", max_length=2000)
+    alternative_hypotheses: tuple[AlternativeHypothesis, ...] = Field(
+        default=(), max_length=3
+    )
+    impact_summary: str = Field(default="", max_length=2000)
+    verification_steps: tuple[str, ...] = Field(default=(), max_length=10)
+    limitations: tuple[str, ...] = Field(default=(), max_length=10)
 
     @model_validator(mode="after")
     def _unique_citations(self) -> Hypothesis:
@@ -107,6 +123,8 @@ class Hypothesis(StateModel):
             tuple(item.to_token() for item in self.supporting_alarms),
             self.supporting_chunk_ids,
             self.supporting_relation_ids,
+            self.supporting_lot_hist_ids,
+            self.supporting_parameter_ids,
         )
         if any(len(values) != len(set(values)) for values in collections):
             raise ValueError("가설 근거 ID를 중복할 수 없습니다")
@@ -118,6 +136,9 @@ class HypothesisOutcome(StateModel):
 
     hypothesis: Hypothesis
     llm_usage: LlmUsage
+    diagnostic_snapshot: IncidentDiagnosticSnapshot | None = None
+    evidence_assessment: EvidenceAssessmentBlock | None = None
+    impact_scope: ImpactScopeBlock | None = None
 
 
 class ActionDecision(StateModel):
@@ -264,6 +285,9 @@ class AgentGraphState(TypedDict, total=False):
     autonomy_level: int
     terminal_error: AgentError | None
     fdc_lot_hist_id: str
+    fdc_lot_hist_ids: tuple[str, ...]
+    fdc_evidence_set: tuple[FdcSummaryToolResult | None, ...]
+    read_retry_used: int
     approval_decision: Decision | None
     pending_llm_usage: LlmUsage | None
 
@@ -377,10 +401,11 @@ class AgentNodePorts(Protocol):
 
     generate_hypothesis: Callable[
         [
-            FdcSummaryToolResult | None,
+            FdcSummaryToolResult | None | tuple[FdcSummaryToolResult | None, ...],
             EquipmentContextToolResult | None,
             DocumentSearchToolResult | None,
             ResolvedIncidentRoute,
+            tuple[str, ...],
         ],
         HypothesisOutcome,
     ]

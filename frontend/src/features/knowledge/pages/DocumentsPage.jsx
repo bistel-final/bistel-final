@@ -46,6 +46,34 @@ const DOCUMENT_LIBRARY = [
   },
 ]
 
+function FilterChips({ label, options, value, onChange, format = (option) => option }) {
+  return (
+    <fieldset>
+      <legend className="text-[10.5px] font-bold text-faint">{label}</legend>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {options.map((option) => {
+          const selected = option === value
+          return (
+            <button
+              key={String(option)}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(option)}
+              className={`rounded-full border px-2.5 py-1.5 font-mono text-[10.5px] font-extrabold transition-colors ${
+                selected
+                  ? 'border-tint-blue-line bg-tint-blue text-blue'
+                  : 'border-cell-line bg-white text-g1 hover:border-blue hover:bg-tint-blue hover:text-blue'
+              }`}
+            >
+              {format(option)}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
 // 문서 검색 — 라이트 시안 4번
 // 좌 280px: 추천 질의 + 문서 라이브러리 / 우측: 결과 카드 / 하단: 입력 + [검색]
 function DocumentsPage() {
@@ -57,6 +85,7 @@ function DocumentsPage() {
   const urlTopK = Number(searchParams.get('top_k'))
   const urlDocumentId = searchParams.get('document_id')
   const urlChunkId = searchParams.get('chunk_id')
+  const urlDetailView = searchParams.get('view')
   const [input, setInput] = useState(urlQuery)
   const [result, setResult] = useState(null) // { query, hits }
   const [modelCode, setModelCode] = useState(DOC_FILTERS.includes(urlModelCode) ? urlModelCode : ALL_MODELS)
@@ -80,6 +109,7 @@ function DocumentsPage() {
       top_k,
       document_id,
       chunk_id,
+      detail_view,
       clearDocument = false,
     }) => {
       const next = new URLSearchParams(searchParams)
@@ -103,6 +133,7 @@ function DocumentsPage() {
       if (clearDocument) {
         next.delete('document_id')
         next.delete('chunk_id')
+        next.delete('view')
       }
       if (document_id !== undefined) {
         if (document_id) next.set('document_id', document_id)
@@ -111,6 +142,10 @@ function DocumentsPage() {
       if (chunk_id !== undefined) {
         if (chunk_id) next.set('chunk_id', chunk_id)
         else next.delete('chunk_id')
+      }
+      if (detail_view !== undefined) {
+        if (detail_view) next.set('view', detail_view)
+        else next.delete('view')
       }
       setSearchParams(next, { replace: false })
     },
@@ -155,7 +190,11 @@ function DocumentsPage() {
         })
     })
     return () => {
-      if (documentRequestRef.current === requestToken) documentRequestRef.current += 1
+      if (documentRequestRef.current === requestToken) {
+        documentRequestRef.current += 1
+        // React Strict Mode가 첫 effect를 정리했으면 같은 딥링크를 다음 effect에서 다시 처리해야 한다.
+        if (urlDocumentHandledRef.current === urlDocumentKey) urlDocumentHandledRef.current = ''
+      }
     }
   }, [urlDocumentId, urlChunkId])
 
@@ -189,7 +228,7 @@ function DocumentsPage() {
     })
       .then((res) => {
         setResult({ ...res, model_code: nextModelCode, doc_type: nextDocType, top_k: nextTopK })
-        setInput('')
+        if (options.clearInput !== false) setInput('')
         setError(null)
       })
       .catch((e) => setError(e.message))
@@ -213,9 +252,11 @@ function DocumentsPage() {
 
   const runRecommendedSearch = (item) => {
     const nextQuery = modelCode === ALL_MODELS ? item.query : (item.scoped_query ?? item.query)
+    setInput(nextQuery)
     run(nextQuery, {
       modelCodeOverride: modelCode,
       docTypeOverride: docType,
+      clearInput: false,
     })
   }
 
@@ -241,6 +282,7 @@ function DocumentsPage() {
     syncUrl({
       document_id: hit.document_id,
       chunk_id: hit.chunk_id,
+      detail_view: null,
     })
     getDocument(hit.document_id)
       .then((detail) => {
@@ -273,6 +315,7 @@ function DocumentsPage() {
     syncUrl({
       document_id: document.document_id,
       chunk_id: null,
+      detail_view: 'library',
     })
     getDocument(document.document_id)
       .then((detail) => {
@@ -297,10 +340,7 @@ function DocumentsPage() {
     setDocumentDetail(null)
     setDetailError(null)
     urlDocumentHandledRef.current = ''
-    syncUrl({
-      document_id: null,
-      chunk_id: null,
-    })
+    syncUrl({ clearDocument: true })
   }
 
   const navigateDetailChunk = (chunk) => {
@@ -382,48 +422,15 @@ function DocumentsPage() {
           <div className="px-4 pb-3">
             <div className="mb-2 text-[11px] font-bold text-g2">검색 필터</div>
             <div className="flex flex-col gap-2.5">
-              <label className="flex flex-col gap-1">
-                <span className="text-[10.5px] font-bold text-faint">설비 모델</span>
-                <select
-                  value={modelCode}
-                  onChange={(e) => setModelCode(e.target.value)}
-                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
-                >
-                  {DOC_FILTERS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10.5px] font-bold text-faint">문서 유형</span>
-                <select
-                  value={docType}
-                  onChange={(e) => setDocType(e.target.value)}
-                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
-                >
-                  {DOC_TYPE_FILTERS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10.5px] font-bold text-faint">결과 수</span>
-                <select
-                  value={topK}
-                  onChange={(e) => setTopK(Number(e.target.value))}
-                  className="h-9 rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
-                >
-                  {TOP_K_OPTIONS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}개
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <FilterChips label="설비 모델" options={DOC_FILTERS} value={modelCode} onChange={setModelCode} />
+              <FilterChips label="문서 유형" options={DOC_TYPE_FILTERS} value={docType} onChange={setDocType} />
+              <FilterChips
+                label="결과 수"
+                options={TOP_K_OPTIONS}
+                value={topK}
+                onChange={setTopK}
+                format={(item) => `${item}개`}
+              />
             </div>
           </div>
 
@@ -544,8 +551,11 @@ function DocumentsPage() {
         loading={detailLoading}
         error={detailError}
         onClose={closeDocument}
-        onRetry={() => selectedHit && openDocument(selectedHit)}
+        onRetry={() =>
+          selectedHit && (urlDetailView === 'library' ? openLibraryDocument(selectedHit) : openDocument(selectedHit))
+        }
         onNavigateChunk={navigateDetailChunk}
+        wide={urlDetailView === 'agent-evidence' || urlDetailView === 'library'}
       />
     </div>
   )

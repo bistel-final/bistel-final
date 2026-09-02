@@ -112,6 +112,14 @@ jobs:
         working-directory: frontend
         run: npm run test:agent-screen
 
+      - name: Verify API schema-derived mock contract
+        working-directory: frontend
+        run: npm run test:api-schema
+
+      - name: Verify Action sort and tab contract
+        working-directory: frontend
+        run: npm run test:actions-sort
+
       - name: Verify Detection screen state contract
         working-directory: frontend
         run: npm run test:detection-screen
@@ -249,6 +257,8 @@ jobs:
           tests/unit/test_api_spec_v3.py
           tests/unit/test_agent_runtime_migration.py
           tests/unit/test_agent_ask.py
+          tests/unit/test_agent_diagnostics.py
+          tests/unit/test_agent_evaluation_read_model.py
           tests/unit/test_agent_public_api.py
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
@@ -292,6 +302,7 @@ jobs:
           tests/unit/test_plan_refinement.py
           tests/unit/test_prefetch_embedding_model.py
           tests/unit/test_preflight.py
+          tests/unit/test_postgres_readiness.py
           tests/unit/test_query_log.py
           tests/unit/test_rag_readiness.py
           tests/unit/test_readiness.py

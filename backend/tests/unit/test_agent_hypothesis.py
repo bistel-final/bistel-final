@@ -70,11 +70,24 @@ def _content(**overrides: object) -> str:
     payload: dict[str, object] = {
         "predicted_fault_code": "OTH",
         "confidence": 0.6,
-        "cause_summary": "pressure pattern",
+        "cause_summary": "압력 이상 패턴이 관측되었습니다.",
         "supporting_alarms": [{"source": "TRACE", "alarm_id": "TA-01"}],
         "supporting_chunk_ids": ["CHUNK-1"],
         "supporting_relation_ids": ["REL-1"],
-        "uncertainty": "limited history",
+        "supporting_lot_hist_ids": [],
+        "supporting_parameter_ids": [],
+        "uncertainty": "이력 범위가 제한적입니다.",
+        "observations": ["압력 이상 패턴 한 건이 관측되었습니다."],
+        "evidence_synthesis": "FDC, Graph, 문서 근거를 함께 비교했습니다.",
+        "alternative_hypotheses": [
+            {
+                "summary": "다른 원인 가능성이 있습니다.",
+                "lower_rank_reason": "직접 근거가 상대적으로 부족합니다.",
+            }
+        ],
+        "impact_summary": "현재 incident의 직접 범위를 우선 확인해야 합니다.",
+        "verification_steps": ["인용된 근거를 다시 확인합니다."],
+        "limitations": ["이력 범위가 제한적입니다."],
     }
     payload.update(overrides)
     return json.dumps(payload)
@@ -120,7 +133,27 @@ def test_invalid_first_response_uses_exactly_one_correction_and_sums_usage(
     assert outcome.llm_usage.input_tokens == 30
     assert outcome.llm_usage.output_tokens == 12
     assert "not-json" not in repr(messages[1])
-    assert "STRUCTURE_INVALID" in repr(messages[1])
+    assert "JSON_INVALID" in repr(messages[1])
+
+
+def test_v2_requires_every_declared_output_key(monkeypatch) -> None:
+    incomplete = json.loads(_content())
+    incomplete.pop("verification_steps")
+    responses = iter(
+        [_completion(json.dumps(incomplete)), _completion(_content(), n=2)]
+    )
+    messages: list[list[dict[str, str]]] = []
+
+    def chat(value, **kwargs):
+        messages.append(value)
+        assert kwargs == {"json_schema": subject.HYPOTHESIS_RESPONSE_SCHEMA}
+        return next(responses)
+
+    monkeypatch.setattr(subject.llm, "chat_with_usage", chat)
+    outcome = generate_hypothesis(None, None, _docs(), _route())
+
+    assert outcome.hypothesis.verification_steps == ("인용된 근거를 다시 확인합니다.",)
+    assert "missing.verification_steps" in repr(messages[1])
 
 
 def test_single_json_fence_is_accepted_without_a_correction_round(monkeypatch) -> None:
@@ -136,6 +169,27 @@ def test_single_json_fence_is_accepted_without_a_correction_round(monkeypatch) -
     outcome = generate_hypothesis(None, None, _docs(), _route())
     assert calls == 1
     assert outcome.hypothesis.predicted_fault_code.value == "OTH"
+
+
+def test_english_narrative_is_rejected_and_corrected_in_korean(monkeypatch) -> None:
+    responses = iter(
+        [
+            _completion(_content(cause_summary="pressure pattern")),
+            _completion(_content(), n=2),
+        ]
+    )
+    messages: list[list[dict[str, str]]] = []
+
+    def chat(value, **_kwargs):
+        messages.append(value)
+        return next(responses)
+
+    monkeypatch.setattr(subject.llm, "chat_with_usage", chat)
+
+    outcome = generate_hypothesis(None, None, _docs(), _route())
+
+    assert outcome.hypothesis.cause_summary == "압력 이상 패턴이 관측되었습니다."
+    assert "KOREAN_OUTPUT_REQUIRED" in messages[1][1]["content"]
 
 
 def test_second_invalid_response_stops_without_third_call_and_keeps_usage(

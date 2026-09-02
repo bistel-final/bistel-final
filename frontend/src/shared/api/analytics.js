@@ -3,6 +3,7 @@ import { assertExactObject, compactParams, requireDatePair } from './contract.js
 import { CORE_AUDIT_LOG } from './contractMocks.js'
 import { page, toIso } from './format.js'
 import { AUDIT_EVENT_TYPES, AUDIT_LOGS } from '../../features/analytics/mock/auditLogs.js'
+import { AGENT_AUDIT_LOGS } from '../../features/agent/mock/auditLogs.js'
 import { NL_INITIAL_HISTORY, NL_QUERIES, NL_REJECTS } from '../../features/analytics/mock/queries.js'
 
 const USE_MOCK = mockEnabledFor('ANALYTICS')
@@ -136,6 +137,20 @@ export function getAuditLogsCore(params = {}) {
   )
   requireDatePair(params, 'getAuditLogsCore params')
   const query = compactParams(params)
-  if (USE_MOCK) return mockResponse([CORE_AUDIT_LOG])
+  if (USE_MOCK) {
+    const agentEntityIds = new Set(AGENT_AUDIT_LOGS.map((item) => item.entity_id))
+    const source = query.entity_id && agentEntityIds.has(query.entity_id)
+      ? AGENT_AUDIT_LOGS
+      : [CORE_AUDIT_LOG]
+    return mockResponse(source.filter(
+      (item) =>
+        (!query.event_type || item.event_type === query.event_type) &&
+        (!query.actor_type || item.actor_type === query.actor_type) &&
+        (!query.entity_type || item.entity_type === query.entity_type) &&
+        (!query.entity_id || item.entity_id === query.entity_id) &&
+        (!query.date_from || item.occurred_at.slice(0, 10) >= query.date_from) &&
+        (!query.date_to || item.occurred_at.slice(0, 10) <= query.date_to),
+    ))
+  }
   return apiClient.get('/audit-logs', { params: query }).then((response) => response.data)
 }

@@ -7,14 +7,7 @@ import ErrorState from '../../../shared/components/ErrorState.jsx'
 import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
-
-const SEND_LABEL = {
-  WAITING: '전송 대기',
-  SENDING: '전송 중',
-  SENT: '전송 완료',
-  FAILED: '전송 실패',
-  CANCELED: '전송 취소',
-}
+import DeliveryFlow from './DeliveryFlow.jsx'
 
 // 값이 없으면 창작하지 않고 "—" 로 표기한다 (규칙: 데이터 창작 금지)
 const DASH = '—'
@@ -77,7 +70,9 @@ function ActionDetailPanel({ actionId }) {
   if (!action) return <LoadingState message="조치 상세를 불러오는 중…" />
 
   // GET /agent/runs/{id} 응답 그대로 — 값이 없으면 창작하지 않고 "—" 카드로 떨어진다
-  const fault = run?.fault_code ? { code: run.fault_code, name: run.fault_name, cause: run.cause_summary } : null
+  const fault = run?.fault_code
+    ? { code: run.fault_code, name: run.fault_name, cause: run.prediction?.cause_summary }
+    : null
   const approval = action.approval_status
 
   return (
@@ -104,20 +99,14 @@ function ActionDetailPanel({ actionId }) {
         <Field label="승인">
           <span className={`font-bold ${approvalClass(approval)}`}>{approvalLabel(approval)}</span>
         </Field>
-        <Field label="전송">
-          <span className="flex flex-wrap gap-1">
-            {(action.deliveries ?? []).length === 0
-              ? DASH
-              : action.deliveries.map((delivery) => (
-                  <Badge key={delivery.channel} variant={delivery.status === 'SENT' ? 't-green' : 't-gray'}>
-                    {delivery.channel} · {SEND_LABEL[delivery.status] ?? delivery.status}
-                  </Badge>
-                ))}
-          </span>
-        </Field>
         <Field label="생성 시각">
           <span className="font-mono font-bold">{fmtDateTime(action.created_at)}</span>
         </Field>
+      </div>
+
+      <div className="rounded-lg border border-line bg-white px-3.5 py-3">
+        <div className="mb-2 text-[11px] font-bold text-g2">조치 전달 흐름</div>
+        <DeliveryFlow action={action} compact />
       </div>
 
       {fault ? (

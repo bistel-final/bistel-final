@@ -11,17 +11,20 @@ import {
   orientOntologyRelationships,
 } from '../../graph/ontology-graph.js'
 
-const nodeStyle = (node, isRoot, isSelected, isDimmed, dimOpacity) => {
+const nodeStyle = (node, isRoot, isSelected, isDimmed, dimOpacity, isDirectImpact, isCheckRequired) => {
   const meta = ONTOLOGY_NODE_META[node.label]
-  const isEmphasized = isRoot || isSelected
+  const isEmphasized = isRoot || isSelected || isDirectImpact || isCheckRequired
+  const impactColor = isCheckRequired ? '#a16207' : '#2563eb'
   return {
     width: 150,
     minHeight: 58,
-    border: `${isSelected ? 3 : isRoot ? 2.5 : 1.5}px solid ${meta.color}`,
+    border: `${isSelected || isDirectImpact || isCheckRequired ? 3 : isRoot ? 2.5 : 1.5}px ${isCheckRequired ? 'dashed' : 'solid'} ${isDirectImpact || isCheckRequired ? impactColor : meta.color}`,
     borderRadius: 12,
-    background: isEmphasized ? `${meta.color}22` : '#ffffff',
+    background: isDirectImpact ? '#eff6ff' : isCheckRequired ? '#fffbeb' : isEmphasized ? `${meta.color}22` : '#ffffff',
     boxShadow: isSelected
       ? `0 0 0 6px ${meta.color}22, 0 8px 20px rgba(15, 23, 42, 0.12)`
+      : isDirectImpact || isCheckRequired
+        ? `0 0 0 5px ${impactColor}1c, 0 7px 18px rgba(15, 23, 42, 0.10)`
       : isRoot
         ? `0 0 0 4px ${meta.color}16`
         : '0 4px 12px rgba(15, 23, 42, 0.06)',
@@ -46,56 +49,79 @@ const nodeLabel = (node) => {
   )
 }
 
-function ViewportFocus({ active, nodeIds }) {
+function ViewportFocus({ active, nodeIds, padding = 0.65, maxZoom = 1.05 }) {
   const { fitView } = useReactFlow()
   const nodeKey = nodeIds.join('|')
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       fitView({
         nodes: active ? nodeIds.map((id) => ({ id })) : undefined,
-        padding: active ? 0.65 : 0.14,
+        padding: active ? padding : 0.14,
         minZoom: 0.38,
-        maxZoom: active ? 1.05 : 1.2,
+        maxZoom: active ? maxZoom : 1.2,
         duration: 320,
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [active, fitView, nodeIds, nodeKey])
+  }, [active, fitView, maxZoom, nodeIds, nodeKey, padding])
   return null
 }
 
 function OntologyGraphCanvas({
   graph,
   focusedRelationIds = new Set(),
+  impactNodeIds = new Set(),
+  checkRequiredNodeIds = new Set(),
   selectedNodeId = null,
   onSelectNode = null,
   viewport = 'compact',
+  emphasizeRoot = true,
 }) {
+  const modalViewport = viewport === 'modal'
   const normalized = useMemo(() => normalizeOntologyGraph(graph), [graph])
   const focused = useMemo(
     () => (focusedRelationIds instanceof Set ? focusedRelationIds : new Set(focusedRelationIds ?? [])),
     [focusedRelationIds],
   )
+  const directImpact = useMemo(
+    () => (impactNodeIds instanceof Set ? impactNodeIds : new Set(impactNodeIds ?? [])),
+    [impactNodeIds],
+  )
+  const checkRequired = useMemo(
+    () => (checkRequiredNodeIds instanceof Set ? checkRequiredNodeIds : new Set(checkRequiredNodeIds ?? [])),
+    [checkRequiredNodeIds],
+  )
   const selectedRelations = useMemo(
     () => connectedRelationIds(normalized, selectedNodeId),
     [normalized, selectedNodeId],
   )
-  const activeRelations = selectedNodeId ? selectedRelations : focused
-  const hasFocus = Boolean(selectedNodeId) || activeRelations.size > 0
   const layout = useMemo(() => layoutOntologyNodes(normalized), [normalized])
   const presentationRelationships = useMemo(
     () => orientOntologyRelationships(normalized, layout),
     [layout, normalized],
   )
+  const impactRelations = useMemo(() => {
+    const explicitNodes = new Set([...directImpact, ...checkRequired])
+    return new Set((normalized?.relationships ?? [])
+      .filter((relationship) => explicitNodes.has(relationship.source) || explicitNodes.has(relationship.target))
+      .map((relationship) => relationship.id))
+  }, [checkRequired, directImpact, normalized])
+  const activeRelations = useMemo(
+    () => selectedNodeId ? selectedRelations : new Set([...focused, ...impactRelations]),
+    [focused, impactRelations, selectedNodeId, selectedRelations],
+  )
+  const hasFocus = Boolean(selectedNodeId) || activeRelations.size > 0 || directImpact.size > 0 || checkRequired.size > 0
   const focusedNodeIds = useMemo(() => {
     if (!hasFocus) return new Set()
     return new Set([
       ...(selectedNodeId ? [selectedNodeId] : []),
+      ...directImpact,
+      ...checkRequired,
       (normalized?.relationships ?? [])
         .filter((relationship) => activeRelations.has(relationship.id))
         .flatMap((relationship) => [relationship.source, relationship.target]),
     ].flat())
-  }, [activeRelations, hasFocus, normalized, selectedNodeId])
+  }, [activeRelations, checkRequired, directImpact, hasFocus, normalized, selectedNodeId])
   const nodes = useMemo(
     () =>
       layout.map(({ node, position, root }) => ({
@@ -107,10 +133,12 @@ function OntologyGraphCanvas({
         // root_node_id 자체는 조회 문맥으로 유지하되 그래프 강조는 사용자의 현재 선택을 따른다.
         style: nodeStyle(
           node,
-          root && !selectedNodeId,
+          root && !selectedNodeId && emphasizeRoot,
           node.id === selectedNodeId,
           hasFocus && !focusedNodeIds.has(node.id),
           viewport === 'page' ? 0.62 : 0.34,
+          directImpact.has(node.id),
+          checkRequired.has(node.id),
         ),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -118,13 +146,24 @@ function OntologyGraphCanvas({
         connectable: false,
         selectable: Boolean(onSelectNode),
       })),
-    [focusedNodeIds, hasFocus, layout, onSelectNode, selectedNodeId, viewport],
+    [checkRequired, directImpact, emphasizeRoot, focusedNodeIds, hasFocus, layout, onSelectNode, selectedNodeId, viewport],
   )
   const initialEvidenceNodes = useMemo(
     () => (viewport === 'compact' && focused.size > 0 ? nodes.filter((node) => focusedNodeIds.has(node.id)) : undefined),
     [focused, focusedNodeIds, nodes, viewport],
   )
-  const focusViewportNodeIds = useMemo(() => [...focusedNodeIds].sort(), [focusedNodeIds])
+  const focusViewportNodeIds = useMemo(
+    () => (modalViewport && directImpact.size + checkRequired.size > 0
+      ? [...new Set([
+          ...directImpact,
+          ...checkRequired,
+          ...(normalized?.nodes ?? [])
+            .filter((node) => node.label === 'EquipmentModel')
+            .map((node) => node.id),
+        ])].sort()
+      : [...focusedNodeIds].sort()),
+    [checkRequired, directImpact, focusedNodeIds, modalViewport, normalized],
+  )
   const edges = useMemo(() => {
     const firstRelationByType = new Map()
     for (const relationship of presentationRelationships) {
@@ -165,9 +204,9 @@ function OntologyGraphCanvas({
   }, [activeRelations, hasFocus, presentationRelationships])
 
   return (
-    <div className="flex w-full flex-col gap-2.5" data-testid="ontology-graph-canvas">
+    <div className={`flex w-full flex-col gap-2.5 ${modalViewport ? 'h-full min-h-0' : ''}`} data-testid="ontology-graph-canvas">
       <div
-        className={`${viewport === 'page' ? 'h-[760px] min-h-[620px]' : 'h-[540px] min-h-[440px]'} w-full overflow-hidden rounded-[10px] border border-line bg-white`}
+        className={`${viewport === 'page' ? 'h-[760px] min-h-[620px]' : modalViewport ? 'h-full min-h-[500px]' : 'h-[400px] min-h-[340px]'} w-full overflow-hidden bg-white ${modalViewport ? '' : 'rounded-[10px] border border-line'}`}
       >
         <ReactFlow
           nodes={nodes}
@@ -194,7 +233,12 @@ function OntologyGraphCanvas({
           onPaneClick={onSelectNode ? () => onSelectNode(null) : undefined}
           aria-label="설비 온톨로지 관계 그래프"
         >
-          <ViewportFocus active={hasFocus} nodeIds={focusViewportNodeIds} />
+          <ViewportFocus
+            active={hasFocus}
+            nodeIds={focusViewportNodeIds}
+            padding={modalViewport ? 0.08 : 0.65}
+            maxZoom={modalViewport ? 1.25 : 1.05}
+          />
           <Background color="#e2e8f0" gap={24} size={1} />
           <Controls position="top-right" showInteractive={false} />
         </ReactFlow>

@@ -17,17 +17,8 @@ const fmtShortSec = (iso) => {
 
 // alarm: AlarmItem (incident 는 (lot_id, chamber_id) 두 개뿐 — sensor_id 등은 형제 필드)
 // siblings: 같은 incident 알람 목록 · wafer/limit: POST /traces/search 응답 · run: GET /agent/runs/{id}
-function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, area, onSelect }) {
+function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, onSelect }) {
   const pos = siblings.findIndex((a) => a.alarm_id === alarm.alarm_id)
-
-  const traceQuery = new URLSearchParams({
-    area,
-    equipment: alarm.equipment_id ?? '',
-    chamber: alarm.chamber_id ?? '',
-    sensor: alarm.sensor_id ?? '',
-    lot: alarm.lot_id ?? '',
-    wafer: alarm.wafer_no ?? '',
-  }).toString()
 
   // 권고 조치는 Agent 실행 응답이 원본 — 없으면 알람에 붙은 조치 코드로 대체한다
   const actionCode = run?.recommended_action ?? alarm.action_code ?? null
@@ -51,9 +42,7 @@ function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, area, onSel
       <Card className="rounded-lg px-3.5 pb-2 pt-3.5">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="font-mono text-[12.5px] font-bold text-navy">{alarm.sensor_id}</span>
-          <Link to={`/traces?${traceQuery}`} className={BTN_PRIMARY_SM}>
-            크게 보기 →
-          </Link>
+          <span className="text-[10.5px] font-semibold text-g2">incident 실측</span>
         </div>
         <AlarmMiniTrace wafer={wafer} limit={limit} />
       </Card>
@@ -97,8 +86,8 @@ function AlarmDetailPanel({ alarm, siblings = [], wafer, limit, run, area, onSel
         )}
         <div className="mt-3.5 flex flex-wrap items-center gap-2.5 border-t border-tint-red-line pt-3">
           <span className="text-[11.5px] text-g1">조치</span>
-          {alarm.action_id ? (
-            <Link to={`/actions?action=${alarm.action_id}`} className="font-mono text-xs font-bold text-navy">
+          {alarm.action_id && alarm.latest_agent_run_id ? (
+            <Link to={`/agent-runs/${alarm.latest_agent_run_id}`} className="font-mono text-xs font-bold text-navy">
               {alarm.action_id}
             </Link>
           ) : (

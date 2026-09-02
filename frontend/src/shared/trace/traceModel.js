@@ -26,6 +26,127 @@ export function judgeValue(value, lim) {
   return 'OK'
 }
 
+// Recharts' numeric axis starts at 0 by default. Trace values can be concentrated far
+// from zero, so that default hides the variation that matters for an alarm. Keep the
+// measured range in focus while retaining limit lines that cross it. If every limit is
+// outside the measurements, retain only the closest limit on each side for context.
+export function traceYAxisDomain(wafers, lim) {
+  const measured = wafers
+    .flatMap((wafer) => wafer?.points ?? [])
+    .map((point) => point?.value)
+    .filter(Number.isFinite)
+
+  if (!measured.length) return ['auto', 'auto']
+
+  const measuredMin = Math.min(...measured)
+  const measuredMax = Math.max(...measured)
+  const limits = limitLines(lim)
+    .map((line) => line.value)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b)
+  const crossingLimits = limits.filter((value) => value >= measuredMin && value <= measuredMax)
+
+  let visibleLimits = crossingLimits
+  if (!crossingLimits.length) {
+    const below = limits.filter((value) => value < measuredMin).at(-1)
+    const above = limits.find((value) => value > measuredMax)
+    visibleLimits = [below, above].filter(Number.isFinite)
+  }
+
+  const visibleValues = [...measured, ...visibleLimits]
+  const visibleMin = Math.min(...visibleValues)
+  const visibleMax = Math.max(...visibleValues)
+  const span = visibleMax - visibleMin
+  const padding = span > 0 ? span * 0.08 : Math.max(Math.abs(visibleMin) * 0.05, 0.01)
+  const roundingUnit = 10 ** (Math.floor(Math.log10(Math.max(span, Math.abs(visibleMax), 0.001))) - 3)
+
+  return [
+    Math.floor((visibleMin - padding) / roundingUnit) * roundingUnit,
+    Math.ceil((visibleMax + padding) / roundingUnit) * roundingUnit,
+  ]
+}
+
+const tracePointIdentity = (point, pointIndex) =>
+  `${point?.recipe_step_no ?? point?.recipe_step_name ?? 'STEP'}:${point?.seq_no ?? pointIndex}`
+
+const tracePointLabel = (point, pointIndex) =>
+  `${point?.recipe_step_name ?? `Step ${point?.recipe_step_no ?? '—'}`} · seq ${point?.seq_no ?? pointIndex}`
+
+export const formatMeasuredAt = (value) => {
+  if (!value) return null
+  const measuredAt = new Date(value)
+  if (Number.isNaN(measuredAt.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(measuredAt)
+  const part = Object.fromEntries(parts.map(({ type, value: item }) => [type, item]))
+  return `${part.year}.${part.month}.${part.day} ${part.hour}:${part.minute}:${part.second}`
+}
+
+const measuredTimeLabel = (point, pointIndex) => {
+  const formatted = formatMeasuredAt(point?.measured_at)
+  if (!formatted) return tracePointLabel(point, pointIndex)
+  return formatted.split(' ')[1]
+}
+
+// X축은 wafer, 선은 동일 측정 위치(step + seq)다. 이 방향이어야 wafer 간
+// 변화가 바로 비교되고, 원시 측정값도 평균으로 축약하지 않고 모두 유지된다.
+export function traceChartModel(wafers) {
+  const seriesByKey = new Map()
+  for (const wafer of wafers) {
+    ;(wafer?.points ?? []).forEach((point, pointIndex) => {
+      const key = tracePointIdentity(point, pointIndex)
+      if (!seriesByKey.has(key)) {
+        seriesByKey.set(key, { key, label: tracePointLabel(point, pointIndex) })
+      }
+    })
+  }
+
+  const series = [...seriesByKey.values()]
+  const rows = wafers.map((wafer, waferIndex) => {
+    const row = {
+      wafer_key: wafer?.lot_hist_id ?? `WAFER-${waferIndex + 1}`,
+      wafer_label: `W${wafer?.wafer_no ?? waferIndex + 1}`,
+      wafer_no: wafer?.wafer_no ?? waferIndex + 1,
+    }
+    ;(wafer?.points ?? []).forEach((point, pointIndex) => {
+      const key = tracePointIdentity(point, pointIndex)
+      row[key] = point?.value
+      row[`${key}:meta`] = point
+    })
+    return row
+  })
+
+  return { rows, series }
+}
+
+// 알람 행을 클릭한 직후에는 해당 wafer 자체의 공정 내 측정 흐름을 먼저 보여 준다.
+// measured_at 실제 시각을 X축으로 두고 하나의 실측선으로 연결해야 사용자가 클릭한
+// 알람의 이탈 위치를 바로 읽을 수 있다. LOT·chamber 비교는 별도 보기다.
+export function selectedWaferChartModel(wafer) {
+  if (!wafer) return { rows: [], series: [] }
+  const waferLabel = `W${wafer.wafer_no ?? '—'}`
+  const rows = (wafer.points ?? []).map((point, pointIndex) => ({
+    point_key: tracePointIdentity(point, pointIndex),
+    point_label: measuredTimeLabel(point, pointIndex),
+    wafer_label: waferLabel,
+    wafer_no: wafer.wafer_no,
+    value: point?.value,
+    'value:meta': point,
+  }))
+  return {
+    rows,
+    series: rows.length ? [{ key: 'value', label: `${waferLabel} 실측` }] : [],
+  }
+}
+
 export function detailNumbers(detail) {
   const grab = (key) => {
     const match = String(detail ?? '').match(new RegExp(`${key}\\s+(-?[0-9.]+)`))

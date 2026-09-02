@@ -5,27 +5,27 @@
 export const actionCodeVariant = (code) =>
   code === 'EQP_HOLD' ? 't-red' : code === 'WARNING' ? 't-amber' : 't-green'
 
-// Agent run 상태: 실행 중 청 · 승인 대기 황 · 완료 녹 · 실패 적
+// Agent run 상태: 의미색은 유지하되 눈부신 solid 대신 저채도 tint를 쓴다.
 export const runStatusVariant = (status) =>
   status === 'RUNNING'
-    ? 'bg-blue'
+    ? 't-blue'
     : status === 'WAITING_APPROVAL'
-      ? 'bg-amber'
+      ? 't-amber'
       : status === 'COMPLETED'
-        ? 'bg-green'
+        ? 't-green'
         : status === 'FAILED'
-          ? 'bg-red'
-          : 'bg-gray'
+          ? 't-red'
+          : 't-gray'
 
-// 룰: R03만 적색 강조(solid), R01/R02 회색 틴트
-export const ruleVariant = (rule) => (String(rule).startsWith('R03') ? 'bg-red' : 't-gray')
+// 룰: R03만 적색 tint, R01/R02 회색 tint
+export const ruleVariant = (rule) => (String(rule).startsWith('R03') ? 't-red' : 't-gray')
 
 // 판정 텍스트: OOS 적 · OOC 황 · IN_CONTROL 녹
 export const judgementClass = (j) =>
   j === 'OOS' ? 'text-red' : j === 'OOC' ? 'text-amber' : 'text-green'
 
-// 주체: AGENT 남색 · HUMAN 적 · SYSTEM 회색 (전부 solid)
-export const actorVariant = (ac) => (ac === 'AGENT' ? 'bg-navy' : ac === 'HUMAN' ? 'bg-red' : 'bg-gray')
+// 주체도 tint로 통일해 감사 화면에서 여러 색이 동시에 튀지 않게 한다.
+export const actorVariant = (ac) => (ac === 'AGENT' ? 't-navy' : ac === 'HUMAN' ? 't-red' : 't-gray')
 
 // 심각도 텍스트: HIGH 적 · MEDIUM 황 · LOW 회색
 export const severityClass = (sev) =>

@@ -26,6 +26,7 @@
 - `/health`·`/health/ready` 2개는 내부 운영·진단 API이며 public 업무 API 수에서 제외한다.
 - `POST /analytics/query`, `POST /analytics/validate`, `GET /analytics/history`,
   `GET /analytics/evaluations`, `GET /audit-logs/paged` 5개는 팀 release 필수 확장이다.
+  `GET /agent/evaluations`는 Agent 평가 보조 탭용 별도 release 확장이다.
   Agent 감사는 선택 run·action·approval 문맥, 독립 감사 화면은 전역 검색·필터·집계다.
 - `POST /agent/runs`의 public 요청은 `AlarmRef(source, alarm_id)`를 사용한다. Frontend가 내부
   DB 키나 합성 평가 라벨을 조립하지 않는다.

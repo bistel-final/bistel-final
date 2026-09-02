@@ -7,24 +7,63 @@ import LoadingState from '../../../shared/components/LoadingState.jsx'
 import OntologyGraphCanvas from '../../../shared/components/ontology/OntologyGraphCanvas.jsx'
 import {
   ONTOLOGY_NODE_META,
+  ONTOLOGY_RELATION_LABELS,
+  ONTOLOGY_REVERSED_RELATION_LABELS,
   hasDisplayableRelationships,
+  layoutOntologyNodes,
   normalizeOntologyGraph,
+  orientOntologyRelationships,
 } from '../../../shared/graph/ontology-graph.js'
 import { evidenceHref } from '../agent-run-view-state.js'
 
 const GRAPH_ERROR = '그래프 조회 서비스가 잠시 준비되지 않았습니다.'
 
-function GraphEvidenceLinks({ items, chamberId }) {
+const checkedRelationsOf = (graph, items) => {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
+  const layout = layoutOntologyNodes(graph)
+  const relationById = new Map(
+    orientOntologyRelationships(graph, layout).map((relationship) => {
+      const source = nodeById.get(relationship.display_source)
+      const target = nodeById.get(relationship.display_target)
+      const labels = relationship.display_reversed
+        ? ONTOLOGY_REVERSED_RELATION_LABELS
+        : ONTOLOGY_RELATION_LABELS
+      return [relationship.id, {
+        source: source?.display_name ?? source?.business_id,
+        sourceType: ONTOLOGY_NODE_META[source?.label]?.shortLabel ?? source?.label,
+        label: labels[relationship.type] ?? relationship.type,
+        target: target?.display_name ?? target?.business_id,
+        targetType: ONTOLOGY_NODE_META[target?.label]?.shortLabel ?? target?.label,
+      }]
+    }),
+  )
+  return items.map((item, index) => ({
+    item,
+    index,
+    relation: relationById.get(item.relation_id) ?? null,
+  }))
+}
+
+function GraphEvidenceLinks({ checkedRelations, chamberId }) {
+  const items = checkedRelations
   if (items.length === 0) return null
   return (
     <div className="flex flex-col gap-2">
-      {items.map((item) => (
+      {items.map(({ item, index, relation }) => (
         <div key={item.source_id} className="flex items-center justify-between gap-3 rounded-lg border border-tint-blue-line bg-tint-blue px-3.5 py-3">
-          <span className="min-w-0">
-            <span className="block truncate text-[12px] font-bold text-ink">{item.title}</span>
-            <span className="block truncate font-mono text-[10.5px] text-g2">
-              {item.relation_id} · rev {item.graph_revision?.slice(0, 10) ?? '미제공'}…
-            </span>
+          <span className="min-w-0 text-[12px] text-ink">
+            <span className="block text-[10px] font-extrabold text-blue">확인 관계 {index + 1}</span>
+            {relation ? (
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 font-semibold">
+                <strong className="text-navy">{relation.source}</strong>
+                <span className="text-[10px] text-g2">{relation.sourceType}</span>
+                <span className="font-bold text-blue">— {relation.label} →</span>
+                <strong className="text-navy">{relation.target}</strong>
+                <span className="text-[10px] text-g2">{relation.targetType}</span>
+              </span>
+            ) : (
+              <span className="mt-1 block text-g1">연결 노드는 아래 그래프에서 확인할 수 있습니다.</span>
+            )}
           </span>
           <Link to={evidenceHref(item, { chamberId })} className="flex-none text-[12px] font-bold text-blue">
             온톨로지에서 보기 →
@@ -52,7 +91,9 @@ function GraphSummary({ graph, selectedNode }) {
           {ONTOLOGY_NODE_META[label]?.shortLabel ?? label} {count}
         </span>
       ))}
-      <span className="ml-auto font-mono text-[10.5px] text-faint">rev {graph.graph_revision ?? '미제공'}</span>
+      <span className="ml-auto text-[10.5px] font-bold text-g2">
+        {graph.graph_revision ? '그래프 기준본 확인' : '그래프 기준본 미제공'}
+      </span>
       {selectedNode && (
         <span className="w-full border-t border-cell-line pt-2 text-[11px] font-bold text-blue">
           선택 포커스 · {ONTOLOGY_NODE_META[selectedNode.label]?.shortLabel ?? selectedNode.label} ·{' '}
@@ -92,7 +133,33 @@ function RelationSummary({ graph }) {
   )
 }
 
-function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
+function GraphNarrativeSummary({ diagnosis, checkedRelations }) {
+  const synthesis = diagnosis?.status === 'AVAILABLE' ? diagnosis.evidence_synthesis?.trim() : ''
+  const relationEvidence = checkedRelations
+    .map(({ relation }) => relation && `${relation.source} — ${relation.label} → ${relation.target}`)
+    .filter(Boolean)
+
+  return (
+    <div className="rounded-[10px] border border-tint-blue-line bg-tint-blue px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-extrabold text-blue-hover">AI 근거 해석</div>
+        <span className="rounded-md border border-tint-blue-line bg-white px-2 py-0.5 text-[10px] font-bold text-blue">
+          {synthesis ? 'LLM 근거 종합' : '요약 미제공'}
+        </span>
+      </div>
+      <div className="mt-2 text-[12.5px] font-semibold leading-6 text-ink">
+        {synthesis || '이 실행에는 Graph 관계를 해석한 LLM 자연어 요약이 제공되지 않았습니다.'}
+      </div>
+      {relationEvidence.length > 0 && (
+        <div className="mt-2 border-t border-tint-blue-line pt-2 text-[11.5px] leading-5 text-g1">
+          <strong className="text-navy">확인한 노드 관계:</strong> {relationEvidence.join(' · ')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RunGraphEvidenceTab({ run, evidenceItems = [], diagnosis = null }) {
   const chamberId = run.incident?.chamber_id
   const graphItems = evidenceItems.filter((item) => item.type === 'GRAPH')
   const focusedRelationIds = useMemo(
@@ -130,7 +197,7 @@ function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
   if (state.status === 'error') {
     return (
       <div className="flex flex-col gap-4">
-        <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
+        <GraphEvidenceLinks checkedRelations={graphItems.map((item, index) => ({ item, index, relation: null }))} chamberId={chamberId} />
         <ErrorState
           title="그래프 근거를 불러오지 못했습니다"
           detail={GRAPH_ERROR}
@@ -145,15 +212,18 @@ function RunGraphEvidenceTab({ run, evidenceItems = [] }) {
   if (state.status === 'empty' || !state.graph) {
     return (
       <div className="flex flex-col gap-4">
-        <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
+        <GraphEvidenceLinks checkedRelations={graphItems.map((item, index) => ({ item, index, relation: null }))} chamberId={chamberId} />
         <EmptyState title="표시 가능한 그래프 관계가 없습니다" description={chamberId} />
       </div>
     )
   }
 
+  const checkedRelations = checkedRelationsOf(state.graph, graphItems)
+
   return (
     <div className="flex flex-col gap-4">
-      <GraphEvidenceLinks items={graphItems} chamberId={chamberId} />
+      <GraphEvidenceLinks checkedRelations={checkedRelations} chamberId={chamberId} />
+      <GraphNarrativeSummary diagnosis={diagnosis} checkedRelations={checkedRelations} />
       <GraphSummary graph={state.graph} selectedNode={selectedNode} />
       <OntologyGraphCanvas
         graph={state.graph}

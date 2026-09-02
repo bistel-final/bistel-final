@@ -10,8 +10,9 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 import Pagination from '../../../shared/components/ui/Pagination.jsx'
-import { HistoryTrendCard } from '../../../shared/components/trace/HistoryTrendChart.jsx'
+import AlarmTracePanel from '../../../shared/components/trace/AlarmTracePanel.jsx'
 import { detailNumbers } from '../../../shared/trace/traceModel.js'
+import { alarmTrendScope } from '../../../shared/trace/incidentTrace.js'
 import {
   CELL_DIM,
   CELL_ID,
@@ -25,14 +26,21 @@ import {
 import { sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
 import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
-import { partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
+import { analysisActionOf, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
-// 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + TRACE/SUMMARY/R03 탭 + 테이블.
+// 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + 전체/TRACE/SUMMARY/R03 탭 + 테이블.
 // 탭 분리는 source(AlarmRef의 TRACE·SUMMARY·R03)로 한다 — judgement로 나누면 R03(OOS)이
 // TRACE 탭에 섞여 보이지 않는 것처럼 된다.
 // 기간·탭 분리 목록 파라미터가 명세에 없어 넓게 받아 클라이언트에서 나눈다. TODO(api): 기간·source 파라미터
 const WIDE = 100
 const PAGE_SIZE = 12
+const ALARM_TABS = Object.freeze(['ALL', 'TRACE', 'SUMMARY', 'R03'])
+const TAB_TITLE = Object.freeze({
+  ALL: '전체 알람',
+  TRACE: 'TRACE 알람',
+  SUMMARY: 'SUMMARY 알람',
+  R03: 'R03 알람',
+})
 
 const dateOf = (iso) => String(iso ?? '').slice(0, 10)
 
@@ -62,7 +70,7 @@ function AlarmsPage() {
   const [runPending, setRunPending] = useState(false)
   const [runError, setRunError] = useState(null)
   const tabParam = searchParams.get('tab')
-  const tab = ['TRACE', 'SUMMARY', 'R03'].includes(tabParam) ? tabParam : 'TRACE'
+  const tab = ALARM_TABS.includes(tabParam) ? tabParam : 'ALL'
   const sourceQuery = searchParams.get('source')
   const source = ['TRACE', 'SUMMARY', 'R03'].includes(sourceQuery) ? sourceQuery : null
   const invalidSource = sourceQuery !== null && source === null
@@ -105,17 +113,17 @@ function AlarmsPage() {
   )
   const loadTrace = useCallback(() => {
     if (!selected) return
-    searchTraces({
-      chamber_id: selected.chamber_id,
-      sensor_ids: [selected.sensor_id],
-      lot_id: selected.lot_id,
-      wafer_nos: [selected.wafer_no],
-    })
+    const scope = alarmTrendScope(selected)
+    const request = scope ? searchTraces(scope) : Promise.resolve(null)
+    request
       .then((res) =>
         setTrace({
           forId: selected.alarm_id,
-          wafer: res.wafers?.[0] ?? null,
-          lim: res.limits?.[selected.sensor_id] ?? null,
+          response: res,
+          wafer: res?.wafers?.find(
+            (item) => item.sensor_id === selected.sensor_id && Number(item.wafer_no) === Number(selected.wafer_no),
+          ) ?? res?.wafers?.[0] ?? null,
+          lim: res?.limits?.[selected.sensor_id] ?? null,
         }),
       )
       .catch((e) => setError(e.message))
@@ -126,6 +134,12 @@ function AlarmsPage() {
 
   const handleRunAnalysis = () => {
     if (!selected || runPending) return
+    const analysisAction = analysisActionOf(selected)
+    if (analysisAction.mode === 'OPEN') {
+      setRunError(null)
+      navigate(`/agent-runs/${encodeURIComponent(analysisAction.runId)}`)
+      return
+    }
     setRunPending(true)
     setRunError(null)
     createRun({ alarm: { source: selected.source, alarm_id: selected.alarm_id } })
@@ -137,7 +151,7 @@ function AlarmsPage() {
   }
 
   const rows = useMemo(() => {
-    if (!data) return { trace: [], summary: [], r03: [] }
+    if (!data) return { all: [], trace: [], summary: [], r03: [] }
     const inRange = (a) => {
       const d = dateOf(a.occurred_at)
       return (!applied.from || d >= applied.from) && (!applied.to || d <= applied.to)
@@ -154,8 +168,8 @@ function AlarmsPage() {
   if (error) return <ErrorState detail={error} onRetry={retry} />
   if (!data) return <LoadingState message="알람 히스토리를 불러오는 중…" />
 
-  const list = tab === 'TRACE' ? rows.trace : tab === 'SUMMARY' ? rows.summary : rows.r03
-  const useSpecLimits = tab !== 'SUMMARY'
+  const list = tab === 'ALL' ? rows.all : tab === 'TRACE' ? rows.trace : tab === 'SUMMARY' ? rows.summary : rows.r03
+  const limitHeaders = tab === 'SUMMARY' ? ['LCL', 'UCL'] : tab === 'ALL' ? ['LOWER', 'UPPER'] : ['LSL', 'USL']
   const pageCnt = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCnt)
   const paged = list.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
@@ -177,6 +191,7 @@ function AlarmsPage() {
 
   const limOf = (sensorId) => sensorLimit(null, data.catalog, sensorId)
   const shownTrace = trace?.forId === alarmId ? trace : null
+  const analysisAction = analysisActionOf(selected)
 
   const tabCls = (on) =>
     `inline-flex h-8 cursor-pointer items-center rounded-lg border px-3.5 font-mono text-[12px] font-bold ${
@@ -188,20 +203,27 @@ function AlarmsPage() {
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">알람 히스토리</div>
         <div className="text-[11.5px] text-g2">
-          기간 내 <span className="font-mono">{rows.trace.length + rows.summary.length + rows.r03.length}</span>건
+          기간 내 <span className="font-mono">{rows.all.length}</span>건
         </div>
       </div>
 
-      <HistoryTrendCard
+      <AlarmTracePanel
         alarm={selected}
         wafer={shownTrace?.wafer}
         lim={shownTrace?.lim ?? (selected ? limOf(selected.sensor_id) : null)}
+        response={shownTrace?.response}
         loading={Boolean(selected) && !shownTrace}
+        allowWaferSelection
+        lotWaferCount={
+          selected
+            ? data.catalog?.lots?.find((lot) => lot.lot_id === selected.lot_id)?.wafer_nos?.length ?? null
+            : null
+        }
         actions={
           <span className="flex items-center gap-2">
             {runError && <span className="text-[11px] font-semibold text-red">{runError}</span>}
             <Button sm onClick={handleRunAnalysis} disabled={runPending}>
-              {runPending ? '분석 실행 중…' : '분석 실행'}
+              {runPending ? '분석 실행 중…' : analysisAction.label}
             </Button>
           </span>
         }
@@ -225,6 +247,9 @@ function AlarmsPage() {
       </div>
 
       <div className="mb-3 flex items-center gap-2">
+        <button type="button" className={tabCls(tab === 'ALL')} onClick={() => setTab('ALL')}>
+          전체 ({rows.all.length})
+        </button>
         <button type="button" className={tabCls(tab === 'TRACE')} onClick={() => setTab('TRACE')}>
           TRACE · OOS ({rows.trace.length})
         </button>
@@ -238,8 +263,8 @@ function AlarmsPage() {
 
       <Card>
         <CardHeader
-          title={tab === 'TRACE' ? 'TRACE 알람' : tab === 'SUMMARY' ? 'SUMMARY 알람' : 'R03 알람'}
-          note="발생 시각 내림차순 · 행 클릭 시 트렌드 갱신"
+          title={TAB_TITLE[tab]}
+          note="청색 행은 기준 알람 · 행 클릭 시 기준 변경"
         />
         {paged.length === 0 ? (
           <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />
@@ -248,7 +273,21 @@ function AlarmsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {['TIME', 'ALARM', 'LOT', 'W', 'EQP-CH', 'PARAMETER', 'STEP', 'RULE', 'HIT', 'VALUE', useSpecLimits ? 'LSL' : 'LCL', useSpecLimits ? 'USL' : 'UCL', 'NOTIFY'].map((h) => (
+                  {[
+                    'TIME',
+                    'ALARM',
+                    ...(tab === 'ALL' ? ['SOURCE'] : []),
+                    'LOT',
+                    'W',
+                    'EQP-CH',
+                    'PARAMETER',
+                    'STEP',
+                    'RULE',
+                    'HIT',
+                    'VALUE',
+                    ...limitHeaders,
+                    'NOTIFY',
+                  ].map((h) => (
                     <th key={h} className={TH_CLS}>
                       {h}
                     </th>
@@ -268,6 +307,11 @@ function AlarmsPage() {
                     >
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtShort(a.occurred_at)}</td>
                       <td className={`${TD_CLS} ${CELL_ID}`}>{a.alarm_id}</td>
+                      {tab === 'ALL' && (
+                        <td className={TD_CLS}>
+                          <Badge variant={a.source === 'SUMMARY' ? 't-amber' : a.source === 'R03' ? 't-red' : 't-blue'}>{a.source}</Badge>
+                        </td>
+                      )}
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.lot_id}</td>
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.wafer_no}</td>
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{a.chamber_id}</td>
@@ -278,8 +322,8 @@ function AlarmsPage() {
                       </td>
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.hit_cnt}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} font-bold ${judgementClass(a.judgement)}`}>{num(value)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(useSpecLimits ? lim?.spec_lower : lim?.ctrl_lower)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(useSpecLimits ? lim?.spec_upper : lim?.ctrl_upper)}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_lower : lim?.spec_lower)}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_upper : lim?.spec_upper)}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} text-[11px] text-g1`}>
                         {act?.deliveries?.length
                           ? act.deliveries.map((delivery) => `${delivery.channel} · ${delivery.status}`).join(' / ')

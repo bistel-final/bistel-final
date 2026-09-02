@@ -74,7 +74,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "53080:80"
+      - "8080:80"
     networks:
       - team
 

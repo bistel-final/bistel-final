@@ -5,12 +5,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.common import readiness
+from app.common import graph_readiness, readiness
 from app.common.db import DB_CONNECT_TIMEOUT_SECONDS
 from app.common.kafka_config import KafkaClientConfig, KafkaConfigError
 from app.common.kafka_readiness import KafkaAdminProbe, KafkaLagTracker
@@ -128,6 +129,53 @@ def test_background_start_failure_does_not_block_health() -> None:
     assert response.json() == {"status": "UP"}
     assert manager.start_calls == manager.close_calls == 1
     assert manager.collect_calls == 0
+
+
+def test_graph_snapshot_uses_supported_managed_transaction_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    queries: list[str] = []
+
+    class Transaction:
+        def run(self, query: str) -> list[object]:
+            assert isinstance(query, str)
+            queries.append(query)
+            return []
+
+    class Session:
+        def __enter__(self) -> Session:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def execute_read(self, work: Any) -> object:
+            assert work.timeout == 2.5
+            return work(Transaction())
+
+    class Driver:
+        def session(self, **kwargs: object) -> Session:
+            assert kwargs == {"database": "neo4j", "default_access_mode": "READ"}
+            return Session()
+
+    monkeypatch.setattr(
+        graph_readiness,
+        "snapshot_from_rows",
+        lambda nodes, relationships: sentinel,
+    )
+
+    result = graph_readiness.read_live_snapshot(
+        Driver(),
+        database="neo4j",
+        timeout_seconds=2.5,
+    )
+
+    assert result is sentinel
+    assert queries == [
+        graph_readiness.NODE_QUERY,
+        graph_readiness.RELATIONSHIP_QUERY,
+    ]
 
 
 def test_readiness_dto_rejects_reason_status_mismatch_and_wrong_owner() -> None:

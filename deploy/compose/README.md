@@ -52,11 +52,12 @@ CONTROLLER 전용 PLAINTEXT listener이므로 compose에서 host에 publish하�
 
 1. 적용 전 `docker ps --no-trunc`와 `docker network inspect`로 전체 container ID·image·
    publish port·network membership를 기록한다.
-2. Frontend 53080·Kafka **host 9092**가 기존 컨테이너나 host process에 사용되지 않는지
+2. Frontend 통합 진입점 **host 8080**·Kafka **host 9092**가 기존 컨테이너나 host process에 사용되지 않는지
    반드시 확인한다. host 9092는 흔히 사용하는 Kafka 포트이므로 점유 중이면 적용하지 않는다.
    기존 공용 PostgreSQL·Neo4j·n8n 포트와 컨테이너는 중지하지 않는다.
-3. 기동 후 Backend liveness는 Frontend 경유 `GET http://<host>:53080/api/health`로 확인한다.
-   이어 `GET http://<host>:53080/api/health/ready`가 exact 6 check `PASS`와 HTTP 200인지
+3. 기동 후 Backend liveness는 Frontend 경유 `GET http://<host>:8080/api/health`로 확인한다.
+   외부 포트 포워딩 환경에서는 `GET http://<public-host>:53000/api/health`도 같은 응답이어야
+   한다. 이어 `GET http://<host>:8080/api/health/ready`가 exact 6 check `PASS`와 HTTP 200인지
    확인한다. 503이면 [`readiness-verdict.md`](../../docs/troubleshooting/readiness-verdict.md)의
    실패 check만 복구하며 공용 PostgreSQL·Neo4j·n8n을 재생성하지 않는다.
 4. Backend 컨테이너에서 기존 verifier를 실행한다.

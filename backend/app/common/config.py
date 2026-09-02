@@ -75,6 +75,16 @@ READONLY_PASSWORD = get_env("READONLY_PASSWORD")
 EVALUATION_DB_USER = os.getenv("EVALUATION_DB_USER", "kosa_evaluation").strip()
 EVALUATION_DB_PASSWORD = os.getenv("EVALUATION_DB_PASSWORD", "").strip() or None
 
+# Agent 평가 화면은 실행 시 재채점하지 않고 검증 완료된 immutable artifact
+# 두 건만 읽는다.
+# 미설정은 정상 Empty이며, 상대경로·symlink·계약 위반은 read model이 fail-closed한다.
+AGENT_FAULT_EVAL_ARTIFACT_PATH = (
+    os.getenv("AGENT_FAULT_EVAL_ARTIFACT_PATH", "").strip() or None
+)
+AGENT_GOLDEN_FLOW_SUMMARY_PATH = (
+    os.getenv("AGENT_GOLDEN_FLOW_SUMMARY_PATH", "").strip() or None
+)
+
 # Neo4j
 NEO4J_USER = get_env("NEO4J_USER")
 NEO4J_PASSWORD = get_env("NEO4J_PASSWORD")

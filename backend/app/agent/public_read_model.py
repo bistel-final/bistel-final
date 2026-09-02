@@ -15,6 +15,19 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
+from app.agent.diagnostics import (
+    CANONICAL_INCIDENT_KEYS,
+    DiagnosisBlock,
+    EvidenceAssessmentBlock,
+    ImpactScopeBlock,
+    IncidentDiagnosticSnapshot,
+    PostActionObservationBlock,
+    SimilarIncidentItem,
+    SimilarIncidentsBlock,
+    abnormal_parameter_ids,
+    parameter_jaccard,
+    similar_incident_score,
+)
 from app.agent.evidence_projection import (
     project_document_evidence,
     project_fdc_evidence,
@@ -24,6 +37,7 @@ from app.agent.public_schemas import (
     ActionDeliveryItem,
     ActionDetailResponse,
     ActionItem,
+    AgentPredictionDetailItem,
     AgentRunActionItem,
     AgentRunApprovalItem,
     AgentRunDetailResponse,
@@ -44,7 +58,6 @@ from app.agent.repository import (
     get_action_public,
     get_agent_run_public,
     get_approval_public,
-    get_prediction_or_none,
     list_actions_public,
     list_agent_runs_public,
     list_approvals_public,
@@ -65,6 +78,9 @@ from app.common.tool_contracts import (
 )
 
 _KST: Final = ZoneInfo("Asia/Seoul")
+_V2_PROMPTS: Final = frozenset(
+    {"agent-hypothesis-v2", "agent-hypothesis-v2-ko", "agent-hypothesis-v2-ko1"}
+)
 
 # 결과 본문·에러 문자열은 요약에 사용하지 않는다. 이름도 Runtime Agent가 호출할 수 있는
 # 4종만 허용해 임의 tool_name이 화면으로 흘러가는 것을 막는다.
@@ -327,6 +343,7 @@ def _stored_tool_evidence(
     agent_run_id: str,
     *,
     supporting_relation_ids: tuple[str, ...],
+    diagnostic_snapshot: IncidentDiagnosticSnapshot | None,
 ) -> list[RunEvidenceItem]:
     items: list[RunEvidenceItem] = []
     graph_revision: str | None = None
@@ -354,6 +371,19 @@ def _stored_tool_evidence(
             # 부분·구버전 payload는 해당 evidence만 생략한다.
             # 원문 오류는 공개하지 않는다.
             continue
+    # Level 2의 정상 실행은 load_incident에서 이미 route graph를 읽고, route가
+    # 일관되면 중복 get_equipment_context Tool 호출을 생략한다. 그 경우에도 v2
+    # diagnostic snapshot에는 당시 relation 집합과 graph revision이 함께 고정된다.
+    # snapshot에 실제 포함된 relation만 같은 revision의 공개 근거로 복원한다.
+    if graph_revision is None and diagnostic_snapshot is not None:
+        source_ids = diagnostic_snapshot.source_ids
+        cited_relations = set(supporting_relation_ids)
+        if (
+            cited_relations <= set(source_ids.relation_ids)
+            and len(source_ids.graph_revisions) == 1
+        ):
+            graph_revision = source_ids.graph_revisions[0]
+
     if graph_revision is not None:
         for relation_id in supporting_relation_ids:
             try:
@@ -374,12 +404,10 @@ def _stored_tool_evidence(
 
 
 def _prediction_citations(
-    connection: Connection, agent_run_id: str
+    evidence: dict[str, object] | None,
 ) -> tuple[tuple[AlarmRef, ...], tuple[str, ...]]:
-    prediction = get_prediction_or_none(connection, agent_run_id)
-    if prediction is None:
+    if evidence is None:
         return (), ()
-    evidence = prediction.evidence
     alarms: list[AlarmRef] = []
     raw_alarms = evidence.get("supporting_alarms", ())
     if isinstance(raw_alarms, list | tuple):
@@ -398,13 +426,211 @@ def _prediction_citations(
     return tuple(alarms), tuple(relations)
 
 
+def _diagnostic_snapshot(
+    evidence: dict[str, object] | None,
+) -> IncidentDiagnosticSnapshot | None:
+    if evidence is None or evidence.get("schema_version") != "agent-evidence-v2":
+        return None
+    raw = evidence.get("diagnostic_snapshot")
+    if raw is None:
+        raise RepositoryContractError("PUBLIC_DIAGNOSTIC_SNAPSHOT_INVALID")
+    try:
+        return IncidentDiagnosticSnapshot.model_validate(raw)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_DIAGNOSTIC_SNAPSHOT_INVALID") from exc
+
+
+def _diagnosis_block(
+    record: PublicAgentRunRecord,
+    snapshot: IncidentDiagnosticSnapshot | None,
+) -> DiagnosisBlock:
+    raw = record.prediction_evidence
+    if snapshot is None or raw is None or record.predicted_fault_code is None:
+        return DiagnosisBlock(
+            status="EMPTY",
+            reason_code="V2_DIAGNOSIS_NOT_AVAILABLE",
+            predicted_fault_code=None,
+            confidence=None,
+            observations=(),
+            evidence_synthesis=None,
+            cause_summary=None,
+            alternative_hypotheses=(),
+            verification_steps=(),
+            limitations=("이 실행에는 v2 종합 진단 snapshot이 없습니다.",),
+            diagnostic_coverage=None,
+        )
+    try:
+        return DiagnosisBlock(
+            status="AVAILABLE",
+            reason_code=None,
+            predicted_fault_code=record.predicted_fault_code,
+            confidence=record.confidence,
+            observations=tuple(raw.get("observations", ())),
+            evidence_synthesis=raw.get("evidence_synthesis", ""),
+            cause_summary=record.prediction_cause_summary,
+            alternative_hypotheses=tuple(raw.get("alternative_hypotheses", ())),
+            verification_steps=tuple(raw.get("verification_steps", ())),
+            limitations=tuple(raw.get("limitations", ())),
+            diagnostic_coverage=(
+                f"상세 진단 {snapshot.observed_wafer_count} / "
+                f"대상 WAFER {snapshot.target_wafer_count} · "
+                f"incident 연결 Alarm {snapshot.member_alarm_count}"
+            ),
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_DIAGNOSIS_INVALID") from exc
+
+
+def _assessment_block(
+    evidence: dict[str, object] | None,
+    *,
+    legacy_missing_sources: tuple[str, ...] = (),
+    available_sources: tuple[str, ...] = (),
+) -> EvidenceAssessmentBlock:
+    raw = None if evidence is None else evidence.get("evidence_assessment")
+    if raw is None:
+        if legacy_missing_sources:
+            return EvidenceAssessmentBlock(
+                status="PARTIAL",
+                reason_codes=("LEGACY_CITATION_PROVENANCE_NOT_AVAILABLE",),
+                available_sources=available_sources,
+                missing_sources=legacy_missing_sources,
+                conflicting_source_ids=(),
+            )
+        return EvidenceAssessmentBlock(
+            status="EMPTY",
+            reason_codes=("V2_EVIDENCE_ASSESSMENT_NOT_AVAILABLE",),
+            available_sources=(),
+            missing_sources=(),
+            conflicting_source_ids=(),
+        )
+    try:
+        return EvidenceAssessmentBlock.model_validate(raw)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_EVIDENCE_ASSESSMENT_INVALID") from exc
+
+
+def _impact_block(evidence: dict[str, object] | None) -> ImpactScopeBlock:
+    raw = None if evidence is None else evidence.get("impact_scope")
+    if raw is None:
+        return ImpactScopeBlock(
+            status="EMPTY",
+            reason_code="V2_IMPACT_SCOPE_NOT_AVAILABLE",
+            direct=(),
+            check_required=(),
+            summary=None,
+            graph_conflict=False,
+        )
+    try:
+        return ImpactScopeBlock.model_validate(raw)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_IMPACT_SCOPE_INVALID") from exc
+
+
+def _similar_incidents(
+    connection: Connection,
+    current: PublicAgentRunRecord,
+    snapshot: IncidentDiagnosticSnapshot | None,
+) -> SimilarIncidentsBlock:
+    if snapshot is None:
+        return SimilarIncidentsBlock(
+            status="EMPTY",
+            reason_code="NOT_ENOUGH_RUNTIME_HISTORY",
+            items=(),
+        )
+    current_key = (snapshot.lot_id, snapshot.chamber_id)
+    if current_key not in CANONICAL_INCIDENT_KEYS:
+        return SimilarIncidentsBlock(
+            status="EMPTY",
+            reason_code="NOT_ENOUGH_RUNTIME_HISTORY",
+            items=(),
+        )
+    current_parameters = abnormal_parameter_ids(snapshot)
+    current_models = frozenset(snapshot.direct_scope.model_codes)
+    scored: list[SimilarIncidentItem] = []
+    candidates = sorted(
+        list_agent_runs_public(
+            connection,
+            date_from=None,
+            date_to=None,
+            status=RunStatus.COMPLETED,
+        ),
+        key=lambda item: (item.created_at, item.agent_run_id),
+    )
+    seen_incidents: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        if (
+            candidate.agent_run_id == current.agent_run_id
+            or candidate.retry_of_run_id is not None
+            or candidate.prompt_version not in _V2_PROMPTS
+            or candidate.predicted_fault_code is None
+            or candidate.recommended_action is None
+            or candidate.lot_id is None
+            or current.lot_id is None
+            or (candidate.lot_id, candidate.chamber_id)
+            == (current.lot_id, current.chamber_id)
+        ):
+            continue
+        candidate_snapshot = _diagnostic_snapshot(candidate.prediction_evidence)
+        if candidate_snapshot is None:
+            continue
+        incident_key = (candidate.lot_id, candidate.chamber_id)
+        if incident_key not in CANONICAL_INCIDENT_KEYS:
+            continue
+        if incident_key in seen_incidents:
+            continue
+        seen_incidents.add(incident_key)
+        similarity = parameter_jaccard(
+            current_parameters,
+            abnormal_parameter_ids(candidate_snapshot),
+        )
+        scored.append(
+            SimilarIncidentItem(
+                agent_run_id=candidate.agent_run_id,
+                lot_id=candidate.lot_id,
+                chamber_id=candidate.chamber_id,
+                score=similar_incident_score(
+                    same_model=(
+                        current_models
+                        == frozenset(candidate_snapshot.direct_scope.model_codes)
+                    ),
+                    parameter_similarity=similarity,
+                    same_fault=(
+                        current.predicted_fault_code is candidate.predicted_fault_code
+                    ),
+                    same_action=(
+                        current.recommended_action is candidate.recommended_action
+                    ),
+                ),
+                parameter_jaccard=similarity,
+                predicted_fault_code=candidate.predicted_fault_code,
+                recommended_action=candidate.recommended_action,
+            )
+        )
+    scored.sort(
+        key=lambda item: (
+            -item.score,
+            item.lot_id,
+            item.chamber_id,
+            item.agent_run_id,
+        )
+    )
+    items = tuple(scored[:3])
+    return SimilarIncidentsBlock(
+        status="AVAILABLE" if items else "EMPTY",
+        reason_code=None if items else "NOT_ENOUGH_RUNTIME_HISTORY",
+        items=items,
+    )
+
+
 def load_public_agent_run_detail(
     connection: Connection,
     agent_run_id: str,
 ) -> AgentRunDetailResponse:
     record = get_agent_run_public(connection, agent_run_id)
     item = _public_run(record)
-    cited_alarms, relation_ids = _prediction_citations(connection, agent_run_id)
+    snapshot = _diagnostic_snapshot(record.prediction_evidence)
+    cited_alarms, relation_ids = _prediction_citations(record.prediction_evidence)
     evidence: list[RunEvidenceItem] = [
         _alarm_evidence(alarm)
         for alarm in (*list_run_alarms(connection, agent_run_id), *cited_alarms)
@@ -414,6 +640,7 @@ def load_public_agent_run_detail(
             connection,
             agent_run_id,
             supporting_relation_ids=relation_ids,
+            diagnostic_snapshot=snapshot,
         )
     )
     deduplicated: list[RunEvidenceItem] = []
@@ -443,7 +670,13 @@ def load_public_agent_run_detail(
                 else to_public_approval_status(action_detail.approval_status)
             ),
             deliveries=[
-                _action_delivery(delivery) for delivery in action_detail.deliveries
+                ActionDeliveryDetailItem(
+                    channel=to_public_channel(delivery.channel),
+                    status=delivery.status,
+                    started_at=delivery.started_at,
+                    completed_at=delivery.completed_at,
+                )
+                for delivery in action_detail.deliveries
             ],
         )
     )
@@ -465,12 +698,122 @@ def load_public_agent_run_detail(
             decision_comment=approval_record.decision_comment,
         )
     )
-    return AgentRunDetailResponse(
-        **item.model_dump(),
-        evidence_items=deduplicated,
-        approval=approval,
-        action=action,
-    )
+    prediction = None
+    legacy_missing_sources: set[str] = set()
+    if record.predicted_fault_code is not None:
+        raw = record.prediction_evidence
+        if (
+            raw is None
+            or raw.get("schema_version")
+            not in {"agent-evidence-v1", "agent-evidence-v2"}
+            or record.prediction_cause_summary is None
+            or record.prediction_llm_model is None
+            or record.prediction_prompt_version is None
+            or record.prompt_version is None
+            or record.prediction_llm_model != record.llm_model
+            or record.prediction_prompt_version != record.prompt_version
+            or record.prediction_created_at is None
+            or record.input_tokens is None
+            or record.output_tokens is None
+        ):
+            raise RepositoryContractError("PUBLIC_PREDICTION_PROVENANCE_INVALID")
+        citation_fields = (
+            "supporting_alarms",
+            "supporting_chunk_ids",
+            "supporting_relation_ids",
+        )
+        if any(not isinstance(raw.get(field, []), list) for field in citation_fields):
+            raise RepositoryContractError("PUBLIC_PREDICTION_EVIDENCE_INVALID")
+        try:
+            prediction_alarms = [
+                AlarmRef.model_validate(value)
+                for value in raw.get("supporting_alarms", ())
+            ]
+            prediction_chunks = list(raw.get("supporting_chunk_ids", ()))
+            prediction_relations = list(raw.get("supporting_relation_ids", ()))
+            # v1은 Graph citation을 저장했어도 당시 graph revision이나 Graph Tool
+            # 결과를 남기지 않은 실행이 있다. 원본을 현재 Graph와 섞어 소급 검증하지
+            # 않고, 공개 projection에서 실제 저장 근거로 검증 가능한 citation만
+            # 노출한다. v2는 immutable snapshot이 있으므로 기존 fail-closed를 유지한다.
+            if raw.get("schema_version") == "agent-evidence-v1":
+                public_source_ids = {item.source_id for item in deduplicated}
+                if any(
+                    alarm.to_token() not in public_source_ids
+                    for alarm in prediction_alarms
+                ):
+                    legacy_missing_sources.add("POSTGRES_ROUTE")
+                if any(
+                    chunk_id not in public_source_ids for chunk_id in prediction_chunks
+                ):
+                    legacy_missing_sources.add("RAG")
+                if any(
+                    relation_id not in public_source_ids
+                    for relation_id in prediction_relations
+                ):
+                    legacy_missing_sources.add("GRAPH")
+                prediction_alarms = [
+                    alarm
+                    for alarm in prediction_alarms
+                    if alarm.to_token() in public_source_ids
+                ]
+                prediction_chunks = [
+                    chunk_id
+                    for chunk_id in prediction_chunks
+                    if chunk_id in public_source_ids
+                ]
+                prediction_relations = [
+                    relation_id
+                    for relation_id in prediction_relations
+                    if relation_id in public_source_ids
+                ]
+            prediction = AgentPredictionDetailItem(
+                predicted_fault_code=record.predicted_fault_code,
+                confidence=record.confidence,
+                cause_summary=record.prediction_cause_summary,
+                supporting_alarms=prediction_alarms,
+                supporting_chunk_ids=prediction_chunks,
+                supporting_relation_ids=prediction_relations,
+                uncertainty=raw.get("uncertainty", ""),
+                llm_model=record.prediction_llm_model,
+                prompt_version=record.prediction_prompt_version,
+                input_tokens=record.input_tokens,
+                output_tokens=record.output_tokens,
+                generated_at=record.prediction_created_at,
+            )
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise RepositoryContractError("PUBLIC_PREDICTION_DTO_INVALID") from exc
+    try:
+        return AgentRunDetailResponse(
+            **item.model_dump(),
+            evidence_items=deduplicated,
+            prediction=prediction,
+            approval=approval,
+            action=action,
+            diagnosis=_diagnosis_block(record, snapshot),
+            evidence_assessment=_assessment_block(
+                record.prediction_evidence,
+                legacy_missing_sources=tuple(
+                    source
+                    for source in ("FDC", "POSTGRES_ROUTE", "GRAPH", "RAG")
+                    if source in legacy_missing_sources
+                ),
+                available_sources=tuple(
+                    source
+                    for source, evidence_type in (
+                        ("FDC", "TRACE"),
+                        ("POSTGRES_ROUTE", "ALARM"),
+                        ("GRAPH", "GRAPH"),
+                        ("RAG", "DOCUMENT"),
+                    )
+                    if any(item.type == evidence_type for item in deduplicated)
+                ),
+            ),
+            impact_scope=_impact_block(record.prediction_evidence),
+            similar_incidents=_similar_incidents(connection, record, snapshot),
+            post_action_observation=PostActionObservationBlock(),
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_AGENT_RUN_DETAIL_INVALID") from exc
 
 
 __all__ = [

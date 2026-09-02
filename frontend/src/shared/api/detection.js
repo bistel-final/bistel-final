@@ -17,6 +17,11 @@ import {
 } from '../../features/detection/mock/trace.js'
 import { ACTIONS } from '../../features/agent/mock/actions.js'
 import { RUNS } from '../../features/agent/mock/runs.js'
+import {
+  FINAL_AGENT_INCIDENT_ALARMS,
+  FINAL_AGENT_TRACE_LIMIT,
+  FINAL_AGENT_WAFER_TRACES,
+} from '../../features/detection/mock/finalAgentIncident.js'
 
 // 백엔드 detection 라우터 구현 전까지 도메인 오버라이드로 mock 유지 가능 (client.js 참조)
 const USE_MOCK = mockEnabledFor('DETECTION')
@@ -37,7 +42,7 @@ const CORE_R03_ALARM_DETAIL = Object.freeze({
   alarm_id: CORE_AGENT_RUN.alarm_id,
   source: CORE_AGENT_RUN.alarm_source,
   area: 'Etch',
-  lot_hist_id: 'LH-000004',
+  lot_hist_id: 'LH-00177',
   lot_id: 'LOT004',
   wafer_no: 2,
   chamber_id: CORE_AGENT_RUN.chamber_id,
@@ -49,7 +54,7 @@ const CORE_R03_ALARM_DETAIL = Object.freeze({
   judgement: 'OOS',
   hit_cnt: 3,
   detail: 'OOS for 3 consecutive WAFER at MAIN_ETCH',
-  occurred_at: CORE_AGENT_RUN.created_at,
+  occurred_at: '2026-08-04T06:52:29+09:00',
   incident: { lot_id: 'LOT004', chamber_id: CORE_AGENT_RUN.chamber_id },
   action_id: CORE_AGENT_RUN.action_id,
   action_code: CORE_AGENT_RUN.recommended_action,
@@ -89,7 +94,7 @@ const toItem = (a) => {
 const areaOf = (equipmentId) => AREA_OF_EQUIPMENT[equipmentId] ?? null
 
 const matchScope = (a, { area, equipment_id, chamber_id, sensor_id, judgement, date }) =>
-  (!area || areaOf(a.equipment_id) === area) &&
+  (!area || String(areaOf(a.equipment_id) ?? a.area).toUpperCase() === String(area).toUpperCase()) &&
   (!equipment_id || a.equipment_id === equipment_id) &&
   (!chamber_id || a.chamber_id === chamber_id) &&
   (!sensor_id || a.sensor_id === sensor_id) &&
@@ -170,15 +175,15 @@ export function getDashboard(params = {}) {
 }
 
 // GET /alarms — date?·area?·equipment_id?·chamber_id?·sensor_id?·judgement?·page·size
-export function getAlarms(params = {}) {
+export function getAlarms(params = {}, options = {}) {
   if (USE_MOCK) {
     const { page: p = 1, size = 20, ...scope } = params
-    const rows = ALARMS.filter((a) => matchScope(a, scope))
+    const rows = [...FINAL_AGENT_INCIDENT_ALARMS, ...ALARMS].filter((a) => matchScope(a, scope))
       .map(toItem)
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.alarm_id.localeCompare(a.alarm_id))
     return mockResponse({ items: rows.slice((p - 1) * size, p * size), total: rows.length, page: p, size })
   }
-  return apiClient.get('/alarms/paged', { params }).then((r) => r.data)
+  return apiClient.get('/alarms/paged', { params, signal: options.signal }).then((r) => r.data)
 }
 
 // GET /alarms/paged 전체 페이지 순회 — 서버 size 상한(100)보다 총 건수가 많을 수 있어
@@ -186,9 +191,20 @@ export function getAlarms(params = {}) {
 // total을 기준으로 필요한 만큼 이어받아 하나의 items 배열로 합친다.
 const ALL_ALARMS_PAGE_SIZE = 100
 const ALL_ALARMS_MAX_PAGES = 20
-export function getAllAlarms(scope = {}) {
+export function getAllAlarms(scope = {}, options = {}) {
+  if (USE_MOCK && scope.chamber_id === CORE_AGENT_RUN.chamber_id) {
+    const items = FINAL_AGENT_INCIDENT_ALARMS.filter(
+      (alarm) =>
+        (!scope.area || alarm.area === scope.area) &&
+        (!scope.equipment_id || alarm.equipment_id === scope.equipment_id) &&
+        (!scope.sensor_id || alarm.sensor_id === scope.sensor_id) &&
+        (!scope.judgement || alarm.judgement === scope.judgement) &&
+        (!scope.date || alarm.occurred_at.startsWith(scope.date)),
+    )
+    return mockResponse({ items, total: items.length, page: 1, size: items.length, partial: false, mock: true })
+  }
   const step = (page, acc) =>
-    getAlarms({ ...scope, page, size: ALL_ALARMS_PAGE_SIZE }).then((res) => {
+    getAlarms({ ...scope, page, size: ALL_ALARMS_PAGE_SIZE }, options).then((res) => {
       const pageItems = res.items ?? []
       const items = acc.concat(pageItems)
       const total = res.total ?? items.length
@@ -211,7 +227,7 @@ export function getAllAlarms(scope = {}) {
 
 // GET /alarms — core compatibility contract. The existing getAlarms() is the
 // deprecated paged UI adapter and intentionally uses /alarms/paged.
-export function getAlarmsCore(params = {}) {
+export function getAlarmsCore(params = {}, options = {}) {
   assertExactObject(
     params,
     ['area', 'equipment', 'chamber', 'parameter', 'source', 'include_derived', 'date_from', 'date_to'],
@@ -220,7 +236,7 @@ export function getAlarmsCore(params = {}) {
   requireDatePair(params, 'getAlarmsCore params')
   const query = compactParams(params)
   if (USE_MOCK) return mockResponse([CORE_ALARM])
-  return apiClient.get('/alarms', { params: query }).then((response) => response.data)
+  return apiClient.get('/alarms', { params: query, signal: options.signal }).then((response) => response.data)
 }
 
 // GET /trace — the four identifiers are the complete public query contract.
@@ -239,7 +255,7 @@ export function getParameters() {
   return apiClient.get('/parameters').then((response) => response.data)
 }
 
-export function getAlarm(alarmId, source = null) {
+export function getAlarm(alarmId, source = null, options = {}) {
   if (USE_MOCK) {
     if (
       alarmId === CORE_R03_ALARM_DETAIL.alarm_id &&
@@ -247,7 +263,7 @@ export function getAlarm(alarmId, source = null) {
     ) {
       return mockResponse(CORE_R03_ALARM_DETAIL)
     }
-    const a = ALARMS.find(
+    const a = [...FINAL_AGENT_INCIDENT_ALARMS, ...ALARMS].find(
       (item) =>
         item.alarm_id === alarmId &&
         (!source || alarmSourceOf(item) === source),
@@ -260,14 +276,14 @@ export function getAlarm(alarmId, source = null) {
   // sensor_ids/wafer_nos에 undefined를 실어 보내 422가 난다.
   if (source) {
     return apiClient
-      .get(`/alarms/${encodeURIComponent(source)}/${encodeURIComponent(alarmId)}`)
+      .get(`/alarms/${encodeURIComponent(source)}/${encodeURIComponent(alarmId)}`, { signal: options.signal })
       .then((response) => response.data)
       .catch((error) => {
         if (error?.response?.status === 404) return null
         throw error
       })
   }
-  return getAlarmsCore().then(
+  return getAlarmsCore({}, options).then(
     (alarms) => alarms.find((alarm) => alarm.alarm_id === alarmId) ?? null,
   )
 }
@@ -279,12 +295,12 @@ export function getTraceCatalog() {
 }
 
 // POST /traces/search — 다중 웨이퍼·다중 파라미터를 한 번에 조회한다 (웨이퍼별 개별 호출 금지)
-export function searchTraces(body = {}) {
+export function searchTraces(body = {}, options = {}) {
   if (USE_MOCK) {
     const { area, equipment_id, chamber_id, sensor_ids, recipe_id, lot_id, wafer_nos, from, to } = body
-    const wafers = WAFER_TRACES.filter(
+    const wafers = [...WAFER_TRACES, ...FINAL_AGENT_WAFER_TRACES].filter(
       (w) =>
-        (!area || areaOf(w.equipment_id) === area) &&
+        (!area || (areaOf(w.equipment_id) ?? (w.equipment_id === 'EQP04' ? 'Etch' : null)) === area) &&
         (!equipment_id || w.equipment_id === equipment_id) &&
         (!chamber_id || w.chamber_id === chamber_id) &&
         (!sensor_ids?.length || sensor_ids.includes(w.sensor_id)) &&
@@ -295,12 +311,19 @@ export function searchTraces(body = {}) {
         (!to || w.occurred_at <= to),
     ).map((w) => ({ ...w, occurred_at: toIso(w.occurred_at), points: w.points.map((p) => ({ ...p, measured_at: toIso(p.measured_at) })) }))
     // 한계선은 센서별로 다르다 — sensor_id 로 키를 잡아 내려준다
+    const includesFinalAgentTrace = wafers.some((wafer) =>
+      FINAL_AGENT_WAFER_TRACES.some((fixture) => fixture.lot_hist_id === wafer.lot_hist_id))
     const limits = Object.fromEntries(
-      [...new Set(wafers.map((w) => w.sensor_id))].map((id) => [id, TRACE_SENSORS.find((s) => s.sensor_id === id) ?? null]),
+      [...new Set(wafers.map((w) => w.sensor_id))].map((id) => [
+        id,
+        includesFinalAgentTrace && id === FINAL_AGENT_TRACE_LIMIT.sensor_id
+          ? FINAL_AGENT_TRACE_LIMIT
+          : TRACE_SENSORS.find((s) => s.sensor_id === id) ?? null,
+      ]),
     )
     return mockResponse({ wafers, limits, total: wafers.length, measured_step_stats: MEASURED_STEP_STATS })
   }
-  return apiClient.post('/traces/search', body).then((response) => response.data)
+  return apiClient.post('/traces/search', body, { signal: options.signal }).then((response) => response.data)
 }
 
 export { MEASURED_STEP_STATS }

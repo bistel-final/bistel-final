@@ -16,6 +16,11 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.agent import golden_flow as subject  # noqa: E402
+from app.agent.golden_summary import (  # noqa: E402
+    GoldenSummaryContractError,
+    build_golden_summary,
+    validate_golden_summary,
+)
 from scripts import verify_golden_flow as cli  # noqa: E402
 
 ORACLE_PATH = BACKEND_ROOT / "tests/fixtures/v5_c_6_1/golden_incidents.json"
@@ -798,6 +803,93 @@ def test_phase_mode_never_claims_full_golden_flow(
     output = capsys.readouterr().out
     assert '"status":"PHASE_PASS"' in output
     assert "GOLDEN_FLOW_PASS" not in output
+
+
+def _full_result(status: subject.PhaseStatus = subject.PhaseStatus.PASS):
+    return subject.GoldenFlowResult(
+        tuple(
+            subject.PhaseResult(phase, status, (), {"checked": 1})
+            for phase in subject.GoldenPhase
+        )
+    )
+
+
+def test_golden_summary_is_exact_ordered_and_derived() -> None:
+    summary = build_golden_summary(
+        _full_result(),
+        dataset_epoch=subject.DATASET_EPOCH,
+        source_manifest_sha256="a" * 64,
+        evidence_manifest_sha256="b" * 64,
+    )
+
+    assert validate_golden_summary(summary) is summary
+    assert [item["phase"] for item in summary["phases"]] == [
+        phase.value for phase in subject.GoldenPhase
+    ]
+
+    summary["status"] = "FAIL"
+    with pytest.raises(GoldenSummaryContractError, match="STATUS_MISMATCH"):
+        validate_golden_summary(summary)
+
+
+def test_summary_output_rejects_phase_and_relative_path_before_engine(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    base = [
+        "--database",
+        "kosa_agent_e2e",
+        "--evidence-file",
+        str(tmp_path / "unused.json"),
+        "--summary-output",
+    ]
+
+    phase_code = cli.main(
+        [*base, str(tmp_path / "summary.json"), "--phase", "PREFLIGHT"],
+        engine_factory=lambda: calls.append("engine"),
+    )
+    relative_code = cli.main(
+        [*base, "summary.json"],
+        engine_factory=lambda: calls.append("engine"),
+    )
+
+    assert phase_code == relative_code == cli.EXIT_USAGE
+    assert calls == []
+
+
+def test_summary_output_publishes_exact_contract_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence_file = tmp_path / "evidence.json"
+    evidence_file.write_text("{}", encoding="utf-8")
+    output = tmp_path / "golden-summary.json"
+    result = _full_result()
+
+    monkeypatch.setattr(cli, "load_evidence_bundle", lambda _path: object())
+    monkeypatch.setattr(cli, "_load_oracle", lambda: object())
+    monkeypatch.setattr(
+        cli,
+        "read_golden_flow_snapshot",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "evaluate_golden_flow",
+        lambda *_args, **_kwargs: result,
+    )
+    argv = [
+        "--database",
+        "kosa_agent_e2e",
+        "--evidence-file",
+        str(evidence_file),
+        "--summary-output",
+        str(output),
+    ]
+
+    assert cli.main(argv, engine_factory=lambda: object()) == cli.EXIT_OK
+    assert validate_golden_summary(json.loads(output.read_text(encoding="utf-8")))
+    assert cli.main(argv, engine_factory=lambda: object()) == cli.EXIT_FAILED
 
 
 class _Connection:

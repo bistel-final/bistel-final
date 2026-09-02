@@ -28,13 +28,13 @@ def _inputs():
     )
 
 
-def test_complete_29_semantic_contracts_pass_all_three_gates() -> None:
+def test_complete_30_semantic_contracts_pass_all_three_gates() -> None:
     spec, required, optional, team = _inputs()
     report = evaluate_sync(spec, canonical_semantics(spec), required, optional, team)
     assert report["overall"] == "PASS"
-    assert report["release_pass_count"] == 19
-    assert report["live_pass_count"] == 29
-    assert report["document_catalog_count"] == 35
+    assert report["release_pass_count"] == 20
+    assert report["live_pass_count"] == 30
+    assert report["document_catalog_count"] == 36
 
 
 def test_release_removal_and_unclassified_live_route_are_red() -> None:
@@ -85,6 +85,7 @@ def test_live_openapi_normalizer_preserves_pattern_and_discriminated_union() -> 
     assert items["type"] == "discriminated_union"
     assert items["discriminator"] == "type"
     assert set(items["variants"]) == {
+        "AGENT_RUN",
         "ALARM",
         "DOCUMENT",
         "GRAPH",
@@ -125,7 +126,7 @@ def test_current_openapi_matches_the_final_canonical_contract() -> None:
     }
     assert drift == set()
     assert missing == set()
-    assert report["status_counts"] == {"PASS": 29, "DRIFT": 0, "MISSING": 0}
-    assert report["release_pass_count"] == 19
-    assert report["live_pass_count"] == 29
+    assert report["status_counts"] == {"PASS": 30, "DRIFT": 0, "MISSING": 0}
+    assert report["release_pass_count"] == 20
+    assert report["live_pass_count"] == 30
     assert report["overall"] == "PASS"

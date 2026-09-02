@@ -137,20 +137,20 @@ def evaluate_sync(
     document_keys = {
         operation_key(item) for item in operations if isinstance(item, Mapping)
     }
-    if len(document_keys) != 35:
+    if len(document_keys) != 36:
         raise ApiSyncError(
-            f"document catalog must contain 35 operations: {len(document_keys)}"
+            f"document catalog must contain 36 operations: {len(document_keys)}"
         )
 
     required_keys = _fixture_keys(required_fixture)
     optional_keys = _fixture_keys(optional_fixture)
     team_keys = _fixture_keys(team_fixture)
-    if len(required_keys) != 14 or len(team_keys) != 5:
+    if len(required_keys) != 14 or len(team_keys) != 6:
         raise ApiSyncError("required/team fixture inventory drift")
     release_keys = required_keys | team_keys
     classified_keys = required_keys | optional_keys | team_keys
-    if len(release_keys) != 19:
-        raise ApiSyncError("release inventory must contain 19 operations")
+    if len(release_keys) != 20:
+        raise ApiSyncError("release inventory must contain 20 operations")
 
     expected = canonical_semantics(spec)
     comparisons = compare_operations(expected, actual)
@@ -167,9 +167,9 @@ def evaluate_sync(
         name: sum(item["status"] == name for item in comparisons)
         for name in ("PASS", "DRIFT", "MISSING")
     }
-    document_gate = not undocumented and len(document_keys) == 35
-    release_gate = release_pass == 19
-    live_gate = len(live_keys) == 29 and live_pass == 29 and not unclassified
+    document_gate = not undocumented and len(document_keys) == 36
+    release_gate = release_pass == 20
+    live_gate = len(live_keys) == 30 and live_pass == 30 and not unclassified
     overall = "PASS" if document_gate and release_gate and live_gate else "BLOCKED"
     return {
         "classified_live_count": len(live_keys),

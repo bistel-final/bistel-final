@@ -301,7 +301,10 @@ def load_snapshot(evidence: Mapping[str, Any] | None) -> RehydrationSnapshot:
 
 def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
     evidence = row.evidence
-    if evidence.get("schema_version") != "agent-evidence-v1":
+    if evidence.get("schema_version") not in {
+        "agent-evidence-v1",
+        "agent-evidence-v2",
+    }:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH")
     try:
         return Hypothesis(
@@ -314,7 +317,17 @@ def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
             ),
             supporting_chunk_ids=tuple(evidence.get("supporting_chunk_ids", ())),
             supporting_relation_ids=tuple(evidence.get("supporting_relation_ids", ())),
+            supporting_lot_hist_ids=tuple(evidence.get("supporting_lot_hist_ids", ())),
+            supporting_parameter_ids=tuple(
+                evidence.get("supporting_parameter_ids", ())
+            ),
             uncertainty=evidence.get("uncertainty", ""),
+            observations=tuple(evidence.get("observations", ())),
+            evidence_synthesis=evidence.get("evidence_synthesis", ""),
+            alternative_hypotheses=tuple(evidence.get("alternative_hypotheses", ())),
+            impact_summary=evidence.get("impact_summary", ""),
+            verification_steps=tuple(evidence.get("verification_steps", ())),
+            limitations=tuple(evidence.get("limitations", ())),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH") from exc

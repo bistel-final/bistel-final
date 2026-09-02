@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
@@ -380,10 +380,16 @@ class AgentAskService:
         self._tools = tools
         self._synthesizer = synthesizer
 
-    def ask(self, question: str) -> AgentAskResponse:
+    def ask(
+        self,
+        question: str,
+        *,
+        context_evidence: Sequence[AskEvidenceItem] = (),
+    ) -> AgentAskResponse:
         normalized = AgentAskRequest(question=question).question
         identifiers = extract_ask_identifiers(normalized)
-        if not identifiers.any_recognized:
+        context = tuple(context_evidence)
+        if not identifiers.any_recognized and not context:
             return _empty_response(
                 tools=[],
                 limitations=[
@@ -422,17 +428,18 @@ class AgentAskService:
             # 문서 검색은 질문에 어떤 정규 식별자든 있을 때만 선택한다. chamber Tool이
             # 검증한 model_code는 검색 filter에 쓸 수 있지만 질문에 없는 ID를
             # 생성하지 않는다.
-            outcomes.append(
-                _document_outcome(
-                    self._tools.search_documents(
-                        DocumentSearchToolInput(
-                            query=normalized,
-                            model_code=identifiers.model_code or discovered_model,
-                            top_k=_DOCUMENT_TOP_K,
+            if identifiers.any_recognized:
+                outcomes.append(
+                    _document_outcome(
+                        self._tools.search_documents(
+                            DocumentSearchToolInput(
+                                query=normalized,
+                                model_code=identifiers.model_code or discovered_model,
+                                top_k=_DOCUMENT_TOP_K,
+                            )
                         )
                     )
                 )
-            )
         except AgentAskContractError:
             raise
         except (ValidationError, TypeError, ValueError) as exc:
@@ -440,7 +447,10 @@ class AgentAskService:
         except Exception as exc:
             raise AgentAskUnavailable("ASK_TOOL_UNAVAILABLE") from exc
 
-        evidence = tuple(item for outcome in outcomes for item in outcome.evidence)
+        evidence = (
+            *context,
+            *(item for outcome in outcomes for item in outcome.evidence),
+        )
         evidence_ids = [item.source_id for item in evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise AgentAskContractError("ASK_EVIDENCE_ID_DUPLICATED")

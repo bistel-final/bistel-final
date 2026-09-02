@@ -3,7 +3,7 @@
 //
 // 포인트 복원식: 스텝 3포인트 = [3*mean − min − max, min, max] (알람 detail 역산, §2 통계와 일치 검증)
 // TODO(data): 포인트별 measured_at 실측 미확보 — occurred_at + 20초 간격 mock
-// TODO(data): ET_REFL 한계선·단위 미확보 — null 이며 화면은 "한계선 미제공"으로 표기한다
+// 최종 project.zip의 dim_parameter 기준 ET_REFL 단위·한계선을 사용한다.
 //
 // 한계선은 센서별로 다르다. 전역 상수를 두지 말고 반드시 catalog.sensors 또는
 // search 응답의 limits[sensor_id]를 사용할 것 (ET_CF4에 PH_FOCUS 한계선을 쓰면 판정이 뒤집힌다).
@@ -42,12 +42,12 @@ export const TRACE_SENSORS = [
   {
     "sensor_id": "ET_REFL",
     "sensor_name": "Reflected Power",
-    "unit": null,
-    "spec_lower": null,
-    "ctrl_lower": null,
-    "target": null,
-    "ctrl_upper": null,
-    "spec_upper": null
+    "unit": "W",
+    "spec_lower": 0,
+    "ctrl_lower": 0,
+    "target": 8,
+    "ctrl_upper": 21,
+    "spec_upper": 30
   }
 ]
 
@@ -92,6 +92,10 @@ export const TRACE_CATALOG = {
   }
 ],
   lots: [
+  {
+    "lot_id": "LOT004",
+    "wafer_nos": Array.from({ length: 25 }, (_, index) => index + 1)
+  },
   {
     "lot_id": "LOT-260003"
   },
