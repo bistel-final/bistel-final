@@ -4,10 +4,32 @@ services:
       - "53081:8000"
     environment:
       POSTGRES_DB: kosa_agent_e2e
+      TEXT2SQL_DATABASE_URL: ${TEXT2SQL_E2E_DATABASE_URL:?TEXT2SQL_E2E_DATABASE_URL is required}
       DELIVERY_CALLBACK_TRAIL_DIR: ${DELIVERY_CALLBACK_TRAIL_DIR:-}
       DELIVERY_CALLBACK_TRAIL_RUN_ID: ${DELIVERY_CALLBACK_TRAIL_RUN_ID:-}
     volumes:
       - type: bind
         source: ./trail
         target: /var/lib/bistel/delivery-trail
+        read_only: false
+
+  e2e-runner:
+    extends:
+      file: docker-compose.team.yml
+      service: backend
+    profiles: ["e2e-runner"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    environment:
+      POSTGRES_DB: kosa_agent_e2e
+      TEXT2SQL_DATABASE_URL: ${TEXT2SQL_E2E_DATABASE_URL:?TEXT2SQL_E2E_DATABASE_URL is required}
+      EVALUATION_DB_USER: kosa_evaluation
+      EVALUATION_DB_PASSWORD: ${EVALUATION_DB_PASSWORD:?EVALUATION_DB_PASSWORD is required}
+      GITHUB_SHA: ${SOURCE_REVISION:?SOURCE_REVISION is required}
+      HOME: /tmp
+    volumes:
+      - type: bind
+        source: ${AGENT_EVAL_REPORTS_DIR:?AGENT_EVAL_REPORTS_DIR is required}
+        target: /reports
         read_only: false

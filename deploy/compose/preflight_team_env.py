@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +50,15 @@ EXPECTED_KEYS = frozenset(
         "KAFKA_BROKER_PASSWORD",
         "KAFKA_CLIENT_USER",
         "KAFKA_CLIENT_PASSWORD",
+        "AGENT_EVAL_REPORTS_DIR",
+        "AGENT_FAULT_EVAL_ARTIFACT_PATH",
+        "AGENT_GOLDEN_FLOW_SUMMARY_PATH",
+        "SOURCE_REVISION",
+        "TEXT2SQL_DATABASE_URL",
+        "TEXT2SQL_EVAL_DATABASE_URL",
+        "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+        "TEXT2SQL_E2E_DATABASE_URL",
+        "EVALUATION_DB_PASSWORD",
     }
 )
 
@@ -60,6 +71,11 @@ SECRET_KEYS = frozenset(
         "LLM_API_KEY",
         "KAFKA_BROKER_PASSWORD",
         "KAFKA_CLIENT_PASSWORD",
+        "TEXT2SQL_DATABASE_URL",
+        "TEXT2SQL_EVAL_DATABASE_URL",
+        "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+        "TEXT2SQL_E2E_DATABASE_URL",
+        "EVALUATION_DB_PASSWORD",
     }
 )
 
@@ -86,8 +102,11 @@ PLACEHOLDER_FRAGMENTS = (
     "your_",
 )
 KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
-IMAGE_TAG_PATTERN = re.compile(r"^v5-[0-9a-f]{7,40}$")
 REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+ARTIFACT_PATH_PATTERN = re.compile(
+    r"^/reports/cm-5\.2/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}/"
+    r"(?:fault-5class|golden-flow)\.json$"
+)
 KAFKA_USER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,31}$")
 KAFKA_PASSWORD_PATTERN = re.compile(r"^[A-Za-z0-9!#%+,./:=@?_-]{16,128}$")
 
@@ -158,6 +177,52 @@ def _validate_url(key: str, value: str) -> list[Finding]:
     return _validate_external_host(key, parsed.hostname)
 
 
+def _validate_dsn(
+    key: str,
+    value: str,
+    *,
+    username: str,
+    database: str,
+    expected_host: str,
+    expected_port: int,
+) -> list[Finding]:
+    """역할별 PostgreSQL DSN을 값 노출 없이 검증한다."""
+
+    try:
+        parsed = urlsplit(value)
+        parsed_port = parsed.port
+    except ValueError:
+        return [Finding(key, "INVALID_DSN")]
+    findings: list[Finding] = []
+    if parsed.scheme != "postgresql+psycopg":
+        findings.append(Finding(key, "INVALID_DSN_SCHEME"))
+    if parsed.username != username:
+        findings.append(Finding(key, "UNEXPECTED_DSN_ROLE"))
+    if not parsed.password:
+        findings.append(Finding(key, "DSN_PASSWORD_MISSING"))
+    if parsed.hostname != expected_host or parsed_port != expected_port:
+        findings.append(Finding(key, "DSN_TARGET_MISMATCH"))
+    findings.extend(_validate_external_host(key, parsed.hostname))
+    if parsed.path != f"/{database}":
+        findings.append(Finding(key, "UNEXPECTED_DSN_DATABASE"))
+    if parsed.fragment:
+        findings.append(Finding(key, "DSN_FRAGMENT_FORBIDDEN"))
+    return findings
+
+
+def _secure_directory(path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(metadata.st_mode)
+        and not path.is_symlink()
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o700
+    )
+
+
 def _validate_origin_list(value: str) -> tuple[list[str], list[Finding]]:
     findings: list[Finding] = []
     origins = [part.strip() for part in value.split(",")]
@@ -203,8 +268,11 @@ def validate(values: dict[str, str]) -> list[Finding]:
         if _is_placeholder(values[key]):
             findings.append(Finding(key, "SECRET_REQUIRED"))
 
-    if not IMAGE_TAG_PATTERN.fullmatch(values["TEAM_IMAGE_TAG"]):
-        findings.append(Finding("TEAM_IMAGE_TAG", "INVALID_FIXED_TAG"))
+    revision = values["SOURCE_REVISION"]
+    if not REVISION_PATTERN.fullmatch(revision):
+        findings.append(Finding("SOURCE_REVISION", "INVALID_REVISION"))
+    if values["TEAM_IMAGE_TAG"] != f"v5-{revision[:12]}":
+        findings.append(Finding("TEAM_IMAGE_TAG", "IMAGE_TAG_REVISION_MISMATCH"))
     if values["POSTGRES_DB"] != "kosa_agent":
         findings.append(Finding("POSTGRES_DB", "UNEXPECTED_DATABASE"))
     if values["APP_DB_USER"] != "kosa_app":
@@ -217,6 +285,28 @@ def validate(values: dict[str, str]) -> list[Finding]:
         postgres_port = 0
     if not 1 <= postgres_port <= 65535:
         findings.append(Finding("POSTGRES_PORT", "INVALID_PORT"))
+
+    if postgres_port:
+        for key, username, database in (
+            ("TEXT2SQL_DATABASE_URL", "kosa_readonly", "kosa_agent"),
+            ("TEXT2SQL_EVAL_DATABASE_URL", "kosa_readonly", "kosa_text2sql"),
+            (
+                "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+                "kosa_query_logger",
+                "kosa_text2sql",
+            ),
+            ("TEXT2SQL_E2E_DATABASE_URL", "kosa_readonly", "kosa_agent_e2e"),
+        ):
+            findings.extend(
+                _validate_dsn(
+                    key,
+                    values[key],
+                    username=username,
+                    database=database,
+                    expected_host=values["POSTGRES_HOST"],
+                    expected_port=postgres_port,
+                )
+            )
 
     try:
         webhook_timeout = int(values["N8N_WEBHOOK_TIMEOUT_SEC"])
@@ -295,6 +385,19 @@ def validate(values: dict[str, str]) -> list[Finding]:
         findings.append(Finding("RAG_MODEL_CACHE_DIR", "ABSOLUTE_PATH_REQUIRED"))
     elif not cache_dir.is_dir():
         findings.append(Finding("RAG_MODEL_CACHE_DIR", "DIRECTORY_NOT_FOUND"))
+
+    reports_dir = Path(values["AGENT_EVAL_REPORTS_DIR"])
+    if not reports_dir.is_absolute() or not _secure_directory(reports_dir):
+        findings.append(Finding("AGENT_EVAL_REPORTS_DIR", "REPORTS_DIR_INVALID"))
+    elif not _secure_directory(reports_dir / "cm-5.2"):
+        findings.append(Finding("AGENT_EVAL_REPORTS_DIR", "REPORTS_DIR_INVALID"))
+    for key in (
+        "AGENT_FAULT_EVAL_ARTIFACT_PATH",
+        "AGENT_GOLDEN_FLOW_SUMMARY_PATH",
+    ):
+        path_value = values[key]
+        if path_value and not ARTIFACT_PATH_PATTERN.fullmatch(path_value):
+            findings.append(Finding(key, "INVALID_ARTIFACT_PATH"))
 
     kafka_host = values["KAFKA_ADVERTISED_HOST"].strip()
     if ":" in kafka_host or "/" in kafka_host:

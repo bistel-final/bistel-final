@@ -1,8 +1,13 @@
 FROM python:3.12.8-slim
 
+ARG SOURCE_REVISION
+RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/workspace/backend
+ENV BISTEL_SOURCE_REVISION=$SOURCE_REVISION
 
 WORKDIR /workspace/backend
 
