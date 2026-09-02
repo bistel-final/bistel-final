@@ -1,11 +1,9 @@
 # API 명세서 생성
 
-> [!CAUTION]
-> **FINAL-DOC — 구 PDF·생성기 사용 중지.** 기존 `API명세서.md`·`.csv`·`.pdf`와
-> `build_api_spec.py`는 최종 `project.zip` 이전 산출물이다. 현재 계약 기준은
-> `API명세서_v3_작업본.md`·`.csv`이며 교차검토를 완료했다. 구현은 V5 Task 기준으로 진행하며,
-> Backend DTO·생성기가 함께 갱신되기 전에는 구 PDF를 제출·구현 근거로 사용하거나 기존
-> 생성기를 실행하지 않는다.
+> [!IMPORTANT]
+> **FINAL-DOC — v3 단일 정본.** machine canonical은 `api_spec_v3.json`이다.
+> `build_api_spec.py`는 이 정본만 읽어 `API명세서.md`·`.csv`·`.pdf`를 재생성하며,
+> `API명세서_v3_작업본.csv`는 sync gate용 요약 inventory다. 생성 결과를 직접 수정하지 않는다.
 
 API v3의 기능 범위와 정책은 요구사항정의서 v2.1과 시스템설계서 v2.1을 따른다.
 
@@ -37,8 +35,28 @@ epoch·schema·role, reference migration marker, Neo4j 44/85 marker, RAG 필수 
 non-null·1024차원·검색 smoke, n8n, Kafka metadata·필수 topic을 의존성별로 검증하고 필수 항목
 실패 시 503을 반환한다. RAG 계약에는 corpus revision·`ACTIVE` 전환·overlay를 추가하지 않는다.
 
-현재 `build_api_spec.py`는 이전 epoch 재현용이다. v3 대응 생성 Task에서 출력 파일명·schema를
-명시적으로 분리하기 전에는 실행 명령을 제공하지 않는다.
+## V5-CM-5.1 최종 재확정 (2026-09-02)
+
+- 검증 기준 revision: `be6cd9e4ab22b6218c6f5ce51dc84bd2311f32ea`
+- canonical SHA-256: `73b4ffdb4d3e184f7e7b68176fc7e02d6bc735c55000ae42dbdf17cdd2947ab9`
+- document inventory: **36 / 36**
+- release gate: **20 / 20 PASS**
+- classified live gate: **30 / 30 PASS**
+- 전체 결과: **PASS** (`DRIFT 0`, `MISSING 0`, 미분류 live 0, 미문서 live 0)
+
+재확정과 산출물 동기화는 아래 명령으로 재현한다.
+
+```bash
+cd backend
+../.venv/bin/python scripts/api_sync_gate.py
+../.venv/bin/python -m pytest tests/unit/test_api_spec_v3.py tests/contract/test_api_sync_gate.py -q
+
+cd ../docs/deliverables/api
+../../../.venv/bin/python build_api_spec.py --check
+```
+
+`build_api_spec.py`는 현재 v3 정본과 같은 epoch의 생성기다. 정본을 변경했을 때는 먼저 생성기를
+실행해 Markdown·CSV·PDF를 함께 갱신하고, 위 `--check`로 stale 산출물이 없는지 확인한다.
 
 생성기는 macOS의 AppleGothic, Windows의 맑은 고딕, Linux의 NanumGothic 순서로 한글 글꼴을 찾는다. 다른 글꼴을 사용하려면 `API_SPEC_FONT`에 TTF 파일 경로를 지정한다.
 

@@ -94,7 +94,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
 endobj
 6 0 obj
-<< /Length 7906 >>
+<< /Length 7926 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
 (s": {"additional_properties": false, "fields": {"LCL": {"nullable": true, "required": false, "schema": {") Tj T*
@@ -113,25 +113,26 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (equired": true, "schema": {"type": "boolean"}}}, "type": "object"}, "type": "array"}, "shape": "array"}}}) Tj T*
 (04 POST /documents/search) Tj T*
 (RULES []) Tj T*
-({"request": {"body": {"additional_properties": false, "fields": {"model_code": {"nullable": true, "requir) Tj T*
-(ed": false, "schema": {"min_length": 1, "type": "string"}}, "query": {"nullable": false, "required": true) Tj T*
-(, "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}, "top_k": {"nullable": false, "requi) Tj T*
-(red": false, "schema": {"default": 4, "maximum": 10.0, "minimum": 1.0, "type": "integer"}}}, "type": "obj) Tj T*
-(ect"}, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"items": {"additional_pro) Tj T*
-(perties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {"min_length": 1,) Tj T*
-( "type": "string"}}, "content": {"nullable": false, "required": true, "schema": {"min_length": 1, "type":) Tj T*
-( "string"}}, "doc_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string") Tj T*
-(}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ) Tj T*
-("model_code": {"nullable": true, "required": false, "schema": {"min_length": 1, "type": "string"}}, "scor) Tj T*
-(e": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": -1.0, "type": "number"}},) Tj T*
-( "section": {"nullable": true, "required": false, "schema": {"type": "string"}}, "title": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}, "type": "array) Tj T*
-("}, "shape": "array"}, "422": {"schema": {"additional_properties": true, "fields": {"detail": {"nullable") Tj T*
-(: false, "required": false, "schema": {"items": {"additional_properties": true, "fields": {"loc": {"nulla) Tj T*
-(ble": false, "required": true, "schema": {"items": {"type": "union", "variants": [{"type": "string"}, {"t) Tj T*
-(ype": "integer"}]}, "type": "array"}}, "msg": {"nullable": false, "required": true, "schema": {"type": "s) Tj T*
-(tring"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}) Tj T*
-(, "type": "array"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
+({"request": {"body": {"additional_properties": false, "fields": {"doc_type": {"nullable": true, "required) Tj T*
+(": false, "schema": {"enum": ["MANUAL", "SPEC", "TROUBLESHOOT"], "type": "string"}}, "model_code": {"null) Tj T*
+(able": true, "required": false, "schema": {"min_length": 1, "type": "string"}}, "query": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}, "top_k": {"null) Tj T*
+(able": false, "required": false, "schema": {"default": 4, "maximum": 10.0, "minimum": 1.0, "type": "integ) Tj T*
+(er"}}}, "type": "object"}, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"item) Tj T*
+(s": {"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema) Tj T*
+(": {"min_length": 1, "type": "string"}}, "content": {"nullable": false, "required": true, "schema": {"min) Tj T*
+(_length": 1, "type": "string"}}, "doc_id": {"nullable": false, "required": true, "schema": {"min_length":) Tj T*
+( 1, "type": "string"}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, ) Tj T*
+("type": "string"}}, "model_code": {"nullable": true, "required": false, "schema": {"min_length": 1, "type) Tj T*
+(": "string"}}, "score": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": -1.0,) Tj T*
+( "type": "number"}}, "section": {"nullable": true, "required": false, "schema": {"type": "string"}}, "tit) Tj T*
+(le": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "obje) Tj T*
+(ct"}, "type": "array"}, "shape": "array"}, "422": {"schema": {"additional_properties": true, "fields": {") Tj T*
+(detail": {"nullable": false, "required": false, "schema": {"items": {"additional_properties": true, "fiel) Tj T*
+(ds": {"loc": {"nullable": false, "required": true, "schema": {"items": {"type": "union", "variants": [{"t) Tj T*
+(ype": "string"}, {"type": "integer"}]}, "type": "array"}}, "msg": {"nullable": false, "required": true, ") Tj T*
+(schema": {"type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}) Tj T*
+(}, "type": "object"}, "type": "array"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (05 GET /relations/chambers/{chamber_id}) Tj T*
 (RULES ["node_count equals len\(nodes\)", "relationship_count equals len\(relationships\)"]) Tj T*
 ({"request": {"body": null, "header": {}, "path": {"chamber_id": {"nullable": false, "required": true, "sc) Tj T*
@@ -170,7 +171,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("nullable": false, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}, ) Tj T*
 ("approval_id": {"nullable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "cham) Tj T*
 (ber": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "chamber_id":) Tj T*
-( {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "confidence": {"nu) Tj T*
 ET
 endstream
 endobj
@@ -181,6 +181,7 @@ endobj
 << /Length 8370 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+( {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "confidence": {"nu) Tj T*
 (llable": true, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "created_) Tj T*
 (at": {"nullable": false, "required": true, "schema": {"format": "date-time", "type": "string"}}, "deliver) Tj T*
 (ies": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields") Tj T*
@@ -254,7 +255,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string) Tj T*
 ("}}}, "type": "object"}}}, "type": "array"}}, "limit": {"nullable": false, "required": true, "schema": {") Tj T*
 (type": "string"}}, "limitations": {"nullable": false, "required": true, "schema": {"items": {"type": "str) Tj T*
-(ing"}, "type": "array"}}, "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum":) Tj T*
 ET
 endstream
 endobj
@@ -265,6 +265,7 @@ endobj
 << /Length 8082 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(ing"}, "type": "array"}}, "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum":) Tj T*
 ( ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "recommended_action": {"nullable": true, "requi) Tj T*
 (red": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "title": {"null) Tj T*
 (able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "tools": {"nullable": fal) Tj T*
@@ -338,7 +339,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nulla) Tj T*
 (ble": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "created_at": {"nullable":) Tj T*
 ( false, "required": true, "schema": {"format": "date-time", "type": "string"}}, "decided_at": {"nullable") Tj T*
-(: true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "decided_by": {"nullable") Tj T*
 ET
 endstream
 endobj
@@ -349,6 +349,7 @@ endobj
 << /Length 7713 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(: true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "decided_by": {"nullable") Tj T*
 (: true, "required": true, "schema": {"type": "string"}}, "decision_comment": {"nullable": true, "required) Tj T*
 (": true, "schema": {"type": "string"}}, "equipment": {"nullable": false, "required": true, "schema": {"mi) Tj T*
 (n_length": 1, "type": "string"}}, "equipment_id": {"nullable": false, "required": true, "schema": {"min_l) Tj T*
@@ -422,7 +423,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (se, "fields": {"area_id": {"nullable": false, "required": true, "schema": {"enum": ["Etch", "Photo"], "ty) Tj T*
 (pe": "string"}}, "chambers": {"nullable": false, "required": true, "schema": {"items": {"min_length": 1, ) Tj T*
 ("type": "string"}, "type": "array"}}, "equipment_id": {"nullable": false, "required": true, "schema": {"m) Tj T*
-(in_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "ooc_count": {"nullable": false) Tj T*
 ET
 endstream
 endobj
@@ -433,6 +433,7 @@ endobj
 << /Length 8211 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(in_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "ooc_count": {"nullable": false) Tj T*
 (, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "oos_count": {"nullable": false, "req) Tj T*
 (uired": true, "schema": {"minimum": 0.0, "type": "integer"}}, "pending_approvals": {"nullable": false, "r) Tj T*
 (equired": true, "schema": {"items": {"additional_properties": false, "fields": {"action_code": {"nullable) Tj T*
@@ -506,7 +507,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (llable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": ) Tj T*
 (false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}}, "judgement") Tj T*
 (: {"nullable": false, "required": true, "schema": {"enum": ["OOC", "OOS"], "type": "string"}}, "latest_ag) Tj T*
-(ent_run_id": {"nullable": true, "required": false, "schema": {"min_length": 1, "type": "string"}}, "lot_h) Tj T*
 ET
 endstream
 endobj
@@ -517,6 +517,7 @@ endobj
 << /Length 8016 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(ent_run_id": {"nullable": true, "required": false, "schema": {"min_length": 1, "type": "string"}}, "lot_h) Tj T*
 (ist_id": {"nullable": true, "required": false, "schema": {"min_length": 1, "type": "string"}}, "lot_id": ) Tj T*
 ({"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "occurred_at": {"nu) Tj T*
 (llable": false, "required": true, "schema": {"format": "date-time", "type": "string"}}, "recipe_step_name) Tj T*
@@ -590,7 +591,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (": "array"}}, "equipment_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": ") Tj T*
 (string"}}}, "type": "object"}, "type": "array"}}, "lots": {"nullable": false, "required": true, "schema":) Tj T*
 ( {"items": {"additional_properties": false, "fields": {"lot_id": {"nullable": false, "required": true, "s) Tj T*
-(chema": {"min_length": 1, "type": "string"}}, "wafer_nos": {"nullable": false, "required": true, "schema") Tj T*
 ET
 endstream
 endobj
@@ -601,6 +601,7 @@ endobj
 << /Length 7738 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(chema": {"min_length": 1, "type": "string"}}, "wafer_nos": {"nullable": false, "required": true, "schema") Tj T*
 (: {"items": {"type": "integer"}, "type": "array"}}}, "type": "object"}, "type": "array"}}, "recipes": {"n) Tj T*
 (ullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"area_) Tj T*
 (id": {"nullable": false, "required": true, "schema": {"enum": ["Etch", "Photo"], "type": "string"}}, "rec) Tj T*
@@ -674,7 +675,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (eger"}}, "content": {"nullable": false, "required": true, "schema": {"type": "string"}}, "section_title":) Tj T*
 ( {"nullable": true, "required": false, "schema": {"type": "string"}}}, "type": "object"}, "type": "array") Tj T*
 (}}, "doc_type": {"nullable": true, "required": false, "schema": {"enum": ["MANUAL", "SPEC", "TROUBLESHOOT) Tj T*
-("], "type": "string"}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, ) Tj T*
 ET
 endstream
 endobj
@@ -685,6 +685,7 @@ endobj
 << /Length 7999 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+("], "type": "string"}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, ) Tj T*
 ("type": "string"}}, "model_code": {"nullable": true, "required": false, "schema": {"min_length": 1, "type) Tj T*
 (": "string"}}, "source_path": {"nullable": true, "required": false, "schema": {"type": "string"}}, "title) Tj T*
 (": {"nullable": false, "required": true, "schema": {"type": "string"}}, "version": {"nullable": true, "re) Tj T*
@@ -758,7 +759,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ype": "string"}}}, "type": "object"}, "type": "array"}}, "cause_summary": {"nullable": true, "required": ) Tj T*
 (false, "schema": {"max_length": 2000, "type": "string"}}, "confidence": {"nullable": true, "required": fa) Tj T*
 (lse, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "diagnostic_coverage": {"nullable": t) Tj T*
-(rue, "required": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "required) Tj T*
 ET
 endstream
 endobj
@@ -769,6 +769,7 @@ endobj
 << /Length 8496 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(rue, "required": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "required) Tj T*
 (": false, "schema": {"max_length": 2000, "type": "string"}}, "limitations": {"nullable": false, "required) Tj T*
 (": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "observations": {"nullable": false, ") Tj T*
 (required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "predicted_fault_code": {"nul) Tj T*
@@ -842,7 +843,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("NOT_AVAILABLE_STATIC_DATASET", "type": "string"}}}, "type": "object"}}, "predicted_fault_code": {"nullab) Tj T*
 (le": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, ) Tj T*
 ("prediction": {"nullable": true, "required": true, "schema": {"additional_properties": false, "fields": {) Tj T*
-("cause_summary": {"nullable": false, "required": true, "schema": {"max_length": 2000, "min_length": 1, "t) Tj T*
 ET
 endstream
 endobj
@@ -853,6 +853,7 @@ endobj
 << /Length 8261 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+("cause_summary": {"nullable": false, "required": true, "schema": {"max_length": 2000, "min_length": 1, "t) Tj T*
 (ype": "string"}}, "confidence": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum) Tj T*
 (": 0.0, "type": "number"}}, "generated_at": {"nullable": false, "required": true, "schema": {"format": "d) Tj T*
 (ate-time", "type": "string"}}, "input_tokens": {"nullable": false, "required": true, "schema": {"minimum") Tj T*
@@ -926,7 +927,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (, "minimum": 0.0, "type": "number"}}}, "type": "object"}}, "by_class": {"nullable": false, "required": tr) Tj T*
 (ue, "schema": {"additional_properties": {"additional_properties": false, "fields": {"f1": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "false_negative": {) Tj T*
-("nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "false_positive": {") Tj T*
 ET
 endstream
 endobj
@@ -937,6 +937,7 @@ endobj
 << /Length 7453 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+("nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "false_positive": {") Tj T*
 (nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "precision": {"nullab) Tj T*
 (le": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "recall": {") Tj T*
 (nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "suppo) Tj T*
@@ -1010,7 +1011,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id) Tj T*
 (": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "approval_status) Tj T*
 (": {"nullable": true, "required": true, "schema": {"enum": ["APPROVED", "PENDING", "REJECTED"], "type": ") Tj T*
-(string"}}, "chamber": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
 ET
 endstream
 endobj
@@ -1018,9 +1018,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 26 0 R >>
 endobj
 28 0 obj
-<< /Length 7874 >>
+<< /Length 7933 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(string"}}, "chamber": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
 (}, "chamber_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "c) Tj T*
 (reated_at": {"nullable": false, "required": true, "schema": {"format": "date-time", "type": "string"}}, ") Tj T*
 (created_by_agent_run_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "stri) Tj T*
@@ -1094,7 +1095,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (27 POST /actions/{action_id}/deliveries/{channel}/retry) Tj T*
 (RULES []) Tj T*
 (deferred inventory) Tj T*
-(28 POST /internal/actions/{action_id}/delivery) Tj T*
 ET
 endstream
 endobj
@@ -1102,9 +1102,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 28 0 R >>
 endobj
 30 0 obj
-<< /Length 7871 >>
+<< /Length 7812 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(28 POST /internal/actions/{action_id}/delivery) Tj T*
 (RULES ["FAILED requires error_code non-null and permits provider_message_id null", "SENT requires provide) Tj T*
 (r_message_id non-null and error_code null"]) Tj T*
 ({"request": {"body": {"additional_properties": false, "fields": {"channel": {"nullable": false, "required) Tj T*
@@ -1178,7 +1179,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (RULES []) Tj T*
 ({"request": {"body": {"additional_properties": false, "fields": {"question": {"nullable": false, "require) Tj T*
 (d": true, "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}}, "type": "object"}, "header) Tj T*
-(": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"additional_properties": false, "fields) Tj T*
 ET
 endstream
 endobj
@@ -1189,6 +1189,7 @@ endobj
 << /Length 7744 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"additional_properties": false, "fields) Tj T*
 (": {"columns": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "arr) Tj T*
 (ay"}}, "error_msg": {"nullable": true, "required": false, "schema": {"type": "string"}}, "generated_cyphe) Tj T*
 (r": {"nullable": true, "required": false, "schema": {"type": "string"}}, "is_rejected": {"nullable": fals) Tj T*
@@ -1262,7 +1263,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (: {"items": {"additional_properties": false, "fields": {"accuracy": {"nullable": false, "required": true,) Tj T*
 ( "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "correct": {"nullable": false, "required") Tj T*
 (: true, "schema": {"minimum": 0.0, "type": "integer"}}, "defense_passed": {"nullable": false, "required":) Tj T*
-( true, "schema": {"minimum": 0.0, "type": "integer"}}, "defense_total": {"nullable": false, "required": t) Tj T*
 ET
 endstream
 endobj
@@ -1270,9 +1270,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 32 0 R >>
 endobj
 34 0 obj
-<< /Length 7980 >>
+<< /Length 8033 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+( true, "schema": {"minimum": 0.0, "type": "integer"}}, "defense_total": {"nullable": false, "required": t) Tj T*
 (rue, "schema": {"minimum": 0.0, "type": "integer"}}, "executed_at": {"nullable": false, "required": true,) Tj T*
 ( "schema": {"format": "date-time", "type": "string"}}, "items": {"nullable": false, "required": true, "sc) Tj T*
 (hema": {"items": {"additional_properties": false, "fields": {"actual_result": {"nullable": true, "require) Tj T*
@@ -1346,7 +1347,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (RULES []) Tj T*
 ({"request": {"body": null, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"addi) Tj T*
 (tional_properties": false, "fields": {"status": {"nullable": false, "required": true, "schema": {"type": ) Tj T*
-("string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 ET
 endstream
 endobj
@@ -1354,9 +1354,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 34 0 R >>
 endobj
 36 0 obj
-<< /Length 8255 >>
+<< /Length 8230 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+("string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (36 GET /health/ready) Tj T*
 (RULES ["all checks PASS yields status READY and HTTP 200", "any check FAIL yields status NOT_READY and HT) Tj T*
 (TP 503"]) Tj T*
@@ -1430,7 +1431,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ing"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "str) Tj T*
 (ing"}}}, "type": "object"}}}, "type": "object"}}, "dataset_epoch": {"nullable": false, "required": true, ) Tj T*
 ("schema": {"type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["NOT_R) Tj T*
-(EADY", "READY"], "type": "string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 ET
 endstream
 endobj
@@ -1438,9 +1438,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 36 0 R >>
 endobj
 38 0 obj
-<< /Length 7260 >>
+<< /Length 7232 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(EADY", "READY"], "type": "string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (DTO COMPONENTS) Tj T*
 (ActionCode) Tj T*
 ({"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}) Tj T*
@@ -1514,7 +1515,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (: "string"}}, "doc_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string) Tj T*
 ("}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}},) Tj T*
 ( "section": {"nullable": true, "required": true, "schema": {"type": "string"}}}, "type": "object"}}, "evi) Tj T*
-(dence_items": {"nullable": false, "required": true, "schema": {"items": {"discriminator": "type", "type":) Tj T*
 ET
 endstream
 endobj
@@ -1525,6 +1525,7 @@ endobj
 << /Length 8338 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(dence_items": {"nullable": false, "required": true, "schema": {"items": {"discriminator": "type", "type":) Tj T*
 ( "discriminated_union", "variants": {"ALARM": {"additional_properties": false, "fields": {"excerpt": {"nu) Tj T*
 (llable": false, "required": true, "schema": {"type": "string"}}, "source_id": {"nullable": false, "requir) Tj T*
 (ed": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true,) Tj T*
@@ -1598,7 +1599,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ullable": false, "required": true, "schema": {"type": "boolean"}}, "hard_gate_reasons": {"nullable": fals) Tj T*
 (e, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "label_source": {"nullabl) Tj T*
 (e": false, "required": true, "schema": {"type": "string"}}, "metrology_observed_count": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "metrology_total_lot_hist_count": {") Tj T*
 ET
 endstream
 endobj
@@ -1609,6 +1609,7 @@ endobj
 << /Length 7920 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(e, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "metrology_total_lot_hist_count": {") Tj T*
 (nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "production_ground_tr) Tj T*
 (uth_available": {"nullable": false, "required": true, "schema": {"type": "boolean"}}, "production_perform) Tj T*
 (ance_disclaimer": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ") Tj T*
@@ -1682,7 +1683,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"chann) Tj T*
 (el": {"nullable": false, "required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "comp) Tj T*
 (leted_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "st) Tj T*
-(arted_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "st) Tj T*
 ET
 endstream
 endobj
@@ -1693,6 +1693,7 @@ endobj
 << /Length 7951 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(arted_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "st) Tj T*
 (atus": {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDIN) Tj T*
 (G", "SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "reason": {) Tj T*
 ("nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
@@ -1766,7 +1767,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_) Tj T*
 (]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE") Tj T*
 (, "EMPTY"], "type": "string"}}, "verification_steps": {"nullable": false, "required": true, "schema": {"i) Tj T*
-(tems": {"type": "string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {"nullable": fa) Tj T*
 ET
 endstream
 endobj
@@ -1777,6 +1777,7 @@ endobj
 << /Length 8496 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(tems": {"type": "string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"additional_properties": false, "fields": {"available_sources": {"nulla) Tj T*
 (ble": false, "required": true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "t) Tj T*
 (ype": "string"}, "type": "array"}}, "conflicting_source_ids": {"nullable": false, "required": true, "sche) Tj T*
@@ -1850,7 +1851,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( {"min_length": 1, "type": "string"}}, "output_tokens": {"nullable": false, "required": true, "schema": {) Tj T*
 ("minimum": 0.0, "type": "integer"}}, "predicted_fault_code": {"nullable": false, "required": true, "schem) Tj T*
 (a": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prompt_version": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "supporting_alarms": {"nullable": fa) Tj T*
 ET
 endstream
 endobj
@@ -1858,9 +1858,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 46 0 R >>
 endobj
 48 0 obj
-<< /Length 7828 >>
+<< /Length 7924 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "supporting_alarms": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"alarm_id": {"null) Tj T*
 (able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "obje) Tj T*
@@ -1934,7 +1935,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
 (}, "type": {"nullable": false, "required": true, "schema": {"enum": ["ALARM"], "type": "string"}}}, "type) Tj T*
 (": "object"}) Tj T*
-(AlarmItem) Tj T*
 ET
 endstream
 endobj
@@ -1942,9 +1942,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 48 0 R >>
 endobj
 50 0 obj
-<< /Length 7884 >>
+<< /Length 7788 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(AlarmItem) Tj T*
 ({"additional_properties": false, "fields": {"action_code": {"nullable": true, "required": true, "schema":) Tj T*
 ( {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "alarm_id": {"nullable": false, "req) Tj T*
 (uired": true, "schema": {"min_length": 1, "type": "string"}}, "alarm_type": {"nullable": false, "required) Tj T*
@@ -2018,7 +2019,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "schema": {"items": {"additional_properties": true, "fields": {}, "type": "object"}, "type": "array"}}, ) Tj T*
 ("visualization": {"nullable": true, "required": false, "schema": {"additional_properties": false, "fields) Tj T*
 (": {"chart_type": {"nullable": false, "required": true, "schema": {"enum": ["bar", "histogram", "line", ") Tj T*
-(table"], "type": "string"}}, "x": {"nullable": true, "required": false, "schema": {"type": "string"}}, "y) Tj T*
 ET
 endstream
 endobj
@@ -2029,6 +2029,7 @@ endobj
 << /Length 7608 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(table"], "type": "string"}}, "x": {"nullable": true, "required": false, "schema": {"type": "string"}}, "y) Tj T*
 (": {"nullable": true, "required": false, "schema": {"type": "string"}}}, "type": "object"}}}, "type": "ob) Tj T*
 (ject"}) Tj T*
 (ApprovalDecisionRequest) Tj T*
@@ -2102,7 +2103,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (elds": {}, "type": "object"}}, "detail": {"nullable": true, "required": true, "schema": {"type": "string") Tj T*
 (}}, "entity": {"nullable": false, "required": true, "schema": {"type": "string"}}, "entity_id": {"nullabl) Tj T*
 (e": false, "required": true, "schema": {"type": "string"}}, "entity_type": {"nullable": false, "required") Tj T*
-(: true, "schema": {"type": "string"}}, "event": {"nullable": false, "required": true, "schema": {"type": ) Tj T*
 ET
 endstream
 endobj
@@ -2113,6 +2113,7 @@ endobj
 << /Length 7438 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(: true, "schema": {"type": "string"}}, "event": {"nullable": false, "required": true, "schema": {"type": ) Tj T*
 ("string"}}, "event_type": {"nullable": false, "required": true, "schema": {"type": "string"}}, "occurred_) Tj T*
 (at": {"nullable": false, "required": true, "schema": {"format": "date-time", "type": "string"}}}, "type":) Tj T*
 ( "object"}, "type": "array"}}, "page": {"nullable": false, "required": true, "schema": {"type": "integer") Tj T*
@@ -2186,7 +2187,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (DeliveryCallbackRequest) Tj T*
 ({"additional_properties": false, "fields": {"channel": {"nullable": false, "required": true, "schema": {") Tj T*
 (enum": ["EMAIL", "MES_MOCK"], "type": "string"}}, "completed_at": {"nullable": false, "required": true, ") Tj T*
-(schema": {"format": "date-time", "type": "string"}}, "error_code": {"nullable": true, "required": true, ") Tj T*
 ET
 endstream
 endobj
@@ -2194,9 +2194,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 54 0 R >>
 endobj
 56 0 obj
-<< /Length 7328 >>
+<< /Length 7350 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(schema": {"format": "date-time", "type": "string"}}, "error_code": {"nullable": true, "required": true, ") Tj T*
 (schema": {"min_length": 1, "type": "string"}}, "event_id": {"nullable": false, "required": true, "schema") Tj T*
 (: {"min_length": 1, "type": "string"}}, "provider_message_id": {"nullable": true, "required": true, "sche) Tj T*
 (ma": {"min_length": 1, "type": "string"}}, "request_hash": {"nullable": false, "required": true, "schema") Tj T*
@@ -2270,7 +2271,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ing"}}, "section": {"nullable": true, "required": true, "schema": {"type": "string"}}, "source_id": {"nul) Tj T*
 (lable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "requi) Tj T*
-(red": true, "schema": {"enum": ["DOCUMENT"], "type": "string"}}}, "type": "object"}) Tj T*
 ET
 endstream
 endobj
@@ -2278,9 +2278,10 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 56 0 R >>
 endobj
 58 0 obj
-<< /Length 7285 >>
+<< /Length 7283 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(red": true, "schema": {"enum": ["DOCUMENT"], "type": "string"}}}, "type": "object"}) Tj T*
 (DocumentHit) Tj T*
 ({"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {) Tj T*
 ("pattern": "^.+:cs2:[0-9]{4}$", "type": "string"}}, "content": {"nullable": false, "required": true, "sch) Tj T*
@@ -2292,10 +2293,11 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": ) Tj T*
 ("object"}) Tj T*
 (DocumentSearchRequest) Tj T*
-({"additional_properties": false, "fields": {"model_code": {"nullable": true, "required": false, "schema":) Tj T*
-( {"min_length": 1, "type": "string"}}, "query": {"nullable": false, "required": true, "schema": {"max_len) Tj T*
-(gth": 1000, "min_length": 1, "type": "string"}}, "top_k": {"nullable": false, "required": false, "schema") Tj T*
-(: {"default": 4, "maximum": 10, "minimum": 1, "type": "integer"}}}, "type": "object"}) Tj T*
+({"additional_properties": false, "fields": {"doc_type": {"nullable": true, "required": false, "schema": {) Tj T*
+("enum": ["MANUAL", "SPEC", "TROUBLESHOOT"], "type": "string"}}, "model_code": {"nullable": true, "require) Tj T*
+(d": false, "schema": {"min_length": 1, "type": "string"}}, "query": {"nullable": false, "required": true,) Tj T*
+( "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}, "top_k": {"nullable": false, "requir) Tj T*
+(ed": false, "schema": {"default": 4, "maximum": 10, "minimum": 1, "type": "integer"}}}, "type": "object"}) Tj T*
 (DocumentType) Tj T*
 ({"enum": ["MANUAL", "SPEC", "TROUBLESHOOT"], "type": "string"}) Tj T*
 (ErrorCode) Tj T*
@@ -2353,8 +2355,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (llable": false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY", "PARTIAL", "SUFFICIENT"], "typ) Tj T*
 (e": "string"}}}, "type": "object"}) Tj T*
 (EvidenceItem) Tj T*
-({"discriminator": "type", "type": "discriminated_union", "variants": {"ALARM": {"additional_properties": ) Tj T*
-(false, "fields": {"excerpt": {"nullable": false, "required": true, "schema": {"type": "string"}}, "source) Tj T*
 ET
 endstream
 endobj
@@ -2365,6 +2365,8 @@ endobj
 << /Length 7402 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+({"discriminator": "type", "type": "discriminated_union", "variants": {"ALARM": {"additional_properties": ) Tj T*
+(false, "fields": {"excerpt": {"nullable": false, "required": true, "schema": {"type": "string"}}, "source) Tj T*
 (_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nu) Tj T*
 (llable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": fa) Tj T*
 (lse, "required": true, "schema": {"enum": ["ALARM"], "type": "string"}}}, "type": "object"}, "DOCUMENT": ) Tj T*
@@ -2437,8 +2439,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ing"}}, "is_rejected": {"nullable": false, "required": true, "schema": {"type": "boolean"}}, "is_valid": ) Tj T*
 ({"nullable": false, "required": true, "schema": {"type": "boolean"}}, "latency_ms": {"nullable": false, ") Tj T*
 (required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "question": {"nullable": false, "require) Tj T*
-(d": true, "schema": {"type": "string"}}, "reject_reason": {"nullable": true, "required": false, "schema":) Tj T*
-( {"type": "string"}}, "row_count": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type) Tj T*
 ET
 endstream
 endobj
@@ -2449,6 +2449,8 @@ endobj
 << /Length 7123 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(d": true, "schema": {"type": "string"}}, "reject_reason": {"nullable": true, "required": false, "schema":) Tj T*
+( {"type": "string"}}, "row_count": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type) Tj T*
 (": "integer"}}, "rows": {"nullable": false, "required": true, "schema": {"items": {"additional_properties) Tj T*
 (": true, "fields": {}, "type": "object"}, "type": "array"}}}, "type": "object"}) Tj T*
 (GraphRelationship) Tj T*
@@ -2521,8 +2523,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (: true, "schema": {"enum": ["DB_ERROR", "POLICY_REJECTED", "SUCCESS", "VALIDATION_FAILED"], "type": "stri) Tj T*
 (ng"}}, "question": {"nullable": false, "required": true, "schema": {"type": "string"}}, "reject_reason": ) Tj T*
 ({"nullable": true, "required": false, "schema": {"type": "string"}}, "row_cnt": {"nullable": true, "requi) Tj T*
-(red": false, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}, "type": "array"}}, "page) Tj T*
-(": {"nullable": false, "required": true, "schema": {"minimum": 1.0, "type": "integer"}}, "size": {"nullab) Tj T*
 ET
 endstream
 endobj
@@ -2533,6 +2533,8 @@ endobj
 << /Length 7654 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(red": false, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}, "type": "array"}}, "page) Tj T*
+(": {"nullable": false, "required": true, "schema": {"minimum": 1.0, "type": "integer"}}, "size": {"nullab) Tj T*
 (le": false, "required": true, "schema": {"maximum": 100.0, "minimum": 1.0, "type": "integer"}}, "total": ) Tj T*
 ({"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}) Tj T*
 (NlQueryLogItem) Tj T*
@@ -2605,8 +2607,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (PublicApprovalItem) Tj T*
 ({"additional_properties": false, "fields": {"action_code": {"nullable": false, "required": true, "schema") Tj T*
 (: {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "action_id": {"nullable": false, "r) Tj T*
-(equired": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "requ) Tj T*
-(ired": true, "schema": {"min_length": 1, "type": "string"}}, "approval_id": {"nullable": false, "required) Tj T*
 ET
 endstream
 endobj
@@ -2614,9 +2614,11 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 64 0 R >>
 endobj
 66 0 obj
-<< /Length 7447 >>
+<< /Length 7535 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(equired": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "requ) Tj T*
+(ired": true, "schema": {"min_length": 1, "type": "string"}}, "approval_id": {"nullable": false, "required) Tj T*
 (": true, "schema": {"min_length": 1, "type": "string"}}, "approved_at": {"nullable": true, "required": tr) Tj T*
 (ue, "schema": {"format": "date-time", "type": "string"}}, "approved_by": {"nullable": true, "required": t) Tj T*
 (rue, "schema": {"type": "string"}}, "chamber": {"nullable": false, "required": true, "schema": {"min_leng) Tj T*
@@ -2689,8 +2691,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (DENCY_UNAVAILABLE", "KAFKA_LAG_STALE", "NOT_CONFIGURED", "RAG_MODEL_NOT_READY", "TIMEOUT"], "type": "stri) Tj T*
 (ng"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "stri) Tj T*
 (ng"}}}, "type": "object"}}}, "type": "object"}) Tj T*
-(ReadinessResponse) Tj T*
-({"additional_properties": false, "fields": {"checks": {"nullable": false, "required": true, "schema": {"a) Tj T*
 ET
 endstream
 endobj
@@ -2698,9 +2698,11 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 66 0 R >>
 endobj
 68 0 obj
-<< /Length 7765 >>
+<< /Length 7711 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(ReadinessResponse) Tj T*
+({"additional_properties": false, "fields": {"checks": {"nullable": false, "required": true, "schema": {"a) Tj T*
 (dditional_properties": false, "fields": {"kafka": {"nullable": false, "required": true, "schema": {"addit) Tj T*
 (ional_properties": false, "fields": {"latency_ms": {"nullable": false, "required": true, "schema": {"mini) Tj T*
 (mum": 0, "type": "integer"}}, "reason_code": {"nullable": true, "required": true, "schema": {"enum": ["CO) Tj T*
@@ -2773,8 +2775,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE",) Tj T*
 ( "EMPTY"], "type": "string"}}}, "type": "object"}) Tj T*
 (SqlValidateRequest) Tj T*
-({"additional_properties": false, "fields": {"sql": {"nullable": false, "required": true, "schema": {"max_) Tj T*
-(length": 20000, "min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
 ET
 endstream
 endobj
@@ -2782,9 +2782,11 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 68 0 R >>
 endobj
 70 0 obj
-<< /Length 4084 >>
+<< /Length 4278 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+({"additional_properties": false, "fields": {"sql": {"nullable": false, "required": true, "schema": {"max_) Tj T*
+(length": 20000, "min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
 (SqlValidateResponse) Tj T*
 ({"additional_properties": false, "fields": {"checks": {"nullable": true, "required": false, "schema": {"i) Tj T*
 (tems": {"additional_properties": false, "fields": {"key": {"nullable": false, "required": true, "schema":) Tj T*
@@ -2853,73 +2855,73 @@ xref
 0000000421 00000 n 
 0000008114 00000 n 
 0000008240 00000 n 
-0000016198 00000 n 
-0000016324 00000 n 
-0000024746 00000 n 
-0000024872 00000 n 
-0000033007 00000 n 
-0000033135 00000 n 
-0000040901 00000 n 
-0000041029 00000 n 
-0000049293 00000 n 
-0000049421 00000 n 
-0000057490 00000 n 
-0000057618 00000 n 
-0000065409 00000 n 
-0000065537 00000 n 
-0000073589 00000 n 
-0000073717 00000 n 
-0000082266 00000 n 
-0000082394 00000 n 
-0000090708 00000 n 
-0000090836 00000 n 
-0000098342 00000 n 
-0000098470 00000 n 
-0000106397 00000 n 
-0000106525 00000 n 
-0000114449 00000 n 
-0000114577 00000 n 
-0000122374 00000 n 
-0000122502 00000 n 
-0000130535 00000 n 
-0000130663 00000 n 
-0000138971 00000 n 
-0000139099 00000 n 
-0000146412 00000 n 
-0000146540 00000 n 
-0000154931 00000 n 
-0000155059 00000 n 
-0000163032 00000 n 
-0000163160 00000 n 
-0000171164 00000 n 
-0000171292 00000 n 
-0000179841 00000 n 
-0000179969 00000 n 
-0000187850 00000 n 
-0000187978 00000 n 
-0000195915 00000 n 
-0000196043 00000 n 
-0000203704 00000 n 
-0000203832 00000 n 
-0000211323 00000 n 
-0000211451 00000 n 
-0000218832 00000 n 
-0000218960 00000 n 
-0000226298 00000 n 
-0000226426 00000 n 
-0000233881 00000 n 
-0000234009 00000 n 
-0000241185 00000 n 
-0000241313 00000 n 
-0000249020 00000 n 
-0000249148 00000 n 
-0000256648 00000 n 
+0000016218 00000 n 
+0000016344 00000 n 
+0000024766 00000 n 
+0000024892 00000 n 
+0000033027 00000 n 
+0000033155 00000 n 
+0000040921 00000 n 
+0000041049 00000 n 
+0000049313 00000 n 
+0000049441 00000 n 
+0000057510 00000 n 
+0000057638 00000 n 
+0000065429 00000 n 
+0000065557 00000 n 
+0000073609 00000 n 
+0000073737 00000 n 
+0000082286 00000 n 
+0000082414 00000 n 
+0000090728 00000 n 
+0000090856 00000 n 
+0000098362 00000 n 
+0000098490 00000 n 
+0000106476 00000 n 
+0000106604 00000 n 
+0000114469 00000 n 
+0000114597 00000 n 
+0000122394 00000 n 
+0000122522 00000 n 
+0000130608 00000 n 
+0000130736 00000 n 
+0000139019 00000 n 
+0000139147 00000 n 
+0000146432 00000 n 
+0000146560 00000 n 
+0000154951 00000 n 
+0000155079 00000 n 
+0000163052 00000 n 
+0000163180 00000 n 
+0000171184 00000 n 
+0000171312 00000 n 
+0000179861 00000 n 
+0000179989 00000 n 
+0000187966 00000 n 
+0000188094 00000 n 
+0000195935 00000 n 
+0000196063 00000 n 
+0000203724 00000 n 
+0000203852 00000 n 
+0000211343 00000 n 
+0000211471 00000 n 
+0000218874 00000 n 
+0000219002 00000 n 
+0000226338 00000 n 
+0000226466 00000 n 
+0000233921 00000 n 
+0000234049 00000 n 
+0000241225 00000 n 
+0000241353 00000 n 
+0000249060 00000 n 
+0000249188 00000 n 
 0000256776 00000 n 
-0000264594 00000 n 
-0000264722 00000 n 
-0000268859 00000 n 
+0000256904 00000 n 
+0000264668 00000 n 
+0000264796 00000 n 
+0000269127 00000 n 
 trailer
 << /Size 72 /Root 1 0 R >>
 startxref
-268987
+269255
 %%EOF
