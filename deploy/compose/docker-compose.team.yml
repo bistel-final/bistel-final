@@ -54,6 +54,16 @@ services:
         source: ${AGENT_EVAL_REPORTS_DIR:?AGENT_EVAL_REPORTS_DIR is required}
         target: /reports
         read_only: true
+      # knowledge graph marker·analytics manifest는 image에 포함되지 않는 저장소 파일이다.
+      # REPOSITORY_ROOT(/workspace) 아래 같은 상대 경로로 read-only mount한다.
+      - type: bind
+        source: ../../infra/bootstrap/markers
+        target: /workspace/infra/bootstrap/markers
+        read_only: true
+      - type: bind
+        source: ../../infra/bootstrap/manifests
+        target: /workspace/infra/bootstrap/manifests
+        read_only: true
     secrets:
       - kafka_client_user
       - kafka_client_password
