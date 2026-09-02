@@ -3,7 +3,8 @@ set -euo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=deploy/compose/cm52_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=cm52_common.sh
 source "$SCRIPT_DIR/cm52_common.sh"
 
 usage() {
@@ -111,9 +112,14 @@ verify_prev_state() {
     return 1
   fi
   if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
-    [[ "$(get_artifact_path AGENT_FAULT_EVAL_ARTIFACT_PATH)" == "$PREV_FAULT" \
-      && "$(get_artifact_path AGENT_GOLDEN_FLOW_SUMMARY_PATH)" == "$PREV_GOLDEN" ]]
-    return
+    # trap handler 안에서 인자 없는 return은 직전 명령이 아니라 trap 진입 전 상태를
+    # 돌려준다(bash 매뉴얼 return) — 비교 결과를 명시적으로 반환한다.
+    local restored=1
+    if [[ "$(get_artifact_path AGENT_FAULT_EVAL_ARTIFACT_PATH)" == "$PREV_FAULT" \
+      && "$(get_artifact_path AGENT_GOLDEN_FLOW_SUMMARY_PATH)" == "$PREV_GOLDEN" ]]; then
+      restored=0
+    fi
+    return "$restored"
   fi
   case "$PREV_STATE" in
     empty)
@@ -287,8 +293,8 @@ step3_boot_e2e() {
   team ps --format json >"$A/team-before.json"
   team down
   install -d -m 0700 "$CM52_COMPOSE_DIR/trail"
-  AGENT_FAULT_EVAL_ARTIFACT_PATH= \
-    AGENT_GOLDEN_FLOW_SUMMARY_PATH= \
+  AGENT_FAULT_EVAL_ARTIFACT_PATH='' \
+    AGENT_GOLDEN_FLOW_SUMMARY_PATH='' \
     e2e up -d --build
   e2e ps --format json >"$A/e2e-services.json"
   e2e exec -T backend python -c "$IDENTITY_SQL" \
