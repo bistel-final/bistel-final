@@ -490,6 +490,11 @@ def test_get_dashboard_summary_assembles_hierarchy_kpi_and_trend() -> None:
     assert chamber_counts == {"EQP05-PM2": 1, "EQP05-PM1": 0}
     assert summary.pending_approvals == []
     assert len(summary.recent_alarms) == 1
+    pending_approval_query = connection.statements[3]
+    assert "COALESCE(" in pending_approval_query
+    assert "incident_equipment.equipment_id" in pending_approval_query
+    assert "history.lot_id = ah.lot_id" in pending_approval_query
+    assert "history.chamber_id = ah.chamber_id" in pending_approval_query
 
 
 def test_get_dashboard_summary_wraps_db_failure() -> None:
