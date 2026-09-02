@@ -53,6 +53,7 @@ def preflight(
     expect_fault_sha: str,
     expect_golden_sha: str,
     expect_revision: str,
+    expect_container_revision: str | None = None,
     attempt_id: str,
     environ: Mapping[str, str],
 ) -> None:
@@ -85,10 +86,16 @@ def preflight(
     ):
         raise ArtifactPreflightError("EPOCH_MISMATCH")
     container_revision = environ.get("BISTEL_SOURCE_REVISION")
+    required_container_revision = (
+        expect_revision
+        if expect_container_revision is None
+        else expect_container_revision
+    )
     if (
         not REVISION_PATTERN.fullmatch(expect_revision)
+        or not REVISION_PATTERN.fullmatch(required_container_revision)
         or fault.get("code_revision") != expect_revision
-        or container_revision != expect_revision
+        or container_revision != required_container_revision
     ):
         raise ArtifactPreflightError("REVISION_MISMATCH")
     if (
@@ -111,6 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expect-fault-sha", required=True)
     parser.add_argument("--expect-golden-sha", required=True)
     parser.add_argument("--expect-revision", required=True)
+    parser.add_argument("--expect-container-revision")
     parser.add_argument("--attempt-id", required=True)
     args = parser.parse_args(argv)
     try:
@@ -120,6 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             expect_fault_sha=args.expect_fault_sha,
             expect_golden_sha=args.expect_golden_sha,
             expect_revision=args.expect_revision,
+            expect_container_revision=args.expect_container_revision,
             attempt_id=args.attempt_id,
             environ=os.environ,
         )

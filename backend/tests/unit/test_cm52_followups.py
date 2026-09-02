@@ -13,8 +13,6 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import e2e_reset_evidence as reset_evidence  # noqa: E402
-
 from app.agent.golden_flow import (  # noqa: E402
     GoldenFlowResult,
     GoldenPhase,
@@ -25,6 +23,7 @@ from app.agent.golden_summary import build_golden_summary  # noqa: E402
 from app.common.enums import ToolCallStatus  # noqa: E402
 from app.evaluation import fault_5class as fault  # noqa: E402
 from scripts import e2e_analytics_questions as questions  # noqa: E402
+from scripts import e2e_reset_evidence as reset_evidence  # noqa: E402
 from scripts import emit_diagnostic_targets as targets  # noqa: E402
 from scripts import observe_public_databases as observer  # noqa: E402
 from scripts import (  # noqa: E402
@@ -65,7 +64,7 @@ class _LogConnection:
         )
 
 
-def _fault_artifact() -> dict[str, Any]:
+def _fault_artifact(*, code_revision: str = REVISION) -> dict[str, Any]:
     keys = tuple(
         fault.IncidentKey(f"LOT{index:03d}", f"EQP{index:02d}-PM1")
         for index in range(12)
@@ -107,7 +106,7 @@ def _fault_artifact() -> dict[str, Any]:
             runtime_provenance_sha256="e" * 64,
             evaluation_provenance_sha256="f" * 64,
             shared_key_sha256="1" * 64,
-            code_revision=REVISION,
+            code_revision=code_revision,
         ),
     )
 
@@ -157,30 +156,56 @@ def _run_preflight(
     environ: dict[str, str],
     *,
     attempt_id: str = ATTEMPT,
+    expect_revision: str = REVISION,
+    expect_container_revision: str | None = None,
 ) -> None:
     artifact_preflight.preflight(
         fault_path=fault_path,
         golden_path=golden_path,
         expect_fault_sha=fault_sha,
         expect_golden_sha=golden_sha,
-        expect_revision=REVISION,
+        expect_revision=expect_revision,
+        expect_container_revision=expect_container_revision,
         attempt_id=attempt_id,
         environ=environ,
     )
 
 
-def test_analytics_questions_emit_only_ordered_digests(tmp_path: Path) -> None:
+def test_analytics_questions_emit_only_ordered_digests(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     output = tmp_path / "digests.json"
     assert questions.main(["--ids", "12,13,14", "--output", str(output)]) == 0
     payload = json.loads(output.read_text(encoding="utf-8"))
+    receipt = json.loads(capsys.readouterr().out)
 
     assert payload == questions.expected_digests([12, 13, 14])
+    assert receipt == {
+        "status": "PASS",
+        "artifact_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+    }
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
     assert all(question not in output.read_text() for question in questions.QUESTIONS)
     assert questions.normalize_question("  A\u0301   B ") == "Á B"
 
 
+def test_analytics_questions_reject_unsorted_ids_before_writing(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "digests.json"
+
+    with pytest.raises(ValueError, match="ANALYTICS_IDS_INVALID"):
+        questions.expected_digests([14, 12, 13])
+    assert questions.main(["--ids", "14,12,13", "--output", str(output)]) == 1
+    assert not output.exists()
+
+
 def test_log_probe_hashes_questions_inside_snapshot_without_raw_text() -> None:
+    assert observer.evidence is reset_evidence
+    assert observer.digest is questions.digest
+    assert observer.snapshot_observer.__globals__["evidence"] is reset_evidence
+    assert observer.snapshot_observer.__globals__["reset"].evidence is reset_evidence
     payload = observer._log_verify_probe(11)(_LogConnection())
     serialized = json.dumps(payload, ensure_ascii=False)
 
@@ -272,10 +297,45 @@ def test_diagnostic_targets_are_exact_and_wafer_sorted() -> None:
 def test_diagnostic_target_sql_uses_the_runtime_success_contract() -> None:
     sql = " ".join(str(targets.TARGET_SQL).split())
 
-    assert f"tool.status = '{ToolCallStatus.SUCCESS.value}'" in sql
+    assert "tool.status = :success_status" in sql
+    assert targets.TARGET_SQL.compile().params == {
+        "success_status": ToolCallStatus.SUCCESS.value
+    }
     assert "JOIN lot_history AS history" in sql
     assert "history.lot_hist_id = tool.input ->> 'lot_hist_id'" in sql
     assert "ORDER BY tool.agent_run_id, tool.call_seq" in sql
+
+
+def test_diagnostic_target_read_failure_has_a_distinct_nonsecret_reason() -> None:
+    class FailingEngine:
+        def connect(self) -> Any:
+            raise RuntimeError("credential-and-host-must-not-leak")
+
+    with pytest.raises(targets.DiagnosticTargetError) as caught:
+        targets._load_rows(FailingEngine(), targets.TARGET_DATABASE)
+
+    assert caught.value.reason == "TARGET_READ_FAILED"
+    assert caught.value.exit_code == 1
+    assert "credential-and-host-must-not-leak" not in str(caught.value)
+
+
+def test_diagnostic_targets_order_by_wafer_number_not_identifier_suffix() -> None:
+    rows = _target_rows()
+    run = [row for row in rows if row["agent_run_id"] == "RUN-0006"]
+    by_number = {row["wafer_no"]: row for row in run}
+    by_number[1]["wafer_id"] = "LOT006W999"
+    by_number[2]["wafer_id"] = "LOT006W001"
+
+    payload = targets.build_receipt(
+        rows,
+        database=targets.TARGET_DATABASE,
+        attempt_id=ATTEMPT,
+    )
+    actual = next(
+        item for item in payload["runs"] if item["agent_run_id"] == "RUN-0006"
+    )
+
+    assert [item["wafer_no"] for item in actual["targets"]] == [1, 2]
 
 
 def test_diagnostic_target_structure_and_distribution_fail_separately() -> None:
@@ -313,9 +373,44 @@ def test_artifact_preflight_accepts_the_bound_pair(tmp_path: Path) -> None:
     _run_preflight(*pair)
 
 
+def test_artifact_preflight_separates_old_artifact_from_current_container_revision(
+    tmp_path: Path,
+) -> None:
+    previous_revision = "f" * 40
+    fault_path, golden_path, _fault_sha, golden_sha, environ = _artifact_pair(tmp_path)
+    fault_sha = _write_json(
+        fault_path,
+        _fault_artifact(code_revision=previous_revision),
+    )
+
+    _run_preflight(
+        fault_path,
+        golden_path,
+        fault_sha,
+        golden_sha,
+        environ,
+        expect_revision=previous_revision,
+        expect_container_revision=REVISION,
+    )
+
+    with pytest.raises(
+        artifact_preflight.ArtifactPreflightError,
+        match="REVISION_MISMATCH",
+    ):
+        _run_preflight(
+            fault_path,
+            golden_path,
+            fault_sha,
+            golden_sha,
+            environ,
+            expect_revision=previous_revision,
+        )
+
+
 def test_fault_validator_accepts_the_writer_canonical_sorted_keys(
     tmp_path: Path,
 ) -> None:
+    assert fault.FAULT_CLASS_SET == frozenset(fault.FAULT_CLASSES)
     artifact = tmp_path / "fault-5class.json"
     reset_evidence.write_atomic_receipt(artifact, _fault_artifact())
     persisted = json.loads(artifact.read_text(encoding="utf-8"))

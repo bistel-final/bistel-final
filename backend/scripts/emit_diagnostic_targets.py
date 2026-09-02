@@ -11,17 +11,21 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-import e2e_reset_evidence as evidence
 from sqlalchemy import text
 
 from app.common.enums import ToolCallStatus
+
+if __package__:
+    from . import e2e_reset_evidence as evidence
+else:
+    import e2e_reset_evidence as evidence
 
 TARGET_DATABASE = "kosa_agent_e2e"
 ATTEMPT_PATTERN = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
 EXPECTED_DISTRIBUTION = {1: 5, 2: 4, 3: 3}
 
 TARGET_SQL = text(
-    f"""
+    """
     SELECT tool.agent_run_id,
            tool.input ->> 'lot_hist_id' AS lot_hist_id,
            history.wafer_id,
@@ -30,10 +34,10 @@ TARGET_SQL = text(
     JOIN lot_history AS history
       ON history.lot_hist_id = tool.input ->> 'lot_hist_id'
     WHERE tool.tool_name = 'get_fdc_summary'
-      AND tool.status = '{ToolCallStatus.SUCCESS.value}'
+      AND tool.status = :success_status
     ORDER BY tool.agent_run_id, tool.call_seq
     """
-)
+).bindparams(success_status=ToolCallStatus.SUCCESS.value)
 
 
 class DiagnosticTargetError(RuntimeError):
@@ -41,11 +45,6 @@ class DiagnosticTargetError(RuntimeError):
         super().__init__(reason)
         self.reason = reason
         self.exit_code = exit_code
-
-
-def _wafer_order(value: str) -> tuple[int, str]:
-    match = re.search(r"(\d+)$", value)
-    return (int(match.group(1)) if match is not None else 2_147_483_647, value)
 
 
 def _load_rows(engine: Any, database: str) -> list[Mapping[str, Any]]:
@@ -67,7 +66,7 @@ def _load_rows(engine: Any, database: str) -> list[Mapping[str, Any]]:
     except DiagnosticTargetError:
         raise
     except Exception as exc:
-        raise DiagnosticTargetError("TARGET_STRUCTURE_INVALID", 1) from exc
+        raise DiagnosticTargetError("TARGET_READ_FAILED", 1) from exc
 
 
 def build_receipt(
@@ -123,7 +122,8 @@ def build_receipt(
     runs: list[dict[str, Any]] = []
     for run_id in sorted(by_run):
         ordered = sorted(
-            by_run[run_id], key=lambda item: _wafer_order(item["wafer_id"])
+            by_run[run_id],
+            key=lambda item: (item["wafer_no"], item["wafer_id"]),
         )
         runs.append(
             {

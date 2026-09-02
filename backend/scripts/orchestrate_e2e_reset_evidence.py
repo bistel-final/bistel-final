@@ -18,13 +18,18 @@ from pathlib import Path
 from typing import Any
 
 import db_target
-import e2e_reset_evidence as evidence
 import postgres_role_matrix as role_matrix
-import reset_e2e_runtime as reset
 import verify_public_profiles
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+
+if __package__:
+    from . import e2e_reset_evidence as evidence
+    from . import reset_e2e_runtime as reset
+else:
+    import e2e_reset_evidence as evidence
+    import reset_e2e_runtime as reset
 
 OBSERVER_DATABASES = ("kosa_agent", "kosa_text2sql")
 OBSERVER_MUTABLE_TABLES: Mapping[str, tuple[str, ...]] = {

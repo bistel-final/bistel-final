@@ -1,8 +1,5 @@
 FROM node:22.14.0-alpine AS build
 
-ARG SOURCE_REVISION
-RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'
-
 WORKDIR /workspace/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -35,10 +32,12 @@ RUN test "$VITE_API_BASE_URL" = "/api" \
 
 FROM nginx:1.27.3-alpine
 
-ARG SOURCE_REVISION
-LABEL org.opencontainers.image.revision=$SOURCE_REVISION
-
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/frontend/dist /usr/share/nginx/html
+
+# Revision만 바뀔 때 npm ci와 production bundle cache는 재사용한다.
+ARG SOURCE_REVISION
+RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 
 EXPOSE 80

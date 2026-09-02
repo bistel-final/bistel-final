@@ -1,4 +1,8 @@
-"""CM-5.2에서 실행할 고정 Text2SQL 질문의 원문 비노출 digest receipt."""
+"""CM-5.2 고정 smoke 질문 3건의 원문 비노출 digest receipt.
+
+이 질문은 D파트의 12+건 Text2SQL 평가셋과 별도로 CM-5.2 실제 API·chart 경로만
+확인하는 통합 smoke 세트다.
+"""
 
 from __future__ import annotations
 
@@ -27,15 +31,17 @@ def digest(value: str) -> str:
 
 
 def expected_digests(ids: Sequence[int]) -> list[list[int | str]]:
+    identifiers = list(ids)
     if (
-        len(ids) != len(QUESTIONS)
-        or len(set(ids)) != len(ids)
-        or any(i < 1 for i in ids)
+        len(identifiers) != len(QUESTIONS)
+        or identifiers != sorted(identifiers)
+        or len(set(identifiers)) != len(identifiers)
+        or any(i < 1 for i in identifiers)
     ):
         raise ValueError("ANALYTICS_IDS_INVALID")
     return [
         [identifier, digest(question)]
-        for identifier, question in zip(ids, QUESTIONS, strict=True)
+        for identifier, question in zip(identifiers, QUESTIONS, strict=True)
     ]
 
 
@@ -61,11 +67,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         identifiers = [int(value) for value in args.ids.split(",")]
         payload = expected_digests(identifiers)
-        _write_exclusive(args.output, payload)
+        artifact_sha256 = _write_exclusive(args.output, payload)
     except (OSError, ValueError):
         print("ANALYTICS_DIGEST_RECEIPT_FAILED", file=sys.stderr)
         return 1
-    print("PASS")
+    print(
+        json.dumps(
+            {"status": "PASS", "artifact_sha256": artifact_sha256},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
     return 0
 
 

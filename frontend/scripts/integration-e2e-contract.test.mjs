@@ -171,7 +171,6 @@ const stateContracts = {
     /DocumentSearchResultCard/,
   ],
   '../src/features/knowledge/pages/OntologyPage.jsx': [
-    /getAllAlarms/,
     /status === 'loading'/,
     /status === 'error'/,
     /표시 가능한 관계가 없습니다/,

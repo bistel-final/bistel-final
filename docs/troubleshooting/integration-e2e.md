@@ -95,12 +95,20 @@ docker compose -p bistel-team \
 DSN은 문자열 조합으로 만들지 않고 완성된 secret으로 주입한다. 네 DSN 모두
 `postgresql+psycopg`·공용 PostgreSQL host/port·지정 계정/DB가 정확해야 하며,
 `preflight_team_env.py`가 비밀번호·원문을 출력하지 않고 검증한다.
+이 네 매핑은 D파트가 소유한 DB 계약을 CM 배포 경계에서 소비하는 의도된 결합이다.
+D파트가 pool·role·database 계약을 바꾸면 D와 CM 변경을 같은 release에서 함께 검토한다.
+이 파트 경계와 CM smoke 질문셋의 별도 소유는 2026-09-02 사용자 확인으로 CM 측 범위를
+확정했으며, D 소유자의 PR 스레드 확인은 대기 중이다.
 
 Backend image에는 OCI revision label과 `BISTEL_SOURCE_REVISION`이, Frontend image에는
 OCI revision label이 들어간다. image build 뒤 두 label이 `SOURCE_REVISION`과 같은지 먼저
 확인한다. `e2e-runner`는 host port·healthcheck·`depends_on` 없이 `--no-deps`와 현재
 실행자의 `uid:gid`로만 일회 실행하며 `/reports`만 read-write다. production Backend의
 같은 mount는 항상 read-only다.
+`cm52_stage2.sh`는 시작 시 실행 중 production Backend에서 실제 revision을 읽어 이전
+artifact 상태를 검증하고, 복구로 현재 이미지를 재생성한 뒤에는 고정한 새 revision으로
+다시 검증한다. 실행 중 revision을 읽지 못하거나 40자리 소문자 hex가 아니면 team down과
+로그 생성 전에 `PRODUCTION_REVISION_UNREADABLE`로 중단한다.
 
 다음 값을 실행보고서에 비밀 없이 기록한다.
 
@@ -121,16 +129,20 @@ OCI revision label이 들어간다. image build 뒤 두 label이 `SOURCE_REVISIO
    attempt directory를 **no-clobber**로 한 번만 생성한다.
 2. CM-4.7 dry-run과 reset을 수행한다. reset 대상은 `kosa_agent_e2e` 하나뿐이다.
    `observe_public_databases.py capture`는 `kosa_agent`·`kosa_text2sql`의 허용된 mutable
-   영역 제외 fingerprint, `kosa_agent` strict fingerprint, `nl_query_log` 기준값을 같은
-   repeatable-read/read-only transaction에서 기록한다. 이 baseline은 구현 증명이 아니라
-   이번 attempt의 전후 비교 기준이다. observer는 `.env`를 자동 로드하지 않으므로 capture와
-   2단 step 9 verify를 실행하는 **같은 host shell**에 승인된 다음 5개 키가 export되어 있어야
-   한다. 값은 실행보고·로그·artifact에 기록하지 않는다.
+   영역 제외 fingerprint, `kosa_agent` strict fingerprint, `nl_query_log` 기준값을 각각의
+   `REPEATABLE READ READ ONLY` transaction에서 기록한다. PostgreSQL database와 축 사이의
+   단일 원자 snapshot을 주장하지 않으며, capture·verify 창에는 승인된 CM-5.2 실행 외의
+   공용 쓰기·Text2SQL 질의를 중지한다. 축 사이 변화는 불일치로 fail-closed 처리한다.
+   이 baseline은 구현 증명이 아니라 이번 attempt의 전후 비교 기준이다. observer는 `.env`를
+   자동 로드하지 않으므로 capture와 2단 step 9 verify를 실행하는 **같은 host shell**에
+   승인된 다음 5개 키가 export되어 있어야 한다. 값은 실행보고·로그·artifact에 기록하지 않는다.
 
    ```bash
    export POSTGRES_BOOTSTRAP_HOST POSTGRES_BOOTSTRAP_PORT
    export POSTGRES_BOOTSTRAP_USER POSTGRES_BOOTSTRAP_PASSWORD
    export POSTGRES_BOOTSTRAP_ALLOWED_HOST_SHA256
+   python3 backend/scripts/observe_public_databases.py capture \
+     --output "$A/observer-baseline.json"
    ```
 3. 다음 명령으로 2단 스크립트를 실행한다. 스크립트는 기존 평가 artifact 경로를 shell
    변수로만 보관하고 `.env.team` 사본을 만들지 않는다.
@@ -143,7 +155,8 @@ OCI revision label이 들어간다. image build 뒤 두 label이 `SOURCE_REVISIO
 
 4. 7화면과 36 operation을 실제 API로 확인한다. Analytics 고정 질문은
    `backend/scripts/e2e_analytics_questions.py`의 `QUESTIONS` **N=3**을 순서대로 사용하며,
-   runbook·receipt에는 질문 원문이 아니라 `nl_query_log_id`와 SHA-256 digest만 남긴다.
+   D파트의 12+건 평가셋과 별도인 CM-5.2 통합 smoke 세트다. runbook·receipt에는 질문
+   원문이 아니라 오름차순 `nl_query_log_id`와 SHA-256 digest만 남긴다.
 5. `run_pending_incidents.py`로 12건을 한 번 실행하고 run/action/retry/action 분포가
    `12/12/12/0/0/5/4/3/0`인지 확인한다. 순서대로 전체 run, v2 prompt run,
    action-link, retry, `RUNNING|FAILED`, `MONITORING`, `WARNING`, `EQP_HOLD`,

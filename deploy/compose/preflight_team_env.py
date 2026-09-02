@@ -184,7 +184,7 @@ def _validate_dsn(
     username: str,
     database: str,
     expected_host: str,
-    expected_port: int,
+    expected_port: int | None,
 ) -> list[Finding]:
     """역할별 PostgreSQL DSN을 값 노출 없이 검증한다."""
 
@@ -200,7 +200,9 @@ def _validate_dsn(
         findings.append(Finding(key, "UNEXPECTED_DSN_ROLE"))
     if not parsed.password:
         findings.append(Finding(key, "DSN_PASSWORD_MISSING"))
-    if parsed.hostname != expected_host or parsed_port != expected_port:
+    if parsed.hostname != expected_host or (
+        expected_port is not None and parsed_port != expected_port
+    ):
         findings.append(Finding(key, "DSN_TARGET_MISMATCH"))
     findings.extend(_validate_external_host(key, parsed.hostname))
     if parsed.path != f"/{database}":
@@ -282,31 +284,31 @@ def validate(values: dict[str, str]) -> list[Finding]:
     try:
         postgres_port = int(values["POSTGRES_PORT"])
     except ValueError:
-        postgres_port = 0
-    if not 1 <= postgres_port <= 65535:
+        postgres_port = None
+    if postgres_port is None or not 1 <= postgres_port <= 65535:
         findings.append(Finding("POSTGRES_PORT", "INVALID_PORT"))
+        postgres_port = None
 
-    if postgres_port:
-        for key, username, database in (
-            ("TEXT2SQL_DATABASE_URL", "kosa_readonly", "kosa_agent"),
-            ("TEXT2SQL_EVAL_DATABASE_URL", "kosa_readonly", "kosa_text2sql"),
-            (
-                "TEXT2SQL_EVAL_LOG_DATABASE_URL",
-                "kosa_query_logger",
-                "kosa_text2sql",
-            ),
-            ("TEXT2SQL_E2E_DATABASE_URL", "kosa_readonly", "kosa_agent_e2e"),
-        ):
-            findings.extend(
-                _validate_dsn(
-                    key,
-                    values[key],
-                    username=username,
-                    database=database,
-                    expected_host=values["POSTGRES_HOST"],
-                    expected_port=postgres_port,
-                )
+    for key, username, database in (
+        ("TEXT2SQL_DATABASE_URL", "kosa_readonly", "kosa_agent"),
+        ("TEXT2SQL_EVAL_DATABASE_URL", "kosa_readonly", "kosa_text2sql"),
+        (
+            "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+            "kosa_query_logger",
+            "kosa_text2sql",
+        ),
+        ("TEXT2SQL_E2E_DATABASE_URL", "kosa_readonly", "kosa_agent_e2e"),
+    ):
+        findings.extend(
+            _validate_dsn(
+                key,
+                values[key],
+                username=username,
+                database=database,
+                expected_host=values["POSTGRES_HOST"],
+                expected_port=postgres_port,
             )
+        )
 
     try:
         webhook_timeout = int(values["N8N_WEBHOOK_TIMEOUT_SEC"])

@@ -12,10 +12,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import e2e_reset_evidence as evidence
-from e2e_analytics_questions import digest
-from orchestrate_e2e_reset_evidence import snapshot_observer
 from sqlalchemy import text
+
+if __package__:
+    from . import e2e_reset_evidence as evidence
+    from .e2e_analytics_questions import digest
+    from .orchestrate_e2e_reset_evidence import snapshot_observer
+else:
+    import e2e_reset_evidence as evidence
+    from e2e_analytics_questions import digest
+    from orchestrate_e2e_reset_evidence import snapshot_observer
 
 FORMAT_VERSION = 1
 ARTIFACT_TYPE = "cm52_public_database_observer"
@@ -95,6 +101,11 @@ def _capture_state(
     observer: Callable[..., dict[str, Any]] = snapshot_observer,
     baseline_max: int | None = None,
 ) -> dict[str, Any]:
+    """Capture each database axis in its own read-only repeatable-read transaction.
+
+    This is intentionally not an atomic cross-database snapshot.  The runbook
+    requires external traffic to remain stopped between capture and verify.
+    """
     immutable_agent = observer("kosa_agent", environ=environ)
     text_snapshot = observer(
         "kosa_text2sql",

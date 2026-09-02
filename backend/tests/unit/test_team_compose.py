@@ -302,8 +302,16 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     assert "ENV BISTEL_SOURCE_REVISION=$SOURCE_REVISION" in backend_dockerfile
     assert "ARG SOURCE_REVISION" in frontend_dockerfile
     assert "grep -Eq '^[0-9a-f]{40}$'" in frontend_dockerfile
-    final_stage = frontend_dockerfile.rsplit("FROM ", maxsplit=1)[-1]
+    assert backend_dockerfile.index("COPY backend/artifacts ./artifacts") < (
+        backend_dockerfile.index("ARG SOURCE_REVISION")
+    )
+    frontend_build_stage, final_stage = frontend_dockerfile.rsplit("FROM ", maxsplit=1)
+    assert "SOURCE_REVISION" not in frontend_build_stage
+    assert final_stage.index("COPY --from=build") < final_stage.index(
+        "ARG SOURCE_REVISION"
+    )
     assert "ARG SOURCE_REVISION" in final_stage
+    assert "grep -Eq '^[0-9a-f]{40}$'" in final_stage
     assert "LABEL org.opencontainers.image.revision=$SOURCE_REVISION" in final_stage
 
 
@@ -594,6 +602,28 @@ def test_preflight_rejects_missing_dsn_password_without_value_leak(
         preflight.Finding("TEXT2SQL_DATABASE_URL", "DSN_PASSWORD_MISSING") in findings
     )
     assert secret_dsn not in repr(findings)
+
+
+def test_preflight_validates_dsn_contract_even_when_postgres_port_is_invalid(
+    tmp_path: Path,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values["POSTGRES_PORT"] = "not-an-integer"
+    values["TEXT2SQL_DATABASE_URL"] = "mysql://wrong-role@10.20.30.40/wrong-database"
+
+    findings = preflight.validate(values)
+
+    assert preflight.Finding("POSTGRES_PORT", "INVALID_PORT") in findings
+    assert preflight.Finding("TEXT2SQL_DATABASE_URL", "INVALID_DSN_SCHEME") in findings
+    assert preflight.Finding("TEXT2SQL_DATABASE_URL", "UNEXPECTED_DSN_ROLE") in findings
+    assert (
+        preflight.Finding("TEXT2SQL_DATABASE_URL", "DSN_PASSWORD_MISSING") in findings
+    )
+    assert (
+        preflight.Finding("TEXT2SQL_DATABASE_URL", "UNEXPECTED_DSN_DATABASE")
+        in findings
+    )
 
 
 @pytest.mark.parametrize(

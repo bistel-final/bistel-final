@@ -64,6 +64,8 @@ PREV_ATTEMPT=""
 PREV_FAULT_SHA=""
 PREV_GOLDEN_SHA=""
 PREV_REV=""
+RUNNING_REV=""
+ACTIVE_CONTAINER_REVISION=""
 
 classify_prev_state() {
   if [[ -z "$PREV_FAULT" && -z "$PREV_GOLDEN" ]]; then
@@ -108,6 +110,8 @@ if [[ "$PREV_STATE" == bound ]]; then
 fi
 
 verify_prev_state() {
+  local expected_container_revision=${1:-}
+  [[ "$expected_container_revision" =~ ^[0-9a-f]{40}$ ]] || return 1
   if ! test_gate restore_verify; then
     return 1
   fi
@@ -116,7 +120,8 @@ verify_prev_state() {
     # 돌려준다(bash 매뉴얼 return) — 비교 결과를 명시적으로 반환한다.
     local restored=1
     if [[ "$(get_artifact_path AGENT_FAULT_EVAL_ARTIFACT_PATH)" == "$PREV_FAULT" \
-      && "$(get_artifact_path AGENT_GOLDEN_FLOW_SUMMARY_PATH)" == "$PREV_GOLDEN" ]]; then
+      && "$(get_artifact_path AGENT_GOLDEN_FLOW_SUMMARY_PATH)" == "$PREV_GOLDEN" \
+      && "$ACTIVE_CONTAINER_REVISION" == "$expected_container_revision" ]]; then
       restored=0
     fi
     return "$restored"
@@ -138,6 +143,7 @@ verify_prev_state() {
         --expect-fault-sha "$PREV_FAULT_SHA" \
         --expect-golden-sha "$PREV_GOLDEN_SHA" \
         --expect-revision "$PREV_REV" \
+        --expect-container-revision "$expected_container_revision" \
         --attempt-id "$PREV_ATTEMPT"
       ;;
   esac
@@ -149,9 +155,15 @@ restore_prev() {
     && test_gate restore_preflight \
     && { [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]] || preflight_team_env; } \
     && test_gate restore_up \
-    && { [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]] || team up -d --force-recreate; } \
+    && {
+      if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+        ACTIVE_CONTAINER_REVISION=$REV
+      else
+        team up -d --force-recreate
+      fi
+    } \
     && { [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]] || production_verify; } \
-    && verify_prev_state
+    && verify_prev_state "$REV"
 }
 
 FAULT_SHA=""
@@ -178,10 +190,24 @@ publish_new() {
     }
 }
 
+read_running_revision() {
+  if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+    printf '%s\n' "${CM52_TEST_RUNNING_REV:-${PREV_REV:-$REV}}"
+    return 0
+  fi
+  team exec -T backend printenv BISTEL_SOURCE_REVISION
+}
+
 if [[ "${CM52_STAGE2_TEST_MODE:-0}" != 1 ]]; then
   production_verify
-  verify_prev_state
 fi
+if ! RUNNING_REV=$(read_running_revision) \
+  || [[ ! "$RUNNING_REV" =~ ^[0-9a-f]{40}$ ]]; then
+  printf '%s\n' PRODUCTION_REVISION_UNREADABLE >&2
+  exit 1
+fi
+ACTIVE_CONTAINER_REVISION=$RUNNING_REV
+verify_prev_state "$RUNNING_REV"
 
 set -o noclobber
 : >"$LOG"
@@ -221,7 +247,7 @@ cleanup() {
     printf '%s\n' LOG_INVALID_BEFORE_PUBLISH >&2
     STAGE2_PASS=0
     FORCE_PUBLISH_FAILED=1
-    rc=2
+    rc=1
   fi
 
   if ! test_gate e2e_down; then

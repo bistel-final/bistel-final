@@ -17,6 +17,7 @@ ASSERT_0600 = COMPOSE_DIR / "assert_owned_0600.py"
 SECRET_SCAN = COMPOSE_DIR / "scan_cm52_artifacts.py"
 ATTEMPT = "20260902T010203Z-0123456789ab"
 REVISION = "0123456789abcdef0123456789abcdef01234567"
+PREVIOUS_REVISION = "f" * 40
 PREV_ATTEMPT = "20260901T000000Z-aaaaaaaaaaaa"
 PREV_FAULT = f"/reports/cm-5.2/{PREV_ATTEMPT}/fault-5class.json"
 PREV_GOLDEN = f"/reports/cm-5.2/{PREV_ATTEMPT}/golden-flow.json"
@@ -73,6 +74,8 @@ def _run_stage2(
     original_rc: int = 0,
     fault: str = PREV_FAULT,
     golden: str = PREV_GOLDEN,
+    previous_revision: str = PREVIOUS_REVISION,
+    running_revision: str = PREVIOUS_REVISION,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     env_file = tmp_path / ".env.team"
     _env_file(env_file, fault=fault, golden=golden)
@@ -90,6 +93,8 @@ def _run_stage2(
         "CM52_STAGE2_FAIL_AT": fail_at,
         "CM52_TEST_STAGE2_PASS": str(stage_pass),
         "CM52_TEST_ORIGINAL_RC": str(original_rc),
+        "CM52_TEST_PREV_REV": previous_revision,
+        "CM52_TEST_RUNNING_REV": running_revision,
     }
     completed = subprocess.run(
         ["bash", str(STAGE2), "--attempt-id", ATTEMPT],
@@ -103,11 +108,15 @@ def _run_stage2(
 
 
 def _outcome(log: Path) -> str | None:
-    if not log.exists():
-        return None
-    lines = [json.loads(line) for line in log.read_text().splitlines() if line]
-    cleanup = [line for line in lines if line.get("step") == "cleanup"]
+    cleanup = _cleanup_records(log)
     return cleanup[-1]["outcome"] if cleanup else None
+
+
+def _cleanup_records(log: Path) -> list[dict[str, object]]:
+    if not log.exists():
+        return []
+    lines = [json.loads(line) for line in log.read_text().splitlines() if line]
+    return [line for line in lines if line.get("step") == "cleanup"]
 
 
 def test_set_artifact_paths_changes_only_two_values_and_preserves_mode(
@@ -284,6 +293,8 @@ def test_cleanup_outcomes_preserve_the_path_invariant(
     if expected_rc == 2:
         assert "RESTORE_FAILED" in completed.stderr
         assert "상태 미보장" in completed.stderr
+    if fail_at == "log_precheck":
+        assert _cleanup_records(log)[-1]["original_rc"] == expected_rc
 
 
 def test_fail_or_hold_restores_original_rc_and_paths(tmp_path: Path) -> None:
@@ -300,6 +311,35 @@ def test_invalid_previous_binding_stops_before_cleanup(tmp_path: Path) -> None:
     assert completed.returncode == 1
     assert "PREV_STATE_INVALID" in completed.stderr
     assert _values(env_file) == (PREV_FAULT, "")
+    assert not log.exists()
+
+
+def test_stage2_accepts_the_running_previous_revision_before_publishing(
+    tmp_path: Path,
+) -> None:
+    completed, env_file, log = _run_stage2(
+        tmp_path,
+        previous_revision=PREVIOUS_REVISION,
+        running_revision=PREVIOUS_REVISION,
+    )
+
+    assert PREVIOUS_REVISION != REVISION
+    assert completed.returncode == 0, completed.stderr
+    assert _values(env_file) == (NEW_FAULT, NEW_GOLDEN)
+    assert _outcome(log) == "PUBLISHED"
+
+
+def test_stage2_rejects_an_unreadable_running_production_revision(
+    tmp_path: Path,
+) -> None:
+    completed, env_file, log = _run_stage2(
+        tmp_path,
+        running_revision="not-a-40-character-revision",
+    )
+
+    assert completed.returncode == 1
+    assert completed.stderr.strip() == "PRODUCTION_REVISION_UNREADABLE"
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
     assert not log.exists()
 
 
@@ -409,6 +449,24 @@ def test_stage2_requires_manual_observer_baseline_and_verifies_on_host() -> None
     assert 'assert_owned_0600 "$A/observer-baseline.json"' in stage
     assert stage.index('assert_owned_0600 "$A/observer-baseline.json"') < stage.index(
         "\n  team down\n"
+    )
+
+
+def test_stage2_uses_running_revision_then_current_after_restore() -> None:
+    stage = STAGE2.read_text(encoding="utf-8")
+    verify_function = stage.split("verify_prev_state()", maxsplit=1)[1].split(
+        "restore_prev()", maxsplit=1
+    )[0]
+    restore_function = stage.split("restore_prev()", maxsplit=1)[1].split(
+        "publish_new()", maxsplit=1
+    )[0]
+
+    assert "team exec -T backend printenv BISTEL_SOURCE_REVISION" in stage
+    assert 'verify_prev_state "$RUNNING_REV"' in stage
+    assert 'verify_prev_state "$REV"' in restore_function
+    assert '--expect-revision "$PREV_REV"' in verify_function
+    assert (
+        '--expect-container-revision "$expected_container_revision"' in verify_function
     )
 
 
