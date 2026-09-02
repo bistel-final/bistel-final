@@ -757,9 +757,24 @@ def get_dashboard_summary(
                 """
                 SELECT ar.approval_id, ar.action_id, ar.agent_run_id,
                        ar.requested_at, ah.lot_id, ah.chamber_id,
-                       ah.equipment_id, ah.action_code
+                       COALESCE(
+                           ah.equipment_id,
+                           incident_equipment.equipment_id
+                       ) AS equipment_id,
+                       ah.action_code
                 FROM approval_request AS ar
                 JOIN action_history AS ah ON ah.action_id = ar.action_id
+                LEFT JOIN LATERAL (
+                    SELECT CASE
+                             WHEN count(DISTINCT history.equipment_id) = 1
+                             THEN min(history.equipment_id)
+                             ELSE NULL
+                           END AS equipment_id
+                    FROM lot_history AS history
+                    WHERE history.lot_id = ah.lot_id
+                      AND history.chamber_id = ah.chamber_id
+                      AND history.equipment_id IS NOT NULL
+                ) AS incident_equipment ON TRUE
                 WHERE ar.status = 'PENDING'
                 ORDER BY ar.requested_at DESC, ar.approval_id DESC
                 """
