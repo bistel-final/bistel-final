@@ -631,7 +631,9 @@ def validate_artifact(artifact: Mapping[str, Any]) -> None:
     if not _nonnegative_int(unclassified) or unclassified > 7:
         raise FaultEvaluationContractError("ARTIFACT_CLASSIFICATION_INVALID")
     by_class = classification["by_class"]
-    if not isinstance(by_class, Mapping) or tuple(by_class) != FAULT_CLASSES:
+    # Evidence receipts use canonical ``sort_keys=True`` serialization, so mapping
+    # insertion order is not durable. The exact five-key set remains mandatory.
+    if not isinstance(by_class, Mapping) or set(by_class) != FAULT_CLASS_SET:
         raise FaultEvaluationContractError("ARTIFACT_CLASSIFICATION_INVALID")
     f1_values: list[float] = []
     for fault_class in FAULT_CLASSES:
