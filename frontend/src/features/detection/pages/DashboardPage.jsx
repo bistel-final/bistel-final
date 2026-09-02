@@ -197,7 +197,7 @@ function DashboardPage() {
     const byDay = {}
     for (const a of rows) {
       const d = dateOf(a.occurred_at)
-      byDay[d] ??= { label: dayLabel(d), oos: 0, ooc: 0 }
+      byDay[d] ??= { label: dayLabel(d), date: d, oos: 0, ooc: 0 } // date: hover 툴팁 표기용 원본 일자
       if (a.judgement === 'OOS') byDay[d].oos += 1
       else byDay[d].ooc += 1
     }
