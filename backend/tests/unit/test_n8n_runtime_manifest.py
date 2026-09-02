@@ -305,7 +305,7 @@ def test_tracked_runtime_manifest_matches_workflow_sources() -> None:
         == rm.EXPECTED_N8N_PLATFORM_DIGESTS
     )
     assert manifest.runtime.database_type == "sqlite"
-    # 2026-09-02 공용 host(팀장 PC · Docker Desktop · linux/amd64) 실측 tuple로 전환됐다.
+    # 2026-09-02 공용 host(팀장 PC Docker · linux/amd64) 실측 tuple로 전환됐다.
     assert manifest.runtime.attestation == "shared-host"
     rm.validate_shared_host_runtime(
         manifest,
