@@ -78,7 +78,9 @@ const lookup = (name) => {
       '$input', '$env', '$', 'require', 'URL', 'URLSearchParams',
       `return (async () => {\n${payload.code}\n})()`
     );
-    const result = await execute(input, payload.env, lookup, require, undefined, undefined);
+    const result = await execute(
+      input, payload.env, lookup, require, undefined, undefined
+    );
     process.stdout.write(JSON.stringify({ ok: true, result }));
   } catch (error) {
     process.stdout.write(JSON.stringify({
