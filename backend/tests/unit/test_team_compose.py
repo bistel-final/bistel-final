@@ -398,6 +398,11 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
     ).read_text(encoding="utf-8")
 
     assert kafka["ports"] == ["53005:9094"]
+    # apache/kafka 3.9 `kafka-get-offsets.sh`는 `--topic name:partition`을 topic
+    # 이름으로 해석해 "Could not match any topic-partitions"가 된다(공용 PC 실측).
+    assert offset_script.count('--topic-partitions "$topic:$partition" --time') == 2
+    assert '--topic "$topic:$partition" --time' not in offset_script
+    assert '--topic "$topic:$partition" --to-offset' in offset_script
     assert environment["KAFKA_LISTENERS"] == (
         "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093," "EXTERNAL://0.0.0.0:9094"
     )
