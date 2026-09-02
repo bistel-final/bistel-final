@@ -19,13 +19,17 @@ import apply_postgres_role_matrix as role_runner
 import apply_severity_pair_guard as severity_guard
 import checkpoint_contract
 import db_target
-import e2e_reset_evidence as evidence
 import postgres_role_matrix as role_matrix
 import verify_public_profiles
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
+
+if __package__:
+    from . import e2e_reset_evidence as evidence
+else:
+    import e2e_reset_evidence as evidence
 
 TARGET_DATABASE = "kosa_agent_e2e"
 TARGET_PROFILE = "runtime"

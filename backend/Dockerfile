@@ -19,6 +19,12 @@ COPY backend/app ./app
 COPY backend/scripts ./scripts
 COPY backend/artifacts ./artifacts
 
+# Revision만 바뀔 때 dependency와 source COPY cache는 재사용한다.
+ARG SOURCE_REVISION
+RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+ENV BISTEL_SOURCE_REVISION=$SOURCE_REVISION
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -4,6 +4,8 @@ services:
     build:
       context: ../..
       dockerfile: backend/Dockerfile
+      args:
+        SOURCE_REVISION: ${SOURCE_REVISION:?SOURCE_REVISION is required}
     restart: unless-stopped
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:?POSTGRES_HOST is required}
@@ -38,10 +40,19 @@ services:
       KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
       KAFKA_CLIENT_USER_FILE: /run/secrets/kafka_client_user
       KAFKA_CLIENT_PASSWORD_FILE: /run/secrets/kafka_client_password
+      AGENT_FAULT_EVAL_ARTIFACT_PATH: ${AGENT_FAULT_EVAL_ARTIFACT_PATH:-}
+      AGENT_GOLDEN_FLOW_SUMMARY_PATH: ${AGENT_GOLDEN_FLOW_SUMMARY_PATH:-}
+      TEXT2SQL_DATABASE_URL: ${TEXT2SQL_DATABASE_URL:?TEXT2SQL_DATABASE_URL is required}
+      TEXT2SQL_EVAL_DATABASE_URL: ${TEXT2SQL_EVAL_DATABASE_URL:?TEXT2SQL_EVAL_DATABASE_URL is required}
+      TEXT2SQL_EVAL_LOG_DATABASE_URL: ${TEXT2SQL_EVAL_LOG_DATABASE_URL:?TEXT2SQL_EVAL_LOG_DATABASE_URL is required}
     volumes:
       - type: bind
         source: ${RAG_MODEL_CACHE_DIR:?RAG_MODEL_CACHE_DIR is required}
         target: /models/bge-m3
+        read_only: true
+      - type: bind
+        source: ${AGENT_EVAL_REPORTS_DIR:?AGENT_EVAL_REPORTS_DIR is required}
+        target: /reports
         read_only: true
     secrets:
       - kafka_client_user
@@ -65,6 +76,7 @@ services:
       context: ../..
       dockerfile: frontend/Dockerfile
       args:
+        SOURCE_REVISION: ${SOURCE_REVISION:?SOURCE_REVISION is required}
         VITE_API_BASE_URL: /api
         VITE_USE_MOCK: "false"
         VITE_USE_MOCK_DETECTION: "false"
