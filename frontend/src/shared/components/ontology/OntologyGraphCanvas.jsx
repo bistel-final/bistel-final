@@ -70,6 +70,7 @@ function ViewportFocus({ active, nodeIds, padding = 0.65, maxZoom = 1.05 }) {
 function OntologyGraphCanvas({
   graph,
   focusedRelationIds = new Set(),
+  scopeRelationIds = new Set(),
   impactNodeIds = new Set(),
   checkRequiredNodeIds = new Set(),
   selectedNodeId = null,
@@ -82,6 +83,10 @@ function OntologyGraphCanvas({
   const focused = useMemo(
     () => (focusedRelationIds instanceof Set ? focusedRelationIds : new Set(focusedRelationIds ?? [])),
     [focusedRelationIds],
+  )
+  const scope = useMemo(
+    () => (scopeRelationIds instanceof Set ? scopeRelationIds : new Set(scopeRelationIds ?? [])),
+    [scopeRelationIds],
   )
   const directImpact = useMemo(
     () => (impactNodeIds instanceof Set ? impactNodeIds : new Set(impactNodeIds ?? [])),
@@ -107,8 +112,10 @@ function OntologyGraphCanvas({
       .map((relationship) => relationship.id))
   }, [checkRequired, directImpact, normalized])
   const activeRelations = useMemo(
-    () => selectedNodeId ? selectedRelations : new Set([...focused, ...impactRelations]),
-    [focused, impactRelations, selectedNodeId, selectedRelations],
+    () => selectedNodeId
+      ? (scope.size > 0 ? scope : selectedRelations)
+      : new Set([...focused, ...impactRelations]),
+    [focused, impactRelations, scope, selectedNodeId, selectedRelations],
   )
   const hasFocus = Boolean(selectedNodeId) || activeRelations.size > 0 || directImpact.size > 0 || checkRequired.size > 0
   const focusedNodeIds = useMemo(() => {

@@ -9,6 +9,7 @@ import {
   PUBLIC_NODE_PROPERTIES,
   buildOntologyOverviewLanes,
   connectedRelationIds,
+  graphRelationIds,
   hasDisplayableRelationships,
   layoutOntologyNodes,
   mergeOntologyGraphs,
@@ -51,6 +52,11 @@ assert.equal(hasDisplayableRelationships(normalized), true)
 assert.equal(hasDisplayableRelationships({ nodes: normalized.nodes, relationships: [] }), false)
 assert.equal(connectedRelationIds(normalized, 'Chamber:EQP01-PM1').size, 5)
 assert.equal(connectedRelationIds(normalized, null).size, 0)
+assert.equal(graphRelationIds(normalized).size, normalized.relationships.length)
+assert.ok(
+  graphRelationIds(normalized).size > connectedRelationIds(normalized, 'Chamber:EQP01-PM1').size,
+  'Chamber 선택 범위는 root의 1-hop이 아니라 chamber API가 반환한 전체 subgraph여야 합니다',
+)
 
 const positions = layoutOntologyNodes(normalized)
 assert.equal(positions.length, normalized.nodes.length)
@@ -280,6 +286,7 @@ for (const contract of [
   '<Controls position="top-right"',
   'onPaneClick',
   'selectedNodeId',
+  'scopeRelationIds',
   'impactNodeIds',
   'checkRequiredNodeIds',
   'root && !selectedNodeId',
@@ -294,6 +301,9 @@ for (const contract of [
 
 const ontologyPageSource = await readFile(resolve(SOURCE_ROOT, 'features/knowledge/pages/OntologyPage.jsx'), 'utf8')
 assert.ok(ontologyPageSource.includes('Promise.allSettled(orderedChambers.map'))
+assert.ok(ontologyPageSource.includes('graphsByChamber[orderedChambers[index]] = result.value'))
+assert.ok(ontologyPageSource.includes('graphRelationIds(state.graphsByChamber[activeSelectedNode.business_id])'))
+assert.ok(ontologyPageSource.includes('scopeRelationIds={selectedChamberScopeRelationIds}'))
 assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
 assert.ok(ontologyPageSource.includes('일부 보조 챔버 관계를 불러오지 못해'))

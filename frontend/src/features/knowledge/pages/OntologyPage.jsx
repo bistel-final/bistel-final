@@ -10,6 +10,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import {
   ONTOLOGY_NODE_META,
   buildOntologyOverviewLanes,
+  graphRelationIds,
   hasDisplayableRelationships,
   mergeOntologyGraphs,
   ontologyAlarmScope,
@@ -302,7 +303,7 @@ function OntologyPage() {
     focus.phase === 'ready' ? focus.chamberId : '',
   )
   const [attempt, setAttempt] = useState(0)
-  const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
+  const [state, setState] = useState({ status: 'loading', graph: null, graphsByChamber: {}, partial: false })
   const [selectedNode, setSelectedNode] = useState(null)
   const [alarmAttempt, setAlarmAttempt] = useState(0)
   const [alarmState, setAlarmState] = useState({ requestKey: null, status: 'idle', summary: null, basis: null })
@@ -326,16 +327,21 @@ function OntologyPage() {
       if (!active) return
       const requestedResult = results[0]
       if (requestedResult.status !== 'fulfilled') {
-        setState({ status: 'error', graph: null, partial: false })
+        setState({ status: 'error', graph: null, graphsByChamber: {}, partial: false })
         return
       }
-      const responses = results
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => result.value)
+      const graphsByChamber = {}
+      const responses = []
+      results.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return
+        graphsByChamber[orderedChambers[index]] = result.value
+        responses.push(result.value)
+      })
       const merged = mergeOntologyGraphs(responses, `Chamber:${requestChamber}`)
       setState({
         status: hasDisplayableRelationships(merged) ? 'success' : 'empty',
         graph: merged,
+        graphsByChamber,
         partial: responses.length !== orderedChambers.length,
       })
       if (focus.phase !== 'ready') {
@@ -401,6 +407,10 @@ function OntologyPage() {
     () => new Set(resolvedFocus.phase === 'found' && resolvedFocus.kind === 'relation' ? [resolvedFocus.relation.id] : []),
     [resolvedFocus],
   )
+  const selectedChamberScopeRelationIds = useMemo(() => {
+    if (activeSelectedNode?.label !== 'Chamber') return new Set()
+    return graphRelationIds(state.graphsByChamber[activeSelectedNode.business_id])
+  }, [activeSelectedNode, state.graphsByChamber])
   const focusedImpactNodeIds = useMemo(
     () => new Set(resolvedFocus.phase === 'found' && resolvedFocus.kind === 'impact'
       ? resolvedFocus.directNodes.map((node) => node.id)
@@ -475,7 +485,7 @@ function OntologyPage() {
           title="온톨로지 조회 오류"
           detail={LOAD_ERROR}
           onRetry={() => {
-            setState({ status: 'loading', graph: null, partial: false })
+            setState({ status: 'loading', graph: null, graphsByChamber: {}, partial: false })
             setAttempt((value) => value + 1)
           }}
         />
@@ -494,6 +504,7 @@ function OntologyPage() {
           <OntologyOverview graph={graph} selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectOverviewNode} />
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <OntologyGraphCanvas graph={graph} focusedRelationIds={focusedRelationIds}
+              scopeRelationIds={selectedChamberScopeRelationIds}
               impactNodeIds={focusedImpactNodeIds} checkRequiredNodeIds={checkRequiredNodeIds}
               selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page"
               emphasizeRoot={Boolean(explicitChamber)} />

@@ -96,6 +96,11 @@ export function connectedRelationIds(graph, nodeId) {
   )
 }
 
+export function graphRelationIds(graph) {
+  const normalized = normalizeOntologyGraph(graph)
+  return new Set((normalized?.relationships ?? []).map((relationship) => relationship.id))
+}
+
 export function publicNodeDetails(node) {
   if (!node) return []
   const allowed = PUBLIC_NODE_PROPERTIES[node.label] ?? []
