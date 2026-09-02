@@ -73,11 +73,12 @@ const lookup = (name) => {
 };
 (async () => {
   try {
+    // n8n JS Task Runner 샌드박스와 같이 URL·URLSearchParams 전역을 노출하지 않는다.
     const execute = new Function(
-      '$input', '$env', '$', 'require',
+      '$input', '$env', '$', 'require', 'URL', 'URLSearchParams',
       `return (async () => {\n${payload.code}\n})()`
     );
-    const result = await execute(input, payload.env, lookup, require);
+    const result = await execute(input, payload.env, lookup, require, undefined, undefined);
     process.stdout.write(JSON.stringify({ ok: true, result }));
   } catch (error) {
     process.stdout.write(JSON.stringify({
@@ -1245,3 +1246,17 @@ def test_each_planned_mutation_turns_the_static_contract_red(mutation: str) -> N
     workflows = copy.deepcopy(_load_workflows())
     _mutate(workflows, mutation)
     assert _contract_errors(workflows), f"mutation stayed green: {mutation}"
+
+
+def test_r12_code_nodes_do_not_depend_on_sandbox_missing_globals() -> None:
+    """공용 n8n 2.32.7 Code node에서 `URL is not defined`가 실측됐다(2026-09-02)."""
+
+    for filename, workflow in _load_workflows().items():
+        for name, node in _nodes(workflow).items():
+            if not node["type"].endswith(".code"):
+                continue
+            code = node["parameters"]["jsCode"]
+            assert "new URL(" not in code, f"{filename}:{name} uses the URL global"
+            assert "URLSearchParams" not in code, (
+                f"{filename}:{name} uses URLSearchParams"
+            )
