@@ -1,6 +1,6 @@
 import Button from '../../../shared/components/ui/Button.jsx'
 import { FilterBar, FilterField, FilterSelect } from '../../../shared/components/ui/FilterField.jsx'
-import { ALL } from './auditModel.js'
+import { ALL, actorLabel, eventLabel } from './auditModel.js'
 
 // 감사로그 필터 — 라이트 시안 7번. [조회] 버튼 없이 변경 즉시 재조회한다.
 // 기간(date~date) + 유형(응답 event_types) + 주체(AGENT/HUMAN/SYSTEM) + 대상 검색 + 샘플 ID 칩 토글
@@ -20,16 +20,26 @@ function AuditFilterBar({ eventTypes, value, onChange, samples, onReset }) {
           </span>
         </FilterField>
         <FilterField label="이벤트 유형">
-          <FilterSelect value={value.type} onChange={(v) => set('type', v)} options={[ALL, ...eventTypes]} mono minWidth={210} />
+          <FilterSelect
+            value={value.type}
+            onChange={(v) => set('type', v)}
+            options={[ALL, ...eventTypes.map((t) => ({ value: t, label: eventLabel(t) }))]}
+            minWidth={190}
+          />
         </FilterField>
-        <FilterField label="주체">
-          <FilterSelect value={value.actor} onChange={(v) => set('actor', v)} options={[ALL, 'AGENT', 'HUMAN', 'SYSTEM']} mono minWidth={110} />
+        <FilterField label="행위자">
+          <FilterSelect
+            value={value.actor}
+            onChange={(v) => set('actor', v)}
+            options={[ALL, ...['AGENT', 'HUMAN', 'SYSTEM'].map((a) => ({ value: a, label: actorLabel(a) }))]}
+            minWidth={110}
+          />
         </FilterField>
-        <FilterField label="대상 (entity_id)">
+        <FilterField label="대상 ID">
           <input
             value={value.target}
             onChange={(e) => set('target', e.target.value)}
-            placeholder="RUN- / ACT- / APR- …"
+            placeholder="알람 · 실행 · 조치 · 승인 ID"
             className="h-9 w-[210px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] text-ink placeholder:text-faint"
           />
         </FilterField>

@@ -1,19 +1,34 @@
 import { fmtDateTime } from '../../../shared/api/format.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
-import { CELL_DIM, TD_CLS, TH_CLS, actorVariant, rowClass } from '../../../shared/components/ui/statusStyles.js'
-import { eventHex } from './auditModel.js'
+import { CELL_DIM, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
+import {
+  ALARM_KEYS,
+  TONE_BADGE,
+  actorLabel,
+  detailKeyLabel,
+  detailValueLabel,
+  eventLabel,
+  eventTone,
+  parseDetail,
+  primaryTargetOf,
+} from './auditModel.js'
 
-// 감사로그 테이블 — 라이트 시안 7번 우측
-// 시간(mono) / 행위자(solid 뱃지) / 유형(유형색 틴트 뱃지) / 대상(mono blue) / 상세(detail + before→after) / 결과
+// 감사로그 테이블 — 라이트 시안 7번 우측 (한글화·4톤 틴트, 흰 사이드바 기준)
+// 시간(mono) / 행위자(틴트 배지, 한글) / 유형(4톤 틴트 배지, 한글) / 대상(알람 ID 우선, 실행·조치 ID 보조)
+// / 상세(키·값 한글 칩 + before→after) / 결과
+const ACTOR_BADGE = { AGENT: 't-navy', HUMAN: 't-blue', USER: 't-blue', SYSTEM: 't-gray' }
+
 const stateText = (v) => {
   if (v == null) return null
-  if (typeof v !== 'object' || Array.isArray(v)) return String(v)
+  if (typeof v !== 'object' || Array.isArray(v)) return detailValueLabel(v)
+  // 대표 알람은 대상 열로 올라갔으니 상태 줄에서는 제외
   return Object.entries(v)
-    .map(([k, val]) => `${k} ${val}`)
-    .join(', ')
+    .filter(([k]) => !ALARM_KEYS.has(k))
+    .map(([k, val]) => `${detailKeyLabel(k)} ${detailValueLabel(val)}`)
+    .join(' · ')
 }
 
-// 결과 — 실패·반려 red bold / 승인·성공 green (시안 고정)
+// 결과 — 실패·반려 red / 승인·성공 green (틴트 텍스트)
 function resultOf(e) {
   if (String(e.event_type).endsWith('_FAILED')) return { label: '실패', cls: 'font-bold text-red' }
   if (e.event_type === 'APPROVAL_DECIDED') {
@@ -21,6 +36,30 @@ function resultOf(e) {
     if (e.after?.status === 'REJECTED') return { label: '반려', cls: 'font-bold text-red' }
   }
   return { label: '성공', cls: 'text-green-dark' }
+}
+
+function DetailChips({ detail }) {
+  const pairs = parseDetail(detail)
+  if (pairs.length === 0) return null
+  // 대표 알람은 대상 열로 올라갔으니 상세에서는 중복 표시하지 않는다
+  const shown = pairs.filter(([k]) => !ALARM_KEYS.has(k))
+  if (shown.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" title={typeof detail === 'string' ? detail : ''}>
+      {shown.map(([k, v], i) =>
+        k ? (
+          <span key={i} className="whitespace-nowrap">
+            <span className="text-g2">{detailKeyLabel(k)}</span>{' '}
+            <span className="font-mono font-semibold text-ink">{detailValueLabel(v)}</span>
+          </span>
+        ) : (
+          <span key={i} className="text-g1">
+            {v}
+          </span>
+        ),
+      )}
+    </div>
+  )
 }
 
 function AuditTable({ items }) {
@@ -38,35 +77,33 @@ function AuditTable({ items }) {
         </thead>
         <tbody>
           {items.map((e, i) => {
-            const hex = eventHex(e.event_type)
             const res = resultOf(e)
             const before = stateText(e.before)
             const after = stateText(e.after)
+            const target = primaryTargetOf(e)
             return (
               <tr key={e.audit_id} className={rowClass(i)}>
                 <td className={`${TD_CLS} ${CELL_DIM}`}>{fmtDateTime(e.occurred_at)}</td>
                 <td className={TD_CLS}>
                   <span className="flex items-center gap-1.5">
-                    <Badge variant={actorVariant(e.actor_type)}>{e.actor_type}</Badge>
-                    <span className="font-mono text-[10.5px] text-g2">{e.actor_id}</span>
+                    <Badge variant={ACTOR_BADGE[e.actor_type] ?? 't-gray'}>{actorLabel(e.actor_type)}</Badge>
+                    {e.actor_id && e.actor_id !== e.actor_type && (
+                      <span className="font-mono text-[10.5px] text-g2">{e.actor_id}</span>
+                    )}
                   </span>
                 </td>
                 <td className={TD_CLS}>
-                  <span
-                    className="inline-flex h-5 items-center whitespace-nowrap rounded-full border px-2.5 font-mono text-[10px] font-bold"
-                    style={{ color: hex, background: `${hex}14`, borderColor: `${hex}40` }}
-                  >
-                    {e.event_type}
-                  </span>
+                  <Badge variant={TONE_BADGE[eventTone(e.event_type)]}>{eventLabel(e.event_type)}</Badge>
                 </td>
-                <td className={`${TD_CLS} font-mono font-bold text-blue`}>{e.entity_id}</td>
-                <td className={`${TD_CLS} max-w-[320px]`}>
-                  {/* detail 이 없으면 빈 줄을 그리지 않는다 — before→after 만 남을 때 본문 줄로 쓴다 */}
-                  {e.detail && (
-                    <div className="truncate text-[12px] text-g1" title={e.detail}>
-                      {e.detail}
-                    </div>
-                  )}
+                <td className={TD_CLS}>
+                  <div className="flex items-center gap-1.5 font-mono text-[12.5px] font-bold text-navy">
+                    {target.primary}
+                    {target.source && <span className="rounded-[3px] bg-tint-gray px-1 py-[1px] text-[9.5px] font-bold text-g1">{target.source}</span>}
+                  </div>
+                  {target.secondary && <div className="font-mono text-[10.5px] text-g2">{target.secondary}</div>}
+                </td>
+                <td className={`${TD_CLS} max-w-[420px]`}>
+                  <DetailChips detail={e.detail} />
                   {(before || after) && (
                     <div
                       className={`truncate font-mono text-[10.5px] text-g2 ${e.detail ? 'mt-0.5' : ''}`}
