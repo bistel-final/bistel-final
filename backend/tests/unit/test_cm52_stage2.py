@@ -602,6 +602,11 @@ def test_stage2_waits_for_http_after_recreate_before_verifying() -> None:
     stage = STAGE2.read_text(encoding="utf-8")
     common = (COMPOSE_DIR / "cm52_common.sh").read_text(encoding="utf-8")
     assert "e2e up -d --force-recreate --wait backend" in stage
+    # step 8 재생성 backend는 파생 RUN_ID — 기존 trail 파일 거부 회피
+    derived = (
+        'DELIVERY_CALLBACK_TRAIL_RUN_ID="${DELIVERY_CALLBACK_TRAIL_RUN_ID:-c46_e2e}_s8_'
+    )
+    assert derived in stage
     assert "cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations" in stage
     assert "cm52_wait_http() {" in common
     assert "cm52_wait_http http://127.0.0.1:8080/api/health" in common

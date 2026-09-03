@@ -503,8 +503,11 @@ FAULT_SHA=$(cm52_sha256 "$A/fault-5class.json")
 LAST_OK_STEP=7
 append_log 7 PASS fault-5class
 
+# C-4.6 trail은 같은 RUN_ID의 기존 파일을 거부하므로(TRAIL_CONFIG_INVALID) 재생성 backend에는
+# 파생 RUN_ID를 준다. 이 backend는 artifact preflight·API 확인 전용이라 callback을 받지 않는다.
 AGENT_FAULT_EVAL_ARTIFACT_PATH="$CA/fault-5class.json" \
   AGENT_GOLDEN_FLOW_SUMMARY_PATH="$CA/golden-flow.json" \
+  DELIVERY_CALLBACK_TRAIL_RUN_ID="${DELIVERY_CALLBACK_TRAIL_RUN_ID:-c46_e2e}_s8_$(date -u +%H%M%S)" \
   e2e up -d --force-recreate --wait backend
 e2e exec -T backend python scripts/preflight_agent_evaluation_artifacts.py \
   --fault "$CA/fault-5class.json" \
