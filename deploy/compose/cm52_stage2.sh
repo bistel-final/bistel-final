@@ -51,6 +51,16 @@ if ((PLAN)); then
   exit 0
 fi
 
+# .env.team 키가 셸에 export돼 있으면 compose 보간에서 --env-file 값을 덮어쓴다(공용 PC 실측:
+# 빈 AGENT_*_PATH export → production ENV_MISMATCH · 옛 TEAM_IMAGE_TAG export → 옛 태그 빌드).
+for shell_override in SOURCE_REVISION TEAM_IMAGE_TAG AGENT_FAULT_EVAL_ARTIFACT_PATH \
+  AGENT_GOLDEN_FLOW_SUMMARY_PATH; do
+  if [[ -n "${!shell_override+x}" ]]; then
+    printf '%s\n' "SHELL_ENV_OVERRIDE $shell_override" >&2
+    exit 1
+  fi
+done
+
 REV="${CM52_REVISION:-$(git -C "$CM52_REPO_ROOT" rev-parse HEAD)}"
 [[ "$REV" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' REVISION_MISMATCH >&2; exit 1; }
 [[ "${ATTEMPT##*-}" == "${REV:0:12}" ]] || {

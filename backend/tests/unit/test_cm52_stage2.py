@@ -611,3 +611,26 @@ def test_stage2_waits_for_http_after_recreate_before_verifying() -> None:
     assert "cm52_wait_http() {" in common
     assert "cm52_wait_http http://127.0.0.1:8080/api/health" in common
     assert 'curl -fsS --max-time 5 "$url"' in common
+
+
+def test_stage2_refuses_shell_exported_env_team_keys(tmp_path: Path) -> None:
+    """셸 export가 --env-file 값을 덮어 ENV_MISMATCH를 만들던 결함 — fail-fast."""
+
+    env_file = tmp_path / ".env.team"
+    _env_file(env_file)
+    completed = subprocess.run(
+        ["bash", str(STAGE2), "--attempt-id", ATTEMPT],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "CM52_ENV_FILE": str(env_file),
+            "CM52_STAGE2_TEST_MODE": "1",
+            "AGENT_FAULT_EVAL_ARTIFACT_PATH": "",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 1
+    assert "SHELL_ENV_OVERRIDE AGENT_FAULT_EVAL_ARTIFACT_PATH" in completed.stderr
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)
