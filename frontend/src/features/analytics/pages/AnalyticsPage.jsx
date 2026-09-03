@@ -182,8 +182,10 @@ function AnalyticsPage() {
           } else {
             setDef(d)
             setSqlText(formatSql(d.generated_sql ?? ''))
-            // 기본 탭은 서버가 정한 차트 유형을 따른다 — 그릴 수 있는 유형(line/bar/histogram)이면 차트 부터
-            setTab(['line', 'bar', 'histogram'].includes(d.visualization?.chart_type) ? 'chart' : 'table')
+            // 기본 탭: 교차확인이 돌았으면 그래프(두 저장소가 같은 답이란 걸 바로 보여준다),
+            // 아니면 서버가 정한 차트 유형(line/bar/histogram)이면 차트, 그 외에는 표
+            const crossRan = ['MATCH', 'MISMATCH'].includes(d.cross_check?.status)
+            setTab(crossRan ? 'graph' : ['line', 'bar', 'histogram'].includes(d.visualization?.chart_type) ? 'chart' : 'table')
             setPhase('run')
             verify(d.generated_sql, false)
             after(800, () => {

@@ -6,6 +6,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
 import { BarChart, HistogramChart, LineChart } from './NlqCharts.jsx'
 import { inferUnit } from './nlqUnits.js'
+import NlqGraphTab from './NlqGraphTab.jsx'
 import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 
 const TABS = [
@@ -13,6 +14,9 @@ const TABS = [
   ['stats', '통계'],
   ['chart', '차트'],
 ]
+// 교차확인이 실제로 돌았을 때(MATCH/MISMATCH)만 그래프 탭이 생긴다
+const GRAPH_TAB = ['graph', '그래프']
+const hasGraphTab = (def) => ['MATCH', 'MISMATCH'].includes(def?.cross_check?.status)
 
 // visualization.chart_type/x/y — 컬럼 목록에 없는 이름은 첫/마지막 컬럼으로 폴백한다
 // 차트 종류는 응답이 확정한다 — UI 는 재판단 없이 그리기만 한다 (FR-D-04)
@@ -106,7 +110,7 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
 
       <div className="flex items-center justify-between px-6 pb-4">
         <div className="flex gap-2">
-          {TABS.map(([key, label]) => (
+          {[...TABS, ...(hasGraphTab(def) ? [GRAPH_TAB] : [])].map(([key, label]) => (
             <Button key={key} sm variant={tab === key ? 'primary' : 'outline'} onClick={() => onTab(key)}>
               {label}
             </Button>
@@ -199,6 +203,11 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
             </div>
           )}
           <Footnote text={footnote} />
+        </div>
+      )}
+      {tab === 'graph' && hasGraphTab(def) && (
+        <div className="px-6 pb-5 pt-1.5">
+          <NlqGraphTab def={def} />
         </div>
       )}
     </Card>
