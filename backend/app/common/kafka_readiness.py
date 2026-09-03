@@ -175,6 +175,10 @@ class KafkaAdminProbe:
         from confluent_kafka.admin import OffsetSpec
 
         metadata = self._admin.list_topics(timeout=self._timeout_seconds)
+        # 두 topic의 metadata는 모두 확인하되, committed/earliest/latest는 WF4 group이
+        # 실제로 소비하는 result topic partition만 본다. actions topic은 WF4가 구독하지
+        # 않아 committed offset이 없거나 -1로 돌아오므로, 이를 요구하면 어느 환경에서도
+        # PASS가 나오지 않는다(공용 PC 실측 CONTRACT_MISMATCH).
         topic_partitions: list[Any] = []
         for topic in REQUIRED_TOPICS:
             topic_metadata = getattr(metadata, "topics", {}).get(topic)
@@ -184,7 +188,10 @@ class KafkaAdminProbe:
             for partition_id, partition_metadata in sorted(partitions.items()):
                 if getattr(partition_metadata, "error", None):
                     raise KafkaReadinessError("Kafka partition metadata 오류입니다")
-                topic_partitions.append(TopicPartition(topic, int(partition_id)))
+                if topic == RESULT_TOPIC:
+                    topic_partitions.append(TopicPartition(topic, int(partition_id)))
+        if not topic_partitions:
+            raise KafkaReadinessError("result topic partition이 없습니다")
 
         request = [
             ConsumerGroupTopicPartitions(

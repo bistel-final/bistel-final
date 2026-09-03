@@ -327,9 +327,15 @@ def _postgres_runtime_readiness(bundle: MarkerBundle) -> None:
     with get_app_engine().connect() as connection, connection.begin():
         connection.exec_driver_sql("SET LOCAL statement_timeout = '3000ms'")
         connection.exec_driver_sql("SET LOCAL lock_timeout = '2000ms'")
+        from app.common import config as runtime_config
+        from app.common.readiness_markers import expected_runtime_database
+
         verify_postgresql_runtime(
             connection,
             payloads["runtime.runtime_checkpointed.json"],
+            expected_database=expected_runtime_database(
+                getattr(runtime_config, "POSTGRES_DB", None)
+            ),
         )
 
 

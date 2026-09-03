@@ -14,7 +14,11 @@ from pydantic import ValidationError
 from app.common import graph_readiness, readiness
 from app.common.db import DB_CONNECT_TIMEOUT_SECONDS
 from app.common.kafka_config import KafkaClientConfig, KafkaConfigError
-from app.common.kafka_readiness import KafkaAdminProbe, KafkaLagTracker
+from app.common.kafka_readiness import (
+    KafkaAdminProbe,
+    KafkaLagTracker,
+    KafkaReadinessError,
+)
 from app.common.readiness import (
     CHECK_NAMES,
     POSTGRES_LOCK_TIMEOUT_SECONDS,
@@ -27,6 +31,7 @@ from app.common.readiness import (
 from app.common.readiness_markers import (
     READINESS_MARKER_FILENAMES,
     MarkerBundle,
+    expected_runtime_database,
 )
 from app.common.schemas import (
     ReadinessCheck,
@@ -446,6 +451,8 @@ class _FakeKafkaAdmin:
     def __init__(self) -> None:
         self.list_offsets_calls = 0
         self.mutations = 0
+        self.committed_requests: list[tuple[str, int]] = []
+        self.offset_requests: list[tuple[str, int]] = []
 
     def list_topics(self, *, timeout: float) -> object:
         assert timeout == 5.0
@@ -459,6 +466,7 @@ class _FakeKafkaAdmin:
 
     def list_consumer_group_offsets(self, request: list[object]) -> dict[str, object]:
         partitions = request[0].topic_partitions
+        self.committed_requests = [(item.topic, item.partition) for item in partitions]
         committed = [
             SimpleNamespace(topic=item.topic, partition=item.partition, offset=4)
             for item in partitions
@@ -471,6 +479,9 @@ class _FakeKafkaAdmin:
 
     def list_offsets(self, request: dict[object, object]) -> dict[object, object]:
         self.list_offsets_calls += 1
+        self.offset_requests = sorted(
+            {(partition.topic, partition.partition) for partition in request}
+        )
         offset = 0 if self.list_offsets_calls == 1 else 10
         return {
             partition: _Resolved(SimpleNamespace(offset=offset))
@@ -483,7 +494,68 @@ def test_kafka_probe_uses_two_admin_offset_planes_without_mutation() -> None:
 
     measurement = KafkaAdminProbe(admin).measure()
 
-    assert measurement.partition_count == 2
-    assert measurement.lag == 12
+    # WF4 group이 소비하는 result topic partition만 잰다(actions topic은 metadata만).
+    assert measurement.partition_count == 1
+    assert measurement.lag == 6
     assert admin.list_offsets_calls == 2
     assert admin.mutations == 0
+    assert admin.committed_requests == [("fdc.actions.result", 0)]
+    assert admin.offset_requests == [("fdc.actions.result", 0)]
+
+
+class _RealisticKafkaAdmin(_FakeKafkaAdmin):
+    """실제 broker처럼 구독하지 않은 topic의 committed offset은 -1로 돌려준다."""
+
+    def list_consumer_group_offsets(self, request: list[object]) -> dict[str, object]:
+        partitions = request[0].topic_partitions
+        committed = [
+            SimpleNamespace(
+                topic=item.topic,
+                partition=item.partition,
+                offset=4 if item.topic == "fdc.actions.result" else -1,
+            )
+            for item in partitions
+        ]
+        return {
+            "kosa-fdc-wf4-writeback": _Resolved(
+                SimpleNamespace(topic_partitions=committed)
+            )
+        }
+
+
+def test_kafka_probe_ignores_unsubscribed_actions_topic_committed_offset() -> None:
+    admin = _RealisticKafkaAdmin()
+
+    measurement = KafkaAdminProbe(admin).measure()
+
+    assert measurement.partition_count == 1
+    assert measurement.lag == 6
+
+
+def test_kafka_probe_requires_both_topics_metadata() -> None:
+    class _MissingActions(_FakeKafkaAdmin):
+        def list_topics(self, *, timeout: float) -> object:
+            partition = SimpleNamespace(error=None)
+            result_topic = SimpleNamespace(partitions={0: partition})
+            return SimpleNamespace(topics={"fdc.actions.result": result_topic})
+
+    with pytest.raises(KafkaReadinessError):
+        KafkaAdminProbe(_MissingActions()).measure()
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("kosa_agent", "kosa_agent"),
+        ("kosa_agent_e2e", "kosa_agent_e2e"),
+        ("kosa_text2sql", "kosa_agent"),
+        (None, "kosa_agent"),
+        ("", "kosa_agent"),
+    ],
+)
+def test_expected_runtime_database_allows_only_the_e2e_alias(
+    configured: object, expected: str
+) -> None:
+    """E2E database는 live identity 기대값으로 허용하되 그 외 값은 정본과 비교한다."""
+
+    assert expected_runtime_database(configured) == expected
