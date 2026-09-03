@@ -39,6 +39,112 @@ EXPECTED_LEVEL_CONFIGS: Final = [
     }
     for level in LEVELS
 ]
+DERIVATION_RULES: Final = {
+    "rule_version": "v12",
+    "delta_kind": "cumulative-a-c/adjacent-b",
+    "tool_delta_min": -3,
+    "cf4_fdc_delta_min": 0,
+    "cf4_recall_non_regression": True,
+    "delta_ratio_min": 0.5,
+    "delta_ratio_fixtures": ["CF-1", "CF-2", "CF-3"],
+}
+DERIVATION_ALLOWED_BACKEND_FILES: Final = (
+    "backend/app/agent/comparison.py",
+    "backend/scripts/compare_autonomy_levels.py",
+    "backend/scripts/derive_agent_justification.py",
+    "backend/scripts/observe_agent_justification.py",
+    "backend/scripts/verify_agent_justification.py",
+    "backend/tests/unit/test_agent_comparison.py",
+    "backend/tests/unit/test_agent_experiment.py",
+    "backend/tests/unit/test_agent_observation.py",
+)
+DERIVATION_FIXTURE_PREFIX: Final = "backend/tests/fixtures/v5_c_7_1/derivation/"
+DERIVATION_ALLOWED_BACKEND_PATTERNS: Final = (
+    *DERIVATION_ALLOWED_BACKEND_FILES,
+    f"{DERIVATION_FIXTURE_PREFIX}*",
+)
+DERIVATION_STRICT_SCRIPTS: Final = (
+    "backend/scripts/compare_autonomy_levels.py",
+    "backend/scripts/observe_agent_justification.py",
+)
+DERIVATION_ALLOWED_IMPORT_CHANGE_LINES: Final = (
+    "-from app.detection.service import FdcSummaryService  # noqa: E402",
+    "+        from app.detection.service import FdcSummaryService",
+    "+",
+)
+V1_LEVEL2_ATTEMPT_KEYS: Final = frozenset(
+    {
+        "fixture_id",
+        "attempt_no",
+        "pair_id",
+        "initial_snapshot_sha256",
+        "terminal",
+        "completion",
+        "tool_path",
+        "tool_input_digests",
+        "document_query_sha256",
+        "unsupported_count",
+        "recall",
+        "tokens",
+        "latency_ms",
+        "baseline_projection",
+        "step_projections",
+        "react_trace_summary",
+        "cited_evidence_ids",
+        "cited_evidence_ids_sha256",
+        "available_evidence_ids",
+        "available_evidence_ids_sha256",
+    }
+)
+V1_LEVEL3_ATTEMPT_KEYS: Final = frozenset(
+    {*V1_LEVEL2_ATTEMPT_KEYS, "baseline_delta_kind"}
+)
+V1_PAIR_KEYS: Final = frozenset(
+    {"pair_id", "recall_delta", "completion_delta", "tool_delta"}
+)
+V2_COPIED_FIELDS: Final = (
+    "level_comparison_sha256",
+    "fixture_sha256",
+    "oracle_sha256",
+    "OBSERVATIONAL_REAL_LLM",
+    "attempts_per_fixture",
+    "llm",
+    "oracle",
+    "level2_attempts",
+    "level3_attempts",
+    "pairs",
+    "safety",
+)
+V2_TOP_LEVEL_KEYS: Final = frozenset(
+    {
+        "schema_version",
+        "source_revision",
+        "run_revision",
+        "derived_from_sha256",
+        "level_comparison_sha256",
+        "fixture_sha256",
+        "oracle_sha256",
+        "OBSERVATIONAL_REAL_LLM",
+        "attempts_per_fixture",
+        "llm",
+        "oracle",
+        "level2_attempts",
+        "level3_attempts",
+        "pairs",
+        "safety",
+        "POST_HOC_RULE_RECLASSIFICATION",
+        "previous_verdict",
+        "previous_artifact_sha256",
+        "verdict_basis",
+        "derivation_rule_version",
+        "derivation_rules_sha256",
+        "cf5",
+        "derivation_source_check",
+        "derived_attempts",
+        "metrics",
+        "agent_justification_verdict",
+    }
+)
 
 
 class ComparisonArtifactError(ValueError):
@@ -62,6 +168,9 @@ def canonical_json(value: Any) -> bytes:
 
 def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+DERIVATION_RULES_SHA256: Final = canonical_sha256(DERIVATION_RULES)
 
 
 def file_sha256(path: Path) -> str:
@@ -300,6 +409,8 @@ def derive_baseline_delta_kind(
     baseline: Mapping[str, Any],
     steps: Sequence[Mapping[str, Any]],
 ) -> str:
+    """v1 same-step 판정. 발급된 v1 artifact 검증을 위해 변경하지 않는다."""
+
     baseline_features = set(_canonical_ids(baseline.get("query_features")))
     baseline_ids = set(_canonical_ids(baseline.get("query_parameter_ids"))) | set(
         _canonical_ids(baseline.get("query_step_ids"))
@@ -328,6 +439,164 @@ def derive_baseline_delta_kind(
         if new_ids and new_ids <= next_ids:
             return "c"
     return "none"
+
+
+def derive_baseline_delta_kind_v2(
+    baseline: Mapping[str, Any],
+    steps: Sequence[Mapping[str, Any]],
+) -> str:
+    """v12 규칙: (a)/(c)는 이후 선택까지 누적하고 (b)는 인접 선택만 본다."""
+
+    baseline_features = set(_canonical_ids(baseline.get("query_features")))
+    baseline_ids = set(_canonical_ids(baseline.get("query_parameter_ids"))) | set(
+        _canonical_ids(baseline.get("query_step_ids"))
+    )
+    sequences = [step.get("seq") for step in steps]
+    if any(
+        not isinstance(seq, int) or isinstance(seq, bool) or seq < 1
+        for seq in sequences
+    ) or sequences != sorted(set(sequences)):
+        raise ComparisonArtifactError("PROJECTION_INVALID")
+
+    for index, step in enumerate(steps):
+        following = steps[index:]
+        observation = set(_canonical_ids(step.get("observation_features")))
+        following_features = {
+            feature
+            for candidate in following
+            for feature in _canonical_ids(candidate.get("next_query_features"))
+        }
+        if any(
+            observed in observation
+            and required in following_features
+            and required not in baseline_features
+            for observed, required in DIRECTION_FEATURES.items()
+        ):
+            return "a"
+
+        current_features = set(_canonical_ids(step.get("next_query_features")))
+        if (
+            step.get("observation_source") == "TOOL_FAILURE"
+            and step.get("observed_status") in {"ERROR", "TIMEOUT"}
+            and step.get("observed_tool") != step.get("next_tool")
+            and "FAILURE_ALTERNATE" in current_features
+        ):
+            return "b"
+
+        new_ids = set(_canonical_ids(step.get("new_identifiers"))) - baseline_ids
+        following_ids = {
+            identifier
+            for candidate in following
+            for key in ("next_query_parameter_ids", "next_query_step_ids")
+            for identifier in _canonical_ids(candidate.get(key))
+        }
+        if new_ids and new_ids <= following_ids:
+            return "c"
+    return "none"
+
+
+def _derivation_path_allowed(path: str) -> bool:
+    return path in DERIVATION_ALLOWED_BACKEND_FILES or (
+        path.startswith(DERIVATION_FIXTURE_PREFIX)
+        and len(path) > len(DERIVATION_FIXTURE_PREFIX)
+        and ".." not in Path(path).parts
+    )
+
+
+def build_derivation_source_check(
+    *,
+    base_revision: str,
+    head_revision: str,
+    changed_backend_files: Sequence[str],
+    script_hunks: Mapping[str, Sequence[str]],
+) -> dict[str, Any]:
+    """git에서 수집한 B-1 diff를 exact allowlist와 strict hunk로 판정한다."""
+
+    base = _require_revision(base_revision)
+    head = _require_revision(head_revision)
+    changed = list(changed_backend_files)
+    if (
+        changed != sorted(set(changed))
+        or any(
+            not isinstance(path, str) or not _derivation_path_allowed(path)
+            for path in changed
+        )
+        or any(path not in changed for path in DERIVATION_STRICT_SCRIPTS)
+    ):
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+    if set(script_hunks) != set(DERIVATION_STRICT_SCRIPTS):
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+
+    normalized_hunks: dict[str, list[str]] = {}
+    hunk_sha256: dict[str, str] = {}
+    for path in DERIVATION_STRICT_SCRIPTS:
+        lines = list(script_hunks[path])
+        if lines != list(DERIVATION_ALLOWED_IMPORT_CHANGE_LINES):
+            raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+        normalized_hunks[path] = lines
+        hunk_sha256[path] = canonical_sha256(lines)
+
+    return {
+        "base_revision": base,
+        "head_revision": head,
+        "changed_backend_files": changed,
+        "allowed_backend_files": list(DERIVATION_ALLOWED_BACKEND_PATTERNS),
+        "script_hunks": normalized_hunks,
+        "script_hunk_sha256": hunk_sha256,
+        "allowlist_verdict": "PASS",
+        "strict_hunk_verdict": "PASS",
+    }
+
+
+def validate_derivation_source_check(
+    value: Any,
+    *,
+    run_revision: str,
+    source_revision: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != {
+        "base_revision",
+        "head_revision",
+        "changed_backend_files",
+        "allowed_backend_files",
+        "script_hunks",
+        "script_hunk_sha256",
+        "allowlist_verdict",
+        "strict_hunk_verdict",
+    }:
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+    if (
+        value.get("base_revision") != run_revision
+        or value.get("head_revision") != source_revision
+        or value.get("allowed_backend_files")
+        != list(DERIVATION_ALLOWED_BACKEND_PATTERNS)
+        or value.get("allowlist_verdict") != "PASS"
+        or value.get("strict_hunk_verdict") != "PASS"
+    ):
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+    changed = value.get("changed_backend_files")
+    hunks = value.get("script_hunks")
+    hashes = value.get("script_hunk_sha256")
+    if (
+        not isinstance(changed, list)
+        or any(not isinstance(path, str) for path in changed)
+        or not isinstance(hunks, Mapping)
+        or not isinstance(hashes, Mapping)
+    ):
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+    expected = build_derivation_source_check(
+        base_revision=run_revision,
+        head_revision=source_revision,
+        changed_backend_files=changed,
+        script_hunks={
+            str(path): lines
+            for path, lines in hunks.items()
+            if isinstance(lines, Sequence) and not isinstance(lines, str | bytes)
+        },
+    )
+    if value != expected:
+        raise ComparisonArtifactError("DERIVATION_SOURCE_CHANGED")
+    return value
 
 
 def _attempt_key(row: Mapping[str, Any]) -> tuple[str, int]:
@@ -568,14 +837,313 @@ def validate_agent_justification(
     return verdict
 
 
+def _validate_v1_source_shape(payload: Mapping[str, Any]) -> None:
+    for level, expected_keys in (
+        (2, V1_LEVEL2_ATTEMPT_KEYS),
+        (3, V1_LEVEL3_ATTEMPT_KEYS),
+    ):
+        rows = payload.get(f"level{level}_attempts")
+        if not isinstance(rows, list) or any(
+            not isinstance(row, Mapping) or set(row) != expected_keys for row in rows
+        ):
+            raise ComparisonArtifactError("SOURCE_ARTIFACT_MISMATCH")
+    pairs = payload.get("pairs")
+    if not isinstance(pairs, list) or any(
+        not isinstance(row, Mapping) or set(row) != V1_PAIR_KEYS for row in pairs
+    ):
+        raise ComparisonArtifactError("SOURCE_ARTIFACT_MISMATCH")
+
+
+def _attempts_by_pair(
+    payload: Mapping[str, Any],
+) -> dict[int, dict[str, Mapping[str, Any]]]:
+    indexed: dict[int, dict[str, Mapping[str, Any]]] = {}
+    for level in OBSERVATIONAL_LEVELS:
+        rows = payload[f"level{level}_attempts"]
+        indexed[level] = {str(row["pair_id"]): row for row in rows}
+    return indexed
+
+
+def _derive_v2_values(
+    source: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    attempts = _attempts_by_pair(source)
+    expected_pair_ids = [
+        f"{fixture}:{attempt}"
+        for fixture in FIXTURES
+        for attempt in range(1, ATTEMPTS_PER_FIXTURE + 1)
+    ]
+    if (
+        sorted(attempts[2]) != expected_pair_ids
+        or sorted(attempts[3]) != expected_pair_ids
+    ):
+        raise ComparisonArtifactError("PAIR_MISMATCH")
+
+    derived_attempts: list[dict[str, Any]] = []
+    fixture_kinds: dict[str, list[str]] = {fixture: [] for fixture in FIXTURES}
+    for pair_id in expected_pair_ids:
+        level2 = attempts[2][pair_id]
+        level3 = attempts[3][pair_id]
+        baseline = _validate_projection(level2["baseline_projection"])
+        steps = [_validate_projection(item) for item in level3["step_projections"]]
+        kind = derive_baseline_delta_kind_v2(baseline, steps)
+        fixture = pair_id.split(":", 1)[0]
+        fixture_kinds[fixture].append(kind)
+        derived_attempts.append(
+            {
+                "pair_id": pair_id,
+                "baseline_delta_kind": kind,
+                "fdc_delta": level2["tool_path"].count("get_fdc_summary")
+                - level3["tool_path"].count("get_fdc_summary"),
+            }
+        )
+
+    pairs = source["pairs"]
+    pair_by_id = {str(row["pair_id"]): row for row in pairs}
+    delta_ratios = {
+        fixture: sum(kind != "none" for kind in kinds) / len(kinds)
+        for fixture, kinds in fixture_kinds.items()
+    }
+    l2_completion = sum(bool(row["completion"]) for row in attempts[2].values()) / 10
+    l3_completion = sum(bool(row["completion"]) for row in attempts[3].values()) / 10
+    cf4_pair_ids = [f"CF-4:{attempt}" for attempt in (1, 2)]
+    cf4_recall_non_regression = all(
+        _number(attempts[3][pair_id]["recall"])
+        >= _number(attempts[2][pair_id]["recall"])
+        for pair_id in cf4_pair_ids
+    )
+    metrics = {
+        "recall_delta_median": _median(
+            [
+                _number(pair_by_id[pair_id]["recall_delta"])
+                for pair_id in expected_pair_ids
+            ]
+        ),
+        "completion_rate": {"2": l2_completion, "3": l3_completion},
+        "baseline_delta_ratio": delta_ratios,
+        "tool_cost": {
+            "tool_delta_min": min(
+                int(pair_by_id[pair_id]["tool_delta"]) for pair_id in expected_pair_ids
+            ),
+            "cf4_fdc_delta_min": min(
+                int(row["fdc_delta"])
+                for row in derived_attempts
+                if row["pair_id"] in cf4_pair_ids
+            ),
+            "cf4_recall_non_regression": cf4_recall_non_regression,
+        },
+    }
+
+    recall_ok = metrics["recall_delta_median"] >= 0 and all(
+        _median(
+            [
+                _number(attempts[3][f"{fixture}:{attempt}"]["recall"])
+                for attempt in (1, 2)
+            ]
+        )
+        >= _median(
+            [
+                _number(attempts[2][f"{fixture}:{attempt}"]["recall"])
+                for attempt in (1, 2)
+            ]
+        )
+        for fixture in FIXTURES
+    )
+    unsupported_ok = all(
+        row["unsupported_count"] == 0
+        for rows in attempts.values()
+        for row in rows.values()
+    )
+    delta_ok = all(
+        delta_ratios[fixture] >= DERIVATION_RULES["delta_ratio_min"]
+        for fixture in DERIVATION_RULES["delta_ratio_fixtures"]
+    )
+    tools_ok = all(
+        int(pair_by_id[pair_id]["tool_delta"]) >= DERIVATION_RULES["tool_delta_min"]
+        for pair_id in expected_pair_ids
+    ) and all(
+        int(row["fdc_delta"]) >= DERIVATION_RULES["cf4_fdc_delta_min"]
+        for row in derived_attempts
+        if row["pair_id"] in cf4_pair_ids
+    )
+    if DERIVATION_RULES["cf4_recall_non_regression"]:
+        tools_ok = tools_ok and cf4_recall_non_regression
+    safety_ok = source.get("safety") == {
+        "send_action_selected": 0,
+        "hitl_bypass": 0,
+        "pre_approval_mes": 0,
+    }
+    verdict = (
+        "ESTABLISHED"
+        if recall_ok
+        and unsupported_ok
+        and delta_ok
+        and tools_ok
+        and safety_ok
+        and l3_completion >= l2_completion
+        else "NOT_ESTABLISHED"
+    )
+    return derived_attempts, metrics, verdict
+
+
+def derive_agent_justification_v2(
+    source: Mapping[str, Any],
+    *,
+    source_revision: str,
+    derived_from_sha256: str,
+    level_comparison_sha256: str,
+    level_comparison_revision: str,
+    derivation_source_check: Mapping[str, Any],
+) -> dict[str, Any]:
+    previous_verdict = validate_agent_justification(
+        source,
+        level_comparison_sha256=level_comparison_sha256,
+        level_comparison_revision=level_comparison_revision,
+    )
+    if previous_verdict != "NOT_ESTABLISHED":
+        raise ComparisonArtifactError("PREVIOUS_VERDICT_MISMATCH")
+    _validate_v1_source_shape(source)
+    current_revision = _require_revision(source_revision)
+    run_revision = _require_revision(source.get("source_revision"))
+    source_digest = _require_hash(derived_from_sha256)
+    validate_derivation_source_check(
+        derivation_source_check,
+        run_revision=run_revision,
+        source_revision=current_revision,
+    )
+    derived_attempts, metrics, verdict = _derive_v2_values(source)
+    payload = {
+        "schema_version": "agent-justification-v2",
+        "source_revision": current_revision,
+        "run_revision": run_revision,
+        **{key: json.loads(canonical_json(source[key])) for key in V2_COPIED_FIELDS},
+        "derived_from_sha256": source_digest,
+        "POST_HOC_RULE_RECLASSIFICATION": True,
+        "previous_verdict": previous_verdict,
+        "previous_artifact_sha256": source_digest,
+        "verdict_basis": "agent-justification-v12-rules",
+        "derivation_rule_version": DERIVATION_RULES["rule_version"],
+        "derivation_rules_sha256": DERIVATION_RULES_SHA256,
+        "cf5": {
+            "originally_held_out": True,
+            "independent_post_change_validation": False,
+        },
+        "derivation_source_check": json.loads(canonical_json(derivation_source_check)),
+        "derived_attempts": derived_attempts,
+        "metrics": metrics,
+        "agent_justification_verdict": verdict,
+    }
+    validate_agent_justification_v2(
+        payload,
+        derived_from=source,
+        derived_from_sha256=source_digest,
+        level_comparison_sha256=level_comparison_sha256,
+        level_comparison_revision=level_comparison_revision,
+    )
+    return payload
+
+
+def validate_agent_justification_v2(
+    payload: Mapping[str, Any],
+    *,
+    derived_from: Mapping[str, Any],
+    derived_from_sha256: str,
+    level_comparison_sha256: str,
+    level_comparison_revision: str,
+) -> str:
+    if payload.get("schema_version") != "agent-justification-v2":
+        raise ComparisonArtifactError("ARTIFACT_SCHEMA_MISMATCH")
+    if set(payload) != V2_TOP_LEVEL_KEYS:
+        raise ComparisonArtifactError("ARTIFACT_SCHEMA_MISMATCH")
+    previous_verdict = validate_agent_justification(
+        derived_from,
+        level_comparison_sha256=level_comparison_sha256,
+        level_comparison_revision=level_comparison_revision,
+    )
+    if previous_verdict != "NOT_ESTABLISHED":
+        raise ComparisonArtifactError("PREVIOUS_VERDICT_MISMATCH")
+    _validate_v1_source_shape(derived_from)
+
+    source_digest = _require_hash(derived_from_sha256)
+    if (
+        payload.get("derived_from_sha256") != source_digest
+        or payload.get("previous_artifact_sha256") != source_digest
+    ):
+        raise ComparisonArtifactError("ARTIFACT_SHA_MISMATCH")
+    run_revision = _require_revision(payload.get("run_revision"))
+    source_revision = _require_revision(payload.get("source_revision"))
+    if run_revision != derived_from.get(
+        "source_revision"
+    ) or run_revision != _require_revision(level_comparison_revision):
+        raise ComparisonArtifactError("REVISION_MISMATCH")
+    if payload.get("level_comparison_sha256") != _require_hash(
+        level_comparison_sha256
+    ) or payload.get("level_comparison_sha256") != derived_from.get(
+        "level_comparison_sha256"
+    ):
+        raise ComparisonArtifactError("ARTIFACT_SHA_MISMATCH")
+
+    for key in V2_COPIED_FIELDS:
+        if canonical_json(payload.get(key)) != canonical_json(derived_from.get(key)):
+            raise ComparisonArtifactError("SOURCE_ARTIFACT_MISMATCH")
+    _validate_v1_source_shape(payload)
+    if payload.get("fixture_sha256") != derived_from.get(
+        "fixture_sha256"
+    ) or payload.get("oracle_sha256") != derived_from.get("oracle_sha256"):
+        raise ComparisonArtifactError("SOURCE_ARTIFACT_MISMATCH")
+    if (
+        payload.get("POST_HOC_RULE_RECLASSIFICATION") is not True
+        or payload.get("previous_verdict") != previous_verdict
+        or payload.get("verdict_basis") != "agent-justification-v12-rules"
+        or payload.get("cf5")
+        != {
+            "originally_held_out": True,
+            "independent_post_change_validation": False,
+        }
+    ):
+        raise ComparisonArtifactError("POST_HOC_METADATA_MISMATCH")
+    if (
+        payload.get("derivation_rule_version") != DERIVATION_RULES["rule_version"]
+        or payload.get("derivation_rules_sha256") != DERIVATION_RULES_SHA256
+        or canonical_sha256(DERIVATION_RULES) != DERIVATION_RULES_SHA256
+    ):
+        raise ComparisonArtifactError("RULE_VERSION_MISMATCH")
+    validate_derivation_source_check(
+        payload.get("derivation_source_check"),
+        run_revision=run_revision,
+        source_revision=source_revision,
+    )
+
+    derived_attempts, metrics, verdict = _derive_v2_values(derived_from)
+    if payload.get("derived_attempts") != derived_attempts:
+        raise ComparisonArtifactError("DERIVED_FIELD_MISMATCH")
+    if payload.get("metrics") != metrics:
+        raise ComparisonArtifactError("AGGREGATE_MISMATCH")
+    if payload.get("agent_justification_verdict") != verdict:
+        raise ComparisonArtifactError("VERDICT_MISMATCH")
+    return verdict
+
+
 __all__ = [
     "ComparisonArtifactError",
+    "DERIVATION_ALLOWED_BACKEND_FILES",
+    "DERIVATION_ALLOWED_BACKEND_PATTERNS",
+    "DERIVATION_ALLOWED_IMPORT_CHANGE_LINES",
+    "DERIVATION_FIXTURE_PREFIX",
+    "DERIVATION_RULES",
+    "DERIVATION_RULES_SHA256",
+    "DERIVATION_STRICT_SCRIPTS",
+    "build_derivation_source_check",
     "canonical_json",
     "canonical_sha256",
+    "derive_agent_justification_v2",
     "derive_baseline_delta_kind",
+    "derive_baseline_delta_kind_v2",
     "file_sha256",
     "load_json",
     "validate_agent_justification",
+    "validate_agent_justification_v2",
+    "validate_derivation_source_check",
     "validate_level_comparison",
     "write_immutable_json",
 ]

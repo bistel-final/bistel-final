@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 import sys
@@ -12,9 +13,16 @@ import pytest
 
 from app.agent import comparison
 from scripts import compare_autonomy_levels as runner
+from scripts import derive_agent_justification as derivation
+from scripts import verify_agent_justification as verifier
 
 REVISION = "a" * 40
 DIGEST = "b" * 64
+DERIVED_REVISION = "c" * 40
+DERIVATION_FIXTURE = (
+    Path(__file__).parents[1]
+    / "fixtures/v5_c_7_1/derivation/lazy_import_commit_diff.json"
+)
 
 
 def test_executor_module_imports_do_not_load_detection_stack() -> None:
@@ -184,6 +192,24 @@ def _step(fixture: str) -> dict[str, Any]:
     return _projection(**values)
 
 
+def _derived_step(seq: int, **updates: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "seq": seq,
+        "observation_source": "DOCUMENTS",
+        "observation_features": [],
+        "observed_tool": "search_documents",
+        "observed_status": "SUCCESS",
+        "new_identifiers": [],
+        "next_tool": "stop",
+        "next_query_features": [],
+        "next_query_parameter_ids": [],
+        "next_query_step_ids": [],
+        "document_query_sha256": DIGEST,
+    }
+    values.update(updates)
+    return _projection(**values)
+
+
 def _ids(row: dict[str, Any], key: str, values: list[str]) -> None:
     row[key] = values
     row[f"{key}_sha256"] = comparison.canonical_sha256(values)
@@ -283,6 +309,64 @@ def _observational(level_sha: str = DIGEST) -> dict[str, Any]:
     }
 
 
+def _observational_not_established(level_sha: str = DIGEST) -> dict[str, Any]:
+    payload = _observational(level_sha)
+    for row in payload["level3_attempts"]:
+        if row["fixture_id"] == "CF-1":
+            row["step_projections"] = [
+                _derived_step(
+                    1,
+                    observation_source="FDC",
+                    observation_features=["OOS_ABOVE_UPPER"],
+                    observed_tool="get_fdc_summary",
+                    next_tool="get_equipment_context",
+                ),
+                _derived_step(
+                    2,
+                    observation_source="EQUIPMENT",
+                    observed_tool="get_equipment_context",
+                    next_tool="search_documents",
+                    next_query_features=["DIRECTION_ABOVE"],
+                ),
+            ]
+            row["baseline_delta_kind"] = "none"
+    payload["metrics"]["baseline_delta_ratio"]["CF-1"] = 0.0
+    payload["agent_justification_verdict"] = "NOT_ESTABLISHED"
+    return payload
+
+
+def _source_check() -> dict[str, Any]:
+    changed = sorted(comparison.DERIVATION_STRICT_SCRIPTS)
+    hunks = {
+        path: list(comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES)
+        for path in comparison.DERIVATION_STRICT_SCRIPTS
+    }
+    return comparison.build_derivation_source_check(
+        base_revision=REVISION,
+        head_revision=DERIVED_REVISION,
+        changed_backend_files=changed,
+        script_hunks=hunks,
+    )
+
+
+def _v2_payload(
+    source: dict[str, Any] | None = None,
+    *,
+    source_sha256: str = DIGEST,
+    level_sha256: str = DIGEST,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    source_payload = source or _observational_not_established(level_sha256)
+    payload = comparison.derive_agent_justification_v2(
+        source_payload,
+        source_revision=DERIVED_REVISION,
+        derived_from_sha256=source_sha256,
+        level_comparison_sha256=level_sha256,
+        level_comparison_revision=REVISION,
+        derivation_source_check=_source_check(),
+    )
+    return source_payload, payload
+
+
 def test_level_comparison_recomputes_36_run_contract() -> None:
     assert (
         comparison.validate_level_comparison(_level_artifact())
@@ -367,6 +451,336 @@ def test_observational_mutations_are_rejected(mutate: Any) -> None:
             payload,
             level_comparison_sha256=DIGEST,
             level_comparison_revision=REVISION,
+        )
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected"),
+    [
+        (
+            [
+                _derived_step(
+                    1,
+                    observation_source="FDC",
+                    observation_features=["OOS_ABOVE_UPPER"],
+                    observed_tool="get_fdc_summary",
+                    next_tool="get_equipment_context",
+                ),
+                _derived_step(
+                    2,
+                    observation_source="EQUIPMENT",
+                    observed_tool="get_equipment_context",
+                    next_tool="search_documents",
+                    next_query_features=["DIRECTION_ABOVE"],
+                ),
+            ],
+            "a",
+        ),
+        (
+            [
+                _derived_step(
+                    1,
+                    observation_source="FDC",
+                    observation_features=["NEW_PARAMETER_ID"],
+                    observed_tool="get_fdc_summary",
+                    new_identifiers=["PARAM-DYNAMIC"],
+                    next_tool="get_equipment_context",
+                ),
+                _derived_step(
+                    2,
+                    observation_source="EQUIPMENT",
+                    observed_tool="get_equipment_context",
+                    next_tool="search_documents",
+                    next_query_parameter_ids=["PARAM-DYNAMIC"],
+                ),
+            ],
+            "c",
+        ),
+    ],
+)
+def test_v2_delta_kind_accumulates_only_forward(
+    steps: list[dict[str, Any]], expected: str
+) -> None:
+    assert comparison.derive_baseline_delta_kind(_baseline(), steps) == "none"
+    assert comparison.derive_baseline_delta_kind_v2(_baseline(), steps) == expected
+    backwards = copy.deepcopy(list(reversed(steps)))
+    for seq, step in enumerate(backwards, start=1):
+        step["seq"] = seq
+    assert comparison.derive_baseline_delta_kind_v2(_baseline(), backwards) == "none"
+
+
+def test_v2_derivation_preserves_v1_and_recomputes_established_verdict() -> None:
+    source, payload = _v2_payload()
+
+    assert payload["agent_justification_verdict"] == "ESTABLISHED"
+    assert payload["previous_verdict"] == "NOT_ESTABLISHED"
+    assert payload["level2_attempts"] == source["level2_attempts"]
+    assert payload["level3_attempts"] == source["level3_attempts"]
+    assert payload["pairs"] == source["pairs"]
+    assert [row["pair_id"] for row in payload["derived_attempts"]] == sorted(
+        row["pair_id"] for row in payload["derived_attempts"]
+    )
+    assert payload["derivation_rules_sha256"] == comparison.DERIVATION_RULES_SHA256
+    assert (
+        comparison.validate_agent_justification_v2(
+            payload,
+            derived_from=source,
+            derived_from_sha256=DIGEST,
+            level_comparison_sha256=DIGEST,
+            level_comparison_revision=REVISION,
+        )
+        == "ESTABLISHED"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda p: p["level3_attempts"][0].__setitem__("latency_ms", 11),
+        lambda p: p["level3_attempts"][0].__setitem__("unexpected", True),
+        lambda p: p["level3_attempts"][0].__setitem__("baseline_delta_kind", "a"),
+        lambda p: p["derived_attempts"][0].__setitem__("baseline_delta_kind", "none"),
+        lambda p: p["derived_attempts"][0].__setitem__("fdc_delta", 99),
+        lambda p: p["derived_attempts"].pop(),
+        lambda p: p["derived_attempts"].append(copy.deepcopy(p["derived_attempts"][0])),
+        lambda p: p["pairs"][0].__setitem__("recall_delta", 99.0),
+        lambda p: p["pairs"][0].__setitem__("fdc_delta", 0),
+        lambda p: p["pairs"].pop(),
+        lambda p: p["pairs"].append(copy.deepcopy(p["pairs"][0])),
+        lambda p: p.__setitem__("run_revision", "d" * 40),
+        lambda p: p.__setitem__("source_revision", "d" * 40),
+        lambda p: p.__setitem__("derivation_rules_sha256", "0" * 64),
+        lambda p: p.__setitem__("previous_verdict", "ESTABLISHED"),
+        lambda p: p["cf5"].__setitem__("independent_post_change_validation", True),
+        lambda p: p["derivation_source_check"]["changed_backend_files"].append(
+            "backend/app/agent/graph.py"
+        ),
+        lambda p: p["metrics"].__setitem__("recall_delta_median", -1.0),
+        lambda p: p.__setitem__("agent_justification_verdict", "NOT_ESTABLISHED"),
+    ],
+)
+def test_v2_observational_mutations_are_rejected(mutate: Any) -> None:
+    source, payload = _v2_payload()
+    mutate(payload)
+    with pytest.raises(comparison.ComparisonArtifactError):
+        comparison.validate_agent_justification_v2(
+            payload,
+            derived_from=source,
+            derived_from_sha256=DIGEST,
+            level_comparison_sha256=DIGEST,
+            level_comparison_revision=REVISION,
+        )
+
+
+def test_v2_rejects_different_source_and_source_file_sha() -> None:
+    source, payload = _v2_payload()
+    other = copy.deepcopy(source)
+    other["llm"]["selector_model_revision"] = "different-model"
+
+    with pytest.raises(comparison.ComparisonArtifactError):
+        comparison.validate_agent_justification_v2(
+            payload,
+            derived_from=other,
+            derived_from_sha256=DIGEST,
+            level_comparison_sha256=DIGEST,
+            level_comparison_revision=REVISION,
+        )
+    with pytest.raises(
+        comparison.ComparisonArtifactError, match="ARTIFACT_SHA_MISMATCH"
+    ):
+        comparison.validate_agent_justification_v2(
+            payload,
+            derived_from=source,
+            derived_from_sha256="d" * 64,
+            level_comparison_sha256=DIGEST,
+            level_comparison_revision=REVISION,
+        )
+
+
+def test_actual_lazy_import_commit_diff_matches_strict_fixture() -> None:
+    fixture = json.loads(DERIVATION_FIXTURE.read_text(encoding="utf-8"))
+    hunks = {
+        path: derivation._changed_lines(diff)
+        for path, diff in fixture["script_diffs"].items()
+    }
+    result = comparison.build_derivation_source_check(
+        base_revision=fixture["base_revision"],
+        head_revision=fixture["head_revision"],
+        changed_backend_files=fixture["changed_backend_files"],
+        script_hunks=hunks,
+    )
+
+    assert result["allowlist_verdict"] == "PASS"
+    assert result["strict_hunk_verdict"] == "PASS"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        [*comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES, "+# comment"],
+        [
+            comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES[0],
+            "+       from app.detection.service import FdcSummaryService",
+            "+",
+        ],
+        [*comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES, "+print('changed')"],
+    ],
+)
+def test_derivation_source_check_rejects_non_exact_script_hunks(
+    mutation: list[str],
+) -> None:
+    hunks = {
+        path: list(comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES)
+        for path in comparison.DERIVATION_STRICT_SCRIPTS
+    }
+    hunks[comparison.DERIVATION_STRICT_SCRIPTS[0]] = mutation
+    with pytest.raises(
+        comparison.ComparisonArtifactError, match="DERIVATION_SOURCE_CHANGED"
+    ):
+        comparison.build_derivation_source_check(
+            base_revision=REVISION,
+            head_revision=DERIVED_REVISION,
+            changed_backend_files=sorted(comparison.DERIVATION_STRICT_SCRIPTS),
+            script_hunks=hunks,
+        )
+
+
+def test_derivation_source_check_rejects_file_outside_allowlist() -> None:
+    with pytest.raises(
+        comparison.ComparisonArtifactError, match="DERIVATION_SOURCE_CHANGED"
+    ):
+        comparison.build_derivation_source_check(
+            base_revision=REVISION,
+            head_revision=DERIVED_REVISION,
+            changed_backend_files=[
+                *sorted(comparison.DERIVATION_STRICT_SCRIPTS),
+                "backend/app/agent/graph.py",
+            ],
+            script_hunks={
+                path: list(comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES)
+                for path in comparison.DERIVATION_STRICT_SCRIPTS
+            },
+        )
+
+
+def test_derivation_source_check_rejects_non_hunk_script_metadata() -> None:
+    with pytest.raises(
+        comparison.ComparisonArtifactError, match="DERIVATION_SOURCE_CHANGED"
+    ):
+        derivation._changed_lines(
+            "\n".join(
+                [
+                    "diff --git a/script b/script",
+                    "old mode 100644",
+                    "new mode 100755",
+                    *comparison.DERIVATION_ALLOWED_IMPORT_CHANGE_LINES,
+                ]
+            )
+        )
+
+
+def test_verifier_requires_derived_from_exactly_for_v2(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    level_path = tmp_path / "level.json"
+    level_path.write_text(json.dumps(_level_artifact()), encoding="utf-8")
+    level_sha256 = comparison.file_sha256(level_path)
+    source = _observational_not_established(level_sha256)
+    source_path = tmp_path / "v1.json"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    source_sha256 = comparison.file_sha256(source_path)
+    _, payload = _v2_payload(
+        source,
+        source_sha256=source_sha256,
+        level_sha256=level_sha256,
+    )
+    artifact_path = tmp_path / "v2.json"
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        verifier.main(
+            [
+                "--artifact",
+                str(artifact_path),
+                "--level-comparison",
+                str(level_path),
+            ]
+        )
+        == 1
+    )
+    assert "DERIVED_FROM_REQUIRED" in capsys.readouterr().err
+    assert (
+        verifier.main(
+            [
+                "--artifact",
+                str(source_path),
+                "--level-comparison",
+                str(level_path),
+                "--derived-from",
+                str(source_path),
+            ]
+        )
+        == 1
+    )
+    assert "DERIVED_FROM_NOT_ALLOWED" in capsys.readouterr().err
+    assert (
+        verifier.main(
+            [
+                "--artifact",
+                str(artifact_path),
+                "--level-comparison",
+                str(level_path),
+                "--derived-from",
+                str(source_path),
+            ]
+        )
+        == 0
+    )
+    assert "AGENT_JUSTIFICATION_OK verdict=ESTABLISHED" in capsys.readouterr().out
+
+
+def test_derivation_executor_writes_immutable_valid_v2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    level_path = tmp_path / "level.json"
+    level_path.write_text(json.dumps(_level_artifact()), encoding="utf-8")
+    source = _observational_not_established(comparison.file_sha256(level_path))
+    source_path = tmp_path / "v1.json"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    artifact_path = tmp_path / "v2.json"
+    source_check = _source_check()
+    monkeypatch.setattr(
+        derivation, "_verify_clean_revision", lambda _expected: DERIVED_REVISION
+    )
+    monkeypatch.setattr(
+        derivation,
+        "inspect_derivation_source",
+        lambda **_kwargs: source_check,
+    )
+
+    digest, recorded_check = derivation.execute(
+        source=source_path,
+        level_comparison=level_path,
+        revision=DERIVED_REVISION,
+        artifact=artifact_path,
+    )
+
+    assert digest == comparison.file_sha256(artifact_path)
+    assert recorded_check == source_check
+    assert os.stat(artifact_path).st_mode & 0o777 == 0o600
+    assert comparison.load_json(artifact_path)["agent_justification_verdict"] == (
+        "ESTABLISHED"
+    )
+    with pytest.raises(
+        comparison.ComparisonArtifactError, match="ARTIFACT_CLOBBER_BLOCKED"
+    ):
+        derivation.execute(
+            source=source_path,
+            level_comparison=level_path,
+            revision=DERIVED_REVISION,
+            artifact=artifact_path,
         )
 
 
