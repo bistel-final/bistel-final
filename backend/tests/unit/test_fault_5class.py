@@ -820,3 +820,33 @@ def test_artifact_writer_cleans_temp_when_publish_fails(
 
     assert not target.exists()
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_available_relations_prefer_terminal_graph_relation_ids() -> None:
+    """완료 run은 snapshot이 없어도 finalize가 남긴 정본으로 인용을 대조한다."""
+
+    from app.evaluation.predictions_repository import _available_relations
+
+    direct_only = {"graph_relation_ids": ["REL-b", "REL-a"]}
+    assert _available_relations(direct_only) == ("REL-b", "REL-a")
+
+    both = {
+        "graph_relation_ids": ["REL-a"],
+        "rehydration_snapshot": {
+            "schema_version": "rehydration-snapshot-v1",
+            "route": {"graph_evidence": [{"relation_ids": ["REL-z"]}]},
+        },
+    }
+    assert _available_relations(both) == ("REL-a",)
+
+    legacy = {
+        "rehydration_snapshot": {
+            "schema_version": "rehydration-snapshot-v1",
+            "route": {"graph_evidence": [{"relation_ids": ["REL-z"]}]},
+        }
+    }
+    assert _available_relations(legacy) == ("REL-z",)
+    assert _available_relations({"action_provenance": {}}) == ()
+
+    with pytest.raises(Exception, match="RUN_EVIDENCE_INVALID"):
+        _available_relations({"graph_relation_ids": ["REL-a", "REL-a"]})
