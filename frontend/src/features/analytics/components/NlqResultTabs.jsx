@@ -74,8 +74,6 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
   const stats = buildStats(def, y)
   const columns = def.columns ?? []
   const groupBy = def.group_by ?? []
-  // 교차확인 배지(#240) — MATCH·MISMATCH 만 표시 (SKIPPED 는 무표시)
-  const crossStatus = def.cross_check?.status
   // 단위는 응답의 y 컬럼명이 근거다 (창작 금지) — raw 히스토그램은 값 컬럼 빈도
   const unit = inferUnit(def, y) // COUNT 계열만 건/장/개, 모르면 null
 
@@ -89,24 +87,6 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
             <span className="font-bold text-navy">{def.row_count ?? rows.length}</span>행
           </span>
         </div>
-        {crossStatus === 'MATCH' && (
-          <div className="flex items-center gap-2.5 rounded-full border border-tint-green-line bg-tint-green px-4 py-1.5">
-            <span className="text-[12.5px] font-extrabold text-green">✓ 교차 확인</span>
-            <span className="text-[12.5px] text-green">PostgreSQL · Neo4j 두 저장소가 같은 답</span>
-            {def.cross_check?.summary && (
-              <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
-            )}
-          </div>
-        )}
-        {crossStatus === 'MISMATCH' && (
-          <div className="flex items-center gap-2.5 rounded-full border border-tint-red-line bg-tint-red px-4 py-1.5">
-            <span className="text-[12.5px] font-extrabold text-red">⚠ 저장소 불일치</span>
-            <span className="text-[12.5px] text-red">두 저장소의 답이 다릅니다 — 정합성 점검 필요</span>
-            {def.cross_check?.summary && (
-              <span className="font-mono text-[12px] text-g1">{def.cross_check.summary}</span>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex items-center justify-between px-6 pb-4">
