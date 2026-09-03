@@ -642,13 +642,14 @@ def test_read_repositories_use_the_shared_public_sql_boundary(module: Any) -> No
     assert "execute_read_all" in imported_names
 
 
-def test_graph_has_exactly_fourteen_canonical_and_one_internal_node(
+def test_graph_has_exactly_sixteen_canonical_and_one_internal_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, *_ = _build(monkeypatch)
     names = set(graph.get_graph().nodes) - {"__start__", "__end__"}
     assert names == set(CANONICAL_NODES) | set(INTERNAL_NODES)
-    assert len(CANONICAL_NODES) == 14
+    # V5-C-7.1: Level 3 ReAct 노드 2개(react_select·react_tool) 추가 → 16
+    assert len(CANONICAL_NODES) == 16
     assert INTERNAL_NODES == ("fail_run",)
 
 
@@ -662,6 +663,10 @@ def test_graph_edges_are_the_reviewed_canonical_and_failure_routes(
         ("load_incident", "collect_fdc"),
         ("collect_fdc", "collect_equipment"),
         ("collect_fdc", "collect_documents"),
+        ("collect_fdc", "react_select"),
+        ("react_select", "react_tool"),
+        ("react_select", "generate_hypothesis"),
+        ("react_tool", "react_select"),
         ("collect_equipment", "collect_documents"),
         ("collect_documents", "generate_hypothesis"),
         ("generate_hypothesis", "decide_action"),

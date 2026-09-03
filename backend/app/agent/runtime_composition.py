@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, Protocol
 
-from app.agent import action_store, ask, decision, hypothesis
+from app.agent import action_store, ask, decision, hypothesis, react
 from app.agent.approval_store import (
     approval_email_port,
     cancel_mes_port,
@@ -130,6 +130,7 @@ class _ProductionNodePorts:
     publish_mes: Any
     writeback_result: Any
     cancel_mes: Any
+    react_select: Any = None
 
 
 def _production_tool_executor(
@@ -210,6 +211,8 @@ def _production_resources(llm_model: str) -> RuntimeResources:
             publish_mes=mes.publish_mes,
             writeback_result=mes.writeback_result,
             cancel_mes=cancel_mes_port(transactions),
+            # V5-C-7.1 Level 3 ReAct 선택 port. Level 1·2 그래프는 사용하지 않는다.
+            react_select=react.production_port(),
         )
         graph = build_agent_graph(
             AgentGraphDependencies(
@@ -309,7 +312,7 @@ class AgentRuntime:
         """재개/종료 경로용 조립. LLM 원격 가용성을 다시 요구하지 않는다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2):
+        if self._autonomy_level not in (1, 2, 3):
             raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
         try:
             model = self._model_config()
@@ -321,7 +324,7 @@ class AgentRuntime:
         """POST run DML 전에 configured model의 원격 준비까지 확인한다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2):
+        if self._autonomy_level not in (1, 2, 3):
             raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
         try:
             model = self._llm_preflight()

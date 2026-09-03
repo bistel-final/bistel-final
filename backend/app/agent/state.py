@@ -8,7 +8,15 @@ canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 �
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Final, Literal, NotRequired, Protocol, TypedDict
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypedDict,
+)
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -290,6 +298,12 @@ class AgentGraphState(TypedDict, total=False):
     read_retry_used: int
     approval_decision: Decision | None
     pending_llm_usage: LlmUsage | None
+    # Level 3 ReAct (V5-C-7.1): 선택 흔적·카운터·다중 문서 검색 결과. Level 1·2는 빈 값.
+    react_trace: tuple[dict[str, Any], ...]
+    react_steps: int
+    react_guard_rejections: int
+    react_pending: dict[str, Any] | None
+    document_evidence_set: tuple[DocumentSearchToolResult | None, ...]
 
 
 class CompletedAgentState(StateModel):
@@ -315,6 +329,8 @@ class CompletedAgentState(StateModel):
     deliveries: tuple[DeliveryPlan, ...]
     tool_budget: ToolBudget
     errors: tuple[AgentError, ...]
+    # Level 3 ReAct 흔적(Level 1·2는 빈 tuple). finalize가 run evidence로 남긴다.
+    react_trace: tuple[dict[str, Any], ...] = ()
 
     @model_validator(mode="after")
     def _validate_complete(self) -> CompletedAgentState:
@@ -421,6 +437,9 @@ class AgentNodePorts(Protocol):
     publish_mes: Callable[[NonEmptyId], None]
     writeback_result: Callable[[NonEmptyId], tuple[DeliveryPlan, ...]]
     cancel_mes: Callable[[NonEmptyId], tuple[DeliveryPlan, ...]]
+    # V5-C-7.1 Level 3: ReactContext → ReactSelectionOutcome (app.agent.react). 순환
+    # import를 피하기 위해 여기서는 Any로 둔다. Level 1·2 조립은 None을 넣어도 된다.
+    react_select: Callable[[Any], Any] | None
 
 
 __all__ = [

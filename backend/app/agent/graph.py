@@ -16,6 +16,7 @@ from typing import Any, Final
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
+from app.agent import react as react_module
 from app.agent.approval_store import (
     EmailTransportError,
     HitlDeliveryError,
@@ -71,6 +72,7 @@ from app.common.exceptions import AppError
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     DocumentSearchToolInput,
+    DocumentSearchToolResult,
     EquipmentContextToolInput,
     FdcSummaryToolInput,
     FdcSummaryToolResult,
@@ -84,6 +86,8 @@ CANONICAL_NODES: Final[tuple[str, ...]] = (
     "collect_fdc",
     "collect_equipment",
     "collect_documents",
+    "react_select",
+    "react_tool",
     "generate_hypothesis",
     "decide_action",
     "persist_action",
@@ -359,7 +363,11 @@ def _canonical_payload(state: AgentGraphState) -> dict[str, Any]:
     # LangGraph checkpoint는 값이 None인 optional channel을 물리 State에서 생략할 수
     # 있다. nullable은 None으로 복원하고, 실제 필수 channel 누락은 아래 Pydantic
     # 완료 검증이 거부하게 한다.
-    return {name: state.get(name) for name in CompletedAgentState.model_fields}
+    payload = {name: state.get(name) for name in CompletedAgentState.model_fields}
+    # Level 1·2 run은 react_trace channel을 만들지 않는다 — 빈 tuple이 정본이다.
+    if payload.get("react_trace") is None:
+        payload["react_trace"] = ()
+    return payload
 
 
 def _required_state_id(state: AgentGraphState, name: str) -> str:
@@ -459,6 +467,42 @@ def _assert_prediction_provenance(
         raise RepositoryConflict("PREDICTION_CONFLICT")
 
 
+def _document_model_code(state: AgentGraphState) -> str | None:
+    graph = state.get("graph_evidence")
+    if graph is not None and graph.ok:
+        return graph.model_code
+    route_graph = next(
+        (
+            item
+            for item in state["route"].graph_evidence
+            if item.chamber_id == state["chamber_id"]
+        ),
+        None,
+    )
+    return None if route_graph is None else route_graph.model_code
+
+
+def _merge_document_results(
+    results: tuple[DocumentSearchToolResult | None, ...],
+) -> DocumentSearchToolResult | None:
+    """여러 검색 결과를 chunk_id 기준으로 합쳐 가설 프롬프트 입력 하나로 만든다."""
+
+    hits: dict[str, Any] = {}
+    seen_ok = False
+    for item in results:
+        if item is None or not item.ok:
+            continue
+        seen_ok = True
+        for hit in item.hits:
+            existing = hits.get(hit.chunk_id)
+            if existing is None or hit.score > existing.score:
+                hits[hit.chunk_id] = hit
+    if not seen_ok:
+        return next((item for item in results if item is not None), None)
+    ordered = sorted(hits.values(), key=lambda hit: hit.score, reverse=True)
+    return DocumentSearchToolResult(ok=True, hits=ordered[:10])
+
+
 def _document_query(state: AgentGraphState) -> str:
     """가설·label 없이 이미 수집된 식별자만으로 검색문을 만든다."""
 
@@ -541,10 +585,13 @@ def build_agent_graph(
         level = state.get("autonomy_level")
         if not isinstance(level, int) or isinstance(level, bool):
             raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
-        if level not in (1, 2):
-            if level == 3:
-                raise AgentGraphInputError("AUTONOMY_LEVEL_NOT_IMPLEMENTED")
+        if level not in (1, 2, 3):
             raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
+        if level == 3 and (
+            ports is None or getattr(ports, "react_select", None) is None
+        ):
+            # Level 3는 ReAct 선택 port가 조립된 경우에만 허용한다(V5-C-7.1).
+            raise AgentGraphInputError("AUTONOMY_LEVEL_NOT_IMPLEMENTED")
         try:
             requested = AlarmRef.model_validate(state.get("requested_alarm"))
         except ValidationError as exc:
@@ -781,6 +828,188 @@ def build_agent_graph(
             "read_retry_used": retry_used,
         }
 
+    # ---- V5-C-7.1 Level 3 ReAct: 조사는 에이전트가, 조치는 규칙이 ----
+    def _react_context(state: AgentGraphState) -> react_module.ReactContext:
+        budget = state["tool_budget"]
+        remaining = max(0, budget.max_calls - budget.used - budget.send_budget)
+        return react_module.build_context(
+            lot_id=state["lot_id"],
+            chamber_id=state["chamber_id"],
+            representative_alarm=state["representative_alarm"],
+            member_alarms=state["member_alarms"],
+            route=state["route"],
+            allowed_lot_hist_ids=state.get("fdc_lot_hist_ids", ()),
+            fdc_results=state.get("fdc_evidence_set", ()),
+            equipment=state.get("graph_evidence"),
+            documents=state.get("document_evidence_set", ()),
+            remaining_tool_calls=remaining,
+            remaining_steps=react_module.REACT_MAX_STEPS - state.get("react_steps", 0),
+            guard_rejections=state.get("react_guard_rejections", 0),
+        )
+
+    def react_select(state: AgentGraphState) -> dict[str, Any]:
+        """LLM에게 다음 조사 행동을 고르게 하고 코드 가드로 판정한다. 실패는 stop."""
+
+        run_id = _required_state_id(state, "run_id")
+        steps = state.get("react_steps", 0)
+        trace = tuple(state.get("react_trace", ()))
+        rejections = state.get("react_guard_rejections", 0)
+        context = _react_context(state)
+        stop_update = {
+            "react_pending": None,
+            "react_steps": steps + 1,
+            "react_trace": trace,
+            "react_guard_rejections": rejections,
+        }
+        if (
+            steps >= react_module.REACT_MAX_STEPS
+            or context.remaining_tool_calls <= 0
+            or rejections >= react_module.REACT_MAX_GUARD_REJECTIONS
+        ):
+            return {**stop_update, "react_steps": steps}
+        assert ports is not None and ports.react_select is not None
+        # 가드 거부는 같은 step 안에서 재선택한다(누적 상한까지). 거부도 흔적에 남긴다.
+        while True:
+            try:
+                outcome = react_module.ReactSelectionOutcome.model_validate(
+                    ports.react_select(context)
+                )
+            except react_module.ReactSelectionError as exc:
+                # 선택 실패는 run을 죽이지 않는다 — 고정 절차와 같은 위치에서 가설로
+                # 넘어간다.
+                errors = (
+                    *state.get("errors", ()),
+                    AgentError(code=exc.code, node="react_select", terminal=False),
+                )
+                return {
+                    **stop_update,
+                    "react_trace": trace,
+                    "react_guard_rejections": rejections,
+                    "errors": errors,
+                }
+            selection = outcome.selection
+            usage = outcome.llm_usage
+            try:
+                with dependencies.transactions() as connection:
+                    run = lock_agent_run(connection, run_id)
+                    record_run_llm_usage(
+                        connection,
+                        run_id,
+                        llm_model=usage.model,
+                        prompt_version=run.prompt_version or PROMPT_VERSION,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                    )
+            except AgentRepositoryError as exc:
+                error = _terminal(exc, "react_select")
+                return {
+                    "terminal_error": error,
+                    "errors": (*state.get("errors", ()), error),
+                    "pending_llm_usage": usage,
+                }
+            guard = react_module.guard_selection(
+                selection,
+                context,
+                equipment_fetched=state.get("graph_evidence") is not None,
+            )
+            entry = react_module.trace_entry(
+                seq=len(trace) + 1,
+                selection=selection,
+                usage=usage,
+                observation=None,
+                guard=guard,
+            )
+            trace = (*trace, entry.model_dump(mode="json"))
+            if guard is None:
+                break
+            rejections += 1
+            if rejections >= react_module.REACT_MAX_GUARD_REJECTIONS:
+                return {
+                    **stop_update,
+                    "react_trace": trace,
+                    "react_guard_rejections": rejections,
+                }
+            context = context.model_copy(update={"guard_rejections": rejections})
+        if selection.next == "stop":
+            return {
+                **stop_update,
+                "react_trace": trace,
+                "react_guard_rejections": rejections,
+            }
+        return {
+            **stop_update,
+            "react_trace": trace,
+            "react_guard_rejections": rejections,
+            "react_pending": selection.model_dump(mode="json"),
+        }
+
+    def react_tool(state: AgentGraphState) -> dict[str, Any]:
+        """react_select가 고른 읽기 Tool 하나를 기존 예산·감사 경계로 실행한다."""
+
+        pending = state.get("react_pending")
+        if not isinstance(pending, dict):
+            return {"react_pending": None}
+        selection = react_module.ReactSelection.model_validate(pending)
+        trace = list(state.get("react_trace", ()))
+        update: dict[str, Any] = {"react_pending": None}
+        if selection.next == "get_fdc_summary":
+            target = selection.arguments.lot_hist_id or ""
+            result, tool_budget, errors = _collect_tool_result(
+                state,
+                node="react_tool",
+                invoke=lambda: dependencies.tools.fdc_summary(
+                    state["run_id"], FdcSummaryToolInput(lot_hist_id=target)
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            fdc = result if isinstance(result, FdcSummaryToolResult) else None
+            update["fdc_evidence_set"] = (*state.get("fdc_evidence_set", ()), fdc)
+            if state.get("fdc_evidence") is None and fdc is not None:
+                update["fdc_evidence"] = fdc
+                update["optional_anomaly_evidence"] = fdc.anomaly
+            observation = react_module.summarize_fdc(fdc)
+        elif selection.next == "search_documents":
+            model_code = _document_model_code(state)
+            result, tool_budget, errors = _collect_tool_result(
+                state,
+                node="react_tool",
+                invoke=lambda: dependencies.tools.document_search(
+                    state["run_id"],
+                    DocumentSearchToolInput(
+                        query=selection.arguments.query or "",
+                        model_code=model_code,
+                    ),
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            docs = result if isinstance(result, DocumentSearchToolResult) else None
+            doc_set = (*state.get("document_evidence_set", ()), docs)
+            update["document_evidence_set"] = doc_set
+            update["document_evidence"] = _merge_document_results(doc_set)
+            observation = react_module.summarize_documents(docs)
+        else:
+            result, tool_budget, errors = _collect_tool_result(
+                state,
+                node="react_tool",
+                invoke=lambda: dependencies.tools.equipment_context(
+                    state["run_id"],
+                    EquipmentContextToolInput(chamber_id=state["chamber_id"]),
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            update["graph_evidence"] = result
+            observation = react_module.summarize_equipment(result)  # type: ignore[arg-type]
+        if trace:
+            last = dict(trace[-1])
+            last["observation"] = (
+                observation if observation is not None else "no-result"
+            )[: react_module._OBSERVATION_MAX]
+            trace[-1] = last
+        update["react_trace"] = tuple(trace)
+        update["tool_budget"] = tool_budget
+        update["errors"] = errors
+        return update
+
     def generate_hypothesis(state: AgentGraphState) -> dict[str, Any]:
         run_id = _required_state_id(state, "run_id")
 
@@ -977,6 +1206,8 @@ def build_agent_graph(
                 terminal_evidence={
                     "route_consistency": completed.route.route_consistency,
                     "error_codes": [error.code for error in completed.errors],
+                    "autonomy_level": state.get("autonomy_level"),
+                    "react_trace": list(completed.react_trace),
                     # LLM이 인용 가능했던 graph relation 정본. rehydration snapshot은
                     # HITL run에만 남으므로, 완료 run 평가(C-6.2 evidence 유효성)가
                     # 인용을 대조할 기준을 모든 run에 남긴다.
@@ -1085,6 +1316,8 @@ def build_agent_graph(
         "collect_fdc": collect_fdc,
         "collect_equipment": collect_equipment,
         "collect_documents": collect_documents,
+        "react_select": react_select,
+        "react_tool": react_tool,
         "generate_hypothesis": generate_hypothesis,
         "decide_action": decide_action,
         "persist_action": persist_action,
@@ -1120,6 +1353,8 @@ def build_agent_graph(
             evidence.chamber_id == state["chamber_id"]
             for evidence in route.graph_evidence
         )
+        if state["autonomy_level"] == 3:
+            return "react_select"
         if state["autonomy_level"] == 2 and route.route_consistency and covered:
             return "collect_documents"
         return "collect_equipment"
@@ -1130,8 +1365,31 @@ def build_agent_graph(
         {
             "collect_equipment": "collect_equipment",
             "collect_documents": "collect_documents",
+            "react_select": "react_select",
             "fail_run": "fail_run",
         },
+    )
+
+    def after_react_select(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        if state.get("react_pending") is not None:
+            return "react_tool"
+        return "generate_hypothesis"
+
+    graph.add_conditional_edges(
+        "react_select",
+        after_react_select,
+        {
+            "react_tool": "react_tool",
+            "generate_hypothesis": "generate_hypothesis",
+            "fail_run": "fail_run",
+        },
+    )
+    graph.add_conditional_edges(
+        "react_tool",
+        _route_or_fail("react_select"),
+        {"react_select": "react_select", "fail_run": "fail_run"},
     )
     graph.add_conditional_edges(
         "collect_equipment",
