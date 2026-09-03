@@ -9,9 +9,13 @@ import OntologyGraphCanvas from '../../../shared/components/ontology/OntologyGra
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import {
   ONTOLOGY_NODE_META,
+  annotateWaferAlarmHints,
+  attachWaferAlarmContext,
+  buildLotContextGraph,
   buildOntologyOverviewLanes,
   hasDisplayableRelationships,
   mergeOntologyGraphs,
+  lotOptionsForChamber,
   ontologyAlarmScope,
   publicNodeDetails,
   summarizeOntologyAlarms,
@@ -89,6 +93,7 @@ function NodeOperationalStatus({ state, onRetry }) {
   }
   if (state.status !== 'success') return null
   const summary = state.summary
+  const incident = Boolean(state.incident)
   const mockHasNoMatch = state.mock && summary.total === 0
   const severity = mockHasNoMatch
     ? ['MOCK 대응 데이터 없음', 'text-g1 bg-soft']
@@ -101,17 +106,17 @@ function NodeOperationalStatus({ state, onRetry }) {
     <div data-testid="ontology-node-operational-status">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-[10px] font-bold text-faint">선택 노드 운영 요약</div>
+          <div className="text-[10px] font-bold text-faint">{incident ? '선택 Incident 알람 요약' : '선택 노드 운영 요약'}</div>
           <div className="mt-0.5 text-[9px] text-faint">{state.basis} · 저장 데이터 전체</div>
         </div>
         <span className={`rounded-full px-2 py-1 text-[9.5px] font-extrabold ${severity[1]}`}>{severity[0]}</span>
       </div>
-      <div className="mt-2 grid grid-cols-4 gap-2">
+      <div className={`mt-2 grid gap-2 ${incident ? 'grid-cols-3' : 'grid-cols-4'}`}>
         {[
           ['ALARM', summary.total, 'text-ink'],
           ['OOS', summary.oos, 'text-red-600'],
           ['OOC', summary.ooc, 'text-amber-600'],
-          ['ACTION', summary.actions, 'text-blue'],
+          ...(!incident ? [['ACTION', summary.actions, 'text-blue']] : []),
         ].map(([label, value, color]) => (
           <div key={label} className="rounded-lg bg-soft px-2.5 py-2 text-center">
             <div className="text-[9px] font-bold text-faint">{label}</div>
@@ -121,7 +126,7 @@ function NodeOperationalStatus({ state, onRetry }) {
       </div>
       <div className="mt-2 flex flex-wrap justify-between gap-2 text-[9.5px] text-g2">
         <span>최근 발생 · {formatOccurredAt(summary.latest_occurred_at)}</span>
-        <span>승인 대기 조치 · {summary.pending_actions}건</span>
+        {!incident && <span>승인 대기 조치 · {summary.pending_actions}건</span>}
       </div>
       {mockHasNoMatch && (
         <div className="mt-2 rounded-md bg-tint-amber px-2.5 py-2 text-[9.5px] font-semibold text-tint-amber-text">
@@ -133,6 +138,28 @@ function NodeOperationalStatus({ state, onRetry }) {
           페이지 조회 상한에 도달해 일부 데이터만 집계했습니다.
         </div>
       )}
+    </div>
+  )
+}
+
+function WaferAlarmContext({ state, onRetry }) {
+  if (state.status === 'loading') return <div className="text-[10.5px] text-g2">Wafer 알람 context를 조회하는 중입니다.</div>
+  if (state.status === 'error') return <button type="button" onClick={onRetry} className="text-[10.5px] font-bold text-blue">Wafer 알람 context 다시 시도</button>
+  if (state.status !== 'success') return <div className="text-[10.5px] text-g2">연결 가능한 Wafer 알람이 없습니다.</div>
+  if ((state.alarms ?? []).length === 0) return <div className="text-[10.5px] text-g2">이 Wafer 처리이력에 연결된 알람이 없습니다.</div>
+  return (
+    <div>
+      <div className="text-[10px] font-bold text-faint">Wafer 알람 · 관련 Parameter</div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {state.alarms.map((alarm) => (
+          <div key={`${alarm.source}:${alarm.alarm_id}`} className="rounded-md bg-soft px-2.5 py-2 text-[10px] text-g1">
+            <span className="font-extrabold text-red-600">{alarm.source} {alarm.judgement}</span>
+            <span className="mx-1.5 text-faint">·</span>
+            <span className="font-mono font-bold">{alarm.sensor_id}</span>
+            <span className="ml-1.5">{alarm.rule_id ?? '-'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -151,6 +178,7 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
     (relationship) => relationship.source === node.id || relationship.target === node.id,
   ).length
   const isQueryRoot = graph.root_node_id === node.id
+  const isWaferNode = node.label === 'Wafer'
   return (
     <Card className="flex flex-col gap-4 p-4" data-testid="ontology-node-detail">
       <div>
@@ -183,7 +211,11 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
         )}
       </div>
       <div className="border-t border-cell-line pt-3">
-        <NodeOperationalStatus state={alarmState} onRetry={onRetryAlarms} />
+        {isWaferNode ? (
+          <WaferAlarmContext state={alarmState} onRetry={onRetryAlarms} />
+        ) : (
+          <NodeOperationalStatus state={alarmState} onRetry={onRetryAlarms} />
+        )}
       </div>
     </Card>
   )
@@ -301,6 +333,7 @@ function OntologyPage() {
   const [selectedChamber, setSelectedChamber] = useState(
     focus.phase === 'ready' ? focus.chamberId : '',
   )
+  const [selectedLot, setSelectedLot] = useState('')
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
   const [selectedNode, setSelectedNode] = useState(null)
@@ -308,7 +341,7 @@ function OntologyPage() {
   const [alarmState, setAlarmState] = useState({ requestKey: null, status: 'idle', summary: null, basis: null })
   const explicitChamber = focus.phase === 'ready' ? focus.chamberId : selectedChamber
   const requestChamber = explicitChamber || DEFAULT_GRAPH_CHAMBER
-  const graph = useMemo(() => {
+  const rawGraph = useMemo(() => {
     if (!state.graph) return null
     if (!explicitChamber) return state.graph
     const rootNodeId = `Chamber:${explicitChamber}`
@@ -316,13 +349,42 @@ function OntologyPage() {
       ? { ...state.graph, root_node_id: rootNodeId }
       : state.graph
   }, [explicitChamber, state.graph])
-  const activeSelectedNode = focus.phase === 'ready' ? null : selectedNode
+  const baseGraph = useMemo(
+    () => buildLotContextGraph(rawGraph, selectedLot, explicitChamber),
+    [rawGraph, selectedLot, explicitChamber],
+  )
+  const lotOptions = useMemo(
+    () => lotOptionsForChamber(rawGraph, explicitChamber),
+    [rawGraph, explicitChamber],
+  )
+  const selectedLotNode = useMemo(
+    () => baseGraph?.nodes.find((node) => node.label === 'Lot' && node.business_id === selectedLot) ?? null,
+    [baseGraph, selectedLot],
+  )
+  const selectedChamberNode = useMemo(
+    () => baseGraph?.nodes.find((node) => node.id === `Chamber:${explicitChamber}`) ?? null,
+    [baseGraph, explicitChamber],
+  )
+  // 상단 Chamber/LOT 선택은 조회 context일 뿐 그래프 node를 클릭한 상태가 아니다.
+  const visualSelectedNode = focus.phase === 'ready' ? null : selectedNode
+  const panelNode = focus.phase === 'ready' ? null : selectedNode ?? selectedLotNode ?? selectedChamberNode
+  const graph = useMemo(
+    () => attachWaferAlarmContext(
+      annotateWaferAlarmHints(baseGraph, alarmState.incident ? alarmState.alarms : []),
+      visualSelectedNode?.id,
+      alarmState.wafer ? alarmState.alarms : [],
+    ),
+    [visualSelectedNode?.id, alarmState.alarms, alarmState.wafer, baseGraph],
+  )
 
   useEffect(() => {
     if (focus.phase === 'invalid') return undefined
     let active = true
     const orderedChambers = [requestChamber, ...GRAPH_CHAMBERS.filter((chamberId) => chamberId !== requestChamber)]
-    Promise.allSettled(orderedChambers.map((chamberId) => getChamberRelationsCore(chamberId))).then((results) => {
+    Promise.allSettled(orderedChambers.map((chamberId) => getChamberRelationsCore(
+      chamberId,
+      { include_production_context: true },
+    ))).then((results) => {
       if (!active) return
       const requestedResult = results[0]
       if (requestedResult.status !== 'fulfilled') {
@@ -338,11 +400,6 @@ function OntologyPage() {
         graph: merged,
         partial: responses.length !== orderedChambers.length,
       })
-      if (focus.phase !== 'ready') {
-        setSelectedNode(explicitChamber
-          ? merged?.nodes.find((node) => node.id === `Chamber:${explicitChamber}`) ?? null
-          : null)
-      }
     })
     return () => {
       active = false
@@ -350,16 +407,18 @@ function OntologyPage() {
   }, [attempt, explicitChamber, focus.phase, requestChamber])
 
   useEffect(() => {
-    const scope = ontologyAlarmScope(graph, activeSelectedNode)
-    if (!activeSelectedNode || !scope) return undefined
+    const scope = ontologyAlarmScope(baseGraph, panelNode)
+    if (!panelNode || !scope) return undefined
     let active = true
-    const requestKey = `${activeSelectedNode.id}:${alarmAttempt}`
+    const requestKey = `${panelNode.id}:${alarmAttempt}`
     Promise.all(scope.requests.map((params) => getAllAlarms(params))).then(
       (responses) => {
         if (active) {
           const uniqueAlarms = new Map()
           for (const response of responses) {
             for (const alarm of response.items ?? []) {
+              if (scope.lot_id && (alarm.lot_id !== scope.lot_id || alarm.chamber_id !== scope.chamber_id)) continue
+              if (scope.lot_hist_id && alarm.lot_hist_id !== scope.lot_hist_id) continue
               const key = alarm.alarm_id ?? `${alarm.source ?? ''}:${alarm.occurred_at ?? ''}:${uniqueAlarms.size}`
               uniqueAlarms.set(key, alarm)
             }
@@ -369,29 +428,32 @@ function OntologyPage() {
             status: 'success',
             summary: summarizeOntologyAlarms([...uniqueAlarms.values()]),
             basis: scope.basis,
+            incident: Boolean(scope.incident),
+            wafer: Boolean(scope.wafer),
+            alarms: [...uniqueAlarms.values()],
             mock: responses.some((response) => response.mock),
             partial: responses.some((response) => response.partial),
           })
         }
       },
       () => {
-        if (active) setAlarmState({ requestKey, status: 'error', summary: null, basis: scope.basis })
+        if (active) setAlarmState({ requestKey, status: 'error', summary: null, basis: scope.basis, incident: Boolean(scope.incident), wafer: Boolean(scope.wafer) })
       },
     )
     return () => {
       active = false
     }
-  }, [activeSelectedNode, alarmAttempt, graph])
+  }, [panelNode, alarmAttempt, baseGraph])
 
-  const selectedAlarmScope = ontologyAlarmScope(graph, activeSelectedNode)
-  const alarmRequestKey = activeSelectedNode ? `${activeSelectedNode.id}:${alarmAttempt}` : null
-  const displayedAlarmState = !activeSelectedNode
+  const selectedAlarmScope = ontologyAlarmScope(baseGraph, panelNode)
+  const alarmRequestKey = panelNode ? `${panelNode.id}:${alarmAttempt}` : null
+  const displayedAlarmState = !panelNode
     ? { status: 'idle' }
     : !selectedAlarmScope
       ? { status: 'unsupported' }
       : alarmState.requestKey === alarmRequestKey
         ? alarmState
-        : { status: 'loading', basis: selectedAlarmScope.basis }
+        : { status: 'loading', basis: selectedAlarmScope.basis, incident: Boolean(selectedAlarmScope.incident), wafer: Boolean(selectedAlarmScope.wafer) }
 
   const resolvedFocus = useMemo(() => {
     if (focus.phase !== 'ready' || state.status !== 'success' || !graph) return focus
@@ -414,21 +476,24 @@ function OntologyPage() {
     [resolvedFocus],
   )
   const status = focus.phase === 'invalid' ? 'invalid' : state.status
-  const displayedNode = activeSelectedNode && graph?.nodes.some((node) => node.id === activeSelectedNode.id)
-    ? activeSelectedNode
+  const displayedNode = panelNode && graph?.nodes.some((node) => node.id === panelNode.id)
+    ? panelNode
     : focus.phase === 'ready'
       ? graph?.nodes.find((node) => node.id === graph.root_node_id) ?? null
       : null
 
   const changeChamber = (chamberId) => {
     setSelectedChamber(chamberId)
-    setSelectedNode(chamberId
-      ? state.graph?.nodes.find((node) => node.id === `Chamber:${chamberId}`) ?? null
-      : null)
+    setSelectedLot('')
+    setSelectedNode(null)
     setSearchParams({}, { replace: true })
   }
 
   const selectChamber = (event) => changeChamber(event.target.value)
+  const selectLot = (event) => {
+    setSelectedLot(event.target.value)
+    setSelectedNode(null)
+  }
 
   const selectGraphNode = (node) => {
     setSelectedNode(node)
@@ -436,7 +501,8 @@ function OntologyPage() {
   }
 
   const selectOverviewNode = (node) => {
-    setSelectedChamber('')
+    // 전체 구조 안내에서는 node 종류와 무관하게 상세 조회 대상만 바꾼다.
+    // 상단 Chamber/LOT selector는 사용자가 직접 선택할 때만 바뀐다.
     setSelectedNode(node)
     setSearchParams({}, { replace: true })
   }
@@ -448,22 +514,27 @@ function OntologyPage() {
           <div className="text-[20px] font-extrabold text-ink">온톨로지</div>
           <div className="mt-1 text-[11.5px] text-g2">전체 설비·공정·파라미터 관계에서 필요한 챔버를 탐색합니다</div>
         </div>
-        <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
-          CHAMBER
-          <select
-            value={explicitChamber}
-            onChange={selectChamber}
-            className="h-9 min-w-[180px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
-            aria-label="온톨로지 챔버 선택"
-          >
-            <option value="">전체 구조</option>
-            {GRAPH_CHAMBERS.map((chamberId) => (
-              <option key={chamberId} value={chamberId}>
-                {chamberId}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
+            CHAMBER
+            <select value={explicitChamber} onChange={selectChamber}
+              className="h-9 min-w-[180px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+              aria-label="온톨로지 챔버 선택">
+              <option value="">전체 구조</option>
+              {GRAPH_CHAMBERS.map((chamberId) => <option key={chamberId} value={chamberId}>{chamberId}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
+            LOT
+            <select value={selectedLot} onChange={selectLot}
+              disabled={!explicitChamber}
+              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink disabled:cursor-not-allowed disabled:bg-soft disabled:text-faint"
+              aria-label="온톨로지 Lot 선택">
+              <option value="">{explicitChamber ? 'LOT 선택' : 'CHAMBER를 먼저 선택'}</option>
+              {lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       {status === 'invalid' && (
@@ -491,15 +562,18 @@ function OntologyPage() {
               일부 보조 챔버 관계를 불러오지 못해 조회한 챔버와 확인 가능한 관계만 표시합니다.
             </div>
           )}
-          <OntologyOverview graph={graph} selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectOverviewNode} />
+          {!explicitChamber && (
+            <OntologyOverview graph={graph} selectedNodeId={visualSelectedNode?.id ?? null} onSelectNode={selectOverviewNode} />
+          )}
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <OntologyGraphCanvas graph={graph} focusedRelationIds={focusedRelationIds}
               impactNodeIds={focusedImpactNodeIds} checkRequiredNodeIds={checkRequiredNodeIds}
-              selectedNodeId={activeSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page"
-              emphasizeRoot={Boolean(explicitChamber)} />
+              selectedNodeId={visualSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page"
+              scopeNodeId={selectedChamberNode?.id ?? null} incidentNodeId={selectedLotNode?.id ?? null}
+              emphasizeRoot={focus.phase === 'ready'} />
             <div className="flex flex-col gap-3 xl:sticky xl:top-4">
               <GraphSummary graph={graph} compact scopeLabel={explicitChamber ? null : '전체 온톨로지'} />
-              <NodeDetail graph={graph} node={displayedNode} isSelected={Boolean(activeSelectedNode)}
+              <NodeDetail graph={graph} node={displayedNode} isSelected={Boolean(visualSelectedNode)}
                 alarmState={displayedAlarmState} onRetryAlarms={() => setAlarmAttempt((value) => value + 1)} />
             </div>
           </div>

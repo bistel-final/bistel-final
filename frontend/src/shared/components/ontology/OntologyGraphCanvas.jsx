@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { Background, Controls, MarkerType, Position, ReactFlow, useReactFlow } from '@xyflow/react'
+import { Background, Controls, Handle, MarkerType, Position, ReactFlow, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
   ONTOLOGY_NODE_META,
@@ -11,22 +11,36 @@ import {
   orientOntologyRelationships,
 } from '../../graph/ontology-graph.js'
 
-const nodeStyle = (node, isRoot, isSelected, isDimmed, dimOpacity, isDirectImpact, isCheckRequired) => {
+const nodeStyle = (
+  node,
+  isRoot,
+  isSelected,
+  isDimmed,
+  dimOpacity,
+  isDirectImpact,
+  isCheckRequired,
+  isScope,
+  isIncident,
+) => {
   const meta = ONTOLOGY_NODE_META[node.label]
   const isEmphasized = isRoot || isSelected || isDirectImpact || isCheckRequired
   const impactColor = isCheckRequired ? '#a16207' : '#2563eb'
+  const contextColor = isIncident ? '#ea580c' : isScope ? '#2563eb' : null
+  const contextBackground = isIncident ? '#fff7ed' : isScope ? '#eff6ff' : null
   return {
-    width: 150,
+    width: node.label === 'Lot' ? 180 : node.label === 'Wafer' ? 132 : 150,
     minHeight: 58,
-    border: `${isSelected || isDirectImpact || isCheckRequired ? 3 : isRoot ? 2.5 : 1.5}px ${isCheckRequired ? 'dashed' : 'solid'} ${isDirectImpact || isCheckRequired ? impactColor : meta.color}`,
+    border: `${isSelected || isDirectImpact || isCheckRequired ? 3 : contextColor || isRoot ? 2.5 : 1.5}px ${isCheckRequired ? 'dashed' : 'solid'} ${isDirectImpact || isCheckRequired ? impactColor : contextColor ?? meta.color}`,
     borderRadius: 12,
-    background: isDirectImpact ? '#eff6ff' : isCheckRequired ? '#fffbeb' : isEmphasized ? `${meta.color}22` : '#ffffff',
+    background: isDirectImpact ? '#eff6ff' : isCheckRequired ? '#fffbeb' : isSelected ? `${meta.color}22` : contextBackground ?? (isEmphasized ? `${meta.color}22` : '#ffffff'),
     boxShadow: isSelected
       ? `0 0 0 6px ${meta.color}22, 0 8px 20px rgba(15, 23, 42, 0.12)`
       : isDirectImpact || isCheckRequired
         ? `0 0 0 5px ${impactColor}1c, 0 7px 18px rgba(15, 23, 42, 0.10)`
-      : isRoot
-        ? `0 0 0 4px ${meta.color}16`
+        : contextColor
+          ? `0 0 0 3px ${contextColor}18`
+        : isRoot
+          ? `0 0 0 4px ${meta.color}16`
         : '0 4px 12px rgba(15, 23, 42, 0.06)',
     color: '#0f172a',
     padding: '9px 12px',
@@ -35,8 +49,10 @@ const nodeStyle = (node, isRoot, isSelected, isDimmed, dimOpacity, isDirectImpac
   }
 }
 
-const nodeLabel = (node) => {
+const nodeLabel = (node, { isScope, isIncident, isSelected }) => {
   const meta = ONTOLOGY_NODE_META[node.label]
+  const alarmCount = Number(node.properties?.alarm_count ?? 0)
+  const waferCount = node.label === 'Lot' ? Number(node.properties?.wafer_count ?? 0) : 0
   return (
     <div className="min-w-0 text-center">
       <div className="text-[9px] font-extrabold tracking-[.08em]" style={{ color: meta.color }}>
@@ -45,11 +61,40 @@ const nodeLabel = (node) => {
       <div className="mt-1 truncate font-mono text-[11px] font-extrabold" title={node.display_name}>
         {node.display_name}
       </div>
+      {(isScope || isIncident || isSelected) && (
+        <div className="mt-1 flex flex-wrap justify-center gap-1 text-[7px] font-extrabold tracking-[.08em]">
+          {isScope && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#2563eb' }}>조회 기준</span>}
+          {isIncident && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#ea580c' }}>선택 LOT</span>}
+          {isSelected && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#0f172a' }}>상세 확인</span>}
+        </div>
+      )}
+      {waferCount > 0 && <div className="mt-1 text-[8px] font-bold text-faint">WAFER {waferCount}</div>}
+      {alarmCount > 0 && (
+        <div className="mt-1 inline-flex rounded-full bg-red-50 px-1.5 py-0.5 text-[8px] font-extrabold text-red-600">
+          ALARM {alarmCount}
+        </div>
+      )}
     </div>
   )
 }
 
-function ViewportFocus({ active, nodeIds, padding = 0.65, maxZoom = 1.05 }) {
+// 기본 관계는 좌→우로, 처리 이력은 Chamber에서 LOT으로 내려간다. 두 방향의 handle을
+// 함께 두어 하나의 Chamber가 Parameter와 LOT 모두에 자연스럽게 연결되게 한다.
+function OntologyFlowNode({ data }) {
+  return (
+    <>
+      <Handle type="target" position={Position.Left} id="left" isConnectable={false} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Top} id="top" isConnectable={false} style={{ opacity: 0 }} />
+      {data.label}
+      <Handle type="source" position={Position.Right} id="right" isConnectable={false} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Bottom} id="bottom" isConnectable={false} style={{ opacity: 0 }} />
+    </>
+  )
+}
+
+const nodeTypes = { ontology: OntologyFlowNode }
+
+function ViewportFocus({ active, nodeIds, graphKey, padding = 0.65, maxZoom = 1.05 }) {
   const { fitView } = useReactFlow()
   const nodeKey = nodeIds.join('|')
   useEffect(() => {
@@ -63,7 +108,7 @@ function ViewportFocus({ active, nodeIds, padding = 0.65, maxZoom = 1.05 }) {
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [active, fitView, maxZoom, nodeIds, nodeKey, padding])
+  }, [active, fitView, graphKey, maxZoom, nodeIds, nodeKey, padding])
   return null
 }
 
@@ -73,6 +118,8 @@ function OntologyGraphCanvas({
   impactNodeIds = new Set(),
   checkRequiredNodeIds = new Set(),
   selectedNodeId = null,
+  scopeNodeId = null,
+  incidentNodeId = null,
   onSelectNode = null,
   viewport = 'compact',
   emphasizeRoot = true,
@@ -126,8 +173,16 @@ function OntologyGraphCanvas({
     () =>
       layout.map(({ node, position, root }) => ({
         id: node.id,
+        type: 'ontology',
         position,
-        data: { node, label: nodeLabel(node) },
+        data: {
+          node,
+          label: nodeLabel(node, {
+            isScope: node.id === scopeNodeId,
+            isIncident: node.id === incidentNodeId,
+            isSelected: node.id === selectedNodeId,
+          }),
+        },
         selected: node.id === selectedNodeId,
         // 다른 노드를 선택하면 조회 root Chamber의 시각 포커스를 해제한다.
         // root_node_id 자체는 조회 문맥으로 유지하되 그래프 강조는 사용자의 현재 선택을 따른다.
@@ -139,6 +194,8 @@ function OntologyGraphCanvas({
           viewport === 'page' ? 0.62 : 0.34,
           directImpact.has(node.id),
           checkRequired.has(node.id),
+          node.id === scopeNodeId,
+          node.id === incidentNodeId,
         ),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -146,7 +203,7 @@ function OntologyGraphCanvas({
         connectable: false,
         selectable: Boolean(onSelectNode),
       })),
-    [checkRequired, directImpact, emphasizeRoot, focusedNodeIds, hasFocus, layout, onSelectNode, selectedNodeId, viewport],
+    [checkRequired, directImpact, emphasizeRoot, focusedNodeIds, hasFocus, incidentNodeId, layout, onSelectNode, scopeNodeId, selectedNodeId, viewport],
   )
   const initialEvidenceNodes = useMemo(
     () => (viewport === 'compact' && focused.size > 0 ? nodes.filter((node) => focusedNodeIds.has(node.id)) : undefined),
@@ -163,6 +220,10 @@ function OntologyGraphCanvas({
         ])].sort()
       : [...focusedNodeIds].sort()),
     [checkRequired, directImpact, focusedNodeIds, modalViewport, normalized],
+  )
+  const layoutKey = useMemo(
+    () => layout.map(({ node, position }) => `${node.id}:${position.x}:${position.y}`).join('|'),
+    [layout],
   )
   const edges = useMemo(() => {
     const firstRelationByType = new Map()
@@ -187,6 +248,8 @@ function OntologyGraphCanvas({
           selectable: false,
           focusable: false,
           markerEnd: { type: MarkerType.ArrowClosed, color: isFocused ? '#2563eb' : '#94a3b8' },
+          sourceHandle: relationship.display_vertical ? 'bottom' : 'right',
+          targetHandle: relationship.display_vertical ? 'top' : 'left',
           style: {
             stroke: isFocused ? '#2563eb' : '#94a3b8',
             strokeWidth: isFocused ? 3 : 1.5,
@@ -211,6 +274,7 @@ function OntologyGraphCanvas({
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{
             nodes: initialEvidenceNodes,
@@ -236,6 +300,7 @@ function OntologyGraphCanvas({
           <ViewportFocus
             active={hasFocus}
             nodeIds={focusViewportNodeIds}
+            graphKey={layoutKey}
             padding={modalViewport ? 0.08 : 0.65}
             maxZoom={modalViewport ? 1.25 : 1.05}
           />
