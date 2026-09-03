@@ -6,6 +6,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import KVGrid from '../../../shared/components/ui/KVGrid.jsx'
 import { BarChart, HistogramChart, LineChart } from './NlqCharts.jsx'
 import { inferUnit } from './nlqUnits.js'
+import { columnLabel } from './columnLabels.js'
 import NlqGraphTab from './NlqGraphTab.jsx'
 import { CELL_ID, CELL_MONO, TD_CLS, TH_CLS, rowClass } from '../../../shared/components/ui/statusStyles.js'
 
@@ -131,15 +132,18 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
               <tr>
                 {columns.map((c) => {
                   const sortable = columns.length > 1 && c === sortKey
+                  const label = columnLabel(def, c)
+                  // "챔버 수" 처럼 제목이 이미 세는 것을 말하므로 (개)·(건) 단위는 중복이라 버린다
+                  const showUnit = c === y && unit && !/(수|건수)$/.test(label)
                   return (
                     <th
                       key={c}
                       onClick={sortable ? onToggleSort : undefined}
-                      title={sortable ? (sortDir ? '클릭: 다음 정렬 (마지막은 원래 순서)' : '클릭: 큰 값부터 정렬') : undefined}
-                      className={`${TH_CLS} font-mono ${sortable ? 'cursor-pointer select-none' : ''}`}
+                      title={`${c}${sortable ? (sortDir ? ' · 클릭: 다음 정렬 (마지막은 원래 순서)' : ' · 클릭: 큰 값부터 정렬') : ''}`}
+                      className={`${TH_CLS} ${sortable ? 'cursor-pointer select-none' : ''}`}
                     >
-                      {c}
-                      {c === y && unit && <span className="ml-1 font-sans font-medium text-g2">({unit})</span>}
+                      {label}
+                      {showUnit && <span className="ml-1 font-sans font-medium text-g2">({unit})</span>}
                       {sortable && sortDir && <span className="ml-1 text-[9px] text-g2">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                     </th>
                   )
@@ -177,7 +181,7 @@ function NlqResultTabs({ def, tab, onTab, sortDir, onToggleSort, sortKey, rows, 
             <>
               <KVGrid items={stats} />
               <div className="text-xs text-g1">
-                std는 표본 표준편차(ddof=1) 기준 · {y ?? '—'} 컬럼 · 결과 행에서 계산
+                std는 표본 표준편차(ddof=1) 기준 · {y ? columnLabel(def, y) : '—'} 컬럼 · 결과 행에서 계산
               </div>
             </>
           ) : (
