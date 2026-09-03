@@ -8,7 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/cm52_common.sh"
 
 usage() {
-  printf '%s\n' 'usage: cm52_stage2.sh [--plan] --attempt-id <id>' >&2
+  printf '%s\n' \
+    'usage: cm52_stage2.sh [--plan] [--hold-after 5d | --resume-from 6] --attempt-id <id>' >&2
   exit 2
 }
 
@@ -17,6 +18,8 @@ print_plan() {
     '3 team down → artifact env blank E2E up → identity/readiness fail-fast' \
     '4 UI Text2SQL 3건 ID digest → 7화면·36 operation 확인' \
     '5 pending 12건 → postcondition 12/12/12/0/0/5/4/3/0 → diagnostic targets' \
+    '   (--hold-after 5d: 여기서 E2E를 올린 채 HELD_FOR_GOLDEN_FLOW 기록 후 종료 · 운영자가 live E2E에서 golden-flow phase 3~7 evidence 수집)' \
+    '   (--resume-from 6: hold 기록·E2E identity/readiness 재확인 후 6~10 계속)' \
     '6 golden-flow 7 phase evidence 검증 → golden-flow.json' \
     '7 fault 5-class 평가 → fault-5class.json' \
     '8 E2E artifact preflight → /api/agent/evaluations Success' \
@@ -25,11 +28,20 @@ print_plan() {
 }
 
 PLAN=0
+MODE=full
 ATTEMPT=""
 while (($#)); do
   case "$1" in
     --plan) PLAN=1; shift ;;
     --attempt-id) (($# >= 2)) || usage; ATTEMPT=$2; shift 2 ;;
+    --hold-after)
+      (($# >= 2)) || usage
+      [[ "$2" == 5d && "$MODE" == full ]] || usage
+      MODE=hold; shift 2 ;;
+    --resume-from)
+      (($# >= 2)) || usage
+      [[ "$2" == 6 && "$MODE" == full ]] || usage
+      MODE=resume; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -198,21 +210,51 @@ read_running_revision() {
   team exec -T backend printenv BISTEL_SOURCE_REVISION
 }
 
-if [[ "${CM52_STAGE2_TEST_MODE:-0}" != 1 ]]; then
-  production_verify
-fi
-if ! RUNNING_REV=$(read_running_revision) \
-  || [[ ! "$RUNNING_REV" =~ ^[0-9a-f]{40}$ ]]; then
-  printf '%s\n' PRODUCTION_REVISION_UNREADABLE >&2
-  exit 1
-fi
-ACTIVE_CONTAINER_REVISION=$RUNNING_REV
-verify_prev_state "$RUNNING_REV"
+HOLD_RECORD=""
+read_hold_record() {
+  # --hold-after 5d 가 남긴 마지막 hold 기록. production은 step 3에서 내려간 상태라
+  # production_verify·running revision 조회를 대신해 hold 시점 값을 재사용한다.
+  [[ -f "$LOG" && ! -L "$LOG" ]] || return 1
+  jq -e . "$LOG" >/dev/null || return 1
+  HOLD_RECORD=$(jq -cs '[.[] | select(.step == "hold")] | last // empty' "$LOG")
+  [[ -n "$HOLD_RECORD" ]] || return 1
+  jq -e \
+    --arg attempt "$ATTEMPT" \
+    --arg fault "$PREV_FAULT" \
+    --arg golden "$PREV_GOLDEN" \
+    '.outcome == "HELD_FOR_GOLDEN_FLOW"
+     and .attempt == $attempt
+     and .last_ok_step == "5d"
+     and (.running_rev | test("^[0-9a-f]{40}$"))
+     and .prev_fault == $fault
+     and .prev_golden == $golden' <<<"$HOLD_RECORD" >/dev/null
+}
 
-set -o noclobber
-: >"$LOG"
-set +o noclobber
-chmod 0600 "$LOG"
+if [[ "$MODE" == resume ]]; then
+  if ! read_hold_record; then
+    printf '%s\n' HOLD_RECORD_REQUIRED >&2
+    exit 1
+  fi
+  RUNNING_REV=$(jq -r '.running_rev' <<<"$HOLD_RECORD")
+  ACTIVE_CONTAINER_REVISION=$RUNNING_REV
+  [[ ! -s "$LOG" ]] || jq -e . "$LOG" >/dev/null
+else
+  if [[ "${CM52_STAGE2_TEST_MODE:-0}" != 1 ]]; then
+    production_verify
+  fi
+  if ! RUNNING_REV=$(read_running_revision) \
+    || [[ ! "$RUNNING_REV" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '%s\n' PRODUCTION_REVISION_UNREADABLE >&2
+    exit 1
+  fi
+  ACTIVE_CONTAINER_REVISION=$RUNNING_REV
+  verify_prev_state "$RUNNING_REV"
+
+  set -o noclobber
+  : >"$LOG"
+  set +o noclobber
+  chmod 0600 "$LOG"
+fi
 
 append_log() {
   local step=$1 status=$2 detail=${3:-}
@@ -230,9 +272,26 @@ log_ok() {
 }
 
 LAST_OK_STEP="2c"
+[[ "$MODE" != resume ]] || LAST_OK_STEP="5d"
 STAGE2_PASS=0
 CLEANUP_RUNNING=0
 FORCE_PUBLISH_FAILED=0
+HOLD_REACHED=0
+
+write_hold_record() {
+  local record
+  record=$(jq -cn \
+    --arg attempt "$ATTEMPT" \
+    --arg running_rev "$RUNNING_REV" \
+    --arg fault "$PREV_FAULT" \
+    --arg golden "$PREV_GOLDEN" \
+    --arg last_ok "$LAST_OK_STEP" \
+    '{step:"hold",outcome:"HELD_FOR_GOLDEN_FLOW",attempt:$attempt,running_rev:$running_rev,prev_fault:$fault,prev_golden:$golden,last_ok_step:$last_ok}') || return 1
+  test_gate log_hold || return 1
+  printf '%s\n' "$record" >>"$LOG" || return 1
+  { sync "$LOG" 2>/dev/null || sync; } || return 1
+  log_ok after
+}
 
 cleanup() {
   local rc outcome="" record="" record_ok=1
@@ -242,6 +301,16 @@ cleanup() {
   CLEANUP_RUNNING=1
   trap - EXIT
   set +e
+
+  # --hold-after 5d 정상 도달: E2E는 올린 채, production은 내린 채 둔다. 기록에 실패하면
+  # hold를 포기하고 아래 일반 복구 경로(E2E down → 이전 production 복원)로 내려간다.
+  if ((HOLD_REACHED)) && [[ "$rc" == 0 ]]; then
+    if write_hold_record; then
+      exit 0
+    fi
+    printf '%s\n' HOLD_RECORD_WRITE_FAILED >&2
+    rc=1
+  fi
 
   if ! log_ok precheck || ! jq -cn '{probe:true}' >/dev/null; then
     printf '%s\n' LOG_INVALID_BEFORE_PUBLISH >&2
@@ -310,6 +379,11 @@ cleanup() {
 trap 'cleanup "$?"' EXIT
 
 if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+  if [[ "$MODE" == hold ]]; then
+    LAST_OK_STEP=5d
+    HOLD_REACHED=1
+    exit "${CM52_TEST_ORIGINAL_RC:-0}"
+  fi
   LAST_OK_STEP=${CM52_TEST_LAST_OK_STEP:-9}
   STAGE2_PASS=${CM52_TEST_STAGE2_PASS:-1}
   exit "${CM52_TEST_ORIGINAL_RC:-0}"
@@ -323,6 +397,10 @@ step3_boot_e2e() {
     AGENT_GOLDEN_FLOW_SUMMARY_PATH='' \
     e2e up -d --build
   e2e ps --format json >"$A/e2e-services.json"
+  e2e_identity_readiness
+}
+
+e2e_identity_readiness() {
   e2e exec -T backend python -c "$IDENTITY_SQL" \
     | grep -q "('kosa_agent_e2e', 'kosa_app')"
   runner python -c "$READONLY_IDENTITY" \
@@ -340,6 +418,13 @@ step3_boot_e2e() {
       ' >/dev/null
 }
 
+if [[ "$MODE" == resume ]]; then
+  # hold 동안 E2E가 살아 있고 같은 revision인지, 전반 산출물이 그대로인지 재확인한다.
+  e2e_identity_readiness
+  assert_owned_0600 \
+    "$A/analytics-digests.json" "$A/pending-run.jsonl" "$A/diagnostic-targets.json" >/dev/null
+  append_log 5d-resume PASS e2e-still-live
+else
 step3_boot_e2e
 LAST_OK_STEP=3b
 append_log 3b PASS identity-readiness
@@ -381,6 +466,12 @@ runner python scripts/emit_diagnostic_targets.py \
 assert_owned_0600 "$A/diagnostic-targets.json" >/dev/null
 LAST_OK_STEP=5d
 append_log 5d PASS agent-12-diagnostic-22
+fi
+
+if [[ "$MODE" == hold ]]; then
+  HOLD_REACHED=1
+  exit 0
+fi
 
 EVIDENCE_FILE=${CM52_GOLDEN_EVIDENCE_FILE:-}
 [[ "$EVIDENCE_FILE" == "$CA/evidence/"* ]] || {

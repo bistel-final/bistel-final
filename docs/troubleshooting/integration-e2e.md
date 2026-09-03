@@ -153,6 +153,27 @@ artifact 상태를 검증하고, 복구로 현재 이미지를 재생성한 뒤�
    bash deploy/compose/cm52_stage2.sh --attempt-id "$ATTEMPT"
    ```
 
+   golden-flow 7 phase evidence는 **같은 attempt의 live E2E**에서 만들어야 한다.
+   `verify_golden_flow.py`는 전체 판정 시 현재 DB가 phase 7 snapshot과 같아야 통과하므로
+   (`LIVE_SNAPSHOT_MISMATCH`), 12 run 직후 검증하는 단일 실행으로는 사전 evidence를 쓸 수
+   없다. 이 경우 두 번에 나눠 실행한다.
+
+   ```bash
+   # 전반 3~5d: E2E를 올린 채 HELD_FOR_GOLDEN_FLOW 기록 후 0으로 종료(복구·게시 없음)
+   bash deploy/compose/cm52_stage2.sh --hold-after 5d --attempt-id "$ATTEMPT"
+   # 운영자: live E2E에서 golden-flow phase 3~7 수행 · phase별 artifact를
+   #   $A/evidence/artifacts/<PHASE>/{snapshot,batch,http,n8n,kafka,smtp}-<name>.(json|ndjson)
+   #   에 기록 · snapshot은 runner python scripts/capture_golden_flow_snapshot.py
+   #   → runner python scripts/build_golden_flow_evidence.py --root $CA/evidence
+   # 후반 6~10: hold 기록·E2E identity/readiness·전반 산출물 재확인 뒤 계속
+   CM52_GOLDEN_EVIDENCE_FILE="$CA/evidence/evidence.json" \
+     bash deploy/compose/cm52_stage2.sh --resume-from 6 --attempt-id "$ATTEMPT"
+   ```
+
+   hold 중 production은 내려간 상태다. hold 기록이 없거나 이전 artifact path가 바뀌었으면
+   `--resume-from 6`은 `HOLD_RECORD_REQUIRED`로 멈추고 아무것도 바꾸지 않는다. 전반이
+   5d 전에 실패하면 hold 없이 기존 cleanup(E2E down → 이전 production 복원)이 그대로 돈다.
+
 4. 7화면과 36 operation을 실제 API로 확인한다. Analytics 고정 질문은
    `backend/scripts/e2e_analytics_questions.py`의 `QUESTIONS` **N=3**을 순서대로 사용하며,
    D파트의 12+건 평가셋과 별도인 CM-5.2 통합 smoke 세트다. runbook·receipt에는 질문
