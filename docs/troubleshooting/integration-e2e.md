@@ -321,3 +321,24 @@ production_verify
 이전 상태가 artifact bound였다면 그 두 파일의 SHA·revision·attempt를 인자로 추가해
 `production_verify`를 다시 실행한다. 수동 복구가 끝나도 실패한 attempt를 PASS로 바꾸지
 않으며, CM-4.7 dry-run부터 새 attempt로 전부 재실행한다.
+
+
+## 실행 결과 — 2026-09-03 stage2 `PUBLISHED`
+
+전문은 [`cm52-execution-report-20260903.md`](./cm52-execution-report-20260903.md).
+
+| 항목 | 값 |
+|---|---|
+| attempt_id | `20260903T071958Z-ce9d9fdcb662` |
+| REV | `ce9d9fdcb6628c7453685812d16f6df9525e6d98` (main `7b7a74e`와 tree 동일) |
+| cleanup outcome | `PUBLISHED` (같은 attempt에서 `RESTORE_FAILED`(오판)·`RESTORED`·`PUBLISH_FAILED` 뒤 4회차) |
+| production artifact path | `/reports/cm-5.2/20260903T071958Z-ce9d9fdcb662/{fault-5class,golden-flow}.json` |
+| golden-flow.json | `b91c8f0940cf11c8514c0c5cd2e70a5576ff4083eca73a20900c719dea796004` · `GOLDEN_FLOW_PASS` 7 phase |
+| fault-5class.json | `c9d2f4308e9458f0ee588b18d9677153185ca33ef521a152b2f3c31cd118d118` · hard gate PASS · evidence 12/12 |
+| evidence manifest | `d1cf672ad661f8f3fe176239b9cc0a556a44b2b366842029a00b5d12d1b9a4f6` (artifact 21) |
+| readiness | E2E·production 모두 6 PASS (production은 WF4 group offset 0 생성 후) |
+
+실행 중 발견해 main에 반영한 결함: #285 #286 #287 #288 #289 #290 #291 #292 #294 #296 #299.
+운영 주의: `.env.team` 키를 셸에 `export`하면 compose 보간이 `--env-file` 값을 덮어쓴다(#299 가드).
+E2E `up`은 kafka를 먼저 healthy로 올린 뒤 backend를 새 `DELIVERY_CALLBACK_TRAIL_RUN_ID`로 올린다
+(동시 기동 시 첫 프로세스 segfault 뒤 같은 RUN_ID trail 규칙으로 재시작 루프 — 원인 조사 후속).
