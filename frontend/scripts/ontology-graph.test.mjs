@@ -249,6 +249,27 @@ assert.ok(
   chamberScopedGraph.nodes.some((node) => node.id === 'Chamber:EQP01-PM2'),
   'Chamber만 선택한 구조 문맥에는 형제 Chamber를 포함해야 합니다',
 )
+assert.deepEqual(
+  chamberScopedGraph.nodes.filter((node) => node.label === 'Lot').map((node) => node.business_id),
+  ['LOT010'],
+  'Chamber를 선택하면 해당 Chamber를 거친 LOT을 표시해야 합니다',
+)
+assert.equal(
+  chamberScopedGraph.nodes.filter((node) => node.label === 'Wafer').length,
+  0,
+  'Chamber 선택 단계에서는 LOT만 요약하고 wafer를 펼치지 않아야 합니다',
+)
+assert.deepEqual(
+  chamberScopedGraph.relationships.filter((relationship) => relationship.type === 'PROCESSED_IN'),
+  [{ id: 'VIEW-LOT-PROCESSED-IN-Lot:LOT010-Chamber:EQP01-PM1', type: 'PROCESSED_IN', source: 'Lot:LOT010', target: 'Chamber:EQP01-PM1' }],
+  'LOT 요약은 선택 Chamber와 처리 관계를 유지해야 합니다',
+)
+const chamberScopedPositions = layoutOntologyNodes(chamberScopedGraph)
+assert.deepEqual(
+  chamberScopedPositions.find(({ node }) => node.label === 'Lot').position,
+  { x: 920, y: 620 },
+  'Chamber LOT 요약은 선택 Chamber 아래 그래프 하단 한 줄에서 시작해야 합니다',
+)
 const selectedLotGraph = buildLotContextGraph(lotContextGraph, 'LOT010')
 assert.equal(selectedLotGraph.nodes.filter((node) => node.label === 'Wafer').length, 1, '동일 wafer의 두 처리 이력은 하나의 wafer node로 묶어야 합니다')
 assert.equal(selectedLotGraph.relationships.filter((relationship) => relationship.type === 'PROCESSED_IN').length, 2)
@@ -296,7 +317,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   incidentPositions.find(({ node }) => node.label === 'Wafer').position,
-  { x: 929, y: 374 },
+  { x: 929, y: 400 },
   'Wafer는 LOT 아래 rack의 첫 칸에서 시작해야 합니다',
 )
 const incidentPresentation = orientOntologyRelationships(incidentGraph, incidentPositions)
@@ -366,6 +387,9 @@ for (const file of featureFiles) {
 
 const canvasSource = await readFile(resolve(SOURCE_ROOT, 'shared/components/ontology/OntologyGraphCanvas.jsx'), 'utf8')
 assert.ok(canvasSource.includes('ALARM {alarmCount}'))
+assert.ok(canvasSource.includes('function LotHistoryEdge'), 'Chamber-LOT 처리 이력은 별도 버스 edge로 그려야 합니다')
+assert.ok(canvasSource.includes("sourceHandle: isLotHistory ? 'left-source'"), 'LOT 처리 이력은 Chamber 왼쪽 여백으로 빠져야 합니다')
+assert.ok(canvasSource.includes('const busX = sourceX - 150'), 'LOT 처리 이력은 구조 관계와 겹치지 않는 세로 버스를 사용해야 합니다')
 assert.ok(!canvasSource.includes("relationship.type !== 'CONTAINS'"), 'LOT-Wafer CONTAINS 관계를 canvas에 표시해야 합니다')
 assert.ok(canvasSource.includes('조회 기준') && canvasSource.includes('선택 LOT') && canvasSource.includes('상세 확인'), '그래프 기준·LOT·현재 선택 상태를 업무 용어로 구분해야 합니다')
 for (const contract of [
@@ -402,7 +426,7 @@ assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
 assert.ok(ontologyPageSource.includes('일부 보조 챔버 관계를 불러오지 못해'))
 assert.ok(ontologyPageSource.includes('전체 구조 안내'))
-assert.ok(ontologyPageSource.includes('{!explicitChamber && ('), 'Chamber 선택 시 전체 구조 안내를 숨겨야 합니다')
+assert.ok(ontologyPageSource.includes('{!explicitChamber && !selectedLot && ('), 'Chamber 또는 LOT 선택 시 전체 구조 안내를 숨겨야 합니다')
 assert.ok(ontologyPageSource.includes('buildOntologyOverviewLanes([graph])'))
 assert.ok(ontologyPageSource.includes('onSelectNode={selectOverviewNode}'))
 assert.ok(ontologyPageSource.includes('전체 구조 안내에서는 node 종류와 무관하게 상세 조회 대상만 바꾼다.'), 'overview button은 selector를 바꾸지 않아야 합니다')

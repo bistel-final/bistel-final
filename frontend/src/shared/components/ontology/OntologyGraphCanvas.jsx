@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, useReactFlow } from '@xyflow/react'
+import { Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MarkerType, Position, ReactFlow, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
   ONTOLOGY_NODE_META,
@@ -21,12 +21,13 @@ const nodeStyle = (
   isCheckRequired,
   isScope,
   isIncident,
+  isWaferSelection,
 ) => {
   const meta = ONTOLOGY_NODE_META[node.label]
-  const isEmphasized = isRoot || isSelected || isDirectImpact || isCheckRequired
+  const isEmphasized = isRoot || isSelected || isDirectImpact || isCheckRequired || isWaferSelection
   const impactColor = isCheckRequired ? '#a16207' : '#2563eb'
-  const contextColor = isIncident ? '#ea580c' : isScope ? '#2563eb' : null
-  const contextBackground = isIncident ? '#fff7ed' : isScope ? '#eff6ff' : null
+  const contextColor = isIncident ? '#ea580c' : isScope ? '#2563eb' : isWaferSelection ? meta.color : null
+  const contextBackground = isIncident ? '#fff7ed' : isScope ? '#eff6ff' : isWaferSelection ? `${meta.color}14` : null
   return {
     width: node.label === 'Lot' ? 180 : node.label === 'Wafer' ? 132 : 150,
     minHeight: 58,
@@ -49,10 +50,11 @@ const nodeStyle = (
   }
 }
 
-const nodeLabel = (node, { isScope, isIncident, isSelected }) => {
+const nodeLabel = (node, { isScope, isIncident, isSelected, isWaferSelection }) => {
   const meta = ONTOLOGY_NODE_META[node.label]
   const alarmCount = Number(node.properties?.alarm_count ?? 0)
   const waferCount = node.label === 'Lot' ? Number(node.properties?.wafer_count ?? 0) : 0
+  const routeOrder = node.label === 'Chamber' ? Number(node.properties?.lot_route_order ?? 0) : 0
   return (
     <div className="min-w-0 text-center">
       <div className="text-[9px] font-extrabold tracking-[.08em]" style={{ color: meta.color }}>
@@ -61,14 +63,16 @@ const nodeLabel = (node, { isScope, isIncident, isSelected }) => {
       <div className="mt-1 truncate font-mono text-[11px] font-extrabold" title={node.display_name}>
         {node.display_name}
       </div>
-      {(isScope || isIncident || isSelected) && (
+      {(isScope || isIncident || isSelected || isWaferSelection) && (
         <div className="mt-1 flex flex-wrap justify-center gap-1 text-[7px] font-extrabold tracking-[.08em]">
           {isScope && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#2563eb' }}>조회 기준</span>}
           {isIncident && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#ea580c' }}>선택 LOT</span>}
           {isSelected && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: '#0f172a' }}>상세 확인</span>}
+          {isWaferSelection && <span className="rounded-full px-1.5 py-0.5 text-white" style={{ backgroundColor: meta.color }}>선택 WAFER</span>}
         </div>
       )}
       {waferCount > 0 && <div className="mt-1 text-[8px] font-bold text-faint">WAFER {waferCount}</div>}
+      {routeOrder > 0 && <div className="mt-1 text-[8px] font-bold text-faint">ROUTE {routeOrder}</div>}
       {alarmCount > 0 && (
         <div className="mt-1 inline-flex rounded-full bg-red-50 px-1.5 py-0.5 text-[8px] font-extrabold text-red-600">
           ALARM {alarmCount}
@@ -78,21 +82,133 @@ const nodeLabel = (node, { isScope, isIncident, isSelected }) => {
   )
 }
 
-// 기본 관계는 좌→우로, 처리 이력은 Chamber에서 LOT으로 내려간다. 두 방향의 handle을
-// 함께 두어 하나의 Chamber가 Parameter와 LOT 모두에 자연스럽게 연결되게 한다.
+// 기본 관계는 좌→우로 둔다. LOT 처리 이력은 별도 edge가 Chamber의 왼쪽 handle에서
+// 시작해 설비 구조선과 겹치지 않는 하단 버스로 연결한다.
 function OntologyFlowNode({ data }) {
   return (
     <>
       <Handle type="target" position={Position.Left} id="left" isConnectable={false} style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Top} id="top" isConnectable={false} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" isConnectable={false} style={{ opacity: 0 }} />
       {data.label}
+      <Handle type="source" position={Position.Left} id="left-source" isConnectable={false} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} id="right" isConnectable={false} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Top} id="top-source" isConnectable={false} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} id="bottom" isConnectable={false} style={{ opacity: 0 }} />
     </>
   )
 }
 
+// Chamber → LOT은 기존 설비 관계를 통과하지 않는 별도 처리 이력 버스다.
+// 왼쪽 여백으로 빠져 아래까지 내려간 후 LOT 직전에서 분기한다.
+function LotHistoryEdge({ sourceX, sourceY, targetX, targetY, label, markerEnd, style }) {
+  const busX = sourceX - 150
+  const branchY = targetY - 38
+  const edgePath = `M ${sourceX} ${sourceY} L ${busX} ${sourceY} L ${busX} ${branchY} L ${targetX} ${branchY} L ${targetX} ${targetY}`
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-g2"
+            style={{ transform: `translate(-50%, -50%) translate(${busX + 26}px, ${(sourceY + branchY) / 2}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
+// LOT 단독 조회의 실제 Chamber 방문은 LOT 아래의 공통 세로 trunk에서 분기한다.
+function LotRouteEdge({ sourceX, sourceY, targetX, targetY, label, markerEnd, style }) {
+  const edgePath = `M ${sourceX} ${sourceY} L ${sourceX} ${targetY} L ${targetX} ${targetY}`
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-g2"
+            style={{ transform: `translate(-50%, -50%) translate(${sourceX + 28}px, ${(sourceY + targetY) / 2}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
+function NextStepEdge({ sourceX, sourceY, targetX, targetY, label, markerEnd, style }) {
+  const edgePath = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-g2"
+            style={{ transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
+function LotContainsEdge({ sourceX, sourceY, targetX, targetY, label, markerEnd, style }) {
+  const isHorizontal = Math.abs(sourceY - targetY) < 8
+  const branchY = targetY - 48
+  // 모든 Wafer edge가 LOT에서 출발하므로, 관계명은 각 개별 분기 중간이 아니라
+  // LOT 바로 아래의 공통 trunk에 한 번만 둔다.
+  const labelY = isHorizontal ? sourceY - 16 : sourceY + 24
+  const labelX = isHorizontal ? (sourceX + targetX) / 2 : sourceX
+  const edgePath = isHorizontal
+    ? `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`
+    : `M ${sourceX} ${sourceY} L ${sourceX} ${branchY} L ${targetX} ${branchY} L ${targetX} ${targetY}`
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-g2"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
+function WaferHistoryEdge({ sourceX, sourceY, targetX, targetY, label, markerEnd, style }) {
+  const edgePath = `M ${sourceX} ${sourceY} L ${sourceX} ${targetY} L ${targetX} ${targetY}`
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="pointer-events-none absolute rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-g2"
+            style={{ transform: `translate(-50%, -50%) translate(${sourceX + 30}px, ${sourceY + 24}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
 const nodeTypes = { ontology: OntologyFlowNode }
+const edgeTypes = { contains: LotContainsEdge, waferHistory: WaferHistoryEdge, lotHistory: LotHistoryEdge, lotRoute: LotRouteEdge, lotIncident: NextStepEdge, nextStep: NextStepEdge }
 
 function ViewportFocus({ active, nodeIds, graphKey, padding = 0.65, maxZoom = 1.05 }) {
   const { fitView } = useReactFlow()
@@ -120,9 +236,11 @@ function OntologyGraphCanvas({
   selectedNodeId = null,
   scopeNodeId = null,
   incidentNodeId = null,
+  waferSelectionNodeId = null,
   onSelectNode = null,
   viewport = 'compact',
   emphasizeRoot = true,
+  chamberOnly = false,
 }) {
   const modalViewport = viewport === 'modal'
   const normalized = useMemo(() => normalizeOntologyGraph(graph), [graph])
@@ -144,8 +262,8 @@ function OntologyGraphCanvas({
   )
   const layout = useMemo(() => layoutOntologyNodes(normalized), [normalized])
   const presentationRelationships = useMemo(
-    () => orientOntologyRelationships(normalized, layout),
-    [layout, normalized],
+    () => orientOntologyRelationships(normalized, layout, { chamberOnly }),
+    [chamberOnly, layout, normalized],
   )
   const impactRelations = useMemo(() => {
     const explicitNodes = new Set([...directImpact, ...checkRequired])
@@ -170,8 +288,8 @@ function OntologyGraphCanvas({
     ].flat())
   }, [activeRelations, checkRequired, directImpact, hasFocus, normalized, selectedNodeId])
   const nodes = useMemo(
-    () =>
-      layout.map(({ node, position, root }) => ({
+    () => {
+      const ontologyNodes = layout.map(({ node, position, root }) => ({
         id: node.id,
         type: 'ontology',
         position,
@@ -181,6 +299,7 @@ function OntologyGraphCanvas({
             isScope: node.id === scopeNodeId,
             isIncident: node.id === incidentNodeId,
             isSelected: node.id === selectedNodeId,
+            isWaferSelection: node.id === waferSelectionNodeId,
           }),
         },
         selected: node.id === selectedNodeId,
@@ -196,14 +315,17 @@ function OntologyGraphCanvas({
           checkRequired.has(node.id),
           node.id === scopeNodeId,
           node.id === incidentNodeId,
+          node.id === waferSelectionNodeId,
         ),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         draggable: false,
         connectable: false,
         selectable: Boolean(onSelectNode),
-      })),
-    [checkRequired, directImpact, emphasizeRoot, focusedNodeIds, hasFocus, incidentNodeId, layout, onSelectNode, scopeNodeId, selectedNodeId, viewport],
+      }))
+      return ontologyNodes
+    },
+    [checkRequired, directImpact, emphasizeRoot, focusedNodeIds, hasFocus, incidentNodeId, layout, onSelectNode, scopeNodeId, selectedNodeId, viewport, waferSelectionNodeId],
   )
   const initialEvidenceNodes = useMemo(
     () => (viewport === 'compact' && focused.size > 0 ? nodes.filter((node) => focusedNodeIds.has(node.id)) : undefined),
@@ -226,32 +348,62 @@ function OntologyGraphCanvas({
     [layout],
   )
   const edges = useMemo(() => {
+    const nodesById = new Map((normalized?.nodes ?? []).map((node) => [node.id, node]))
+    const hasWaferContext = (normalized?.nodes ?? []).some((node) => node.label === 'Wafer')
+    const isWaferSelection = (normalized?.nodes ?? []).filter((node) => node.label === 'Wafer').length === 1 &&
+      (normalized?.nodes ?? []).some((node) => node.properties?.lot_route_order != null)
     const firstRelationByType = new Map()
     for (const relationship of presentationRelationships) {
       if (!firstRelationByType.has(relationship.type)) firstRelationByType.set(relationship.type, relationship.id)
     }
+    const primaryLotContainsId = presentationRelationships.find((relationship) =>
+      relationship.type === 'CONTAINS' &&
+      nodesById.get(relationship.display_source)?.label === 'Lot' &&
+      nodesById.get(relationship.display_target)?.label === 'Wafer',
+    )?.id
     return presentationRelationships.map((relationship) => {
+        const isLotHistory = relationship.type === 'PROCESSED_IN' &&
+          nodesById.get(relationship.display_source)?.label === 'Chamber' &&
+          nodesById.get(relationship.display_target)?.label === 'Lot' &&
+          nodesById.get(relationship.display_source)?.properties?.lot_route_order == null &&
+          !hasWaferContext
+        const isLotIncident = relationship.type === 'PROCESSED_IN' &&
+          nodesById.get(relationship.display_source)?.label === 'Chamber' &&
+          nodesById.get(relationship.display_target)?.label === 'Lot' &&
+          hasWaferContext
+        const isLotContains = relationship.type === 'CONTAINS' &&
+          nodesById.get(relationship.display_source)?.label === 'Lot' &&
+          nodesById.get(relationship.display_target)?.label === 'Wafer'
+        const isLotRoute = relationship.type === 'PROCESSED_IN' &&
+          nodesById.get(relationship.display_source)?.label === 'Lot' &&
+          nodesById.get(relationship.display_target)?.label === 'Chamber' &&
+          nodesById.get(relationship.display_target)?.properties?.lot_route_order != null
+        const isNextStep = (relationship.type === 'NEXT_STEP' && relationship.display_vertical) || relationship.display_straight
+        const isWaferHistory = isWaferSelection && relationship.type === 'PROCESSED_IN' && nodesById.get(relationship.display_source)?.label === 'Wafer' && nodesById.get(relationship.display_target)?.label === 'Chamber'
         const isFocused = activeRelations.has(relationship.id)
         const isDimmed = hasFocus && !isFocused
         const showLabel = isFocused || firstRelationByType.get(relationship.type) === relationship.id
+        const relationshipColor = isFocused ? '#2563eb' : '#94a3b8'
         return {
           id: relationship.id,
           source: relationship.display_source,
           target: relationship.display_target,
-          label: showLabel
-            ? (relationship.display_reversed
-                ? ONTOLOGY_REVERSED_RELATION_LABELS[relationship.type]
-                : ONTOLOGY_RELATION_LABELS[relationship.type]) ?? relationship.type
-            : undefined,
-          type: 'smoothstep',
+          label: isLotContains && relationship.id === primaryLotContainsId
+            ? '포함 웨이퍼'
+            : showLabel
+              ? (relationship.display_reversed
+                  ? ONTOLOGY_REVERSED_RELATION_LABELS[relationship.type]
+                  : ONTOLOGY_RELATION_LABELS[relationship.type]) ?? relationship.type
+              : undefined,
+          type: isLotHistory ? 'lotHistory' : isLotRoute ? 'lotRoute' : isLotIncident ? 'lotIncident' : isLotContains ? 'contains' : isWaferHistory ? 'waferHistory' : isNextStep ? 'nextStep' : 'smoothstep',
           animated: false,
           selectable: false,
           focusable: false,
-          markerEnd: { type: MarkerType.ArrowClosed, color: isFocused ? '#2563eb' : '#94a3b8' },
-          sourceHandle: relationship.display_vertical ? 'bottom' : 'right',
-          targetHandle: relationship.display_vertical ? 'top' : 'left',
+          markerEnd: { type: MarkerType.ArrowClosed, color: relationshipColor },
+          sourceHandle: isLotHistory ? 'left-source' : isWaferHistory ? 'bottom' : isLotRoute || isLotIncident || isLotContains ? 'bottom' : relationship.display_vertical_up ? 'top-source' : relationship.display_vertical ? 'bottom' : 'right',
+          targetHandle: isLotRoute ? 'left' : isWaferHistory ? 'left' : isLotIncident || isLotContains ? 'top' : relationship.display_vertical_up ? 'bottom-target' : relationship.display_vertical ? 'top' : 'left',
           style: {
-            stroke: isFocused ? '#2563eb' : '#94a3b8',
+            stroke: relationshipColor,
             strokeWidth: isFocused ? 3 : 1.5,
             opacity: isDimmed ? 0.2 : 1,
           },
@@ -264,7 +416,7 @@ function OntologyGraphCanvas({
           labelBgStyle: { fill: '#ffffff', fillOpacity: isDimmed ? 0.2 : 0.92 },
         }
       })
-  }, [activeRelations, hasFocus, presentationRelationships])
+  }, [activeRelations, hasFocus, normalized, presentationRelationships])
 
   return (
     <div className={`flex w-full flex-col gap-2.5 ${modalViewport ? 'h-full min-h-0' : ''}`} data-testid="ontology-graph-canvas">
@@ -275,6 +427,7 @@ function OntologyGraphCanvas({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{
             nodes: initialEvidenceNodes,

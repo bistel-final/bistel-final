@@ -16,6 +16,7 @@ import {
   hasDisplayableRelationships,
   mergeOntologyGraphs,
   lotOptionsForChamber,
+  waferOptionsForLot,
   ontologyAlarmScope,
   publicNodeDetails,
   summarizeOntologyAlarms,
@@ -352,12 +353,16 @@ function OntologyPage() {
     focus.phase === 'ready' ? focus.chamberId : '',
   )
   const [selectedLot, setSelectedLot] = useState('')
+  const [selectedWafer, setSelectedWafer] = useState('')
+  const [browseMode, setBrowseMode] = useState('structure')
+  const [alarmBrowse, setAlarmBrowse] = useState({ status: 'idle', items: [] })
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
   const [selectedNode, setSelectedNode] = useState(null)
   const [alarmAttempt, setAlarmAttempt] = useState(0)
   const [alarmState, setAlarmState] = useState({ requestKey: null, status: 'idle', summary: null, basis: null })
   const explicitChamber = focus.phase === 'ready' ? focus.chamberId : selectedChamber
+  const activeBrowseMode = focus.phase === 'ready' ? 'chamber' : browseMode
   const requestChamber = explicitChamber || DEFAULT_GRAPH_CHAMBER
   const rawGraph = useMemo(() => {
     if (!state.graph) return null
@@ -368,24 +373,34 @@ function OntologyPage() {
       : state.graph
   }, [explicitChamber, state.graph])
   const baseGraph = useMemo(
-    () => buildLotContextGraph(rawGraph, selectedLot, explicitChamber),
-    [rawGraph, selectedLot, explicitChamber],
+    () => buildLotContextGraph(rawGraph, selectedLot, explicitChamber, selectedWafer),
+    [rawGraph, selectedLot, explicitChamber, selectedWafer],
   )
   const lotOptions = useMemo(
     () => lotOptionsForChamber(rawGraph, explicitChamber),
     [rawGraph, explicitChamber],
   )
+  const waferOptions = useMemo(
+    () => waferOptionsForLot(rawGraph, selectedLot, explicitChamber),
+    [rawGraph, selectedLot, explicitChamber],
+  )
   const selectedLotNode = useMemo(
     () => baseGraph?.nodes.find((node) => node.label === 'Lot' && node.business_id === selectedLot) ?? null,
     [baseGraph, selectedLot],
+  )
+  const selectedWaferNode = useMemo(
+    () => baseGraph?.nodes.find((node) => node.id === selectedWafer && node.label === 'Wafer') ?? null,
+    [baseGraph, selectedWafer],
   )
   const selectedChamberNode = useMemo(
     () => baseGraph?.nodes.find((node) => node.id === `Chamber:${explicitChamber}`) ?? null,
     [baseGraph, explicitChamber],
   )
   // 상단 Chamber/LOT 선택은 조회 context일 뿐 그래프 node를 클릭한 상태가 아니다.
+  // 상단 WAFER selector는 표시 범위를 정하는 필터다. 그래프 click과 달리
+  // node/edge를 강조하거나 나머지를 흐리게 하지 않는다.
   const visualSelectedNode = focus.phase === 'ready' ? null : selectedNode
-  const panelNode = focus.phase === 'ready' ? null : selectedNode ?? selectedLotNode ?? selectedChamberNode
+  const panelNode = focus.phase === 'ready' ? null : selectedNode ?? selectedWaferNode ?? selectedLotNode ?? selectedChamberNode
   const graph = useMemo(
     () => attachWaferAlarmContext(
       annotateWaferAlarmHints(baseGraph, alarmState.incident ? alarmState.alarms : []),
@@ -423,6 +438,17 @@ function OntologyPage() {
       active = false
     }
   }, [attempt, explicitChamber, focus.phase, requestChamber])
+
+  useEffect(() => {
+    if (activeBrowseMode !== 'alarm') return undefined
+    let active = true
+    setAlarmBrowse({ status: 'loading', items: [] })
+    getAllAlarms({}).then(
+      (response) => { if (active) setAlarmBrowse({ status: 'success', items: response.items ?? [] }) },
+      () => { if (active) setAlarmBrowse({ status: 'error', items: [] }) },
+    )
+    return () => { active = false }
+  }, [activeBrowseMode])
 
   useEffect(() => {
     const scope = ontologyAlarmScope(baseGraph, panelNode)
@@ -503,6 +529,7 @@ function OntologyPage() {
   const changeChamber = (chamberId) => {
     setSelectedChamber(chamberId)
     setSelectedLot('')
+    setSelectedWafer('')
     setSelectedNode(null)
     setSearchParams({}, { replace: true })
   }
@@ -510,7 +537,42 @@ function OntologyPage() {
   const selectChamber = (event) => changeChamber(event.target.value)
   const selectLot = (event) => {
     setSelectedLot(event.target.value)
+    setSelectedWafer('')
     setSelectedNode(null)
+  }
+  const selectWafer = (event) => {
+    // Wafer는 전체 공정 경로를 보는 기준이다. Chamber 기준과 함께 유지하지 않는다.
+    if (event.target.value) {
+      setSelectedChamber('')
+      setSearchParams({}, { replace: true })
+    }
+    setSelectedWafer(event.target.value)
+    setSelectedNode(null)
+  }
+
+  const selectBrowseMode = (mode) => {
+    setBrowseMode(mode)
+    setSelectedNode(null)
+    if (mode === 'structure' || mode === 'alarm') {
+      setSelectedChamber('')
+      setSelectedLot('')
+      setSelectedWafer('')
+    } else if (mode === 'chamber') {
+      setSelectedLot('')
+      setSelectedWafer('')
+    } else if (mode === 'lot') {
+      setSelectedChamber('')
+    }
+    setSearchParams({}, { replace: true })
+  }
+
+  const selectAlarmRoute = (alarm) => {
+    const wafer = rawGraph?.nodes.find((node) => node.label === 'Wafer' && String(node.properties?.lot_hist_id) === String(alarm.lot_hist_id))
+    setSelectedChamber('')
+    setSelectedLot(String(alarm.lot_id ?? ''))
+    setSelectedWafer(wafer?.id ?? '')
+    setSelectedNode(null)
+    setBrowseMode('lot')
   }
 
   const selectGraphNode = (node) => {
@@ -532,7 +594,18 @@ function OntologyPage() {
           <div className="text-[20px] font-extrabold text-ink">온톨로지</div>
           <div className="mt-1 text-[11.5px] text-g2">전체 설비·공정·파라미터 관계에서 필요한 챔버를 탐색합니다</div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex rounded-lg border border-field-line bg-soft p-1" aria-label="온톨로지 탐색 관점">
+            {[
+              ['structure', '전체 구조'], ['chamber', '챔버'], ['lot', 'LOT / WAFER'], ['alarm', '알람'],
+            ].map(([mode, label]) => (
+              <button key={mode} type="button" onClick={() => selectBrowseMode(mode)}
+                className={`rounded-md px-2.5 py-1.5 text-[11px] font-extrabold transition ${activeBrowseMode === mode ? 'bg-white text-blue shadow-sm' : 'text-g2 hover:text-ink'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {activeBrowseMode === 'chamber' && <>
           <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
             CHAMBER
             <select value={explicitChamber} onChange={selectChamber}
@@ -545,15 +618,53 @@ function OntologyPage() {
           <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
             LOT
             <select value={selectedLot} onChange={selectLot}
-              disabled={!explicitChamber}
-              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink disabled:cursor-not-allowed disabled:bg-soft disabled:text-faint"
+              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
               aria-label="온톨로지 Lot 선택">
-              <option value="">{explicitChamber ? 'LOT 선택' : 'CHAMBER를 먼저 선택'}</option>
+              <option value="">LOT 선택 (선택 사항)</option>
               {lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
             </select>
           </label>
+          </>}
+          {activeBrowseMode === 'lot' && <>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
+            LOT
+            <select value={selectedLot} onChange={selectLot}
+              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+              aria-label="온톨로지 Lot 선택">
+              <option value="">LOT 선택</option>
+              {lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
+            WAFER
+            <select value={selectedWafer} onChange={selectWafer} disabled={!selectedLot || Boolean(explicitChamber)}
+              className="h-9 min-w-[160px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink disabled:cursor-not-allowed disabled:bg-soft disabled:text-faint"
+              aria-label="온톨로지 Wafer 선택">
+              <option value="">{!selectedLot ? 'LOT를 먼저 선택' : explicitChamber ? 'CHAMBER 선택 해제 필요' : 'WAFER 선택'}</option>
+              {waferOptions.map((wafer) => <option key={wafer.id} value={wafer.id}>{wafer.label}</option>)}
+            </select>
+          </label>
+          </>}
         </div>
       </div>
+
+      {activeBrowseMode === 'alarm' && (
+        <Card className="mb-4 p-3" data-testid="ontology-alarm-entry">
+          <div className="mb-2 text-[12px] font-extrabold text-ink">알람에서 공정 이력으로 추적</div>
+          {alarmBrowse.status === 'loading' && <div className="text-[11px] text-g2">알람을 불러오는 중…</div>}
+          {alarmBrowse.status === 'error' && <div className="text-[11px] text-red-600">알람 목록을 불러오지 못했습니다.</div>}
+          {alarmBrowse.status === 'success' && (
+            <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto">
+              {alarmBrowse.items.map((alarm) => (
+                <button key={alarm.alarm_id ?? `${alarm.lot_hist_id}-${alarm.occurred_at}`} type="button" onClick={() => selectAlarmRoute(alarm)}
+                  className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-left font-mono text-[10px] font-bold text-red-700 hover:bg-red-100">
+                  {alarm.chamber_id} · {alarm.lot_id} · {alarm.sensor_id ?? 'ALARM'}
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {status === 'invalid' && (
         <ErrorState title="올바르지 않은 온톨로지 링크입니다" detail={focus.message} />
@@ -580,18 +691,20 @@ function OntologyPage() {
               일부 보조 챔버 관계를 불러오지 못해 조회한 챔버와 확인 가능한 관계만 표시합니다.
             </div>
           )}
-          {!explicitChamber && (
+          {!explicitChamber && !selectedLot && (
             <OntologyOverview graph={graph} selectedNodeId={visualSelectedNode?.id ?? null} onSelectNode={selectOverviewNode} />
           )}
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <OntologyGraphCanvas graph={graph} focusedRelationIds={focusedRelationIds}
               impactNodeIds={focusedImpactNodeIds} checkRequiredNodeIds={checkRequiredNodeIds}
               selectedNodeId={visualSelectedNode?.id ?? null} onSelectNode={selectGraphNode} viewport="page"
-              scopeNodeId={selectedChamberNode?.id ?? null} incidentNodeId={selectedLotNode?.id ?? null}
-              emphasizeRoot={focus.phase === 'ready'} />
+              scopeNodeId={selectedChamberNode?.id ?? null}
+              incidentNodeId={selectedWafer ? null : selectedLotNode?.id ?? null}
+              waferSelectionNodeId={selectedWafer || null}
+              emphasizeRoot={focus.phase === 'ready'} chamberOnly={Boolean(explicitChamber && !selectedLot)} />
             <div className="flex flex-col gap-3 xl:sticky xl:top-4">
               <GraphSummary graph={graph} compact scopeLabel={explicitChamber ? null : '전체 온톨로지'} />
-              <NodeDetail graph={graph} node={displayedNode} isSelected={Boolean(visualSelectedNode)}
+              <NodeDetail graph={graph} node={displayedNode} isSelected={Boolean(selectedNode)}
                 alarmState={displayedAlarmState} onRetryAlarms={() => setAlarmAttempt((value) => value + 1)} />
             </div>
           </div>
