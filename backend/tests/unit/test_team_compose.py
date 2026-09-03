@@ -286,6 +286,15 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     assert "WORKDIR /workspace/backend" in backend_dockerfile
     assert "COPY backend/scripts ./scripts" in backend_dockerfile
     assert "COPY backend/artifacts ./artifacts" in backend_dockerfile
+    # step 6 verifier 입력 — 컨테이너 안 BACKEND_ROOT/REPOSITORY_ROOT 상대 경로 exact.
+    assert (
+        "COPY backend/tests/fixtures/v5_c_6_1/golden_incidents.json "
+        "./tests/fixtures/v5_c_6_1/golden_incidents.json"
+    ) in backend_dockerfile
+    assert (
+        "COPY infra/bootstrap/source-manifest-v4.json "
+        "/workspace/infra/bootstrap/source-manifest-v4.json"
+    ) in backend_dockerfile
     assert "https://download.pytorch.org/whl/cpu" in backend_dockerfile
     assert "torch==2.5.1" in backend_dockerfile
     assert "torch==2.5.1" in backend_requirements
