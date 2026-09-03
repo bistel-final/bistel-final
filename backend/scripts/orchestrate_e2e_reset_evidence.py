@@ -18,13 +18,18 @@ from pathlib import Path
 from typing import Any
 
 import db_target
-import e2e_reset_evidence as evidence
 import postgres_role_matrix as role_matrix
-import reset_e2e_runtime as reset
 import verify_public_profiles
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+
+if __package__:
+    from . import e2e_reset_evidence as evidence
+    from . import reset_e2e_runtime as reset
+else:
+    import e2e_reset_evidence as evidence
+    import reset_e2e_runtime as reset
 
 OBSERVER_DATABASES = ("kosa_agent", "kosa_text2sql")
 OBSERVER_MUTABLE_TABLES: Mapping[str, tuple[str, ...]] = {
@@ -57,6 +62,8 @@ def snapshot_observer(
     environ: Mapping[str, str],
     engine_factory: Callable[[db_target.BootstrapTarget], Engine] = _engine_for,
     marker_root: Path = verify_public_profiles.MARKER_ROOT,
+    strict: bool = False,
+    extra_probe: Callable[[Any], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if database not in OBSERVER_DATABASES:
         raise OrchestrationError("TARGET_NOT_ALLOWED", 2)
@@ -75,11 +82,18 @@ def snapshot_observer(
                 connection.exec_driver_sql("SET LOCAL statement_timeout = '30s'")
                 db_target.validate_connected_identity(connection, target)
                 db_target.set_and_validate_public_search_path(connection)
-                return evidence.snapshot_database_fingerprint(
+                snapshot = evidence.snapshot_database_fingerprint(
                     connection,
-                    mutable_tables=OBSERVER_MUTABLE_TABLES[database],
-                    mutable_sequences=OBSERVER_MUTABLE_SEQUENCES[database],
+                    mutable_tables=(
+                        () if strict else OBSERVER_MUTABLE_TABLES[database]
+                    ),
+                    mutable_sequences=(
+                        () if strict else OBSERVER_MUTABLE_SEQUENCES[database]
+                    ),
                 )
+                if extra_probe is not None:
+                    snapshot["extra_probe"] = dict(extra_probe(connection))
+                return snapshot
         finally:
             engine.dispose()
     except OrchestrationError:

@@ -39,6 +39,7 @@ const requests = [
   ['dashboard', 'GET /dashboard/summary', () => detection.getDashboard()],
   ['alarms', 'GET /alarms/paged', () => detection.getAlarms()],
   ['agent-runs', 'GET /agent/runs', () => agent.getRunsCore()],
+  ['agent-evaluations', 'GET /agent/evaluations', () => agent.getAgentEvaluations()],
   [
     'documents',
     'POST /documents/search',
@@ -67,6 +68,12 @@ const responseData = (url) => {
     '/dashboard/summary': { alarm_count: 0, recent_alarms: [] },
     '/alarms/paged': page,
     '/agent/runs': [],
+    '/agent/evaluations': {
+      fault_5class: null,
+      golden_flow: null,
+      fault_5class_empty_reason: 'NOT_CONFIGURED',
+      golden_flow_empty_reason: 'NOT_CONFIGURED',
+    },
     '/documents/search': [],
     '/relations/chambers/EQP01-PM1': {},
     '/analytics/query': {
@@ -215,4 +222,4 @@ for (const [relativePath, expectedNames] of primaryPageImports) {
 // V5-D-2.6 머지 후에는 지연 mock import가 남아 있지 않아야 한다.
 assert.deepEqual(deferredRuntimeImports, [])
 
-console.log('OK integration E2E contract: Backend fixture · mock=false real transport · delay/network/422 · 7-screen states')
+console.log('OK integration E2E contract: Backend fixture · mock=false real transport · delay/network/422 · 7-screen states · Agent evaluations')

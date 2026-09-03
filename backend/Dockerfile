@@ -18,6 +18,16 @@ RUN pip install --no-cache-dir \
 COPY backend/app ./app
 COPY backend/scripts ./scripts
 COPY backend/artifacts ./artifacts
+# verify_golden_flow.py(CM-5.2 step 6)가 컨테이너 안에서 읽는 oracle 정본과 source manifest.
+# 경로는 스크립트의 BACKEND_ROOT/REPOSITORY_ROOT 상대 경로와 같아야 한다.
+COPY backend/tests/fixtures/v5_c_6_1/golden_incidents.json ./tests/fixtures/v5_c_6_1/golden_incidents.json
+COPY infra/bootstrap/source-manifest-v4.json /workspace/infra/bootstrap/source-manifest-v4.json
+
+# Revision만 바뀔 때 dependency와 source COPY cache는 재사용한다.
+ARG SOURCE_REVISION
+RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+ENV BISTEL_SOURCE_REVISION=$SOURCE_REVISION
 
 EXPOSE 8000
 

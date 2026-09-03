@@ -270,6 +270,8 @@ def _verify_runtime_select_privileges(
 def verify_postgresql_runtime(
     connection: Connection,
     manifest: Mapping[str, Any],
+    *,
+    expected_database: str = RUNTIME_DATABASE,
 ) -> None:
     identity = (
         connection.exec_driver_sql(
@@ -285,7 +287,7 @@ def verify_postgresql_runtime(
         .one()
     )
     if (
-        identity["database"] != RUNTIME_DATABASE
+        identity["database"] != expected_database
         or identity["role"] != "kosa_app"
         or identity["schema_usage"] is not True
         or identity["schema_create"] is not False

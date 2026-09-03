@@ -64,10 +64,10 @@ case "$command" in
 
     earliest="$(/opt/kafka/bin/kafka-get-offsets.sh \
       --bootstrap-server "$bootstrap" --command-config "$properties" \
-      --topic "$topic:$partition" --time -2 | awk -F: 'NR == 1 {print $3}')"
+      --topic-partitions "$topic:$partition" --time -2 | awk -F: 'NR == 1 {print $3}')"
     latest="$(/opt/kafka/bin/kafka-get-offsets.sh \
       --bootstrap-server "$bootstrap" --command-config "$properties" \
-      --topic "$topic:$partition" --time -1 | awk -F: 'NR == 1 {print $3}')"
+      --topic-partitions "$topic:$partition" --time -1 | awk -F: 'NR == 1 {print $3}')"
     case "$earliest" in
       ''|*[!0-9]*)
         printf '%s\n' 'retention bounds unavailable' >&2

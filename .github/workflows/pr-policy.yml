@@ -252,6 +252,8 @@ jobs:
           NEO4J_PASSWORD: ci-not-a-secret
           NEO4J_URI: bolt://localhost:7687
           N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+          # CM-5.2 rendered compose model은 CI에서 skip을 허용하지 않는다.
+          CM52_REQUIRE_DOCKER: "1"
         run: >-
           python -m pytest -q
           tests/contract/test_api_sync_gate.py
@@ -276,6 +278,8 @@ jobs:
           tests/unit/test_build_source_manifest_v4.py
           tests/unit/test_chart_resolution.py
           tests/unit/test_ci_test_registration.py
+          tests/unit/test_cm52_followups.py
+          tests/unit/test_cm52_stage2.py
           tests/unit/test_common_audit.py
           tests/unit/test_common_boundary_adapters.py
           tests/unit/test_common_db_evaluation.py
@@ -333,6 +337,12 @@ jobs:
           tests/unit/test_verify_public_profiles.py
           tests/contract/test_detection_label_isolation.py
           -rs --no-header
+
+      - name: Verify CM-5.2 shell contracts
+        run: |
+          bash -n deploy/compose/cm52_common.sh
+          bash -n deploy/compose/cm52_stage2.sh
+          shellcheck deploy/compose/cm52_common.sh deploy/compose/cm52_stage2.sh
 
   schema-rehearsal-container:
     name: Schema rehearsal container
@@ -720,6 +730,7 @@ jobs:
           tests/unit/test_send_action_tool.py
           tests/unit/test_run_pending_incidents.py
           tests/unit/test_golden_flow.py
+          tests/unit/test_golden_flow_evidence_tools.py
           tests/unit/test_fault_5class.py
           -rs --no-header
 

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -12,8 +16,10 @@ import yaml
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.team.yml"
 FRONTEND_DOCKERFILE_PATH = REPOSITORY_ROOT / "frontend" / "Dockerfile"
+BACKEND_DOCKERFILE_PATH = REPOSITORY_ROOT / "backend" / "Dockerfile"
 TEAM_ENV_EXAMPLE = REPOSITORY_ROOT / "deploy" / "compose" / ".env.team.example"
 PREFLIGHT_PATH = REPOSITORY_ROOT / "deploy" / "compose" / "preflight_team_env.py"
+PR_POLICY_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "pr-policy.yml"
 E2E_OVERRIDE_PATH = (
     REPOSITORY_ROOT / "deploy" / "compose" / "docker-compose.e2e-backend.yml"
 )
@@ -59,6 +65,11 @@ BACKEND_ENV_KEYS = {
     "KAFKA_BOOTSTRAP_INTERNAL",
     "KAFKA_CLIENT_USER_FILE",
     "KAFKA_CLIENT_PASSWORD_FILE",
+    "AGENT_FAULT_EVAL_ARTIFACT_PATH",
+    "AGENT_GOLDEN_FLOW_SUMMARY_PATH",
+    "TEXT2SQL_DATABASE_URL",
+    "TEXT2SQL_EVAL_DATABASE_URL",
+    "TEXT2SQL_EVAL_LOG_DATABASE_URL",
 }
 MES_ENV_KEYS = {
     "KAFKA_BOOTSTRAP_INTERNAL",
@@ -103,8 +114,18 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
     assert findings == []
     cache_dir = tmp_path / "bge-m3"
     cache_dir.mkdir()
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(mode=0o700)
+    reports_dir.chmod(0o700)
+    report_scope = reports_dir / "cm-5.2"
+    report_scope.mkdir(mode=0o700)
+    report_scope.chmod(0o700)
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    encoded_password = "pa%40%3A%2F%23%25%24"
     values.update(
         {
+            "SOURCE_REVISION": revision,
+            "TEAM_IMAGE_TAG": f"v5-{revision[:12]}",
             "POSTGRES_HOST": "10.20.30.40",
             "APP_DB_PASSWORD": "app-secret-value",
             "READONLY_PASSWORD": "readonly-secret-value",
@@ -119,12 +140,37 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
             "LLM_API_KEY": "llm-secret-value",
             "LLM_BASE_URL": "http://10.20.30.41:11434/v1",
             "RAG_MODEL_CACHE_DIR": str(cache_dir),
+            "AGENT_EVAL_REPORTS_DIR": str(reports_dir),
+            "TEXT2SQL_DATABASE_URL": (
+                f"postgresql+psycopg://kosa_readonly:{encoded_password}"
+                "@10.20.30.40:53001/kosa_agent"
+            ),
+            "TEXT2SQL_EVAL_DATABASE_URL": (
+                f"postgresql+psycopg://kosa_readonly:{encoded_password}"
+                "@10.20.30.40:53001/kosa_text2sql"
+            ),
+            "TEXT2SQL_EVAL_LOG_DATABASE_URL": (
+                f"postgresql+psycopg://kosa_query_logger:{encoded_password}"
+                "@10.20.30.40:53001/kosa_text2sql"
+            ),
+            "TEXT2SQL_E2E_DATABASE_URL": (
+                f"postgresql+psycopg://kosa_readonly:{encoded_password}"
+                "@10.20.30.40:53001/kosa_agent_e2e"
+            ),
+            "EVALUATION_DB_PASSWORD": "evaluation-secret-value",
             "KAFKA_ADVERTISED_HOST": "10.20.30.40",
             "KAFKA_BROKER_PASSWORD": "broker-secret-value",
             "KAFKA_CLIENT_PASSWORD": "client-secret-value",
         }
     )
     return values
+
+
+def _write_env(path: Path, values: dict[str, str]) -> None:
+    path.write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+    )
 
 
 def test_compose_defines_only_team_owned_services() -> None:
@@ -222,9 +268,7 @@ def test_mes_fixture_runs_the_real_entrypoint_with_file_only_secrets() -> None:
 def test_images_and_build_contracts_are_exactly_pinned() -> None:
     payload = _load_yaml()
     services = payload["services"]
-    backend_dockerfile = (REPOSITORY_ROOT / "backend" / "Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    backend_dockerfile = BACKEND_DOCKERFILE_PATH.read_text(encoding="utf-8")
     backend_requirements = (REPOSITORY_ROOT / "backend" / "requirements.txt").read_text(
         encoding="utf-8"
     )
@@ -242,6 +286,15 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     assert "WORKDIR /workspace/backend" in backend_dockerfile
     assert "COPY backend/scripts ./scripts" in backend_dockerfile
     assert "COPY backend/artifacts ./artifacts" in backend_dockerfile
+    # step 6 verifier 입력 — 컨테이너 안 BACKEND_ROOT/REPOSITORY_ROOT 상대 경로 exact.
+    assert (
+        "COPY backend/tests/fixtures/v5_c_6_1/golden_incidents.json "
+        "./tests/fixtures/v5_c_6_1/golden_incidents.json"
+    ) in backend_dockerfile
+    assert (
+        "COPY infra/bootstrap/source-manifest-v4.json "
+        "/workspace/infra/bootstrap/source-manifest-v4.json"
+    ) in backend_dockerfile
     assert "https://download.pytorch.org/whl/cpu" in backend_dockerfile
     assert "torch==2.5.1" in backend_dockerfile
     assert "torch==2.5.1" in backend_requirements
@@ -250,6 +303,25 @@ def test_images_and_build_contracts_are_exactly_pinned() -> None:
     assert "FROM nginx:1.27.3-alpine" in frontend_dockerfile
     assert "npm ci" in frontend_dockerfile
     assert "npm run build" in frontend_dockerfile
+    assert "ARG SOURCE_REVISION" in backend_dockerfile
+    assert "grep -Eq '^[0-9a-f]{40}$'" in backend_dockerfile
+    assert "LABEL org.opencontainers.image.revision=$SOURCE_REVISION" in (
+        backend_dockerfile
+    )
+    assert "ENV BISTEL_SOURCE_REVISION=$SOURCE_REVISION" in backend_dockerfile
+    assert "ARG SOURCE_REVISION" in frontend_dockerfile
+    assert "grep -Eq '^[0-9a-f]{40}$'" in frontend_dockerfile
+    assert backend_dockerfile.index("COPY backend/artifacts ./artifacts") < (
+        backend_dockerfile.index("ARG SOURCE_REVISION")
+    )
+    frontend_build_stage, final_stage = frontend_dockerfile.rsplit("FROM ", maxsplit=1)
+    assert "SOURCE_REVISION" not in frontend_build_stage
+    assert final_stage.index("COPY --from=build") < final_stage.index(
+        "ARG SOURCE_REVISION"
+    )
+    assert "ARG SOURCE_REVISION" in final_stage
+    assert "grep -Eq '^[0-9a-f]{40}$'" in final_stage
+    assert "LABEL org.opencontainers.image.revision=$SOURCE_REVISION" in final_stage
 
 
 def test_frontend_proxy_and_production_build_args_are_fixed() -> None:
@@ -265,6 +337,7 @@ def test_frontend_proxy_and_production_build_args_are_fixed() -> None:
 
     assert frontend["ports"] == ["8080:80"]
     assert frontend["build"]["args"] == {
+        "SOURCE_REVISION": "${SOURCE_REVISION:?SOURCE_REVISION is required}",
         "VITE_API_BASE_URL": "/api",
         "VITE_USE_MOCK": "false",
         **domain_mock_args,
@@ -287,13 +360,34 @@ def test_backend_has_no_host_publish_and_rag_mount_is_read_only() -> None:
     backend = _load_yaml()["services"]["backend"]
 
     assert "ports" not in backend
+    assert backend["build"]["args"] == {
+        "SOURCE_REVISION": "${SOURCE_REVISION:?SOURCE_REVISION is required}"
+    }
     assert backend["volumes"] == [
         {
             "type": "bind",
             "source": "${RAG_MODEL_CACHE_DIR:?RAG_MODEL_CACHE_DIR is required}",
             "target": "/models/bge-m3",
             "read_only": True,
-        }
+        },
+        {
+            "type": "bind",
+            "source": "${AGENT_EVAL_REPORTS_DIR:?AGENT_EVAL_REPORTS_DIR is required}",
+            "target": "/reports",
+            "read_only": True,
+        },
+        {
+            "type": "bind",
+            "source": "../../infra/bootstrap/markers",
+            "target": "/workspace/infra/bootstrap/markers",
+            "read_only": True,
+        },
+        {
+            "type": "bind",
+            "source": "../../infra/bootstrap/manifests",
+            "target": "/workspace/infra/bootstrap/manifests",
+            "read_only": True,
+        },
     ]
     assert backend["environment"]["EMBEDDING_MODEL_PATH"] == "/models/bge-m3"
     assert backend["healthcheck"]["test"][:2] == ["CMD", "python"]
@@ -313,6 +407,11 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
     ).read_text(encoding="utf-8")
 
     assert kafka["ports"] == ["53005:9094"]
+    # apache/kafka 3.9 `kafka-get-offsets.sh`는 `--topic name:partition`을 topic
+    # 이름으로 해석해 "Could not match any topic-partitions"가 된다(공용 PC 실측).
+    assert offset_script.count('--topic-partitions "$topic:$partition" --time') == 2
+    assert '--topic "$topic:$partition" --time' not in offset_script
+    assert '--topic "$topic:$partition" --to-offset' in offset_script
     assert environment["KAFKA_LISTENERS"] == (
         "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093," "EXTERNAL://0.0.0.0:9094"
     )
@@ -330,6 +429,9 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         "-Djava.security.auth.login.config=/tmp/kafka_server_jaas.conf"
     )
     assert environment["KAFKA_AUTO_CREATE_TOPICS_ENABLE"] == "false"
+    # 데이터가 named volume에 남아야 e2e down/up 뒤에도 topic·WF4 offset이 보존된다.
+    assert environment["KAFKA_LOG_DIRS"] == "/var/lib/kafka/data"
+    assert "kafka_data:/var/lib/kafka/data" in kafka["volumes"]
     assert not {
         "KAFKA_BROKER_USER",
         "KAFKA_BROKER_PASSWORD",
@@ -363,11 +465,16 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
 
 def test_e2e_backend_override_isolated_database_and_port_are_exact() -> None:
     payload = yaml.safe_load(E2E_OVERRIDE_PATH.read_text(encoding="utf-8"))
+    assert set(payload["services"]) == {"backend", "e2e-runner"}
     backend = payload["services"]["backend"]
+    runner = payload["services"]["e2e-runner"]
 
     assert backend["ports"] == ["53081:8000"]
     assert backend["environment"] == {
         "POSTGRES_DB": "kosa_agent_e2e",
+        "TEXT2SQL_DATABASE_URL": (
+            "${TEXT2SQL_E2E_DATABASE_URL:?TEXT2SQL_E2E_DATABASE_URL is required}"
+        ),
         "DELIVERY_CALLBACK_TRAIL_DIR": "${DELIVERY_CALLBACK_TRAIL_DIR:-}",
         "DELIVERY_CALLBACK_TRAIL_RUN_ID": "${DELIVERY_CALLBACK_TRAIL_RUN_ID:-}",
     }
@@ -376,6 +483,35 @@ def test_e2e_backend_override_isolated_database_and_port_are_exact() -> None:
             "type": "bind",
             "source": "./trail",
             "target": "/var/lib/bistel/delivery-trail",
+            "read_only": False,
+        }
+    ]
+    assert runner["extends"] == {
+        "file": "docker-compose.team.yml",
+        "service": "backend",
+    }
+    assert runner["profiles"] == ["e2e-runner"]
+    assert runner["restart"] == "no"
+    assert runner["healthcheck"] == {"disable": True}
+    assert "ports" not in runner
+    assert "depends_on" not in runner
+    assert runner["environment"] == {
+        "POSTGRES_DB": "kosa_agent_e2e",
+        "TEXT2SQL_DATABASE_URL": (
+            "${TEXT2SQL_E2E_DATABASE_URL:?TEXT2SQL_E2E_DATABASE_URL is required}"
+        ),
+        "EVALUATION_DB_USER": "kosa_evaluation",
+        "EVALUATION_DB_PASSWORD": (
+            "${EVALUATION_DB_PASSWORD:?EVALUATION_DB_PASSWORD is required}"
+        ),
+        "GITHUB_SHA": "${SOURCE_REVISION:?SOURCE_REVISION is required}",
+        "HOME": "/tmp",
+    }
+    assert runner["volumes"] == [
+        {
+            "type": "bind",
+            "source": "${AGENT_EVAL_REPORTS_DIR:?AGENT_EVAL_REPORTS_DIR is required}",
+            "target": "/reports",
             "read_only": False,
         }
     ]
@@ -417,7 +553,7 @@ def test_preflight_accepts_a_complete_nonlocal_contract(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("key", "value", "code"),
     [
-        ("TEAM_IMAGE_TAG", "latest", "INVALID_FIXED_TAG"),
+        ("TEAM_IMAGE_TAG", "latest", "IMAGE_TAG_REVISION_MISMATCH"),
         ("POSTGRES_HOST", "localhost", "LOCALHOST_FORBIDDEN"),
         ("CORS_ORIGINS", "*", "WILDCARD_OR_NULL"),
         ("BACKEND_BASE_URL", "http://10.20.30.40:8080/backend", "ORIGIN_MISMATCH"),
@@ -450,3 +586,195 @@ def test_docker_context_excludes_local_model_cache_and_secrets() -> None:
     assert (
         REPOSITORY_ROOT / "backend" / "artifacts" / "embedding_model_manifest.json"
     ).is_file()
+
+
+@pytest.mark.parametrize(
+    ("key", "username", "database"),
+    [
+        ("TEXT2SQL_DATABASE_URL", "kosa_readonly", "kosa_agent"),
+        ("TEXT2SQL_EVAL_DATABASE_URL", "kosa_readonly", "kosa_text2sql"),
+        (
+            "TEXT2SQL_EVAL_LOG_DATABASE_URL",
+            "kosa_query_logger",
+            "kosa_text2sql",
+        ),
+        ("TEXT2SQL_E2E_DATABASE_URL", "kosa_readonly", "kosa_agent_e2e"),
+    ],
+)
+def test_preflight_accepts_special_character_dsn_passwords(
+    tmp_path: Path,
+    key: str,
+    username: str,
+    database: str,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values[key] = (
+        f"postgresql+psycopg://{username}:pa%40%3A%2F%23%25%24"
+        f"@10.20.30.40:53001/{database}"
+    )
+
+    assert preflight.validate(values) == []
+
+
+def test_preflight_rejects_missing_dsn_password_without_value_leak(
+    tmp_path: Path,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    secret_dsn = "postgresql+psycopg://kosa_readonly@10.20.30.40:53001/kosa_agent"
+    values["TEXT2SQL_DATABASE_URL"] = secret_dsn
+
+    findings = preflight.validate(values)
+
+    assert (
+        preflight.Finding("TEXT2SQL_DATABASE_URL", "DSN_PASSWORD_MISSING") in findings
+    )
+    assert secret_dsn not in repr(findings)
+
+
+def test_preflight_validates_dsn_contract_even_when_postgres_port_is_invalid(
+    tmp_path: Path,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values["POSTGRES_PORT"] = "not-an-integer"
+    values["TEXT2SQL_DATABASE_URL"] = "mysql://wrong-role@10.20.30.40/wrong-database"
+
+    findings = preflight.validate(values)
+
+    assert preflight.Finding("POSTGRES_PORT", "INVALID_PORT") in findings
+    assert preflight.Finding("TEXT2SQL_DATABASE_URL", "INVALID_DSN_SCHEME") in findings
+    assert preflight.Finding("TEXT2SQL_DATABASE_URL", "UNEXPECTED_DSN_ROLE") in findings
+    assert (
+        preflight.Finding("TEXT2SQL_DATABASE_URL", "DSN_PASSWORD_MISSING") in findings
+    )
+    assert (
+        preflight.Finding("TEXT2SQL_DATABASE_URL", "UNEXPECTED_DSN_DATABASE")
+        in findings
+    )
+
+
+@pytest.mark.parametrize(
+    "revision",
+    ["a" * 39, "A" * 40],
+)
+def test_preflight_rejects_noncanonical_source_revision(
+    tmp_path: Path,
+    revision: str,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values["SOURCE_REVISION"] = revision
+
+    assert preflight.Finding("SOURCE_REVISION", "INVALID_REVISION") in (
+        preflight.validate(values)
+    )
+
+
+def test_preflight_requires_image_tag_to_match_revision(tmp_path: Path) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values["TEAM_IMAGE_TAG"] = "v5-ffffffffffff"
+
+    assert preflight.Finding(
+        "TEAM_IMAGE_TAG", "IMAGE_TAG_REVISION_MISMATCH"
+    ) in preflight.validate(values)
+
+
+def test_preflight_rejects_insecure_report_root_and_bad_artifact_path(
+    tmp_path: Path,
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    reports_dir = Path(values["AGENT_EVAL_REPORTS_DIR"])
+    reports_dir.chmod(0o755)
+    values["AGENT_FAULT_EVAL_ARTIFACT_PATH"] = "/reports/not-an-attempt/fault.json"
+
+    findings = preflight.validate(values)
+
+    assert (
+        preflight.Finding("AGENT_EVAL_REPORTS_DIR", "REPORTS_DIR_INVALID") in findings
+    )
+    assert (
+        preflight.Finding("AGENT_FAULT_EVAL_ARTIFACT_PATH", "INVALID_ARTIFACT_PATH")
+        in findings
+    )
+
+
+def test_compose_rendered_model_preserves_runner_isolation(tmp_path: Path) -> None:
+    docker = shutil.which("docker")
+    if docker is None:
+        if os.environ.get("CM52_REQUIRE_DOCKER") == "1":
+            pytest.fail("docker CLI is required for the CM-5.2 rendered-model gate")
+        pytest.skip("docker CLI is unavailable")
+    env_file = tmp_path / ".env.team"
+    values = _valid_env(tmp_path)
+    _write_env(env_file, values)
+    compose_environment = {**os.environ, **values}
+
+    base = subprocess.run(
+        [
+            docker,
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            str(COMPOSE_PATH),
+            "config",
+            "--quiet",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=compose_environment,
+    )
+    assert base.returncode == 0, base.stderr
+    rendered = subprocess.run(
+        [
+            docker,
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            str(COMPOSE_PATH),
+            "-f",
+            str(E2E_OVERRIDE_PATH),
+            "--profile",
+            "e2e-runner",
+            "config",
+            "--format",
+            "json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=compose_environment,
+    )
+    assert rendered.returncode == 0, rendered.stderr
+    model = json.loads(rendered.stdout)
+    backend = model["services"]["backend"]
+    runner = model["services"]["e2e-runner"]
+    revision = values["SOURCE_REVISION"]
+
+    assert runner["image"] == f"bistel-backend:v5-{revision[:12]}"
+    assert runner["build"]
+    assert "ports" not in runner
+    assert runner["environment"]["POSTGRES_DB"] == "kosa_agent_e2e"
+    assert runner["environment"]["GITHUB_SHA"] == revision
+    assert "depends_on" not in runner
+    runner_reports = next(
+        mount for mount in runner["volumes"] if mount["target"] == "/reports"
+    )
+    backend_reports = next(
+        mount for mount in backend["volumes"] if mount["target"] == "/reports"
+    )
+    assert runner_reports.get("read_only", False) is False
+    assert backend_reports["read_only"] is True
+
+
+def test_ci_requires_the_cm52_rendered_compose_model() -> None:
+    workflow = PR_POLICY_PATH.read_text(encoding="utf-8")
+
+    assert 'CM52_REQUIRE_DOCKER: "1"' in workflow
+    assert "tests/unit/test_team_compose.py" in workflow

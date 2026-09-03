@@ -10,7 +10,7 @@
     }
   },
   "runtime": {
-    "attestation": "local-rehearsal",
+    "attestation": "shared-host",
     "database_type": "sqlite",
     "execution_mode": "regular",
     "main_worker": "single"
@@ -20,8 +20,8 @@
     "image": null
   },
   "workflow_source_sha256": {
-    "WF2-notify-email.json": "sha256:1c1204b0ffaee036af16e7db1862b4d7cc7eeebf05faa4ad7cfa62c3eb9b025e",
-    "WF3-mes-hold.json": "sha256:a28eef135f5acf79bfc5a59974361b0e6cda5ddecb2999bcf323f2b1b2c1d9b4",
-    "WF4-result-writeback.json": "sha256:cce3bb35c82718aeeea55178827c58179cca263c52095c19316a7f2a1967513e"
+    "WF2-notify-email.json": "sha256:8c8ed5513c497d484b5399613d734c3dc9fd0df8327c5f074a7fb4c6fc6ee21c",
+    "WF3-mes-hold.json": "sha256:e13f80f921d6a4e8c128ee942e273cd9ccf48c0cf016d007e28efb4728d5ff7e",
+    "WF4-result-writeback.json": "sha256:bd4771a1353d3b66c29edd989e48675ca60c533ac7c2cd719b43a6a40ccf64da"
   }
 }
