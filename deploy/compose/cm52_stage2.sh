@@ -51,6 +51,16 @@ if ((PLAN)); then
   exit 0
 fi
 
+# team env 파일의 키가 셸에 export돼 있으면 compose 보간에서 --env-file 값을 덮어쓴다(공용 PC 실측:
+# 빈 AGENT_*_PATH export → production ENV_MISMATCH · 옛 TEAM_IMAGE_TAG export → 옛 태그 빌드).
+for shell_override in SOURCE_REVISION TEAM_IMAGE_TAG AGENT_FAULT_EVAL_ARTIFACT_PATH \
+  AGENT_GOLDEN_FLOW_SUMMARY_PATH; do
+  if [[ -n "${!shell_override+x}" ]]; then
+    printf '%s\n' "SHELL_ENV_OVERRIDE $shell_override" >&2
+    exit 1
+  fi
+done
+
 REV="${CM52_REVISION:-$(git -C "$CM52_REPO_ROOT" rev-parse HEAD)}"
 [[ "$REV" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' REVISION_MISMATCH >&2; exit 1; }
 [[ "${ATTEMPT##*-}" == "${REV:0:12}" ]] || {
@@ -140,7 +150,8 @@ verify_prev_state() {
   fi
   case "$PREV_STATE" in
     empty)
-      curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
+      cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations \
+        && curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
         | jq -e '
             .fault_5class == null
             and .golden_flow == null
@@ -502,9 +513,12 @@ FAULT_SHA=$(cm52_sha256 "$A/fault-5class.json")
 LAST_OK_STEP=7
 append_log 7 PASS fault-5class
 
+# C-4.6 trail은 같은 RUN_ID의 기존 파일을 거부하므로(TRAIL_CONFIG_INVALID) 재생성 backend에는
+# 파생 RUN_ID를 준다. 이 backend는 artifact preflight·API 확인 전용이라 callback을 받지 않는다.
 AGENT_FAULT_EVAL_ARTIFACT_PATH="$CA/fault-5class.json" \
   AGENT_GOLDEN_FLOW_SUMMARY_PATH="$CA/golden-flow.json" \
-  e2e up -d --force-recreate backend
+  DELIVERY_CALLBACK_TRAIL_RUN_ID="${DELIVERY_CALLBACK_TRAIL_RUN_ID:-c46_e2e}_s8_$(date -u +%H%M%S)" \
+  e2e up -d --force-recreate --wait backend
 e2e exec -T backend python scripts/preflight_agent_evaluation_artifacts.py \
   --fault "$CA/fault-5class.json" \
   --golden "$CA/golden-flow.json" \
@@ -512,6 +526,7 @@ e2e exec -T backend python scripts/preflight_agent_evaluation_artifacts.py \
   --expect-golden-sha "$GOLDEN_SHA" \
   --expect-revision "$REV" \
   --attempt-id "$ATTEMPT"
+cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations
 curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
   | jq -e '.fault_5class != null and .golden_flow != null' >/dev/null
 LAST_OK_STEP=8
