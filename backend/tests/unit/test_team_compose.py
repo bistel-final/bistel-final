@@ -420,6 +420,9 @@ def test_kafka_listener_sasl_and_topic_lifecycle_are_explicit() -> None:
         "-Djava.security.auth.login.config=/tmp/kafka_server_jaas.conf"
     )
     assert environment["KAFKA_AUTO_CREATE_TOPICS_ENABLE"] == "false"
+    # 데이터가 named volume에 남아야 e2e down/up 뒤에도 topic·WF4 offset이 보존된다.
+    assert environment["KAFKA_LOG_DIRS"] == "/var/lib/kafka/data"
+    assert "kafka_data:/var/lib/kafka/data" in kafka["volumes"]
     assert not {
         "KAFKA_BROKER_USER",
         "KAFKA_BROKER_PASSWORD",

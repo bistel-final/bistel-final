@@ -477,6 +477,9 @@ def test_stage2_postcondition_requires_v2_complete_exact_distribution() -> None:
     stage = STAGE2.read_text(encoding="utf-8")
 
     assert "prompt_version='agent-hypothesis-v2-ko1'" in stage
+    # kosa_readonly는 agent_run을 못 읽는다(C-0.2 allowlist) — kosa_app engine으로 센다.
+    assert "get_app_engine(); c=e.connect(); q=text(" in stage
+    assert "pool_factory.get_engine(LogicalDb.RUNTIME,PoolRole.QUERY)" not in stage
     assert "status IN ('RUNNING','FAILED')" in stage
     assert "grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'" in stage
 
