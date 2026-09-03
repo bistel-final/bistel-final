@@ -50,7 +50,7 @@ export const PUBLIC_NODE_PROPERTIES = Object.freeze({
   EquipmentModel: Object.freeze(['model_code', 'model_name']),
   Parameter: Object.freeze(['parameter_id']),
   ProcessStep: Object.freeze(['step_id', 'step_name', 'step_seq']),
-  Lot: Object.freeze(['lot_id', 'source_system']),
+  Lot: Object.freeze(['lot_id']),
   Wafer: Object.freeze([
     'lot_hist_id', 'lot_id', 'wafer_id', 'wafer_no', 'step_id', 'recipe_id',
     'track_in_at', 'track_out_at', 'chamber_wafer_cum', 'wafer_count', 'alarm_count', 'source_system',

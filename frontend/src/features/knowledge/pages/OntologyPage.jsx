@@ -62,13 +62,16 @@ const formatOccurredAt = (value) => {
   if (!value) return '없음'
   const date = new Date(String(value).replace(' ', 'T'))
   if (Number.isNaN(date.getTime())) return String(value)
-  return new Intl.DateTimeFormat('ko-KR', {
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(date)
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const byType = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
+  return `${byType.month}-${byType.day} ${byType.hour}:${byType.minute}`
 }
 
 function NodeOperationalStatus({ state, onRetry }) {
@@ -164,6 +167,18 @@ function WaferAlarmContext({ state, onRetry }) {
   )
 }
 
+const waferDetailItems = (node) => {
+  const properties = node.properties ?? {}
+  const items = [
+    ['WAFER NO.', properties.wafer_no],
+    ['RECIPE', properties.recipe_id],
+    ['TRACK IN', properties.track_in_at ? formatOccurredAt(properties.track_in_at) : null],
+    ['TRACK OUT', properties.track_out_at ? formatOccurredAt(properties.track_out_at) : null],
+    ['CHAMBER SEQUENCE', properties.chamber_wafer_cum],
+  ]
+  return items.filter(([, value]) => value != null && value !== '')
+}
+
 function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
   if (!node) {
     return (
@@ -179,6 +194,9 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
   ).length
   const isQueryRoot = graph.root_node_id === node.id
   const isWaferNode = node.label === 'Wafer'
+  const displayDetails = isWaferNode
+    ? waferDetailItems(node)
+    : details.map(({ key, value }) => [key, value])
   return (
     <Card className="flex flex-col gap-4 p-4" data-testid="ontology-node-detail">
       <div>
@@ -196,10 +214,10 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
         </div>
       </div>
       <div className="border-t border-cell-line pt-3">
-        <div className="mb-2 text-[10px] font-bold text-faint">공개 속성</div>
-        {details.length ? (
+        <div className="mb-2 text-[10px] font-bold text-faint">{isWaferNode ? 'PROCESS HISTORY' : '공개 속성'}</div>
+        {displayDetails.length ? (
           <div className="flex flex-wrap gap-2">
-            {details.map(({ key, value }) => (
+            {displayDetails.map(([key, value]) => (
               <div key={key} className="min-w-[150px] rounded-lg bg-soft px-3 py-2">
                 <div className="text-[9.5px] font-bold text-g2">{key}</div>
                 <div className="mt-0.5 break-all font-mono text-[11px] font-semibold text-ink">{value}</div>
@@ -207,7 +225,7 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
             ))}
           </div>
         ) : (
-          <div className="text-[11.5px] text-g2">추가 공개 속성이 없습니다.</div>
+          <div className="text-[11.5px] text-g2">No process history available.</div>
         )}
       </div>
       <div className="border-t border-cell-line pt-3">

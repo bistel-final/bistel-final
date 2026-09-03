@@ -222,6 +222,7 @@ const chamberWithPrivateProperty = normalizeOntologyGraph({
 assert.deepEqual(publicNodeDetails(chamberWithPrivateProperty.nodes[0]), [{ key: 'chamber_id', value: 'EQP01-PM1' }])
 assert.ok(!Object.values(PUBLIC_NODE_PROPERTIES).flat().includes('password'))
 assert.ok(!Object.values(PUBLIC_NODE_PROPERTIES).flat().includes('uri'))
+assert.ok(!PUBLIC_NODE_PROPERTIES.Lot.includes('source_system'), 'LOT 화면에 데이터 출처를 노출하면 안 됩니다')
 
 const lotContextGraph = {
   ...CORE_CHAMBER_GRAPH,
@@ -419,6 +420,7 @@ assert.ok(ontologyPageSource.includes('Promise.all(scope.requests.map'))
 assert.ok(ontologyPageSource.includes('선택 노드 운영 요약'))
 assert.ok(ontologyPageSource.includes("node.label === 'Wafer'"), 'Wafer에는 Incident 전체 알람을 귀속하면 안 됩니다')
 assert.ok(ontologyPageSource.includes('Wafer 알람 · 관련 Parameter'))
+assert.ok(ontologyPageSource.includes('PROCESS HISTORY') && ontologyPageSource.includes('CHAMBER SEQUENCE'), 'Wafer는 내부 ID 대신 공정 처리 이력을 표시해야 합니다')
 assert.ok(ontologyPageSource.includes('선택 Incident 알람 요약'))
 assert.ok(ontologyPageSource.includes('alarm.lot_id !== scope.lot_id'))
 assert.ok(ontologyPageSource.includes('alarm.lot_hist_id !== scope.lot_hist_id'))
@@ -431,6 +433,7 @@ assert.ok(ontologyPageSource.includes('scopeNodeId={selectedChamberNode?.id ?? n
 assert.ok(ontologyPageSource.includes('incidentNodeId={selectedLotNode?.id ?? null}'), '선택 LOT을 graph incident로 전달해야 합니다')
 assert.ok(ontologyPageSource.includes("['ACTION', summary.actions"))
 assert.ok(ontologyPageSource.includes("timeZone: 'Asia/Seoul'"))
+assert.ok(ontologyPageSource.includes("hourCycle: 'h23'"), '시각은 오전/오후 없이 24시간 형식으로 표시해야 합니다')
 assert.ok(ontologyPageSource.includes('MOCK 대응 데이터 없음'))
 assert.ok(ontologyPageSource.includes('Agent 영향 범위'))
 assert.ok(!ontologyPageSource.includes('직접 · {node.business_id}'))
