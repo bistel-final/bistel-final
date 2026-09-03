@@ -23,7 +23,7 @@ const FOCUS_BY_TEXT = [
 ]
 
 // 식별자 → 조회할 챔버 목록. 설비(EQP04)면 그 설비의 챔버 전부, 챔버면 그 챔버.
-export function scopeChambers(text) {
+function scopeChambers(text) {
   const ids = new Set(String(text ?? '').match(EQP_RE) ?? [])
   const chambers = new Set()
   for (const id of ids) {
@@ -83,58 +83,60 @@ const EMPTY = new Set()
 function NlqGraphTab({ def }) {
   const scopeText = `${def?.cross_check?.cypher ?? ''}\n${def?.generated_sql ?? ''}`
   const chambers = useMemo(() => scopeChambers(scopeText), [scopeText])
-  const [state, setState] = useState({ phase: 'loading', graph: null })
+  const key = chambers.join(',')
+  // 응답은 "어느 범위(key)에 대한 것"인지와 함께 저장하고, 로딩·빈 상태는 그 자리에서 파생한다 —
+  // effect 안에서 동기 setState 를 하지 않기 위해 (react-hooks/set-state-in-effect).
+  const [result, setResult] = useState({ key: null, ok: false, graph: null })
 
   useEffect(() => {
-    if (chambers.length === 0) {
-      setState({ phase: 'empty', graph: null })
-      return undefined
-    }
+    if (chambers.length === 0) return undefined
     let cancelled = false
-    setState({ phase: 'loading', graph: null })
     Promise.allSettled(chambers.map((c) => getChamberRelationsCore(c)))
       .then((results) => {
         if (cancelled) return
         const graphs = results.filter((r) => r.status === 'fulfilled').map((r) => r.value)
         const merged = mergeOntologyGraphs(graphs, null)
-        setState(merged ? { phase: 'ready', graph: merged } : { phase: 'error', graph: null })
+        setResult({ key, ok: Boolean(merged), graph: merged })
       })
       .catch(() => {
-        if (!cancelled) setState({ phase: 'error', graph: null })
+        if (!cancelled) setResult({ key, ok: false, graph: null })
       })
     return () => {
       cancelled = true
     }
-  }, [chambers])
+  }, [chambers, key])
 
-  const rootId = useMemo(() => resolveRoot(state.graph, scopeText), [state.graph, scopeText])
-  const shown = useMemo(() => subgraphOf(state.graph, rootId, focusTypes(scopeText)), [state.graph, rootId, scopeText])
+  const phase =
+    chambers.length === 0 ? 'empty' : result.key !== key ? 'loading' : result.ok ? 'ready' : 'error'
+  const graph = phase === 'ready' ? result.graph : null
+  const rootId = useMemo(() => resolveRoot(graph, scopeText), [graph, scopeText])
+  const shown = useMemo(() => subgraphOf(graph, rootId, focusTypes(scopeText)), [graph, rootId, scopeText])
 
   return (
     <div className="flex flex-col gap-3">
-      {state.phase === 'loading' && (
+      {phase === 'loading' && (
         <div className="flex h-[400px] items-center justify-center rounded-[10px] border border-line bg-soft text-[12.5px] text-g2">
           설비 구성 정보를 불러오는 중…
         </div>
       )}
-      {state.phase === 'empty' && (
+      {phase === 'empty' && (
         <div className="rounded-[10px] border border-line bg-soft px-4 py-3.5 text-[12.5px] text-g1">
           이 질의는 특정 설비·챔버를 가리키지 않아 그릴 구성도가 없습니다.
         </div>
       )}
-      {state.phase === 'error' && (
+      {phase === 'error' && (
         <div className="rounded-[10px] border border-line bg-soft px-4 py-3.5 text-[12.5px] text-g1">
           설비 구성 정보를 불러오지 못했습니다.
         </div>
       )}
-      {state.phase === 'ready' && shown && (
+      {phase === 'ready' && shown && (
         // 고정 뷰 — 컨트롤·워터마크 숨김, 마우스 조작 차단. 공용 컴포넌트 무변경: data 속성으로 범위를 한정한 style 한 조각
         <div data-nlq-graph="" className="pointer-events-none select-none">
           <style>{`[data-nlq-graph] .react-flow__controls,[data-nlq-graph] .react-flow__attribution,[data-nlq-graph] .react-flow__panel{display:none !important}`}</style>
           <OntologyGraphCanvas graph={shown} focusedRelationIds={EMPTY} viewport="compact" />
         </div>
       )}
-      {state.phase === 'ready' && (
+      {phase === 'ready' && (
         <div className="flex justify-end">
           <Link to={ontologyHref(shown, chambers)} className="text-[12.5px] font-semibold text-blue hover:text-blue-hover">
             설비 구성 전체 보기 →

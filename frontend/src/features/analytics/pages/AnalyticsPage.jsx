@@ -375,7 +375,7 @@ function AnalyticsPage() {
           {phase === 'failed' && (
             <EmptyState
               title="요청을 보내지 못했습니다"
-              description="백엔드 서버(8010) 상태와 네트워크를 확인한 뒤 다시 시도해 주세요."
+              description="서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."
             />
           )}
 
