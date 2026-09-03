@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
   analysisActionOf,
+  dataDateRange,
   hasDashboardResults,
   partitionAlarms,
   periodLabel,
@@ -10,6 +11,19 @@ import {
 import { getAlarm, searchTraces } from '../src/shared/api/detection.js'
 import { alarmTrendScope } from '../src/shared/trace/incidentTrace.js'
 import { formatMeasuredAt, selectedWaferChartModel } from '../src/shared/trace/traceModel.js'
+
+// 기간 필터 기본값 — 대시보드·알람 히스토리가 같은 규칙으로 응답 범위를 채운다.
+assert.equal(dataDateRange([]), null)
+assert.equal(dataDateRange(null), null)
+assert.deepEqual(
+  dataDateRange([
+    { occurred_at: '2026-06-03T10:00:00+09:00' },
+    { occurred_at: '2026-06-01T23:17:23+09:00' },
+    { occurred_at: '2026-06-04T02:00:00+09:00' },
+  ]),
+  { from: '2026-06-01', to: '2026-06-04' },
+)
+assert.equal(dataDateRange([{ occurred_at: null }]), null, '일자가 없는 응답은 기간을 강제하지 않아야 합니다')
 
 assert.equal(periodLabel({ from: '', to: '' }), '전체 기간')
 assert.equal(periodLabel({ from: '2026-06-01', to: '2026-06-04' }), '2026-06-01 ~ 2026-06-04')
@@ -80,7 +94,23 @@ assert.match(dashboardPageSource, /onTotal=\{\(\) => navigate\('\/alarms\?tab=AL
 assert.match(alarmsPageSource, /ALARM_TABS = Object\.freeze\(\['ALL', 'TRACE', 'SUMMARY', 'R03'\]\)/)
 assert.match(alarmsPageSource, /전체 \(\{rows\.all\.length\}\)/)
 assert.match(alarmsPageSource, /\.\.\.\(tab === 'ALL' \? \['SOURCE'\] : \[\]\)/, '혼합 목록은 알람 source를 구분해야 합니다')
-assert.match(alarmsPageSource, /a\.source === 'SUMMARY' \? lim\?\.ctrl_lower : lim\?\.spec_lower/, '전체 목록의 하한은 source별 계약을 사용해야 합니다')
+// 멘토 피드백(2026-09-03): 알람 표의 한계 컬럼은 탭·source와 무관하게 LSL·USL(스펙 한계)로 통일한다.
+assert.match(alarmsPageSource, /const limitHeaders = \['LSL', 'USL'\]/, '알람 표 한계 컬럼은 LSL·USL이어야 합니다')
+assert.doesNotMatch(alarmsPageSource, /'LCL', 'UCL'|'LOWER', 'UPPER'/, '표에 LCL·UCL·LOWER·UPPER 헤더를 남기면 안 됩니다')
+assert.match(alarmsPageSource, /\{num\(lim\?\.spec_lower\)\}/, '한계 컬럼 값도 스펙 한계를 써야 합니다')
+// 조치·알림 관련 컬럼은 알람 표에서 제외한다(멘토 피드백) — 조치는 Agent 화면에서 본다.
+assert.doesNotMatch(alarmsPageSource, /'ACTION',|'NOTIFY'|'HIT'/, 'ACTION·NOTIFY·HIT 컬럼은 표에 없어야 합니다')
+assert.doesNotMatch(alarmsPageSource, /action_code|deliveries/, '표는 조치 값을 렌더하지 않아야 합니다')
+assert.doesNotMatch(alarmsPageSource, /data\.actionOf/, '표는 별도 actions 조회 없이 알람 항목만으로 조치를 표시해야 합니다')
+// wafer 컬럼은 이름과 값 모두 W 표기를 쓴다.
+assert.match(alarmsPageSource, /'WAFER',/, 'wafer 컬럼 헤더는 WAFER여야 합니다')
+// 기간 필터는 두 화면이 같다 — 데이터 전체 기간을 기본값으로 채우고, 재조회는 걸지 않는다.
+for (const [name, source] of [['대시보드', dashboardPageSource], ['알람 히스토리', alarmsPageSource]]) {
+  assert.match(source, /dataDateRange\(alarms\)/, `${name} 화면은 응답 기간을 기본값으로 채워야 합니다`)
+  assert.match(source, /const \{ area, equipment, chamber \} = applied/, `${name} 화면 조회는 기간 변경으로 재조회되면 안 됩니다`)
+  assert.match(source, /\.\.\.DEFAULT_SCOPE, \.\.\.\(range \?\? \{\}\)/, `${name} 화면 초기화는 데이터 기간으로 돌아가야 합니다`)
+}
+assert.match(alarmsPageSource, /`W\$\{a\.wafer_no\}`/, 'wafer 값 앞에 W를 붙여야 합니다')
 const handlerStart = alarmsPageSource.indexOf('  const handleRunAnalysis = () => {')
 const handlerEnd = alarmsPageSource.indexOf('\n  const rows = useMemo', handlerStart)
 const runHandler = alarmsPageSource.slice(handlerStart, handlerEnd)
@@ -116,16 +146,28 @@ const seriesPalette = traceChartSource.match(/const COLORS = \[([^\]]*)\]/)?.[1]
 for (const banned of ['#dc2626', '#d97706', '#f59e0b', '#16a34a', '#15803d', '#7c3aed', '#db2777', '#0891b2']) {
   assert.ok(!seriesPalette.includes(banned), `WAFER 계열색은 단일 hue ramp여야 합니다 (${banned} 발견)`)
 }
-// 한계선은 채도 있는 의미색을 쓰지 않는다 — 항상 떠 있어 색 예산을 소진한다.
+// 멘토 피드백(2026-09-03) #3: OOS·OOC를 면으로 칠하지 않고 USL·UCL·TGT·LCL·LSL을
+// 색이 있는 가로 점선으로만 표시한다. spec(적) · control(황) · target(청)으로 층을 나누고
+// 상·하한은 같은 색에서 dash 길이로 구분한다.
 const limitBlock = traceChartSource.match(/const LIMIT_STYLE = \{([\s\S]*?)\}\n/)?.[1] ?? ''
-for (const banned of ['#dc2626', '#d97706', '#f59e0b', '#2563eb']) {
-  assert.ok(!limitBlock.includes(banned), `한계선은 중립 회색이어야 합니다 (${banned} 발견)`)
+for (const label of ['USL', 'LSL', 'UCL', 'LCL', 'TARGET']) {
+  assert.match(limitBlock, new RegExp(`${label}: \\{ color: '#`), `${label} 한계선에 색을 지정해야 합니다`)
 }
-// 상·하한은 색이 아니라 dash 길이로 구분한다.
-assert.match(traceChartSource, /USL: \{ color: '#5f6d7c', dash: '8 5', opacity: 0\.96, width: 1\.55 \}/)
-assert.match(traceChartSource, /LSL: \{ color: '#5f6d7c', dash: '3 5', opacity: 0\.96, width: 1\.55 \}/)
-assert.match(traceChartSource, /UCL: \{ color: '#9ca8b5', dash: '8 5', opacity: 0\.84, width: 1\.15 \}/)
-assert.match(traceChartSource, /LCL: \{ color: '#9ca8b5', dash: '3 5', opacity: 0\.84, width: 1\.15 \}/)
+assert.match(traceChartSource, /USL: \{ color: '#c2384a', dash: '9 5'/)
+assert.match(traceChartSource, /LSL: \{ color: '#c2384a', dash: '3 5'/)
+assert.match(traceChartSource, /UCL: \{ color: '#c07a12', dash: '9 5'/)
+assert.match(traceChartSource, /LCL: \{ color: '#c07a12', dash: '3 5'/)
+assert.match(traceChartSource, /TARGET: \{ color: '#2f5fa8'/)
+assert.match(traceChartSource, /fill=\{line \? limitColor\(line\.styleLabel\) : '#64748b'\}/, 'Y축 한계 라벨은 해당 점선과 같은 색이어야 합니다')
+// 축 밖으로 밀린 ReferenceLine은 recharts가 버린다 — 다섯 선이 모두 보이려면 도메인에 포함해야 한다.
+assert.match(traceChartSource, /traceYAxisDomain\(wafers, limit, \{ includeAllLimits: true \}\)/, 'LCL·LSL이 실측 범위 밖이어도 축에 남아야 합니다')
+// recharts YAxis 기본 interval='preserveEnd'는 라벨이 겹치면 조용히 버린다 —
+// 측정값이 넓게 퍼진 알람에서 UCL·LCL 라벨이 사라지던 원인. 전부 그리게 하고
+// 겹칠 만큼 가까운 한계는 우리가 먼저 하나만 남긴다.
+assert.match(traceChartSource, /interval=\{0\}/, '축 눈금 라벨을 recharts가 임의로 버리게 두면 안 됩니다')
+assert.match(traceChartSource, /function axisLimitLines/, '겹치는 한계 라벨은 축에서 하나만 남겨야 합니다')
+assert.match(traceChartSource, /tick=\{<YAxisTick lines=\{axisLimits\} \/>\} width=\{78\}/, '축 라벨은 정리한 한계 목록을 써야 합니다')
+assert.doesNotMatch(traceChartSource, /LimitLegend/, '한계 값은 Y축에서 읽는다 — 별도 범례를 다시 넣지 않는다')
 // 이상 판정은 한계선·구간으로 읽고 실측점 자체는 동일한 작은 원형 marker를 쓴다.
 const pointDotSource = traceChartSource.slice(
   traceChartSource.indexOf('function PointDot'),
@@ -142,10 +184,13 @@ assert.match(traceChartSource, /fontSize=\{line \? 11 : 10\}/, '한계 라벨은
 assert.match(traceChartSource, /fontWeight=\{line \? 700 : 400\}/, '한계 라벨은 일반 눈금보다 굵게 표시해야 합니다')
 assert.match(traceChartSource, /Number\(payload\.value\.toFixed\(1\)\)\.toString\(\)/, '일반 Y축 눈금은 불필요한 세 자리 소수를 표시하지 않아야 합니다')
 assert.match(traceChartSource, /Math\.abs\(tick - line\.value\) < span \* 0\.055/, '한계와 가까운 일반 눈금은 중복 표시하지 않아야 합니다')
-assert.match(traceChartSource, /tick=\{<YAxisTick lines=\{displayedLimits\} \/>\} width=\{78\}/, 'Y축 폭은 한계 라벨과 데이터 눈금이 한 줄에서 읽힐 정도만 확보해야 합니다')
+assert.match(traceChartSource, /width=\{78\} \/>/, 'Y축 폭은 한계 라벨과 데이터 눈금이 한 줄에서 읽힐 정도만 확보해야 합니다')
 assert.match(traceChartSource, /function visibleLimitLines/, '같은 값의 한계 라벨은 겹치지 않게 합쳐야 합니다')
 assert.match(traceChartSource, /label: `\$\{existing\.label\}\/\$\{line\.label\}`/, 'LCL과 LSL 값이 같으면 LCL\/LSL로 표시해야 합니다')
-assert.match(traceChartSource, /<circle cx=\{cx\} cy=\{cy\} r=\{3\} fill="#fff" stroke=\{stroke \?\? SINGLE_COLOR\} strokeWidth=\{1\.5\}/, '실측점은 판정과 무관하게 동일한 작은 원으로 표시해야 합니다')
+// 멘토 피드백 #4: 측정 시각 그래프의 실측점은 흰 점이 아니라 빨간 점이다.
+assert.match(traceChartSource, /const POINT_COLOR = '#e03131'/, '실측점 색을 상수로 고정해야 합니다')
+assert.match(traceChartSource, /fill=\{selectedView \? POINT_COLOR : '#fff'\}/, '단일 wafer(측정 시각) 그래프의 실측점은 빨간 점이어야 합니다')
+assert.match(traceChartSource, /r=\{3\.2\} fill=\{fill\}/, '실측점은 판정과 무관하게 동일한 작은 원으로 표시해야 합니다')
 assert.doesNotMatch(traceChartSource, /const ALERT_COLOR/, '실측점은 OOS·OOC 전용 색을 사용하지 않아야 합니다')
 assert.doesNotMatch(pointDotSource, /judgeValue|OOS|OOC/, '실측점 renderer는 판정에 따라 모양·색을 바꾸지 않아야 합니다')
 assert.match(traceTooltipSource, /min-w-\[260px\] max-w-\[400px\]/, 'hover tooltip은 발표 화면에서 읽을 수 있는 폭이어야 합니다')
@@ -157,18 +202,12 @@ assert.match(traceTooltipSource, /formatMeasuredAt\(point\?\.measured_at\)/, 'ho
 assert.match(traceTooltipSource, />\{measuredTime\}<\/div>/, 'hover tooltip은 정리한 한국 기준 연월일·시각만 표시해야 합니다')
 assert.doesNotMatch(traceTooltipSource, /측정 시각|\{point\?\.measured_at\}/, 'hover tooltip은 시각 라벨이나 ISO timestamp를 그대로 표시하지 않아야 합니다')
 assert.doesNotMatch(traceChartSource, /<path d=\{`M \$\{cx\}/, '상태 marker를 다이아몬드·삼각형으로 표시하지 않아야 합니다')
-assert.match(traceChartSource, /ReferenceArea/, '선택 wafer 그래프는 실제 OOS 구간을 면으로 표시해야 합니다')
-assert.match(traceChartSource, /OOS 영역 · USL 초과/, '상한 이탈 영역의 의미를 직접 표시해야 합니다')
-assert.match(traceChartSource, /OOS 영역 · LSL 미만/, '하한 이탈 영역의 의미를 직접 표시해야 합니다')
-assert.match(traceChartSource, /OOC 영역 · UCL~USL/, '상한 관리 이탈 영역을 OOS와 다른 면으로 표시해야 합니다')
-assert.match(traceChartSource, /OOC 영역 · LSL~LCL/, '하한 관리 이탈 영역을 OOS와 다른 면으로 표시해야 합니다')
-assert.match(traceChartSource, /function limitAreas/, 'OOS·OOC 영역을 현재 Y축 범위에 맞게 계산해야 합니다')
-assert.match(traceChartSource, /const showLabel = y2 - y1 >= \(domainMax - domainMin\) \* 0\.08/, '얇은 영역의 문구는 X축과 겹치지 않게 숨겨야 합니다')
+assert.doesNotMatch(traceChartSource, /ReferenceArea/, 'OOS·OOC 영역을 면으로 칠하면 안 됩니다 (멘토 피드백 #3)')
+assert.doesNotMatch(traceChartSource, /function limitAreas/, '한계 영역 계산은 점선 표시로 대체돼야 합니다')
+assert.doesNotMatch(traceChartSource, /OOS 영역|OOC 영역/, '그래프에 이탈 영역 면·라벨을 남기면 안 됩니다')
 assert.doesNotMatch(historyTrendSource, /text-\[#|bg-\[#/, '상태 칩은 임의 hex 대신 토큰 클래스를 써야 합니다')
 assert.match(historyTrendSource, /OOS: \{ label: 'OOS', text: 'text-trace-oos', dot: 'bg-trace-oos' \}/, '오른쪽 패널 OOS는 그래프 OOS 한계 영역과 같은 의미색 토큰을 써야 합니다')
 assert.match(historyTrendSource, /OOC: \{ label: 'OOC', text: 'text-trace-ooc', dot: 'bg-trace-ooc' \}/, '오른쪽 패널 OOC는 그래프 OOC 한계 영역과 같은 의미색 토큰을 써야 합니다')
-assert.match(traceChartSource, /var\(--color-trace-oos\)/, '그래프 OOS 한계 영역은 공용 trace OOS 토큰을 써야 합니다')
-assert.match(traceChartSource, /var\(--color-trace-ooc\)/, '그래프 OOC 한계 영역은 공용 trace OOC 토큰을 써야 합니다')
 // Tailwind 기본 팔레트(slate-*) 대신 프로젝트 토큰만 쓴다.
 assert.doesNotMatch(historyTrendSource, /(?:bg|text|border)-slate-\d/, '패널은 프로젝트 색 토큰만 써야 합니다')
 // 웨이퍼 격자에서도 채도는 이상 신호에만 — 정상은 점이 없어야 한다.

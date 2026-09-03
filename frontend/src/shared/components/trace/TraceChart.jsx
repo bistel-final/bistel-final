@@ -5,7 +5,6 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -27,14 +26,36 @@ import {
 const COLORS = ['#c7d9e8', '#b4cbde', '#a0bdd3', '#8cadc7', '#789db9', '#678dab', '#587d9c', '#496d8c']
 const SINGLE_COLOR = '#47769d' // 회사 청색을 낮은 채도로 쓰되 한계선보다 분명한 단일 wafer 실측선
 const GRID_COLOR = '#eef2f7' // --color-cell-line
-// 한계선은 항상 떠 있는 기준선이므로 중립 회색으로 물러난다.
-// 색이 아니라 명도(spec > control > target)와 dash(긴=상한 · 짧은=하한)로 읽는다.
+const POINT_COLOR = '#e03131' // 측정 시각별 실측 점 — 눈에 바로 걸리는 빨강
+// 한계선은 이탈 구간을 면으로 칠하지 않고 색이 있는 가로 점선으로만 나타낸다.
+// USL·LSL = spec(적색), UCL·LCL = control(황색), TGT = 목표(청색).
+// 상·하한은 같은 색에서 dash 길이(긴=상한 · 짧은=하한)로 구분한다.
 const LIMIT_STYLE = {
-  USL: { color: '#5f6d7c', dash: '8 5', opacity: 0.96, width: 1.55 },
-  LSL: { color: '#5f6d7c', dash: '3 5', opacity: 0.96, width: 1.55 },
-  UCL: { color: '#9ca8b5', dash: '8 5', opacity: 0.84, width: 1.15 },
-  LCL: { color: '#9ca8b5', dash: '3 5', opacity: 0.84, width: 1.15 },
-  TARGET: { color: '#b8c1cb', dash: '2 6', opacity: 0.92, width: 1 },
+  USL: { color: '#c2384a', dash: '9 5', opacity: 1, width: 1.6 },
+  LSL: { color: '#c2384a', dash: '3 5', opacity: 1, width: 1.6 },
+  UCL: { color: '#c07a12', dash: '9 5', opacity: 1, width: 1.5 },
+  LCL: { color: '#c07a12', dash: '3 5', opacity: 1, width: 1.5 },
+  TARGET: { color: '#2f5fa8', dash: '2 6', opacity: 1, width: 1.4 },
+}
+const limitColor = (styleLabel) => (LIMIT_STYLE[styleLabel] ?? LIMIT_STYLE.TARGET).color
+// Y축 라벨 최소 간격(축 범위 대비). recharts YAxis 기본 interval='preserveEnd'는 라벨이
+// 겹치면 조용히 버린다 — 측정값이 넓게 퍼진 알람에서 UCL·LCL 라벨이 사라지던 원인이다.
+// interval={0}으로 전부 그리게 하고, 글씨가 서로 위에 찍힐 만큼 가까운 한계만
+// 여기서 하나로 정리한다 — 그 경우에도 점선 자체는 둘 다 그대로 그린다.
+const TICK_MIN_GAP = 0.055
+const LIMIT_RANK = { USL: 3, LSL: 3, UCL: 2, LCL: 2, TARGET: 1 }
+const limitRank = (line) => LIMIT_RANK[line.styleLabel] ?? 0
+
+function axisLimitLines(lines, yDomain) {
+  if (!yDomain.every(Number.isFinite)) return lines
+  const span = yDomain[1] - yDomain[0]
+  if (!(span > 0)) return lines
+  const kept = []
+  for (const line of [...lines].sort((a, b) => limitRank(b) - limitRank(a))) {
+    if (kept.some((item) => Math.abs(item.value - line.value) < span * TICK_MIN_GAP)) continue
+    kept.push(line)
+  }
+  return kept.sort((a, b) => a.value - b.value)
 }
 
 function visibleLimitLines(limit) {
@@ -77,33 +98,13 @@ function YAxisTick({ x, y, payload, lines }) {
       textAnchor="end"
       fontSize={line ? 11 : 10}
       fontWeight={line ? 700 : 400}
-      fill={line ? '#4f5d6c' : '#64748b'}
+      fill={line ? limitColor(line.styleLabel) : '#64748b'}
     >
       {label}
     </text>
   )
 }
 const axisValue = (value) => Number(Number(value).toFixed(3)).toString()
-
-function limitAreas(limit, yDomain) {
-  if (!limit || !yDomain.every(Number.isFinite)) return []
-  const [domainMin, domainMax] = yDomain
-  const areas = []
-  const addArea = (key, lower, upper, label, fill, labelColor) => {
-    if (!Number.isFinite(lower) || !Number.isFinite(upper)) return
-    const y1 = Math.max(domainMin, Math.min(lower, upper))
-    const y2 = Math.min(domainMax, Math.max(lower, upper))
-    if (y2 <= y1) return
-    const showLabel = y2 - y1 >= (domainMax - domainMin) * 0.08
-    areas.push({ key, y1, y2, label, fill, labelColor, showLabel })
-  }
-
-  addArea('UPPER_OOS', limit.spec_upper, domainMax, 'OOS 영역 · USL 초과', 'var(--color-trace-oos-zone)', 'var(--color-trace-oos)')
-  addArea('UPPER_OOC', limit.ctrl_upper, limit.spec_upper, 'OOC 영역 · UCL~USL', 'var(--color-trace-ooc-zone)', 'var(--color-trace-ooc)')
-  addArea('LOWER_OOC', limit.spec_lower, limit.ctrl_lower, 'OOC 영역 · LSL~LCL', 'var(--color-trace-ooc-zone)', 'var(--color-trace-ooc)')
-  addArea('LOWER_OOS', domainMin, limit.spec_lower, 'OOS 영역 · LSL 미만', 'var(--color-trace-oos-zone)', 'var(--color-trace-oos)')
-  return areas
-}
 
 const limitDifference = (value, limit, judgement) => {
   if (!Number.isFinite(value) || !limit) return null
@@ -146,23 +147,23 @@ function TraceTooltip({ active, payload, limit }) {
   )
 }
 
-function PointDot({ cx, cy, payload, stroke, highlightWaferNo }) {
+function PointDot({ cx, cy, payload, stroke, highlightWaferNo, fill = '#fff' }) {
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null
   const highlighted = Number(payload?.wafer_no) === Number(highlightWaferNo)
   const focusRing = highlighted
     ? <circle cx={cx} cy={cy} r={7} fill="none" stroke={SINGLE_COLOR} strokeWidth={1.5} opacity={0.5} />
     : null
-  return <g>{focusRing}<circle cx={cx} cy={cy} r={3} fill="#fff" stroke={stroke ?? SINGLE_COLOR} strokeWidth={1.5} /></g>
+  return <g>{focusRing}<circle cx={cx} cy={cy} r={3.2} fill={fill} stroke={fill === '#fff' ? stroke ?? SINGLE_COLOR : fill} strokeWidth={1.5} /></g>
 }
 
 export default function TraceChart({ wafers = [], limit = null, height = 300, syncId = 'incident-trace', highlightWaferNo = null, viewMode = 'context' }) {
   const [highlighted, setHighlighted] = useState(null)
   const selectedView = viewMode === 'selected'
   const { rows, series } = selectedView ? selectedWaferChartModel(wafers[0]) : traceChartModel(wafers)
-  const yDomain = traceYAxisDomain(wafers, limit)
-  const thresholdAreas = selectedView ? limitAreas(limit, yDomain) : []
+  const yDomain = traceYAxisDomain(wafers, limit, { includeAllLimits: true })
   const displayedLimits = visibleLimitLines(limit)
-  const ticks = yAxisTicks(yDomain, displayedLimits)
+  const axisLimits = axisLimitLines(displayedLimits, yDomain)
+  const ticks = yAxisTicks(yDomain, axisLimits)
   if (!rows.length) return <div className="flex h-[300px] items-center justify-center text-[12px] text-g2">trace 실측 데이터가 없습니다.</div>
   return (
     <div style={{ height }}>
@@ -175,31 +176,29 @@ export default function TraceChart({ wafers = [], limit = null, height = 300, sy
             tick={{ fontSize: 10 }}
             label={{ value: selectedView ? '측정 시각' : 'WAFER', position: 'insideBottomRight', offset: -4, fontSize: 10 }}
           />
-          <YAxis domain={yDomain} allowDataOverflow ticks={ticks} tick={<YAxisTick lines={displayedLimits} />} width={78} />
+          <YAxis domain={yDomain} allowDataOverflow ticks={ticks} interval={0} tick={<YAxisTick lines={axisLimits} />} width={78} />
           <Tooltip content={<TraceTooltip limit={limit} />} />
           <Legend
             wrapperStyle={{ fontSize: 10 }}
             onMouseEnter={(entry) => setHighlighted(entry.dataKey ?? entry.value)}
             onMouseLeave={() => setHighlighted(null)}
           />
-          {thresholdAreas.map((area) => (
-            <ReferenceArea
-              key={area.key}
-              y1={area.y1}
-              y2={area.y2}
-              fill={area.fill}
-              fillOpacity={0.78}
-              ifOverflow="hidden"
-              label={area.showLabel ? { value: area.label, position: 'insideTopLeft', fontSize: 9, fontWeight: 700, fill: area.labelColor } : false}
-            />
-          ))}
           {displayedLimits.map((line) => {
             const style = LIMIT_STYLE[line.styleLabel] ?? LIMIT_STYLE.TARGET
-            return <ReferenceLine key={line.label} y={line.value} stroke={style.color} strokeWidth={style.width} strokeOpacity={style.opacity} strokeDasharray={style.dash} />
+            return (
+              <ReferenceLine
+                key={line.label}
+                y={line.value}
+                stroke={style.color}
+                strokeWidth={style.width}
+                strokeOpacity={style.opacity}
+                strokeDasharray={style.dash}
+              />
+            )
           })}
           {series.map((item, index) => {
             const color = selectedView ? SINGLE_COLOR : COLORS[index % COLORS.length]
-            return <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={color} strokeWidth={selectedView ? 2.8 : 2} strokeOpacity={highlighted && highlighted !== item.key ? 0.2 : 1} connectNulls={false} dot={(props) => <PointDot {...props} stroke={color} highlightWaferNo={selectedView ? null : highlightWaferNo} />} activeDot={{ r: 5 }} isAnimationActive={false} />
+            return <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={color} strokeWidth={selectedView ? 2.8 : 2} strokeOpacity={highlighted && highlighted !== item.key ? 0.2 : 1} connectNulls={false} dot={(props) => <PointDot {...props} stroke={color} fill={selectedView ? POINT_COLOR : '#fff'} highlightWaferNo={selectedView ? null : highlightWaferNo} />} activeDot={{ r: 5, fill: selectedView ? POINT_COLOR : color, stroke: '#fff' }} isAnimationActive={false} />
           })}
           {!selectedView && rows.length > 25 && <Brush dataKey="wafer_label" height={22} stroke="#cbd5e1" travellerWidth={8} />}
         </LineChart>

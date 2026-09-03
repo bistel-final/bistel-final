@@ -119,6 +119,16 @@ assert.ok(upperOnlyDomain[0] < 30 && upperOnlyDomain[0] > 0, '가장 가까운 �
 assert.ok(upperOnlyDomain[1] > 39.2)
 assert.deepEqual(traceYAxisDomain([{ points: [] }], null), ['auto', 'auto'])
 
+// includeAllLimits: 다섯 한계선을 모두 그리는 화면은 실측 밖 한계까지 축에 담아야 한다.
+const allLimits = { spec_lower: 0, ctrl_lower: 0, target: 8, ctrl_upper: 21, spec_upper: 30 }
+const fullDomain = traceYAxisDomain([{ points: [{ value: 25 }, { value: 35 }] }], allLimits, {
+  includeAllLimits: true,
+})
+assert.ok(fullDomain[0] <= 0, 'LSL·LCL(0)이 축 안에 있어야 그래프에 표시됩니다')
+assert.ok(fullDomain[1] >= 35, '실측 최댓값은 그대로 축 안에 있어야 합니다')
+const focusedDomain = traceYAxisDomain([{ points: [{ value: 25 }, { value: 35 }] }], allLimits)
+assert.ok(focusedDomain[0] > 0, '기본 모드는 실측 범위에 집중하는 기존 거동을 유지해야 합니다')
+
 const fiveWaferChart = traceChartModel(
   [1, 3, 5, 7, 9].map((waferNo) => ({
     lot_hist_id: `LH-${waferNo}`,
