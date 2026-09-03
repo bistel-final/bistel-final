@@ -7,10 +7,14 @@ import { CORE_CHAMBER_GRAPH } from '../src/shared/api/contractMocks.js'
 import { DEFAULT_GRAPH_CHAMBER, GRAPH_CHAMBERS } from '../src/shared/graph/ontology-chambers.js'
 import {
   PUBLIC_NODE_PROPERTIES,
+  annotateWaferAlarmHints,
+  attachWaferAlarmContext,
   buildOntologyOverviewLanes,
+  buildLotContextGraph,
   connectedRelationIds,
   hasDisplayableRelationships,
   layoutOntologyNodes,
+  lotOptionsForChamber,
   mergeOntologyGraphs,
   normalizeOntologyGraph,
   ontologyAlarmScope,
@@ -218,6 +222,102 @@ const chamberWithPrivateProperty = normalizeOntologyGraph({
 assert.deepEqual(publicNodeDetails(chamberWithPrivateProperty.nodes[0]), [{ key: 'chamber_id', value: 'EQP01-PM1' }])
 assert.ok(!Object.values(PUBLIC_NODE_PROPERTIES).flat().includes('password'))
 assert.ok(!Object.values(PUBLIC_NODE_PROPERTIES).flat().includes('uri'))
+assert.ok(!PUBLIC_NODE_PROPERTIES.Lot.includes('source_system'), 'LOT 화면에 데이터 출처를 노출하면 안 됩니다')
+
+const lotContextGraph = {
+  ...CORE_CHAMBER_GRAPH,
+  nodes: [
+    ...CORE_CHAMBER_GRAPH.nodes,
+    { node_id: 'Lot:LOT010', label: 'Lot', business_id: 'LOT010', name: 'LOT010', properties: { lot_id: 'LOT010' } },
+    { node_id: 'Wafer:LH-1', label: 'Wafer', business_id: 'WAFER-01', name: 'WAFER-01', properties: { lot_hist_id: 'LH-1', wafer_id: 'WAFER-01', lot_id: 'LOT010' } },
+    { node_id: 'Wafer:LH-2', label: 'Wafer', business_id: 'WAFER-01', name: 'WAFER-01', properties: { lot_hist_id: 'LH-2', wafer_id: 'WAFER-01', lot_id: 'LOT010' } },
+  ],
+  relationships: [
+    ...CORE_CHAMBER_GRAPH.relationships,
+    { relation_id: 'PG-C-1', type: 'CONTAINS', from_node_id: 'Lot:LOT010', to_node_id: 'Wafer:LH-1' },
+    { relation_id: 'PG-C-2', type: 'CONTAINS', from_node_id: 'Lot:LOT010', to_node_id: 'Wafer:LH-2' },
+    { relation_id: 'PG-P-1', type: 'PROCESSED_IN', from_node_id: 'Wafer:LH-1', to_node_id: 'Chamber:EQP01-PM1' },
+    { relation_id: 'PG-P-2', type: 'PROCESSED_IN', from_node_id: 'Wafer:LH-2', to_node_id: 'Chamber:EQP01-PM2' },
+  ],
+}
+assert.deepEqual(lotOptionsForChamber(lotContextGraph).map((lot) => lot.id), ['LOT010'])
+assert.deepEqual(lotOptionsForChamber(lotContextGraph, 'EQP01-PM2').map((lot) => lot.id), ['LOT010'])
+const lotSummary = buildLotContextGraph(lotContextGraph)
+assert.equal(lotSummary.nodes.filter((node) => ['Lot', 'Wafer'].includes(node.label)).length, 0, '첫 진입에는 생산 이력 node를 표시하지 않아야 합니다')
+const chamberScopedGraph = buildLotContextGraph(lotContextGraph, '', 'EQP01-PM1')
+assert.ok(
+  chamberScopedGraph.nodes.some((node) => node.id === 'Chamber:EQP01-PM2'),
+  'Chamber만 선택한 구조 문맥에는 형제 Chamber를 포함해야 합니다',
+)
+const selectedLotGraph = buildLotContextGraph(lotContextGraph, 'LOT010')
+assert.equal(selectedLotGraph.nodes.filter((node) => node.label === 'Wafer').length, 1, '동일 wafer의 두 처리 이력은 하나의 wafer node로 묶어야 합니다')
+assert.equal(selectedLotGraph.relationships.filter((relationship) => relationship.type === 'PROCESSED_IN').length, 2)
+const incidentGraph = buildLotContextGraph(lotContextGraph, 'LOT010', 'EQP01-PM2')
+assert.equal(incidentGraph.nodes.filter((node) => node.label === 'Wafer').length, 1)
+assert.deepEqual(
+  incidentGraph.nodes.filter((node) => node.label === 'Chamber').map((node) => node.business_id),
+  ['EQP01-PM2'],
+  'LOT까지 선택한 incident graph에는 선택 Chamber만 남겨야 합니다',
+)
+assert.ok(
+  incidentGraph.nodes.some((node) => node.label === 'Area') &&
+    incidentGraph.nodes.some((node) => node.label === 'ProcessStep') &&
+    incidentGraph.nodes.some((node) => node.label === 'EquipmentModel'),
+  'LOT incident graph에도 선택 Chamber의 상위 구조는 남겨야 합니다',
+)
+assert.ok(
+  !incidentGraph.relationships.some((relationship) => relationship.type === 'NEXT_STEP'),
+  'LOT incident graph에는 인접 공정 관계를 표시하지 않아야 합니다',
+)
+assert.deepEqual(
+  incidentGraph.relationships.filter((relationship) => relationship.type === 'PROCESSED_IN').map((relationship) => relationship.target),
+  ['Chamber:EQP01-PM2'],
+  'Lot과 Chamber를 함께 고르면 해당 incident의 wafer-chamber 관계만 남겨야 합니다',
+)
+assert.equal(incidentGraph.relationships.find((relationship) => relationship.type === 'PROCESSED_IN').source, 'Lot:LOT010')
+const incidentPositions = layoutOntologyNodes(incidentGraph)
+assert.equal(
+  incidentPositions.find(({ node }) => node.id === 'Chamber:EQP01-PM2').position.y,
+  incidentPositions.find(({ node }) => node.label === 'Equipment').position.y,
+  'LOT incident에서 선택 Chamber는 Equipment와 같은 축에 배치해야 합니다',
+)
+assert.ok(
+  (await readFile(resolve(SOURCE_ROOT, 'shared/graph/ontology-graph.js'), 'utf8')).includes('columnsPerRow: 3'),
+  'LOT incident wafer는 한 줄에 세 개씩 배치해야 합니다',
+)
+assert.ok(
+  (await readFile(resolve(SOURCE_ROOT, 'shared/graph/ontology-graph.js'), 'utf8')).includes('? 108 : waferRowGap'),
+  'ALARM badge가 있는 wafer rack은 행 간격을 넓혀야 합니다',
+)
+assert.deepEqual(
+  incidentPositions.find(({ node }) => node.label === 'Lot').position,
+  { x: 905, y: 230 },
+  'LOT은 선택 Chamber 아래의 처리 이력 anchor에 배치해야 합니다',
+)
+assert.deepEqual(
+  incidentPositions.find(({ node }) => node.label === 'Wafer').position,
+  { x: 929, y: 374 },
+  'Wafer는 LOT 아래 rack의 첫 칸에서 시작해야 합니다',
+)
+const incidentPresentation = orientOntologyRelationships(incidentGraph, incidentPositions)
+const lotHistoryPresentation = incidentPresentation.find((relationship) => relationship.type === 'PROCESSED_IN')
+assert.equal(lotHistoryPresentation.display_source, 'Chamber:EQP01-PM2')
+assert.equal(lotHistoryPresentation.display_target, 'Lot:LOT010')
+assert.equal(lotHistoryPresentation.display_reversed, true)
+const containmentPresentation = incidentPresentation.find((relationship) => relationship.type === 'CONTAINS')
+assert.equal(containmentPresentation.display_source, 'Lot:LOT010')
+assert.equal(containmentPresentation.display_target, 'Wafer:LH-2')
+assert.equal(containmentPresentation.display_vertical, true)
+const waferAlarmGraph = attachWaferAlarmContext(selectedLotGraph, 'Wafer:LH-1', [
+  { source: 'TRACE', alarm_id: 'ALM-1', judgement: 'OOS', rule_id: 'USL', sensor_id: 'PH_FOCUS', occurred_at: '2026-08-18T09:00:00+09:00' },
+])
+assert.ok(!waferAlarmGraph.nodes.some((node) => node.label === 'Alarm'))
+assert.ok(waferAlarmGraph.relationships.some((relationship) => relationship.type === 'ALARM_ON' && relationship.target === 'Parameter:PH_FOCUS'))
+const hintedWaferGraph = annotateWaferAlarmHints(selectedLotGraph, [
+  { lot_hist_id: 'LH-1', alarm_id: 'ALM-1' },
+  { lot_hist_id: 'LH-1', alarm_id: 'ALM-2' },
+])
+assert.equal(hintedWaferGraph.nodes.find((node) => node.id === 'Wafer:LH-1').properties.alarm_count, 2)
 
 const noFocus = parseOntologyFocus(new URLSearchParams())
 assert.equal(noFocus.phase, 'none')
@@ -265,6 +365,9 @@ for (const file of featureFiles) {
 }
 
 const canvasSource = await readFile(resolve(SOURCE_ROOT, 'shared/components/ontology/OntologyGraphCanvas.jsx'), 'utf8')
+assert.ok(canvasSource.includes('ALARM {alarmCount}'))
+assert.ok(!canvasSource.includes("relationship.type !== 'CONTAINS'"), 'LOT-Wafer CONTAINS 관계를 canvas에 표시해야 합니다')
+assert.ok(canvasSource.includes('조회 기준') && canvasSource.includes('선택 LOT') && canvasSource.includes('상세 확인'), '그래프 기준·LOT·현재 선택 상태를 업무 용어로 구분해야 합니다')
 for (const contract of [
   'nodesDraggable={false}',
   'nodesConnectable={false}',
@@ -288,6 +391,7 @@ for (const contract of [
   "'h-[400px] min-h-[340px]'",
   'padding={modalViewport ? 0.08 : 0.65}',
   'maxZoom={modalViewport ? 1.25 : 1.05}',
+  'graphKey={layoutKey}',
 ]) {
   assert.ok(canvasSource.includes(contract), `xyflow read-only 계약 누락: ${contract}`)
 }
@@ -298,23 +402,38 @@ assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
 assert.ok(ontologyPageSource.includes('일부 보조 챔버 관계를 불러오지 못해'))
 assert.ok(ontologyPageSource.includes('전체 구조 안내'))
+assert.ok(ontologyPageSource.includes('{!explicitChamber && ('), 'Chamber 선택 시 전체 구조 안내를 숨겨야 합니다')
 assert.ok(ontologyPageSource.includes('buildOntologyOverviewLanes([graph])'))
 assert.ok(ontologyPageSource.includes('onSelectNode={selectOverviewNode}'))
-assert.ok(ontologyPageSource.includes("setSelectedChamber('')"), '전체 구조 노드 선택은 챔버 필터를 해제해야 합니다')
+assert.ok(ontologyPageSource.includes('전체 구조 안내에서는 node 종류와 무관하게 상세 조회 대상만 바꾼다.'), 'overview button은 selector를 바꾸지 않아야 합니다')
 assert.ok(ontologyPageSource.includes("focus.phase === 'ready' ? focus.chamberId : ''"), '일반 진입은 선택·포커스 없는 전체 구조여야 합니다')
 assert.ok(ontologyPageSource.includes('xl:grid-cols-[minmax(0,1fr)_360px]'))
 assert.ok(ontologyPageSource.includes("<GraphSummary graph={graph} compact scopeLabel={explicitChamber ? null : '전체 온톨로지'} />"))
 assert.ok(ontologyPageSource.includes('<option value="">전체 구조</option>'))
 assert.ok(ontologyPageSource.includes('viewport="page"'), '독립 Ontology 화면만 확장 viewport를 사용해야 합니다')
-assert.ok(ontologyPageSource.includes('emphasizeRoot={Boolean(explicitChamber)}'), '전체 구조 첫 진입에서는 기본 챔버 root를 강조하면 안 됩니다')
+assert.ok(ontologyPageSource.includes("emphasizeRoot={focus.phase === 'ready'}"), '일반 Chamber selector는 root를 강조하면 안 됩니다')
 assert.ok(ontologyPageSource.includes("setSearchParams({}, { replace: true })"), 'selector 변경은 focus query를 모두 제거해야 합니다')
 assert.ok(ontologyPageSource.includes("status: hasDisplayableRelationships(merged) ? 'success' : 'empty'"))
 assert.ok(ontologyPageSource.includes('현재 선택'), '선택한 node의 상태 badge가 필요합니다')
 assert.ok(ontologyPageSource.includes('직접 관계 {relationCount}건'), '선택한 node의 직접 관계 상태가 필요합니다')
 assert.ok(ontologyPageSource.includes('Promise.all(scope.requests.map'))
 assert.ok(ontologyPageSource.includes('선택 노드 운영 요약'))
+assert.ok(ontologyPageSource.includes("node.label === 'Wafer'"), 'Wafer에는 Incident 전체 알람을 귀속하면 안 됩니다')
+assert.ok(ontologyPageSource.includes('Wafer 알람 · 관련 Parameter'))
+assert.ok(ontologyPageSource.includes('PROCESS HISTORY') && ontologyPageSource.includes('CHAMBER SEQUENCE'), 'Wafer는 내부 ID 대신 공정 처리 이력을 표시해야 합니다')
+assert.ok(ontologyPageSource.includes('선택 Incident 알람 요약'))
+assert.ok(ontologyPageSource.includes('alarm.lot_id !== scope.lot_id'))
+assert.ok(ontologyPageSource.includes('alarm.lot_hist_id !== scope.lot_hist_id'))
+assert.ok(ontologyPageSource.includes("node.label === 'Lot' && node.business_id === selectedLot"), 'LOT 선택 시 Lot 정보를 우측 패널 기본값으로 써야 합니다')
+assert.ok(ontologyPageSource.includes('const visualSelectedNode'), 'LOT 조회 context와 node 선택 상태를 분리해야 합니다')
+assert.ok(ontologyPageSource.includes('const panelNode'), 'LOT 선택 시 우측 패널 기본 node가 필요합니다')
+assert.ok(ontologyPageSource.includes('const selectedChamberNode'), 'Chamber selector의 우측 패널 기본 node가 필요합니다')
+assert.ok(ontologyPageSource.includes('selectedNode ?? selectedLotNode ?? selectedChamberNode'), '그래프 선택 없이 Lot/Chamber panel 기본값을 정해야 합니다')
+assert.ok(ontologyPageSource.includes('scopeNodeId={selectedChamberNode?.id ?? null}'), '선택 Chamber를 graph scope로 전달해야 합니다')
+assert.ok(ontologyPageSource.includes('incidentNodeId={selectedLotNode?.id ?? null}'), '선택 LOT을 graph incident로 전달해야 합니다')
 assert.ok(ontologyPageSource.includes("['ACTION', summary.actions"))
 assert.ok(ontologyPageSource.includes("timeZone: 'Asia/Seoul'"))
+assert.ok(ontologyPageSource.includes("hourCycle: 'h23'"), '시각은 오전/오후 없이 24시간 형식으로 표시해야 합니다')
 assert.ok(ontologyPageSource.includes('MOCK 대응 데이터 없음'))
 assert.ok(ontologyPageSource.includes('Agent 영향 범위'))
 assert.ok(!ontologyPageSource.includes('직접 · {node.business_id}'))

@@ -742,6 +742,7 @@ DB에서 해당 실행의 공개 상세를 읽어 저장된 종합 진단·citat
 |---|---|---:|---|
 | `label` | string | 아니오 | chamber component allowlist: `Area, ProcessStep, EquipmentModel, Equipment, Chamber, Parameter` |
 | `limit` | integer | 아니오 | 기본 500, 1..1000 |
+| `include_production_context` | boolean | 아니오 | 기본 `false`. `true`면 선택 chamber의 PostgreSQL `lot_history` 전체를 화면용 `Lot`·`Wafer` 관계 노드로 추가한다. Neo4j 적재·수정이나 Agent routing 판단에는 사용하지 않는다. |
 
 #### Response 200 — `ChamberGraphResponse`
 
