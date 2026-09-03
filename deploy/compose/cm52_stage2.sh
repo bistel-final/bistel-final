@@ -140,7 +140,8 @@ verify_prev_state() {
   fi
   case "$PREV_STATE" in
     empty)
-      curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
+      cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations \
+        && curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
         | jq -e '
             .fault_5class == null
             and .golden_flow == null
@@ -504,7 +505,7 @@ append_log 7 PASS fault-5class
 
 AGENT_FAULT_EVAL_ARTIFACT_PATH="$CA/fault-5class.json" \
   AGENT_GOLDEN_FLOW_SUMMARY_PATH="$CA/golden-flow.json" \
-  e2e up -d --force-recreate backend
+  e2e up -d --force-recreate --wait backend
 e2e exec -T backend python scripts/preflight_agent_evaluation_artifacts.py \
   --fault "$CA/fault-5class.json" \
   --golden "$CA/golden-flow.json" \
@@ -512,6 +513,7 @@ e2e exec -T backend python scripts/preflight_agent_evaluation_artifacts.py \
   --expect-golden-sha "$GOLDEN_SHA" \
   --expect-revision "$REV" \
   --attempt-id "$ATTEMPT"
+cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations
 curl -fsS http://127.0.0.1:8080/api/agent/evaluations \
   | jq -e '.fault_5class != null and .golden_flow != null' >/dev/null
 LAST_OK_STEP=8

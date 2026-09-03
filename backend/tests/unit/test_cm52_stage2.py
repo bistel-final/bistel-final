@@ -594,3 +594,15 @@ def test_hold_and_resume_flags_are_exclusive_and_exact() -> None:
         )
         assert completed.returncode == 2, args
         assert "usage:" in completed.stderr
+
+
+def test_stage2_waits_for_http_after_recreate_before_verifying() -> None:
+    """재생성 직후 1회 curl 오판(공용 PC 실측)을 막는 대기·재시도 계약."""
+
+    stage = STAGE2.read_text(encoding="utf-8")
+    common = (COMPOSE_DIR / "cm52_common.sh").read_text(encoding="utf-8")
+    assert "e2e up -d --force-recreate --wait backend" in stage
+    assert "cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations" in stage
+    assert "cm52_wait_http() {" in common
+    assert "cm52_wait_http http://127.0.0.1:8080/api/health" in common
+    assert 'curl -fsS --max-time 5 "$url"' in common
