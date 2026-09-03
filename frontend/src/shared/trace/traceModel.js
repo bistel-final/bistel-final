@@ -30,7 +30,11 @@ export function judgeValue(value, lim) {
 // from zero, so that default hides the variation that matters for an alarm. Keep the
 // measured range in focus while retaining limit lines that cross it. If every limit is
 // outside the measurements, retain only the closest limit on each side for context.
-export function traceYAxisDomain(wafers, lim) {
+//
+// includeAllLimits: USL·UCL·TGT·LCL·LSL 다섯 선을 모두 그려야 하는 화면(알람 히스토리
+// 상세 그래프)용. 축 밖으로 밀린 한계선은 recharts가 그리지 않고 버리므로(ReferenceLine
+// 기본 ifOverflow='discard') 도메인에 미리 포함시켜야 LCL·LSL이 보인다.
+export function traceYAxisDomain(wafers, lim, { includeAllLimits = false } = {}) {
   const measured = wafers
     .flatMap((wafer) => wafer?.points ?? [])
     .map((point) => point?.value)
@@ -46,8 +50,8 @@ export function traceYAxisDomain(wafers, lim) {
     .sort((a, b) => a - b)
   const crossingLimits = limits.filter((value) => value >= measuredMin && value <= measuredMax)
 
-  let visibleLimits = crossingLimits
-  if (!crossingLimits.length) {
+  let visibleLimits = includeAllLimits ? limits : crossingLimits
+  if (!includeAllLimits && !crossingLimits.length) {
     const below = limits.filter((value) => value < measuredMin).at(-1)
     const above = limits.find((value) => value > measuredMax)
     visibleLimits = [below, above].filter(Number.isFinite)
@@ -60,9 +64,13 @@ export function traceYAxisDomain(wafers, lim) {
   const padding = span > 0 ? span * 0.08 : Math.max(Math.abs(visibleMin) * 0.05, 0.01)
   const roundingUnit = 10 ** (Math.floor(Math.log10(Math.max(span, Math.abs(visibleMax), 0.001))) - 3)
 
+  // 축 끝이 실측이 아니라 한계선이면 여백을 줄인다 — 한계선은 축에 닿지 않을 정도만
+  // 띄우면 되고, 남은 높이는 실측 변화를 크게 보여주는 데 쓴다.
+  const lowerPadding = visibleMin < measuredMin ? padding * 0.35 : padding
+  const upperPadding = visibleMax > measuredMax ? padding * 0.35 : padding
   return [
-    Math.floor((visibleMin - padding) / roundingUnit) * roundingUnit,
-    Math.ceil((visibleMax + padding) / roundingUnit) * roundingUnit,
+    Math.floor((visibleMin - lowerPadding) / roundingUnit) * roundingUnit,
+    Math.ceil((visibleMax + upperPadding) / roundingUnit) * roundingUnit,
   ]
 }
 

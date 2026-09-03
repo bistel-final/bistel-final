@@ -56,10 +56,6 @@
           "reason": "`equipment`·`chamber`·`wafer`는 알람 화면 filter·trace view state의 property이며 AlarmItem compatibility 소비가 아님"
         },
         {
-          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
-          "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"
-        },
-        {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
           "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 화면 URL·filter state의 property이며 AlarmItem compatibility 소비가 아님"
         }
@@ -103,12 +99,7 @@
       "enforcement": "validator",
       "derivation": "notify is true only for notify_status=SENT; mes is empty for null mes_status and otherwise its public status string.",
       "consumers": [],
-      "consumer_scan_ignores": [
-        {
-          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
-          "reason": "`notify`는 대시보드 filter·집계 view model의 property이며 AlarmItem compatibility 소비가 아님"
-        }
-      ],
+      "consumer_scan_ignores": [],
       "removal_conditions": [
         {
           "check": "consumer_zero",
@@ -374,14 +365,6 @@
           "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 ActionItem compatibility 소비가 아님"
         },
         {
-          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
-          "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 ActionItem compatibility 소비가 아님"
-        },
-        {
-          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
-          "reason": "`equipment`·`chamber`는 대시보드 filter·집계 view model의 property이며 ActionItem compatibility 소비가 아님"
-        },
-        {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
           "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 ActionItem compatibility 소비가 아님"
         }
@@ -471,8 +454,7 @@
         "frontend/src/features/agent/components/RunListPanel.jsx#RunListPanel",
         "frontend/src/features/agent/components/RunSummaryCard.jsx#RunSummaryCard",
         "frontend/src/features/agent/components/RunVerdictCard.jsx#RunVerdictCard",
-        "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel",
-        "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
+        "frontend/src/features/detection/components/AlarmDetailPanel.jsx#AlarmDetailPanel"
       ],
       "consumer_scan_ignores": [
         {
@@ -490,10 +472,6 @@
         {
           "reference": "frontend/src/features/detection/components/TraceModel.jsx",
           "reason": "`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
-        },
-        {
-          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
-          "reason": "`chamber`는 알람 화면 filter·trace view state의 property이며 PublicAgentRunItem compatibility 소비가 아님"
         },
         {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
@@ -685,14 +663,6 @@
         {
           "reference": "frontend/src/features/detection/components/TraceModel.jsx",
           "reason": "`lot`·`equipment`·`chamber`는 trace 검색용 정규화 filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"
-        },
-        {
-          "reference": "frontend/src/features/detection/pages/AlarmsPage.jsx",
-          "reason": "`equipment`·`chamber`는 알람 화면 filter·trace view state의 property이며 PublicApprovalItem compatibility 소비가 아님"
-        },
-        {
-          "reference": "frontend/src/features/detection/pages/DashboardPage.jsx",
-          "reason": "`equipment`·`chamber`·`fault_code`는 대시보드 filter·집계 view model의 property이며 PublicApprovalItem compatibility 소비가 아님"
         },
         {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
@@ -935,7 +905,6 @@
       "replacement_kind": "export",
       "consumers": [
         "frontend/src/features/agent/pages/ActionsPage.jsx#ActionsPage",
-        "frontend/src/features/detection/pages/AlarmsPage.jsx#AlarmsPage",
         "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
       ],
       "consumer_scan_ignores": [],
@@ -1034,9 +1003,7 @@
       "symbol": "frontend/src/shared/api/agent.js#getRuns",
       "replacement": "frontend/src/shared/api/agent.js#getRunsCore",
       "replacement_kind": "export",
-      "consumers": [
-        "frontend/src/features/detection/pages/DashboardPage.jsx#DashboardPage"
-      ],
+      "consumers": [],
       "consumer_scan_ignores": [],
       "removal_conditions": [
         {

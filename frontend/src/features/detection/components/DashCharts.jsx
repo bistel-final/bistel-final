@@ -216,8 +216,10 @@ export function TrendLine({ data, height = 300 }) {
 }
 
 // ── 누적 막대 — 챔버·설비·파라미터 분포 (탭으로 전환) ────────────────
+// 전폭 카드에서 쓰므로 viewBox 폭을 추이 차트(TrendLine)와 맞춘다 — meet 스케일에서
+// 폭이 좁으면 좌우가 레터박스 여백으로 남는다.
 export function StackBars({ data, height = 300 }) {
-  const VW = 640
+  const VW = 1280
   const VH = height
   const L = 44
   const R = VW - 16
