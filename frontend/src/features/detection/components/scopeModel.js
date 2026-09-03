@@ -11,3 +11,28 @@ export const DEFAULT_SCOPE = {
   equipment: ALL,
   chamber: ALL,
 }
+
+// 화면 사이(대시보드 KPI → 알람 히스토리)로 넘기는 필터 키
+export const SCOPE_KEYS = Object.freeze(['from', 'to', 'area', 'equipment', 'chamber'])
+
+// 적용된 필터를 쿼리스트링으로 — 미지정(''·전체)은 키를 지워 URL을 짧게 유지한다.
+// base 에 기존 쿼리(URLSearchParams·객체)를 주면 그 위에 덮어쓴다(tab·source 보존).
+export function scopeToParams(scope, base) {
+  const params = new URLSearchParams(base ?? undefined)
+  for (const key of SCOPE_KEYS) {
+    const value = scope?.[key]
+    if (value == null || value === '' || value === ALL) params.delete(key)
+    else params.set(key, String(value))
+  }
+  return params
+}
+
+// 쿼리에 실린 필터만 읽는다 — 하나도 없으면 null(= 화면 기본 동작 유지).
+export function scopeFromParams(searchParams) {
+  const picked = {}
+  for (const key of SCOPE_KEYS) {
+    const value = searchParams?.get(key)
+    if (value) picked[key] = value
+  }
+  return Object.keys(picked).length ? { ...DEFAULT_SCOPE, ...picked } : null
+}

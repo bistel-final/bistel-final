@@ -25,7 +25,7 @@ import {
 } from '../../../shared/components/ui/statusStyles.js'
 import { sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
-import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
+import { ALL, DEFAULT_SCOPE, scopeFromParams, scopeToParams } from '../components/scopeModel.js'
 import { analysisActionOf, dataDateRange, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
 // 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + 전체/TRACE/SUMMARY/R03 탭 + 테이블.
@@ -63,11 +63,15 @@ function AlarmsPage() {
   const [data, setData] = useState(null)
   const [trace, setTrace] = useState(null)
   const [error, setError] = useState(null)
-  const [draft, setDraft] = useState(DEFAULT_SCOPE)
-  const [applied, setApplied] = useState(DEFAULT_SCOPE)
+  // 대시보드 KPI에서 넘어온 필터가 쿼리에 있으면 그것으로 시작한다(같은 값이 보이도록).
+  // 최초 진입 쿼리만 읽으면 되므로 lazy 초기화로 한 번만 계산해 고정한다.
+  const [entryScope] = useState(() => scopeFromParams(searchParams))
+  const [draft, setDraft] = useState(entryScope ?? DEFAULT_SCOPE)
+  const [applied, setApplied] = useState(entryScope ?? DEFAULT_SCOPE)
   // 응답에서 유도한 데이터 기간 — 기간 필터의 기본값·초기화 기준(대시보드와 같은 규칙)
   const [range, setRange] = useState(null)
-  const rangeSet = useRef(false)
+  // 쿼리로 기간을 받았으면 유도값으로 덮어쓰지 않는다
+  const rangeSet = useRef(Boolean(entryScope?.from || entryScope?.to))
   const [page, setPage] = useState(1)
   const [runPending, setRunPending] = useState(false)
   const [runError, setRunError] = useState(null)
@@ -95,11 +99,11 @@ function AlarmsPage() {
         const alarms = alarmPage.items ?? []
         setData({ hierarchy: summary.hierarchy ?? [], catalog, alarms, focusedAlarm })
         // 기간 기본값 — 첫 응답이 덮는 일자 범위를 그대로 필터에 채운다.
-        if (rangeSet.current) return
         const derived = dataDateRange(alarms)
         if (!derived) return
+        setRange((prev) => prev ?? derived) // 초기화 기준은 쿼리 진입 여부와 무관하게 잡아 둔다
+        if (rangeSet.current) return
         rangeSet.current = true
-        setRange(derived)
         setDraft((prev) => ({ ...prev, ...derived }))
         setApplied((prev) => ({ ...prev, ...derived }))
       })
@@ -191,8 +195,11 @@ function AlarmsPage() {
     // 다른 알람을 고르면 이전 알람의 실행 실패 메시지를 들고 있지 않는다
     setRunError(null)
     const selectedSource = data.alarms.find((alarm) => alarm.alarm_id === id)?.source
-    const query = new URLSearchParams({ tab })
+    // 행을 눌러 이동해도 지금 적용된 필터를 URL에 유지한다(새로고침·뒤로가기 복원)
+    const query = scopeToParams(applied, searchParams)
+    query.set('tab', tab)
     if (selectedSource) query.set('source', selectedSource)
+    else query.delete('source')
     navigate(`/alarms/${encodeURIComponent(id)}?${query}`)
   }
 
