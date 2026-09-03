@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,3 +57,32 @@ def test_experiment_selector_is_level_three_only() -> None:
             routing_graph=None,  # type: ignore[arg-type]
             configured_llm_model="fixture",
         )
+
+
+@pytest.mark.parametrize(
+    "port_name",
+    [
+        "persist_action",
+        "notify_email",
+        "approval_email",
+        "hitl_interrupt",
+        "publish_mes",
+        "writeback_result",
+        "cancel_mes",
+    ],
+)
+def test_experiment_external_effect_ports_are_unreachable(port_name: str) -> None:
+    ports = experiment._ExperimentPorts(  # type: ignore[attr-defined]
+        generate_hypothesis=lambda *_args: None,
+        react_select=None,
+    )
+    with pytest.raises(RuntimeError, match="EXPERIMENT_EXTERNAL_EFFECT_FORBIDDEN"):
+        getattr(ports, port_name)()
+
+
+def test_level_experiment_graph_rejects_runtime_level_override() -> None:
+    inner = SimpleNamespace(invoke=lambda *_args, **_kwargs: pytest.fail())
+    graph = experiment.LevelExperimentGraph(inner, 3)
+
+    with pytest.raises(ValueError, match="EXPERIMENT_LEVEL_MISMATCH"):
+        graph.invoke({"autonomy_level": 2})

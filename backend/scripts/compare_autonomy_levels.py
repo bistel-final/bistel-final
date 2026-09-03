@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -62,7 +63,40 @@ SNAPSHOT_DATABASE = "fdc_react_comparison"
 
 
 class ComparisonExecutionError(RuntimeError):
-    pass
+    def __init__(self, code: str, *, detail: str | None = None) -> None:
+        super().__init__(code if not detail else f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\b(password|passwd|pwd|token|api[_-]?key|authorization|secret)"
+    r"(\s*[:=]\s*)([^\r\n]+)"
+)
+_URL_USERINFO = re.compile(r"(://[^:/@\s]+:)[^@\s]+@")
+
+
+def _safe_stderr_tail(
+    stderr: str,
+    *,
+    environment: dict[str, str] | None,
+) -> str | None:
+    """비밀을 제거한 stderr 마지막 5줄만 진단용으로 보존한다."""
+
+    value = stderr
+    for key, secret in (environment or {}).items():
+        upper = key.upper()
+        if secret and any(
+            marker in upper
+            for marker in ("PASSWORD", "TOKEN", "SECRET", "API_KEY", "AUTHORIZATION")
+        ):
+            value = value.replace(secret, "***")
+    value = _SECRET_ASSIGNMENT.sub(r"\1\2***", value)
+    value = _URL_USERINFO.sub(r"\1***@", value)
+    lines = [
+        " ".join(line.split())[:240] for line in value.splitlines() if line.strip()
+    ]
+    return " | ".join(lines[-5:]) or None
 
 
 def _pinned_local_image_runner(command: list[str], **kwargs: Any) -> Any:
@@ -74,17 +108,27 @@ def _pinned_local_image_runner(command: list[str], **kwargs: Any) -> Any:
 
 
 def _run(command: list[str], *, environment: dict[str, str] | None = None) -> None:
-    completed = subprocess.run(
-        command,
-        check=False,
-        shell=False,
-        capture_output=True,
-        text=True,
-        timeout=900,
-        env=environment,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ComparisonExecutionError(
+            "COMPARISON_DEPENDENCY_FAILED",
+            detail="dependency command timed out",
+        ) from exc
     if completed.returncode:
-        raise ComparisonExecutionError("COMPARISON_DEPENDENCY_FAILED")
+        detail = _safe_stderr_tail(completed.stderr, environment=environment)
+        raise ComparisonExecutionError(
+            "COMPARISON_DEPENDENCY_FAILED",
+            detail=detail or f"exit={completed.returncode}",
+        )
 
 
 def _verify_revision(expected: str) -> None:
@@ -500,7 +544,11 @@ def main(argv: list[str] | None = None) -> int:
             "ARTIFACT_CLOBBER_BLOCKED",
         }
         reason = code if code in allowed else "COMPARISON_FAILED"
-        print(json.dumps({"reason_code": reason}), file=sys.stderr)
+        error_payload = {"reason_code": reason}
+        diagnostic = getattr(exc, "detail", None)
+        if isinstance(diagnostic, str) and diagnostic:
+            error_payload["diagnostic"] = diagnostic
+        print(json.dumps(error_payload), file=sys.stderr)
         return 1
     print(f"LEVEL_COMPARISON_WRITTEN sha256={digest}")
     return 0

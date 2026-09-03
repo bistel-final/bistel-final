@@ -741,9 +741,14 @@ def main(argv: list[str] | None = None) -> int:
             "LLM_CONFIG_MISMATCH",
             "FIXTURE_INVALID",
             "ARTIFACT_CLOBBER_BLOCKED",
+            "COMPARISON_DEPENDENCY_FAILED",
         }
         reason = code if code in allowed else "OBSERVATION_FAILED"
-        print(json.dumps({"reason_code": reason}), file=sys.stderr)
+        error_payload = {"reason_code": reason}
+        diagnostic = getattr(exc, "detail", None)
+        if isinstance(diagnostic, str) and diagnostic:
+            error_payload["diagnostic"] = diagnostic
+        print(json.dumps(error_payload), file=sys.stderr)
         return 1
     print(f"AGENT_JUSTIFICATION_WRITTEN sha256={digest}")
     return 0

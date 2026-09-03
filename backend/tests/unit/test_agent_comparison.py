@@ -3,11 +3,13 @@ from __future__ import annotations
 import copy
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from app.agent import comparison
+from scripts import compare_autonomy_levels as runner
 
 REVISION = "a" * 40
 DIGEST = "b" * 64
@@ -274,6 +276,14 @@ def test_level_comparison_recomputes_36_run_contract() -> None:
             "status", "BROKEN"
         ),
         lambda p: p["incidents"][0]["levels"][0].__setitem__("action", "WARNING"),
+        lambda p: p["safety"].__setitem__("hitl_bypass", 1),
+        lambda p: p.__setitem__("contract_verdict", "ADAPTIVE_LOOP_CONTRACT_FAIL"),
+        lambda p: (
+            p["incidents"][0]["levels"][2]["tool_path"].__setitem__(0, "send_action"),
+            p["incidents"][0]["levels"][2]["tool_calls"][0].__setitem__(
+                "tool", "send_action"
+            ),
+        ),
     ],
 )
 def test_level_comparison_mutations_are_rejected(mutate: Any) -> None:
@@ -344,3 +354,32 @@ def test_immutable_writer_is_mode_0600_and_no_clobber(tmp_path: Path) -> None:
         comparison.ComparisonArtifactError, match="ARTIFACT_CLOBBER_BLOCKED"
     ):
         comparison.write_immutable_json(path, {"ok": False})
+
+
+def test_dependency_failure_keeps_only_redacted_stderr_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stderr = "\n".join(
+        [
+            "old line omitted",
+            "line 2",
+            "PGPASSWORD=top-secret",
+            "postgresql://user:top-secret@db.example/test",
+            "authorization: Bearer bearer-value",
+            "line 6 root cause",
+        ]
+    )
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr=stderr),
+    )
+
+    with pytest.raises(runner.ComparisonExecutionError) as info:
+        runner._run(["fixture"], environment={"PGPASSWORD": "top-secret"})
+
+    assert info.value.code == "COMPARISON_DEPENDENCY_FAILED"
+    assert "old line omitted" not in str(info.value)
+    assert "top-secret" not in str(info.value)
+    assert "bearer-value" not in str(info.value)
+    assert "line 6 root cause" in str(info.value)
