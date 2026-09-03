@@ -2,7 +2,7 @@
 
 > 상태: **2단 공용 실행 완료 — stage2 cleanup outcome `PUBLISHED`**
 > 실행일: 2026-09-03 (KST) · 실행 PC: 팀장 PC(WSL2 Ubuntu, `192.168.5.29`) · 운영자: 방대혁 · 명령 설계·판정: Claude
-> 판정: **CM-5.2 PASS 후보** — §7 후속(7화면 4상태 UI 수동 확인)을 닫으면 CM-5.3 진입. 확장 5 op는 모두 실호출 PASS
+> 판정: **CM-5.2 PASS(보류 1건 명시)** — 7화면 4상태 UI 수동 캡처는 담당자 결정으로 보류(§3). 확장 5 op는 모두 실호출 PASS. CM-5.3 진입 가능
 
 ## 1. 실행 식별
 
@@ -59,7 +59,7 @@ cleanup outcome 이력(같은 attempt · `stage2-log.jsonl`):
 
 ## 3. 7화면 4상태
 
-step 4는 스크립트가 실 API로 Analytics 3건·history·evaluations Empty를 확인했다. 7화면 각 Loading/Error/Empty/Success **UI 수동 확인과 Network 캡처는 이번 run에서 수행하지 않았다**(§7 후속). production은 gate 직후 새 artifact로 Success 상태다.
+step 4는 스크립트가 실 API로 Analytics 3건·history·evaluations Empty를 확인했다. 7화면 각 Loading/Error/Empty/Success **UI 수동 캡처는 담당자 결정(2026-09-03)으로 보류**했다. 근거: 1단 contract test(`frontend/scripts/integration-e2e-contract.test.mjs`)가 7화면의 4상태 계약을 실 transport로 CI에서 검증하며(Mock 0), 수동 캡처는 추가 증적이다. production은 gate 직후 새 artifact로 Success 상태다.
 
 | 화면 | 이번 run 확인 | 비고 |
 |---|---|---|
@@ -128,7 +128,7 @@ golden-flow 7 phase 요약: PREFLIGHT(r03 3·selected 12) · BATCH_BASELINE(9 CO
 | #299 | stage2 | step 8 `--wait`·HTTP 대기·파생 RUN_ID·셸 export 가드 |
 
 **후속(미충족)**
-- 7화면 4상태 UI 수동 확인·Network 캡처(§3) — production 현재 상태로 수행 가능.
+- 7화면 4상태 UI 수동 캡처(§3) — 담당자 결정으로 보류. 필요 시 production 현재 상태로 수행 가능(절차: DevTools throttling/Offline·빈 필터).
 - backend 기동 segfault(exit 139): Kafka 컨테이너와 동시 기동 시 첫 프로세스가 죽고 같은 RUN_ID trail 규칙으로 재시작 루프. 회피(kafka 선기동)로 진행했고 원인 미확정 — core dump·librdkafka/torch 조사 필요.
 - cleanup `RESTORE_FAILED` 오판 사례(1회차)는 #299로 해소했으나 `production_verify` 실패 시 상태 분류를 더 세분화할 여지.
 - LLM 편차: 12 run 5회 중 1회 `HYPOTHESIS_STRUCTURE_INVALID` 1건(LOT009/EQP06-PM1) → 재실행. 가설 구조 검증 실패의 재시도 정책은 A파트 후속.
