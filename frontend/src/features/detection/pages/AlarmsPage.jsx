@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getAlarm, getAllAlarms, getDashboard, getTraceCatalog, searchTraces } from '../../../shared/api/detection.js'
-import { createRun, getActions } from '../../../shared/api/agent.js'
+import { createRun } from '../../../shared/api/agent.js'
 import { fmtShort } from '../../../shared/api/format.js'
 import LoadingState from '../../../shared/components/LoadingState.jsx'
 import ErrorState from '../../../shared/components/ErrorState.jsx'
@@ -25,14 +25,13 @@ import {
 } from '../../../shared/components/ui/statusStyles.js'
 import { sensorLimit } from '../components/TraceModel.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
-import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
-import { analysisActionOf, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
+import { ALL, DEFAULT_SCOPE, scopeFromParams, scopeToParams } from '../components/scopeModel.js'
+import { analysisActionOf, dataDateRange, partitionAlarms, runErrorMessage } from '../detection-screen-state.js'
 
 // 알람 히스토리 — 라이트 시안 2번. 상단 선택 알람 트렌드 + 필터바 + 전체/TRACE/SUMMARY/R03 탭 + 테이블.
 // 탭 분리는 source(AlarmRef의 TRACE·SUMMARY·R03)로 한다 — judgement로 나누면 R03(OOS)이
 // TRACE 탭에 섞여 보이지 않는 것처럼 된다.
 // 기간·탭 분리 목록 파라미터가 명세에 없어 넓게 받아 클라이언트에서 나눈다. TODO(api): 기간·source 파라미터
-const WIDE = 100
 const PAGE_SIZE = 12
 const ALARM_TABS = Object.freeze(['ALL', 'TRACE', 'SUMMARY', 'R03'])
 const TAB_TITLE = Object.freeze({
@@ -64,8 +63,15 @@ function AlarmsPage() {
   const [data, setData] = useState(null)
   const [trace, setTrace] = useState(null)
   const [error, setError] = useState(null)
-  const [draft, setDraft] = useState(DEFAULT_SCOPE)
-  const [applied, setApplied] = useState(DEFAULT_SCOPE)
+  // 대시보드 KPI에서 넘어온 필터가 쿼리에 있으면 그것으로 시작한다(같은 값이 보이도록).
+  // 최초 진입 쿼리만 읽으면 되므로 lazy 초기화로 한 번만 계산해 고정한다.
+  const [entryScope] = useState(() => scopeFromParams(searchParams))
+  const [draft, setDraft] = useState(entryScope ?? DEFAULT_SCOPE)
+  const [applied, setApplied] = useState(entryScope ?? DEFAULT_SCOPE)
+  // 응답에서 유도한 데이터 기간 — 기간 필터의 기본값·초기화 기준(대시보드와 같은 규칙)
+  const [range, setRange] = useState(null)
+  // 쿼리로 기간을 받았으면 유도값으로 덮어쓰지 않는다
+  const rangeSet = useRef(Boolean(entryScope?.from || entryScope?.to))
   const [page, setPage] = useState(1)
   const [runPending, setRunPending] = useState(false)
   const [runError, setRunError] = useState(null)
@@ -75,29 +81,34 @@ function AlarmsPage() {
   const source = ['TRACE', 'SUMMARY', 'R03'].includes(sourceQuery) ? sourceQuery : null
   const invalidSource = sourceQuery !== null && source === null
 
+  // 조회 파라미터는 AREA·설비·챔버뿐이다(기간은 클라이언트 필터) —
+  // 기간 기본값을 채워 넣을 때 불필요한 재조회가 걸리지 않도록 그 셋만 의존한다.
+  const { area, equipment, chamber } = applied
   const load = useCallback(() => {
     const scope = {}
-    if (applied.area !== ALL) scope.area = applied.area
-    if (applied.equipment !== ALL) scope.equipment_id = applied.equipment
-    if (applied.chamber !== ALL) scope.chamber_id = applied.chamber
+    if (area !== ALL) scope.area = area
+    if (equipment !== ALL) scope.equipment_id = equipment
+    if (chamber !== ALL) scope.chamber_id = chamber
     Promise.all([
       getDashboard({}),
       getTraceCatalog(),
       getAllAlarms(scope), // size 상한(100)보다 총 건수가 많을 수 있어 전체 페이지를 순회한다
-      getActions({ page: 1, size: WIDE }),
       alarmId && source ? getAlarm(alarmId, source) : Promise.resolve(null),
     ])
-      .then(([summary, catalog, alarmPage, actionPage, focusedAlarm]) =>
-        setData({
-          hierarchy: summary.hierarchy ?? [],
-          catalog,
-          alarms: alarmPage.items ?? [],
-          actionOf: Object.fromEntries((actionPage.items ?? []).map((a) => [a.action_id, a])),
-          focusedAlarm,
-        }),
-      )
+      .then(([summary, catalog, alarmPage, focusedAlarm]) => {
+        const alarms = alarmPage.items ?? []
+        setData({ hierarchy: summary.hierarchy ?? [], catalog, alarms, focusedAlarm })
+        // 기간 기본값 — 첫 응답이 덮는 일자 범위를 그대로 필터에 채운다.
+        const derived = dataDateRange(alarms)
+        if (!derived) return
+        setRange((prev) => prev ?? derived) // 초기화 기준은 쿼리 진입 여부와 무관하게 잡아 둔다
+        if (rangeSet.current) return
+        rangeSet.current = true
+        setDraft((prev) => ({ ...prev, ...derived }))
+        setApplied((prev) => ({ ...prev, ...derived }))
+      })
       .catch((e) => setError(e.message))
-  }, [alarmId, applied, source])
+  }, [alarmId, area, equipment, chamber, source])
   useEffect(() => {
     load()
   }, [load])
@@ -169,7 +180,7 @@ function AlarmsPage() {
   if (!data) return <LoadingState message="알람 히스토리를 불러오는 중…" />
 
   const list = tab === 'ALL' ? rows.all : tab === 'TRACE' ? rows.trace : tab === 'SUMMARY' ? rows.summary : rows.r03
-  const limitHeaders = tab === 'SUMMARY' ? ['LCL', 'UCL'] : tab === 'ALL' ? ['LOWER', 'UPPER'] : ['LSL', 'USL']
+  const limitHeaders = ['LSL', 'USL'] // 탭과 무관하게 스펙 한계로 통일(멘토 피드백)
   const pageCnt = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCnt)
   const paged = list.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE)
@@ -184,8 +195,11 @@ function AlarmsPage() {
     // 다른 알람을 고르면 이전 알람의 실행 실패 메시지를 들고 있지 않는다
     setRunError(null)
     const selectedSource = data.alarms.find((alarm) => alarm.alarm_id === id)?.source
-    const query = new URLSearchParams({ tab })
+    // 행을 눌러 이동해도 지금 적용된 필터를 URL에 유지한다(새로고침·뒤로가기 복원)
+    const query = scopeToParams(applied, searchParams)
+    query.set('tab', tab)
     if (selectedSource) query.set('source', selectedSource)
+    else query.delete('source')
     navigate(`/alarms/${encodeURIComponent(id)}?${query}`)
   }
 
@@ -200,11 +214,8 @@ function AlarmsPage() {
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
-      <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
+      <div className="flex min-h-16 items-center pb-1.5 pt-3.5">
         <div className="text-[20px] font-extrabold text-ink">알람 히스토리</div>
-        <div className="text-[11.5px] text-g2">
-          기간 내 <span className="font-mono">{rows.all.length}</span>건
-        </div>
       </div>
 
       <AlarmTracePanel
@@ -240,8 +251,9 @@ function AlarmsPage() {
           }}
           onReset={() => {
             setPage(1)
-            setDraft(DEFAULT_SCOPE)
-            setApplied(DEFAULT_SCOPE)
+            const reset = { ...DEFAULT_SCOPE, ...(range ?? {}) }
+            setDraft(reset)
+            setApplied(reset)
           }}
         />
       </div>
@@ -262,10 +274,7 @@ function AlarmsPage() {
       </div>
 
       <Card>
-        <CardHeader
-          title={TAB_TITLE[tab]}
-          note="청색 행은 기준 알람 · 행 클릭 시 기준 변경"
-        />
+        <CardHeader title={TAB_TITLE[tab]} />
         {paged.length === 0 ? (
           <EmptyState title="조건에 맞는 알람이 없습니다" description="기간·AREA·설비·챔버 필터를 조정해 주세요." />
         ) : (
@@ -278,15 +287,13 @@ function AlarmsPage() {
                     'ALARM',
                     ...(tab === 'ALL' ? ['SOURCE'] : []),
                     'LOT',
-                    'W',
+                    'WAFER',
                     'EQP-CH',
                     'PARAMETER',
                     'STEP',
                     'RULE',
-                    'HIT',
                     'VALUE',
                     ...limitHeaders,
-                    'NOTIFY',
                   ].map((h) => (
                     <th key={h} className={TH_CLS}>
                       {h}
@@ -298,7 +305,6 @@ function AlarmsPage() {
                 {paged.map((a, i) => {
                   const lim = limOf(a.sensor_id)
                   const value = alarmValue(a, lim)
-                  const act = a.action_id ? data.actionOf[a.action_id] : null
                   return (
                     <tr
                       key={a.alarm_id}
@@ -313,22 +319,16 @@ function AlarmsPage() {
                         </td>
                       )}
                       <td className={`${TD_CLS} ${CELL_MONO}`}>{a.lot_id}</td>
-                      <td className={`${TD_CLS} ${CELL_MONO}`}>{a.wafer_no}</td>
+                      <td className={`${TD_CLS} ${CELL_MONO}`}>{a.wafer_no == null ? '—' : `W${a.wafer_no}`}</td>
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{a.chamber_id}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} font-semibold`}>{a.sensor_id}</td>
                       <td className={`${TD_CLS} ${CELL_DIM}`}>{a.recipe_step_name}</td>
                       <td className={TD_CLS}>
                         <Badge variant={ruleVariant(a.rule_id)}>{String(a.rule_id).slice(0, 3)}</Badge>
                       </td>
-                      <td className={`${TD_CLS} ${CELL_MONO}`}>{a.hit_cnt}</td>
                       <td className={`${TD_CLS} ${CELL_MONO} font-bold ${judgementClass(a.judgement)}`}>{num(value)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_lower : lim?.spec_lower)}</td>
-                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(a.source === 'SUMMARY' ? lim?.ctrl_upper : lim?.spec_upper)}</td>
-                      <td className={`${TD_CLS} ${CELL_MONO} text-[11px] text-g1`}>
-                        {act?.deliveries?.length
-                          ? act.deliveries.map((delivery) => `${delivery.channel} · ${delivery.status}`).join(' / ')
-                          : '—'}
-                      </td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(lim?.spec_lower)}</td>
+                      <td className={`${TD_CLS} ${CELL_DIM}`}>{num(lim?.spec_upper)}</td>
                     </tr>
                   )
                 })}

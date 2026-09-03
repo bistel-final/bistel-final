@@ -31,6 +31,17 @@ export function analysisActionOf(alarm) {
   return { mode: 'OPEN', label, runId }
 }
 
+// 기간 필터 기본값 — 응답이 실제로 덮는 일자 범위를 그대로 쓴다.
+// 픽스처 날짜를 코드에 박지 않으며, 데이터가 없으면 null(=기간 필터 없음).
+export function dataDateRange(alarms) {
+  const dates = (alarms ?? [])
+    .map((alarm) => String(alarm?.occurred_at ?? '').slice(0, 10))
+    .filter(Boolean)
+    .sort()
+  if (!dates.length) return null
+  return { from: dates[0], to: dates[dates.length - 1] }
+}
+
 export function periodLabel({ from, to }) {
   if (from && to) return `${from} ~ ${to}`
   if (from) return `${from} 이후`

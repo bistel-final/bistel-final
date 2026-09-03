@@ -110,6 +110,9 @@ services:
       - "53005:9094"
     environment:
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      # apache/kafka 기본 log.dirs는 컨테이너 안 /tmp라 재생성 시 topic·offset이 사라진다.
+      # named volume(kafka_data) 경로로 고정해 compose down/up 사이에도 보존한다.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093

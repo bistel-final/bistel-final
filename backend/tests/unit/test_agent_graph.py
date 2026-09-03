@@ -931,6 +931,11 @@ def test_finalize_preserves_action_provenance_in_terminal_evidence(
     evidence = finishes[0][1]["evidence"]
     assert evidence["action_provenance"] == provenance
     assert evidence["route_consistency"] is True
+    # 완료 run에도 인용 대조 기준(graph relation 정본)이 남아야 한다 — 정렬·중복 없음.
+    relation_ids = evidence["graph_relation_ids"]
+    assert isinstance(relation_ids, list)
+    assert relation_ids == sorted(set(relation_ids))
+    assert all(isinstance(item, str) and item for item in relation_ids)
 
 
 def test_failed_finish_paths_share_one_provenance_preserving_helper() -> None:

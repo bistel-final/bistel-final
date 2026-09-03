@@ -477,6 +477,9 @@ def test_stage2_postcondition_requires_v2_complete_exact_distribution() -> None:
     stage = STAGE2.read_text(encoding="utf-8")
 
     assert "prompt_version='agent-hypothesis-v2-ko1'" in stage
+    # kosa_readonly는 agent_run을 못 읽는다(C-0.2 allowlist) — kosa_app engine으로 센다.
+    assert "get_app_engine(); c=e.connect(); q=text(" in stage
+    assert "pool_factory.get_engine(LogicalDb.RUNTIME,PoolRole.QUERY)" not in stage
     assert "status IN ('RUNNING','FAILED')" in stage
     assert "grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'" in stage
 
@@ -591,3 +594,43 @@ def test_hold_and_resume_flags_are_exclusive_and_exact() -> None:
         )
         assert completed.returncode == 2, args
         assert "usage:" in completed.stderr
+
+
+def test_stage2_waits_for_http_after_recreate_before_verifying() -> None:
+    """재생성 직후 1회 curl 오판(공용 PC 실측)을 막는 대기·재시도 계약."""
+
+    stage = STAGE2.read_text(encoding="utf-8")
+    common = (COMPOSE_DIR / "cm52_common.sh").read_text(encoding="utf-8")
+    assert "e2e up -d --force-recreate --wait backend" in stage
+    # step 8 재생성 backend는 파생 RUN_ID — 기존 trail 파일 거부 회피
+    derived = (
+        'DELIVERY_CALLBACK_TRAIL_RUN_ID="${DELIVERY_CALLBACK_TRAIL_RUN_ID:-c46_e2e}_s8_'
+    )
+    assert derived in stage
+    assert "cm52_wait_http http://127.0.0.1:8080/api/agent/evaluations" in stage
+    assert "cm52_wait_http() {" in common
+    assert "cm52_wait_http http://127.0.0.1:8080/api/health" in common
+    assert 'curl -fsS --max-time 5 "$url"' in common
+
+
+def test_stage2_refuses_shell_exported_env_team_keys(tmp_path: Path) -> None:
+    """셸 export가 --env-file 값을 덮어 ENV_MISMATCH를 만들던 결함 — fail-fast."""
+
+    env_file = tmp_path / ".env.team"
+    _env_file(env_file)
+    completed = subprocess.run(
+        ["bash", str(STAGE2), "--attempt-id", ATTEMPT],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "CM52_ENV_FILE": str(env_file),
+            "CM52_STAGE2_TEST_MODE": "1",
+            "AGENT_FAULT_EVAL_ARTIFACT_PATH": "",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 1
+    assert "SHELL_ENV_OVERRIDE AGENT_FAULT_EVAL_ARTIFACT_PATH" in completed.stderr
+    assert _values(env_file) == (PREV_FAULT, PREV_GOLDEN)

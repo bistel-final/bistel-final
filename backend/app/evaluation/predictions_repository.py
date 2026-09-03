@@ -183,6 +183,11 @@ def _available_chunks(raw_tools: object) -> tuple[str, ...]:
 def _available_relations(run_evidence: object) -> tuple[str, ...]:
     if not isinstance(run_evidence, dict):
         return ()
+    # finalize가 모든 run에 남기는 정본을 우선한다. rehydration snapshot은 HITL run에만
+    # 있어 완료 run 9건의 인용이 전부 "가용 밖"으로 판정되던 결함(공용 PC 실측).
+    direct = run_evidence.get("graph_relation_ids")
+    if direct is not None:
+        return _string_tuple(direct, "RUN_EVIDENCE_INVALID")
     snapshot = run_evidence.get("rehydration_snapshot")
     if not isinstance(snapshot, dict):
         return ()
