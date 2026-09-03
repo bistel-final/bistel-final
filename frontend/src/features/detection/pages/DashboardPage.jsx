@@ -8,7 +8,7 @@ import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import ScopeFilterBar from '../components/ScopeFilterBar.jsx'
-import { ALL, DEFAULT_SCOPE } from '../components/scopeModel.js'
+import { ALL, DEFAULT_SCOPE, scopeToParams } from '../components/scopeModel.js'
 import { dataDateRange, hasDashboardResults } from '../detection-screen-state.js'
 import {
   ChartCard,
@@ -55,7 +55,7 @@ const stackOf = (rows, keyOf) => {
 function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
   // 4칸 같은 문법: 전체 | OOS | OOC | 조치 완료 — 누르면 그 목록으로 (호버에 힌트가 파랑으로)
   const tiles = [
-    { label: '전체 알람', value: agg.total, color: null, hint: '알람 히스토리 보기 →', onClick: onTotal, hero: true },
+    { label: '전체 알람', value: agg.total, color: null, hint: '알람 히스토리 보기 →', onClick: onTotal },
     { label: 'OOS', value: agg.oos, color: OOS_HEX, hint: 'TRACE 알람 보기 →', onClick: onOos },
     { label: 'OOC', value: agg.ooc, color: OOC_HEX, hint: 'SUMMARY 알람 보기 →', onClick: onOoc },
     { label: '조치 완료', value: agg.mesSent, color: SKY_HEX, hint: 'Agent 분석 · 승인 보기 →', onClick: onAction },
@@ -73,7 +73,7 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
             {t.color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />}
             {t.label}
           </div>
-          <div className={`mt-1 font-mono font-extrabold leading-none tracking-[-.02em] text-navy ${t.hero ? 'text-[60px]' : 'text-[44px]'}`}>
+          <div className="mt-1 font-mono text-[44px] font-extrabold leading-none tracking-[-.02em] text-navy">
             {t.value}
           </div>
           <div className="mt-2.5 text-[12px] text-faint transition-colors group-hover:text-blue">{t.hint}</div>
@@ -217,6 +217,9 @@ function DashboardPage() {
 
   const hierarchy = data.summary.hierarchy ?? []
   const resetScope = { ...DEFAULT_SCOPE, ...(range ?? {}) }
+  // KPI 클릭 이동 — 지금 적용된 필터(기간·AREA·설비·챔버)를 쿼리로 넘겨
+  // 알람 히스토리가 대시보드와 같은 집계 범위로 열리게 한다.
+  const alarmsPath = (tab) => `/alarms?${scopeToParams(applied, { tab })}`
 
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
@@ -243,9 +246,9 @@ function DashboardPage() {
         <div className="mt-2 flex flex-col gap-5">
           <HeroBand
             agg={agg}
-            onTotal={() => navigate('/alarms?tab=ALL')}
-            onOos={() => navigate('/alarms?tab=TRACE')}
-            onOoc={() => navigate('/alarms?tab=SUMMARY')}
+            onTotal={() => navigate(alarmsPath('ALL'))}
+            onOos={() => navigate(alarmsPath('TRACE'))}
+            onOoc={() => navigate(alarmsPath('SUMMARY'))}
             onAction={() => navigate('/agent-runs')}
           />
 

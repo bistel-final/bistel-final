@@ -8,6 +8,7 @@ import {
   periodLabel,
   runErrorMessage,
 } from '../src/features/detection/detection-screen-state.js'
+import { ALL, DEFAULT_SCOPE, scopeFromParams, scopeToParams } from '../src/features/detection/components/scopeModel.js'
 import { getAlarm, searchTraces } from '../src/shared/api/detection.js'
 import { alarmTrendScope } from '../src/shared/trace/incidentTrace.js'
 import { formatMeasuredAt, selectedWaferChartModel } from '../src/shared/trace/traceModel.js'
@@ -90,7 +91,19 @@ assert.equal(finalTrend.limits.ET_REFL.spec_upper, 30)
 
 const alarmsPageSource = await readFile(new URL('../src/features/detection/pages/AlarmsPage.jsx', import.meta.url), 'utf8')
 const dashboardPageSource = await readFile(new URL('../src/features/detection/pages/DashboardPage.jsx', import.meta.url), 'utf8')
-assert.match(dashboardPageSource, /onTotal=\{\(\) => navigate\('\/alarms\?tab=ALL'\)\}/, '대시보드 전체 알람은 전체 히스토리로 이동해야 합니다')
+// 대시보드 KPI → 알람 히스토리 이동은 지금 적용된 필터를 쿼리로 넘겨 같은 집계 범위를 연다.
+assert.match(
+  dashboardPageSource,
+  /const alarmsPath = \(tab\) => `\/alarms\?\$\{scopeToParams\(applied, \{ tab \}\)\}`/,
+  '대시보드 KPI 이동은 적용된 필터를 쿼리로 넘겨야 합니다',
+)
+assert.match(dashboardPageSource, /onTotal=\{\(\) => navigate\(alarmsPath\('ALL'\)\)\}/, '대시보드 전체 알람은 전체 히스토리로 이동해야 합니다')
+assert.match(dashboardPageSource, /onOos=\{\(\) => navigate\(alarmsPath\('TRACE'\)\)\}/)
+assert.match(dashboardPageSource, /onOoc=\{\(\) => navigate\(alarmsPath\('SUMMARY'\)\)\}/)
+assert.match(alarmsPageSource, /useState\(\(\) => scopeFromParams\(searchParams\)\)/, '알람 히스토리는 쿼리로 받은 필터로 시작해야 합니다')
+assert.match(alarmsPageSource, /useState\(entryScope \?\? DEFAULT_SCOPE\)/)
+// 4개 KPI 타일은 같은 크기로 읽힌다 — 전체 알람만 크게 두지 않는다(멘토 피드백 2026-09-03).
+assert.doesNotMatch(dashboardPageSource, /text-\[60px\]|hero:/, 'KPI 타일 수치는 같은 폰트 크기여야 합니다')
 assert.match(alarmsPageSource, /ALARM_TABS = Object\.freeze\(\['ALL', 'TRACE', 'SUMMARY', 'R03'\]\)/)
 assert.match(alarmsPageSource, /전체 \(\{rows\.all\.length\}\)/)
 assert.match(alarmsPageSource, /\.\.\.\(tab === 'ALL' \? \['SOURCE'\] : \[\]\)/, '혼합 목록은 알람 source를 구분해야 합니다')
@@ -227,3 +240,34 @@ const layoutSource = await readFile(new URL('../src/app/Layout.jsx', import.meta
 assert.match(layoutSource, /border-r border-line bg-white/, '사이드바는 회사 포털과 같은 라이트 서피스여야 합니다')
 assert.match(layoutSource, /bg-tint-blue font-bold text-blue/, '활성 메뉴만 회사 청색 tint로 강조해야 합니다')
 assert.doesNotMatch(layoutSource, /bg-navy text-white/, '진한 네이비 사이드바로 되돌리면 안 됩니다')
+
+// ── 화면 간 필터 전달(대시보드 KPI → 알람 히스토리) ─────────────────
+const carried = scopeToParams(
+  { from: '2026-06-02', to: '2026-06-03', area: 'AREA1', equipment: 'EQP04', chamber: ALL },
+  { tab: 'TRACE' },
+)
+assert.equal(
+  carried.toString(),
+  new URLSearchParams({ tab: 'TRACE', from: '2026-06-02', to: '2026-06-03', area: 'AREA1', equipment: 'EQP04' }).toString(),
+  'KPI 이동 쿼리는 tab과 적용 필터를 함께 실어야 합니다',
+)
+assert.equal(carried.get('chamber'), null, '전체(미지정) 필터는 쿼리에 싣지 않아야 합니다')
+assert.deepEqual(
+  scopeFromParams(carried),
+  { from: '2026-06-02', to: '2026-06-03', area: 'AREA1', equipment: 'EQP04', chamber: ALL },
+  '알람 히스토리는 넘겨받은 필터를 그대로 복원해야 합니다',
+)
+assert.equal(scopeFromParams(new URLSearchParams({ tab: 'ALL' })), null, '필터 없는 진입은 화면 기본 동작을 유지해야 합니다')
+assert.deepEqual(
+  scopeFromParams(new URLSearchParams({ area: 'AREA2' })),
+  { ...DEFAULT_SCOPE, area: 'AREA2' },
+  '쿼리에 실린 키만 덮어쓰고 나머지는 기본값이어야 합니다',
+)
+// 쿼리로 진입한 필터를 바꾼 뒤 행을 눌러도 tab·source와 함께 필터가 유지된다.
+const afterSelect = scopeToParams({ ...DEFAULT_SCOPE, from: '2026-06-04' }, carried)
+afterSelect.set('source', 'TRACE')
+assert.equal(afterSelect.get('from'), '2026-06-04')
+assert.equal(afterSelect.get('area'), null, '해제된 필터는 URL에서 지워져야 합니다')
+assert.equal(afterSelect.get('tab'), 'TRACE', '탭 선택은 필터 갱신에도 유지되어야 합니다')
+
+console.log('detection-screen-state: 기간 필터·화면 간 필터 전달 계약 통과')

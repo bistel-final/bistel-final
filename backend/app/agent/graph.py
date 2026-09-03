@@ -977,6 +977,16 @@ def build_agent_graph(
                 terminal_evidence={
                     "route_consistency": completed.route.route_consistency,
                     "error_codes": [error.code for error in completed.errors],
+                    # LLM이 인용 가능했던 graph relation 정본. rehydration snapshot은
+                    # HITL run에만 남으므로, 완료 run 평가(C-6.2 evidence 유효성)가
+                    # 인용을 대조할 기준을 모든 run에 남긴다.
+                    "graph_relation_ids": sorted(
+                        {
+                            relation_id
+                            for item in completed.route.graph_evidence
+                            for relation_id in item.relation_ids
+                        }
+                    ),
                 },
             )
             latency_ms = run_latency_ms(connection, completed.run_id)
