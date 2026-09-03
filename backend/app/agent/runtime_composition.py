@@ -30,6 +30,7 @@ from app.agent.graph import (
     AgentGraphInputError,
     build_agent_graph,
 )
+from app.agent.level3_gate import production_level3_allowed, receipt_matches
 from app.agent.mes_delivery import production_ports as mes_production_ports
 from app.agent.public_read_model import to_public_approval
 from app.agent.public_schemas import PublicApprovalItem
@@ -211,8 +212,10 @@ def _production_resources(llm_model: str) -> RuntimeResources:
             publish_mes=mes.publish_mes,
             writeback_result=mes.writeback_result,
             cancel_mes=cancel_mes_port(transactions),
-            # V5-C-7.1 Level 3 ReAct 선택 port. Level 1·2 그래프는 사용하지 않는다.
-            react_select=react.production_port(),
+            # V5-C-7.1: 기본 Level 1·2 production 조립에는 selector 자체가 없다.
+            react_select=(
+                react.production_port() if settings.AGENT_LEVEL3_ENABLED else None
+            ),
         )
         graph = build_agent_graph(
             AgentGraphDependencies(
@@ -274,6 +277,10 @@ class AgentRuntime:
         model_config: Callable[[], str] = llm.configured_model,
         embedding_preflight: Callable[[], None] | None = None,
         autonomy_level: int = AGENT_AUTONOMY_LEVEL,
+        level3_enabled: bool = settings.AGENT_LEVEL3_ENABLED,
+        database_name: str = settings.POSTGRES_DB,
+        demo_ack: str | None = settings.AGENT_LEVEL3_DEMO_ACK,
+        demo_receipt_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self._factory = factory
         self._ask_factory = ask_factory
@@ -281,6 +288,15 @@ class AgentRuntime:
         self._model_config = model_config
         self._embedding_preflight = embedding_preflight
         self._autonomy_level = autonomy_level
+        self._level3_enabled = level3_enabled
+        self._database_name = database_name
+        self._demo_ack = demo_ack
+        self._demo_receipt_validator = demo_receipt_validator or (
+            lambda attempt_id: receipt_matches(
+                attempt_id,
+                evaluation_artifact_path=settings.AGENT_FAULT_EVAL_ARTIFACT_PATH,
+            )
+        )
         self._resources: RuntimeResources | None = None
         self._ask_service: ask.AgentAskService | None = None
         self._closed = False
@@ -289,6 +305,16 @@ class AgentRuntime:
     def _require_open(self) -> None:
         if self._closed:
             raise AgentRuntimeError("AGENT_RUNTIME_CLOSED")
+
+    def _require_autonomy_ready(self) -> None:
+        if self._autonomy_level not in (1, 2, 3) or not production_level3_allowed(
+            autonomy_level=self._autonomy_level,
+            enabled=self._level3_enabled,
+            database=self._database_name,
+            demo_ack=self._demo_ack,
+            receipt_validator=self._demo_receipt_validator,
+        ):
+            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
 
     def _build_or_get(self, model: str) -> RuntimeResources:
         self._require_open()
@@ -312,8 +338,7 @@ class AgentRuntime:
         """재개/종료 경로용 조립. LLM 원격 가용성을 다시 요구하지 않는다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2, 3):
-            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
+        self._require_autonomy_ready()
         try:
             model = self._model_config()
         except Exception as exc:
@@ -324,8 +349,7 @@ class AgentRuntime:
         """POST run DML 전에 configured model의 원격 준비까지 확인한다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2, 3):
-            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
+        self._require_autonomy_ready()
         try:
             model = self._llm_preflight()
         except Exception as exc:

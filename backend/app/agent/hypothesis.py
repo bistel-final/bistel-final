@@ -295,6 +295,8 @@ def generate_hypothesis(
     document_evidence: DocumentSearchToolResult | None,
     route: ResolvedIncidentRoute,
     extra_data_gaps: Sequence[str] = (),
+    *,
+    seed: int | None = None,
 ) -> HypothesisOutcome:
     """최대 2회 생성하고 구조·실제 근거 인용을 fail-closed 검증한다."""
 
@@ -342,6 +344,7 @@ def generate_hypothesis(
             completion = llm.chat_with_usage(
                 messages,
                 json_schema=HYPOTHESIS_RESPONSE_SCHEMA,
+                **({} if seed is None else {"seed": seed}),
             )
         except (
             llm.LlmNotReadyError,

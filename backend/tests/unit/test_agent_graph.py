@@ -59,6 +59,7 @@ from app.common.enums import (
     FaultHypothesis,
     RunStatus,
     Severity,
+    ToolCallStatus,
 )
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -173,6 +174,31 @@ class _FakeTools:
     ) -> ToolBudget:
         self.budget_connections.append(connection)
         return self.budget(run_id)
+
+    def history(self, run_id: str) -> tuple[Any, ...]:
+        names = {
+            "fdc": "get_fdc_summary",
+            "equipment": "get_equipment_context",
+            "documents": "search_documents",
+            "send_action": "send_action",
+        }
+        rows = []
+        for name, request in self.calls:
+            canonical = names.get(name)
+            if canonical is None:
+                continue
+            ok = not (
+                (name == "fdc" and not self._fdc_ok)
+                or (name == "equipment" and not self._equipment_ok)
+            )
+            rows.append(
+                SimpleNamespace(
+                    tool_name=canonical,
+                    input=request.model_dump(mode="json"),
+                    status=(ToolCallStatus.SUCCESS if ok else ToolCallStatus.ERROR),
+                )
+            )
+        return tuple(rows)
 
     def fdc_summary(self, run_id: str, request: Any) -> FdcSummaryToolResult:
         self.calls.append(("fdc", request))

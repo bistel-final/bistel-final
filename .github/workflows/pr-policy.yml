@@ -266,6 +266,10 @@ jobs:
           tests/unit/test_agent_diagnostics.py
           tests/unit/test_agent_evaluation_read_model.py
           tests/unit/test_agent_public_api.py
+          tests/unit/test_agent_comparison.py
+          tests/unit/test_agent_experiment.py
+          tests/unit/test_agent_level3_gate.py
+          tests/unit/test_agent_observation.py
           tests/unit/test_agent_react.py
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py

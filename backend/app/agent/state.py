@@ -1,8 +1,9 @@
 """LangGraph 실행 State와 내부 node port 계약 (`V5-C-2.1`).
 
-공개 API DTO가 아니다. 그래프가 끝나기 직전에 :class:`CompletedAgentState`로 20개
-canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 다섯 channel은 출력에서
-제거한다. ID·Enum·Tool payload는 ``app.common``의 정본을 그대로 재사용한다.
+공개 API DTO가 아니다. 그래프가 끝나기 직전에 :class:`CompletedAgentState`로
+canonical 출력 channel을 명시적으로 검증하고, 실행 중에만 필요한 internal
+channel은 출력에서 제거한다. ID·Enum·Tool payload는 ``app.common``의 정본을 그대로
+재사용한다.
 """
 
 from __future__ import annotations
@@ -307,7 +308,7 @@ class AgentGraphState(TypedDict, total=False):
 
 
 class CompletedAgentState(StateModel):
-    """성공 종료 직전에 명시적으로 호출하는 canonical 20-channel 검증기."""
+    """성공 종료 직전에 명시적으로 호출하는 canonical State 검증기."""
 
     run_id: NonEmptyId
     thread_id: NonEmptyId

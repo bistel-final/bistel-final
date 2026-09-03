@@ -26,6 +26,7 @@ from app.agent.repository import (
     ToolCallRow,
     count_tool_calls_for_budget,
     finalize_tool_call,
+    list_tool_calls,
     reserve_tool_call,
 )
 from app.agent.state import ToolBudget
@@ -281,6 +282,12 @@ class AuditedToolExecutor:
 
         with self.transactions() as connection:
             return self.budget_from_connection(connection, agent_run_id)
+
+    def history(self, agent_run_id: str) -> tuple[ToolCallRow, ...]:
+        """ReAct 중복·재시도 판정용 persisted call_seq 정본."""
+
+        with self.transactions() as connection:
+            return tuple(list_tool_calls(connection, agent_run_id))
 
     def budget_from_connection(
         self,

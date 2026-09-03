@@ -110,6 +110,33 @@ def test_openai_preserves_requested_json_schema(monkeypatch) -> None:
     ]
 
 
+def test_explicit_seed_is_forwarded_without_changing_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(llm, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "gpt-5.6-luna")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    requests: list[dict[str, object]] = []
+
+    def post(*args, **kwargs):
+        requests.append(kwargs["json"])
+        return _response()
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    llm.chat_with_usage([{"role": "user", "content": "q"}], seed=0)
+    llm.chat_with_usage([{"role": "user", "content": "q"}])
+    assert requests[0]["seed"] == 0
+    assert "seed" not in requests[1]
+
+
+@pytest.mark.parametrize("seed", [-1, True, 2_147_483_648])
+def test_invalid_seed_fails_before_http(monkeypatch, seed: object) -> None:
+    monkeypatch.setattr(llm.httpx, "post", lambda *_a, **_k: pytest.fail())
+    with pytest.raises(ValueError, match="seed"):
+        llm.chat_with_usage(
+            [{"role": "user", "content": "q"}],
+            seed=seed,  # type: ignore[arg-type]
+        )
+
+
 def test_reasoning_model_uses_gpt5_parameter_contract(monkeypatch) -> None:
     """gpt-5 계열: max_completion_tokens + reasoning_effort,
     temperature/max_tokens 없음 (보내면 400)."""

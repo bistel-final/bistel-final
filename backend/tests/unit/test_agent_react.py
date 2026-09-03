@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from app.agent import react
 from app.agent.state import LlmUsage
-from app.common.enums import AlarmSource, RunStatus
+from app.common.enums import AlarmSource, RunStatus, ToolCallStatus
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import DocumentHit, DocumentSearchToolResult
 from tests.unit import test_agent_graph as harness
@@ -50,7 +50,7 @@ def _context(**overrides: Any) -> react.ReactContext:
 
 def _selection(next_: str, **arguments: Any) -> react.ReactSelection:
     return react.ReactSelection(
-        thought="다음 근거가 필요하다",
+        rationale_summary="다음 근거가 필요하다",
         next=next_,
         arguments=react.ReactArguments(**arguments),
         stop_reason=None,
@@ -60,7 +60,11 @@ def _selection(next_: str, **arguments: Any) -> react.ReactSelection:
 class ScriptedReactPort:
     """테스트 대본: 호출 순서대로 선택을 돌려주고, 끝나면 stop."""
 
-    def __init__(self, *selections: react.ReactSelection, error_at: int | None = None):
+    def __init__(
+        self,
+        *selections: react.ReactSelection,
+        error_at: int | set[int] | None = None,
+    ):
         self._selections = list(selections)
         self._error_at = error_at
         self.contexts: list[react.ReactContext] = []
@@ -68,7 +72,9 @@ class ScriptedReactPort:
     def __call__(self, context: react.ReactContext) -> react.ReactSelectionOutcome:
         self.contexts.append(context)
         index = len(self.contexts)
-        if self._error_at is not None and index == self._error_at:
+        if (isinstance(self._error_at, int) and index == self._error_at) or (
+            isinstance(self._error_at, set) and index in self._error_at
+        ):
             raise react.ReactSelectionError("REACT_STRUCTURE_INVALID", usage=_usage())
         selection = self._selections.pop(0) if self._selections else _selection("stop")
         return react.ReactSelectionOutcome(selection=selection, llm_usage=_usage())
@@ -108,6 +114,12 @@ class ScriptedReactPort:
             "REACT_GUARD_QUERY_INVALID",
         ),
         (
+            _selection("search_documents", query="q"),
+            {},
+            False,
+            "REACT_GUARD_QUERY_REPEATED",
+        ),
+        (
             _selection("search_documents", query="drop <script>"),
             {},
             False,
@@ -135,10 +147,70 @@ def test_guard_selection_enforces_allowlist_budget_and_repetition(
     expected: str | None,
 ) -> None:
     context = _context(**context_overrides)
+    history = (
+        (
+            SimpleNamespace(
+                tool_name="search_documents",
+                input={"query": "q", "model_code": None},
+                status=ToolCallStatus.SUCCESS,
+            ),
+        )
+        if expected == "REACT_GUARD_QUERY_REPEATED"
+        else ()
+    )
     assert (
-        react.guard_selection(selection, context, equipment_fetched=equipment_fetched)
+        react.guard_selection(
+            selection,
+            context,
+            equipment_fetched=equipment_fetched,
+            tool_history=history,
+        )
         == expected
     )
+
+
+def test_failed_persisted_call_can_be_reselected() -> None:
+    failed = SimpleNamespace(
+        tool_name="search_documents",
+        input={"query": "q", "model_code": None},
+        status=ToolCallStatus.TIMEOUT,
+    )
+    assert (
+        react.guard_selection(
+            _selection("search_documents", query="q"),
+            _context(),
+            equipment_fetched=False,
+            tool_history=(failed,),
+        )
+        is None
+    )
+
+
+def test_failed_tool_observation_is_visible_to_the_next_selection() -> None:
+    context = react.build_context(
+        lot_id="LOT001",
+        chamber_id="EQP01-PM1",
+        representative_alarm=ALARM,
+        member_alarms=(ALARM,),
+        route=harness._route(),
+        allowed_lot_hist_ids=("LH-REP",),
+        fdc_results=(harness._fdc(),),
+        equipment=None,
+        documents=(),
+        remaining_tool_calls=4,
+        remaining_steps=5,
+        guard_rejections=0,
+        react_trace=(
+            {
+                "phase": "OBSERVED",
+                "tool": "search_documents",
+                "observation_summary": "실패 TIMEOUT",
+            },
+        ),
+    )
+    assert context.recent_tool_events == ("search_documents: 실패 TIMEOUT",)
+    payload = json.loads(react.build_react_select_messages(context)[1]["content"])
+    assert payload["observations"]["recent_tools"] == ["search_documents: 실패 TIMEOUT"]
 
 
 def test_schema_has_no_send_action_and_selection_rejects_unknown_tool() -> None:
@@ -149,7 +221,7 @@ def test_schema_has_no_send_action_and_selection_rejects_unknown_tool() -> None:
     with pytest.raises(ValidationError):
         react.ReactSelection.model_validate(
             {
-                "thought": "t",
+                "rationale_summary": "t",
                 "next": "send_action",
                 "arguments": {},
                 "stop_reason": None,
@@ -161,9 +233,10 @@ def test_select_next_step_maps_llm_structure_failure_and_records_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     completion = SimpleNamespace(
-        content=json.dumps({"thought": "t", "next": "fly", "arguments": {}}),
+        content=json.dumps({"rationale_summary": "t", "next": "fly", "arguments": {}}),
         model="fixture-model",
-        usage=SimpleNamespace(input_tokens=11, output_tokens=2),
+        prompt_tokens=11,
+        completion_tokens=2,
     )
     monkeypatch.setattr(react.llm, "chat_with_usage", lambda *a, **k: completion)
     with pytest.raises(react.ReactSelectionError) as info:
@@ -175,14 +248,15 @@ def test_select_next_step_maps_llm_structure_failure_and_records_usage(
     good = SimpleNamespace(
         content=json.dumps(
             {
-                "thought": "PH_FOCUS 이탈 스펙을 확인한다",
+                "rationale_summary": "PH_FOCUS 이탈 스펙을 확인한다",
                 "next": "search_documents",
                 "arguments": {"lot_hist_id": None, "query": "PH_FOCUS 관리 범위"},
                 "stop_reason": None,
             }
         ),
         model="fixture-model",
-        usage=SimpleNamespace(input_tokens=11, output_tokens=2),
+        prompt_tokens=11,
+        completion_tokens=2,
     )
     monkeypatch.setattr(react.llm, "chat_with_usage", lambda *a, **k: good)
     outcome = react.select_next_step(_context())
@@ -206,13 +280,15 @@ def test_prompt_and_trace_never_carry_raw_documents_or_secrets() -> None:
         seq=1,
         selection=_selection("search_documents", query="q" * 500),
         usage=_usage(),
-        observation="o" * 1000,
-        guard=None,
+        phase="OBSERVED",
+        observation_summary="o" * 1000,
     )
-    assert len(entry.thought) <= 200
-    assert entry.observation is not None and len(entry.observation) <= 300
-    assert entry.arguments_summary is not None and len(entry.arguments_summary) <= 200
-    assert entry.arguments_digest is not None and len(entry.arguments_digest) == 64
+    assert entry.rationale_summary is not None and len(entry.rationale_summary) <= 120
+    assert (
+        entry.observation_summary is not None and len(entry.observation_summary) <= 160
+    )
+    assert entry.argument_summary == "문서 검색"
+    assert entry.argument_digest is not None and len(entry.argument_digest) == 64
     assert entry.tool == "search_documents"
 
 
@@ -267,6 +343,7 @@ def test_level3_react_selects_tools_then_stops_and_records_trace(
 
     tool_names = [name for name, _ in tools.calls]
     assert tool_names[:1] == ["fdc"]
+    assert tool_names.count("fdc") == 1
     assert "documents" in tool_names and "equipment" in tool_names
     assert "send_action" in tool_names  # 조치는 규칙대로 그대로 나간다(WARNING → EMAIL)
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
@@ -278,12 +355,20 @@ def test_level3_react_selects_tools_then_stops_and_records_trace(
         "get_equipment_context",
         "stop",
     ]
-    assert trace[0]["observation"] is not None
-    assert trace[0]["arguments_summary"].startswith("query=")
-    assert all(step["guard"] is None for step in trace)
+    assert trace[0]["observation_summary"] is not None
+    assert trace[0]["argument_summary"] == "문서 검색"
+    assert all(step["guard_code"] is None for step in trace)
+    assert [step["phase"] for step in trace] == [
+        "OBSERVED",
+        "OBSERVED",
+        "STOPPED",
+    ]
     assert "generate_hypothesis" in ports.calls and "decide_action" in ports.calls
     # 선택 LLM 호출마다 컨텍스트 예산이 줄어드는지
     assert [c.remaining_steps for c in port.contexts] == [6, 5, 4]
+    assert tools.llm_usage == [
+        (10, 5)
+    ], "selector usage를 hypothesis run 합계에 섞지 않는다"
 
 
 def test_level3_guard_rejections_stop_after_limit_without_failing_run(
@@ -300,10 +385,13 @@ def test_level3_guard_rejections_stop_after_limit_without_failing_run(
 
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
     trace = finishes[0][1]["evidence"]["react_trace"]
-    assert [step["guard"] for step in trace] == [
+    assert [step["guard_code"] for step in trace[:2]] == [
         "REACT_GUARD_TARGET_NOT_ALLOWED",
         "REACT_GUARD_TARGET_NOT_ALLOWED",
     ]
+    assert trace[2]["phase"] == "STOPPED"
+    assert trace[2]["stop_reason"] == "GUARD_LIMIT"
+    assert trace[2]["degraded"] is True
     assert "documents" not in [name for name, _ in tools.calls]
     assert len(port.contexts) == 2
 
@@ -311,7 +399,7 @@ def test_level3_guard_rejections_stop_after_limit_without_failing_run(
 def test_level3_selection_failure_degrades_to_hypothesis_with_non_terminal_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    port = ScriptedReactPort(error_at=1)
+    port = ScriptedReactPort(error_at={1, 2})
     (graph, _tools, ports, finishes, _), _ = _level3(monkeypatch, port)
 
     harness._invoke(graph, level=3)
@@ -319,7 +407,12 @@ def test_level3_selection_failure_degrades_to_hypothesis_with_non_terminal_error
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
     evidence = finishes[0][1]["evidence"]
     assert "REACT_STRUCTURE_INVALID" in evidence["error_codes"]
-    assert evidence["react_trace"] == []
+    assert [step["phase"] for step in evidence["react_trace"]] == [
+        "REJECTED",
+        "STOPPED",
+    ]
+    assert evidence["react_trace"][-1]["stop_reason"] == "REACT_STRUCTURE_INVALID"
+    assert "REACT_DEGRADED_TO_HYPOTHESIS" in evidence["error_codes"]
     assert "generate_hypothesis" in ports.calls
 
 

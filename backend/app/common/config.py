@@ -152,10 +152,17 @@ CORS_ORIGINS = parse_cors_origins(
 # 에이전트 동작 설정
 # ---------------------------------------------------------------------
 AGENT_AUTONOMY_LEVEL = get_int_env("AGENT_AUTONOMY_LEVEL", "2", minimum=1)
+AGENT_LEVEL3_ENABLED = get_bool_env("AGENT_LEVEL3_ENABLED", "false")
+AGENT_LEVEL3_DEMO_ACK = os.getenv("AGENT_LEVEL3_DEMO_ACK", "").strip() or None
 
 if AGENT_AUTONOMY_LEVEL not in (1, 2, 3):
     raise RuntimeError(
         f"AGENT_AUTONOMY_LEVEL 은 1·2·3 중 하나여야 합니다: {AGENT_AUTONOMY_LEVEL}"
+    )
+if (AGENT_AUTONOMY_LEVEL == 3) != AGENT_LEVEL3_ENABLED:
+    raise RuntimeError(
+        "AUTONOMY_LEVEL_INVALID: Level 3는 AGENT_AUTONOMY_LEVEL=3과 "
+        "AGENT_LEVEL3_ENABLED=true를 함께 설정해야 합니다"
     )
 
 # 그래프 1회 실행의 총 실제 Tool 호출 상한(재시도 포함)
