@@ -34,6 +34,16 @@ fallback도 지원하지 않는다.
 일반 `config` 출력에는 치환된 secret이 포함될 수 있으므로 저장·공유하지 않는다. 검증은
 `config --quiet`, 서비스 확인은 `config --services`만 사용한다.
 
+## 저장소 파일 read-only mount
+
+Backend image는 `backend/app`·`scripts`·`artifacts`만 담는다. knowledge의 Neo4j graph
+marker(`infra/bootstrap/markers/neo4j_graph.neo4j.json`)와 analytics의
+manifest(`infra/bootstrap/manifests/*.json`)는 런타임에 `REPOSITORY_ROOT/infra/...`에서
+읽으므로 compose가 두 디렉터리를 `/workspace/infra/bootstrap/{markers,manifests}`에
+read-only bind한다. 없으면 Agent run이 `GRAPH_DEPENDENCY_ERROR`(load_incident)로 전부
+실패하고 Analytics validator도 manifest를 찾지 못한다. `e2e-runner`는 base backend를
+extends하므로 같은 mount를 받는다.
+
 ## Kafka network trust boundary
 
 INTERNAL·EXTERNAL listener는 모두 `SASL_PLAINTEXT/PLAIN`이다. 이는 **인증만 제공하고

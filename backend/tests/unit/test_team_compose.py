@@ -367,6 +367,18 @@ def test_backend_has_no_host_publish_and_rag_mount_is_read_only() -> None:
             "target": "/reports",
             "read_only": True,
         },
+        {
+            "type": "bind",
+            "source": "../../infra/bootstrap/markers",
+            "target": "/workspace/infra/bootstrap/markers",
+            "read_only": True,
+        },
+        {
+            "type": "bind",
+            "source": "../../infra/bootstrap/manifests",
+            "target": "/workspace/infra/bootstrap/manifests",
+            "read_only": True,
+        },
     ]
     assert backend["environment"]["EMBEDDING_MODEL_PATH"] == "/models/bge-m3"
     assert backend["healthcheck"]["test"][:2] == ["CMD", "python"]
