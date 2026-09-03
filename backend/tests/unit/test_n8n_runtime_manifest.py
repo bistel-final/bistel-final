@@ -305,7 +305,16 @@ def test_tracked_runtime_manifest_matches_workflow_sources() -> None:
         == rm.EXPECTED_N8N_PLATFORM_DIGESTS
     )
     assert manifest.runtime.database_type == "sqlite"
-    assert manifest.runtime.attestation == "local-rehearsal"
+    # 2026-09-02 공용 host(팀장 PC Docker · linux/amd64) 실측 tuple로 전환됐다.
+    assert manifest.runtime.attestation == "shared-host"
+    rm.validate_shared_host_runtime(
+        manifest,
+        database_type="sqlite",
+        execution_mode="regular",
+        main_worker="single",
+        platform="linux/amd64",
+        digest=rm.EXPECTED_N8N_PLATFORM_DIGESTS["linux/amd64"],
+    )
     assert manifest.runtime.execution_mode == "regular"
     assert manifest.runtime.main_worker == "single"
     assert manifest.task_runner.mode == "internal"

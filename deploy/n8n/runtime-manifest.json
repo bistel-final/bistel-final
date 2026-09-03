@@ -10,7 +10,7 @@
     }
   },
   "runtime": {
-    "attestation": "local-rehearsal",
+    "attestation": "shared-host",
     "database_type": "sqlite",
     "execution_mode": "regular",
     "main_worker": "single"
