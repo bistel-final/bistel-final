@@ -730,6 +730,7 @@ jobs:
           tests/unit/test_send_action_tool.py
           tests/unit/test_run_pending_incidents.py
           tests/unit/test_golden_flow.py
+          tests/unit/test_golden_flow_evidence_tools.py
           tests/unit/test_fault_5class.py
           -rs --no-header
 
