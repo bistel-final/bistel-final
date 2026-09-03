@@ -43,7 +43,6 @@ from app.common.tool_contracts import (  # noqa: E402
     ParameterSummaryItem,
     fail,
 )
-from app.detection.service import FdcSummaryService  # noqa: E402
 from scripts import compare_autonomy_levels as deterministic  # noqa: E402
 from scripts.rehearsal_postgres import (  # noqa: E402
     POSTGRES_RAG_IMAGE,
@@ -108,6 +107,8 @@ class CounterfactualBoundary:
         self.document_queries = []
 
     def fdc(self, payload: dict[str, Any]) -> FdcSummaryToolResult:
+        from app.detection.service import FdcSummaryService
+
         with self.engine.connect() as connection:
             result = FdcSummaryService(connection).get_fdc_summary(
                 str(payload["lot_hist_id"])

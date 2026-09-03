@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,6 +15,28 @@ from scripts import compare_autonomy_levels as runner
 
 REVISION = "a" * 40
 DIGEST = "b" * 64
+
+
+def test_executor_module_imports_do_not_load_detection_stack() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from scripts import compare_autonomy_levels, "
+                "observe_agent_justification; "
+                "assert 'sklearn' not in sys.modules; "
+                "assert 'numpy' not in sys.modules; "
+                "assert 'app.detection.service' not in sys.modules"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def _level_artifact() -> dict[str, Any]:

@@ -51,7 +51,6 @@ from app.common.tool_contracts import (  # noqa: E402
     FdcSummaryToolResult,
     fail,
 )
-from app.detection.service import FdcSummaryService  # noqa: E402
 from scripts.rehearsal_postgres import (  # noqa: E402
     POSTGRES_RAG_IMAGE,
     RehearsalEndpoint,
@@ -282,6 +281,8 @@ def _clear_agent_runtime(engine: Any) -> None:
 
 def _tool_boundary(engine: Any) -> ToolBoundary:
     def fdc(payload: dict[str, Any]) -> FdcSummaryToolResult:
+        from app.detection.service import FdcSummaryService
+
         with engine.connect() as connection:
             result = FdcSummaryService(connection).get_fdc_summary(
                 str(payload["lot_hist_id"])
