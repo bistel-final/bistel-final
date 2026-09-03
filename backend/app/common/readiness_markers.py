@@ -12,6 +12,23 @@ from typing import Any
 
 DATASET_EPOCH = "fdc_final_20260818"
 RUNTIME_DATABASE = "kosa_agent"
+#: live identity 검증에 허용되는 runtime database. marker·profile의 ``database``는
+#: bootstrap 정본인 ``kosa_agent``로 고정되지만, 격리 E2E(``kosa_agent_e2e``)는 같은
+#: marker를 mount한 채 다른 database 이름으로 기동한다(CM-5.2 step 3b readiness 6 PASS).
+ALLOWED_RUNTIME_DATABASES = frozenset({RUNTIME_DATABASE, "kosa_agent_e2e"})
+
+
+def expected_runtime_database(configured: object) -> str:
+    """설정된 ``POSTGRES_DB``가 allowlist에 있으면 그 값을, 아니면 정본을 기대한다.
+
+    allowlist 밖 값(오타·임의 DB)은 정본과 비교돼 CONTRACT_MISMATCH로 드러난다.
+    """
+
+    if isinstance(configured, str) and configured in ALLOWED_RUNTIME_DATABASES:
+        return configured
+    return RUNTIME_DATABASE
+
+
 PACKAGE_ROOT = Path(__file__).resolve().parent / "readiness_marker_bundle"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
