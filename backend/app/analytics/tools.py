@@ -49,7 +49,8 @@ _SQL_FENCE_RE = re.compile(r"```(?:sql)?\s*(.+?)```", re.IGNORECASE | re.DOTALL)
 #: 구별한다 (GET /analytics/evaluations 계약 필드). 규칙·스키마 힌트가 바뀜 때마다 bump.
 #:   v1 기본 6규칙 · v2 그룹 신호 3종 · v3 값 도메인 힌트+구성 질문 테이블 유도
 #:   v4 alarm-table value domains (alarm_type/chamber/equipment/parameter) + rule 5 (alarm type <-> table, id formats)
-PROMPT_VERSION = "text2sql-v4"
+#:   v5 rule 6: time-series questions ORDER BY the time column ascending (ordering is part of the answer)
+PROMPT_VERSION = "text2sql-v5"
 
 #: 값 도메인 힌트 대상 — 코드값 소속 혼동이 실측된 저카디널리티 컬럼만.
 #: (CD_AEI 사례: 값은 metrology.measure_type 소속인데 LLM 이
@@ -153,7 +154,8 @@ _SYSTEM_PROMPT = """당신은 반도체 FDC 데이터의 PostgreSQL Text2SQL 변
    확인한다. 식별자 형식: 챔버는 'EQP04-PM2' 처럼 설비-챔버 결합 문자열이며 chamber
    컬럼에, 설비는 'EQP04' 처럼 접두어만이며 equipment 컬럼에 있다 — 챔버 ID 를
    equipment 컬럼과 비교하지 않는다.
-6. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500).
+6. 결과 행이 많을 수 있으면 LIMIT 를 명시한다 (최대 500). 일자별·시간별 추이는
+   시간 컬럼 오름차순으로 정렬한다 — 정렬은 답의 일부다.
 7. 설명 없이 SQL 만 출력한다. 코드 블록(```sql) 사용 가능.
 
 사용 가능한 테이블:
