@@ -752,6 +752,11 @@ DB에서 해당 실행의 공개 상세를 읽어 저장된 종합 진단·citat
 `chamber_wafer_cum`, `source_system`만 포함한다. 이 확장은 화면 read model이며 기존
 chamber component allowlist와 Neo4j graph revision을 변경하지 않는다.
 
+이 endpoint는 V5 기준 Ontology의 유일한 chamber 조회 API이며 B(Knowledge) 소유다.
+`include_production_context`는 Neo4j 적재가 아닌 화면 전용 PostgreSQL read model 확장이다.
+Wafer의 `step_id`, `recipe_id`는 공정 이력 식별·표시 범위로 공개하며, 본 계약의 정본은
+API명세서 v3 작업본이다. v4 이하 문서는 이전 epoch 이력으로 사용하지 않는다.
+
 #### Response 200 — `ChamberGraphResponse`
 
 아래는 선택 chamber와 `label=Parameter` 관계를 축약해 보여 주는 계약 예시다.

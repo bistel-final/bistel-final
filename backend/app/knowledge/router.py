@@ -52,7 +52,9 @@ def get_chamber_relations(
         )
     # 기본 응답은 기존 4개 필드를 그대로 유지하고, opt-in metadata만 조건부로 보낸다.
     if response.production_context is None:
-        return JSONResponse(response.model_dump(exclude={"production_context"}))
+        return JSONResponse(
+            response.model_dump(mode="json", exclude={"production_context"})
+        )
     return response
 
 

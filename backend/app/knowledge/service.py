@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.common.tool_contracts import (
     DocumentHit,
     EquipmentContextToolResult,
@@ -131,6 +133,9 @@ class ProductionContextService:
             for relationship in graph.relationships
         }
 
+        def iso_datetime(value: object) -> object:
+            return value.isoformat() if isinstance(value, datetime) else value
+
         for row in rows:
             lot_id = str(row["lot_id"])
             lot_hist_id = str(row["lot_hist_id"])
@@ -161,8 +166,8 @@ class ProductionContextService:
                     "wafer_no": row["wafer_no"],
                     "step_id": row["step_id"],
                     "recipe_id": row["recipe_id"],
-                    "track_in_at": row["track_in_at"],
-                    "track_out_at": row["track_out_at"],
+                    "track_in_at": iso_datetime(row["track_in_at"]),
+                    "track_out_at": iso_datetime(row["track_out_at"]),
                     "chamber_wafer_cum": row["chamber_wafer_cum"],
                     "source_system": "POSTGRES_LOT_HISTORY",
                 },
