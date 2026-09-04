@@ -51,7 +51,15 @@ jobs:
       POSTGRES_DB: fdc_final
       APP_DB_USER: kosa_app               # config import 시 필수 검사 — 값만 맞추고 실제 사용하지 않는다
       READONLY_USER: kosa_readonly
-      READONLY_PASSWORD: ${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD }}
+      # secret missing -> dummy, so config import (rejects empty) does not kill the freshness test.
+      # The real evaluation step checks for the dummy in 'Verify secrets present' and stops.
+      READONLY_PASSWORD: ${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD || 'ci-not-a-secret' }}
+      # Remaining vars app.common.config requires at import (same dummies as pr-policy).
+      # Evaluation never connects to Neo4j/n8n; cross-check becomes SKIPPED and is not graded.
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-not-a-secret
+      NEO4J_URI: bolt://localhost:7687
+      N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
       LLM_PROVIDER: openai
       LLM_MODEL_MAIN: gpt-5.6-luna
       LLM_TEMPERATURE: "0.1"
@@ -97,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${LLM_API_KEY}" || { echo "::error::ANALYTICS_EVAL_LLM_API_KEY 시크릿이 없습니다"; exit 1; }
-          test -n "${READONLY_PASSWORD}" || { echo "::error::ANALYTICS_EVAL_READONLY_PASSWORD 시크릿이 없습니다"; exit 1; }
+          test "${READONLY_PASSWORD}" != "ci-not-a-secret" || { echo "::error::ANALYTICS_EVAL_READONLY_PASSWORD secret is not set"; exit 1; }
 
       - name: Run Text2SQL evaluation
         if: steps.fresh.outcome == 'failure'
