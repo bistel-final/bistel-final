@@ -742,6 +742,20 @@ DB에서 해당 실행의 공개 상세를 읽어 저장된 종합 진단·citat
 |---|---|---:|---|
 | `label` | string | 아니오 | chamber component allowlist: `Area, ProcessStep, EquipmentModel, Equipment, Chamber, Parameter` |
 | `limit` | integer | 아니오 | 기본 500, 1..1000 |
+| `include_production_context` | boolean | 아니오 | 기본 `false`. `true`면 선택 chamber의 PostgreSQL `lot_history` 최신 1,000건을 화면용 `Lot`·`Wafer` 관계 노드로 추가한다. 절단 여부는 `production_context.truncated`으로 확인한다. Neo4j 적재·수정이나 Agent routing 판단에는 사용하지 않는다. |
+
+`include_production_context=true`일 때만 응답 node label에 `Lot`, `Wafer`가 추가될 수 있다.
+이력은 최신 순 최대 1,000건만 반환하며, `production_context.returned_count`와
+`production_context.truncated`으로 반환 건수와 절단 여부를 알린다.
+`Lot.properties`에는 `lot_id`, `source_system`, `Wafer.properties`에는 `lot_hist_id`,
+`lot_id`, `wafer_id`, `wafer_no`, `step_id`, `recipe_id`, `track_in_at`, `track_out_at`,
+`chamber_wafer_cum`, `source_system`만 포함한다. 이 확장은 화면 read model이며 기존
+chamber component allowlist와 Neo4j graph revision을 변경하지 않는다.
+
+이 endpoint는 V5 기준 Ontology의 유일한 chamber 조회 API이며 B(Knowledge) 소유다.
+`include_production_context`는 Neo4j 적재가 아닌 화면 전용 PostgreSQL read model 확장이다.
+Wafer의 `step_id`, `recipe_id`는 공정 이력 식별·표시 범위로 공개하며, 본 계약의 정본은
+API명세서 v3 작업본이다. v4 이하 문서는 이전 epoch 이력으로 사용하지 않는다.
 
 #### Response 200 — `ChamberGraphResponse`
 

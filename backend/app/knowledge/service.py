@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.common.tool_contracts import (
     DocumentHit,
     EquipmentContextToolResult,
@@ -9,7 +11,11 @@ from app.common.tool_contracts import (
 from app.knowledge.document_search import DocumentSearchRepository
 from app.knowledge.embedding import embed_query
 from app.knowledge.graph_query import GraphQueryRepository
-from app.knowledge.repository import ChamberGraphRepository, DocumentRepository
+from app.knowledge.repository import (
+    ChamberGraphRepository,
+    DocumentRepository,
+    LotHistoryContextRepository,
+)
 from app.knowledge.schemas import (
     ChamberRelationResponse,
     DocumentChunkItem,
@@ -98,6 +104,96 @@ class GraphService:
                 "nodes": projection.nodes,
                 "relationships": projection.relationships,
                 "graph_revision": projection.graph_revision,
+            }
+        )
+
+
+class ProductionContextService:
+    """LOT/WAFER의 실제 이력을 읽어 화면 관계 노드로 projection한다.
+
+    Agent의 routing 판단이나 Neo4j ontology를 바꾸지 않는다. ``lot_hist_id``는
+    wafer의 특정 공정 처리 건을 식별하므로 같은 wafer가 다른 step을 거친 기록도
+    안전하게 구분된다.
+    """
+
+    def __init__(self, repository: LotHistoryContextRepository) -> None:
+        self._repository = repository
+
+    def merge_chamber_history(
+        self,
+        graph: ChamberRelationResponse,
+        chamber_id: str,
+    ) -> ChamberRelationResponse:
+        rows = self._repository.list_chamber_history(chamber_id)
+        truncated = len(rows) > 1000
+        rows = rows[:1000]
+        nodes = {node.id: node.model_dump() for node in graph.nodes}
+        relationships = {
+            relationship.id: relationship.model_dump()
+            for relationship in graph.relationships
+        }
+
+        def iso_datetime(value: object) -> object:
+            return value.isoformat() if isinstance(value, datetime) else value
+
+        for row in rows:
+            lot_id = str(row["lot_id"])
+            lot_hist_id = str(row["lot_hist_id"])
+            lot_node_id = f"Lot:{lot_id}"
+            wafer_node_id = f"Wafer:{lot_hist_id}"
+            nodes.setdefault(
+                lot_node_id,
+                {
+                    "id": lot_node_id,
+                    "label": "Lot",
+                    "business_id": lot_id,
+                    "display_name": lot_id,
+                    "properties": {
+                        "lot_id": lot_id,
+                        "source_system": "POSTGRES_LOT_HISTORY",
+                    },
+                },
+            )
+            nodes[wafer_node_id] = {
+                "id": wafer_node_id,
+                "label": "Wafer",
+                "business_id": str(row["wafer_id"]),
+                "display_name": str(row["wafer_id"]),
+                "properties": {
+                    "lot_hist_id": lot_hist_id,
+                    "lot_id": lot_id,
+                    "wafer_id": str(row["wafer_id"]),
+                    "wafer_no": row["wafer_no"],
+                    "step_id": row["step_id"],
+                    "recipe_id": row["recipe_id"],
+                    "track_in_at": iso_datetime(row["track_in_at"]),
+                    "track_out_at": iso_datetime(row["track_out_at"]),
+                    "chamber_wafer_cum": row["chamber_wafer_cum"],
+                    "source_system": "POSTGRES_LOT_HISTORY",
+                },
+            }
+            relationships[f"PG-CONTAINS-{lot_hist_id}"] = {
+                "id": f"PG-CONTAINS-{lot_hist_id}",
+                "type": "CONTAINS",
+                "source": lot_node_id,
+                "target": wafer_node_id,
+            }
+            relationships[f"PG-PROCESSED-IN-{lot_hist_id}"] = {
+                "id": f"PG-PROCESSED-IN-{lot_hist_id}",
+                "type": "PROCESSED_IN",
+                "source": wafer_node_id,
+                "target": f"Chamber:{chamber_id}",
+            }
+
+        return ChamberRelationResponse.model_validate(
+            {
+                **graph.model_dump(),
+                "nodes": list(nodes.values()),
+                "relationships": list(relationships.values()),
+                "production_context": {
+                    "returned_count": len(rows),
+                    "truncated": truncated,
+                },
             }
         )
 

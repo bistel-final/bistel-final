@@ -336,6 +336,8 @@ const legacyGraph = await knowledge.getChamberRelations('EQP01-PM1')
 assert.equal(captures.at(-1).url, '/relations/chambers/EQP01-PM1')
 assert.equal(legacyGraph.chamber.chamber_id, CORE_CHAMBER_GRAPH.context.chamber_id)
 assert.equal(legacyGraph.equipment.equipment_id, CORE_CHAMBER_GRAPH.context.equipment_id)
+await knowledge.getChamberRelationsCore('EQP01-PM1', { include_production_context: true })
+assert.deepEqual(captures.at(-1).params, { include_production_context: true }, '생산 이력 context는 canonical chamber API의 명시적 query로만 요청해야 합니다')
 
 assert.throws(
   () => agent.createRun({ alarm: { source: 'TRACE', alarm_id: 'TAL-0001', extra: true } }),
