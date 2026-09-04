@@ -18,6 +18,7 @@ import {
   hasDisplayableRelationships,
   mergeOntologyGraphs,
   lotOptionsForChamber,
+  productionLotContexts,
   waferOptionsForLot,
   ontologyAlarmScope,
   publicNodeDetails,
@@ -452,20 +453,24 @@ function OntologyPage() {
       ? { ...state.graph, root_node_id: rootNodeId }
       : state.graph
   }, [explicitChamber, state.graph])
+  const lotContexts = useMemo(
+    () => productionLotContexts(rawGraph),
+    [rawGraph],
+  )
   const lotOptions = useMemo(
-    () => lotOptionsForChamber(rawGraph, explicitChamber),
-    [rawGraph, explicitChamber],
+    () => lotOptionsForChamber(rawGraph, explicitChamber, lotContexts),
+    [rawGraph, explicitChamber, lotContexts],
   )
   // LOT / WAFER 탭은 빈 전체 구조를 다시 보여 주지 않는다. 생산 이력이 준비되면
   // selector 최상단 LOT를 유효 선택값으로 사용해 실제 공정 경로 projection을 바로 연다.
   const activeLotId = selectedLot || (activeBrowseMode === 'lot' ? lotOptions[0]?.id ?? '' : '')
   const baseGraph = useMemo(
-    () => buildLotContextGraph(rawGraph, activeLotId, explicitChamber, selectedWafer),
-    [rawGraph, activeLotId, explicitChamber, selectedWafer],
+    () => buildLotContextGraph(rawGraph, activeLotId, explicitChamber, selectedWafer, lotContexts),
+    [rawGraph, activeLotId, explicitChamber, selectedWafer, lotContexts],
   )
   const waferOptions = useMemo(
-    () => waferOptionsForLot(rawGraph, activeLotId, explicitChamber),
-    [rawGraph, activeLotId, explicitChamber],
+    () => waferOptionsForLot(rawGraph, activeLotId, explicitChamber, lotContexts),
+    [rawGraph, activeLotId, explicitChamber, lotContexts],
   )
   const selectedLotNode = useMemo(
     () => baseGraph?.nodes.find((node) => node.label === 'Lot' && node.business_id === activeLotId) ?? null,

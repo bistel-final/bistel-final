@@ -326,19 +326,24 @@ export function mergeOntologyGraphs(graphs, rootNodeId = null) {
   }
 }
 
-const productionLots = (graph) => {
+export const productionLotContexts = (graph) => {
   const normalized = normalizeOntologyGraph(graph)
   if (!normalized) return []
   const nodesById = new Map(normalized.nodes.map((node) => [node.id, node]))
   const wafersByLot = new Map()
+  const chamberIdsByWafer = new Map()
+  for (const relationship of normalized.relationships) {
+    if (relationship.type !== 'PROCESSED_IN') continue
+    const chamberIds = chamberIdsByWafer.get(relationship.source) ?? []
+    chamberIds.push(relationship.target)
+    chamberIdsByWafer.set(relationship.source, chamberIds)
+  }
   for (const relationship of normalized.relationships) {
     if (relationship.type !== 'CONTAINS') continue
     const lot = nodesById.get(relationship.source)
     const wafer = nodesById.get(relationship.target)
     if (lot?.label !== 'Lot' || wafer?.label !== 'Wafer') continue
-    const chamberIds = normalized.relationships
-      .filter((item) => item.type === 'PROCESSED_IN' && item.source === wafer.id)
-      .map((item) => item.target)
+    const chamberIds = chamberIdsByWafer.get(wafer.id) ?? []
     const lotWafers = wafersByLot.get(lot.id) ?? new Map()
     const waferKey = String(wafer.properties?.wafer_id ?? wafer.business_id)
     const existing = lotWafers.get(waferKey) ?? { node: wafer, chamberIds: new Set(), historyNodesByChamber: new Map() }
@@ -386,8 +391,8 @@ const processHistoryForWafers = (wafers) => {
   ))
 }
 
-export function lotOptionsForChamber(graph, chamberId = '') {
-  const options = productionLots(graph)
+export function lotOptionsForChamber(graph, chamberId = '', lotContexts = productionLotContexts(graph)) {
+  const options = lotContexts
     .filter(({ wafers }) => !chamberId || wafers.some(({ chamberIds }) => chamberIds.has(`Chamber:${chamberId}`)))
     .map(({ lot }) => ({ id: lot.business_id, label: lot.display_name }))
   return options.sort((a, b) => a.id.localeCompare(b.id))
@@ -395,10 +400,10 @@ export function lotOptionsForChamber(graph, chamberId = '') {
 
 // Wafer는 LOT를 선택한 뒤에만 탐색한다. Chamber가 함께 지정된 경우에는 현재
 // 그래프에 표시 가능한 해당 Chamber 처리 이력만 남긴다.
-export function waferOptionsForLot(graph, lotId = '', chamberId = '') {
+export function waferOptionsForLot(graph, lotId = '', chamberId = '', lotContexts = productionLotContexts(graph)) {
   if (!lotId) return []
   const chamberNodeId = chamberId ? `Chamber:${chamberId}` : ''
-  const lotContext = productionLots(graph).find(({ lot }) => lot.business_id === lotId)
+  const lotContext = lotContexts.find(({ lot }) => lot.business_id === lotId)
   if (!lotContext) return []
   return lotContext.wafers
     .filter(({ chamberIds }) => !chamberNodeId || chamberIds.has(chamberNodeId))
@@ -505,11 +510,17 @@ const staticGraphForLotRoute = (normalized, lots) => {
 // 전체 화면은 생산 이력을 숨긴다. Chamber를 고르면 해당 Chamber를 거친 LOT을 요약 node로
 // 보여 주고, LOT을 고르면 그 LOT의 실제 wafer를 펼친다. 원본 lot_history row는 그대로
 // 유지되며 이 함수는 read model의 화면 projection만 만든다.
-export function buildLotContextGraph(graph, selectedLotId = '', selectedChamberId = '', selectedWaferId = '') {
+export function buildLotContextGraph(
+  graph,
+  selectedLotId = '',
+  selectedChamberId = '',
+  selectedWaferId = '',
+  lotContexts = productionLotContexts(graph),
+) {
   const normalized = normalizeOntologyGraph(graph)
   if (!normalized) return null
   const chamberNodeId = selectedChamberId ? `Chamber:${selectedChamberId}` : ''
-  const selectedLots = productionLots(normalized)
+  const selectedLots = lotContexts
     .filter(({ lot }) => !selectedLotId || lot.business_id === selectedLotId)
     .filter(({ wafers }) => !chamberNodeId || wafers.some(({ chamberIds }) => chamberIds.has(chamberNodeId)))
   // Chamber 단계에서는 같은 설비의 형제 Chamber를 함께 보지만, LOT까지 선택하면
@@ -563,15 +574,12 @@ export function buildLotContextGraph(graph, selectedLotId = '', selectedChamberI
       const routeChambers = staticGraph.nodes
         .filter((node) => node.label === 'Chamber')
         .sort((left, right) => Number(left.properties?.lot_route_order ?? 999) - Number(right.properties?.lot_route_order ?? 999))
-      const firstChamber = routeChambers[0]
-      if (firstChamber) {
-        routeChambers.forEach((chamber) => {
-          relationships.set(`VIEW-LOT-ROUTE-${lot.id}-${chamber.id}`, {
-            id: `VIEW-LOT-ROUTE-${lot.id}-${chamber.id}`,
-            type: 'PROCESSED_IN', source: lot.id, target: chamber.id,
-          })
+      routeChambers.forEach((chamber) => {
+        relationships.set(`VIEW-LOT-ROUTE-${lot.id}-${chamber.id}`, {
+          id: `VIEW-LOT-ROUTE-${lot.id}-${chamber.id}`,
+          type: 'PROCESSED_IN', source: lot.id, target: chamber.id,
         })
-      }
+      })
       // 알람은 lot_hist_id(개별 처리 이력)를 가리킬 수 있다. 동일 물리 Wafer의
       // route는 합쳐 보여 주되, 선택 node에는 알람이 발생한 Chamber를 보존한다.
       const selectedWafer = wafers.flatMap(({ node, chamberIds, historyNodesByChamber }) => [

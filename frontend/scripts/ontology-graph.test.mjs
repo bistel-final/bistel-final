@@ -20,8 +20,10 @@ import {
   normalizeOntologyGraph,
   ontologyAlarmScope,
   orientOntologyRelationships,
+  productionLotContexts,
   publicNodeDetails,
   summarizeOntologyAlarms,
+  waferOptionsForLot,
 } from '../src/shared/graph/ontology-graph.js'
 import { parseOntologyFocus, resolveOntologyFocus } from '../src/features/knowledge/ontology-focus-state.js'
 
@@ -241,8 +243,14 @@ const lotContextGraph = {
     { relation_id: 'PG-P-2', type: 'PROCESSED_IN', from_node_id: 'Wafer:LH-2', to_node_id: 'Chamber:EQP01-PM2' },
   ],
 }
-assert.deepEqual(lotOptionsForChamber(lotContextGraph).map((lot) => lot.id), ['LOT010'])
-assert.deepEqual(lotOptionsForChamber(lotContextGraph, 'EQP01-PM2').map((lot) => lot.id), ['LOT010'])
+const lotContexts = productionLotContexts(lotContextGraph)
+assert.deepEqual(lotOptionsForChamber(lotContextGraph, '', lotContexts).map((lot) => lot.id), ['LOT010'])
+assert.deepEqual(lotOptionsForChamber(lotContextGraph, 'EQP01-PM2', lotContexts).map((lot) => lot.id), ['LOT010'])
+assert.deepEqual(
+  waferOptionsForLot(lotContextGraph, 'LOT010', '', lotContexts).map((wafer) => wafer.id),
+  ['Wafer:LH-1'],
+  'LOT 옵션·Wafer 옵션·그래프 projection은 동일한 생산 이력 인덱스를 공유해야 합니다',
+)
 const lotSummary = buildLotContextGraph(lotContextGraph)
 assert.equal(lotSummary.nodes.filter((node) => ['Lot', 'Wafer'].includes(node.label)).length, 0, '첫 진입에는 생산 이력 node를 표시하지 않아야 합니다')
 const chamberScopedGraph = buildLotContextGraph(lotContextGraph, '', 'EQP01-PM1')

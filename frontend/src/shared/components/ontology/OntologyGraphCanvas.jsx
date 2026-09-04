@@ -350,8 +350,7 @@ function OntologyGraphCanvas({
   const edges = useMemo(() => {
     const nodesById = new Map((normalized?.nodes ?? []).map((node) => [node.id, node]))
     const hasWaferContext = (normalized?.nodes ?? []).some((node) => node.label === 'Wafer')
-    const isWaferSelection = (normalized?.nodes ?? []).filter((node) => node.label === 'Wafer').length === 1 &&
-      (normalized?.nodes ?? []).some((node) => node.properties?.lot_route_order != null)
+    const isWaferSelection = Boolean(waferSelectionNodeId)
     const firstRelationByType = new Map()
     for (const relationship of presentationRelationships) {
       if (!firstRelationByType.has(relationship.type)) firstRelationByType.set(relationship.type, relationship.id)
@@ -416,7 +415,7 @@ function OntologyGraphCanvas({
           labelBgStyle: { fill: '#ffffff', fillOpacity: isDimmed ? 0.2 : 0.92 },
         }
       })
-  }, [activeRelations, hasFocus, normalized, presentationRelationships])
+  }, [activeRelations, hasFocus, normalized, presentationRelationships, waferSelectionNodeId])
 
   return (
     <div className={`flex w-full flex-col gap-2.5 ${modalViewport ? 'h-full min-h-0' : ''}`} data-testid="ontology-graph-canvas">
