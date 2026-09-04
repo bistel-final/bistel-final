@@ -31,11 +31,17 @@ class GraphRelationship(ApiModel):
     target: NonEmptyId
 
 
+class ProductionContextMeta(ApiModel):
+    returned_count: int = Field(ge=0)
+    truncated: bool
+
+
 class ChamberRelationResponse(ApiModel):
     root_node_id: NonEmptyId
     nodes: list[GraphNode]
     relationships: list[GraphRelationship]
     graph_revision: NonEmptyId
+    production_context: ProductionContextMeta | None = None
 
 
 # ==================

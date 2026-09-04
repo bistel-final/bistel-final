@@ -10783,6 +10783,31 @@
                     "type": "array"
                   }
                 },
+                "production_context": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "returned_count": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "truncated": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
                 "relationships": {
                   "nullable": false,
                   "required": true,

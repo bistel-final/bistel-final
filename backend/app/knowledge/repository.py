@@ -9,7 +9,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.common.config import TOOL_DB_TIMEOUT_SEC
 from app.common.neo4j import get_neo4j_driver
+from app.common.tool_timeouts import apply_postgres_statement_timeout
 from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_revision import (
     graph_database_name,
@@ -93,6 +95,7 @@ class LotHistoryContextRepository:
           FROM lot_history
          WHERE chamber_id = :chamber_id
          ORDER BY track_in_at DESC NULLS LAST, lot_hist_id DESC
+         LIMIT 1001
         """
     )
 
@@ -105,6 +108,11 @@ class LotHistoryContextRepository:
     ) -> list[Mapping[str, Any]]:
         connection = self._engine.connect()
         try:
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            apply_postgres_statement_timeout(
+                connection,
+                timeout_seconds=TOOL_DB_TIMEOUT_SEC,
+            )
             return list(
                 connection.execute(
                     self.CHAMBER_CONTEXT_QUERY,

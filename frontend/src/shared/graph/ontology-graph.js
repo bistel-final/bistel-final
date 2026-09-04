@@ -54,7 +54,7 @@ export const PUBLIC_NODE_PROPERTIES = Object.freeze({
   Lot: Object.freeze(['lot_id']),
   Wafer: Object.freeze([
     'lot_hist_id', 'lot_id', 'wafer_id', 'wafer_no', 'step_id', 'recipe_id',
-    'track_in_at', 'track_out_at', 'chamber_wafer_cum', 'wafer_count', 'alarm_count', 'source_system',
+    'track_in_at', 'track_out_at', 'chamber_wafer_cum',
   ]),
 })
 
@@ -986,16 +986,7 @@ export function layoutOntologyNodes(graph) {
     }))
   }
   if (normalized.nodes.some((node) => node.label === 'Lot')) {
-    if (
-      !normalized.nodes.some((node) => node.label === 'Wafer') &&
-      normalized.nodes.filter((node) => node.label === 'Chamber').some((node) => node.properties?.lot_route_order != null)
-    ) {
-      return lotRouteLayout(normalized)
-    }
-    if (
-      normalized.nodes.some((node) => node.label === 'Wafer') &&
-      normalized.nodes.filter((node) => node.label === 'Chamber').some((node) => node.properties?.lot_route_order != null)
-    ) {
+    if (normalized.nodes.filter((node) => node.label === 'Chamber').some((node) => node.properties?.lot_route_order != null)) {
       return lotRouteLayout(normalized)
     }
     if (!normalized.nodes.some((node) => node.label === 'Wafer')) {

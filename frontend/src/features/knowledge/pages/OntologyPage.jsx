@@ -310,7 +310,7 @@ function NodeDetail({ graph, node, isSelected, alarmState, onRetryAlarms }) {
             ))}
           </div>
         ) : (
-          <div className="text-[11.5px] text-g2">No process history available.</div>
+          <div className="text-[11.5px] text-g2">추가 공개 속성이 없습니다.</div>
         )}
       </div>
       <div className="border-t border-cell-line pt-3">

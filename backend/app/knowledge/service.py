@@ -123,6 +123,8 @@ class ProductionContextService:
         chamber_id: str,
     ) -> ChamberRelationResponse:
         rows = self._repository.list_chamber_history(chamber_id)
+        truncated = len(rows) > 1000
+        rows = rows[:1000]
         nodes = {node.id: node.model_dump() for node in graph.nodes}
         relationships = {
             relationship.id: relationship.model_dump()
@@ -180,10 +182,13 @@ class ProductionContextService:
 
         return ChamberRelationResponse.model_validate(
             {
-                "root_node_id": graph.root_node_id,
+                **graph.model_dump(),
                 "nodes": list(nodes.values()),
                 "relationships": list(relationships.values()),
-                "graph_revision": graph.graph_revision,
+                "production_context": {
+                    "returned_count": len(rows),
+                    "truncated": truncated,
+                },
             }
         )
 

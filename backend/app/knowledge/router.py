@@ -29,6 +29,7 @@ router = APIRouter(tags=["Knowledge"])
 @router.get(
     "/relations/chambers/{chamber_id}",
     response_model=ChamberRelationResponse,
+    response_model_exclude_none=True,
 )
 def get_chamber_relations(
     chamber_id: str,
