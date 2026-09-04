@@ -124,7 +124,10 @@ class ProductionContextService:
     ) -> ChamberRelationResponse:
         rows = self._repository.list_chamber_history(chamber_id)
         nodes = {node.id: node.model_dump() for node in graph.nodes}
-        relationships = {relationship.id: relationship.model_dump() for relationship in graph.relationships}
+        relationships = {
+            relationship.id: relationship.model_dump()
+            for relationship in graph.relationships
+        }
 
         for row in rows:
             lot_id = str(row["lot_id"])
@@ -138,7 +141,10 @@ class ProductionContextService:
                     "label": "Lot",
                     "business_id": lot_id,
                     "display_name": lot_id,
-                    "properties": {"lot_id": lot_id, "source_system": "POSTGRES_LOT_HISTORY"},
+                    "properties": {
+                        "lot_id": lot_id,
+                        "source_system": "POSTGRES_LOT_HISTORY",
+                    },
                 },
             )
             nodes[wafer_node_id] = {

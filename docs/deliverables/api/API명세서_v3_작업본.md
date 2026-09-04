@@ -744,6 +744,12 @@ DB에서 해당 실행의 공개 상세를 읽어 저장된 종합 진단·citat
 | `limit` | integer | 아니오 | 기본 500, 1..1000 |
 | `include_production_context` | boolean | 아니오 | 기본 `false`. `true`면 선택 chamber의 PostgreSQL `lot_history` 전체를 화면용 `Lot`·`Wafer` 관계 노드로 추가한다. Neo4j 적재·수정이나 Agent routing 판단에는 사용하지 않는다. |
 
+`include_production_context=true`일 때만 응답 node label에 `Lot`, `Wafer`가 추가될 수 있다.
+`Lot.properties`에는 `lot_id`, `source_system`, `Wafer.properties`에는 `lot_hist_id`,
+`lot_id`, `wafer_id`, `wafer_no`, `step_id`, `recipe_id`, `track_in_at`, `track_out_at`,
+`chamber_wafer_cum`, `source_system`만 포함한다. 이 확장은 화면 read model이며 기존
+chamber component allowlist와 Neo4j graph revision을 변경하지 않는다.
+
 #### Response 200 — `ChamberGraphResponse`
 
 아래는 선택 chamber와 `label=Parameter` 관계를 축약해 보여 주는 계약 예시다.

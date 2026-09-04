@@ -146,6 +146,17 @@ export function summarizeOntologyAlarms(alarms) {
 
 const nodeById = (graph, nodeId) => graph.nodes.find((node) => node.id === nodeId)
 
+const uniqueAlarmHistoryRefs = (refs) => [...new Map(
+  refs
+    .filter((ref) => ref?.chamber_id && ref?.lot_hist_id)
+    .map((ref) => {
+      const normalized = { chamber_id: String(ref.chamber_id), lot_hist_id: String(ref.lot_hist_id) }
+      return [`${normalized.chamber_id}\u0000${normalized.lot_hist_id}`, normalized]
+    }),
+).values()].sort((left, right) => (
+  left.chamber_id.localeCompare(right.chamber_id) || left.lot_hist_id.localeCompare(right.lot_hist_id)
+))
+
 export function ontologyAlarmScope(graph, node) {
   const normalized = normalizeOntologyGraph(graph)
   if (!normalized || !node) return null
@@ -154,38 +165,52 @@ export function ontologyAlarmScope(graph, node) {
     return { requests: [{ sensor_id: node.business_id }], basis: `파라미터 ${node.business_id}` }
   }
   if (node.label === 'Wafer') {
-    const focusChamberId = node.properties?.alarm_focus_chamber_id
-    const chamber = normalized.relationships
+    const lotId = node.properties?.lot_id
+    const historyRefs = (Array.isArray(node.properties?.alarm_history_refs)
+      ? node.properties.alarm_history_refs
+      : [])
+      .map((ref) => ({ chamber_id: ref?.chamber_id, lot_hist_id: ref?.lot_hist_id }))
+    const fallbackChamber = normalized.relationships
       .filter((relationship) => relationship.type === 'PROCESSED_IN' && relationship.source === node.id)
       .map((relationship) => nodeById(normalized, relationship.target))
-      .find((related) => related?.id === focusChamberId)
-      ?? normalized.relationships
-        .filter((relationship) => relationship.type === 'PROCESSED_IN' && relationship.source === node.id)
-        .map((relationship) => nodeById(normalized, relationship.target))
-        .find((related) => related?.label === 'Chamber')
+      .find((related) => related?.label === 'Chamber')
       ?? nodeById(normalized, normalized.root_node_id)
-    const lotHistId = node.properties?.lot_hist_id
-    const lotId = node.properties?.lot_id
-    if (chamber && lotHistId && lotId) {
+    if (historyRefs.length === 0 && fallbackChamber && node.properties?.lot_hist_id) {
+      historyRefs.push({ chamber_id: fallbackChamber.business_id, lot_hist_id: String(node.properties.lot_hist_id) })
+    }
+    if (historyRefs.length > 0 && lotId) {
+      const uniqueRefs = uniqueAlarmHistoryRefs(historyRefs)
       return {
-        requests: [{ chamber_id: chamber.business_id }],
+        requests: [...new Set(uniqueRefs.map((ref) => ref.chamber_id))].sort().map((chamber_id) => ({ chamber_id })),
         lot_id: String(lotId),
-        lot_hist_id: String(lotHistId),
-        chamber_id: chamber.business_id,
+        lot_hist_ids: uniqueRefs.map((ref) => ref.lot_hist_id),
         wafer: true,
-        basis: `Wafer ${node.business_id} · ${chamber.business_id}`,
+        basis: `Wafer ${node.business_id} · ${uniqueRefs.map((ref) => ref.chamber_id).join(', ')}`,
       }
     }
   }
   if (node.label === 'Lot') {
-    const chamber = nodeById(normalized, normalized.root_node_id)
-    if (chamber?.label === 'Chamber') {
+    const lotId = String(node.properties?.lot_id ?? node.business_id)
+    const historyRefs = uniqueAlarmHistoryRefs(Array.isArray(node.properties?.alarm_history_refs)
+      ? node.properties.alarm_history_refs
+      : [])
+    if (!node.properties?.selected_chamber_id && historyRefs.length > 0) {
       return {
-        requests: [{ chamber_id: chamber.business_id }],
-        lot_id: node.business_id,
-        chamber_id: chamber.business_id,
+        requests: [...new Set(historyRefs.map((ref) => ref.chamber_id))].sort().map((chamber_id) => ({ chamber_id })),
+        lot_id: lotId,
+        lot_hist_ids: historyRefs.map((ref) => ref.lot_hist_id),
+        lot: true,
+        basis: `LOT ${lotId} · 처리 이력 ${historyRefs.length}건`,
+      }
+    }
+    const chamberId = node.properties?.selected_chamber_id
+    if (chamberId) {
+      return {
+        requests: [{ chamber_id: chamberId }],
+        lot_id: lotId,
+        chamber_id: chamberId,
         incident: true,
-        basis: `Incident ${node.business_id} · ${chamber.business_id}`,
+        basis: `Incident ${lotId} · ${chamberId}`,
       }
     }
   }
@@ -284,10 +309,12 @@ const productionLots = (graph) => {
       .map((item) => item.target)
     const lotWafers = wafersByLot.get(lot.id) ?? new Map()
     const waferKey = String(wafer.properties?.wafer_id ?? wafer.business_id)
-    const existing = lotWafers.get(waferKey) ?? { node: wafer, chamberIds: new Set(), historyNodeByChamber: new Map() }
+    const existing = lotWafers.get(waferKey) ?? { node: wafer, chamberIds: new Set(), historyNodesByChamber: new Map() }
     chamberIds.forEach((chamberId) => {
       existing.chamberIds.add(chamberId)
-      existing.historyNodeByChamber.set(chamberId, wafer)
+      const histories = existing.historyNodesByChamber.get(chamberId) ?? []
+      if (!histories.some((history) => history.id === wafer.id)) histories.push(wafer)
+      existing.historyNodesByChamber.set(chamberId, histories)
     })
     lotWafers.set(waferKey, existing)
     wafersByLot.set(lot.id, lotWafers)
@@ -296,6 +323,35 @@ const productionLots = (graph) => {
     lot,
     wafers: [...(wafersByLot.get(lot.id)?.values() ?? [])],
   }))
+}
+
+const processHistoryForWafers = (wafers) => {
+  const histories = []
+  for (const { historyNodesByChamber } of wafers) {
+    for (const [chamberNodeId, historyNodes] of historyNodesByChamber.entries()) {
+      for (const historyNode of historyNodes) {
+        const properties = historyNode.properties ?? {}
+        if (properties.lot_hist_id == null) continue
+        const history = {
+          chamber_id: chamberNodeId.replace(/^Chamber:/, ''),
+          lot_hist_id: String(properties.lot_hist_id),
+        }
+        for (const key of ['step_id', 'recipe_id', 'track_in_at', 'track_out_at', 'chamber_wafer_cum']) {
+          if (properties[key] != null && properties[key] !== '') history[key] = properties[key]
+        }
+        histories.push(history)
+      }
+    }
+  }
+  const uniqueHistories = [...new Map(histories.map((history) => [
+    `${history.chamber_id}\u0000${history.lot_hist_id}`,
+    history,
+  ])).values()]
+  return uniqueHistories.sort((left, right) => (
+    String(left.track_in_at ?? '').localeCompare(String(right.track_in_at ?? '')) ||
+    left.chamber_id.localeCompare(right.chamber_id) ||
+    left.lot_hist_id.localeCompare(right.lot_hist_id)
+  ))
 }
 
 export function lotOptionsForChamber(graph, chamberId = '') {
@@ -371,10 +427,11 @@ const staticGraphForChamber = (
 const staticGraphForLotRoute = (normalized, lots) => {
   const visits = new Map()
   for (const { wafers } of lots) {
-    for (const { chamberIds, historyNodeByChamber } of wafers) {
+    for (const { chamberIds, historyNodesByChamber } of wafers) {
       for (const chamberNodeId of chamberIds) {
-        const historyNode = historyNodeByChamber.get(chamberNodeId)
-        const occurredAt = String(historyNode?.properties?.track_in_at ?? '')
+        const occurredAt = historyNodesByChamber.get(chamberNodeId)
+          ?.map((historyNode) => String(historyNode.properties?.track_in_at ?? ''))
+          .sort()[0] ?? ''
         const existing = visits.get(chamberNodeId)
         if (!existing || occurredAt < existing.occurredAt) visits.set(chamberNodeId, { occurredAt })
       }
@@ -451,7 +508,13 @@ export function buildLotContextGraph(graph, selectedLotId = '', selectedChamberI
       : wafers
     nodes.set(lot.id, {
       ...lot,
-      properties: { ...lot.properties, wafer_count: visibleWafers.length, source_system: 'POSTGRES_LOT_HISTORY' },
+      properties: {
+        ...lot.properties,
+        wafer_count: visibleWafers.length,
+        source_system: 'POSTGRES_LOT_HISTORY',
+        selected_chamber_id: selectedChamberId || null,
+        alarm_history_refs: uniqueAlarmHistoryRefs(processHistoryForWafers(wafers)),
+      },
     })
     // Chamber만 선택했을 때는 LOT 단위로만 보여 준다. LOT 선택 뒤에만 wafer 처리 이력을
     // 펼쳐, 하단 LOT row가 과도하게 커지지 않게 한다.
@@ -479,16 +542,18 @@ export function buildLotContextGraph(graph, selectedLotId = '', selectedChamberI
       }
       // 알람은 lot_hist_id(개별 처리 이력)를 가리킬 수 있다. 동일 물리 Wafer의
       // route는 합쳐 보여 주되, 선택 node에는 알람이 발생한 Chamber를 보존한다.
-      const selectedWafer = wafers.flatMap(({ node, chamberIds, historyNodeByChamber }) => [
-        { node, chamberIds, focusChamberId: null },
-        ...[...historyNodeByChamber.entries()].map(([focusChamberId, historyNode]) => ({
-          node: historyNode, chamberIds, focusChamberId,
-        })),
+      const selectedWafer = wafers.flatMap(({ node, chamberIds, historyNodesByChamber }) => [
+        { node, chamberIds, historyNodesByChamber, focusChamberId: null },
+        ...[...historyNodesByChamber.entries()].flatMap(([focusChamberId, historyNodes]) => historyNodes.map((historyNode) => ({
+          node: historyNode, chamberIds, historyNodesByChamber, focusChamberId,
+        }))),
       ]).find(({ node }) => node.id === selectedWaferId)
       if (selectedWafer) {
+        const processHistory = processHistoryForWafers([selectedWafer])
+        const alarmHistoryRefs = uniqueAlarmHistoryRefs(processHistory)
         const waferNode = selectedWafer.focusChamberId
-          ? { ...selectedWafer.node, properties: { ...selectedWafer.node.properties, alarm_focus_chamber_id: selectedWafer.focusChamberId } }
-          : selectedWafer.node
+          ? { ...selectedWafer.node, properties: { ...selectedWafer.node.properties, alarm_focus_chamber_id: selectedWafer.focusChamberId, alarm_history_refs: alarmHistoryRefs, process_history: processHistory } }
+          : { ...selectedWafer.node, properties: { ...selectedWafer.node.properties, alarm_history_refs: alarmHistoryRefs, process_history: processHistory } }
         nodes.set(waferNode.id, waferNode)
         relationships.set(`VIEW-CONTAINS-${lot.business_id}-${waferNode.id}`, {
           id: `VIEW-CONTAINS-${lot.business_id}-${waferNode.id}`,
@@ -503,8 +568,8 @@ export function buildLotContextGraph(graph, selectedLotId = '', selectedChamberI
       }
       continue
     }
-    const displayedWafers = visibleWafers.map(({ node, chamberIds, historyNodeByChamber }) => ({
-      node: chamberNodeId ? historyNodeByChamber.get(chamberNodeId) ?? node : node,
+    const displayedWafers = visibleWafers.map(({ node, chamberIds, historyNodesByChamber }) => ({
+      node: chamberNodeId ? historyNodesByChamber.get(chamberNodeId)?.[0] ?? node : node,
       chamberIds: chamberNodeId ? new Set([chamberNodeId]) : chamberIds,
     }))
     for (const { node, chamberIds } of displayedWafers) {
@@ -593,6 +658,10 @@ export function attachWaferAlarmContext(graph, waferNodeId, alarms) {
   const wafer = nodeById(normalized ?? { nodes: [] }, waferNodeId)
   if (!normalized || wafer?.label !== 'Wafer' || !Array.isArray(alarms) || alarms.length === 0) return normalized
   const nodes = new Map(normalized.nodes.map((node) => [node.id, node]))
+  nodes.set(wafer.id, {
+    ...wafer,
+    properties: { ...wafer.properties, alarm_count: alarms.length },
+  })
   const relationships = new Map(normalized.relationships.map((relationship) => [relationship.id, relationship]))
   for (const sensorId of new Set(alarms.map((alarm) => alarm?.sensor_id).filter(Boolean))) {
     const parameterNodeId = `Parameter:${sensorId}`

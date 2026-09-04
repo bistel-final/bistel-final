@@ -42,7 +42,10 @@ def get_chamber_relations(
         raise HTTPException(status_code=404, detail="chamber relation not found")
     if include_production_context:
         engine = pool_factory.get_engine(LogicalDb.RUNTIME, PoolRole.QUERY)
-        response = ProductionContextService(LotHistoryContextRepository(engine)).merge_chamber_history(
+        production_context = ProductionContextService(
+            LotHistoryContextRepository(engine)
+        )
+        response = production_context.merge_chamber_history(
             response,
             chamber_id,
         )

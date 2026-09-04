@@ -16,10 +16,18 @@ from app.knowledge.graph_query import (
     GraphQueryRepository,
 )
 from app.knowledge.graph_revision import load_graph_revision
-from app.knowledge.repository import ChamberGraphProjection, ChamberGraphRepository, LotHistoryContextRepository
+from app.knowledge.repository import (
+    ChamberGraphProjection,
+    ChamberGraphRepository,
+    LotHistoryContextRepository,
+)
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.schemas import ChamberRelationResponse
-from app.knowledge.service import EquipmentContextService, GraphService, ProductionContextService
+from app.knowledge.service import (
+    EquipmentContextService,
+    GraphService,
+    ProductionContextService,
+)
 from app.knowledge.tools import get_equipment_context as get_equipment_context_tool
 
 REVISION = "3474debee491ea5c699080109d748a4922ad0566a3b84568e9067053de2fa2eb"
@@ -295,9 +303,88 @@ def test_chamber_relations_api_returns_404_for_missing_chamber(
     assert response.status_code == 404
 
 
+def test_chamber_relations_api_adds_production_context_only_when_requested(
+    monkeypatch: Any,
+) -> None:
+    class FakeService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def get_chamber_relations(self, chamber_id: str) -> ChamberRelationResponse:
+            assert chamber_id == "EQP04-PM2"
+            return ChamberRelationResponse.model_validate(
+                {
+                    "root_node_id": CHAMBER_GRAPH_FIXTURE.root_node_id,
+                    "nodes": CHAMBER_GRAPH_FIXTURE.nodes,
+                    "relationships": CHAMBER_GRAPH_FIXTURE.relationships,
+                    "graph_revision": CHAMBER_GRAPH_FIXTURE.graph_revision,
+                }
+            )
+
+    calls: list[object] = []
+
+    class FakePoolFactory:
+        def get_engine(self, database: object, role: object) -> object:
+            calls.append((database, role))
+            return object()
+
+    class FakeHistoryRepository:
+        def __init__(self, engine: object) -> None:
+            calls.append(engine)
+
+    class FakeProductionContextService:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def merge_chamber_history(
+            self, graph: ChamberRelationResponse, chamber_id: str
+        ) -> ChamberRelationResponse:
+            assert chamber_id == "EQP04-PM2"
+            return ChamberRelationResponse.model_validate(
+                {
+                    **graph.model_dump(),
+                    "nodes": [
+                        *graph.model_dump()["nodes"],
+                        {
+                            "id": "Lot:LOT-01",
+                            "label": "Lot",
+                            "business_id": "LOT-01",
+                            "display_name": "LOT-01",
+                            "properties": {"lot_id": "LOT-01"},
+                        },
+                    ],
+                }
+            )
+
+    monkeypatch.setattr("app.knowledge.router.GraphService", FakeService)
+    monkeypatch.setattr("app.knowledge.router.pool_factory", FakePoolFactory())
+    monkeypatch.setattr(
+        "app.knowledge.router.LotHistoryContextRepository", FakeHistoryRepository
+    )
+    monkeypatch.setattr(
+        "app.knowledge.router.ProductionContextService", FakeProductionContextService
+    )
+    app = FastAPI()
+    app.include_router(knowledge_router)
+
+    basic = TestClient(app).get("/relations/chambers/EQP04-PM2")
+    assert basic.status_code == 200
+    assert not calls
+    assert all(node["label"] != "Lot" for node in basic.json()["nodes"])
+
+    production = TestClient(app).get(
+        "/relations/chambers/EQP04-PM2?include_production_context=true"
+    )
+    assert production.status_code == 200
+    assert len(calls) == 2
+    assert any(node["label"] == "Lot" for node in production.json()["nodes"])
+
+
 def test_production_context_projects_lot_and_wafer_without_mutating_graph() -> None:
     class FakeGraphRepository:
-        def get_chamber_graph_projection(self, chamber_id: str) -> ChamberGraphProjection:
+        def get_chamber_graph_projection(
+            self, chamber_id: str
+        ) -> ChamberGraphProjection:
             assert chamber_id == "EQP04-PM2"
             return CHAMBER_GRAPH_FIXTURE
 
@@ -330,7 +417,10 @@ def test_production_context_projects_lot_and_wafer_without_mutating_graph() -> N
     assert wafers[0].id == "Wafer:LH-0042"
     assert wafers[0].properties["source_system"] == "POSTGRES_LOT_HISTORY"
     assert "fault_code" not in wafers[0].properties
-    assert {relationship.type for relationship in result.relationships} >= {"CONTAINS", "PROCESSED_IN"}
+    assert {relationship.type for relationship in result.relationships} >= {
+        "CONTAINS",
+        "PROCESSED_IN",
+    }
     assert graph.graph_revision == result.graph_revision
 
 
@@ -340,7 +430,10 @@ def test_lot_history_context_query_is_read_only_and_excludes_fault_label() -> No
     assert "FROM lot_history" in query
     assert "WHERE chamber_id = :chamber_id" in query
     assert "fault_code" not in query
-    assert all(token not in query.upper() for token in ("INSERT ", "UPDATE ", "DELETE ", "MERGE "))
+    assert all(
+        token not in query.upper()
+        for token in ("INSERT ", "UPDATE ", "DELETE ", "MERGE ")
+    )
 
 
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
