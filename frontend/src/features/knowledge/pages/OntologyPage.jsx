@@ -754,7 +754,6 @@ function OntologyPage() {
             <select value={activeLotId} onChange={selectLot}
               className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
               aria-label="온톨로지 Lot 선택">
-              <option value="">LOT 선택</option>
               {lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
             </select>
           </label>
