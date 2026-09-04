@@ -54,6 +54,10 @@ jobs:
       # secret missing -> dummy, so config import (rejects empty) does not kill the freshness test.
       # The real evaluation step checks for the dummy in 'Verify secrets present' and stops.
       READONLY_PASSWORD: ${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD || 'ci-not-a-secret' }}
+      # The analytics pool reads a single DSN, not POSTGRES_* parts. Runtime DB (fdc_final) via kosa_readonly.
+      # GitHub masks the secret substring in logs. Logger DSN is intentionally absent -> nl_query_log write is skipped;
+      # evaluation only needs the readonly query pool.
+      TEXT2SQL_DATABASE_URL: postgresql+psycopg://kosa_readonly:${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD || 'ci-not-a-secret' }}@kosa165.iptime.org:53001/fdc_final
       # Remaining vars app.common.config requires at import (same dummies as pr-policy).
       # Evaluation never connects to Neo4j/n8n; cross-check becomes SKIPPED and is not graded.
       NEO4J_USER: neo4j
