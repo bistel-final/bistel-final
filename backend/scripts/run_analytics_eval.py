@@ -34,6 +34,7 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
+from app.analytics.eval_fingerprint import compute_fingerprint  # noqa: E402
 from app.analytics.service import run_analysis_query  # noqa: E402
 from app.analytics.tools import PROMPT_VERSION  # noqa: E402
 from app.common.config import (  # noqa: E402
@@ -315,6 +316,9 @@ def main() -> int:
             "temperature": LLM_TEMPERATURE,
             "prompt_version": PROMPT_VERSION,
         },
+        # 구성 지문 (#304) — "이 성적표가 지금 코드 기준인가"를 기계가 판단하는 근거.
+        # 프롬프트 원문·질문셋·매니페스트·모델 중 하나라도 바뀜면 지문이 달라지고 재평가 대상이 된다.
+        "fingerprint": compute_fingerprint(),
         "grading_criteria": spec["grading_criteria"],
         "total": total,
         "passed": passed,
