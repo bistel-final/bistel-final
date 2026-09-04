@@ -9,6 +9,7 @@ import OntologyGraphCanvas from '../../../shared/components/ontology/OntologyGra
 import { Card } from '../../../shared/components/ui/Card.jsx'
 import {
   ONTOLOGY_NODE_META,
+  PUBLIC_NODE_PROPERTIES,
   annotateWaferAlarmHints,
   alarmsForOntologyScope,
   attachWaferAlarmContext,
@@ -202,16 +203,20 @@ function WaferAlarmContext({ node, state, onRetry }) {
 
 const waferDetailItems = (node) => {
   const properties = node.properties ?? {}
+  const allowed = new Set(PUBLIC_NODE_PROPERTIES.Wafer)
+  const publicHistory = (history) => Object.fromEntries(
+    Object.entries(history ?? {}).filter(([key]) => key === 'chamber_id' || allowed.has(key)),
+  )
   const histories = Array.isArray(properties.process_history) && properties.process_history.length > 0
-    ? properties.process_history
-    : [{
+    ? properties.process_history.map(publicHistory)
+    : [publicHistory({
       chamber_id: properties.alarm_focus_chamber_id?.replace(/^Chamber:/, ''),
       step_id: properties.step_id,
       recipe_id: properties.recipe_id,
       track_in_at: properties.track_in_at,
       track_out_at: properties.track_out_at,
       chamber_wafer_cum: properties.chamber_wafer_cum,
-    }]
+    })]
   return {
     waferNo: properties.wafer_no,
     histories: histories.map((history) => [
