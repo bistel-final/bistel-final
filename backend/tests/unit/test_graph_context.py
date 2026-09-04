@@ -434,6 +434,37 @@ def test_lot_history_context_query_is_read_only_and_excludes_fault_label() -> No
         token not in query.upper()
         for token in ("INSERT ", "UPDATE ", "DELETE ", "MERGE ")
     )
+    assert "LIMIT 1001" in query
+
+
+def test_lot_history_context_sets_read_only_and_timeout_before_query() -> None:
+    calls: list[tuple[str, object]] = []
+
+    class Result:
+        def mappings(self) -> Result:
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return []
+
+    class Connection:
+        def execute(self, statement: object, params: object = None) -> Result:
+            calls.append((str(statement), params))
+            return Result()
+
+        def close(self) -> None:
+            calls.append(("CLOSE", None))
+
+    class Engine:
+        def connect(self) -> Connection:
+            return Connection()
+
+    assert LotHistoryContextRepository(Engine()).list_chamber_history("EQP01-PM1") == []
+    assert calls[0] == ("SET TRANSACTION READ ONLY", None)
+    assert "set_config('statement_timeout'" in calls[1][0]
+    assert "FROM lot_history" in calls[2][0]
+    assert calls[2][1] == {"chamber_id": "EQP01-PM1"}
+    assert calls[3] == ("CLOSE", None)
 
 
 def test_graph_repository_query_is_read_only_and_not_full_graph_scan() -> None:
