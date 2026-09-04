@@ -1,0 +1,165 @@
+# Text2SQL 평가 자동 실행 (#304, D - Analytics)
+#
+# 프롬프트·질문셋·스키마 매니페스트·평가 러너가 바뀐 PR 에서 평가 14문항을 실제 LLM + 실 DB 로 돌리고
+# 결과 artifact 를 PR 브랜치에 커밋한다. 이미 최신이면(지문 일치) LLM 을 호출하지 않는다.
+#
+# 게이트는 두 겹이다:
+#   - 이 워크플로: 낡았으면 돌려서 artifact 를 갱신 (자동 실행)
+#   - tests/unit/test_analytics_eval_freshness.py (pr-policy 의 pytest): 어떤 이유로든 갱신이 안 되면 실패
+#
+# pr-policy.yml 은 건드리지 않는다. 필요한 시크릿(팀장님 등록):
+#   ANALYTICS_EVAL_LLM_API_KEY          — OpenAI 호환 API 키 (평가 전용 키 권장)
+#   ANALYTICS_EVAL_READONLY_PASSWORD    — kosa_readonly 비밀번호
+# 비밀이 아닌 값(호스트·포트·DB·계정명·모델명)은 아래 env 에 둔다 — .env.example·설계서에 이미 공개된 값.
+#
+# 처음엔 continue-on-error 로 둔다: GitHub 러너에서 학원 DB(kosa165) 접속이 안정적인지 확인 전까지
+# 이 워크플로의 실패가 머지를 막지 않게 한다. 안정 확인 후 false 로 바꾸고 필수 체크로 올린다.
+
+name: Analytics Eval
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/app/analytics/tools.py"
+      - "backend/app/analytics/eval_fingerprint.py"
+      - "backend/scripts/run_analytics_eval.py"
+      - "backend/artifacts/analytics_eval/questionset_fdc_final.json"
+      - "infra/bootstrap/manifests/runtime.runtime_clean.json"
+      - ".github/workflows/analytics-eval.yml"
+
+concurrency:
+  group: analytics-eval-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  evaluate:
+    name: Text2SQL 평가 (낡았을 때만 실행)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    # fork PR 은 시크릿을 받지 못하므로 건너뛴다 (팀 레포는 같은 저장소 브랜치 PR 만 쓴다)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      # 비밀 아닌 접속 정보 — 값은 .env.example 계약과 같다
+      POSTGRES_HOST: kosa165.iptime.org
+      POSTGRES_PORT: "53001"
+      POSTGRES_DB: fdc_final
+      APP_DB_USER: kosa_app               # config import 시 필수 검사 — 값만 맞추고 실제 사용하지 않는다
+      READONLY_USER: kosa_readonly
+      # secret missing -> dummy, so config import (rejects empty) does not kill the freshness test.
+      # The real evaluation step checks for the dummy in 'Verify secrets present' and stops.
+      READONLY_PASSWORD: ${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD || 'ci-not-a-secret' }}
+      # The analytics pool reads a single DSN, not POSTGRES_* parts. Runtime DB (fdc_final) via kosa_readonly.
+      # GitHub masks the secret substring in logs. Logger DSN is intentionally absent -> nl_query_log write is skipped;
+      # evaluation only needs the readonly query pool.
+      TEXT2SQL_DATABASE_URL: postgresql+psycopg://kosa_readonly:${{ secrets.ANALYTICS_EVAL_READONLY_PASSWORD || 'ci-not-a-secret' }}@kosa165.iptime.org:53001/fdc_final
+      # Remaining vars app.common.config requires at import (same dummies as pr-policy).
+      # Evaluation never connects to Neo4j/n8n; cross-check becomes SKIPPED and is not graded.
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-not-a-secret
+      NEO4J_URI: bolt://localhost:7687
+      N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+      LLM_PROVIDER: openai
+      LLM_MODEL_MAIN: gpt-5.6-luna
+      LLM_TEMPERATURE: "0.1"
+      LLM_API_KEY: ${{ secrets.ANALYTICS_EVAL_LLM_API_KEY }}
+      TZ: Asia/Seoul
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend deps
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest==8.3.4
+
+      # 1) 지금 artifact 가 현재 구성 기준이면 여기서 끝 — LLM 호출 0회
+      - name: Check evaluation freshness
+        id: fresh
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python -m pytest tests/unit/test_analytics_eval_freshness.py -q
+
+      - name: Up to date
+        if: steps.fresh.outcome == 'success'
+        run: echo "평가 artifact 가 현재 구성과 일치합니다 — 실행 생략"
+
+      # 2) 낡았으면 실제 평가 실행 (LLM + 실 DB)
+      - name: Verify secrets present
+        if: steps.fresh.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          test -n "${LLM_API_KEY}" || { echo "::error::ANALYTICS_EVAL_LLM_API_KEY 시크릿이 없습니다"; exit 1; }
+          test "${READONLY_PASSWORD}" != "ci-not-a-secret" || { echo "::error::ANALYTICS_EVAL_READONLY_PASSWORD secret is not set"; exit 1; }
+
+      - name: Run Text2SQL evaluation
+        if: steps.fresh.outcome == 'failure'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python scripts/run_analytics_eval.py | tee eval.log
+
+      - name: Re-check freshness (must pass now)
+        if: steps.fresh.outcome == 'failure'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m pytest tests/unit/test_analytics_eval_freshness.py -q
+
+      # 3) 새 artifact 를 PR 브랜치에 커밋 — 사람이 하던 "돌리고 add" 를 봇이 한다
+      - name: Commit artifact to PR branch
+        if: steps.fresh.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          git config user.name "analytics-eval-bot"
+          git config user.email "analytics-eval-bot@users.noreply.github.com"
+          git add backend/artifacts/analytics_eval/result_*.json
+          if git diff --cached --quiet; then
+            echo "커밋할 artifact 변경이 없습니다"; exit 0
+          fi
+          latest=$(ls backend/artifacts/analytics_eval/result_*.json | sort | tail -1)
+          summary=$(python - "$latest" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          print(f"{d['passed']}/{d['total']} · {d['llm']['prompt_version']}")
+          PY
+          )
+          git commit -m "chore: Text2SQL 평가 artifact 자동 갱신 — ${summary}" -m "analytics-eval 워크플로가 구성 지문 불일치를 감지해 재평가했다. Refs #304"
+          git push origin HEAD:${{ github.head_ref }}
+
+      - name: Summary
+        if: always()
+        working-directory: backend
+        run: |
+          latest=$(ls artifacts/analytics_eval/result_*.json 2>/dev/null | sort | tail -1 || true)
+          if [ -n "$latest" ]; then
+            python - "$latest" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          fp = d.get("fingerprint", {})
+          print("## Text2SQL 평가")
+          print(f"- artifact: `{sys.argv[1].split('/')[-1]}`")
+          print(f"- 결과: **{d['passed']}/{d['total']}** (기준 {d['pass_threshold']}) · {'통과' if d['meets_threshold'] else '미달'}")
+          print(f"- 프롬프트: `{d['llm']['prompt_version']}` · 모델: `{d['llm']['model']}`")
+          print(f"- 지문: `{fp.get('digest','-')[:12]}`")
+          PY
+          fi
