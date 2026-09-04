@@ -433,7 +433,10 @@ function OntologyPage() {
   const [isOverviewOpen, setIsOverviewOpen] = useState(true)
   const [attempt, setAttempt] = useState(0)
   const graphResponseCache = useRef(new Map())
-  const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
+  const [state, setState] = useState({
+    status: 'loading', graph: null, chamberLoadPartial: false,
+    historyTruncated: false, productionHistoryReturnedCount: 0,
+  })
   const [selectedNode, setSelectedNode] = useState(null)
   const [alarmAttempt, setAlarmAttempt] = useState(0)
   const [alarmState, setAlarmState] = useState({ requestKey: null, status: 'idle', summary: null, basis: null })
@@ -531,7 +534,10 @@ function OntologyPage() {
       if (!active) return
       const requestedResult = results[0]
       if (requestedResult.status !== 'fulfilled') {
-        setState({ status: 'error', graph: null, partial: false })
+        setState({
+          status: 'error', graph: null, chamberLoadPartial: false,
+          historyTruncated: false, productionHistoryReturnedCount: 0,
+        })
         return
       }
       const responses = results
@@ -541,7 +547,9 @@ function OntologyPage() {
       setState({
         status: hasDisplayableRelationships(merged) ? 'success' : 'empty',
         graph: merged,
-        partial: responses.length !== orderedChambers.length || Boolean(merged.production_context?.truncated),
+        chamberLoadPartial: responses.length !== orderedChambers.length,
+        historyTruncated: Boolean(merged.production_context?.truncated),
+        productionHistoryReturnedCount: Number(merged.production_context?.returned_count ?? 0),
       })
     })
     return () => {
@@ -772,7 +780,10 @@ function OntologyPage() {
           title="온톨로지 조회 오류"
           detail={LOAD_ERROR}
           onRetry={() => {
-            setState({ status: 'loading', graph: null, partial: false })
+            setState({
+              status: 'loading', graph: null, chamberLoadPartial: false,
+              historyTruncated: false, productionHistoryReturnedCount: 0,
+            })
             setAttempt((value) => value + 1)
           }}
         />
@@ -783,9 +794,14 @@ function OntologyPage() {
       {status === 'success' && graph && (
         <div className="flex flex-col gap-4">
           <FocusNotice focus={resolvedFocus} />
-          {state.partial && (
+          {state.chamberLoadPartial && (
             <div className="rounded-[10px] border border-tint-amber-line bg-tint-amber px-4 py-3 text-[12px] font-bold text-tint-amber-text">
-              일부 보조 챔버 관계를 불러오지 못했거나 생산 이력 반환 상한에 도달해, 확인 가능한 관계만 표시합니다.
+              일부 보조 챔버 관계를 불러오지 못해, 확인 가능한 관계만 표시합니다.
+            </div>
+          )}
+          {state.historyTruncated && (
+            <div className="rounded-[10px] border border-tint-amber-line bg-tint-amber px-4 py-3 text-[12px] font-bold text-tint-amber-text">
+              생산 이력은 최신 1,000건까지만 표시됩니다. 현재 {state.productionHistoryReturnedCount}건을 불러왔습니다.
             </div>
           )}
           {activeBrowseMode === 'structure' && !explicitChamber && !activeLotId && (
