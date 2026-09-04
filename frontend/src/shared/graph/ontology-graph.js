@@ -105,6 +105,28 @@ export function normalizeOntologyGraph(graph) {
 
 export const hasDisplayableRelationships = (graph) => Boolean(graph?.relationships?.length)
 
+// Ontology의 Wafer 처리 이력은 lot_hist_id가 동일한 알람만 연결한다. 이 함수는
+// 화면 상태와 분리해 공개 AlarmItem projection의 식별자 필터를 회귀 검증한다.
+export function alarmsForOntologyScope(scope, responses) {
+  const unique = new Map()
+  for (const response of responses) {
+    for (const alarm of response?.items ?? []) {
+      if (scope.lot_id && alarm.lot_id !== scope.lot_id) continue
+      if (scope.chamber_id && alarm.chamber_id !== scope.chamber_id) continue
+      if (scope.lot_hist_id && alarm.lot_hist_id !== scope.lot_hist_id) continue
+      if (scope.lot_hist_ids && !scope.lot_hist_ids.includes(alarm.lot_hist_id)) continue
+      const identity = `${alarm.source ?? 'UNKNOWN'}:${alarm.alarm_id ?? `${alarm.occurred_at ?? 'unknown'}:${alarm.lot_hist_id ?? ''}`}`
+      unique.set(identity, alarm)
+    }
+  }
+  return [...unique.values()].sort((left, right) => (
+    String(right.occurred_at ?? '').localeCompare(String(left.occurred_at ?? ''))
+    || String(left.chamber_id ?? '').localeCompare(String(right.chamber_id ?? ''))
+    || String(left.source ?? '').localeCompare(String(right.source ?? ''))
+    || String(left.alarm_id ?? '').localeCompare(String(right.alarm_id ?? ''))
+  ))
+}
+
 export function connectedRelationIds(graph, nodeId) {
   if (!nodeId) return new Set()
   const normalized = normalizeOntologyGraph(graph)

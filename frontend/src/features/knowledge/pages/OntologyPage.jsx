@@ -10,6 +10,7 @@ import { Card } from '../../../shared/components/ui/Card.jsx'
 import {
   ONTOLOGY_NODE_META,
   annotateWaferAlarmHints,
+  alarmsForOntologyScope,
   attachWaferAlarmContext,
   buildLotContextGraph,
   buildOntologyOverviewLanes,
@@ -60,26 +61,6 @@ function GraphSummary({ graph, compact = false, scopeLabel = null }) {
 }
 
 const alarmIdentity = (alarm, index = 0) => `${alarm?.source ?? 'UNKNOWN'}:${alarm?.alarm_id ?? `${alarm?.occurred_at ?? 'unknown'}:${index}`}`
-
-const sortAlarms = (alarms) => [...alarms].sort((left, right) =>
-  String(right.occurred_at ?? '').localeCompare(String(left.occurred_at ?? ''))
-  || String(left.chamber_id ?? '').localeCompare(String(right.chamber_id ?? ''))
-  || alarmIdentity(left).localeCompare(alarmIdentity(right)),
-)
-
-const alarmsForScope = (scope, responses) => {
-  const uniqueAlarms = new Map()
-  for (const response of responses) {
-    for (const alarm of response.items ?? []) {
-      if (scope.lot_id && alarm.lot_id !== scope.lot_id) continue
-      if (scope.chamber_id && alarm.chamber_id !== scope.chamber_id) continue
-      if (scope.lot_hist_id && alarm.lot_hist_id !== scope.lot_hist_id) continue
-      if (scope.lot_hist_ids && !scope.lot_hist_ids.includes(alarm.lot_hist_id)) continue
-      uniqueAlarms.set(alarmIdentity(alarm, uniqueAlarms.size), alarm)
-    }
-  }
-  return sortAlarms([...uniqueAlarms.values()])
-}
 
 const formatOccurredAt = (value) => {
   if (!value) return '없음'
@@ -570,7 +551,7 @@ function OntologyPage() {
         setAlarmState({ requestKey, status: 'error', summary: null, basis: scope.basis, incident: Boolean(scope.incident), lot: Boolean(scope.lot), wafer: Boolean(scope.wafer) })
         return
       }
-      const alarms = alarmsForScope(scope, responses)
+      const alarms = alarmsForOntologyScope(scope, responses)
       setAlarmState({
         requestKey,
         status: 'success',
@@ -601,7 +582,7 @@ function OntologyPage() {
         setWaferAlarmState({ requestKey, status: 'error', alarms: [], basis: scope.basis, wafer: true })
         return
       }
-      const alarms = alarmsForScope(scope, responses)
+      const alarms = alarmsForOntologyScope(scope, responses)
       setWaferAlarmState({
         requestKey, status: 'success', alarms, basis: scope.basis, wafer: true,
         partial: results.length !== responses.length || responses.some((response) => response.partial),
@@ -751,10 +732,12 @@ function OntologyPage() {
           {activeBrowseMode === 'lot' && <>
           <label className="flex items-center gap-2 text-[11px] font-bold text-g2">
             LOT
-            <select value={activeLotId} onChange={selectLot}
-              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink"
+            <select value={activeLotId} onChange={selectLot} disabled={lotOptions.length === 0}
+              className="h-9 min-w-[150px] rounded-lg border border-field-line bg-white px-3 font-mono text-[12px] font-bold text-ink disabled:cursor-not-allowed disabled:bg-soft disabled:text-faint"
               aria-label="온톨로지 Lot 선택">
-              {lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
+              {lotOptions.length === 0
+                ? <option value="">생산 이력 없음</option>
+                : lotOptions.map((lot) => <option key={lot.id} value={lot.id}>{lot.label}</option>)}
             </select>
           </label>
           <label className="flex items-center gap-2 text-[11px] font-bold text-g2">

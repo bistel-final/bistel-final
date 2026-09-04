@@ -7,6 +7,7 @@ import { CORE_CHAMBER_GRAPH } from '../src/shared/api/contractMocks.js'
 import { DEFAULT_GRAPH_CHAMBER, GRAPH_CHAMBERS } from '../src/shared/graph/ontology-chambers.js'
 import {
   PUBLIC_NODE_PROPERTIES,
+  alarmsForOntologyScope,
   annotateWaferAlarmHints,
   attachWaferAlarmContext,
   buildOntologyOverviewLanes,
@@ -285,6 +286,18 @@ assert.deepEqual(ontologyAlarmScope(selectedLotGraph, selectedLotNode), {
   lot: true,
   basis: 'LOT LOT010 · 처리 이력 2건',
 }, 'LOT 단독 조회는 임의 root Chamber가 아닌 모든 처리 이력의 알람을 집계해야 합니다')
+assert.deepEqual(
+  alarmsForOntologyScope(
+    { lot_id: 'LOT010', lot_hist_ids: ['LH-1', 'LH-2'] },
+    [{ items: [
+      { source: 'TRACE', alarm_id: 'A-1', lot_id: 'LOT010', lot_hist_id: 'LH-1', chamber_id: 'EQP01-PM1', occurred_at: '2026-08-18T09:00:00+09:00' },
+      { source: 'TRACE', alarm_id: 'A-2', lot_id: 'LOT010', lot_hist_id: 'LH-2', chamber_id: 'EQP01-PM2', occurred_at: '2026-08-18T09:01:00+09:00' },
+      { source: 'TRACE', alarm_id: 'A-3', lot_id: 'LOT010', lot_hist_id: 'LH-other', chamber_id: 'EQP01-PM1', occurred_at: '2026-08-18T09:02:00+09:00' },
+    ] }],
+  ).map((alarm) => alarm.alarm_id),
+  ['A-2', 'A-1'],
+  'Wafer 처리 이력 범위는 AlarmItem.lot_hist_id가 일치하는 알람만 유지해야 합니다',
+)
 const selectedWaferGraph = buildLotContextGraph(lotContextGraph, 'LOT010', '', 'Wafer:LH-1')
 assert.equal(selectedWaferGraph.nodes.filter((node) => node.label === 'Wafer').length, 1, '선택한 Wafer만 공정 경로에 표시해야 합니다')
 const selectedWaferNode = selectedWaferGraph.nodes.find((node) => node.id === 'Wafer:LH-1')
@@ -468,6 +481,7 @@ for (const contract of [
 }
 
 const ontologyPageSource = await readFile(resolve(SOURCE_ROOT, 'features/knowledge/pages/OntologyPage.jsx'), 'utf8')
+const ontologyGraphSource = await readFile(resolve(SOURCE_ROOT, 'shared/graph/ontology-graph.js'), 'utf8')
 assert.ok(ontologyPageSource.includes('Promise.allSettled(orderedChambers.map'))
 assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
@@ -507,9 +521,9 @@ assert.ok(ontologyPageSource.includes('PROCESS HISTORY') && ontologyPageSource.i
 assert.ok(ontologyPageSource.includes('선택 Incident 알람 요약'))
 assert.ok(ontologyPageSource.includes('선택 LOT 알람 요약'), 'LOT 단독 선택은 Incident가 아닌 전체 LOT 알람 요약으로 표시해야 합니다')
 assert.ok(ontologyPageSource.includes('처리 이력 {index + 1}'), 'Wafer 우측 패널은 공정 처리 이력을 각각 표시해야 합니다')
-assert.ok(ontologyPageSource.includes('alarm.lot_id !== scope.lot_id'))
-assert.ok(ontologyPageSource.includes('alarm.lot_hist_id !== scope.lot_hist_id'))
-assert.ok(ontologyPageSource.includes("scope.lot_hist_ids.includes(alarm.lot_hist_id)"), 'Wafer의 모든 공정 이력을 알람 범위로 사용해야 합니다')
+assert.ok(ontologyGraphSource.includes('alarm.lot_id !== scope.lot_id'))
+assert.ok(ontologyGraphSource.includes('alarm.lot_hist_id !== scope.lot_hist_id'))
+assert.ok(ontologyGraphSource.includes("scope.lot_hist_ids.includes(alarm.lot_hist_id)"), 'Wafer의 모든 공정 이력을 알람 범위로 사용해야 합니다')
 assert.ok(ontologyPageSource.includes("node.label === 'Lot' && node.business_id === activeLotId"), 'LOT 선택 시 Lot 정보를 우측 패널 기본값으로 써야 합니다')
 assert.ok(ontologyPageSource.includes('const visualSelectedNode'), 'LOT 조회 context와 node 선택 상태를 분리해야 합니다')
 assert.ok(ontologyPageSource.includes('const panelNode'), 'LOT 선택 시 우측 패널 기본 node가 필요합니다')
