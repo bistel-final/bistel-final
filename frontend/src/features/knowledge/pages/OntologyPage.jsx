@@ -516,6 +516,11 @@ function OntologyPage() {
         { include_production_context: includeProductionContext },
       )
       graphResponseCache.current.set(cacheKey, request)
+      request.catch(() => {
+        if (graphResponseCache.current.get(cacheKey) === request) {
+          graphResponseCache.current.delete(cacheKey)
+        }
+      })
       return request
     })).then((results) => {
       if (!active) return
