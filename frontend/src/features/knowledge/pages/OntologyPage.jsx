@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getAllAlarms } from '../../../shared/api/detection.js'
 import { getChamberRelationsCore } from '../../../shared/api/knowledge.js'
@@ -446,6 +446,7 @@ function OntologyPage() {
   const [browseMode, setBrowseMode] = useState('structure')
   const [isOverviewOpen, setIsOverviewOpen] = useState(true)
   const [attempt, setAttempt] = useState(0)
+  const graphResponseCache = useRef(new Map())
   const [state, setState] = useState({ status: 'loading', graph: null, partial: false })
   const [selectedNode, setSelectedNode] = useState(null)
   const [alarmAttempt, setAlarmAttempt] = useState(0)
@@ -514,6 +515,10 @@ function OntologyPage() {
   )
 
   useEffect(() => {
+    graphResponseCache.current.clear()
+  }, [attempt])
+
+  useEffect(() => {
     if (focus.phase === 'invalid') return undefined
     let active = true
     const loadAllChambers = activeBrowseMode === 'structure' || activeBrowseMode === 'lot'
@@ -521,10 +526,17 @@ function OntologyPage() {
       ? [requestChamber, ...GRAPH_CHAMBERS.filter((chamberId) => chamberId !== requestChamber)]
       : [requestChamber]
     const includeProductionContext = activeBrowseMode === 'lot' || Boolean(explicitChamber)
-    Promise.allSettled(orderedChambers.map((chamberId) => getChamberRelationsCore(
-      chamberId,
-      { include_production_context: includeProductionContext },
-    ))).then((results) => {
+    Promise.allSettled(orderedChambers.map((chamberId) => {
+      const cacheKey = `${chamberId}:${includeProductionContext}`
+      const cached = graphResponseCache.current.get(cacheKey)
+      if (cached) return cached
+      const request = getChamberRelationsCore(
+        chamberId,
+        { include_production_context: includeProductionContext },
+      )
+      graphResponseCache.current.set(cacheKey, request)
+      return request
+    })).then((results) => {
       if (!active) return
       const requestedResult = results[0]
       if (requestedResult.status !== 'fulfilled') {
@@ -538,7 +550,7 @@ function OntologyPage() {
       setState({
         status: hasDisplayableRelationships(merged) ? 'success' : 'empty',
         graph: merged,
-        partial: responses.length !== orderedChambers.length,
+        partial: responses.length !== orderedChambers.length || Boolean(merged.production_context?.truncated),
       })
     })
     return () => {
@@ -781,7 +793,7 @@ function OntologyPage() {
           <FocusNotice focus={resolvedFocus} />
           {state.partial && (
             <div className="rounded-[10px] border border-tint-amber-line bg-tint-amber px-4 py-3 text-[12px] font-bold text-tint-amber-text">
-              일부 보조 챔버 관계를 불러오지 못해 조회한 챔버와 확인 가능한 관계만 표시합니다.
+              일부 보조 챔버 관계를 불러오지 못했거나 생산 이력 반환 상한에 도달해, 확인 가능한 관계만 표시합니다.
             </div>
           )}
           {activeBrowseMode === 'structure' && !explicitChamber && !activeLotId && (

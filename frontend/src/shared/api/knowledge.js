@@ -118,7 +118,14 @@ const withMockProductionContext = (graph, chamberId) => {
     mockGraphRelationship(`PG-CONTAINS-${historyId}`, 'CONTAINS', lotNodeId, waferNodeId),
     mockGraphRelationship(`PG-PROCESSED-IN-${historyId}`, 'PROCESSED_IN', waferNodeId, `Chamber:${chamberId}`),
   ]
-  return { ...graph, nodes, relationships, node_count: nodes.length, relationship_count: relationships.length }
+  return {
+    ...graph,
+    nodes,
+    relationships,
+    node_count: nodes.length,
+    relationship_count: relationships.length,
+    production_context: { returned_count: 1, truncated: false },
+  }
 }
 
 const MOCK_DOCUMENT_ALIASES = Object.freeze({

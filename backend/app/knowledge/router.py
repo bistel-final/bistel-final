@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.analytics.db_pool import LogicalDb, PoolRole, pool_factory
 from app.knowledge.document_search import DocumentSearchRepository
@@ -29,12 +30,11 @@ router = APIRouter(tags=["Knowledge"])
 @router.get(
     "/relations/chambers/{chamber_id}",
     response_model=ChamberRelationResponse,
-    response_model_exclude_none=True,
 )
 def get_chamber_relations(
     chamber_id: str,
     include_production_context: bool = False,
-) -> ChamberRelationResponse:
+) -> ChamberRelationResponse | JSONResponse:
     """챔버 기준 구조 ontology와 선택적 PostgreSQL 생산 이력을 조회한다."""
 
     service = GraphService(ChamberGraphRepository())
@@ -50,6 +50,9 @@ def get_chamber_relations(
             response,
             chamber_id,
         )
+    # 기본 응답은 기존 4개 필드를 그대로 유지하고, opt-in metadata만 조건부로 보낸다.
+    if response.production_context is None:
+        return JSONResponse(response.model_dump(exclude={"production_context"}))
     return response
 
 

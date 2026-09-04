@@ -471,7 +471,7 @@ const ontologyPageSource = await readFile(resolve(SOURCE_ROOT, 'features/knowled
 assert.ok(ontologyPageSource.includes('Promise.allSettled(orderedChambers.map'))
 assert.ok(ontologyPageSource.includes("requestedResult.status !== 'fulfilled'"))
 assert.ok(ontologyPageSource.includes('mergeOntologyGraphs(responses'))
-assert.ok(ontologyPageSource.includes('일부 보조 챔버 관계를 불러오지 못해'))
+assert.ok(ontologyPageSource.includes('생산 이력 반환 상한에 도달해'))
 assert.ok(ontologyPageSource.includes('전체 구조 안내'))
 assert.ok(ontologyPageSource.includes("const [isOverviewOpen, setIsOverviewOpen] = useState(true)"), '전체 구조 안내는 기본으로 열려 있어야 합니다')
 assert.ok(ontologyPageSource.includes('aria-expanded={isOpen}'), '박스 내부 토글의 상태를 접근 가능하게 제공해야 합니다')

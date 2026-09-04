@@ -97,6 +97,9 @@ export function normalizeOntologyGraph(graph) {
     nodes,
     relationships,
     graph_revision: graph.graph_revision ? String(graph.graph_revision) : null,
+    production_context: graph.production_context && typeof graph.production_context === 'object'
+      ? graph.production_context
+      : null,
   }
 }
 
@@ -286,11 +289,18 @@ export function mergeOntologyGraphs(graphs, rootNodeId = null) {
     }
   }
   const requestedRoot = rootNodeId && nodes.has(rootNodeId) ? rootNodeId : normalizedGraphs[0].root_node_id
+  const productionContexts = normalizedGraphs
+    .map((graph) => graph.production_context)
+    .filter((context) => context && typeof context === 'object')
   return {
     root_node_id: requestedRoot,
     nodes: [...nodes.values()],
     relationships: [...relationships.values()],
     graph_revision: [...revisions][0] ?? null,
+    production_context: productionContexts.length ? {
+      returned_count: productionContexts.reduce((total, context) => total + Number(context.returned_count ?? 0), 0),
+      truncated: productionContexts.some((context) => context.truncated === true),
+    } : null,
   }
 }
 
