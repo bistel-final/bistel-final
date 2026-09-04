@@ -12,8 +12,8 @@
 #   ANALYTICS_EVAL_READONLY_PASSWORD    — kosa_readonly 비밀번호
 # 비밀이 아닌 값(호스트·포트·DB·계정명·모델명)은 아래 env 에 둔다 — .env.example·설계서에 이미 공개된 값.
 #
-# 처음엔 continue-on-error 로 둔다: GitHub 러너에서 학원 DB(kosa165) 접속이 안정적인지 확인 전까지
-# 이 워크플로의 실패가 머지를 막지 않게 한다. 안정 확인 후 false 로 바꾸고 필수 체크로 올린다.
+# 필수 체크(#307): 실전 검증(result_20260904T015806Z, 14/14 — 러너→kosa165 접속·LLM·봇 커밋) 후 continue-on-error 를
+# 제거했다. 평가 통과선(10/12) 미달이면 이 검사가 실패하고 PR 은 머지되지 않는다.
 
 name: Analytics Eval
 
@@ -40,7 +40,6 @@ jobs:
   evaluate:
     name: Text2SQL 평가 (낡았을 때만 실행)
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 20
     # fork PR 은 시크릿을 받지 못하므로 건너뛴다 (팀 레포는 같은 저장소 브랜치 PR 만 쓴다)
     if: github.event.pull_request.head.repo.full_name == github.repository
