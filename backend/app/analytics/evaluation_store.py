@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,9 @@ RESULT_DIR = BACKEND_ROOT / "artifacts" / "analytics_eval"
 
 _RUN_FILE_RE = re.compile(r"^result_(\d{8}T\d{6}Z)\.json$")
 _UNKNOWN = "unknown"  # llm 메타가 기록되기 전(구 artifact)의 표기
+# date-time 응답은 Asia/Seoul offset(+09:00)으로 통일한다 (API v3 계약 검증 기준 — audit.py 와 같은 규약).
+# artifact 의 executed_at 은 러너가 UTC 로 기록하므로 그대로 내보내면 화면이 UTC 시간을 보인다.
+_KST = timezone(timedelta(hours=9))
 
 
 def _visualization(chart: Any) -> VisualizationPlan | None:
@@ -81,7 +84,7 @@ def project_run(run_id: str, payload: dict[str, Any]) -> EvaluationResponse:
     defense = [item for item in items if item.case_type == "DEFENSE"]
     return EvaluationResponse(
         run_id=run_id,
-        executed_at=datetime.fromisoformat(payload["executed_at"]),
+        executed_at=datetime.fromisoformat(payload["executed_at"]).astimezone(_KST),
         provider=str(llm.get("provider") or _UNKNOWN),
         model=str(llm.get("model") or _UNKNOWN),
         temperature=float(llm.get("temperature", 0.0)),
