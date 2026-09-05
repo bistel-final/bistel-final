@@ -2185,6 +2185,12 @@
           }
         },
         "query": {
+          "include_production_context": {
+            "default": false,
+            "nullable": false,
+            "required": false,
+            "type": "boolean"
+          },
           "label": {
             "enum": [
               "Area",

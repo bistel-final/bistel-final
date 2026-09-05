@@ -9,7 +9,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.common.config import TOOL_DB_TIMEOUT_SEC
 from app.common.neo4j import get_neo4j_driver
+from app.common.tool_timeouts import apply_postgres_statement_timeout
 from app.knowledge.exceptions import GraphProjectionShapeError
 from app.knowledge.graph_revision import (
     graph_database_name,
@@ -72,6 +74,50 @@ class DocumentRepository:
         try:
             return list(
                 connection.execute(self.DOCUMENT_CHUNKS_QUERY, params)
+                .mappings()
+                .all()
+            )
+        finally:
+            connection.close()
+
+
+class LotHistoryContextRepository:
+    """PostgreSQL의 실제 처리 이력을 화면용 관계 projection으로 읽는다.
+
+    Neo4j ontology에 LOT/WAFER를 적재하지 않는다. 이 repository는 선택 chamber의
+    ``lot_history``를 read-only로 조회해 화면에서만 결합할 작은 context를 제공한다.
+    """
+
+    CHAMBER_CONTEXT_QUERY = text(
+        """
+        SELECT lot_hist_id, lot_id, wafer_id, wafer_no, step_id, recipe_id,
+               track_in_at, track_out_at, chamber_wafer_cum
+          FROM lot_history
+         WHERE chamber_id = :chamber_id
+         ORDER BY track_in_at DESC NULLS LAST, lot_hist_id DESC
+         LIMIT 1001
+        """
+    )
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def list_chamber_history(
+        self,
+        chamber_id: str,
+    ) -> list[Mapping[str, Any]]:
+        connection = self._engine.connect()
+        try:
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            apply_postgres_statement_timeout(
+                connection,
+                timeout_seconds=TOOL_DB_TIMEOUT_SEC,
+            )
+            return list(
+                connection.execute(
+                    self.CHAMBER_CONTEXT_QUERY,
+                    {"chamber_id": chamber_id},
+                )
                 .mappings()
                 .all()
             )

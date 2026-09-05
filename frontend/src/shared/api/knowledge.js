@@ -96,6 +96,38 @@ const mockCoreGraphFor = (chamberId) => {
   }
 }
 
+const withMockProductionContext = (graph, chamberId) => {
+  const lotId = `LOT-${chamberId.replace(/[^A-Z0-9]/g, '')}`
+  const historyId = `MOCK-LH-${chamberId}`
+  const lotNodeId = `Lot:${lotId}`
+  const waferNodeId = `Wafer:${historyId}`
+  const nodes = [
+    ...graph.nodes,
+    mockGraphNode('Lot', lotId, lotId, { lot_id: lotId, source_system: 'POSTGRES_LOT_HISTORY' }),
+    mockGraphNode('Wafer', historyId, `WAFER-${chamberId}`, {
+      lot_hist_id: historyId,
+      lot_id: lotId,
+      wafer_id: `WAFER-${chamberId}`,
+      wafer_no: 1,
+      step_id: graph.context?.process_step_id,
+      source_system: 'POSTGRES_LOT_HISTORY',
+    }),
+  ]
+  const relationships = [
+    ...graph.relationships,
+    mockGraphRelationship(`PG-CONTAINS-${historyId}`, 'CONTAINS', lotNodeId, waferNodeId),
+    mockGraphRelationship(`PG-PROCESSED-IN-${historyId}`, 'PROCESSED_IN', waferNodeId, `Chamber:${chamberId}`),
+  ]
+  return {
+    ...graph,
+    nodes,
+    relationships,
+    node_count: nodes.length,
+    relationship_count: relationships.length,
+    production_context: { returned_count: 1, truncated: false },
+  }
+}
+
 const MOCK_DOCUMENT_ALIASES = Object.freeze({
   'DOC-TROUBLE-FDC': { legacy: 'TROUBLE_FDC_FaultGuide', firstChunk: 6 },
   'DOC-SPEC-PH9000': { legacy: 'SPEC_PH-9000_PhotoScanner', firstChunk: 5 },
@@ -150,9 +182,12 @@ const chamberRelation = (chamberId) => {
 
 export function getChamberRelationsCore(chamberId, params = {}) {
   const normalizedId = requireNonEmptyString(chamberId, 'chamber_id')
-  assertExactObject(params, ['label', 'limit'], 'getChamberRelationsCore params')
+  assertExactObject(params, ['label', 'limit', 'include_production_context'], 'getChamberRelationsCore params')
   const query = compactParams(params)
-  if (USE_MOCK) return mockResponse(mockCoreGraphFor(normalizedId))
+  if (USE_MOCK) {
+    const graph = mockCoreGraphFor(normalizedId)
+    return mockResponse(params.include_production_context ? withMockProductionContext(graph, normalizedId) : graph)
+  }
   return apiClient
     .get(`/relations/chambers/${encodeURIComponent(normalizedId)}`, { params: query })
     .then((response) => response.data)

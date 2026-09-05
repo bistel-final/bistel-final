@@ -76,11 +76,12 @@ function Node({ index, state }) {
 
 function NlqPipeline({ phase, def, rejected }) {
   const states = deriveSteps({ phase, def, rejected })
+  // 5단계 밑 문구 — 예외에만. 일치는 ✓ 가 이미 말하므로 비우고, 불일치(경고)·해당 없음(안 돌았음)만 한 단어로.
   const crossSub = (() => {
     const cc = def?.cross_check
     if (!cc || phase !== 'done') return null
-    if (cc.status === 'MATCH') return cc.summary ? `두 저장소 일치 · ${cc.summary}` : '두 저장소 일치'
-    if (cc.status === 'MISMATCH') return cc.summary ? `불일치 · ${cc.summary}` : '불일치'
+    if (cc.status === 'MATCH') return null
+    if (cc.status === 'MISMATCH') return '불일치'
     return '해당 없음'
   })()
   return (

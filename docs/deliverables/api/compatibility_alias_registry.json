@@ -62,6 +62,10 @@
         {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
           "reason": "`equipment`·`chamber`·`recipe`·`lot`는 trace 화면 URL·filter state의 property이며 AlarmItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/knowledge/pages/OntologyPage.jsx",
+          "reason": "`lot`·`wafer`는 Ontology 알람 집계 범위와 UI 상태 property이며 AlarmItem compatibility alias를 읽지 않음"
         }
       ],
       "removal_conditions": [
@@ -371,6 +375,10 @@
         {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
           "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 ActionItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/knowledge/pages/OntologyPage.jsx",
+          "reason": "`lot`은 Ontology 알람 집계 범위와 UI 상태 property이며 ActionItem compatibility alias를 읽지 않음"
         }
       ],
       "removal_conditions": [
@@ -671,6 +679,10 @@
         {
           "reference": "frontend/src/features/detection/pages/TracePage.jsx",
           "reason": "`lot`·`equipment`·`chamber`는 trace 화면 URL·filter state의 property이며 PublicApprovalItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/knowledge/pages/OntologyPage.jsx",
+          "reason": "`lot`은 Ontology 알람 집계 범위와 UI 상태 property이며 PublicApprovalItem compatibility alias를 읽지 않음"
         }
       ],
       "removal_conditions": [

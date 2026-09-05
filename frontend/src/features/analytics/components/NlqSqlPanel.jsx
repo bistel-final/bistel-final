@@ -2,6 +2,7 @@
 // 검증 항목은 POST /analytics/validate 응답(checks)을 그대로 렌더하고,
 // valid=false 면 같은 응답의 reason 을 그대로 노출한다.
 // "SQL 수정"을 누르면 pre 대신 textarea 로 전환해 편집 후 재검증·실행한다 (passthrough 경로, 검증 포함).
+import { useState } from 'react'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import Button from '../../../shared/components/ui/Button.jsx'
 import { Card } from '../../../shared/components/ui/Card.jsx'
@@ -48,6 +49,44 @@ function NlqSqlPanel({
   const failReason = valid === false && reason ? reason : null
   const lines = Math.max(2, sqlText.split('\n').length)
 
+  // 기본은 접힘 — 관리자는 SQL 을 읽지 않고 검증은 항상 통과라 정보가 없다. 검증 실패·편집 중에만 강제로 펼친다.
+  // 심사에서 "어떻게 안전한가"를 보여줄 때 한 번 클릭으로 SQL 본문과 6규칙이 전부 보인다.
+  const [open, setOpen] = useState(false)
+  const expanded = open || editing || valid === false
+
+  if (!expanded) {
+    return (
+      <Card className="flex items-center justify-between gap-4 px-6 py-3.5">
+        <div className="flex items-center gap-2.5 text-[12.5px]">
+          {validating ? (
+            <>
+              <span className="h-3.5 w-3.5 animate-[om-spin_.8s_linear_infinite] rounded-full border-2 border-tint-blue border-t-blue" />
+              <span className="text-g1">안전 검증 중…</span>
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 rounded-full bg-navy" aria-hidden="true" />
+              <span className="font-semibold text-navy">안전 검증 통과</span>
+              {list.length > 0 && (
+                <span className="font-mono text-g2">
+                  {passed}/{list.length}
+                </span>
+              )}
+              {verifyNotice && <span className={verifyNotice.ok ? 'text-g2' : 'font-semibold text-fail'}>· {verifyNotice.text}</span>}
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="cursor-pointer text-[12.5px] font-semibold text-blue hover:text-blue-hover"
+        >
+          생성 SQL 보기 ▸
+        </button>
+      </Card>
+    )
+  }
+
   return (
     <Card className="px-6 pb-5 pt-4">
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -79,9 +118,16 @@ function NlqSqlPanel({
               </Button>
             </>
           ) : (
-            <Button sm variant="outline" onClick={onStartEdit}>
-              SQL 수정
-            </Button>
+            <>
+              <Button sm variant="outline" onClick={onStartEdit}>
+                SQL 수정
+              </Button>
+              {valid !== false && (
+                <Button sm variant="outline" onClick={() => setOpen(false)}>
+                  접기
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

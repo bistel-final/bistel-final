@@ -1042,11 +1042,11 @@
 ### 4.5 `GET /relations/chambers/{chamber_id}`
 
 - 구분/담당: 보안필수 / B
-- 요청: path: chamber_id 필수; query: label 선택; limit 1..1000 기본500
+- 요청: path: chamber_id 필수; query: label 선택; limit 1..1000 기본500; include_production_context 기본false
 - 성공 응답: ChamberGraphResponse
 - 기타 상태: 404,422,503
 - 정렬·제약: node label/business_id; edge type/from/to
-- 호환·경계: chamber component만(Recipe/RecipeStep 제외); relation_id=REL-SHA20; graph_revision=검증 marker actual fingerprint; 응답 count는 subset 배열 길이; 전체 44/85는 graph gate; Neo4j Browser·credentials 직접 노출 금지
+- 호환·경계: chamber component만(Recipe/RecipeStep 제외); include_production_context=true면 Runtime DB lot_history 최신 1000건을 화면 read model Lot·Wafer node/edge로 추가하고 production_context.truncated으로 절단 여부를 알리며 Neo4j 적재·Agent routing은 변경하지 않음; relation_id=REL-SHA20; graph_revision=검증 marker actual fingerprint; 응답 count는 subset 배열 길이; 전체 44/85는 graph gate; Neo4j Browser·credentials 직접 노출 금지
 - 계약 규칙:
   - node_count equals len(nodes)
   - relationship_count equals len(relationships)
@@ -1065,7 +1065,16 @@
         }
       }
     },
-    "query": {}
+    "query": {
+      "include_production_context": {
+        "nullable": false,
+        "required": false,
+        "schema": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    }
   },
   "responses": {
     "200": {
@@ -1132,6 +1141,31 @@
                 "type": "object"
               },
               "type": "array"
+            }
+          },
+          "production_context": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "returned_count": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                },
+                "truncated": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "type": "object"
             }
           },
           "relationships": {

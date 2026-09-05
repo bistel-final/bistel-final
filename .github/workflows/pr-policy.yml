@@ -283,6 +283,7 @@ jobs:
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
           tests/unit/test_analysis_plan_tool.py
+          tests/unit/test_analytics_eval_freshness.py
           tests/unit/test_apply_agent_runtime.py
           tests/unit/test_apply_rag_schema.py
           tests/unit/test_audit_read.py
