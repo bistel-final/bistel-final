@@ -18,7 +18,7 @@ from app.agent.release_artifacts import EvidenceError, EvidenceModel, parse_json
 from app.common.schemas import ReadinessResponse
 
 GATEWAY_ORIGIN = "http://127.0.0.1:8080"
-_PATHS = ("/api/health/ready", "/", "/api")
+_PATHS = ("/api/health/ready", "/", "/api/health")
 _MAX_READINESS_BYTES = 16384
 
 
@@ -76,7 +76,7 @@ def _probe(fetch: Fetch, path: str) -> ProbeResponse:
 
 
 def verify_readiness(*, fetch: Fetch = fetch_gateway) -> ReadinessObservation:
-    """Require backend READY/exact six PASS, frontend / 200 and /api 200.
+    """Require backend READY/exact six PASS, frontend / and /api/health 200.
 
     Return an in-memory point-in-time observation only. No receipt, overall
     integrity, profile assertion, allowed_actions, or external-effect grant.
@@ -93,7 +93,7 @@ def verify_readiness(*, fetch: Fetch = fetch_gateway) -> ReadinessObservation:
     if readiness.status != "READY":
         raise EvidenceError("U10_READINESS_NOT_READY")
     frontend = _probe(fetch, "/")
-    api = _probe(fetch, "/api")
+    api = _probe(fetch, "/api/health")
     return ReadinessObservation(
         gateway_origin=GATEWAY_ORIGIN,
         backend_readiness=readiness,

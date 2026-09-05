@@ -1,7 +1,10 @@
 """Synthetic HTTP only; never call local deployments or external providers."""
 
+import ast
+import re
 import subprocess
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -17,7 +20,7 @@ CHECKS = (
     "n8n",
     "kafka",
 )
-PATHS = ("/api/health/ready", "/", "/api")
+PATHS = ("/api/health/ready", "/", "/api/health")
 
 
 def ready():
@@ -187,7 +190,57 @@ def test_default_transport_gets_only_local_gateway_without_proxy_or_redirect(
     )
 
 
-@pytest.mark.parametrize("path", ["https://example.com", "/api/other", "//other", None])
+def test_gateway_health_succeeds_when_bare_api_is_404(monkeypatch):
+    calls = []
+
+    def handler(request):
+        path = request.url.path
+        calls.append(path)
+        if path == "/api/health/ready":
+            return httpx.Response(200, json=ready())
+        if path == "/api/health":
+            return httpx.Response(200, json={"status": "UP"})
+        if path == "/":
+            return httpx.Response(200, text="<html>frontend</html>")
+        return httpx.Response(404)
+
+    mock_client(monkeypatch, handler)
+    result = subject.verify_readiness(fetch=subject.fetch_gateway)
+    assert result.api_status == 200
+    assert calls == ["/api/health/ready", "/", "/api/health"]
+
+
+def test_health_probe_matches_nginx_backend_and_stage2_source_contract():
+    # Read repository sources only; do not import main/start providers or nginx.
+    root = Path(__file__).resolve().parents[3]
+    nginx = (root / "frontend/nginx.conf").read_text()
+    assert re.search(
+        r"location\s+/api/\s*\{\s*proxy_pass\s+http://backend:8000/;", nginx
+    )
+    main = ast.parse((root / "backend/app/main.py").read_text())
+    get_routes = {
+        decorator.args[0].value
+        for node in main.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        for decorator in node.decorator_list
+        if isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and isinstance(decorator.func.value, ast.Name)
+        and decorator.func.value.id == "app"
+        and decorator.func.attr == "get"
+        and decorator.args
+        and isinstance(decorator.args[0], ast.Constant)
+    }
+    assert {"/health", "/health/ready"} <= get_routes
+    assert PATHS[2].removeprefix("/api") in get_routes
+    for name in ("cm52_common.sh", "cm52_stage2.sh"):
+        script = (root / "deploy/compose" / name).read_text()
+        assert re.search(r"http://127\.0\.0\.1:8080/api/health(?=\s)", script)
+
+
+@pytest.mark.parametrize(
+    "path", ["https://example.com", "/api/other", "//other", None, "/api"]
+)
 def test_default_transport_rejects_non_allowlisted_path_before_client(
     monkeypatch, path
 ):
@@ -226,7 +279,9 @@ def test_default_transport_sanitizes_connection_failure(monkeypatch):
         subject.fetch_gateway(PATHS[0])
 
 
-@pytest.mark.parametrize("path,status", [("/", 200), ("/api", 200), (PATHS[0], 503)])
+@pytest.mark.parametrize(
+    "path,status", [("/", 200), ("/api/health", 200), (PATHS[0], 503)]
+)
 def test_default_transport_closes_unused_body_without_reading(
     monkeypatch, path, status
 ):

@@ -1,6 +1,6 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
-담당 방대혁(C). 계획 v58의 **부분 구현**이다. 32 attempt의 구조와 판정 재계산 및
+담당 방대혁(C). 계획 v59의 **부분 구현**이다. 32 attempt의 구조와 판정 재계산 및
 고정 정책/공통 읽기와 32건 메모리 배치 실행 코어를 제공한다.
 실제 CF 데이터·provider 연결·운영 전환 Gate는 아니다.
 기존 `comparison.py`의 historical v1/v2 발급물은 변경하지 않는다.
@@ -404,12 +404,15 @@ subprocess 이전 거부를 확인한다. 외부 검사기의 선행 가드에 �
   epoch는 `fdc_final_20260818`, 상태는 READY, check는 postgresql_runtime·reference_migration·
   neo4j·rag·n8n·kafka **정확히 6종 PASS**여야 한다. 누락/추가 필드·상태 불일치·
   부적절한 reason·latency 타입 강제 변환을 허용하지 않는다. HTTP 200이어도 NOT_READY는 실패다.
-- 이후 frontend `/`와 `/api` 각각 HTTP 200을 확인한다. 첫 실패에서 중단하며 재시도하지 않는다.
+- 이후 frontend `/`와 `/api/health` 각각 HTTP 200을 확인한다. 첫 실패에서 중단하며 재시도하지 않는다.
   production backend는 host port가 없으므로 nginx의 `/api/` prefix 제거 경로를 사용한다.
+  `api_status`는 `/api/health`의 상태다. bare `/api`는 backend `/`로 전달되어 404이므로
+  검사 경로로 허용하지 않는다(18차 필수 1·계획 v59). 기존 Stage2 경로와 통일하며
+  backend에 새 root API를 추가하거나 nginx를 변경하지 않는다.
 - 기본 HTTP 포트는 GET만 사용하고 임의 URL/path·환경 proxy·redirect를 허용하지 않는다.
   HTTP I/O timeout은 15초(전체 검사 wall-clock deadline이 아님)이며 readiness body는
   streaming 16KiB 제한을 적용한다. 주입 포트 응답도 타입·크기를 다시 검증한다.
-  frontend HTML·API root·오류 응답 body는 읽거나 보존하지 않고 response/client를 닫는다.
+  frontend HTML·liveness·오류 응답 body는 읽거나 보존하지 않고 response/client를 닫는다.
   비정상 JSON·중복 키·비유한 수·전송 오류는 원문/URL 없는 고정 코드로 거부한다.
 - 반환물은 gateway origin·readiness DTO·frontend/API status의 메모리 관측값뿐이다.
   profile·container ID·revision·checked_at은 이 단위에서 결속하거나 주장하지 않는다.
