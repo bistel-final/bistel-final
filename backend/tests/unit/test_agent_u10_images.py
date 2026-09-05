@@ -276,6 +276,9 @@ def test_docker_command_is_read_only_and_projects_no_secrets(monkeypatch, kind):
         (b"not json", 0),
         (b'{"x":1,"x":2}', 0),
         (b"x" * 16385, 0),
+        pytest.param(
+            canonical_json({"value": "x" * 16384}), 0, id="oversize-valid-json"
+        ),
         (b"private-output", 1),
     ],
 )
@@ -301,6 +304,26 @@ def test_docker_process_error_is_sanitized(monkeypatch, error):
     monkeypatch.setattr(subject.subprocess, "run", fail)
     with pytest.raises(EvidenceError, match="^U10_DOCKER_INSPECT_INVALID$"):
         subject.docker_inspect("image", "sha256:" + "1" * 64)
+
+
+@pytest.mark.parametrize(
+    "kind,identifier",
+    [
+        ("image", "bistel-backend:latest"),
+        ("container", "bistel-team-backend-1"),
+        ("images", "sha256:" + "1" * 64),
+        ("image", None),
+    ],
+)
+def test_public_inspect_rejects_mutable_or_invalid_id_before_process(
+    monkeypatch, kind, identifier
+):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid Docker ID reached subprocess")
+
+    monkeypatch.setattr(subject.subprocess, "run", forbidden)
+    with pytest.raises(EvidenceError, match="^U10_DOCKER_ID_INVALID$"):
+        subject.docker_inspect(kind, identifier)
 
 
 def test_import_does_not_call_docker_git_or_load_providers():

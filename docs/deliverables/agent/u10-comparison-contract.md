@@ -391,6 +391,36 @@ Git 포트를 사용하며, Docker subprocess도 대체하여 명령의 읽기 �
 receipt 출처/무결성·DB identity/effective-env·readiness·robustness/delivery·live preflight 연결은
 각 소유 검증기를 통해 추가해야 한다. 이 검사기 통과만으로 production을 활성화할 수 없다.
 
+17차 권장 회귀는 **유효 JSON 16KiB 초과**를 넣어 cap 자체를 검증하고, 공개
+`docker_inspect()`에 image tag/container name/잘못된 kind/non-string ID를 직접 전달하여
+subprocess 이전 거부를 확인한다. 외부 검사기의 선행 가드에 의존하지 않는다.
+
+## Readiness 관측 경계
+
+`u10_readiness.verify_readiness()`는 계획의 preflight 검사 **7**만 담당한다.
+기본 포트는 순차 Compose 배포가 공유하는 `http://127.0.0.1:8080`의 코드 소유 경로를 사용한다.
+
+- `/api/health/ready` HTTP 200 응답을 기존 `ReadinessResponse`로 strict 검증한다.
+  epoch는 `fdc_final_20260818`, 상태는 READY, check는 postgresql_runtime·reference_migration·
+  neo4j·rag·n8n·kafka **정확히 6종 PASS**여야 한다. 누락/추가 필드·상태 불일치·
+  부적절한 reason·latency 타입 강제 변환을 허용하지 않는다. HTTP 200이어도 NOT_READY는 실패다.
+- 이후 frontend `/`와 `/api` 각각 HTTP 200을 확인한다. 첫 실패에서 중단하며 재시도하지 않는다.
+  production backend는 host port가 없으므로 nginx의 `/api/` prefix 제거 경로를 사용한다.
+- 기본 HTTP 포트는 GET만 사용하고 임의 URL/path·환경 proxy·redirect를 허용하지 않는다.
+  HTTP I/O timeout은 15초(전체 검사 wall-clock deadline이 아님)이며 readiness body는
+  streaming 16KiB 제한을 적용한다. 주입 포트 응답도 타입·크기를 다시 검증한다.
+  frontend HTML·API root·오류 응답 body는 읽거나 보존하지 않고 response/client를 닫는다.
+  비정상 JSON·중복 키·비유한 수·전송 오류는 원문/URL 없는 고정 코드로 거부한다.
+- 반환물은 gateway origin·readiness DTO·frontend/API status의 메모리 관측값뿐이다.
+  profile·container ID·revision·checked_at은 이 단위에서 결속하거나 주장하지 않는다.
+  후속 orchestrator가 image/DB identity 검사와 시각을 묶어야 한다. 관측 간 atomic snapshot이나
+  배포 교체 방지 lock은 아니며 이 결과만으로 overall integrity/allowed_actions를 발급하지 않는다.
+
+회귀는 합성 JSON과 `httpx.MockTransport`를 사용한다. 실제 localhost HTTP·Docker·DB·n8n·
+Kafka·LLM 호출을 수행하지 않는다. import 시 provider/config/DB/orchestrator를 로드하지 않는다.
+검사 **8(effective-env·DB identity)**의 기존 runtime readback 연결, 1~8 통합 preflight CLI,
+Stage2 및 실제 runner/lifecycle 연결은 남아 있다. 실환경 6-check PASS 증거는 아직 아니다.
+
 ## 아직 증명하지 않는 것
 
 13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
