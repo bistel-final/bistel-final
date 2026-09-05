@@ -514,7 +514,7 @@ agent_verdict·robustness·delivery_integrity·allowed_actions를 발급하지 �
 않으며 이후 검사 4에 전달해야 한다. 전체 preflight의 `integrity`나 allowed_actions는 발급하지
 않는다. CLI subprocess exit 재실행 대신 같은 순수 검증 함수를 호출하며 예외가 실패를 나타낸다.
 이 평가 결과와 검사 4~8의 동일 R/tree 연결은 아래 무결성 조립기가 담당한다.
-최종 CLI의 exit 0/1 및 4축 출력은 후속 조립 대상이다.
+CLI의 exit 0/1 및 4축 출력은 아래 묶음 A가 담당하며, robustness/delivery의 실제 검증은 묶음 C다.
 
 ## 검사 1~8 무결성 조립
 
@@ -539,11 +539,68 @@ agent_verdict·robustness·delivery_integrity·allowed_actions를 발급하지 �
   시각 역행, 반복 호출 시 파일·Git 작업 트리 무변경을 검증한다.
 
 이 모듈은 읽기 전용이며 저장된 preflight 상태를 만들지 않는다. `integrity=PASS`는 **검사 1~8의
-관측 결과**이지 production 활성화 허가가 아니다. robustness/delivery 검증기·4축 출력·
-allowed_actions·실패 JSON/exit 0/1·최종 CLI·Stage2 연결은 남아 있다. caller는 내부 DTO 전체를
+관측 결과**이지 production 활성화 허가가 아니다. 4축 출력·allowed_actions·실패 JSON/exit는
+아래 CLI로 연결했다. robustness/delivery 검증기·Stage2 연결은 남아 있다. caller는 내부 DTO 전체를
 공개 stdout으로 덤프하지 말고 최종 계약의 비밀 제외 필드만 투영해야 한다.
 재검사 뒤 변경, 변경 후 원상 복구, 실제 실행/발급자 진위와 gateway port 소유권은 이 시점
 대조로 보장하지 않는다. 기존 준비 격리와 승인 조건은 유지된다.
+
+## 묶음 A — preflight CLI와 evaluation receipt 발급
+
+22차 리뷰 §6의 묶음 A다. 구현리뷰는 이 묶음의 연결 테스트를 포함해 한 번 받는다.
+
+### `backend/scripts/u10_preflight.py`
+
+필수 인자: `--repository`, `--profile`, `--phase`, `--artifact`, `--evaluation-receipt`,
+`--benchmark`, `--benchmark-sha256`, 반복 가능한 `--image-id ROLE=ID`, `--container-id ROLE=ID`.
+production Level 3만 기존 `--expected-attempt-id` 계약의 독립 검증된 attempt를 전달한다.
+같은 role 중복·mutable ID·알 수 없는 role을 거부한다. role별 필수 집합은 기존 검사기가 소유한다.
+
+- `verify_preflight_integrity()`를 실제 호출하고 내부 DTO에서 계획 §454의 15개 공개 필드만
+  투영한다. `validator_command`, receipt 원문, config/budget, ACK·DSN은 stdout에 내보내지 않는다.
+  정상/오류 모두 **한 줄 JSON**, 오류 parser도 원래 argv/path를 stderr에 복사하지 않는다.
+  `--help`만 일반 argparse help/exit 0이며 preflight 실행 결과가 아니다.
+- 성공은 `failed_checks=[]`, 실패는 첫 고정 오류 코드 1건을 배열로 반환한다. 알려지지 않은
+  예외/원문 오류는 `U10_CLI_FAILED`로 바꾼다. 실패 시 확보하지 못한 root/head/R/verdict는 null,
+  image_ids는 빈 map이다. 부분 관측을 성공 결과처럼 복구하거나 별도 IO로 채우지 않는다.
+- **exit 0은 integrity PASS만 의미**한다. 연구 부정 판정의 `NO_GAIN`, `COST_CAP_EXCEEDED`,
+  `HARD_GATE_FAIL:*`도 그대로 보존하면서 exit 0이다. integrity 실패만 exit 1이다.
+- 묶음 A에는 robustness/delivery verifier가 없으므로 **두 축은 항상 `NOT_RUN`**이다.
+  CLI에 PASS 값을 주입하는 옵션이나 `--robustness-artifact`는 아직 없다(묶음 C 구현 대상).
+  `reset_attempt_id`도 reset lineage 검증 전이므로 null이며 production ACK로 대신 채우지 않는다.
+  이는 22차 묶음 A의 NOT_RUN 허용 범위다. 묶음 C에서 receipt 재검증/필수 인자 계약을 완성한다.
+- 순수 정책 함수는 `u9=e2e=(integrity==PASS)`, production은 integrity/robustness/delivery
+  **모두 PASS**일 때만 true다. 연구 verdict는 이 함수의 입력이 아니다. 현재 CLI에서는
+  production이 항상 false이므로 **exit 0만 보고 production을 켜면 안 된다**.
+- 상태 파일·로그·승인·컨테이너 lifecycle을 생성하지 않으며 반복 호출 때 매번 재검증한다.
+  실제 CLI는 기본 Docker/HTTP 포트를 사용한다. 테스트만 Python 호출의 leaf port를 주입한다.
+
+### `backend/scripts/emit_u10_evaluation_receipt.py`
+
+필수 인자: `--repository`, `--artifact`, `--benchmark`, `--benchmark-sha256`.
+artifact 안의 R을 사용하며 output 경로나 R을 따로 덮어쓰는 인자는 없다.
+
+- private artifact/benchmark SHA·순수 validator를 확인하고 **clean local main HEAD==R**을
+  검증한다. 코드 소유 argv로 `verify_u10_comparison.py`를 실제 subprocess 실행(30초 timeout,
+  stdout 16KiB 상한)하고 exit 0·artifact SHA·판정·사유·inspection_only 결과 전체를 대조한다.
+  사용자 명령을 실행하지 않는다. 실행한 interpreter/script/인자 목록을 private receipt에 기록한다.
+- 검증 명령 뒤 입력 bytes와 revision/clean 상태를 다시 대조하고, 발급 직전에도 clean R을
+  확인한다. Git/파일 lock은 아니며 동시 변경 방지와 실제 LLM 실행 provenance는 runner 책임이다.
+- 출력은 `<repository>/output/v5-c-7.1/<R>/u10-evaluation-receipt.json` 고정이다.
+  필요한 디렉터리는 0700으로 만들고 기존 경로가 symlink/non-directory/다른 소유자면 거부한다.
+  기존 R 디렉터리가 0700이 아니면 chmod하지 않고 실패한다. 상위 기존 디렉터리 권한은 보존한다.
+- 기존 `write_private`의 **0600·O_EXCL·fsync**를 사용한다. 재발급은 `ARTIFACT_EXISTS`로
+  거부하고 기존 바이트를 보존한다. 부분 파일도 삭제/덮어쓰지 않는다. immutable은 이 writer의
+  no-clobber 계약이며 OS immutable flag/서명이나 사후 편집 불가능성을 주장하지 않는다.
+- 성공 stdout은 status/receipt 경로·SHA/artifact SHA/R/verdict만 반환한다. 실패는 고정 code와
+  exit 1이다. 명령/stdout/stderr 원문은 출력하지 않는다. 부모 디렉터리 생성 중 실패하면 생성된
+  빈 디렉터리는 남을 수 있다. 공용 DB·LLM·SMTP·Docker는 호출하지 않는다.
+
+테스트는 임시 Git/private 파일·**실제 offline verifier subprocess**로 receipt를 발급한 뒤
+preflight CLI에 넘긴다. preflight의 상위 validator들은 실제 실행하며 Docker/HTTP만 합성이다.
+세 profile×정/부정, 부정 사유 3종, 반복 무변경, 전체 18개 Gate 조합, CLI parser/exit/필드 투영,
+발급 no-clobber·권한·symlink·dirty/feature·검증 실패·입력/HEAD drift를 함께 검증한다.
+실제 프로젝트에 새 실험 artifact/receipt를 발급하거나 배포한 증거는 아니다.
 
 ## 아직 증명하지 않는 것
 

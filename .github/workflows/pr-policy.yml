@@ -289,6 +289,7 @@ jobs:
           tests/unit/test_agent_u10_deployment.py
           tests/unit/test_agent_u10_evaluation.py
           tests/unit/test_agent_u10_integrity.py
+          tests/unit/test_agent_u10_cli_bundle.py
           tests/unit/test_agent_experiment.py
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py
