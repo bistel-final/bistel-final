@@ -62,6 +62,7 @@ class ObservationContext:
             "get_chamber_parameter_history": [],
             "get_metrology_result": [],
         }
+        self._successful_calls: list[dict[str, Any]] = []
 
     def initial_evidence_ids(self) -> EvidenceIds:
         from app.agent.u10_evidence import project_initial_evidence
@@ -258,12 +259,39 @@ class ObservationContext:
         result = self.validate_result(tool, request, result, internal)
         if not result.ok:
             return
+        call = {"tool_name": tool, "input": deepcopy(request)}
+        if call not in self._successful_calls:
+            self._successful_calls.append(call)
         # Equivalent repeated success does not inflate observations or candidates.
         if all(
             canonical_json(previous) != canonical_json(result)
             for previous in self._results[tool]
         ):
             self._results[tool].append(result)
+
+    def hypothesis_inputs(self) -> dict[str, Any]:
+        """Detached production-v3 inputs after the read loop (no oracle/labels).
+
+        Successful calls here describe observations, NOT reservation/attempt
+        counts. ReadSession remains the authoritative budget and retry ledger.
+        """
+        from app.agent.graph import _merge_document_results
+        from app.agent.investigation_models import InvestigationEvidence
+
+        equipment = self.results("get_equipment_context")
+        return {
+            "fdc_evidence": tuple(self.results("get_fdc_summary")),
+            "graph_evidence": equipment[-1] if equipment else None,
+            "document_evidence": _merge_document_results(
+                tuple(self.results("search_documents"))
+            ),
+            "route": deepcopy(self._route),
+            "investigation": InvestigationEvidence(
+                successful_calls=deepcopy(self._successful_calls),
+                history=tuple(self.results("get_chamber_parameter_history")),
+                metrology=tuple(self.results("get_metrology_result")),
+            ),
+        }
 
     def results(self, tool: str) -> list[Any]:
         if tool not in self._results:

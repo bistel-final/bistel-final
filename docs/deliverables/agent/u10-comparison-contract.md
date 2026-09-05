@@ -176,6 +176,38 @@ fake read 포트/실 Tool DTO/로컬 ThreadDeadlineRunner로 연결 순서를 �
 모두 같은 인코딩을 써야 한다. **현재 오프라인 validator가 이 source SHA 결속까지 증명하는 것은
 아니다.** 아직 발급하지 않은 U10 runner의 잔여 사항이며 단위 테스트의 fake raw-ID 계약과 구분한다.
 
+## 관찰에서 가설 v3 생성까지
+
+`ObservationContext.hypothesis_inputs()`는 성공 DTO와 성공 입력에서만 기존 가설 생성 함수의
+인자를 만든다. 현재 FDC·설비·문서·이력·계측·초기 route를 deep copy하고 oracle/label을
+별도 인자로 받지 않는다. 실패 조회는 성공 목록에 넣지 않는다. 이 목록은 조사 상태 계산용이며
+중복/재시도를 포함한 호출 횟수의 정본은 계속 `ReadSession.calls`다.
+
+문서 병합은 production graph의 `_merge_document_results()`를 그대로 재사용한다
+(동일 chunk 최고 점수·점수 내림차순·최대 10개). 이력/계측 DTO와 성공 호출은 기존
+`InvestigationEvidence`로 전달한다. 실제 DB reservation을 저장했다고 주장하지 않는다.
+
+`u10_hypothesis.execute_hypothesis()`는 읽기 루프 종료 후 호출한다. generator를 필수로 받으며
+`production_hypothesis_port()`가 기존 `hypothesis.production_port()`를 반환한다. import나
+factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이 같은 generator/model/seed를
+사용하도록 실제 runner가 결속해야 한다.
+
+- 성공 FDC가 하나도 없으면 generator 호출 없이 `HYPOTHESIS_EVIDENCE_INSUFFICIENT`를 반환한다.
+- 수정 재시도와 사용량 합산은 기존 가설 v3가 소유한다. 어댑터는 재시도를 추가하지 않는다.
+- 성공·실패 모두 실제 usage의 model 및 `agent-hypothesis-v3-ko1`을 대조한다.
+  usage 미관측은 `None`으로 보존하며 `measured_tokens()`는 이를 0으로 바꾸지 않고
+  `METRIC_PRECONDITION_INVALID`로 거부한다. timeout 전 관측된 부분 usage는 보존한다.
+- 안전한 오류 코드와 generator 구간 monotonic latency만 반환한다. 예외 원문은 저장하지 않는다.
+  seed는 음수/boolean을 거부한다. 어댑터 자체에 별도 provider timeout/강제 종료 기능은 없다.
+- 성공 결과는 실제 `HypothesisOutcome`을 재검증하고 v3 `origin_assessment` 및 코드 계산
+  `compared`와 대조한 뒤 namespace citation을 투영한다. generator 입력/결과 변조는 내부
+  관찰 문맥으로 전파되지 않는다.
+
+이때의 `compared`는 **production 가설의 route 기반 matrix**다. U10 artifact의
+`candidate_inventory` 기반 matrix·attempt completion·action·available/required 근거 집합
+검증을 대체하지 않는다. 어댑터에 주입 가능한 테스트 generator가 실제 LLM이라는 보증도 아니다.
+실제 실행과 model/config/seed/SHA 결속·승인 검증은 32-attempt runner의 잔여다.
+
 ## 아직 증명하지 않는 것
 
 - inventory의 실제 DB 재조회, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
