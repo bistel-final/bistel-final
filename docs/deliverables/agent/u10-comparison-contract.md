@@ -471,6 +471,8 @@ readback 전후 drift 확인 요구를 구현한다. **전체 `u10_preflight` �
 - profile과 `phase=pre_u9|post_start_pre_enable`, 관측 시작/완료 UTC 시각을 결과 DTO에 묶는다.
   naive/잘못된 시각·완료 시각 역행을 거부한다. phase는 관측 라벨이며 여기서 lifecycle 단계의
   허용 여부나 실행 권한을 판정하지 않는다. 기본 clock은 UTC wall clock이며 deadline/lock은 아니다.
+  20차 권장 반영: 두 시각의 DTO 타입은 기존 `UtcTime`이다. 원래 마이크로초 정밀도로 역행을
+  먼저 검사한 뒤 초 단위 `YYYY-MM-DDTHH:MM:SSZ`로 절삭·`utc()` 재검증해 직렬화한다.
 - 테스트는 상위 검사기 자체를 대체하지 않는다. 실제 image/runtime/readiness 검증을 연결하고
   Git 조회·inspect·readback·HTTP만 합성 포트로 대체한다. 세 profile·두 phase의 exact 순서,
   backend/frontend/runner의 runtime·HTTP 중 재시작, 중지, 실패 시 후속 호출 0건을 검증한다.
@@ -479,8 +481,39 @@ readback 전후 drift 확인 요구를 구현한다. **전체 `u10_preflight` �
 published-port 소유 container, 장기 실행 process 메모리의 동일성까지 증명하지 않는다.
 현재 반환값은 image/runtime/readiness DTO·profile/phase/시각이며 `head`·overall integrity·
 agent_verdict·robustness·delivery_integrity·allowed_actions를 발급하지 않는다.
-검사 1~3의 artifact/evaluation receipt 연결, 최종 4축 CLI, Stage2 lifecycle 연결이 남아 있다.
+검사 1~3은 아래 평가 검증 단위가 담당한다. 최종 1~8 조립·4축 CLI·Stage2 lifecycle 연결은 남아 있다.
 공용 배포·실서비스 조회·artifact 발급은 수행하지 않았다.
+
+## 검사 1~3 artifact·evaluation receipt 검증
+
+`u10_evaluation.verify_evaluation()`는 세 private 파일(artifact·evaluation receipt·benchmark)을
+읽고 기존 `verify_u10_comparison.py`와 **동일한 `validate_artifact()`**를 직접 재실행한다.
+파일 발급·subprocess·DB·LLM·배포 작업은 없다.
+
+- 세 파일 모두 기존 FD 기반 private reader의 regular file·0600·현재 사용자·단일 hard link·
+  symlink 거부·크기 제한을 적용한다. parent/root는 0700이다. benchmark **raw 파일 SHA**는
+  실행 전에 별도로 고정한 `pinned_benchmark_sha256`와 비교한다. artifact의 `benchmark_sha256`은
+  canonical Benchmark DTO SHA라 줄바꿈 포함 파일 SHA와 다르며 서로 대체하지 않는다.
+- `EvaluationReceipt`는 계획 §431의 필드를 exact/strict 검증한다. `validator_command`는
+  비어 있지 않은 argv 문자열 목록의 **이력 메타데이터**이며 실행하거나 exit 0 선언으로 검증을
+  생략하지 않는다. 명령의 실행 이력/완전성 자체는 증명하지 않는다. `decided_at`은 초 단위 UTC와
+  실제 달력값을 검증하고, tree OID 3종의 길이는 git_object_format sha1/sha256과 대조한다.
+- receipt의 artifact SHA를 raw bytes와 대조한 뒤 실제 32행·지표·판정 재계산을 수행한다.
+  artifact R, benchmark의 fixture/oracle/inventory/tool/fixed-policy SHA 5종, verdict rules SHA,
+  코드 소유 U10 예산 `{total:10, read:8, send:2, same_tool:4}` 및 재계산한 verdict를 receipt와 비교한다.
+  receipt `effective_budget_policy`는 이 U10 비교 예산의 exact map이며 검사 8의 runtime budget
+  5키 출력과는 별도 형식이다. 둘을 묵시적으로 교환하지 않는다.
+- 판정 값은 기존 비교 코드의 정본 문자열 `AGENT_JUSTIFICATION_ESTABLISHED_V21` /
+  `AGENT_JUSTIFICATION_NOT_ESTABLISHED_V21`을 보존한다. 계획의 축약 표기를 새 값으로 발급하지
+  않는다. receipt의 historical 필드명 `agent_justification_verdict`와 반환 `agent_verdict`를
+  exact 대조하되 부정 판정도 검증 성공이며 `HARD_GATE_FAIL:*` 등의 사유를 원문 코드로 유지한다.
+
+반환 DTO는 receipt와 파일 SHA·재계산 verdict/reason뿐이다. 파일·receipt·선언값의 일치가
+실제 LLM 실행, 원천 CF/tool source 내용의 진위, clean merged main, receipt 발급자/불변성을
+증명하지 않는다. SHA 원천과 파일 발급 책임은 별도다. tree OID는 이 단위에서 Git을 조회하지
+않으며 이후 검사 4에 전달해야 한다. 전체 preflight의 `integrity`나 allowed_actions는 발급하지
+않는다. CLI subprocess exit 재실행 대신 같은 순수 검증 함수를 호출하며 예외가 실패를 나타낸다.
+최종 CLI의 exit 0/1 및 4축 출력, 이 평가 결과와 검사 4~8 동일 R/tree 연결은 후속 조립 대상이다.
 
 ## 아직 증명하지 않는 것
 

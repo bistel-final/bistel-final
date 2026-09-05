@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.agent.release_artifacts import EvidenceError, EvidenceModel
+from app.agent.release_prepared import UtcTime, utc
 from app.agent.u10_images import (
     ImageBindings,
     Inspect,
@@ -39,8 +40,8 @@ Phase = Literal["pre_u9", "post_start_pre_enable"]
 class DeploymentObservation(EvidenceModel):
     profile: Profile
     phase: Phase
-    started_at: str
-    checked_at: str
+    started_at: UtcTime
+    checked_at: UtcTime
     image_bindings: ImageBindings
     runtime: RuntimeObservation
     readiness: ReadinessObservation
@@ -55,6 +56,12 @@ def _time(clock: Callable[[], datetime]) -> datetime:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
         raise EvidenceError("U10_OBSERVATION_TIME_INVALID")
     return value.astimezone(UTC)
+
+
+def _stamp(value: datetime) -> str:
+    stamp = value.strftime("%Y-%m-%dT%H:%M:%SZ")
+    utc(stamp)
+    return stamp
 
 
 def observe_deployment(
@@ -124,8 +131,8 @@ def observe_deployment(
     return DeploymentObservation(
         profile=profile,
         phase=phase,
-        started_at=started.isoformat().replace("+00:00", "Z"),
-        checked_at=checked.isoformat().replace("+00:00", "Z"),
+        started_at=_stamp(started),
+        checked_at=_stamp(checked),
         image_bindings=after,
         runtime=runtime,
         readiness=readiness,

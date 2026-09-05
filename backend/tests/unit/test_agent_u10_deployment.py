@@ -189,6 +189,18 @@ def test_backwards_clock_does_not_issue_observation(monkeypatch):
         subject.observe_deployment(**args)
 
 
+def test_microseconds_are_truncated_only_after_time_order_check(monkeypatch):
+    args, _, _, _ = setup(monkeypatch)
+    start = datetime(2026, 9, 5, 1, 2, 3, 123456, tzinfo=UTC)
+    times = iter([start, start + timedelta(microseconds=1)])
+    args["clock"] = lambda: next(times)
+    result = subject.observe_deployment(**args)
+    assert result.started_at == result.checked_at == "2026-09-05T01:02:03Z"
+    times = iter([start, start - timedelta(microseconds=1)])
+    with pytest.raises(EvidenceError, match="^U10_OBSERVATION_TIME_INVALID$"):
+        subject.observe_deployment(**args)
+
+
 def test_import_has_no_io_or_provider_loading():
     code = """
 import sys, subprocess, httpx
