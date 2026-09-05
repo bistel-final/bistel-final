@@ -76,6 +76,31 @@ hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSess
 주입 adapter가 read-only이고 실제 hard timeout을 집행한다는 검증도 실제 연결 단계에 남는다.
 이 모듈 자체는 callback의 강제 종료, 파일/artifact 발급, DB 또는 외부 서비스 호출을 하지 않는다.
 
+## ReAct 정책 연결
+
+`u10_react_execution.execute_react_policy()`는 기존 `react.guard_selection()`·
+`resolve_call()`·trace 생성 함수를 재사용하고, 허용된 읽기만 `ReadSession`으로 실행한다.
+실제 selector와 read adapter, 관찰에서 문맥을 재구성하는 `build_context`는 필수 주입 포트다.
+모듈 import는 config/provider를 불러오지 않으며 실행 진입 시 기존 ReAct 모듈만 지연 import한다.
+
+- selector는 후보 토큰만 선택하며, history의 incident-derived `internal_context`는 request와
+  분리해 전달한다. 재시도마다 이 문맥도 복사하여 adapter 변경으로 다음 호출이 달라지지 않는다.
+- 실제 호출 이력으로 성공한 대상/동일 문서 query 재조회를 거부한다. 가드 거부 2회·selector
+  호출 10회(구조 보정 재시도 포함)·읽기 8회/동일 도구 4회를 각각 제한한다.
+- build_context의 남은 예산은 신뢰하지 않고 재계산한다. run/lot/chamber/alarm identity 변경이나
+  이미 발급된 후보 token의 대상 변경을 거부한다. 새 후보의 사실상 정당성은 후속 snapshot adapter가
+  검증해야 한다. 인접 FDC의 방향·형제 chamber·현재 계측 scope도 inventory와 대조한다.
+- selector model/prompt를 검사하고 호출별 token·latency를 독립 집계한다. trace는 화면 호환
+  이벤트이므로 token을 trace 이벤트에서 중복 합산하지 않는다. provider usage가 없는 오류는
+  `SelectorMeasurement.usage=None`으로 보존하며 `measured_selector_calls()`가
+  `METRIC_PRECONDITION_INVALID`로 거부한다(0 token 대체 금지).
+- 반환값은 조사 calls/selector measurement/trace/stop reason뿐이다. 가설·조치·completion을
+  만들지 않는다. 특히 동일 도구 cap 때문에 마지막 실패의 retry를 수행하지 못한 조사나
+  불완전한 측정 결과를 caller가 임의로 성공 artifact로 바꾸면 안 된다.
+
+실제 context builder와 read adapter는 아직 미연결이다. 현재 회귀는 기존 production 가드에
+테스트 selector/read 포트를 주입한 검증이며 실 LLM 관측·DB snapshot 재조회가 아니다.
+
 ## 아직 증명하지 않는 것
 
 - inventory의 실제 DB 재조회, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
