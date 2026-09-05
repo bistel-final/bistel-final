@@ -48,3 +48,19 @@ def test_production_ack_is_not_substituted_by_valid_budget():
     payload["ack_matches_receipt"] = False
     with pytest.raises(ValueError, match="AUTONOMY_LEVEL_NOT_READY"):
         validate_readback(payload, "production_level3")
+
+
+@pytest.mark.parametrize("key,value", [("autonomy_level", 3.0), ("level3_enabled", 1)])
+def test_runtime_types_are_not_coerced(key, value):
+    payload = _payload("e2e_level3")
+    payload[key] = value
+    with pytest.raises(ValueError, match="AUTONOMY_LEVEL_NOT_READY"):
+        validate_readback(payload, "e2e_level3")
+
+
+@pytest.mark.parametrize("key", _payload("e2e_level3")["budget_policy"])
+def test_budget_float_alias_is_rejected(key):
+    payload = _payload("e2e_level3")
+    payload["budget_policy"][key] = float(payload["budget_policy"][key])
+    with pytest.raises(ValueError, match="AUTONOMY_LEVEL_NOT_READY"):
+        validate_readback(payload, "e2e_level3")

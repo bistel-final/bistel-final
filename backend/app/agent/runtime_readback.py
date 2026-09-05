@@ -5,12 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import text
-
-from app.agent.level3_gate import receipt_matches
-from app.common import config
-from app.common.db import get_app_engine
-
 PROFILES = {
     "production_level2": ("kosa_agent", 2, False),
     "e2e_level3": ("kosa_agent_e2e", 3, True),
@@ -19,8 +13,13 @@ PROFILES = {
 
 
 def validate_readback(payload: Mapping[str, Any], profile: str) -> None:
-    if profile not in PROFILES:
+    if type(profile) is not str or profile not in PROFILES:
         raise ValueError("READBACK_PROFILE_INVALID")
+    if (
+        type(payload.get("autonomy_level")) is not int
+        or type(payload.get("level3_enabled")) is not bool
+    ):
+        raise ValueError("AUTONOMY_LEVEL_NOT_READY")
     database, level, enabled = PROFILES[profile]
     if (
         payload.get("database"),
@@ -32,13 +31,19 @@ def validate_readback(payload: Mapping[str, Any], profile: str) -> None:
         enabled,
     ) or payload.get("database_user") != "kosa_app":
         raise ValueError("AUTONOMY_LEVEL_NOT_READY")
-    if payload.get("budget_policy") != {
-        "level12_total": 8,
-        "level3_total": 10,
-        "send": 2,
-        "same_tool_attempts": 4,
-        "selector_steps": 10,
-    }:
+    budget = payload.get("budget_policy")
+    if (
+        type(budget) is not dict
+        or any(type(value) is not int for value in budget.values())
+        or budget
+        != {
+            "level12_total": 8,
+            "level3_total": 10,
+            "send": 2,
+            "same_tool_attempts": 4,
+            "selector_steps": 10,
+        }
+    ):
         raise ValueError("AUTONOMY_LEVEL_NOT_READY")
     if (
         profile == "production_level3"
@@ -48,8 +53,13 @@ def validate_readback(payload: Mapping[str, Any], profile: str) -> None:
 
 
 def collect_readback() -> dict[str, Any]:
+    from sqlalchemy import text
+
+    from app.agent.level3_gate import receipt_matches
     from app.agent.react import REACT_MAX_STEPS
     from app.agent.tools import SEND_ACTION_BUDGET
+    from app.common import config
+    from app.common.db import get_app_engine
 
     try:
         with get_app_engine().connect() as connection:

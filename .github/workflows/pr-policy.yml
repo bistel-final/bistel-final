@@ -285,6 +285,7 @@ jobs:
           tests/unit/test_agent_u10_revision.py
           tests/unit/test_agent_u10_images.py
           tests/unit/test_agent_u10_readiness.py
+          tests/unit/test_agent_u10_runtime.py
           tests/unit/test_agent_experiment.py
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py

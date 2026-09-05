@@ -421,8 +421,39 @@ subprocess 이전 거부를 확인한다. 외부 검사기의 선행 가드에 �
 
 회귀는 합성 JSON과 `httpx.MockTransport`를 사용한다. 실제 localhost HTTP·Docker·DB·n8n·
 Kafka·LLM 호출을 수행하지 않는다. import 시 provider/config/DB/orchestrator를 로드하지 않는다.
-검사 **8(effective-env·DB identity)**의 기존 runtime readback 연결, 1~8 통합 preflight CLI,
-Stage2 및 실제 runner/lifecycle 연결은 남아 있다. 실환경 6-check PASS 증거는 아직 아니다.
+검사 8은 아래 runtime readback 단위가 담당한다. 1~8 통합 preflight CLI, Stage2 및 실제
+runner/lifecycle 연결은 남아 있다. 실환경 6-check PASS 증거는 아직 아니다.
+
+## Effective-env·DB identity 관측 경계
+
+`u10_runtime.verify_runtime_readbacks()`는 계획 v59의 preflight 검사 **8** 내부 단위다.
+기존 `runtime_readback.PROFILES`와 `validate_readback()`을 재사용하며 기대 설정을 CLI로 받지 않는다.
+
+- production_level2/3는 backend 1종, e2e_level3는 backend·runner 2종의 정확한 container ID map을
+  받는다. frontend에는 Python runtime/DB 연결이 없으므로 검사 8에서 exec하지 않는다. frontend
+  image/running/readiness 검사는 앞의 별도 단위가 계속 담당한다. ID는 64자리 hex이며 name/tag,
+  누락·추가 role, 같은 container의 역할 중복을 읽기 전에 거부한다.
+- 기본 포트는 `docker exec <ID> python -B /workspace/backend/scripts/read_agent_runtime.py
+  --profile <profile>`로 기존 스크립트를 실행한다. shell·env override·Compose service 이름 재탐색을
+  사용하지 않는다. 스크립트는 해당 container 환경의 config와 DB `current_database(), current_user`를
+  조회한다. HTTP 공개 응답/업무 API는 변경하지 않는다. 30초 subprocess timeout, stdout 16KiB
+  사후 cap, JSON object·중복 키 검증을 적용하고 stdout/stderr 원문은 오류에 포함하지 않는다.
+- host는 `PASS` 선언만 믿지 않고 schema/profile/필수 필드/extra key/type을 엄격히 검사한 뒤
+  database·user·level·enabled·budget을 코드 기대값과 다시 대조한다. 공통 validator도
+  `3.0 == 3`, `1 == True`, float budget의 Python 동등성 우회를 거부한다.
+- production Level 3는 별도 검증된 `expected_attempt_id`를 필수로 받아 `demo_ack`와 exact
+  대조하고 `ack_matches_receipt is True`도 요구한다. 다른 profile은 expected attempt 입력을
+  거부한다. **legacy receipt_matches는 attempt.json의 attempt 필드 일치만 확인**하므로 이 값은
+  full receipt/robustness/delivery 무결성 증명이 아니다. 그 검증기와 3-Gate 조립은 별도로 필요하다.
+- config/DB/React import는 `collect_readback()` 호출 때로 지연한다. host에서 검사 함수를
+  import하거나 payload를 검증하는 것만으로 provider/DB를 초기화하지 않는다.
+
+caller는 **검증된 image bindings와 동일한 container ID**, 독립 검증한 attempt를 제공해야 한다.
+이 단위는 ID와 관측 payload를 메모리 DTO로 돌려주며 image/project/revision·시각·PID·DB server
+system_identifier를 증명하지 않는다. exec는 새 Python process이므로 기존 장기 실행 process의
+메모리를 읽는 것도 아니다. readback 전후 배포 drift 확인, 1~8 wrapper 조립과 실운영 연결은 남아
+있다. `integrity`·`allowed_actions`·SMTP/LLM 승인·파일 발급·workload 실행은 하지 않는다.
+회귀는 합성 readback/subprocess와 실제 코드 validator를 사용하며 Docker/DB에는 접속하지 않는다.
 
 ## 아직 증명하지 않는 것
 
