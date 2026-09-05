@@ -11,7 +11,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from app.agent.release_artifacts import EvidenceError, canonical_json
-from app.agent.u10_comparison import EvidenceIds
+from app.agent.u10_comparison import EvidenceIds, Inventory
 
 if TYPE_CHECKING:
     from app.agent.react import ReactContext
@@ -68,6 +68,76 @@ class ObservationContext:
         from app.agent.u10_evidence import project_initial_evidence
 
         return project_initial_evidence(self._route)
+
+    def resolve_history_context(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Resolve fixed-policy history arguments against observed candidates.
+
+        No caller-supplied _context is accepted. Missing observed FDC/equipment
+        means no authorized history read, even if the snapshot had a candidate.
+        """
+        from app.agent import react
+
+        context = self.build_context()
+        for candidate in context.candidates.history:
+            selection = react.ReactSelection(
+                rationale_summary="fixed history scope",
+                next="get_chamber_parameter_history",
+                arguments=react.ReactArguments(
+                    history_candidate_id=candidate.candidate_id
+                ),
+            )
+            resolved = react.resolve_call(selection, context)
+            if canonical_json(request) == canonical_json(resolved["request"]):
+                return deepcopy(resolved["internal_context"])
+        raise EvidenceError("U10_READ_SCOPE_INVALID")
+
+    def validate_fixed_inputs(
+        self, inventory: Inventory, inputs: dict[str, Any]
+    ) -> None:
+        """Bind same-tool slots to their actual relation/chamber BEFORE any read."""
+        context = self.build_context()
+        expected = {
+            s
+            for s, ok in inventory.available_slots().items()
+            if ok and not s.startswith("DOCUMENT_")
+        }
+        if set(inputs) != expected:
+            raise EvidenceError("FIXED_INPUT_SLOTS_MISMATCH")
+        for slot, request in inputs.items():
+            valid = False
+            if slot in {"CURRENT_FDC", "ADJACENT_FDC"}:
+                relation = (
+                    "CURRENT" if slot == "CURRENT_FDC" else inventory.adjacent.relation
+                )
+                valid = any(
+                    c.relation == relation and request == {"lot_hist_id": c.lot_hist_id}
+                    for c in context.candidates.fdc
+                )
+            elif slot == "EQUIPMENT":
+                valid = request == {"chamber_id": context.chamber_id}
+            elif slot in {"HISTORY", "SIBLING"}:
+                chamber = (
+                    context.chamber_id
+                    if slot == "HISTORY"
+                    else inventory.sibling_chamber_id
+                )
+                valid = (
+                    isinstance(request, dict) and request.get("chamber_id") == chamber
+                )
+                if slot == "SIBLING":
+                    valid = (
+                        valid
+                        and chamber != context.chamber_id
+                        and chamber in self._graph.sibling_chamber_ids
+                    )
+            elif slot == "METROLOGY":
+                valid = any(
+                    c.relation == "CURRENT"
+                    and request == {"lot_id": c.lot_id, "step_id": c.step_id}
+                    for c in context.candidates.metrology
+                )
+            if not valid:
+                raise EvidenceError("FIXED_INPUT_SCOPE_INVALID")
 
     def build_context(self) -> ReactContext:
         from app.agent import react

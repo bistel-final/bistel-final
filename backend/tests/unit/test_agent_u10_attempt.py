@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from app.agent.hypothesis import HypothesisGenerationError
+from app.agent.react import ReactSelectionError
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_attempt import execute_react_attempt
 from app.agent.u10_comparison import (
@@ -17,6 +18,7 @@ from app.agent.u10_comparison import (
     Safety,
 )
 from tests.unit.test_agent_graph import _fdc
+from tests.unit.test_agent_react import _usage as selector_usage
 from tests.unit.test_agent_u10_comparison import ids
 from tests.unit.test_agent_u10_hypothesis import docs, generated, usage
 from tests.unit.test_agent_u10_observations import context
@@ -179,6 +181,35 @@ def test_initial_evidence_mismatch_and_dirty_context_are_rejected():
 
 def test_second_pair_order_is_react_first():
     assert run(attempt_no=2).attempt.execution_order == 3
+
+
+@pytest.mark.parametrize(
+    "code", ["REACT_STRUCTURE_INVALID", "LLM_TIMEOUT", "LLM_DEPENDENCY"]
+)
+def test_abnormal_selector_stop_is_incomplete_even_with_successful_hypothesis(code):
+    selections = []
+
+    def select(ctx, *, seed):
+        selections.append(ctx.structure_retry)
+        if len(selections) == 1:
+            return outcome("get_fdc_summary", fdc_candidate_id="F1")
+        assert ctx.fetched_fdc_candidate_ids == ("F1",)
+        raise ReactSelectionError(code, usage=selector_usage())
+
+    result = run(select=select)
+    expected = (
+        [False, False, True] if code == "REACT_STRUCTURE_INVALID" else [False, False]
+    )
+    assert selections == expected
+    assert result.reads.stop_reason == code
+    assert result.attempt.successful_reads == 1
+    assert (
+        result.hypothesis.error_code is None and result.hypothesis.outcome is not None
+    )
+    assert result.attempt.hypothesis_tokens.total() == 14
+    assert result.attempt.selector_tokens.total() == 10 * len(expected)
+    assert result.attempt.action == "WARNING"
+    assert result.attempt.completion is False
 
 
 def test_read_failures_retry_and_no_fdc_means_incomplete_not_free_llm():

@@ -232,11 +232,43 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
 - ReAct의 교차 순서 번호는 CF별 첫 attempt=2, 둘째=3(다음 CF는 +4)으로 고정한다.
   이는 번호 결속일 뿐, fixed 쪽 실행이나 실제 교차 순서를 실행했다는 증명이 아니다.
 
-반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 고정 정책의 end-to-end
-연결, 32건 interleave/배치·CF inventory 재조회·source/tool contract SHA·승인/receipt/이미지 결속은
+반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 32건 interleave/배치·
+CF inventory 재조회·source/tool contract SHA·승인/receipt/이미지 결속은
 아직 남아 있다. 단위 테스트는 테스트 read/selector/generator/observer를 사용하며 실험 성과가 아니다.
 
+## 고정 정책 단일 attempt 실행 연결
+
+`u10_attempt.execute_fixed_attempt()`는 같은 snapshot·초기 근거·fresh context 검사와
+가설/조치/외부 효과 관측/지표 조립 함수를 ReAct와 공유한다. 읽기만 기존
+`execute_fixed_policy()`로 수행하고 selector 인자·호출 경로는 없다. selector 목록·횟수·
+token·latency는 0이며 가설은 ReAct와 같은 seed/model을 사용한다.
+
+- 비문서 `bound_inputs`와 문서 `DocumentContext`는 실제 snapshot에 결속된 입력을 caller가
+  제공해야 한다. 새 코드는 그 데이터의 DB 진위를 증명하지 않는다.
+- 첫 읽기 전에 slot 집합과 현재/인접 FDC 관계, 현재/형제 history chamber, 설비·계측 대상을
+  검사한다. 같은 Tool을 쓰는 slot의 target 교환으로 `compared`를 잘못 계산하지 못하게 한다.
+- 이력 내부 `_context`는 `ObservationContext.resolve_history_context()`가 **관측된** 후보와
+  exact canonical request를 대조해 production `react.resolve_call()`로 생성한다.
+  호출자 `_context`, 미관측 parameter, boolean/int 우회는 수용하지 않는다. FDC가 실패하여
+  관측 후보가 없으면 history port를 호출하지 않고 공통 read runner가 ERROR/재시도로 기록한다.
+- 문서 query 2개와 model filter는 기존 코드 소유 함수로 만든다. snapshot model과 다른
+  문서 context는 첫 읽기 전에 거부한다. 문서 query를 bound_inputs로 주입할 수 없다.
+- candidate가 없는 slot만 NO_CANDIDATE로 skip한다. ERROR/TIMEOUT 공통 1회 재시도와
+  read 8회 예산을 그대로 쓰며 예산 소진 후 미실행 문서를 추가 호출하지 않는다.
+- fixed 교차 번호는 CF별 첫 attempt=1, 둘째=4(+4씩)다. 두 policy 번호가 맞아도 실제
+  32건 interleave를 수행했다는 증명은 아니며, 배치 실행기는 후속 작업이다.
+
+반환물은 메모리 `FixedAttemptResult(attempt, calls, skipped_slots, hypothesis)`다.
+공유 조립 경계의 ReAct 회귀와 고정 정책의 문서/현재·형제 history/예산 경계를 함께 검증한다.
+실 DB·LLM·observer 연결, 데이터 반출 승인, revision/image/receipt·immutable artifact 발급은
+여전히 후속 실행기에서 처리해야 한다.
+
 ## 아직 증명하지 않는 것
+
+13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
+timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도 SIBLING 거부(1건),
+정상 binding 양성 대조 후 CURRENT/ADJACENT target 교환 거부(상류·하류 2건)를 검증한다.
+각각 F5/O1/O3 가드 무력화 변이를 탐지하며, 이 테스트 fixture를 실제 DB snapshot으로 주장하지 않는다.
 
 - inventory의 실제 DB 재조회, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
   CF 8종 fixture/oracle의 적합성 및 각 입력 파일 SHA 검증.
