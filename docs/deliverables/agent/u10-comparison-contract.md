@@ -98,8 +98,8 @@ hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSess
   만들지 않는다. 특히 동일 도구 cap 때문에 마지막 실패의 retry를 수행하지 못한 조사나
   불완전한 측정 결과를 caller가 임의로 성공 artifact로 바꾸면 안 된다.
 
-관찰 DTO 기반 context builder는 아래 모듈로 연결한다. 실제 DB snapshot/read adapter와
-provider는 아직 미연결이며 회귀는 실 LLM 관측·DB snapshot 재조회가 아니다.
+관찰 DTO 기반 context builder와 읽기 어댑터는 아래 모듈로 연결한다. 실제 CF snapshot과
+provider 실행은 아직 미연결이며 회귀는 실 LLM 관측·DB snapshot 재조회가 아니다.
 
 ## Tool DTO 기반 관찰 문맥
 
@@ -120,7 +120,31 @@ provider는 아직 미연결이며 회귀는 실 LLM 관측·DB snapshot 재조�
 `execute_react_policy(..., state.build_context, ..., invoke, ...)`에 연결하는 회귀를 제공한다.
 예산은 여전히 정책 실행기가 덮어쓰며 이 builder가 집행하지 않는다. 이 모듈은 DTO의 실제
 DB 출처/수치의 진위를 증명하지 않고, 조회·timeout·evidence ID 발급·가설 생성도 하지 않는다.
-다음 snapshot/read adapter가 `authorize → 실제 조회 → record` 순서를 보장해야 한다.
+아래 읽기 어댑터가 `authorize → 조회 → 검증 → record` 순서를 집행한다.
+
+## 읽기 어댑터 연결
+
+`u10_read_adapter.ReadAdapter`는 `ObservationContext`, 읽기 포트 5개, caller 소유 deadline
+runner, code-owned evidence projector를 필수로 받는다. 전송 포트는 없다.
+`ReadPorts.production()`은 기존 `ToolBoundary.production()`을 인자 없이 호출해 읽기 포트만
+복사하며 send-action factory를 구성하지 않는다. module import 자체는 factory를 실행하지 않는다.
+
+- 외부 호출 전에 scope를 확인하고 history 내부 문맥만 `_context` 키로 도구 입력에 결합한다.
+  고정 정책과 ReAct 모두 문서 `model_code`를 명시해야 한다. Fixed query 입력과 policy spec에도
+  snapshot model filter를 추가했으므로 `fixed_policy_sha256`은 새 코드에서 다시 고정해야 한다.
+  historical v1/v2와 아직 발급하지 않은 U10 artifact를 혼동하지 않는다.
+- `DeadlineRunner.call(..., seconds=8)`의 worker에는 읽기 함수만 전달한다. DTO 검증·projection·
+  관찰 저장은 반환 후 caller에서 수행하므로 timeout 뒤의 늦은 worker 결과가 관찰을 갱신하지 않는다.
+  server-side hard timeout은 기존 읽기 도구가 소유하며 이 어댑터가 worker를 강제 종료하지 않는다.
+- 포화는 ERROR, timeout은 TIMEOUT, 의존성 예외는 ERROR로 기록하며 원문을 노출하지 않는다.
+  실패 DTO도 TIMEOUT prefix를 구분하고 빈 evidence만 반환한다. 재시도/예산은 `ReadSession`이 소유한다.
+- `validate_result()`는 관찰을 저장하지 않고 DTO/identity를 검사한다. 그 뒤 projector의 ID
+  canonical 정렬·SHA를 검증하고 **마지막에만** `record()`한다. DTO/scope/projection 오류 시
+  성공 관찰은 0건이다. 입력·내부 문맥·projector/반환 값의 mutation과 어댑터 재진입을 격리한다.
+
+근거 ID의 의미와 oracle 매핑은 후속 CF fixture의 code-owned projector가 정의해야 한다.
+이 어댑터는 주입 projector의 ID가 실제 oracle 의미에 맞는지 증명하지 않는다. 현재 테스트는
+fake read 포트/실 Tool DTO/로컬 ThreadDeadlineRunner로 연결 순서를 검증하며 공용 DB에는 접속하지 않는다.
 
 ## 아직 증명하지 않는 것
 

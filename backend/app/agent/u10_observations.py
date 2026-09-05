@@ -175,14 +175,14 @@ class ObservationContext:
         if guard:
             raise EvidenceError("U10_READ_SCOPE_INVALID")
 
-    def record(
+    def validate_result(
         self,
         tool: str,
         request: dict[str, Any],
         result: Any,
         internal: dict[str, Any] | None = None,
-    ) -> None:
-        """Only validated, identity-bound SUCCESS results enter selector context."""
+    ) -> Any:
+        """Validate and copy a result without publishing it to observations."""
         from app.common import tool_contracts as dto
 
         self.authorize(tool, request, internal)
@@ -198,7 +198,7 @@ class ObservationContext:
             raise EvidenceError("U10_OBSERVATION_TYPE_INVALID")
         result = model.model_validate(result.model_dump()).model_copy(deep=True)
         if not result.ok:
-            return
+            return result
         valid = True
         if tool == "get_fdc_summary":
             candidate = next(
@@ -239,6 +239,19 @@ class ObservationContext:
             )
         if not valid:
             raise EvidenceError("U10_OBSERVATION_SCOPE_INVALID")
+        return result
+
+    def record(
+        self,
+        tool: str,
+        request: dict[str, Any],
+        result: Any,
+        internal: dict[str, Any] | None = None,
+    ) -> None:
+        """Only validated, identity-bound SUCCESS results enter selector context."""
+        result = self.validate_result(tool, request, result, internal)
+        if not result.ok:
+            return
         # Equivalent repeated success does not inflate observations or candidates.
         if all(
             canonical_json(previous) != canonical_json(result)

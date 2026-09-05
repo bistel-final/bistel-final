@@ -46,6 +46,7 @@ FIXED_POLICY_SPEC = {
         "suffixes": ["FDC 이상 원인 점검", "FDC 점검 절차"],
         "separator": " ",
         "max_length": 200,
+        "model_filter": "snapshot_model_code",
     },
 }
 
@@ -222,7 +223,10 @@ def fixed_policy_requests(
             skips.append(SkippedSlot(slot=slot, reason="NO_CANDIDATE"))
             continue
         arguments = (
-            {"query": fixed_policy_document_query(context, slot)}
+            {
+                "query": fixed_policy_document_query(context, slot),
+                "model_code": context.model_code,
+            }
             if slot.startswith("DOCUMENT_")
             else bound_inputs[slot]
         )

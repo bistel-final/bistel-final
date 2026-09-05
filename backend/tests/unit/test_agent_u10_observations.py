@@ -302,6 +302,12 @@ def test_invalid_snapshot_scope_and_dto_type_are_rejected():
         context().record("get_fdc_summary", {"lot_hist_id": "LH-REP"}, _equipment())
 
 
+def test_inconsistent_route_is_rejected_before_context_creation():
+    route = replace(_level3_route(), route_consistency=False)
+    with pytest.raises(EvidenceError, match="^U10_SNAPSHOT_SCOPE_INVALID$"):
+        ObservationContext("RUN-1", route, ["LH-REP"], document_model_code="MODEL-1")
+
+
 def test_module_import_does_not_open_runtime_or_provider():
     result = subprocess.run(
         [
