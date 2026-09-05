@@ -272,6 +272,7 @@ jobs:
           tests/unit/test_agent_public_api.py
           tests/unit/test_agent_comparison.py
           tests/unit/test_agent_u10_comparison.py
+          tests/unit/test_agent_u10_read_execution.py
           tests/unit/test_agent_experiment.py
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py

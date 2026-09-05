@@ -1,7 +1,7 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
-담당 방대혁(C). 계획 v58의 **부분 구현**이다. 실제 실행기·CF 시나리오 데이터·운영
-전환 Gate가 아니라, 실행기가 나중에 생산할 32 attempt의 구조와 판정을 재계산한다.
+담당 방대혁(C). 계획 v58의 **부분 구현**이다. 32 attempt의 구조와 판정 재계산 및
+고정 정책/공통 읽기 실행 코어를 제공한다. 실제 CF 데이터·provider 연결·운영 전환 Gate는 아니다.
 기존 `comparison.py`의 historical v1/v2 발급물은 변경하지 않는다.
 
 ## 입력과 결속
@@ -51,6 +51,30 @@ CLI의 benchmark pin은 **파일 byte SHA**이며 artifact 내부 benchmark SHA�
 `agent_verdict=AGENT_JUSTIFICATION_NOT_ESTABLISHED_V21`로 출력한다.
 `integrity=PASS`는 이 오프라인 계약의 일관성만 뜻한다. `inspection_only=true`이고
 `allowed_actions`·승인 파일·receipt·env 수정·production enable 기능은 없다.
+
+## 고정 정책 및 공통 읽기 실행 코어
+
+`backend/app/agent/u10_read_execution.py`는 provider/config/DB를 import하지 않는다.
+`execute_fixed_policy()`는 후보가 존재하는 slot만 정해진 순서로 실행하며, selector나
+hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSession.execute()`를 사용한다.
+
+- `fixed_policy_document_query()`는 snapshot의 model/parameter ID만 받아 중복 제거·정렬한
+  식별자와 두 code-owned suffix로 검색어를 만든다. 최대 200자이며 oracle/가설 입력은 없다.
+  `fixed_policy_sha256()`는 query 규칙·slot·budget의 canonical spec SHA를 제공한다.
+  실제 benchmark에 이 SHA를 결속하는 runner는 아직 미연결이다.
+- 시작 전 전체 fixed 입력의 slot 집합/JSON 크기를 검사한다. 문서 검색어 override는 거부한다.
+  snapshot별 식별자 allowlist와 사실상 inventory 검증은 후속 adapter의 책임이다.
+- ERROR/TIMEOUT은 동일 선택·canonical 입력으로 1회 재시도한다. 매 호출 직전 예산을 소비하며
+  read 8회·동일 도구 4회 상한에 도달하면 추가 adapter 호출 없이 차단한다.
+- callback 예외 원문은 보존하지 않고 ERROR/TIMEOUT만 기록한다. monotonic clock으로 지연을
+  측정하고 input digest·selection·retry·status·evidence ID를 기존 `ReadCall` 계약으로 남긴다.
+- 반환 기록과 입력은 복사하여 외부 mutation을 격리한다. 동시/재진입은 BUSY로 거부하고,
+  비정상 관찰·중단·선택 중 상한 도달로 끝난 session은 다시 실행할 수 없다.
+  남은 호출 기록을 보존하되 runner가 임의로 completion=true를 만들면 안 된다.
+
+이는 **인메모리 조사 실행 코어**다. production의 DB 예약/복구/감사 경계를 대체하지 않는다.
+주입 adapter가 read-only이고 실제 hard timeout을 집행한다는 검증도 실제 연결 단계에 남는다.
+이 모듈 자체는 callback의 강제 종료, 파일/artifact 발급, DB 또는 외부 서비스 호출을 하지 않는다.
 
 ## 아직 증명하지 않는 것
 
