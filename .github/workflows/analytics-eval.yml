@@ -20,13 +20,9 @@ name: Analytics Eval
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "backend/app/analytics/tools.py"
-      - "backend/app/analytics/eval_fingerprint.py"
-      - "backend/scripts/run_analytics_eval.py"
-      - "backend/artifacts/analytics_eval/questionset_fdc_final.json"
-      - "infra/bootstrap/manifests/runtime.runtime_clean.json"
-      - ".github/workflows/analytics-eval.yml"
+    # paths 필터를 쓰지 않는다 — Required 검사는 항상 실행되어야 한다.
+    # (paths 로 걸러지면 다른 파트 PR 에서 검사가 생성되지 않아 'Expected' 상태로 머지가 막힌다)
+    # 대신 첫 단계에서 바뀐 파일을 보고 D 평가 경로가 없으면 성공으로 즉시 종료한다.
 
 concurrency:
   group: analytics-eval-${{ github.head_ref }}
@@ -75,7 +71,25 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      # 0) D 평가 경로가 바뀐 PR 인지 — 아니면 여기서 성공 종료 (다른 파트 PR 은 30초 초록)
+      - name: Detect relevant changes
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # PR 의 변경 파일 목록은 API 가 정본 — git diff 는 fetch depth may leave no merge-base
+          changed=$(gh pr view "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --json files -q '.files[].path')
+          echo "$changed"
+          if echo "$changed" | grep -Eq '^(backend/app/analytics/tools\.py|backend/app/analytics/eval_fingerprint\.py|backend/scripts/run_analytics_eval\.py|backend/artifacts/analytics_eval/questionset_fdc_final\.json|infra/bootstrap/manifests/runtime\.runtime_clean\.json|\.github/workflows/analytics-eval\.yml)$'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "D 평가 경로 변경 없음 — 실행 생략" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Python 3.12
+        if: steps.rel.outputs.relevant == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -83,6 +97,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install backend deps
+        if: steps.rel.outputs.relevant == 'true'
         working-directory: backend
         run: |
           set -euo pipefail
@@ -92,6 +107,7 @@ jobs:
       # 1) 지금 artifact 가 현재 구성 기준이면 여기서 끝 — LLM 호출 0회
       - name: Check evaluation freshness
         id: fresh
+        if: steps.rel.outputs.relevant == 'true'
         working-directory: backend
         continue-on-error: true
         run: |
