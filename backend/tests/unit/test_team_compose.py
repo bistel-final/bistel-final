@@ -50,6 +50,9 @@ BACKEND_ENV_KEYS = {
     "N8N_WEBHOOK_TIMEOUT_SEC",
     "DELIVERY_UNKNOWN_AFTER_SEC",
     "AGENT_EMAIL_RECIPIENTS",
+    "AGENT_AUTONOMY_LEVEL",
+    "AGENT_LEVEL3_ENABLED",
+    "AGENT_LEVEL3_DEMO_ACK",
     "CORS_ORIGINS",
     "LLM_PROVIDER",
     "LLM_MODEL_MAIN",
@@ -551,6 +554,33 @@ def test_preflight_accepts_a_complete_nonlocal_contract(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("level", "enabled"), [("3", "false"), ("2", "true"), ("4", "false")]
+)
+def test_preflight_rejects_single_key_level_three(
+    tmp_path: Path, level: str, enabled: str
+) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values.update(AGENT_AUTONOMY_LEVEL=level, AGENT_LEVEL3_ENABLED=enabled)
+    assert preflight.Finding(
+        "AGENT_AUTONOMY_LEVEL", "AUTONOMY_LEVEL_INVALID"
+    ) in preflight.validate(values)
+
+
+def test_compose_preserves_default_level_two_and_exposes_only_three_opt_in_keys() -> (
+    None
+):
+    source = COMPOSE_PATH.read_text()
+    for line in (
+        "AGENT_AUTONOMY_LEVEL: ${AGENT_AUTONOMY_LEVEL:-2}",
+        "AGENT_LEVEL3_ENABLED: ${AGENT_LEVEL3_ENABLED:-false}",
+        "AGENT_LEVEL3_DEMO_ACK: ${AGENT_LEVEL3_DEMO_ACK:-}",
+    ):
+        assert line in source
+    assert "AGENT_LEVEL3_MAX_TOOL_CALLS" not in source
+
+
+@pytest.mark.parametrize(
     ("key", "value", "code"),
     [
         ("TEAM_IMAGE_TAG", "latest", "IMAGE_TAG_REVISION_MISMATCH"),
@@ -710,8 +740,17 @@ def test_compose_rendered_model_preserves_runner_isolation(tmp_path: Path) -> No
         pytest.skip("docker CLI is unavailable")
     env_file = tmp_path / ".env.team"
     values = _valid_env(tmp_path)
+    opt_in_keys = (
+        "AGENT_AUTONOMY_LEVEL",
+        "AGENT_LEVEL3_ENABLED",
+        "AGENT_LEVEL3_DEMO_ACK",
+    )
+    for key in opt_in_keys:
+        values.pop(key, None)
     _write_env(env_file, values)
     compose_environment = {**os.environ, **values}
+    for key in opt_in_keys:
+        compose_environment.pop(key, None)
 
     base = subprocess.run(
         [
@@ -756,6 +795,13 @@ def test_compose_rendered_model_preserves_runner_isolation(tmp_path: Path) -> No
     backend = model["services"]["backend"]
     runner = model["services"]["e2e-runner"]
     revision = values["SOURCE_REVISION"]
+
+    for service in (backend, runner):
+        assert {key: service["environment"][key] for key in opt_in_keys} == {
+            "AGENT_AUTONOMY_LEVEL": "2",
+            "AGENT_LEVEL3_ENABLED": "false",
+            "AGENT_LEVEL3_DEMO_ACK": "",
+        }
 
     assert runner["image"] == f"bistel-backend:v5-{revision[:12]}"
     assert runner["build"]

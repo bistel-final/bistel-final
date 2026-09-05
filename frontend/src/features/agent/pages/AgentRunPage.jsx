@@ -21,6 +21,8 @@ import RunDetailModal from '../components/RunDetailModal.jsx'
 import RunHeaderCard from '../components/RunHeaderCard.jsx'
 import RunListPanel from '../components/RunListPanel.jsx'
 import RunSummaryCard from '../components/RunSummaryCard.jsx'
+import RunInvestigationCard from '../components/RunInvestigationCard.jsx'
+import RunInvestigationTimeline from '../components/RunInvestigationTimeline.jsx'
 
 const publicErrorMessage = (error, fallback) => {
   const status = error?.response?.status
@@ -295,6 +297,7 @@ function AgentRunDetailPage({ runId }) {
             />
           </div>
           <AgentExecutionFlow detail={detail} alarm={alarm} />
+          <RunInvestigationTimeline detail={detail} />
           {pollingEnded && (
             <div className="flex items-center justify-between rounded-lg border border-tint-amber-line bg-tint-amber px-4 py-2 text-[12.5px] text-tint-amber-text">
               <span>30초 자동 갱신이 종료됐습니다. 전송 재시도는 수행하지 않았습니다.</span>
@@ -309,6 +312,7 @@ function AgentRunDetailPage({ runId }) {
             lim={lim}
             action={detail.action}
           />
+          <RunInvestigationCard diagnosis={detail.diagnosis} />
           <div className="flex justify-end">
             <Button onClick={() => setModalOpen(true)}>근거 · 조치 상세 보기</Button>
           </div>

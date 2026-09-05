@@ -1046,6 +1046,23 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
 | D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
 
+#### V5-C-7.1 실행 상세 additive 계약 (C · 2026-09-05)
+
+`GET /agent/runs/{run_id}`에 `autonomy_level`(1~3), `remaining_read_calls`,
+`react_trace: ReactStepPublic[]`, `trace_state`를 추가한다. Level 1·2는
+`NOT_APPLICABLE`과 빈 trace, Level 3 RUNNING·WAITING_APPROVAL은 `PENDING`과 빈 trace다.
+종료한 Level 3는 `agent_run.evidence.react_trace`만 읽어 `AVAILABLE`로 반환하며, finalize 전
+crash 등으로 저장본이 없으면 `UNAVAILABLE`이다. 원문 Tool 인자·query·lot_hist_id·digest와
+selector provider model은 trace 공개 필드에 포함하지 않는다. 선택의 짧은 이유와 서버 생성
+인자/관찰 요약, phase·guard·중단 사유·selector token만 제공한다.
+
+`diagnosis.parameter_findings`는 인용 FDC에서 코드가 계산한 파라미터·recipe step·방향
+(`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된
+namespace별 근거와 상류·하류·형제·이력·계측의 `CHECKED|NOT_CHECKED|NOT_AVAILABLE`를 담는다.
+LLM draft에 산술·compared 필드를 받지 않는다. 새 prediction은 `agent-evidence-v3`,
+가설 prompt는 `agent-hypothesis-v3-ko1`이며 v1·v2 저장본 읽기를 유지한다. 경로·status code와
+CM-5.1 operation 모집단(20/30/36)은 변하지 않는다.
+
 ### 5.3 팀 release 필수 확장 API
 
 다음 6개(D 확장 5개 + Agent 평가 1개)는 멘토 기준 분류상 확장이지만 팀의 7개 주

@@ -17,6 +17,7 @@ from app.agent.diagnostics import (
     IncidentDiagnosticSnapshot,
     WaferParameterObservation,
 )
+from app.agent.investigation_models import ComparisonMatrix, InvestigationEvidence
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -25,7 +26,7 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-PROMPT_VERSION: Final = "agent-hypothesis-v2-ko1"
+PROMPT_VERSION: Final = "agent-hypothesis-v3-ko1"
 MAX_PROMPT_CHARS: Final = 12_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
 MAX_PROMPT_MEMBER_ALARMS: Final = 12
@@ -269,6 +270,8 @@ def build_hypothesis_messages(
     diagnostic_snapshot: IncidentDiagnosticSnapshot | None = None,
     evidence_assessment: EvidenceAssessmentBlock | None = None,
     impact_scope: ImpactScopeBlock | None = None,
+    investigation: InvestigationEvidence | None = None,
+    compared: ComparisonMatrix | None = None,
 ) -> list[dict[str, str]]:
     """초도·보정 시도가 같은 근거 builder를 쓰는 messages를 만든다."""
 
@@ -298,6 +301,33 @@ def build_hypothesis_messages(
             None if impact_scope is None else impact_scope.model_dump(mode="json")
         ),
         "route": _route_payload(route),
+        "investigation": {
+            "compared": None if compared is None else compared.model_dump(),
+            "history": [
+                {
+                    "scope": item.scope,
+                    "parameter_id": item.parameter_id,
+                    "step_no": item.step_no,
+                    "trend": item.trend,
+                    "sample_count": item.sample_count,
+                    "current": None
+                    if item.current is None
+                    else {
+                        "lot_mean": item.current.lot_mean,
+                        "ooc_wafers": item.current.ooc_wafers,
+                        "oos_wafers": item.current.oos_wafers,
+                    },
+                    "prior_means": [prior.lot_mean for prior in item.prior],
+                }
+                for item in (() if investigation is None else investigation.history)
+                if item.ok
+            ],
+            "metrology": [
+                item.model_dump(mode="json")
+                for item in (() if investigation is None else investigation.metrology)
+                if item.ok
+            ],
+        },
     }
     evidence_json = json.dumps(
         evidence,
@@ -312,12 +342,13 @@ def build_hypothesis_messages(
         "predicted_fault_code, confidence, cause_summary, supporting_alarms, "
         "supporting_chunk_ids, supporting_relation_ids, supporting_lot_hist_ids, "
         "supporting_parameter_ids, uncertainty, observations, evidence_synthesis, "
-        "alternative_hypotheses, impact_summary, verification_steps, limitations. "
+        "alternative_hypotheses, impact_summary, verification_steps, limitations, "
+        "parameter_findings_draft, origin_claim. "
         "predicted_fault_code는 FOC, RFM, MFD, TMD, OTH 중 하나여야 합니다. "
         "supporting_alarms 항목은 다음 형식을 사용하세요: "
         '{"source":"TRACE|SUMMARY|R03","alarm_id":"..."}. '
-        "제공된 식별자만 인용하세요. member alarm은 최소 하나 인용하고, 문서 hit나 "
-        "관계 식별자가 존재하면 각각 최소 하나를 인용하세요. 알람은 "
+        "제공된 식별자만 인용하세요. member alarm은 최소 하나 인용하고, 문서 hit가 "
+        "있으면 최소 하나 인용하세요. 관계는 판단에 사용한 경우에만 인용하세요. 알람은 "
         "route.incident.member_alarms의 제공된 인용 후보, 문서 chunk는 "
         "document.hits[].chunk_id, "
         "관계는 route.graph_evidence[].relation_ids의 값을 정확히 복사하세요. "
@@ -331,7 +362,16 @@ def build_hypothesis_messages(
         "cause_summary, uncertainty, observations, evidence_synthesis, "
         "alternative_hypotheses의 summary와 lower_rank_reason, impact_summary, "
         "verification_steps, limitations에 모두 적용됩니다. "
-        "추가 키 없이 다음 15개 키와 값 형태를 정확히 사용하세요: "
+        "parameter_findings_draft에는 실제 인용한 parameter_id와 "
+        "lot_hist_ids만 넣으세요. "
+        "이탈 방향·크기·wafer_scope·compared는 코드가 계산하므로 출력에 넣지 마세요. "
+        "non-OTH는 유효 이탈 finding이 필요하고 cause_summary에 해당 parameter_id를 "
+        "모두 포함하세요. origin_claim.scope와 basis_refs를 고르고 "
+        "namespace별 제공 ID만 "
+        "인용하세요. 상류/하류 주장은 그 차원이 CHECKED이며 해당 방향 lot_hist를 "
+        "실제로 인용할 때만 허용됩니다. 미조사는 NOT_CHECKED, 대상 부재는 "
+        "NOT_AVAILABLE이며 서로 다릅니다. 계측 결과는 품질 근거입니다. "
+        "추가 키 없이 다음 17개 키와 값 형태를 정확히 사용하세요: "
         '{"predicted_fault_code":"OTH","confidence":0.0,"cause_summary":"...",'
         '"supporting_alarms":[{"source":"SUMMARY","alarm_id":"..."}],'
         '"supporting_chunk_ids":["..."],"supporting_relation_ids":["..."],'
@@ -340,7 +380,9 @@ def build_hypothesis_messages(
         '"evidence_synthesis":"...","alternative_hypotheses":['
         '{"summary":"...","lower_rank_reason":"..."}],'
         '"impact_summary":"...","verification_steps":["..."],'
-        '"limitations":["..."]}. confidence는 0부터 1 사이의 숫자이며 모든 '
+        '"limitations":["..."],"parameter_findings_draft":[],"origin_claim":'
+        '{"scope":"UNDETERMINED","basis_refs":[]}}. '
+        "confidence는 0부터 1 사이의 숫자이며 모든 "
         "supporting 필드는 JSON 배열입니다."
     )
     user = f"Evidence JSON:\n{evidence_json}"

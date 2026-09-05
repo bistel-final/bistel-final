@@ -232,6 +232,7 @@ def _prediction_record(row: Any) -> PredictionRecord:
         if evidence.get("schema_version") not in {
             "agent-evidence-v1",
             "agent-evidence-v2",
+            "agent-evidence-v3",
         }:
             raise PredictionRepositoryError("PREDICTION_EVIDENCE_INVALID")
         supporting_alarms = tuple(

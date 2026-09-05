@@ -1,0 +1,10 @@
+{
+  "schema_version": "agent-counterfactual-oracle-v1",
+  "oracle": [
+    {"fixture_id": "CF-1", "required_evidence_ids": ["DOC-CF1-DIRECTION"]},
+    {"fixture_id": "CF-2", "required_evidence_ids": ["DOC-CF2-DYNAMIC"]},
+    {"fixture_id": "CF-3", "required_evidence_ids": ["DOC-CF3-RECOVERED"]},
+    {"fixture_id": "CF-4", "required_evidence_ids": ["DOC-CF4-A"]},
+    {"fixture_id": "CF-5", "required_evidence_ids": ["DOC-CF5"]}
+  ]
+}

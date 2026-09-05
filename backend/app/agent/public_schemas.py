@@ -17,6 +17,13 @@ from app.agent.diagnostics import (
     PostActionObservationBlock,
     SimilarIncidentsBlock,
 )
+from app.agent.react import (
+    ReactNext,
+    ReactPhase,
+    ReactStep,
+    ReactStopReason,
+    SelectorTokens,
+)
 from app.common.enums import (
     ActionCode,
     AlarmSource,
@@ -386,6 +393,41 @@ RunEvidenceItem = Annotated[
 RUN_EVIDENCE_ADAPTER = TypeAdapter(RunEvidenceItem)
 
 
+class ReactStepPublic(ApiModel):
+    """U2-lite 공개 allowlist. 원문 인자·digest·provider model은 제외한다."""
+
+    seq: int = Field(ge=1)
+    phase: ReactPhase
+    rationale_summary: str | None = Field(default=None, max_length=120)
+    tool: ReactNext | None = None
+    argument_summary: str | None = Field(
+        default=None,
+        pattern=(
+            r"^(후보 wafer [1-9][0-9]*\((현재|상류|하류)\)|"
+            r"이력 [1-9][0-9]*\((현재|형제)\)|"
+            r"계측 [1-9][0-9]*\((현재|상류|하류)\)|문서 검색|설비 컨텍스트)$"
+        ),
+    )
+    observation_summary: str | None = Field(default=None, max_length=160)
+    guard_code: str | None = Field(default=None, max_length=64)
+    react_prompt_version: Literal["agent-react-v2-ko1"] | None = None
+    selector_tokens: SelectorTokens
+    stop_reason: ReactStopReason | None = None
+    degraded: bool = False
+
+    @model_validator(mode="after")
+    def validate_phase(self) -> "ReactStepPublic":
+        ReactStep.model_validate(
+            {
+                **self.model_dump(),
+                "llm_model": "public" if self.react_prompt_version else None,
+            }
+        )
+        if self.phase in {"SELECTED", "OBSERVED"} and self.argument_summary is None:
+            raise ValueError("선택·관찰에는 서버 생성 인자 요약이 필요합니다")
+        return self
+
+
 class AgentRunDetailResponse(PublicAgentRunItem):
     evidence_items: list[RunEvidenceItem]
     prediction: AgentPredictionDetailItem | None
@@ -396,6 +438,12 @@ class AgentRunDetailResponse(PublicAgentRunItem):
     impact_scope: ImpactScopeBlock
     similar_incidents: SimilarIncidentsBlock
     post_action_observation: PostActionObservationBlock
+    autonomy_level: int = Field(default=2, ge=1, le=3, strict=True)
+    react_trace: list[ReactStepPublic] = Field(default_factory=list)
+    trace_state: Literal["NOT_APPLICABLE", "PENDING", "AVAILABLE", "UNAVAILABLE"] = (
+        "NOT_APPLICABLE"
+    )
+    remaining_read_calls: int = Field(default=0, ge=0, le=8)
 
     @model_validator(mode="after")
     def validate_detail_identity(self) -> "AgentRunDetailResponse":

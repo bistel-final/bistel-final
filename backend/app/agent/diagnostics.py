@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.agent.investigation_models import OriginAssessment, ParameterFinding
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.enums import ActionCode, AlarmType, FaultHypothesis
 from app.common.ids import NonEmptyId
@@ -115,8 +116,8 @@ class IncidentDiagnosticSnapshot(DiagnosticModel):
     chamber_id: NonEmptyId
     representative_alarm_ref: NonEmptyId
     member_alarm_count: int = Field(ge=1)
-    target_wafer_count: int = Field(ge=1, le=3)
-    observed_wafer_count: int = Field(ge=0, le=3)
+    target_wafer_count: int = Field(ge=1, le=8)
+    observed_wafer_count: int = Field(ge=0, le=8)
     wafer_observations: tuple[WaferParameterObservation, ...]
     parameter_patterns: tuple[ParameterPattern, ...]
     step_patterns: tuple[StepPattern, ...]
@@ -150,6 +151,8 @@ class DiagnosisBlock(DiagnosticModel):
     verification_steps: tuple[str, ...]
     limitations: tuple[str, ...]
     diagnostic_coverage: str | None = None
+    parameter_findings: tuple[ParameterFinding, ...] = ()
+    origin_assessment: OriginAssessment | None = None
 
     @model_validator(mode="after")
     def validate_status(self) -> DiagnosisBlock:
@@ -162,6 +165,7 @@ class DiagnosisBlock(DiagnosticModel):
                 self.evidence_synthesis,
                 self.cause_summary,
                 self.diagnostic_coverage,
+                self.origin_assessment,
             )
             if any(item is not None for item in populated):
                 raise ValueError("EMPTY diagnosis에는 판단 값을 넣을 수 없습니다")
@@ -170,6 +174,7 @@ class DiagnosisBlock(DiagnosticModel):
                     self.observations,
                     self.alternative_hypotheses,
                     self.verification_steps,
+                    self.parameter_findings,
                 )
             ):
                 raise ValueError("EMPTY diagnosis에는 판단 목록을 넣을 수 없습니다")
@@ -459,7 +464,9 @@ def build_diagnostic_snapshot(
         direct_scope=DirectScope(
             lot_ids=(route.incident.lot_id,),
             wafer_ids=wafer_ids,
-            chamber_ids=(route.incident.chamber_id,),
+            chamber_ids=tuple(
+                sorted({result.wafer.chamber_id for result in successful})
+            ),
             parameter_ids=parameter_ids,
             model_codes=tuple(
                 sorted(

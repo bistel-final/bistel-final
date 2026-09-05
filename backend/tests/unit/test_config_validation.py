@@ -20,7 +20,10 @@ BASE_ENV = {
     "NEO4J_URI": "bolt://localhost:7687",
     "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/fdc-notify-email",
     "AGENT_AUTONOMY_LEVEL": "2",
+    "AGENT_LEVEL3_ENABLED": "false",
+    "AGENT_LEVEL3_DEMO_ACK": "",
     "AGENT_MAX_TOOL_CALLS": "8",
+    "AGENT_LEVEL3_MAX_TOOL_CALLS": "10",
     "AGENT_MAX_RETRY": "3",
     "HITL_REQUIRED_SEVERITY": "HIGH",
     "MODEL_SIGNAL_ENABLED": "false",
@@ -46,7 +49,9 @@ class TestDefaults:
         config = load_config(monkeypatch)
 
         assert config.AGENT_AUTONOMY_LEVEL == 2
+        assert config.AGENT_LEVEL3_ENABLED is False
         assert config.AGENT_MAX_TOOL_CALLS == 8
+        assert config.AGENT_LEVEL3_MAX_TOOL_CALLS == 10
         assert config.AGENT_MAX_RETRY == 3
         assert config.HITL_REQUIRED_SEVERITY == "HIGH"
         assert config.MODEL_SIGNAL_ENABLED is False
@@ -118,9 +123,34 @@ class TestApprovalGateCannotBeBypassed:
 
 
 class TestAutonomyLevel:
-    @pytest.mark.parametrize("value", ["1", "2", "3"])
+    @pytest.mark.parametrize("value", ["1", "2"])
     def test_allowed_levels(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
         assert load_config(monkeypatch, AGENT_AUTONOMY_LEVEL=value).AGENT_AUTONOMY_LEVEL
+
+    def test_level_three_requires_both_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config = load_config(
+            monkeypatch,
+            AGENT_AUTONOMY_LEVEL="3",
+            AGENT_LEVEL3_ENABLED="true",
+        )
+        assert config.AGENT_AUTONOMY_LEVEL == 3
+        assert config.AGENT_LEVEL3_ENABLED is True
+
+    @pytest.mark.parametrize(("level", "enabled"), [("3", "false"), ("2", "true")])
+    def test_single_level_three_key_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        level: str,
+        enabled: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="AUTONOMY_LEVEL_INVALID"):
+            load_config(
+                monkeypatch,
+                AGENT_AUTONOMY_LEVEL=level,
+                AGENT_LEVEL3_ENABLED=enabled,
+            )
 
     @pytest.mark.parametrize("value", ["0", "4", "-1"])
     def test_out_of_range_is_rejected(
@@ -148,6 +178,15 @@ class TestBudgetBounds:
 
     def test_retry_allows_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert load_config(monkeypatch, AGENT_MAX_RETRY="0").AGENT_MAX_RETRY == 0
+
+    @pytest.mark.parametrize("value", ["0", "1", "-1"])
+    def test_level_three_budget_reserves_two_send_slots(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="AGENT_LEVEL3_MAX_TOOL_CALLS"):
+            load_config(monkeypatch, AGENT_LEVEL3_MAX_TOOL_CALLS=value)
 
     def test_retry_rejects_negative(self, monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(RuntimeError, match="AGENT_MAX_RETRY"):

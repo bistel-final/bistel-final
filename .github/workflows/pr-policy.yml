@@ -112,6 +112,10 @@ jobs:
         working-directory: frontend
         run: npm run test:agent-screen
 
+      - name: Verify Agent investigation components and public trace fixture
+        working-directory: frontend
+        run: npm run test:agent-investigation
+
       - name: Verify API schema-derived mock contract
         working-directory: frontend
         run: npm run test:api-schema
@@ -266,6 +270,39 @@ jobs:
           tests/unit/test_agent_diagnostics.py
           tests/unit/test_agent_evaluation_read_model.py
           tests/unit/test_agent_public_api.py
+          tests/unit/test_agent_comparison.py
+          tests/unit/test_agent_u10_comparison.py
+          tests/unit/test_agent_u10_read_execution.py
+          tests/unit/test_agent_u10_react_execution.py
+          tests/unit/test_agent_u10_observations.py
+          tests/unit/test_agent_u10_read_adapter.py
+          tests/unit/test_agent_u10_evidence.py
+          tests/unit/test_agent_u10_hypothesis.py
+          tests/unit/test_agent_u10_attempt.py
+          tests/unit/test_agent_u10_fixed_attempt.py
+          tests/unit/test_agent_u10_batch.py
+          tests/unit/test_agent_u10_inventory.py
+          tests/unit/test_agent_u10_revision.py
+          tests/unit/test_agent_u10_images.py
+          tests/unit/test_agent_u10_readiness.py
+          tests/unit/test_agent_u10_runtime.py
+          tests/unit/test_agent_u10_deployment.py
+          tests/unit/test_agent_u10_evaluation.py
+          tests/unit/test_agent_u10_integrity.py
+          tests/unit/test_agent_u10_cli_bundle.py
+          tests/unit/test_agent_u10_preparation.py
+          tests/unit/test_agent_u10_fixtures.py
+          tests/unit/test_agent_u10_provider.py
+          tests/unit/test_agent_u10_runner.py
+          tests/unit/test_agent_experiment.py
+          tests/unit/test_agent_level3_gate.py
+          tests/unit/test_agent_observation.py
+          tests/unit/test_agent_react.py
+          tests/unit/test_agent_hypothesis_v3.py
+          tests/unit/test_agent_investigation.py
+          tests/unit/test_agent_react_public.py
+          tests/unit/test_agent_runtime_readback.py
+          tests/unit/test_agent_release.py
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
           tests/unit/test_analysis_plan_tool.py
@@ -353,6 +390,15 @@ jobs:
       # 최종 ZIP이 붙어 있는 release tag. **비밀이 아니라 repo variable이다** — 값 자체는
       # 태그 이름일 뿐이고, private asset 다운로드 권한은 `GITHUB_TOKEN`이 가진다.
       FINAL_ARCHIVE_RELEASE: ${{ vars.MENTOR_FINAL_ARCHIVE_RELEASE }}
+      # Agent import의 공통 설정. 실제 DB 접속은 각 테스트의 one-off endpoint를 쓴다.
+      POSTGRES_DB: kosa_agent
+      POSTGRES_HOST: localhost
+      READONLY_USER: kosa_readonly
+      READONLY_PASSWORD: ci-not-a-secret
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-not-a-secret
+      NEO4J_URI: bolt://localhost:7687
+      N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
 
     steps:
       - name: Check out repository
@@ -810,6 +856,10 @@ jobs:
       # **이 축은 실제 View가 아니면 성립하지 않는다.** `unnest` 두 배열의 순서쌍 대응,
       # source별 join 형상이 만드는 owner resolve, `(lot_id, wafer_id, chamber_id)`
       # unique 제약 부재가 만드는 fan-out은 단위 fake로 재현되지 않는다.
+      - name: Verify generated Level 3 lifecycle schema and failure tables
+        working-directory: backend
+        run: python scripts/render_level3_lifecycle_contract.py --check
+
       - name: Prove WAFER route scope against the real alarm view
         working-directory: backend
         run: >-
@@ -852,6 +902,22 @@ jobs:
           # 여기서 통과하고 거기서 실패한다.
           echo "MENTOR_FINAL_ARCHIVE=${target}" >> "${GITHUB_ENV}"
 
+      - name: Prove investigation history and metrology against final data
+        working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_investigation_container.py
+          -rs --no-header
+
       - name: Prove the three-target transition with the actual final archive
         if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
         working-directory: backend
@@ -892,6 +958,7 @@ jobs:
             echo "- CM-3.1 최종 ZIP 9 CSV 기반 0/189·3/192·TRACE 138·SUMMARY 51 실증"
             echo "- CM-3.2 Runtime 002 runner — rehearsal rollback·fresh apply·adopt·no-op과"
             echo "  final data gate(TRACE 138·SUMMARY 51·null owner 0·R03 0/3) 음성 회귀"
+            echo "- C-7.1 investigation history/metrology — 최종 데이터 실조회 미검증"
             echo
             echo "archive 없이 도는 회귀는 위 step에서 실행됐다(skip 목록은 \`-rs\` 출력)."
             echo

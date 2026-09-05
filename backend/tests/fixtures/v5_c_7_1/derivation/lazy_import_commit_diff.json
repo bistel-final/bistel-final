@@ -1,0 +1,13 @@
+{
+  "base_revision": "71d6b254e908e7d545579d86f41f29f3f13818ed",
+  "head_revision": "cc7bf5daacddd1d30516ca90980c0cf5062f2d0c",
+  "changed_backend_files": [
+    "backend/scripts/compare_autonomy_levels.py",
+    "backend/scripts/observe_agent_justification.py",
+    "backend/tests/unit/test_agent_comparison.py"
+  ],
+  "script_diffs": {
+    "backend/scripts/compare_autonomy_levels.py": "diff --git a/backend/scripts/compare_autonomy_levels.py b/backend/scripts/compare_autonomy_levels.py\nindex 12d5e2b..5029245 100644\n--- a/backend/scripts/compare_autonomy_levels.py\n+++ b/backend/scripts/compare_autonomy_levels.py\n@@ -54 +53,0 @@ from app.common.tool_contracts import (  # noqa: E402\n-from app.detection.service import FdcSummaryService  # noqa: E402\n@@ -284,0 +284,2 @@ def _tool_boundary(engine: Any) -> ToolBoundary:\n+        from app.detection.service import FdcSummaryService\n+\n",
+    "backend/scripts/observe_agent_justification.py": "diff --git a/backend/scripts/observe_agent_justification.py b/backend/scripts/observe_agent_justification.py\nindex fddd08c..1fe257e 100644\n--- a/backend/scripts/observe_agent_justification.py\n+++ b/backend/scripts/observe_agent_justification.py\n@@ -46 +45,0 @@ from app.common.tool_contracts import (  # noqa: E402\n-from app.detection.service import FdcSummaryService  # noqa: E402\n@@ -110,0 +110,2 @@ class CounterfactualBoundary:\n+        from app.detection.service import FdcSummaryService\n+\n"
+  }
+}

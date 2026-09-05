@@ -59,6 +59,7 @@ from app.common.enums import (
     FaultHypothesis,
     RunStatus,
     Severity,
+    ToolCallStatus,
 )
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -174,6 +175,31 @@ class _FakeTools:
         self.budget_connections.append(connection)
         return self.budget(run_id)
 
+    def history(self, run_id: str) -> tuple[Any, ...]:
+        names = {
+            "fdc": "get_fdc_summary",
+            "equipment": "get_equipment_context",
+            "documents": "search_documents",
+            "send_action": "send_action",
+        }
+        rows = []
+        for name, request in self.calls:
+            canonical = names.get(name)
+            if canonical is None:
+                continue
+            ok = not (
+                (name == "fdc" and not self._fdc_ok)
+                or (name == "equipment" and not self._equipment_ok)
+            )
+            rows.append(
+                SimpleNamespace(
+                    tool_name=canonical,
+                    input=request.model_dump(mode="json"),
+                    status=(ToolCallStatus.SUCCESS if ok else ToolCallStatus.ERROR),
+                )
+            )
+        return tuple(rows)
+
     def fdc_summary(self, run_id: str, request: Any) -> FdcSummaryToolResult:
         self.calls.append(("fdc", request))
         return _fdc(ok=self._fdc_ok)
@@ -250,6 +276,7 @@ class _BudgetBlockedTools(_FakeTools):
                     "send_action": 2,
                 },
                 pending_reservations=1,
+                autonomy_level=2,
             ),
         )
 
@@ -273,6 +300,7 @@ class _Ports:
         docs: Any,
         route: Any,
         extra_data_gaps: tuple[str, ...],
+        investigation: Any = None,
     ) -> Any:
         self.calls.append("generate_hypothesis")
         self.hypothesis_extra_data_gaps = extra_data_gaps
@@ -642,13 +670,14 @@ def test_read_repositories_use_the_shared_public_sql_boundary(module: Any) -> No
     assert "execute_read_all" in imported_names
 
 
-def test_graph_has_exactly_fourteen_canonical_and_one_internal_node(
+def test_graph_has_exactly_sixteen_canonical_and_one_internal_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph, *_ = _build(monkeypatch)
     names = set(graph.get_graph().nodes) - {"__start__", "__end__"}
     assert names == set(CANONICAL_NODES) | set(INTERNAL_NODES)
-    assert len(CANONICAL_NODES) == 14
+    # V5-C-7.1: Level 3 ReAct 노드 2개(react_select·react_tool) 추가 → 16
+    assert len(CANONICAL_NODES) == 16
     assert INTERNAL_NODES == ("fail_run",)
 
 
@@ -662,6 +691,10 @@ def test_graph_edges_are_the_reviewed_canonical_and_failure_routes(
         ("load_incident", "collect_fdc"),
         ("collect_fdc", "collect_equipment"),
         ("collect_fdc", "collect_documents"),
+        ("collect_fdc", "react_select"),
+        ("react_select", "react_tool"),
+        ("react_select", "generate_hypothesis"),
+        ("react_tool", "react_select"),
         ("collect_equipment", "collect_documents"),
         ("collect_documents", "generate_hypothesis"),
         ("generate_hypothesis", "decide_action"),
@@ -1067,6 +1100,7 @@ def test_safe_node_keeps_budget_block_nonterminal_for_future_tool_nodes() -> Non
         total=8,
         by_tool={"get_fdc_summary": 4, "send_action": 2, "search_documents": 2},
         pending_reservations=0,
+        autonomy_level=2,
     )
 
     def blocked(_state: Any) -> dict[str, Any]:

@@ -2220,6 +2220,16 @@
             "type": "string"
           }
         },
+        "autonomy_level": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": 2,
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
         "chamber": {
           "nullable": false,
           "required": true,
@@ -2378,6 +2388,213 @@
                 "schema": {
                   "items": {
                     "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "origin_assessment": {
+                "nullable": true,
+                "required": false,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "basis": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "items": {
+                          "additional_properties": false,
+                          "fields": {
+                            "id": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "max_length": 160,
+                                "min_length": 1,
+                                "type": "string"
+                              }
+                            },
+                            "namespace": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "ALARM",
+                                  "CHUNK",
+                                  "LOT_HIST",
+                                  "PARAMETER",
+                                  "RELATION"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "compared": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "additional_properties": false,
+                        "fields": {
+                          "downstream": {
+                            "nullable": false,
+                            "required": false,
+                            "schema": {
+                              "default": "NOT_AVAILABLE",
+                              "enum": [
+                                "CHECKED",
+                                "NOT_AVAILABLE",
+                                "NOT_CHECKED"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "history": {
+                            "nullable": false,
+                            "required": false,
+                            "schema": {
+                              "default": "NOT_AVAILABLE",
+                              "enum": [
+                                "CHECKED",
+                                "NOT_AVAILABLE",
+                                "NOT_CHECKED"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "metrology": {
+                            "nullable": false,
+                            "required": false,
+                            "schema": {
+                              "default": "NOT_AVAILABLE",
+                              "enum": [
+                                "CHECKED",
+                                "NOT_AVAILABLE",
+                                "NOT_CHECKED"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "sibling": {
+                            "nullable": false,
+                            "required": false,
+                            "schema": {
+                              "default": "NOT_AVAILABLE",
+                              "enum": [
+                                "CHECKED",
+                                "NOT_AVAILABLE",
+                                "NOT_CHECKED"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "upstream": {
+                            "nullable": false,
+                            "required": false,
+                            "schema": {
+                              "default": "NOT_AVAILABLE",
+                              "enum": [
+                                "CHECKED",
+                                "NOT_AVAILABLE",
+                                "NOT_CHECKED"
+                              ],
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "scope": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "CURRENT_CHAMBER",
+                          "DOWNSTREAM",
+                          "EQUIPMENT_COMMON",
+                          "UNDETERMINED",
+                          "UPSTREAM"
+                        ],
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "parameter_findings": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": [],
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "direction": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "ABOVE",
+                            "BELOW",
+                            "BOTH"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "excursion_ratio": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "type": "number"
+                        }
+                      },
+                      "lot_hist_ids": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "parameter_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 20,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "step_no": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "wafer_scope": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "ALL",
+                            "PARTIAL",
+                            "SINGLE"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
                   },
                   "type": "array"
                 }
@@ -3131,6 +3348,144 @@
             "type": "object"
           }
         },
+        "react_trace": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "argument_summary": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+                    "type": "string"
+                  }
+                },
+                "degraded": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "guard_code": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 64,
+                    "type": "string"
+                  }
+                },
+                "observation_summary": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 160,
+                    "type": "string"
+                  }
+                },
+                "phase": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "OBSERVED",
+                      "REJECTED",
+                      "SELECTED",
+                      "STOPPED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "rationale_summary": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "max_length": 120,
+                    "type": "string"
+                  }
+                },
+                "react_prompt_version": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "type": "string"
+                  }
+                },
+                "selector_tokens": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "input": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      },
+                      "output": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "minimum": 0.0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "seq": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "stop_reason": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "enum": [
+                      "BUDGET_EXHAUSTED",
+                      "GUARD_LIMIT",
+                      "LLM_DEPENDENCY",
+                      "LLM_STOP",
+                      "LLM_TIMEOUT",
+                      "REACT_STRUCTURE_INVALID",
+                      "STEP_CAP"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "tool": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "enum": [
+                      "get_chamber_parameter_history",
+                      "get_equipment_context",
+                      "get_fdc_summary",
+                      "get_metrology_result",
+                      "search_documents",
+                      "stop"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
         "recommended_action": {
           "nullable": true,
           "required": true,
@@ -3141,6 +3496,16 @@
               "WARNING"
             ],
             "type": "string"
+          }
+        },
+        "remaining_read_calls": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": 0,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "type": "integer"
           }
         },
         "similar_incidents": {
@@ -3333,6 +3698,20 @@
               "type": "object"
             },
             "type": "array"
+          }
+        },
+        "trace_state": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_APPLICABLE",
+            "enum": [
+              "AVAILABLE",
+              "NOT_APPLICABLE",
+              "PENDING",
+              "UNAVAILABLE"
+            ],
+            "type": "string"
           }
         }
       },
@@ -5371,6 +5750,77 @@
       },
       "type": "object"
     },
+    "ComparisonMatrix": {
+      "additional_properties": false,
+      "fields": {
+        "downstream": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE",
+            "enum": [
+              "CHECKED",
+              "NOT_AVAILABLE",
+              "NOT_CHECKED"
+            ],
+            "type": "string"
+          }
+        },
+        "history": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE",
+            "enum": [
+              "CHECKED",
+              "NOT_AVAILABLE",
+              "NOT_CHECKED"
+            ],
+            "type": "string"
+          }
+        },
+        "metrology": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE",
+            "enum": [
+              "CHECKED",
+              "NOT_AVAILABLE",
+              "NOT_CHECKED"
+            ],
+            "type": "string"
+          }
+        },
+        "sibling": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE",
+            "enum": [
+              "CHECKED",
+              "NOT_AVAILABLE",
+              "NOT_CHECKED"
+            ],
+            "type": "string"
+          }
+        },
+        "upstream": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": "NOT_AVAILABLE",
+            "enum": [
+              "CHECKED",
+              "NOT_AVAILABLE",
+              "NOT_CHECKED"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "CrossCheck": {
       "additional_properties": false,
       "fields": {
@@ -5659,6 +6109,213 @@
           "schema": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "origin_assessment": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "basis": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "max_length": 160,
+                          "min_length": 1,
+                          "type": "string"
+                        }
+                      },
+                      "namespace": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "ALARM",
+                            "CHUNK",
+                            "LOT_HIST",
+                            "PARAMETER",
+                            "RELATION"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "compared": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "additional_properties": false,
+                  "fields": {
+                    "downstream": {
+                      "nullable": false,
+                      "required": false,
+                      "schema": {
+                        "default": "NOT_AVAILABLE",
+                        "enum": [
+                          "CHECKED",
+                          "NOT_AVAILABLE",
+                          "NOT_CHECKED"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "history": {
+                      "nullable": false,
+                      "required": false,
+                      "schema": {
+                        "default": "NOT_AVAILABLE",
+                        "enum": [
+                          "CHECKED",
+                          "NOT_AVAILABLE",
+                          "NOT_CHECKED"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "metrology": {
+                      "nullable": false,
+                      "required": false,
+                      "schema": {
+                        "default": "NOT_AVAILABLE",
+                        "enum": [
+                          "CHECKED",
+                          "NOT_AVAILABLE",
+                          "NOT_CHECKED"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "sibling": {
+                      "nullable": false,
+                      "required": false,
+                      "schema": {
+                        "default": "NOT_AVAILABLE",
+                        "enum": [
+                          "CHECKED",
+                          "NOT_AVAILABLE",
+                          "NOT_CHECKED"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "upstream": {
+                      "nullable": false,
+                      "required": false,
+                      "schema": {
+                        "default": "NOT_AVAILABLE",
+                        "enum": [
+                          "CHECKED",
+                          "NOT_AVAILABLE",
+                          "NOT_CHECKED"
+                        ],
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "scope": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "CURRENT_CHAMBER",
+                    "DOWNSTREAM",
+                    "EQUIPMENT_COMMON",
+                    "UNDETERMINED",
+                    "UPSTREAM"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "parameter_findings": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": [],
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "direction": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "ABOVE",
+                      "BELOW",
+                      "BOTH"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "excursion_ratio": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "type": "number"
+                  }
+                },
+                "lot_hist_ids": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "parameter_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 20,
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "step_no": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "wafer_scope": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "ALL",
+                      "PARTIAL",
+                      "SINGLE"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
             },
             "type": "array"
           }
@@ -7752,6 +8409,230 @@
       ],
       "type": "string"
     },
+    "OriginAssessment": {
+      "additional_properties": false,
+      "fields": {
+        "basis": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "additional_properties": false,
+              "fields": {
+                "id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "max_length": 160,
+                    "min_length": 1,
+                    "type": "string"
+                  }
+                },
+                "namespace": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "ALARM",
+                      "CHUNK",
+                      "LOT_HIST",
+                      "PARAMETER",
+                      "RELATION"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "compared": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "downstream": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE",
+                  "enum": [
+                    "CHECKED",
+                    "NOT_AVAILABLE",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "string"
+                }
+              },
+              "history": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE",
+                  "enum": [
+                    "CHECKED",
+                    "NOT_AVAILABLE",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "string"
+                }
+              },
+              "metrology": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE",
+                  "enum": [
+                    "CHECKED",
+                    "NOT_AVAILABLE",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "string"
+                }
+              },
+              "sibling": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE",
+                  "enum": [
+                    "CHECKED",
+                    "NOT_AVAILABLE",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "string"
+                }
+              },
+              "upstream": {
+                "nullable": false,
+                "required": false,
+                "schema": {
+                  "default": "NOT_AVAILABLE",
+                  "enum": [
+                    "CHECKED",
+                    "NOT_AVAILABLE",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "scope": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "CURRENT_CHAMBER",
+              "DOWNSTREAM",
+              "EQUIPMENT_COMMON",
+              "UNDETERMINED",
+              "UPSTREAM"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "OriginBasisRef": {
+      "additional_properties": false,
+      "fields": {
+        "id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "max_length": 160,
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "namespace": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "ALARM",
+              "CHUNK",
+              "LOT_HIST",
+              "PARAMETER",
+              "RELATION"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "ParameterFinding": {
+      "additional_properties": false,
+      "fields": {
+        "direction": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "ABOVE",
+              "BELOW",
+              "BOTH"
+            ],
+            "type": "string"
+          }
+        },
+        "excursion_ratio": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        },
+        "lot_hist_ids": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "parameter_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "max_length": 20,
+            "min_length": 1,
+            "type": "string"
+          }
+        },
+        "step_no": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "wafer_scope": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "ALL",
+              "PARTIAL",
+              "SINGLE"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "ParameterItem": {
       "additional_properties": false,
       "fields": {
@@ -8458,6 +9339,137 @@
       },
       "type": "object"
     },
+    "ReactStepPublic": {
+      "additional_properties": false,
+      "fields": {
+        "argument_summary": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+            "type": "string"
+          }
+        },
+        "degraded": {
+          "nullable": false,
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "guard_code": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 64,
+            "type": "string"
+          }
+        },
+        "observation_summary": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 160,
+            "type": "string"
+          }
+        },
+        "phase": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "OBSERVED",
+              "REJECTED",
+              "SELECTED",
+              "STOPPED"
+            ],
+            "type": "string"
+          }
+        },
+        "rationale_summary": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "max_length": 120,
+            "type": "string"
+          }
+        },
+        "react_prompt_version": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        "selector_tokens": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "input": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              },
+              "output": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "minimum": 0.0,
+                  "type": "integer"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        "seq": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "stop_reason": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "enum": [
+              "BUDGET_EXHAUSTED",
+              "GUARD_LIMIT",
+              "LLM_DEPENDENCY",
+              "LLM_STOP",
+              "LLM_TIMEOUT",
+              "REACT_STRUCTURE_INVALID",
+              "STEP_CAP"
+            ],
+            "type": "string"
+          }
+        },
+        "tool": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "enum": [
+              "get_chamber_parameter_history",
+              "get_equipment_context",
+              "get_fdc_summary",
+              "get_metrology_result",
+              "search_documents",
+              "stop"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
     "ReadinessCheck": {
       "additional_properties": false,
       "fields": {
@@ -9148,6 +10160,28 @@
         "WAITING_APPROVAL"
       ],
       "type": "string"
+    },
+    "SelectorTokens": {
+      "additional_properties": false,
+      "fields": {
+        "input": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "output": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        }
+      },
+      "type": "object"
     },
     "SimilarIncidentItem": {
       "additional_properties": false,
@@ -15549,6 +16583,16 @@
                     "type": "string"
                   }
                 },
+                "autonomy_level": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": 2,
+                    "maximum": 3.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
                 "chamber": {
                   "nullable": false,
                   "required": true,
@@ -15707,6 +16751,213 @@
                         "schema": {
                           "items": {
                             "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "origin_assessment": {
+                        "nullable": true,
+                        "required": false,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "basis": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "items": {
+                                  "additional_properties": false,
+                                  "fields": {
+                                    "id": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "max_length": 160,
+                                        "min_length": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "namespace": {
+                                      "nullable": false,
+                                      "required": true,
+                                      "schema": {
+                                        "enum": [
+                                          "ALARM",
+                                          "CHUNK",
+                                          "LOT_HIST",
+                                          "PARAMETER",
+                                          "RELATION"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "compared": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "additional_properties": false,
+                                "fields": {
+                                  "downstream": {
+                                    "nullable": false,
+                                    "required": false,
+                                    "schema": {
+                                      "default": "NOT_AVAILABLE",
+                                      "enum": [
+                                        "CHECKED",
+                                        "NOT_AVAILABLE",
+                                        "NOT_CHECKED"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "history": {
+                                    "nullable": false,
+                                    "required": false,
+                                    "schema": {
+                                      "default": "NOT_AVAILABLE",
+                                      "enum": [
+                                        "CHECKED",
+                                        "NOT_AVAILABLE",
+                                        "NOT_CHECKED"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "metrology": {
+                                    "nullable": false,
+                                    "required": false,
+                                    "schema": {
+                                      "default": "NOT_AVAILABLE",
+                                      "enum": [
+                                        "CHECKED",
+                                        "NOT_AVAILABLE",
+                                        "NOT_CHECKED"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "sibling": {
+                                    "nullable": false,
+                                    "required": false,
+                                    "schema": {
+                                      "default": "NOT_AVAILABLE",
+                                      "enum": [
+                                        "CHECKED",
+                                        "NOT_AVAILABLE",
+                                        "NOT_CHECKED"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "upstream": {
+                                    "nullable": false,
+                                    "required": false,
+                                    "schema": {
+                                      "default": "NOT_AVAILABLE",
+                                      "enum": [
+                                        "CHECKED",
+                                        "NOT_AVAILABLE",
+                                        "NOT_CHECKED"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "type": "object"
+                              }
+                            },
+                            "scope": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "CURRENT_CHAMBER",
+                                  "DOWNSTREAM",
+                                  "EQUIPMENT_COMMON",
+                                  "UNDETERMINED",
+                                  "UPSTREAM"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "parameter_findings": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": [],
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "direction": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "ABOVE",
+                                    "BELOW",
+                                    "BOTH"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "excursion_ratio": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "type": "number"
+                                }
+                              },
+                              "lot_hist_ids": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "parameter_id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "max_length": 20,
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "step_no": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 1.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "wafer_scope": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "ALL",
+                                    "PARTIAL",
+                                    "SINGLE"
+                                  ],
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
                           },
                           "type": "array"
                         }
@@ -16460,6 +17711,144 @@
                     "type": "object"
                   }
                 },
+                "react_trace": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "argument_summary": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+                            "type": "string"
+                          }
+                        },
+                        "degraded": {
+                          "nullable": false,
+                          "required": false,
+                          "schema": {
+                            "default": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "guard_code": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "max_length": 64,
+                            "type": "string"
+                          }
+                        },
+                        "observation_summary": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "max_length": 160,
+                            "type": "string"
+                          }
+                        },
+                        "phase": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "OBSERVED",
+                              "REJECTED",
+                              "SELECTED",
+                              "STOPPED"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "rationale_summary": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "max_length": 120,
+                            "type": "string"
+                          }
+                        },
+                        "react_prompt_version": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "type": "string"
+                          }
+                        },
+                        "selector_tokens": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "additional_properties": false,
+                            "fields": {
+                              "input": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              },
+                              "output": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "minimum": 0.0,
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          }
+                        },
+                        "seq": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 1.0,
+                            "type": "integer"
+                          }
+                        },
+                        "stop_reason": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "enum": [
+                              "BUDGET_EXHAUSTED",
+                              "GUARD_LIMIT",
+                              "LLM_DEPENDENCY",
+                              "LLM_STOP",
+                              "LLM_TIMEOUT",
+                              "REACT_STRUCTURE_INVALID",
+                              "STEP_CAP"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "tool": {
+                          "nullable": true,
+                          "required": false,
+                          "schema": {
+                            "enum": [
+                              "get_chamber_parameter_history",
+                              "get_equipment_context",
+                              "get_fdc_summary",
+                              "get_metrology_result",
+                              "search_documents",
+                              "stop"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
                 "recommended_action": {
                   "nullable": true,
                   "required": true,
@@ -16470,6 +17859,16 @@
                       "WARNING"
                     ],
                     "type": "string"
+                  }
+                },
+                "remaining_read_calls": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": 0,
+                    "maximum": 8.0,
+                    "minimum": 0.0,
+                    "type": "integer"
                   }
                 },
                 "similar_incidents": {
@@ -16662,6 +18061,20 @@
                       "type": "object"
                     },
                     "type": "array"
+                  }
+                },
+                "trace_state": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_APPLICABLE",
+                    "enum": [
+                      "AVAILABLE",
+                      "NOT_APPLICABLE",
+                      "PENDING",
+                      "UNAVAILABLE"
+                    ],
+                    "type": "string"
                   }
                 }
               },

@@ -152,14 +152,29 @@ CORS_ORIGINS = parse_cors_origins(
 # 에이전트 동작 설정
 # ---------------------------------------------------------------------
 AGENT_AUTONOMY_LEVEL = get_int_env("AGENT_AUTONOMY_LEVEL", "2", minimum=1)
+AGENT_LEVEL3_ENABLED = get_bool_env("AGENT_LEVEL3_ENABLED", "false")
+AGENT_LEVEL3_DEMO_ACK = os.getenv("AGENT_LEVEL3_DEMO_ACK", "").strip() or None
 
 if AGENT_AUTONOMY_LEVEL not in (1, 2, 3):
     raise RuntimeError(
         f"AGENT_AUTONOMY_LEVEL 은 1·2·3 중 하나여야 합니다: {AGENT_AUTONOMY_LEVEL}"
     )
+if (AGENT_AUTONOMY_LEVEL == 3) != AGENT_LEVEL3_ENABLED:
+    raise RuntimeError(
+        "AUTONOMY_LEVEL_INVALID: Level 3는 AGENT_AUTONOMY_LEVEL=3과 "
+        "AGENT_LEVEL3_ENABLED=true를 함께 설정해야 합니다"
+    )
 
 # 그래프 1회 실행의 총 실제 Tool 호출 상한(재시도 포함)
 AGENT_MAX_TOOL_CALLS = get_int_env("AGENT_MAX_TOOL_CALLS", "8", minimum=1)
+
+# Level 3 ReAct는 조사 읽기 8회와 전송 2회를 서로 침범하지 않게 예약한다.
+# production 진입 여부는 위 2-key gate가 결정하며 이 값은 그 뒤 예산에만 쓰인다.
+AGENT_LEVEL3_MAX_TOOL_CALLS = get_int_env(
+    "AGENT_LEVEL3_MAX_TOOL_CALLS",
+    "10",
+    minimum=2,
+)
 
 # 같은 Tool 의 최초 실패 후 추가 시도 수
 AGENT_MAX_RETRY = get_int_env("AGENT_MAX_RETRY", "3", minimum=0)

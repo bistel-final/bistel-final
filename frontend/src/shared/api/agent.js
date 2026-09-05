@@ -30,6 +30,10 @@ const GRAPH_EVIDENCE = Object.freeze({
 
 const CORE_AGENT_RUN_DETAIL = Object.freeze({
   ...CORE_AGENT_RUN,
+  autonomy_level: 2,
+  react_trace: [],
+  trace_state: 'NOT_APPLICABLE',
+  remaining_read_calls: Math.max(0, 6 - CORE_AGENT_RUN.tools.filter((tool) => tool.tool_name !== 'send_action').length),
   evidence_items: [
     {
       type: 'ALARM',
@@ -91,6 +95,8 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     generated_at: CORE_AGENT_RUN.created_at,
   },
   diagnosis: {
+    parameter_findings: [],
+    origin_assessment: null,
     status: 'AVAILABLE',
     reason_code: null,
     predicted_fault_code: CORE_AGENT_RUN.predicted_fault_code,
