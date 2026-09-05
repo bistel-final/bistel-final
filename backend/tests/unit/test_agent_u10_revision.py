@@ -221,6 +221,15 @@ def test_sha256_identity_reader_does_not_confuse_git_oids_with_file_sha(tmp_path
         subject.verify_execution_revision(repo, revision)
 
 
+@pytest.mark.parametrize("object_format,wrong_length", [("sha1", 64), ("sha256", 40)])
+def test_revision_length_must_match_repository_object_format(
+    tmp_path, object_format, wrong_length
+):
+    repo, _ = make_repo(tmp_path / "format-mismatch", object_format=object_format)
+    with pytest.raises(EvidenceError, match="^U10_GIT_OBJECT_FORMAT_INVALID$"):
+        subject.read_revision_identity(repo, "a" * wrong_length)
+
+
 def test_import_has_no_provider_or_git_side_effects():
     code = """
 import sys, subprocess

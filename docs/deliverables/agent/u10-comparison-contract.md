@@ -352,9 +352,44 @@ revision 입력으로 허용하지 않는다. 출력은 canonical repository roo
 이는 **시점 관측**이며 workspace lock, 원격 merge/CI PASS, main pull 완료를 증명하지 않는다.
 Git status의 통상 ignored-file 규칙을 따르므로 ignored cache의 바이트나 실행 중 import된
 모듈까지 증명하지 않는다. caller가 실실행 동안 저장소를 고정하고 사용 시 재검증해야 한다.
-이미지 label/tree 대조·receipt·`execute_batch`/live CLI 연결은 아직 남아 있다. 현재 feature
+이미지 label/tree는 아래 검사기가 담당하며 receipt·`execute_batch`/live CLI 연결은 남아 있다. 현재 feature
 브랜치에서 이 검사기를 구현한 것이 최종 R을 고정했거나 U10 실행을 승인했다는 뜻은 아니다.
 회귀의 commit/checkout/replace는 pytest 임시 저장소에서만 수행하며 프로젝트 Git은 읽기만 한다.
+
+16차 권장 회귀는 SHA-1 저장소에 64자 revision, SHA-256 저장소에 40자 revision을 넣으면
+Git 객체 조회 실패로 뭉개지 않고 `U10_GIT_OBJECT_FORMAT_INVALID`로 거부함을 확인한다.
+
+## Profile별 이미지·컨테이너 결속 경계
+
+`u10_images.verify_image_bindings()`는 계획의 preflight 검사 **4(revision)·5(image label)·
+6(running container)** 경계다. 전체 preflight PASS나 `allowed_actions`를 발급하지 않는다.
+
+- profile 기대값은 코드 소유다. `production_level2`/`production_level3`는 `bistel-team`의
+  backend·frontend, `e2e_level3`는 `bistel-team-e2e`의 backend·frontend·runner가 exact 집합이다.
+  runner의 실제 Compose service label은 `e2e-runner`다. 이름은 `cm52_common.sh`와 맞춘다.
+- caller는 독립 검증된 receipt의 R/tree OID와 빌드에서 고정한 역할별 image ID, 준비 단계에서
+  얻은 역할별 container ID를 제공해야 한다. 현재 container가 말하는 image ID를 기대값으로
+  재사용하지 않는다. image `sha256:<64hex>`·container `<64hex>`만 허용하고 tag/name은 거부한다.
+- receipt R의 backend/frontend/deploy tree를 명시 root에서 다시 읽어 먼저 대조한다.
+  각 image의 ID와 `org.opencontainers.image.revision == R`을 검사하고 image label의 revision으로
+  tree를 다시 조회·대조한다. HEAD를 대신 쓰지 않으며 같은 tree여도 다른 label R은 허용하지 않는다.
+- 각 container의 ID·`.Image`·Compose project/service를 기대값과 대조한다. 상태는 정확한
+  `Running=true`, `Status=running`, `Paused=false`, `Restarting=false`여야 한다. E2E runner가
+  backend image를 공유해도 **container ID는 달라야 하며 역할별로 별도 검사**한다.
+- 모든 역할 검사 뒤 container를 한 번 더 조회하여 binding/state와 StartedAt을 대조한다.
+  조회 사이 재시작은 거부하지만 이는 atomic snapshot이나 이후 변경을 막는 lock이 아니다.
+- 기본 Docker 포트는 ID 기반 `docker image/container inspect --format`만 실행하며, 필요한
+  ID·revision·Compose label 두 개·상태·StartedAt만 JSON으로 투영한다. Config.Env·mount·전체
+  label은 읽기 출력에 넣지 않는다. 중복 JSON 키·잘못된 응답·16KiB 초과·명령 실패·timeout은
+  고정 오류 코드로 거부하며 stdout/stderr 원문을 보고서에 남기지 않는다.
+
+반환물은 기존 `RuntimeImage`/`RuntimeContainer`를 재사용하는 메모리 DTO다. 이미지 빌드·pull·
+컨테이너 create/start/stop·provider 호출·파일 발급을 하지 않는다. 테스트는 합성 inspect 응답과
+Git 포트를 사용하며, Docker subprocess도 대체하여 명령의 읽기 전용/최소 투영을 확인한다.
+**실제 Docker daemon·Go template 실실행·이미지 빌드 증거는 아니다.** 기존 Stage2에는 아직
+지속 실행 runner를 이 검사기에 넘기는 연결이 없으며 후속 prepare/lifecycle 구현이 필요하다.
+receipt 출처/무결성·DB identity/effective-env·readiness·robustness/delivery·live preflight 연결은
+각 소유 검증기를 통해 추가해야 한다. 이 검사기 통과만으로 production을 활성화할 수 없다.
 
 ## 아직 증명하지 않는 것
 
@@ -367,7 +402,7 @@ timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도
   CF 8종 fixture/oracle의 적합성 및 각 입력 파일 SHA 검증.
 - provider 호출·selector 결정별 실행 trace의 진위, 32건의 실제 실행, latency/token 실측.
   단위 테스트의 CF ID와 model 이름은 계약 검사용 가짜 입력이며 실험 결과가 아니다.
-- 최종 실실행 revision의 clean main 검사기 연결·이미지 label 대조, 데이터 반출 승인, robustness·delivery,
+- 최종 실실행 revision의 clean main·이미지 결속 검사기 live 연결, 데이터 반출 승인, robustness·delivery,
   receipt/seal·immutable 게시·production 전환의 4축 검증.
 
 다음 단위에서 실제 runner/기록·CF fixture를 연결하고 독립 검증을 추가한다.
