@@ -208,6 +208,34 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
 검증을 대체하지 않는다. 어댑터에 주입 가능한 테스트 generator가 실제 LLM이라는 보증도 아니다.
 실제 실행과 model/config/seed/SHA 결속·승인 검증은 32-attempt runner의 잔여다.
 
+## ReAct 단일 attempt 실행 연결
+
+`u10_attempt.execute_react_attempt()`는 새 `ObservationContext`에서 다음 순서로 한 건을
+실행한다: snapshot/초기 근거 대조 → ReAct 읽기 → 가설 v3 → 순수 규칙 조치 → 외부 효과 관측
+→ `Attempt` 조립 → 기존 `_check_attempt()` 검증. 전송·DB 저장·artifact 발급은 하지 않는다.
+
+- fixture와 LLM 설정을 재검증/복사하고 CF-1~8 및 attempt 1/2만 허용한다. 이미 성공 관찰이
+  있는 context는 재사용하지 않는다. fixture의 oracle은 selector/generator에 전달하지 않는다.
+- selector와 hypothesis에 같은 seed를 전달한다. 모델·프롬프트는 각 기존 실행 어댑터가 검사한다.
+  검증된 snapshot SHA 인자는 fixture와 대조하지만 **실 DB snapshot의 진위는 caller 책임**이다.
+- 성공 읽기+초기 근거로 available을 계산하고 actual 호출/usage/latency에서 집계를 만든다.
+  가설 생성 전 selector usage 누락, 실제 가설 호출 뒤 usage 누락은 발급 가능한 record로
+  바꾸지 않는다. 성공 FDC가 없어 가설 호출 자체를 하지 않은 경우만 hypothesis 목록이 빈다.
+- `derive_compared()`를 builder와 verifier가 공유한다. production 가설 matrix를 복사하지 않고
+  factual inventory의 가용성과 성공 read slot으로 재계산한다.
+- completion은 가설 성공과 정상 조사 종료(`LLM_STOP`, 예산/guard/step 상한), 미완료 retry 없음으로
+  계산한다. 동일 도구 4번째 실패 뒤 retry를 못 한 경우(<8 read)는 가설 성공이어도 false다.
+  timeout/실패의 부분 usage는 남긴다. 조치는 기존 `decision.decide_action(route)`이며 send가 아니다.
+- `observe_effects()`는 필수이며 실행 **뒤에** 받은 safety/외부 효과 값을 그대로 보존한다.
+  nonzero는 숨기지 않고 최종 32건 evaluator가 부정 판정하도록 남긴다. 관측 함수의 진위를
+  자체 보증하지 않으며 실제 observer/격리 sandbox 연결은 batch runner 책임이다.
+- ReAct의 교차 순서 번호는 CF별 첫 attempt=2, 둘째=3(다음 CF는 +4)으로 고정한다.
+  이는 번호 결속일 뿐, fixed 쪽 실행이나 실제 교차 순서를 실행했다는 증명이 아니다.
+
+반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 고정 정책의 end-to-end
+연결, 32건 interleave/배치·CF inventory 재조회·source/tool contract SHA·승인/receipt/이미지 결속은
+아직 남아 있다. 단위 테스트는 테스트 read/selector/generator/observer를 사용하며 실험 성과가 아니다.
+
 ## 아직 증명하지 않는 것
 
 - inventory의 실제 DB 재조회, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제

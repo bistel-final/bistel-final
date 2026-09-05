@@ -261,6 +261,28 @@ class SkippedSlot(EvidenceModel):
     reason: Literal["NO_CANDIDATE"]
 
 
+def derive_compared(inventory: Inventory, calls: list[ReadCall]) -> Compared:
+    """Code-owned inventory matrix shared by attempt builder and verifier."""
+    checked = {c.slot for c in calls if c.status == "SUCCESS"}
+    slots = {
+        "upstream": "ADJACENT_FDC",
+        "downstream": "ADJACENT_FDC",
+        "sibling": "SIBLING",
+        "history": "HISTORY",
+        "metrology": "METROLOGY",
+    }
+    return Compared(
+        **{
+            dimension: "NOT_AVAILABLE"
+            if available == "NOT_AVAILABLE"
+            else "CHECKED"
+            if slots[dimension] in checked
+            else "NOT_CHECKED"
+            for dimension, available in inventory.dimensions().items()
+        }
+    )
+
+
 class SelectorCall(EvidenceModel):
     tokens: Tokens
     latency_ms: Count
@@ -396,23 +418,9 @@ def _check_attempt(a: Attempt, fixture: Fixture, order: int) -> dict[str, Any]:
         _require(not a.skipped_slots, "REACT_FIXED_SKIPS_FORBIDDEN")
         _require(not a.completion or bool(a.selector), "REACT_SELECTOR_MISSING")
     _require(not a.completion or bool(a.hypothesis), "HYPOTHESIS_USAGE_MISSING")
-    dimensions = fixture.candidate_inventory.dimensions()
-    checked_slots = {c.slot for c in a.calls if c.status == "SUCCESS"}
-    dimension_slots = {
-        "upstream": "ADJACENT_FDC",
-        "downstream": "ADJACENT_FDC",
-        "sibling": "SIBLING",
-        "history": "HISTORY",
-        "metrology": "METROLOGY",
-    }
-    expected_compared = {
-        d: "NOT_AVAILABLE"
-        if value == "NOT_AVAILABLE"
-        else "CHECKED"
-        if dimension_slots[d] in checked_slots
-        else "NOT_CHECKED"
-        for d, value in dimensions.items()
-    }
+    expected_compared = derive_compared(
+        fixture.candidate_inventory, a.calls
+    ).model_dump()
     _require(a.compared.model_dump() == expected_compared, "COMPARED_MISMATCH")
     cited = set(a.cited_evidence_ids.values)
     required = set(fixture.required_evidence_ids.values)

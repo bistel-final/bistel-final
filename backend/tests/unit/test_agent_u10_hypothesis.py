@@ -316,6 +316,14 @@ def test_backwards_clock_is_rejected():
         )
 
 
+def test_v2_prompt_tree_is_rejected_before_generation(monkeypatch):
+    from app.agent import prompts
+
+    monkeypatch.setattr(prompts, "PROMPT_VERSION", "agent-hypothesis-v2-ko1")
+    with pytest.raises(EvidenceError, match="^U10_HYPOTHESIS_CONFIG_INVALID$"):
+        run(observed(), lambda **_: pytest.fail("generator called"))
+
+
 def test_import_is_lazy():
     code = """
 import sys

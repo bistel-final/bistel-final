@@ -278,6 +278,7 @@ jobs:
           tests/unit/test_agent_u10_read_adapter.py
           tests/unit/test_agent_u10_evidence.py
           tests/unit/test_agent_u10_hypothesis.py
+          tests/unit/test_agent_u10_attempt.py
           tests/unit/test_agent_experiment.py
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py
