@@ -58,6 +58,7 @@ class RouteStep:
     recipe_id: str | None
     track_in_at: datetime
     track_out_at: datetime | None
+    lot_first_track_in_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,7 +217,8 @@ _SNAPSHOT = text(
         NULL::varchar(24)   AS chamber_id,
         NULL::varchar(20)   AS recipe_id,
         NULL::timestamp     AS track_in_at,
-        NULL::timestamp     AS track_out_at
+        NULL::timestamp     AS track_out_at,
+        NULL::timestamp     AS lot_first_track_in_at
     FROM resolved AS r CROSS JOIN status AS s
 
     UNION ALL
@@ -237,7 +239,11 @@ _SNAPSHOT = text(
         NULL::varchar(20)   AS member_lot_hist_id,
         h.lot_hist_id, h.lot_id, h.wafer_no,
         h.step_id, h.area_id, h.equipment_id, h.chamber_id, h.recipe_id,
-        h.track_in_at, h.track_out_at
+        h.track_in_at, h.track_out_at,
+        (SELECT min(first_history.track_in_at) FROM lot_history AS first_history
+         WHERE first_history.lot_id = h.lot_id
+           AND first_history.chamber_id = h.chamber_id
+           AND first_history.step_id = h.step_id) AS lot_first_track_in_at
     FROM lot_history AS h
     JOIN wafer AS w ON h.lot_id = w.lot_id AND h.wafer_id = w.wafer_id
     CROSS JOIN status AS s
@@ -359,4 +365,5 @@ def _step(row: Row[Any]) -> RouteStep:
         recipe_id=row.recipe_id,
         track_in_at=row.track_in_at,
         track_out_at=row.track_out_at,
+        lot_first_track_in_at=getattr(row, "lot_first_track_in_at", None),
     )

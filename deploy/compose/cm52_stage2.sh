@@ -389,7 +389,23 @@ cleanup() {
 }
 trap 'cleanup "$?"' EXIT
 
+legacy_workload_guard() {
+  # Prepared lineage orchestration is a separate implementation unit. Until it
+  # is connected, legacy full/hold/resume must never send mail from Level 3.
+  if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+    if [[ "${CM52_TEST_AUTONOMY_LEVEL:-2}" == 3 \
+      || "${CM52_TEST_LEVEL3_ENABLED:-false}" == true ]]; then
+      printf '%s\n' SMTP_SEND_GRANT_REQUIRED >&2
+      return 1
+    fi
+    return 0
+  fi
+  e2e exec -T backend python -c \
+    'from app.common import config; import sys; blocked = config.AGENT_AUTONOMY_LEVEL == 3 or config.AGENT_LEVEL3_ENABLED; sys.exit("SMTP_SEND_GRANT_REQUIRED" if blocked else 0)'
+}
+
 if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+  legacy_workload_guard
   if [[ "$MODE" == hold ]]; then
     LAST_OK_STEP=5d
     HOLD_REACHED=1
@@ -432,6 +448,7 @@ e2e_identity_readiness() {
 if [[ "$MODE" == resume ]]; then
   # hold 동안 E2E가 살아 있고 같은 revision인지, 전반 산출물이 그대로인지 재확인한다.
   e2e_identity_readiness
+  legacy_workload_guard
   assert_owned_0600 \
     "$A/analytics-digests.json" "$A/pending-run.jsonl" "$A/diagnostic-targets.json" >/dev/null
   append_log 5d-resume PASS e2e-still-live
@@ -439,6 +456,7 @@ else
 step3_boot_e2e
 LAST_OK_STEP=3b
 append_log 3b PASS identity-readiness
+legacy_workload_guard
 
 IDS=${CM52_ANALYTICS_QUERY_IDS:-}
 [[ "$IDS" =~ ^[0-9]+,[0-9]+,[0-9]+$ ]] || {
@@ -470,7 +488,7 @@ tail -n 1 "$A/pending-run.jsonl" \
 
 # kosa_readonly(analytics QUERY pool)는 C-0.2 allowlist상 agent_run·approval_request를 읽지 못한다
 # (공용 PC 실측 InsufficientPrivilege). postcondition은 read-only count라 kosa_app engine으로 읽는다.
-POSTCONDITION_SQL="from app.common.db import get_app_engine; from sqlalchemy import text; e=get_app_engine(); c=e.connect(); q=text(\"SELECT (SELECT count(*) FROM agent_run), (SELECT count(*) FROM agent_run WHERE prompt_version='agent-hypothesis-v2-ko1'), (SELECT count(*) FROM agent_run_action), (SELECT count(*) FROM agent_run WHERE retry_of_run_id IS NOT NULL), (SELECT count(*) FROM agent_run WHERE status IN ('RUNNING','FAILED')), (SELECT count(*) FROM action_history WHERE action_code='MONITORING'), (SELECT count(*) FROM action_history WHERE action_code='WARNING'), (SELECT count(*) FROM action_history WHERE action_code='EQP_HOLD'), (SELECT count(*) FROM (SELECT agent_run_id, count(*) c FROM agent_run_action GROUP BY agent_run_id HAVING count(*)<>1) x)\"); print(tuple(c.execute(q).one())); c.close()"
+POSTCONDITION_SQL="from app.common.db import get_app_engine; from app.agent.prompts import PROMPT_VERSION; from sqlalchemy import text; e=get_app_engine(); c=e.connect(); q=text(\"SELECT (SELECT count(*) FROM agent_run), (SELECT count(*) FROM agent_run WHERE prompt_version=:prompt), (SELECT count(*) FROM agent_run_action), (SELECT count(*) FROM agent_run WHERE retry_of_run_id IS NOT NULL), (SELECT count(*) FROM agent_run WHERE status IN ('RUNNING','FAILED')), (SELECT count(*) FROM action_history WHERE action_code='MONITORING'), (SELECT count(*) FROM action_history WHERE action_code='WARNING'), (SELECT count(*) FROM action_history WHERE action_code='EQP_HOLD'), (SELECT count(*) FROM (SELECT agent_run_id, count(*) c FROM agent_run_action GROUP BY agent_run_id HAVING count(*)<>1) x)\"); print(tuple(c.execute(q, {'prompt': PROMPT_VERSION}).one())); c.close()"
 runner python -c "$POSTCONDITION_SQL" | grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'
 runner python scripts/emit_diagnostic_targets.py \
   --agent-database kosa_agent_e2e \
@@ -506,7 +524,8 @@ runner python scripts/evaluate_fault_5class.py \
   --output "$CA/fault-5class.json"
 jq -e \
   --arg revision "$REV" \
-  '.hard_gate_passed and .prompt_version == "agent-hypothesis-v2-ko1" and .code_revision == $revision' \
+  --arg prompt "$(runner python -c 'from app.agent.prompts import PROMPT_VERSION; print(PROMPT_VERSION)')" \
+  '.hard_gate_passed and .prompt_version == $prompt and .code_revision == $revision' \
   "$A/fault-5class.json" >/dev/null
 assert_owned_0600 "$A/fault-5class.json" >/dev/null
 FAULT_SHA=$(cm52_sha256 "$A/fault-5class.json")

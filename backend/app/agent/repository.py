@@ -1855,6 +1855,7 @@ class ToolBudgetCounts:
     total: int
     by_tool: Mapping[str, int]
     pending_reservations: int
+    autonomy_level: int
 
 
 #: 예약 row가 쓰는 sentinel.
@@ -1881,7 +1882,9 @@ _TOOL_CALL_COLUMNS = """
 """
 
 #: **run row를 잠근다.** `max(call_seq)+1`은 lock 없이는 두 session이 같은 값을 본다.
-_LOCK_RUN = text("SELECT 1 FROM agent_run WHERE agent_run_id = :run_id FOR UPDATE")
+_LOCK_RUN = text(
+    "SELECT autonomy_level FROM agent_run " "WHERE agent_run_id = :run_id FOR UPDATE"
+)
 
 _NEXT_CALL_SEQ = text(
     """
@@ -2124,6 +2127,12 @@ def count_tool_calls_for_budget(
         ).one_or_none()
         if locked is None:
             raise RepositoryNotFound("RUN_NOT_FOUND")
+        try:
+            autonomy_level = locked.autonomy_level
+        except AttributeError:
+            raise RepositoryContractError("AUTONOMY_LEVEL_INVALID") from None
+        if type(autonomy_level) is not int or autonomy_level not in (1, 2, 3):
+            raise RepositoryContractError("AUTONOMY_LEVEL_INVALID")
         rows = connection.execute(_SELECT_TOOL_CALLS, {"run_id": agent_run_id}).all()
     except AgentRepositoryError:
         raise
@@ -2147,6 +2156,7 @@ def count_tool_calls_for_budget(
         total=sum(by_tool.values()),
         by_tool=by_tool,
         pending_reservations=pending,
+        autonomy_level=autonomy_level,
     )
 
 
@@ -3583,6 +3593,8 @@ class PublicAgentRunRecord:
     prediction_created_at: datetime | None = None
     lot_id: str | None = None
     retry_of_run_id: str | None = None
+    autonomy_level: int = 2
+    run_evidence: dict[str, Any] | None = None
 
 
 # API v3가 bare array를 유지하므로 DB가 무한히 자라도 한 요청이 모두 읽지 않는다.
@@ -3642,6 +3654,8 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
            COALESCE(delivery_rows.items, '[]'::jsonb) AS deliveries,
            r.latency_ms,
            r.evidence -> 'active_timing' AS active_timing,
+           r.autonomy_level,
+           r.evidence AS run_evidence,
            clock_timestamp() AS observed_at,
            r.llm_model,
            r.prompt_version,
@@ -3923,6 +3937,12 @@ def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
         prediction_created_at=getattr(row, "prediction_created_at", None),
         lot_id=getattr(row, "lot_id", None),
         retry_of_run_id=getattr(row, "retry_of_run_id", None),
+        autonomy_level=int(getattr(row, "autonomy_level", 2)),
+        run_evidence=(
+            None
+            if getattr(row, "run_evidence", None) is None
+            else dict(row.run_evidence)
+        ),
     )
 
 

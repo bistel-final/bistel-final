@@ -5790,6 +5790,16 @@
               "type": "string"
             }
           },
+          "autonomy_level": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": 2,
+              "maximum": 3.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
           "chamber": {
             "nullable": false,
             "required": true,
@@ -5948,6 +5958,213 @@
                   "schema": {
                     "items": {
                       "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "origin_assessment": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "basis": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "additional_properties": false,
+                            "fields": {
+                              "id": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "max_length": 160,
+                                  "min_length": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "namespace": {
+                                "nullable": false,
+                                "required": true,
+                                "schema": {
+                                  "enum": [
+                                    "ALARM",
+                                    "CHUNK",
+                                    "LOT_HIST",
+                                    "PARAMETER",
+                                    "RELATION"
+                                  ],
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "compared": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": false,
+                          "fields": {
+                            "downstream": {
+                              "nullable": false,
+                              "required": false,
+                              "schema": {
+                                "default": "NOT_AVAILABLE",
+                                "enum": [
+                                  "CHECKED",
+                                  "NOT_AVAILABLE",
+                                  "NOT_CHECKED"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "history": {
+                              "nullable": false,
+                              "required": false,
+                              "schema": {
+                                "default": "NOT_AVAILABLE",
+                                "enum": [
+                                  "CHECKED",
+                                  "NOT_AVAILABLE",
+                                  "NOT_CHECKED"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "metrology": {
+                              "nullable": false,
+                              "required": false,
+                              "schema": {
+                                "default": "NOT_AVAILABLE",
+                                "enum": [
+                                  "CHECKED",
+                                  "NOT_AVAILABLE",
+                                  "NOT_CHECKED"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "sibling": {
+                              "nullable": false,
+                              "required": false,
+                              "schema": {
+                                "default": "NOT_AVAILABLE",
+                                "enum": [
+                                  "CHECKED",
+                                  "NOT_AVAILABLE",
+                                  "NOT_CHECKED"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "upstream": {
+                              "nullable": false,
+                              "required": false,
+                              "schema": {
+                                "default": "NOT_AVAILABLE",
+                                "enum": [
+                                  "CHECKED",
+                                  "NOT_AVAILABLE",
+                                  "NOT_CHECKED"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "scope": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "CURRENT_CHAMBER",
+                            "DOWNSTREAM",
+                            "EQUIPMENT_COMMON",
+                            "UNDETERMINED",
+                            "UPSTREAM"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "parameter_findings": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": [],
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "direction": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "ABOVE",
+                              "BELOW",
+                              "BOTH"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "excursion_ratio": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "type": "number"
+                          }
+                        },
+                        "lot_hist_ids": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "parameter_id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "max_length": 20,
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "step_no": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 1.0,
+                            "type": "integer"
+                          }
+                        },
+                        "wafer_scope": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "ALL",
+                              "PARTIAL",
+                              "SINGLE"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
                     },
                     "type": "array"
                   }
@@ -6701,6 +6918,144 @@
               "type": "object"
             }
           },
+          "react_trace": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "argument_summary": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+                      "type": "string"
+                    }
+                  },
+                  "degraded": {
+                    "nullable": false,
+                    "required": false,
+                    "schema": {
+                      "default": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "guard_code": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "max_length": 64,
+                      "type": "string"
+                    }
+                  },
+                  "observation_summary": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "max_length": 160,
+                      "type": "string"
+                    }
+                  },
+                  "phase": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "OBSERVED",
+                        "REJECTED",
+                        "SELECTED",
+                        "STOPPED"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "rationale_summary": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "max_length": 120,
+                      "type": "string"
+                    }
+                  },
+                  "react_prompt_version": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  "selector_tokens": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "additional_properties": false,
+                      "fields": {
+                        "input": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        },
+                        "output": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "minimum": 0.0,
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "seq": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  },
+                  "stop_reason": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "BUDGET_EXHAUSTED",
+                        "GUARD_LIMIT",
+                        "LLM_DEPENDENCY",
+                        "LLM_STOP",
+                        "LLM_TIMEOUT",
+                        "REACT_STRUCTURE_INVALID",
+                        "STEP_CAP"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "tool": {
+                    "nullable": true,
+                    "required": false,
+                    "schema": {
+                      "enum": [
+                        "get_chamber_parameter_history",
+                        "get_equipment_context",
+                        "get_fdc_summary",
+                        "get_metrology_result",
+                        "search_documents",
+                        "stop"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
           "recommended_action": {
             "nullable": true,
             "required": true,
@@ -6711,6 +7066,16 @@
                 "WARNING"
               ],
               "type": "string"
+            }
+          },
+          "remaining_read_calls": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 8.0,
+              "minimum": 0.0,
+              "type": "integer"
             }
           },
           "similar_incidents": {
@@ -6903,6 +7268,20 @@
                 "type": "object"
               },
               "type": "array"
+            }
+          },
+          "trace_state": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_APPLICABLE",
+              "enum": [
+                "AVAILABLE",
+                "NOT_APPLICABLE",
+                "PENDING",
+                "UNAVAILABLE"
+              ],
+              "type": "string"
             }
           }
         },
@@ -13170,6 +13549,16 @@
         "type": "string"
       }
     },
+    "autonomy_level": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": 2,
+        "maximum": 3.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
     "chamber": {
       "nullable": false,
       "required": true,
@@ -13328,6 +13717,213 @@
             "schema": {
               "items": {
                 "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "origin_assessment": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "basis": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "items": {
+                      "additional_properties": false,
+                      "fields": {
+                        "id": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "max_length": 160,
+                            "min_length": 1,
+                            "type": "string"
+                          }
+                        },
+                        "namespace": {
+                          "nullable": false,
+                          "required": true,
+                          "schema": {
+                            "enum": [
+                              "ALARM",
+                              "CHUNK",
+                              "LOT_HIST",
+                              "PARAMETER",
+                              "RELATION"
+                            ],
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "compared": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "downstream": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE",
+                          "enum": [
+                            "CHECKED",
+                            "NOT_AVAILABLE",
+                            "NOT_CHECKED"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "history": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE",
+                          "enum": [
+                            "CHECKED",
+                            "NOT_AVAILABLE",
+                            "NOT_CHECKED"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "metrology": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE",
+                          "enum": [
+                            "CHECKED",
+                            "NOT_AVAILABLE",
+                            "NOT_CHECKED"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "sibling": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE",
+                          "enum": [
+                            "CHECKED",
+                            "NOT_AVAILABLE",
+                            "NOT_CHECKED"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "upstream": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": "NOT_AVAILABLE",
+                          "enum": [
+                            "CHECKED",
+                            "NOT_AVAILABLE",
+                            "NOT_CHECKED"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "scope": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "CURRENT_CHAMBER",
+                      "DOWNSTREAM",
+                      "EQUIPMENT_COMMON",
+                      "UNDETERMINED",
+                      "UPSTREAM"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "parameter_findings": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "direction": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "ABOVE",
+                        "BELOW",
+                        "BOTH"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "excursion_ratio": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "type": "number"
+                    }
+                  },
+                  "lot_hist_ids": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "parameter_id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "max_length": 20,
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "step_no": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 1.0,
+                      "type": "integer"
+                    }
+                  },
+                  "wafer_scope": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "ALL",
+                        "PARTIAL",
+                        "SINGLE"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
               },
               "type": "array"
             }
@@ -14081,6 +14677,144 @@
         "type": "object"
       }
     },
+    "react_trace": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "argument_summary": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+                "type": "string"
+              }
+            },
+            "degraded": {
+              "nullable": false,
+              "required": false,
+              "schema": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "guard_code": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "max_length": 64,
+                "type": "string"
+              }
+            },
+            "observation_summary": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "max_length": 160,
+                "type": "string"
+              }
+            },
+            "phase": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "OBSERVED",
+                  "REJECTED",
+                  "SELECTED",
+                  "STOPPED"
+                ],
+                "type": "string"
+              }
+            },
+            "rationale_summary": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "max_length": 120,
+                "type": "string"
+              }
+            },
+            "react_prompt_version": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "type": "string"
+              }
+            },
+            "selector_tokens": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "additional_properties": false,
+                "fields": {
+                  "input": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  },
+                  "output": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "minimum": 0.0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "seq": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 1.0,
+                "type": "integer"
+              }
+            },
+            "stop_reason": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "BUDGET_EXHAUSTED",
+                  "GUARD_LIMIT",
+                  "LLM_DEPENDENCY",
+                  "LLM_STOP",
+                  "LLM_TIMEOUT",
+                  "REACT_STRUCTURE_INVALID",
+                  "STEP_CAP"
+                ],
+                "type": "string"
+              }
+            },
+            "tool": {
+              "nullable": true,
+              "required": false,
+              "schema": {
+                "enum": [
+                  "get_chamber_parameter_history",
+                  "get_equipment_context",
+                  "get_fdc_summary",
+                  "get_metrology_result",
+                  "search_documents",
+                  "stop"
+                ],
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
     "recommended_action": {
       "nullable": true,
       "required": true,
@@ -14091,6 +14825,16 @@
           "WARNING"
         ],
         "type": "string"
+      }
+    },
+    "remaining_read_calls": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": 0,
+        "maximum": 8.0,
+        "minimum": 0.0,
+        "type": "integer"
       }
     },
     "similar_incidents": {
@@ -14283,6 +15027,20 @@
           "type": "object"
         },
         "type": "array"
+      }
+    },
+    "trace_state": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_APPLICABLE",
+        "enum": [
+          "AVAILABLE",
+          "NOT_APPLICABLE",
+          "PENDING",
+          "UNAVAILABLE"
+        ],
+        "type": "string"
       }
     }
   },
@@ -16418,7 +17176,83 @@
 }
 ```
 
-### 5.37 `CrossCheck`
+### 5.37 `ComparisonMatrix`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "downstream": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE",
+        "enum": [
+          "CHECKED",
+          "NOT_AVAILABLE",
+          "NOT_CHECKED"
+        ],
+        "type": "string"
+      }
+    },
+    "history": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE",
+        "enum": [
+          "CHECKED",
+          "NOT_AVAILABLE",
+          "NOT_CHECKED"
+        ],
+        "type": "string"
+      }
+    },
+    "metrology": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE",
+        "enum": [
+          "CHECKED",
+          "NOT_AVAILABLE",
+          "NOT_CHECKED"
+        ],
+        "type": "string"
+      }
+    },
+    "sibling": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE",
+        "enum": [
+          "CHECKED",
+          "NOT_AVAILABLE",
+          "NOT_CHECKED"
+        ],
+        "type": "string"
+      }
+    },
+    "upstream": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "NOT_AVAILABLE",
+        "enum": [
+          "CHECKED",
+          "NOT_AVAILABLE",
+          "NOT_CHECKED"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.38 `CrossCheck`
 
 ```json
 {
@@ -16455,7 +17289,7 @@
 }
 ```
 
-### 5.38 `DeliveryCallbackRequest`
+### 5.39 `DeliveryCallbackRequest`
 
 ```json
 {
@@ -16534,7 +17368,7 @@
 }
 ```
 
-### 5.39 `DeliveryChannel`
+### 5.40 `DeliveryChannel`
 
 ```json
 {
@@ -16546,7 +17380,7 @@
 }
 ```
 
-### 5.40 `DeliveryResult`
+### 5.41 `DeliveryResult`
 
 ```json
 {
@@ -16632,7 +17466,7 @@
 }
 ```
 
-### 5.41 `DeliveryStatus`
+### 5.42 `DeliveryStatus`
 
 ```json
 {
@@ -16649,7 +17483,7 @@
 }
 ```
 
-### 5.42 `DiagnosisBlock`
+### 5.43 `DiagnosisBlock`
 
 ```json
 {
@@ -16738,6 +17572,213 @@
         "type": "array"
       }
     },
+    "origin_assessment": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "basis": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "items": {
+                "additional_properties": false,
+                "fields": {
+                  "id": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "max_length": 160,
+                      "min_length": 1,
+                      "type": "string"
+                    }
+                  },
+                  "namespace": {
+                    "nullable": false,
+                    "required": true,
+                    "schema": {
+                      "enum": [
+                        "ALARM",
+                        "CHUNK",
+                        "LOT_HIST",
+                        "PARAMETER",
+                        "RELATION"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "compared": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "downstream": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE",
+                    "enum": [
+                      "CHECKED",
+                      "NOT_AVAILABLE",
+                      "NOT_CHECKED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "history": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE",
+                    "enum": [
+                      "CHECKED",
+                      "NOT_AVAILABLE",
+                      "NOT_CHECKED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "metrology": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE",
+                    "enum": [
+                      "CHECKED",
+                      "NOT_AVAILABLE",
+                      "NOT_CHECKED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "sibling": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE",
+                    "enum": [
+                      "CHECKED",
+                      "NOT_AVAILABLE",
+                      "NOT_CHECKED"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "upstream": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "NOT_AVAILABLE",
+                    "enum": [
+                      "CHECKED",
+                      "NOT_AVAILABLE",
+                      "NOT_CHECKED"
+                    ],
+                    "type": "string"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
+          "scope": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "CURRENT_CHAMBER",
+                "DOWNSTREAM",
+                "EQUIPMENT_COMMON",
+                "UNDETERMINED",
+                "UPSTREAM"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "parameter_findings": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": [],
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "direction": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "ABOVE",
+                  "BELOW",
+                  "BOTH"
+                ],
+                "type": "string"
+              }
+            },
+            "excursion_ratio": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "type": "number"
+              }
+            },
+            "lot_hist_ids": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "parameter_id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "max_length": 20,
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "step_no": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "minimum": 1.0,
+                "type": "integer"
+              }
+            },
+            "wafer_scope": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "ALL",
+                  "PARTIAL",
+                  "SINGLE"
+                ],
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
     "predicted_fault_code": {
       "nullable": true,
       "required": true,
@@ -16786,7 +17827,7 @@
 }
 ```
 
-### 5.43 `DocumentAskEvidence`
+### 5.44 `DocumentAskEvidence`
 
 ```json
 {
@@ -16851,7 +17892,7 @@
 }
 ```
 
-### 5.44 `DocumentChunkItem`
+### 5.45 `DocumentChunkItem`
 
 ```json
 {
@@ -16892,7 +17933,7 @@
 }
 ```
 
-### 5.45 `DocumentDetailResponse`
+### 5.46 `DocumentDetailResponse`
 
 ```json
 {
@@ -16995,7 +18036,7 @@
 }
 ```
 
-### 5.46 `DocumentEvidence`
+### 5.47 `DocumentEvidence`
 
 ```json
 {
@@ -17062,7 +18103,7 @@
 }
 ```
 
-### 5.47 `DocumentHit`
+### 5.48 `DocumentHit`
 
 ```json
 {
@@ -17137,7 +18178,7 @@
 }
 ```
 
-### 5.48 `DocumentSearchRequest`
+### 5.49 `DocumentSearchRequest`
 
 ```json
 {
@@ -17187,7 +18228,7 @@
 }
 ```
 
-### 5.49 `DocumentType`
+### 5.50 `DocumentType`
 
 ```json
 {
@@ -17200,7 +18241,7 @@
 }
 ```
 
-### 5.50 `ErrorCode`
+### 5.51 `ErrorCode`
 
 ```json
 {
@@ -17223,7 +18264,7 @@
 }
 ```
 
-### 5.51 `ErrorResponse`
+### 5.52 `ErrorResponse`
 
 ```json
 {
@@ -17259,7 +18300,7 @@
 }
 ```
 
-### 5.52 `EvaluationListResponse`
+### 5.53 `EvaluationListResponse`
 
 ```json
 {
@@ -17560,7 +18601,7 @@
 }
 ```
 
-### 5.53 `EvidenceAssessmentBlock`
+### 5.54 `EvidenceAssessmentBlock`
 
 ```json
 {
@@ -17636,7 +18677,7 @@
 }
 ```
 
-### 5.54 `EvidenceItem`
+### 5.55 `EvidenceItem`
 
 ```json
 {
@@ -17884,7 +18925,7 @@
 }
 ```
 
-### 5.55 `FaultHypothesis`
+### 5.56 `FaultHypothesis`
 
 ```json
 {
@@ -17899,7 +18940,7 @@
 }
 ```
 
-### 5.56 `GraphAskEvidence`
+### 5.57 `GraphAskEvidence`
 
 ```json
 {
@@ -17957,7 +18998,7 @@
 }
 ```
 
-### 5.57 `GraphContext`
+### 5.58 `GraphContext`
 
 ```json
 {
@@ -18041,7 +19082,7 @@
 }
 ```
 
-### 5.58 `GraphEvidence`
+### 5.59 `GraphEvidence`
 
 ```json
 {
@@ -18101,7 +19142,7 @@
 }
 ```
 
-### 5.59 `GraphNode`
+### 5.60 `GraphNode`
 
 ```json
 {
@@ -18160,7 +19201,7 @@
 }
 ```
 
-### 5.60 `GraphQueryRequest`
+### 5.61 `GraphQueryRequest`
 
 ```json
 {
@@ -18180,7 +19221,7 @@
 }
 ```
 
-### 5.61 `GraphQueryResponse`
+### 5.62 `GraphQueryResponse`
 
 ```json
 {
@@ -18271,7 +19312,7 @@
 }
 ```
 
-### 5.62 `GraphRelationship`
+### 5.63 `GraphRelationship`
 
 ```json
 {
@@ -18314,7 +19355,7 @@
 }
 ```
 
-### 5.63 `GroupedMetricResult`
+### 5.64 `GroupedMetricResult`
 
 ```json
 {
@@ -18352,7 +19393,7 @@
 }
 ```
 
-### 5.64 `HTTPValidationError`
+### 5.65 `HTTPValidationError`
 
 ```json
 {
@@ -18408,7 +19449,7 @@
 }
 ```
 
-### 5.65 `HealthResponse`
+### 5.66 `HealthResponse`
 
 ```json
 {
@@ -18429,7 +19470,7 @@
 }
 ```
 
-### 5.66 `ImpactScopeBlock`
+### 5.67 `ImpactScopeBlock`
 
 ```json
 {
@@ -18561,7 +19602,7 @@
 }
 ```
 
-### 5.67 `ImpactScopeItem`
+### 5.68 `ImpactScopeItem`
 
 ```json
 {
@@ -18602,7 +19643,7 @@
 }
 ```
 
-### 5.68 `MetricPlan`
+### 5.69 `MetricPlan`
 
 ```json
 {
@@ -18647,7 +19688,7 @@
 }
 ```
 
-### 5.69 `MetrologyAskEvidence`
+### 5.70 `MetrologyAskEvidence`
 
 ```json
 {
@@ -18689,7 +19730,7 @@
 }
 ```
 
-### 5.70 `MetrologyEvidence`
+### 5.71 `MetrologyEvidence`
 
 ```json
 {
@@ -18736,7 +19777,7 @@
 }
 ```
 
-### 5.71 `NlQueryHistoryResponse`
+### 5.72 `NlQueryHistoryResponse`
 
 ```json
 {
@@ -18872,7 +19913,7 @@
 }
 ```
 
-### 5.72 `NlQueryLogItem`
+### 5.73 `NlQueryLogItem`
 
 ```json
 {
@@ -18970,7 +20011,7 @@
 }
 ```
 
-### 5.73 `NlQueryOutcome`
+### 5.74 `NlQueryOutcome`
 
 ```json
 {
@@ -18984,7 +20025,246 @@
 }
 ```
 
-### 5.74 `ParameterItem`
+### 5.75 `OriginAssessment`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "basis": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "additional_properties": false,
+          "fields": {
+            "id": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "max_length": 160,
+                "min_length": 1,
+                "type": "string"
+              }
+            },
+            "namespace": {
+              "nullable": false,
+              "required": true,
+              "schema": {
+                "enum": [
+                  "ALARM",
+                  "CHUNK",
+                  "LOT_HIST",
+                  "PARAMETER",
+                  "RELATION"
+                ],
+                "type": "string"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "compared": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "downstream": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE",
+              "enum": [
+                "CHECKED",
+                "NOT_AVAILABLE",
+                "NOT_CHECKED"
+              ],
+              "type": "string"
+            }
+          },
+          "history": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE",
+              "enum": [
+                "CHECKED",
+                "NOT_AVAILABLE",
+                "NOT_CHECKED"
+              ],
+              "type": "string"
+            }
+          },
+          "metrology": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE",
+              "enum": [
+                "CHECKED",
+                "NOT_AVAILABLE",
+                "NOT_CHECKED"
+              ],
+              "type": "string"
+            }
+          },
+          "sibling": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE",
+              "enum": [
+                "CHECKED",
+                "NOT_AVAILABLE",
+                "NOT_CHECKED"
+              ],
+              "type": "string"
+            }
+          },
+          "upstream": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "NOT_AVAILABLE",
+              "enum": [
+                "CHECKED",
+                "NOT_AVAILABLE",
+                "NOT_CHECKED"
+              ],
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "scope": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "CURRENT_CHAMBER",
+          "DOWNSTREAM",
+          "EQUIPMENT_COMMON",
+          "UNDETERMINED",
+          "UPSTREAM"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.76 `OriginBasisRef`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "max_length": 160,
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "namespace": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "ALARM",
+          "CHUNK",
+          "LOT_HIST",
+          "PARAMETER",
+          "RELATION"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.77 `ParameterFinding`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "direction": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "ABOVE",
+          "BELOW",
+          "BOTH"
+        ],
+        "type": "string"
+      }
+    },
+    "excursion_ratio": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "type": "number"
+      }
+    },
+    "lot_hist_ids": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "parameter_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "max_length": 20,
+        "min_length": 1,
+        "type": "string"
+      }
+    },
+    "step_no": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "wafer_scope": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "ALL",
+          "PARTIAL",
+          "SINGLE"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.78 `ParameterItem`
 
 ```json
 {
@@ -19114,7 +20394,7 @@
 }
 ```
 
-### 5.75 `PostActionObservationBlock`
+### 5.79 `PostActionObservationBlock`
 
 ```json
 {
@@ -19141,7 +20421,7 @@
 }
 ```
 
-### 5.76 `PublicAgentRunItem`
+### 5.80 `PublicAgentRunItem`
 
 ```json
 {
@@ -19413,7 +20693,7 @@
 }
 ```
 
-### 5.77 `PublicApprovalDecision`
+### 5.81 `PublicApprovalDecision`
 
 ```json
 {
@@ -19425,7 +20705,7 @@
 }
 ```
 
-### 5.78 `PublicApprovalItem`
+### 5.82 `PublicApprovalItem`
 
 ```json
 {
@@ -19613,7 +20893,7 @@
 }
 ```
 
-### 5.79 `PublicApprovalStatus`
+### 5.83 `PublicApprovalStatus`
 
 ```json
 {
@@ -19626,7 +20906,7 @@
 }
 ```
 
-### 5.80 `PublicDeliveryChannel`
+### 5.84 `PublicDeliveryChannel`
 
 ```json
 {
@@ -19638,7 +20918,7 @@
 }
 ```
 
-### 5.81 `PublicDeliveryItem`
+### 5.85 `PublicDeliveryItem`
 
 ```json
 {
@@ -19676,7 +20956,7 @@
 }
 ```
 
-### 5.82 `PublicToolCallItem`
+### 5.86 `PublicToolCallItem`
 
 ```json
 {
@@ -19735,7 +21015,143 @@
 }
 ```
 
-### 5.83 `ReadinessCheck`
+### 5.87 `ReactStepPublic`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "argument_summary": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "pattern": "^(후보 wafer [1-9][0-9]*\\((현재|상류|하류)\\)|이력 [1-9][0-9]*\\((현재|형제)\\)|계측 [1-9][0-9]*\\((현재|상류|하류)\\)|문서 검색|설비 컨텍스트)$",
+        "type": "string"
+      }
+    },
+    "degraded": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": false,
+        "type": "boolean"
+      }
+    },
+    "guard_code": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 64,
+        "type": "string"
+      }
+    },
+    "observation_summary": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 160,
+        "type": "string"
+      }
+    },
+    "phase": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "OBSERVED",
+          "REJECTED",
+          "SELECTED",
+          "STOPPED"
+        ],
+        "type": "string"
+      }
+    },
+    "rationale_summary": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "max_length": 120,
+        "type": "string"
+      }
+    },
+    "react_prompt_version": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "type": "string"
+      }
+    },
+    "selector_tokens": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "input": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "output": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "seq": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "stop_reason": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "enum": [
+          "BUDGET_EXHAUSTED",
+          "GUARD_LIMIT",
+          "LLM_DEPENDENCY",
+          "LLM_STOP",
+          "LLM_TIMEOUT",
+          "REACT_STRUCTURE_INVALID",
+          "STEP_CAP"
+        ],
+        "type": "string"
+      }
+    },
+    "tool": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "enum": [
+          "get_chamber_parameter_history",
+          "get_equipment_context",
+          "get_fdc_summary",
+          "get_metrology_result",
+          "search_documents",
+          "stop"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.88 `ReadinessCheck`
 
 ```json
 {
@@ -19780,7 +21196,7 @@
 }
 ```
 
-### 5.84 `ReadinessChecks`
+### 5.89 `ReadinessChecks`
 
 ```json
 {
@@ -20055,7 +21471,7 @@
 }
 ```
 
-### 5.85 `ReadinessResponse`
+### 5.90 `ReadinessResponse`
 
 ```json
 {
@@ -20365,7 +21781,7 @@
 }
 ```
 
-### 5.86 `RunAlarmEvidence`
+### 5.91 `RunAlarmEvidence`
 
 ```json
 {
@@ -20437,7 +21853,7 @@
 }
 ```
 
-### 5.87 `RunStatus`
+### 5.92 `RunStatus`
 
 ```json
 {
@@ -20451,7 +21867,34 @@
 }
 ```
 
-### 5.88 `SimilarIncidentItem`
+### 5.93 `SelectorTokens`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "input": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    },
+    "output": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.94 `SimilarIncidentItem`
 
 ```json
 {
@@ -20530,7 +21973,7 @@
 }
 ```
 
-### 5.89 `SimilarIncidentsBlock`
+### 5.95 `SimilarIncidentsBlock`
 
 ```json
 {
@@ -20649,7 +22092,7 @@
 }
 ```
 
-### 5.90 `SqlValidateRequest`
+### 5.96 `SqlValidateRequest`
 
 ```json
 {
@@ -20669,7 +22112,7 @@
 }
 ```
 
-### 5.91 `SqlValidateResponse`
+### 5.97 `SqlValidateResponse`
 
 ```json
 {
@@ -20737,7 +22180,7 @@
 }
 ```
 
-### 5.92 `ToolCallStatus`
+### 5.98 `ToolCallStatus`
 
 ```json
 {
@@ -20750,7 +22193,7 @@
 }
 ```
 
-### 5.93 `TraceAskEvidence`
+### 5.99 `TraceAskEvidence`
 
 ```json
 {
@@ -20792,7 +22235,7 @@
 }
 ```
 
-### 5.94 `TraceEvidence`
+### 5.100 `TraceEvidence`
 
 ```json
 {
@@ -20836,7 +22279,7 @@
 }
 ```
 
-### 5.95 `TracePoint`
+### 5.101 `TracePoint`
 
 ```json
 {
@@ -20878,7 +22321,7 @@
 }
 ```
 
-### 5.96 `ValidationCheck`
+### 5.102 `ValidationCheck`
 
 ```json
 {
@@ -20912,7 +22355,7 @@
 }
 ```
 
-### 5.97 `ValidationError`
+### 5.103 `ValidationError`
 
 ```json
 {
@@ -20955,7 +22398,7 @@
 }
 ```
 
-### 5.98 `VisualizationPlan`
+### 5.104 `VisualizationPlan`
 
 ```json
 {

@@ -28,6 +28,13 @@ from app.agent.diagnostics import (
     ImpactScopeBlock,
     IncidentDiagnosticSnapshot,
 )
+from app.agent.investigation_models import (
+    InvestigationEvidence,
+    OriginAssessment,
+    OriginClaim,
+    ParameterFinding,
+    ParameterFindingDraft,
+)
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.config import AGENT_MAX_TOOL_CALLS
 from app.common.enums import (
@@ -46,9 +53,11 @@ from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     AGENT_TOOL_NAMES,
     AnomalySignal,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
+    MetrologyResultToolResult,
 )
 
 if TYPE_CHECKING:
@@ -105,7 +114,7 @@ class LlmUsage(StateModel):
         )
 
 
-class Hypothesis(StateModel):
+class HypothesisContent(StateModel):
     """LLM이 만든 가설과 그 가설이 실제로 인용한 근거 ID."""
 
     predicted_fault_code: FaultHypothesis
@@ -127,7 +136,7 @@ class Hypothesis(StateModel):
     limitations: tuple[str, ...] = Field(default=(), max_length=10)
 
     @model_validator(mode="after")
-    def _unique_citations(self) -> Hypothesis:
+    def _unique_citations(self) -> HypothesisContent:
         collections = (
             tuple(item.to_token() for item in self.supporting_alarms),
             self.supporting_chunk_ids,
@@ -138,6 +147,20 @@ class Hypothesis(StateModel):
         if any(len(values) != len(set(values)) for values in collections):
             raise ValueError("가설 근거 ID를 중복할 수 없습니다")
         return self
+
+
+class HypothesisDraftV3(HypothesisContent):
+    """LLM strict 출력. 산술·compared 필드는 이 DTO에 들어올 수 없다."""
+
+    parameter_findings_draft: tuple[ParameterFindingDraft, ...]
+    origin_claim: OriginClaim
+
+
+class Hypothesis(HypothesisContent):
+    """검증된 draft에 코드 계산값을 더한 저장용 DTO. v1/v2 읽기도 허용한다."""
+
+    parameter_findings: tuple[ParameterFinding, ...] = ()
+    origin_assessment: OriginAssessment | None = None
 
 
 class HypothesisOutcome(StateModel):
@@ -304,7 +327,10 @@ class AgentGraphState(TypedDict, total=False):
     react_steps: int
     react_guard_rejections: int
     react_pending: dict[str, Any] | None
+    react_candidates: dict[str, Any]
     document_evidence_set: tuple[DocumentSearchToolResult | None, ...]
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...]
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...]
 
 
 class CompletedAgentState(StateModel):
@@ -423,6 +449,7 @@ class AgentNodePorts(Protocol):
             DocumentSearchToolResult | None,
             ResolvedIncidentRoute,
             tuple[str, ...],
+            InvestigationEvidence,
         ],
         HypothesisOutcome,
     ]

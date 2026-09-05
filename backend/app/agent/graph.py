@@ -25,6 +25,7 @@ from app.agent.approval_store import (
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
 from app.agent.diagnostics import ANALYSIS_VERSION
 from app.agent.hypothesis import HypothesisGenerationError
+from app.agent.investigation_models import InvestigationEvidence
 from app.agent.mes_delivery import MesDeliveryError
 from app.agent.prompts import PROMPT_VERSION
 from app.agent.rehydration import RehydrationSeed
@@ -72,11 +73,15 @@ from app.common.enums import ActionCode, AlarmSource, Decision, RunStatus
 from app.common.exceptions import AppError
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
+    ChamberParameterHistoryToolInput,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolInput,
     DocumentSearchToolResult,
     EquipmentContextToolInput,
     FdcSummaryToolInput,
     FdcSummaryToolResult,
+    MetrologyResultToolInput,
+    MetrologyResultToolResult,
     SendActionToolInput,
     SendActionToolResult,
     ToolResult,
@@ -385,6 +390,7 @@ def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
     if evidence.get("schema_version") not in {
         "agent-evidence-v1",
         "agent-evidence-v2",
+        "agent-evidence-v3",
     }:
         raise RepositoryConflict("PREDICTION_CONFLICT")
     try:
@@ -409,6 +415,8 @@ def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
             impact_summary=evidence.get("impact_summary", ""),
             verification_steps=tuple(evidence.get("verification_steps", ())),
             limitations=tuple(evidence.get("limitations", ())),
+            parameter_findings=tuple(evidence.get("parameter_findings", ())),
+            origin_assessment=evidence.get("origin_assessment"),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RepositoryConflict("PREDICTION_CONFLICT") from exc
@@ -417,7 +425,7 @@ def _prediction_hypothesis(row: PredictionRow) -> Hypothesis:
 def _prediction_evidence(outcome: HypothesisOutcome) -> dict[str, Any]:
     hypothesis = outcome.hypothesis
     return {
-        "schema_version": "agent-evidence-v2",
+        "schema_version": "agent-evidence-v3",
         "analysis_version": ANALYSIS_VERSION,
         "supporting_alarms": [
             alarm.model_dump(mode="json") for alarm in hypothesis.supporting_alarms
@@ -435,6 +443,14 @@ def _prediction_evidence(outcome: HypothesisOutcome) -> dict[str, Any]:
         "impact_summary": hypothesis.impact_summary,
         "verification_steps": list(hypothesis.verification_steps),
         "limitations": list(hypothesis.limitations),
+        "parameter_findings": [
+            item.model_dump(mode="json") for item in hypothesis.parameter_findings
+        ],
+        "origin_assessment": (
+            None
+            if hypothesis.origin_assessment is None
+            else hypothesis.origin_assessment.model_dump(mode="json")
+        ),
         "diagnostic_snapshot": (
             None
             if outcome.diagnostic_snapshot is None
@@ -560,13 +576,28 @@ def build_agent_graph(
         run_id: str,
         *,
         error_code: str,
+        trace: tuple[dict[str, Any], ...] | None = None,
     ) -> None:
         """FAILED 두 경로가 action provenance를 같은 방식으로 보존하게 한다."""
 
         merged = merge_run_action_provenance(
             connection,
             run_id,
-            terminal_evidence={"code": error_code},
+            terminal_evidence={
+                "code": error_code,
+                **(
+                    {
+                        "react_trace": [
+                            react_module.ReactStep.model_validate(item).model_dump(
+                                mode="json"
+                            )
+                            for item in trace
+                        ]
+                    }
+                    if trace is not None
+                    else {}
+                ),
+            },
         )
         latency_ms = run_latency_ms(connection, run_id)
         finish_agent_run(
@@ -683,11 +714,16 @@ def build_agent_graph(
             "pending_llm_usage": None,
             "fdc_evidence_set": (),
             "document_evidence_set": (),
+            "history_evidence_set": (),
+            "metrology_evidence_set": (),
             "read_retry_used": 0,
             "react_trace": (),
             "react_steps": 0,
             "react_guard_rejections": 0,
             "react_pending": None,
+            "react_candidates": react_module.ReactCandidates(
+                run_id=started.run.agent_run_id
+            ).model_dump(mode="json"),
         }
         if not ordered_targets:
             error = _terminal(
@@ -709,6 +745,12 @@ def build_agent_graph(
             )
         try:
             base["route"] = combine_route(bound, graph=dependencies.routing_graph)
+            if level == 3:
+                base["react_candidates"] = react_module.build_initial_candidates(
+                    run_id=started.run.agent_run_id,
+                    route=base["route"],
+                    current_lot_hist_ids=ordered_targets,
+                ).model_dump(mode="json")
         except Exception as exc:
             error = _terminal(exc, "load_incident")
             base["terminal_error"] = error
@@ -751,6 +793,14 @@ def build_agent_graph(
                 )
             results.append(result if isinstance(result, FdcSummaryToolResult) else None)
         primary = next((item for item in results if item is not None), None)
+        candidate_state = react_module.ReactCandidates.model_validate(
+            state.get("react_candidates")
+        )
+        refreshed_candidates = react_module.refresh_history_candidates(
+            candidate_state,
+            fdc_results=tuple(results),
+            equipment=state.get("graph_evidence"),
+        )
         return {
             "fdc_evidence": primary,
             "fdc_evidence_set": tuple(results),
@@ -758,6 +808,7 @@ def build_agent_graph(
             "tool_budget": tool_budget,
             "errors": errors,
             "read_retry_used": retry_used,
+            "react_candidates": refreshed_candidates.model_dump(mode="json"),
         }
 
     def collect_equipment(state: AgentGraphState) -> dict[str, Any]:
@@ -842,15 +893,18 @@ def build_agent_graph(
         budget = state["tool_budget"]
         remaining = max(0, budget.max_calls - budget.used - budget.send_budget)
         return react_module.build_context(
+            run_id=state["run_id"],
             lot_id=state["lot_id"],
             chamber_id=state["chamber_id"],
             representative_alarm=state["representative_alarm"],
             member_alarms=state["member_alarms"],
             route=state["route"],
-            allowed_lot_hist_ids=state.get("fdc_lot_hist_ids", ()),
+            candidates=state.get("react_candidates", {}),
             fdc_results=state.get("fdc_evidence_set", ()),
             equipment=state.get("graph_evidence"),
             documents=state.get("document_evidence_set", ()),
+            history_results=state.get("history_evidence_set", ()),
+            metrology_results=state.get("metrology_evidence_set", ()),
             remaining_tool_calls=remaining,
             remaining_steps=react_module.REACT_MAX_STEPS - state.get("react_steps", 0),
             guard_rejections=state.get("react_guard_rejections", 0),
@@ -961,27 +1015,35 @@ def build_agent_graph(
                 tool_history=dependencies.tools.history(state["run_id"]),
                 document_model_code=_document_model_code(state),
             )
+            resolved_call = (
+                None
+                if guard is not None or selection.next == "stop"
+                else react_module.resolve_call(
+                    selection,
+                    context,
+                    document_model_code=_document_model_code(state),
+                )
+            )
             if guard is not None:
                 phase: react_module.ReactPhase = "REJECTED"
             elif selection.next == "stop":
                 phase = "STOPPED"
             else:
                 phase = "SELECTED"
-            candidate_ordinal: int | None = None
-            if selection.arguments.lot_hist_id in context.allowed_lot_hist_ids:
-                candidate_ordinal = (
-                    context.allowed_lot_hist_ids.index(
-                        selection.arguments.lot_hist_id  # type: ignore[arg-type]
-                    )
-                    + 1
-                )
             entry = react_module.trace_entry(
                 seq=len(trace) + 1,
                 selection=selection,
                 usage=usage,
                 phase=phase,
                 guard_code=guard,
-                candidate_ordinal=candidate_ordinal,
+                canonical_arguments=(
+                    None
+                    if resolved_call is None
+                    else {"tool": resolved_call["tool"], **resolved_call["request"]}
+                ),
+                argument_summary=(
+                    None if resolved_call is None else resolved_call["argument_summary"]
+                ),
             )
             trace = (*trace, entry.model_dump(mode="json"))
             if guard is None:
@@ -1009,6 +1071,7 @@ def build_agent_graph(
             "react_pending": {
                 "selection": selection.model_dump(mode="json"),
                 "trace_seq": entry.seq,
+                "resolved_call": resolved_call,
             },
         }
 
@@ -1019,13 +1082,25 @@ def build_agent_graph(
         if not isinstance(pending, dict):
             return {"react_pending": None}
         selection = react_module.ReactSelection.model_validate(pending.get("selection"))
+        resolved_call = pending.get("resolved_call")
+        if not isinstance(resolved_call, dict):
+            raise ValueError("REACT_PENDING_INVALID")
+        if resolved_call != react_module.resolve_call(
+            selection,
+            _react_context(state),
+            document_model_code=_document_model_code(state),
+        ):
+            raise ValueError("REACT_PENDING_INVALID")
+        request_payload = resolved_call.get("request")
+        if not isinstance(request_payload, dict):
+            raise ValueError("REACT_PENDING_INVALID")
         trace_seq = pending.get("trace_seq")
         if not isinstance(trace_seq, int):
             raise ValueError("REACT_PENDING_INVALID")
         trace = list(state.get("react_trace", ()))
         update: dict[str, Any] = {"react_pending": None}
         if selection.next == "get_fdc_summary":
-            target = selection.arguments.lot_hist_id or ""
+            target = str(request_payload.get("lot_hist_id", ""))
             result, tool_budget, errors = _collect_tool_result(
                 state,
                 node="react_tool",
@@ -1040,6 +1115,52 @@ def build_agent_graph(
                 update["fdc_evidence"] = fdc
                 update["optional_anomaly_evidence"] = fdc.anomaly
             observation = react_module.summarize_fdc(fdc)
+        elif selection.next == "get_chamber_parameter_history":
+            internal = resolved_call.get("internal_context")
+            if not isinstance(internal, dict):
+                raise ValueError("REACT_PENDING_INVALID")
+            request = ChamberParameterHistoryToolInput.model_validate(request_payload)
+            result, tool_budget, errors = _collect_tool_result(
+                state,
+                node="react_tool",
+                invoke=lambda: dependencies.tools.chamber_parameter_history(
+                    state["run_id"],
+                    request,
+                    current_lot_id=str(internal.get("current_lot_id", "")),
+                    incident_step_id=str(internal.get("incident_step_id", "")),
+                    scope=str(internal.get("scope", "")),
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            history = (
+                result
+                if isinstance(result, ChamberParameterHistoryToolResult)
+                else None
+            )
+            update["history_evidence_set"] = (
+                *state.get("history_evidence_set", ()),
+                history,
+            )
+            observation = react_module.summarize_history(history)
+        elif selection.next == "get_metrology_result":
+            request = MetrologyResultToolInput.model_validate(request_payload)
+            result, tool_budget, errors = _collect_tool_result(
+                state,
+                node="react_tool",
+                invoke=lambda: dependencies.tools.metrology_result(
+                    state["run_id"],
+                    request,
+                ),
+                budget=lambda: dependencies.tools.budget(state["run_id"]),
+            )
+            metrology = (
+                result if isinstance(result, MetrologyResultToolResult) else None
+            )
+            update["metrology_evidence_set"] = (
+                *state.get("metrology_evidence_set", ()),
+                metrology,
+            )
+            observation = react_module.summarize_metrology(metrology)
         elif selection.next == "search_documents":
             model_code = _document_model_code(state)
             result, tool_budget, errors = _collect_tool_result(
@@ -1059,7 +1180,7 @@ def build_agent_graph(
             update["document_evidence_set"] = doc_set
             update["document_evidence"] = _merge_document_results(doc_set)
             observation = react_module.summarize_documents(docs)
-        else:
+        elif selection.next == "get_equipment_context":
             result, tool_budget, errors = _collect_tool_result(
                 state,
                 node="react_tool",
@@ -1071,6 +1192,22 @@ def build_agent_graph(
             )
             update["graph_evidence"] = result
             observation = react_module.summarize_equipment(result)  # type: ignore[arg-type]
+        else:  # pragma: no cover - ReactNext와 위 분기가 함께 유지된다.
+            raise ValueError("REACT_PENDING_INVALID")
+
+        candidate_state = react_module.ReactCandidates.model_validate(
+            state.get("react_candidates")
+        )
+        refreshed_fdc = update.get(
+            "fdc_evidence_set",
+            state.get("fdc_evidence_set", ()),
+        )
+        refreshed_equipment = update.get("graph_evidence", state.get("graph_evidence"))
+        update["react_candidates"] = react_module.refresh_history_candidates(
+            candidate_state,
+            fdc_results=refreshed_fdc,
+            equipment=refreshed_equipment,
+        ).model_dump(mode="json")
         if trace:
             last = react_module.ReactStep.model_validate(trace[-1])
             if last.seq != trace_seq or last.phase != "SELECTED":
@@ -1139,6 +1276,23 @@ def build_agent_graph(
                         error.code
                         for error in state.get("errors", ())
                         if error.code == "FDC_TARGET_BUDGET_EXCEEDED"
+                    ),
+                    InvestigationEvidence(
+                        successful_calls=tuple(
+                            {"tool_name": call.tool_name, "input": call.input}
+                            for call in dependencies.tools.history(run_id)
+                            if call.status.value == "SUCCESS"
+                        ),
+                        history=tuple(
+                            item
+                            for item in state.get("history_evidence_set", ())
+                            if item is not None and item.ok
+                        ),
+                        metrology=tuple(
+                            item
+                            for item in state.get("metrology_evidence_set", ())
+                            if item is not None and item.ok
+                        ),
                     ),
                 )
             )
@@ -1369,7 +1523,16 @@ def build_agent_graph(
                         # FAILED 전이를 계속하지 않고 바깥의 새 UoW로 넘긴다.
                         usage_persistence_exc = exc
                         raise
-                _finish_failed(connection, run_id, error_code=error.code)
+                _finish_failed(
+                    connection,
+                    run_id,
+                    error_code=error.code,
+                    trace=(
+                        state.get("react_trace", ())
+                        if state.get("autonomy_level") == 3
+                        else None
+                    ),
+                )
         except Exception as exc:
             if usage_persistence_exc is not None:
                 usage_error = _terminal(usage_persistence_exc, "fail_run")
@@ -1382,7 +1545,16 @@ def build_agent_graph(
                     # usage UoW는 rollback시킨 뒤 fresh transaction에서 terminal
                     # 전이만 수행해 RUNNING 고착을 막는다.
                     with dependencies.transactions() as connection:
-                        _finish_failed(connection, run_id, error_code=error.code)
+                        _finish_failed(
+                            connection,
+                            run_id,
+                            error_code=error.code,
+                            trace=(
+                                state.get("react_trace", ())
+                                if state.get("autonomy_level") == 3
+                                else None
+                            ),
+                        )
                 except Exception as finish_exc:
                     persistence_error = _terminal(finish_exc, "fail_run")
                     logger.error(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,13 +11,72 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent import react
+from app.agent.routing import ResolvedIncidentRoute, WaferRoute
+from app.agent.routing_repository import RouteStep
 from app.agent.state import LlmUsage
 from app.common.enums import AlarmSource, RunStatus, ToolCallStatus
 from app.common.schemas import AlarmRef
-from app.common.tool_contracts import DocumentHit, DocumentSearchToolResult
+from app.common.tool_contracts import (
+    ChamberParameterHistoryToolResult,
+    DocumentHit,
+    DocumentSearchToolResult,
+    HistoryBaseline,
+    LotAggregate,
+    MetrologyResultItem,
+    MetrologyResultToolResult,
+)
 from tests.unit import test_agent_graph as harness
 
 ALARM = AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-01")
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def _candidates() -> react.ReactCandidates:
+    return react.ReactCandidates(
+        run_id="RUN-1",
+        fdc=(
+            react.FdcCandidate(
+                candidate_id="F1",
+                lot_hist_id="LH-REP",
+                wafer_id="W1",
+                wafer_ordinal=1,
+                relation="CURRENT",
+                step_id="CT-PHOTO",
+                chamber_id="EQP01-PM1",
+                track_in_at=NOW,
+            ),
+            react.FdcCandidate(
+                candidate_id="F2",
+                lot_hist_id="LH-2",
+                wafer_id="W1",
+                wafer_ordinal=1,
+                relation="DOWNSTREAM",
+                step_id="CT-ETCH",
+                chamber_id="EQP04-PM1",
+                track_in_at=NOW,
+            ),
+        ),
+        history=(
+            react.HistoryCandidate(
+                candidate_id="H1",
+                scope="CURRENT",
+                chamber_id="EQP01-PM1",
+                parameter_id="P1",
+                step_no=1,
+                before=NOW,
+                current_lot_id="LOT001",
+                incident_step_id="CT-PHOTO",
+            ),
+        ),
+        metrology=(
+            react.MetrologyCandidate(
+                candidate_id="M1",
+                lot_id="LOT001",
+                step_id="CT-PHOTO",
+                relation="CURRENT",
+            ),
+        ),
+    )
 
 
 def _usage() -> LlmUsage:
@@ -35,10 +95,13 @@ def _context(**overrides: Any) -> react.ReactContext:
         representative_alarm=ALARM,
         member_alarm_count=1,
         r03_present=False,
-        allowed_lot_hist_ids=("LH-REP", "LH-2"),
-        fetched_lot_hist_ids=("LH-REP",),
+        candidates=_candidates(),
+        fetched_fdc_candidate_ids=("F1",),
+        observed_parameter_keys=(("P1", 1),),
         fdc_observations=("lot_hist=LH-REP wafer=1 flagged=[P1(ooc=2,oos=0)]",),
         equipment_observation=None,
+        history_observations=(),
+        metrology_observations=(),
         document_observations=(),
         remaining_tool_calls=5,
         remaining_steps=6,
@@ -80,6 +143,84 @@ class ScriptedReactPort:
         return react.ReactSelectionOutcome(selection=selection, llm_usage=_usage())
 
 
+def _level3_route() -> ResolvedIncidentRoute:
+    route_step = RouteStep(
+        lot_hist_id="LH-REP",
+        lot_id="LOT001",
+        wafer_id="LOT001W001",
+        wafer_no=1,
+        step_id="CT-PHOTO",
+        area_id="PHOTO",
+        equipment_id="EQP01",
+        chamber_id="EQP01-PM1",
+        recipe_id="RECIPE01",
+        track_in_at=NOW,
+        track_out_at=NOW,
+    )
+    base = harness._route()
+    return ResolvedIncidentRoute(
+        incident=base.incident,
+        wafer_routes=(
+            WaferRoute(
+                wafer_id="LOT001W001",
+                member_alarms=(ALARM,),
+                steps=(route_step,),
+            ),
+        ),
+        graph_evidence=base.graph_evidence,
+        route_consistency=True,
+        mismatches=(),
+    )
+
+
+class _InvestigationTools(harness._FakeTools):
+    def chamber_parameter_history(self, _run_id: str, request: Any, **_kwargs: Any):
+        self.calls.append(("history", request))
+        current = LotAggregate(
+            lot_id="LOT001",
+            lot_mean=10.0,
+            wafer_count=1,
+            ooc_wafers=1,
+            oos_wafers=0,
+            evaluation_missing=0,
+            track_in_from=NOW,
+            track_in_to=NOW,
+        )
+        return ChamberParameterHistoryToolResult(
+            ok=True,
+            scope="CURRENT",
+            chamber_id=request.chamber_id,
+            parameter_id=request.parameter_id,
+            step_no=request.step_no,
+            current=current,
+            baseline=HistoryBaseline(prior_lot_count=0),
+            trend="INSUFFICIENT",
+            comparison="CURRENT",
+            sample_count=1,
+        )
+
+    def metrology_result(self, _run_id: str, request: Any):
+        self.calls.append(("metrology", request))
+        return MetrologyResultToolResult(
+            ok=True,
+            lot_id=request.lot_id,
+            step_id=request.step_id,
+            results=[
+                MetrologyResultItem(
+                    wafer_id="LOT001W001",
+                    measure_type="CD_ADI",
+                    measured_value=10.0,
+                    spec_lower=9.0,
+                    spec_upper=11.0,
+                    alarm_result="PASS",
+                    measured_at=NOW,
+                )
+            ],
+            fail_count=0,
+            disclaimer="계측 PASS/FAIL은 제품 품질 근거이며 Fault Mode 정답이 아니다",
+        )
+
+
 # ---------- 순수 함수 ----------
 
 
@@ -87,15 +228,15 @@ class ScriptedReactPort:
     ("selection", "context_overrides", "equipment_fetched", "expected"),
     [
         (_selection("stop"), {}, False, None),
-        (_selection("get_fdc_summary", lot_hist_id="LH-2"), {}, False, None),
+        (_selection("get_fdc_summary", fdc_candidate_id="F2"), {}, False, None),
         (
-            _selection("get_fdc_summary", lot_hist_id="LH-999"),
+            _selection("get_fdc_summary", fdc_candidate_id="F999"),
             {},
             False,
-            "REACT_GUARD_TARGET_NOT_ALLOWED",
+            "REACT_GUARD_CANDIDATE_UNKNOWN",
         ),
         (
-            _selection("get_fdc_summary", lot_hist_id="LH-REP"),
+            _selection("get_fdc_summary", fdc_candidate_id="F1"),
             {},
             False,
             "REACT_GUARD_TARGET_REPEATED",
@@ -188,12 +329,13 @@ def test_failed_persisted_call_can_be_reselected() -> None:
 
 def test_failed_tool_observation_is_visible_to_the_next_selection() -> None:
     context = react.build_context(
+        run_id="RUN-1",
         lot_id="LOT001",
         chamber_id="EQP01-PM1",
         representative_alarm=ALARM,
         member_alarms=(ALARM,),
         route=harness._route(),
-        allowed_lot_hist_ids=("LH-REP",),
+        candidates=_candidates(),
         fdc_results=(harness._fdc(),),
         equipment=None,
         documents=(),
@@ -250,7 +392,12 @@ def test_select_next_step_maps_llm_structure_failure_and_records_usage(
             {
                 "rationale_summary": "PH_FOCUS 이탈 스펙을 확인한다",
                 "next": "search_documents",
-                "arguments": {"lot_hist_id": None, "query": "PH_FOCUS 관리 범위"},
+                "arguments": {
+                    "fdc_candidate_id": None,
+                    "history_candidate_id": None,
+                    "metrology_candidate_id": None,
+                    "query": "PH_FOCUS 관리 범위",
+                },
                 "stop_reason": None,
             }
         ),
@@ -271,8 +418,7 @@ def test_prompt_and_trace_never_carry_raw_documents_or_secrets() -> None:
     payload = json.loads(messages[1]["content"])
     assert set(payload) == {
         "incident",
-        "allowed_lot_hist_ids",
-        "fetched_lot_hist_ids",
+        "candidates",
         "observations",
         "budget",
     }
@@ -282,6 +428,8 @@ def test_prompt_and_trace_never_carry_raw_documents_or_secrets() -> None:
         usage=_usage(),
         phase="OBSERVED",
         observation_summary="o" * 1000,
+        canonical_arguments={"query": "q" * 500, "model_code": None},
+        argument_summary="문서 검색",
     )
     assert entry.rationale_summary is not None and len(entry.rationale_summary) <= 120
     assert (
@@ -365,18 +513,52 @@ def test_level3_react_selects_tools_then_stops_and_records_trace(
     ]
     assert "generate_hypothesis" in ports.calls and "decide_action" in ports.calls
     # 선택 LLM 호출마다 컨텍스트 예산이 줄어드는지
-    assert [c.remaining_steps for c in port.contexts] == [6, 5, 4]
+    assert [c.remaining_steps for c in port.contexts] == [10, 9, 8]
     assert tools.llm_usage == [
         (10, 5)
     ], "selector usage를 hypothesis run 합계에 섞지 않는다"
+
+
+def test_level3_executes_history_and_metrology_only_through_candidate_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    port = ScriptedReactPort(
+        _selection("get_chamber_parameter_history", history_candidate_id="H1"),
+        _selection("get_metrology_result", metrology_candidate_id="M1"),
+        _selection("stop"),
+    )
+    tools = _InvestigationTools()
+    (graph, _tools, _ports, finishes, _), _ = _level3(
+        monkeypatch,
+        port,
+        tools=tools,
+        level_route=_level3_route(),
+    )
+
+    harness._invoke(graph, level=3)
+
+    assert [name for name, _ in tools.calls if name in {"history", "metrology"}] == [
+        "history",
+        "metrology",
+    ]
+    trace = finishes[0][1]["evidence"]["react_trace"]
+    assert [step["tool"] for step in trace] == [
+        "get_chamber_parameter_history",
+        "get_metrology_result",
+        "stop",
+    ]
+    assert "trend=INSUFFICIENT" in trace[0]["observation_summary"]
+    assert "fail_count=0" in trace[1]["observation_summary"]
+    assert "LOT001" not in trace[0]["argument_summary"]
+    assert "CT-PHOTO" not in trace[1]["argument_summary"]
 
 
 def test_level3_guard_rejections_stop_after_limit_without_failing_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     port = ScriptedReactPort(
-        _selection("get_fdc_summary", lot_hist_id="LH-NOPE"),
-        _selection("get_fdc_summary", lot_hist_id="LH-NOPE"),
+        _selection("get_fdc_summary", fdc_candidate_id="F999"),
+        _selection("get_fdc_summary", fdc_candidate_id="F999"),
         _selection("search_documents", query="never reached"),
     )
     (graph, tools, _ports, finishes, _), _ = _level3(monkeypatch, port)
@@ -386,8 +568,8 @@ def test_level3_guard_rejections_stop_after_limit_without_failing_run(
     assert [status for status, _ in finishes] == [RunStatus.COMPLETED.value]
     trace = finishes[0][1]["evidence"]["react_trace"]
     assert [step["guard_code"] for step in trace[:2]] == [
-        "REACT_GUARD_TARGET_NOT_ALLOWED",
-        "REACT_GUARD_TARGET_NOT_ALLOWED",
+        "REACT_GUARD_CANDIDATE_UNKNOWN",
+        "REACT_GUARD_CANDIDATE_UNKNOWN",
     ]
     assert trace[2]["phase"] == "STOPPED"
     assert trace[2]["stop_reason"] == "GUARD_LIMIT"

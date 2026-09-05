@@ -13,11 +13,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final, Literal
 
-from pydantic import ValidationError, model_validator
+from pydantic import Field, ValidationError, model_validator
 from sqlalchemy.engine import Connection
 
 from app.agent.incident import ResolvedIncident
-from app.agent.react import trace_from_payload
+from app.agent.react import ReactCandidates, trace_from_payload
 from app.agent.repository import (
     ACTION_PROVENANCE_KEY,
     ACTION_PROVENANCE_SCHEMA,
@@ -55,9 +55,11 @@ from app.common.ids import NonEmptyId
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     AnomalySignal,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
+    MetrologyResultToolResult,
 )
 
 REHYDRATION_SNAPSHOT_SCHEMA: Final = "rehydration-snapshot-v1"
@@ -92,6 +94,7 @@ class RouteStepSnapshotModel(StateModel):
     recipe_id: NonEmptyId | None
     track_in_at: datetime
     track_out_at: datetime | None
+    lot_first_track_in_at: datetime | None = None
 
 
 class WaferRouteSnapshotModel(StateModel):
@@ -109,6 +112,7 @@ class GraphRouteEvidenceSnapshotModel(StateModel):
     downstream_process_step_ids: tuple[NonEmptyId, ...]
     relation_ids: tuple[NonEmptyId, ...]
     graph_revision: NonEmptyId | None
+    sibling_chamber_ids: tuple[str, ...] = ()
 
 
 class RouteMismatchSnapshotModel(StateModel):
@@ -212,11 +216,14 @@ class RehydrationSeed(StateModel):
     fdc_lot_hist_ids: tuple[NonEmptyId, ...] = ()
     fdc_evidence_set: tuple[FdcSummaryToolResult | None, ...] = ()
     document_evidence_set: tuple[DocumentSearchToolResult | None, ...] = ()
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...] = ()
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...] = ()
     read_retry_used: int = 0
     react_trace: tuple[dict[str, Any], ...] = ()
     react_steps: int = 0
     react_guard_rejections: int = 0
     react_pending: None = None
+    react_candidates: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> RehydrationSeed:
@@ -255,11 +262,14 @@ class RehydrationSeed(StateModel):
             fdc_lot_hist_ids=tuple(state.get("fdc_lot_hist_ids", ())),
             fdc_evidence_set=tuple(state.get("fdc_evidence_set", ())),
             document_evidence_set=tuple(state.get("document_evidence_set", ())),
+            history_evidence_set=tuple(state.get("history_evidence_set", ())),
+            metrology_evidence_set=tuple(state.get("metrology_evidence_set", ())),
             read_retry_used=state.get("read_retry_used", 0),
             react_trace=tuple(state.get("react_trace", ())),
             react_steps=state.get("react_steps", 0),
             react_guard_rejections=state.get("react_guard_rejections", 0),
             react_pending=None,
+            react_candidates=dict(state.get("react_candidates", {})),
         )
 
 
@@ -278,11 +288,14 @@ class RehydrationSnapshot(StateModel):
     fdc_lot_hist_ids: tuple[NonEmptyId, ...] = ()
     fdc_evidence_set: tuple[FdcSummaryToolResult | None, ...] = ()
     document_evidence_set: tuple[DocumentSearchToolResult | None, ...] = ()
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...] = ()
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...] = ()
     read_retry_used: int = 0
     react_trace: tuple[dict[str, Any], ...] = ()
     react_steps: int = 0
     react_guard_rejections: int = 0
     react_pending: None = None
+    react_candidates: dict[str, Any] = Field(default_factory=dict)
     action_id: NonEmptyId
     approval_id: NonEmptyId
     deliveries: tuple[DeliveryPlan, ...]
@@ -311,11 +324,14 @@ class RehydrationSnapshot(StateModel):
             fdc_lot_hist_ids=resolved.fdc_lot_hist_ids,
             fdc_evidence_set=resolved.fdc_evidence_set,
             document_evidence_set=resolved.document_evidence_set,
+            history_evidence_set=resolved.history_evidence_set,
+            metrology_evidence_set=resolved.metrology_evidence_set,
             read_retry_used=resolved.read_retry_used,
             react_trace=resolved.react_trace,
             react_steps=resolved.react_steps,
             react_guard_rejections=resolved.react_guard_rejections,
             react_pending=None,
+            react_candidates=resolved.react_candidates,
             action_id=action_id,
             approval_id=approval_id,
             deliveries=deliveries,
@@ -342,6 +358,7 @@ def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
     if evidence.get("schema_version") not in {
         "agent-evidence-v1",
         "agent-evidence-v2",
+        "agent-evidence-v3",
     }:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH")
     try:
@@ -366,6 +383,8 @@ def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
             impact_summary=evidence.get("impact_summary", ""),
             verification_steps=tuple(evidence.get("verification_steps", ())),
             limitations=tuple(evidence.get("limitations", ())),
+            parameter_findings=tuple(evidence.get("parameter_findings", ())),
+            origin_assessment=evidence.get("origin_assessment"),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH") from exc
@@ -466,6 +485,13 @@ def build_rehydrated_state(
         raise RehydrationError("REHYDRATE_RUN_NOT_WAITING")
     evidence: Mapping[str, Any] = run.evidence or {}
     snapshot = load_snapshot(evidence)
+    if snapshot.react_candidates:
+        try:
+            candidates = ReactCandidates.model_validate(snapshot.react_candidates)
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise RehydrationError("REHYDRATE_SNAPSHOT_MISSING") from exc
+        if candidates.run_id != run_id:
+            raise RehydrationError("REHYDRATE_BUNDLE_MISMATCH")
     route = snapshot_to_route(snapshot.route)
     incident = route.incident
     fdc_anomaly = (
@@ -573,11 +599,14 @@ def build_rehydrated_state(
                 else ()
             )
         ),
+        "history_evidence_set": snapshot.history_evidence_set,
+        "metrology_evidence_set": snapshot.metrology_evidence_set,
         "read_retry_used": snapshot.read_retry_used,
         "react_trace": snapshot.react_trace,
         "react_steps": snapshot.react_steps,
         "react_guard_rejections": snapshot.react_guard_rejections,
         "react_pending": None,
+        "react_candidates": snapshot.react_candidates,
     }
     validate_rehydrated_payload(payload)
     return payload
@@ -681,11 +710,26 @@ def canonical_payload(values: Mapping[str, Any]) -> str:
             _dump(item, DocumentSearchToolResult)
             for item in values.get("document_evidence_set", ())
         ],
+        "history_evidence_set": [
+            _dump(item, ChamberParameterHistoryToolResult)
+            for item in values.get("history_evidence_set", ())
+        ],
+        "metrology_evidence_set": [
+            _dump(item, MetrologyResultToolResult)
+            for item in values.get("metrology_evidence_set", ())
+        ],
         "read_retry_used": values.get("read_retry_used", 0),
         "react_trace": list(values.get("react_trace", ())),
         "react_steps": values.get("react_steps", 0),
         "react_guard_rejections": values.get("react_guard_rejections", 0),
         "react_pending": None,
+        "react_candidates": (
+            {}
+            if not values.get("react_candidates")
+            else ReactCandidates.model_validate(
+                values.get("react_candidates")
+            ).model_dump(mode="json")
+        ),
     }
     return json.dumps(
         projection,

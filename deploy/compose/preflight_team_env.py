@@ -32,6 +32,9 @@ EXPECTED_KEYS = frozenset(
         "N8N_WEBHOOK_TIMEOUT_SEC",
         "DELIVERY_UNKNOWN_AFTER_SEC",
         "AGENT_EMAIL_RECIPIENTS",
+        "AGENT_AUTONOMY_LEVEL",
+        "AGENT_LEVEL3_ENABLED",
+        "AGENT_LEVEL3_DEMO_ACK",
         "CORS_ORIGINS",
         "BACKEND_BASE_URL",
         "LLM_PROVIDER",
@@ -265,6 +268,17 @@ def validate(values: dict[str, str]) -> list[Finding]:
         findings.append(Finding(key, "UNEXPECTED_KEY"))
     if findings:
         return sorted(set(findings))
+
+    level = values["AGENT_AUTONOMY_LEVEL"]
+    enabled = values["AGENT_LEVEL3_ENABLED"]
+    if level not in {"1", "2", "3"} or enabled not in {"true", "false"} or (
+        (level == "3") != (enabled == "true")
+    ):
+        findings.append(Finding("AGENT_AUTONOMY_LEVEL", "AUTONOMY_LEVEL_INVALID"))
+    if level == "3" and not re.fullmatch(
+        r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}", values["AGENT_LEVEL3_DEMO_ACK"]
+    ):
+        findings.append(Finding("AGENT_LEVEL3_DEMO_ACK", "AUTONOMY_LEVEL_NOT_READY"))
 
     for key in SECRET_KEYS:
         if _is_placeholder(values[key]):

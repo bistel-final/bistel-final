@@ -1,0 +1,1175 @@
+{
+  "LifecycleClaim": {
+    "$defs": {
+      "Component": {
+        "additionalProperties": false,
+        "properties": {
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256"
+        ],
+        "title": "Component",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "boot_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Boot Id",
+        "type": "string"
+      },
+      "claimed_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Claimed At",
+        "type": "string"
+      },
+      "host": {
+        "maxLength": 253,
+        "minLength": 1,
+        "title": "Host",
+        "type": "string"
+      },
+      "invocation_id": {
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Invocation Id",
+        "type": "string"
+      },
+      "phase": {
+        "enum": [
+          "RESUME_WORKLOAD",
+          "PUBLISH",
+          "ABORT"
+        ],
+        "title": "Phase",
+        "type": "string"
+      },
+      "pid": {
+        "exclusiveMinimum": 0,
+        "title": "Pid",
+        "type": "integer"
+      },
+      "prepared_attempt": {
+        "$ref": "#/$defs/Component"
+      },
+      "process_start_time": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Process Start Time",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": "level3-lifecycle-claim-v1",
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "phase",
+      "prepared_attempt",
+      "invocation_id",
+      "host",
+      "pid",
+      "boot_id",
+      "process_start_time",
+      "claimed_at"
+    ],
+    "title": "LifecycleClaim",
+    "type": "object"
+  },
+  "LifecycleOutcome": {
+    "$defs": {
+      "Component": {
+        "additionalProperties": false,
+        "properties": {
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256"
+        ],
+        "title": "Component",
+        "type": "object"
+      },
+      "ExternalEffects": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Basis",
+            "type": "string"
+          },
+          "email_sent": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sent"
+          },
+          "mes_blocked": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mes Blocked"
+          },
+          "state": {
+            "enum": [
+              "KNOWN",
+              "INDETERMINATE"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "email_sent",
+          "mes_blocked",
+          "basis"
+        ],
+        "title": "ExternalEffects",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "claim": {
+        "$ref": "#/$defs/Component"
+      },
+      "cleanup_result": {
+        "enum": [
+          "NOT_ATTEMPTED",
+          "OK",
+          "FAILED"
+        ],
+        "title": "Cleanup Result",
+        "type": "string"
+      },
+      "external_effects": {
+        "$ref": "#/$defs/ExternalEffects"
+      },
+      "failure_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "STAGE2_STEP_FAILED",
+              "WORKLOAD_ABORTED",
+              "PUBLISH_PRECONDITION_FAILED",
+              "ARTIFACT_PUBLISH_FAILED",
+              "STALE_CLAIM_RECOVERED",
+              "PUBLISH_PHASE_RECOVERED",
+              "CLEANUP_FAILED",
+              "RESTORE_FAILED"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Failure Code"
+      },
+      "finished_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Finished At",
+        "type": "string"
+      },
+      "issued_by": {
+        "enum": [
+          "RESUME_WORKLOAD",
+          "ABORT",
+          "RECOVER"
+        ],
+        "title": "Issued By",
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "HELD",
+          "ABORTED",
+          "FAILED"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "phase": {
+        "enum": [
+          "RESUME_WORKLOAD",
+          "ABORT"
+        ],
+        "title": "Phase",
+        "type": "string"
+      },
+      "primary_failure_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "STAGE2_STEP_FAILED",
+              "WORKLOAD_ABORTED",
+              "PUBLISH_PRECONDITION_FAILED",
+              "ARTIFACT_PUBLISH_FAILED",
+              "STALE_CLAIM_RECOVERED",
+              "PUBLISH_PHASE_RECOVERED"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Primary Failure Code"
+      },
+      "reason_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "OPERATOR_ABORT",
+              "EXTERNAL_EFFECT_APPROVAL_MISSING",
+              "PREPARED_ATTEMPT_EXPIRED",
+              "PREPARED_RUNTIME_DRIFT"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Reason Code"
+      },
+      "recovery_started_workload": {
+        "const": false,
+        "title": "Recovery Started Workload",
+        "type": "boolean"
+      },
+      "restore_result": {
+        "enum": [
+          "NOT_ATTEMPTED",
+          "OK",
+          "FAILED"
+        ],
+        "title": "Restore Result",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": "level3-lifecycle-outcome-v1",
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "issued_by",
+      "reason_code",
+      "primary_failure_code",
+      "failure_code",
+      "external_effects",
+      "cleanup_result",
+      "restore_result",
+      "schema_version",
+      "phase",
+      "outcome",
+      "claim",
+      "recovery_started_workload",
+      "finished_at"
+    ],
+    "title": "LifecycleOutcome",
+    "type": "object"
+  },
+  "PreparedAttempt": {
+    "$defs": {
+      "DbIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "current_database": {
+            "const": "kosa_agent_e2e",
+            "title": "Current Database",
+            "type": "string"
+          },
+          "database": {
+            "const": "kosa_agent_e2e",
+            "title": "Database",
+            "type": "string"
+          },
+          "host_alias": {
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Host Alias",
+            "type": "string"
+          },
+          "system_identifier": {
+            "pattern": "^[0-9]+$",
+            "title": "System Identifier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host_alias",
+          "database",
+          "current_database",
+          "system_identifier"
+        ],
+        "title": "DbIdentity",
+        "type": "object"
+      },
+      "EffectiveEnv": {
+        "additionalProperties": false,
+        "properties": {
+          "AGENT_AUTONOMY_LEVEL": {
+            "const": 3,
+            "title": "Agent Autonomy Level",
+            "type": "integer"
+          },
+          "AGENT_LEVEL3_DEMO_ACK": {
+            "maxLength": 64,
+            "title": "Agent Level3 Demo Ack",
+            "type": "string"
+          },
+          "AGENT_LEVEL3_ENABLED": {
+            "const": true,
+            "title": "Agent Level3 Enabled",
+            "type": "boolean"
+          },
+          "level12_total": {
+            "const": 8,
+            "title": "Level12 Total",
+            "type": "integer"
+          },
+          "level3_total": {
+            "const": 10,
+            "title": "Level3 Total",
+            "type": "integer"
+          },
+          "same_tool_attempts": {
+            "const": 4,
+            "title": "Same Tool Attempts",
+            "type": "integer"
+          },
+          "selector_steps": {
+            "const": 10,
+            "title": "Selector Steps",
+            "type": "integer"
+          },
+          "send": {
+            "const": 2,
+            "title": "Send",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "AGENT_AUTONOMY_LEVEL",
+          "AGENT_LEVEL3_ENABLED",
+          "AGENT_LEVEL3_DEMO_ACK",
+          "level12_total",
+          "level3_total",
+          "send",
+          "same_tool_attempts",
+          "selector_steps"
+        ],
+        "title": "EffectiveEnv",
+        "type": "object"
+      },
+      "N8nEvidenceProbe": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_data_retained": {
+            "const": true,
+            "title": "Execution Data Retained",
+            "type": "boolean"
+          },
+          "returns_action_id": {
+            "const": true,
+            "title": "Returns Action Id",
+            "type": "boolean"
+          },
+          "returns_recipient": {
+            "const": true,
+            "title": "Returns Recipient",
+            "type": "boolean"
+          },
+          "verdict": {
+            "const": "PASS",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_data_retained",
+          "returns_action_id",
+          "returns_recipient",
+          "verdict"
+        ],
+        "title": "N8nEvidenceProbe",
+        "type": "object"
+      },
+      "Recipient": {
+        "additionalProperties": false,
+        "properties": {
+          "canonical_addresses": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Canonical Addresses",
+            "type": "array"
+          },
+          "canonical_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Canonical Hash",
+            "type": "string"
+          },
+          "count": {
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "recipient_hash_version": {
+            "const": 2,
+            "title": "Recipient Hash Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "canonical_addresses",
+          "canonical_hash",
+          "recipient_hash_version",
+          "count"
+        ],
+        "title": "Recipient",
+        "type": "object"
+      },
+      "RuntimeContainer": {
+        "additionalProperties": false,
+        "properties": {
+          "container_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Container Id",
+            "type": "string"
+          },
+          "started_at": {
+            "maxLength": 40,
+            "minLength": 20,
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "container_id",
+          "started_at"
+        ],
+        "title": "RuntimeContainer",
+        "type": "object"
+      },
+      "RuntimeContainers": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/$defs/RuntimeContainer"
+          },
+          "frontend": {
+            "$ref": "#/$defs/RuntimeContainer"
+          },
+          "runner": {
+            "$ref": "#/$defs/RuntimeContainer"
+          }
+        },
+        "required": [
+          "backend",
+          "frontend",
+          "runner"
+        ],
+        "title": "RuntimeContainers",
+        "type": "object"
+      },
+      "RuntimeImage": {
+        "additionalProperties": false,
+        "properties": {
+          "image_id": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "label_revision": {
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Label Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_id",
+          "label_revision"
+        ],
+        "title": "RuntimeImage",
+        "type": "object"
+      },
+      "RuntimeImages": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/$defs/RuntimeImage"
+          },
+          "frontend": {
+            "$ref": "#/$defs/RuntimeImage"
+          },
+          "runner": {
+            "$ref": "#/$defs/RuntimeImage"
+          }
+        },
+        "required": [
+          "backend",
+          "frontend",
+          "runner"
+        ],
+        "title": "RuntimeImages",
+        "type": "object"
+      },
+      "Stage2Log": {
+        "additionalProperties": false,
+        "properties": {
+          "prefix_bytes": {
+            "exclusiveMinimum": 0,
+            "title": "Prefix Bytes",
+            "type": "integer"
+          },
+          "prefix_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Prefix Sha256",
+            "type": "string"
+          },
+          "relative_path": {
+            "const": "stage2-log.jsonl",
+            "title": "Relative Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "prefix_sha256",
+          "prefix_bytes"
+        ],
+        "title": "Stage2Log",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "R": {
+        "pattern": "^[0-9a-f]{40}$",
+        "title": "R",
+        "type": "string"
+      },
+      "approved_config_digest_allowlist": {
+        "items": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Approved Config Digest Allowlist",
+        "type": "array"
+      },
+      "attempt_id": {
+        "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$",
+        "title": "Attempt Id",
+        "type": "string"
+      },
+      "containers": {
+        "$ref": "#/$defs/RuntimeContainers"
+      },
+      "db_identity": {
+        "$ref": "#/$defs/DbIdentity"
+      },
+      "e2e_level3_preflight_output_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "E2E Level3 Preflight Output Sha256",
+        "type": "string"
+      },
+      "effective_env": {
+        "$ref": "#/$defs/EffectiveEnv"
+      },
+      "expires_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Expires At",
+        "type": "string"
+      },
+      "images": {
+        "$ref": "#/$defs/RuntimeImages"
+      },
+      "last_ok_step": {
+        "const": "3b",
+        "title": "Last Ok Step",
+        "type": "string"
+      },
+      "max_external_emails": {
+        "const": 7,
+        "title": "Max External Emails",
+        "type": "integer"
+      },
+      "n8n_evidence_probe": {
+        "$ref": "#/$defs/N8nEvidenceProbe"
+      },
+      "observer_baseline_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Observer Baseline Sha256",
+        "type": "string"
+      },
+      "prepared_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Prepared At",
+        "type": "string"
+      },
+      "prev_attempt": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Attempt"
+      },
+      "prev_fault_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Fault Path"
+      },
+      "prev_fault_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Fault Sha256"
+      },
+      "prev_golden_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Golden Path"
+      },
+      "prev_golden_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Golden Sha256"
+      },
+      "prev_rev": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prev Rev"
+      },
+      "prev_state": {
+        "enum": [
+          "empty",
+          "bound"
+        ],
+        "title": "Prev State",
+        "type": "string"
+      },
+      "recipient": {
+        "$ref": "#/$defs/Recipient"
+      },
+      "reset_final_receipt_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Reset Final Receipt Sha256",
+        "type": "string"
+      },
+      "running_rev": {
+        "pattern": "^[0-9a-f]{40}$",
+        "title": "Running Rev",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": "level3-prepared-attempt-v1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "stage2_log": {
+        "$ref": "#/$defs/Stage2Log"
+      }
+    },
+    "required": [
+      "schema_version",
+      "attempt_id",
+      "R",
+      "images",
+      "containers",
+      "effective_env",
+      "db_identity",
+      "n8n_evidence_probe",
+      "recipient",
+      "reset_final_receipt_sha256",
+      "observer_baseline_sha256",
+      "approved_config_digest_allowlist",
+      "max_external_emails",
+      "e2e_level3_preflight_output_sha256",
+      "prepared_at",
+      "expires_at",
+      "prev_state",
+      "prev_fault_path",
+      "prev_golden_path",
+      "prev_fault_sha256",
+      "prev_golden_sha256",
+      "prev_rev",
+      "prev_attempt",
+      "running_rev",
+      "stage2_log",
+      "last_ok_step"
+    ],
+    "title": "PreparedAttempt",
+    "type": "object"
+  },
+  "RoundCompletion": {
+    "$defs": {
+      "Component": {
+        "additionalProperties": false,
+        "properties": {
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256"
+        ],
+        "title": "Component",
+        "type": "object"
+      },
+      "ExternalEffects": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Basis",
+            "type": "string"
+          },
+          "email_sent": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sent"
+          },
+          "mes_blocked": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mes Blocked"
+          },
+          "state": {
+            "enum": [
+              "KNOWN",
+              "INDETERMINATE"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "email_sent",
+          "mes_blocked",
+          "basis"
+        ],
+        "title": "ExternalEffects",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "attempt_artifact_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Attempt Artifact Sha256"
+      },
+      "cleanup_result": {
+        "enum": [
+          "NOT_ATTEMPTED",
+          "OK",
+          "FAILED"
+        ],
+        "title": "Cleanup Result",
+        "type": "string"
+      },
+      "cm52_attempt_id": {
+        "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$",
+        "title": "Cm52 Attempt Id",
+        "type": "string"
+      },
+      "completed_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Completed At",
+        "type": "string"
+      },
+      "external_effects": {
+        "$ref": "#/$defs/ExternalEffects"
+      },
+      "failure_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "STAGE2_STEP_FAILED",
+              "WORKLOAD_ABORTED",
+              "PUBLISH_PRECONDITION_FAILED",
+              "ARTIFACT_PUBLISH_FAILED",
+              "STALE_CLAIM_RECOVERED",
+              "PUBLISH_PHASE_RECOVERED",
+              "CLEANUP_FAILED",
+              "RESTORE_FAILED"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Failure Code"
+      },
+      "fault_5class_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Fault 5Class Sha256"
+      },
+      "final_status": {
+        "enum": [
+          "PASS",
+          "FAIL"
+        ],
+        "title": "Final Status",
+        "type": "string"
+      },
+      "golden_flow_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Golden Flow Sha256"
+      },
+      "issued_by": {
+        "enum": [
+          "PUBLISH",
+          "RECOVER"
+        ],
+        "title": "Issued By",
+        "type": "string"
+      },
+      "lifecycle_claim_publish": {
+        "$ref": "#/$defs/Component"
+      },
+      "lifecycle_claim_resume_workload": {
+        "$ref": "#/$defs/Component"
+      },
+      "lifecycle_outcome_resume_workload": {
+        "$ref": "#/$defs/Component"
+      },
+      "primary_failure_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "STAGE2_STEP_FAILED",
+              "WORKLOAD_ABORTED",
+              "PUBLISH_PRECONDITION_FAILED",
+              "ARTIFACT_PUBLISH_FAILED",
+              "STALE_CLAIM_RECOVERED",
+              "PUBLISH_PHASE_RECOVERED"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Primary Failure Code"
+      },
+      "reason_code": {
+        "title": "Reason Code",
+        "type": "null"
+      },
+      "restore_result": {
+        "enum": [
+          "NOT_ATTEMPTED",
+          "OK",
+          "FAILED"
+        ],
+        "title": "Restore Result",
+        "type": "string"
+      },
+      "round1": {
+        "$ref": "#/$defs/Component"
+      },
+      "schema_version": {
+        "const": "level3-round1-completion-v1",
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "issued_by",
+      "reason_code",
+      "primary_failure_code",
+      "failure_code",
+      "external_effects",
+      "cleanup_result",
+      "restore_result",
+      "schema_version",
+      "round1",
+      "cm52_attempt_id",
+      "final_status",
+      "lifecycle_claim_resume_workload",
+      "lifecycle_outcome_resume_workload",
+      "lifecycle_claim_publish",
+      "attempt_artifact_sha256",
+      "golden_flow_sha256",
+      "fault_5class_sha256",
+      "completed_at"
+    ],
+    "title": "RoundCompletion",
+    "type": "object"
+  },
+  "SmtpConfigSnapshot": {
+    "additionalProperties": false,
+    "description": "Non-secret runtime projection; never pass raw n8n credentials/config.",
+    "properties": {
+      "n8n_workflow_versions": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "minProperties": 1,
+        "title": "N8N Workflow Versions",
+        "type": "object"
+      },
+      "recipient_allowlist": {
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Recipient Allowlist",
+        "type": "array"
+      },
+      "smtp_from": {
+        "minLength": 1,
+        "title": "Smtp From",
+        "type": "string"
+      },
+      "smtp_host": {
+        "minLength": 1,
+        "title": "Smtp Host",
+        "type": "string"
+      },
+      "smtp_port": {
+        "maximum": 65535,
+        "minimum": 1,
+        "title": "Smtp Port",
+        "type": "integer"
+      },
+      "wf2_callback_endpoint": {
+        "minLength": 1,
+        "title": "Wf2 Callback Endpoint",
+        "type": "string"
+      }
+    },
+    "required": [
+      "n8n_workflow_versions",
+      "smtp_host",
+      "smtp_port",
+      "smtp_from",
+      "recipient_allowlist",
+      "wf2_callback_endpoint"
+    ],
+    "title": "SmtpConfigSnapshot",
+    "type": "object"
+  },
+  "SmtpGrant": {
+    "$defs": {
+      "Component": {
+        "additionalProperties": false,
+        "properties": {
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256"
+        ],
+        "title": "Component",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "approval_reference": {
+        "maxLength": 256,
+        "minLength": 1,
+        "title": "Approval Reference",
+        "type": "string"
+      },
+      "approved_at": {
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+        "title": "Approved At",
+        "type": "string"
+      },
+      "approver": {
+        "title": "Approver",
+        "type": "string"
+      },
+      "attempt_id": {
+        "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$",
+        "title": "Attempt Id",
+        "type": "string"
+      },
+      "grant_type": {
+        "const": "SMTP_SEND_GRANT",
+        "title": "Grant Type",
+        "type": "string"
+      },
+      "max_external_emails": {
+        "const": 7,
+        "title": "Max External Emails",
+        "type": "integer"
+      },
+      "prepared_attempt": {
+        "$ref": "#/$defs/Component"
+      },
+      "recipient_canonical_addresses": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Recipient Canonical Addresses",
+        "type": "array"
+      },
+      "recipient_canonical_hash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Recipient Canonical Hash",
+        "type": "string"
+      },
+      "recipient_hash_version": {
+        "const": 2,
+        "title": "Recipient Hash Version",
+        "type": "integer"
+      },
+      "schema_version": {
+        "const": "smtp-send-grant-v1",
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "grant_type",
+      "attempt_id",
+      "prepared_attempt",
+      "approval_reference",
+      "approver",
+      "recipient_canonical_addresses",
+      "recipient_canonical_hash",
+      "recipient_hash_version",
+      "max_external_emails",
+      "approved_at"
+    ],
+    "title": "SmtpGrant",
+    "type": "object"
+  }
+}

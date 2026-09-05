@@ -1,0 +1,25 @@
+{
+  "schema_version": "level3-lifecycle-policy-v1",
+  "transitions": {
+    "PREPARED": ["RESUME_WORKLOAD", "ABORT"],
+    "UNRESOLVED": ["RECOVER"],
+    "HELD": ["PUBLISH"],
+    "TERMINAL": []
+  },
+  "failures": [
+    {"phase": "RESUME_WORKLOAD", "issued_by": "RESUME_WORKLOAD", "primary_failure_code": "STAGE2_STEP_FAILED"},
+    {"phase": "RESUME_WORKLOAD", "issued_by": "RESUME_WORKLOAD", "primary_failure_code": "WORKLOAD_ABORTED"},
+    {"phase": "ABORT", "issued_by": "ABORT", "primary_failure_code": null},
+    {"phase": "RESUME_WORKLOAD", "issued_by": "RECOVER", "primary_failure_code": "STALE_CLAIM_RECOVERED"},
+    {"phase": "ABORT", "issued_by": "RECOVER", "primary_failure_code": "STALE_CLAIM_RECOVERED"},
+    {"phase": "PUBLISH", "issued_by": "PUBLISH", "primary_failure_code": "ARTIFACT_PUBLISH_FAILED"},
+    {"phase": "PUBLISH", "issued_by": "PUBLISH", "primary_failure_code": "PUBLISH_PRECONDITION_FAILED"},
+    {"phase": "PUBLISH", "issued_by": "RECOVER", "primary_failure_code": "PUBLISH_PHASE_RECOVERED"}
+  ],
+  "results": [
+    {"cleanup_result": "OK", "restore_result": "OK", "failure": "PRIMARY"},
+    {"cleanup_result": "FAILED", "restore_result": "OK", "failure": "CLEANUP_FAILED"},
+    {"cleanup_result": "OK", "restore_result": "FAILED", "failure": "RESTORE_FAILED"},
+    {"cleanup_result": "FAILED", "restore_result": "FAILED", "failure": "RESTORE_FAILED"}
+  ]
+}

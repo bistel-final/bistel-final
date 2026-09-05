@@ -78,6 +78,8 @@ def _run_stage2(
     running_revision: str = PREVIOUS_REVISION,
     extra_args: tuple[str, ...] = (),
     reuse_attempt: bool = False,
+    autonomy_level: str = "2",
+    level3_enabled: str = "false",
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     env_file = tmp_path / ".env.team"
     report_root = tmp_path / "reports"
@@ -98,6 +100,8 @@ def _run_stage2(
         "CM52_TEST_ORIGINAL_RC": str(original_rc),
         "CM52_TEST_PREV_REV": previous_revision,
         "CM52_TEST_RUNNING_REV": running_revision,
+        "CM52_TEST_AUTONOMY_LEVEL": autonomy_level,
+        "CM52_TEST_LEVEL3_ENABLED": level3_enabled,
     }
     completed = subprocess.run(
         ["bash", str(STAGE2), *extra_args, "--attempt-id", ATTEMPT],
@@ -473,15 +477,61 @@ def test_stage2_uses_running_revision_then_current_after_restore() -> None:
     )
 
 
-def test_stage2_postcondition_requires_v2_complete_exact_distribution() -> None:
+def test_stage2_postcondition_requires_current_prompt_exact_distribution() -> None:
     stage = STAGE2.read_text(encoding="utf-8")
 
-    assert "prompt_version='agent-hypothesis-v2-ko1'" in stage
+    assert "from app.agent.prompts import PROMPT_VERSION" in stage
+    assert "prompt_version=:prompt" in stage
+    assert "c.execute(q, {'prompt': PROMPT_VERSION})" in stage
     # kosa_readonly는 agent_run을 못 읽는다(C-0.2 allowlist) — kosa_app engine으로 센다.
     assert "get_app_engine(); c=e.connect(); q=text(" in stage
     assert "pool_factory.get_engine(LogicalDb.RUNTIME,PoolRole.QUERY)" not in stage
     assert "status IN ('RUNNING','FAILED')" in stage
     assert "grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'" in stage
+
+
+@pytest.mark.parametrize("args", [(), ("--hold-after", "5d")])
+@pytest.mark.parametrize(
+    "level,enabled", [("3", "true"), ("3", "false"), ("2", "true")]
+)
+def test_legacy_level3_cannot_bypass_smtp_grant(tmp_path, args, level, enabled):
+    completed, _env, log = _run_stage2(
+        tmp_path,
+        extra_args=args,
+        autonomy_level=level,
+        level3_enabled=enabled,
+    )
+    assert completed.returncode != 0
+    assert "SMTP_SEND_GRANT_REQUIRED" in completed.stderr
+    assert _outcome(log) == "RESTORED"
+    assert not list(log.parent.glob("robustness/*.json"))
+
+
+@pytest.mark.parametrize(
+    "anchor",
+    [
+        'if [[ "$MODE" == resume ]]; then',
+        "append_log 3b PASS identity-readiness",
+    ],
+    ids=["resume", "full-and-hold"],
+)
+def test_legacy_level3_guard_is_on_the_real_workload_path(anchor):
+    # Test mode exits early: bind these assertions to the real post-readiness
+    # branch, never to the test-only guard or the function definition.
+    stage = STAGE2.read_text(encoding="utf-8")
+    real_path = stage.split("step3_boot_e2e() {", 1)[1]
+    lines = [
+        line.strip()
+        for line in real_path.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    index = lines.index(anchor)
+    expected = (
+        ["e2e_identity_readiness", "legacy_workload_guard"]
+        if anchor.startswith("if")
+        else ["legacy_workload_guard"]
+    )
+    assert lines[index + 1 : index + 1 + len(expected)] == expected
 
 
 def _hold_records(log: Path) -> list[dict[str, object]]:

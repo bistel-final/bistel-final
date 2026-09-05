@@ -48,7 +48,9 @@ PostgreSQL·n8n·Kafka·SMTP에는 접근하지 않는다.
 
 `LEVEL_COMPARISON`은 Level 1·2 모두 `ISOLATED_CONTAINER`이고 `level_round`는
 `[1,2]`다. 각 phase·round마다 위 artifact를 각각 둔다. public SMTP·Kafka 효과는
-발생시키지 않는다.
+발생시키지 않는다. 이 C-6.1 비교에서 두 Level의 DB-derived Tool count는 run당
+`total <= 8`, non-send `<= 6`, send `<= 2`, same-tool `<= 4`를 함께 검증한다.
+Level 3 `10/8/2`·selector 10-step 증적은 V5-C-7.1 artifact가 별도로 소유한다.
 
 ## 4. DB snapshot 수집
 
@@ -179,7 +181,8 @@ cd backend
 
 지표의 출처는 다음처럼 구분한다.
 
-- **DB snapshot 파생**: run active latency, completion rate, Tool call 수,
+- **DB snapshot 파생**: run active latency, completion rate, Tool call 수와 Level별
+  `total/read/send/same-tool` 상한 준수,
   token 합계·평균·결측 수, rehydration snapshot bytes
 - **운영자 제출 evidence 파생**: `batch_wall_clock_ms`
 

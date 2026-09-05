@@ -16,13 +16,15 @@ from app.agent.diagnostics import (
     build_diagnostic_snapshot,
     build_impact_scope,
 )
+from app.agent.hypothesis_v3 import comparison_matrix, finalize_hypothesis
+from app.agent.investigation_models import InvestigationEvidence
 from app.agent.prompts import (
     PROMPT_VERSION,
     HypothesisPromptError,
     build_hypothesis_messages,
 )
 from app.agent.routing import ResolvedIncidentRoute
-from app.agent.state import Hypothesis, HypothesisOutcome, LlmUsage
+from app.agent.state import Hypothesis, HypothesisDraftV3, HypothesisOutcome, LlmUsage
 from app.common import llm
 from app.common.tool_contracts import (
     DocumentSearchToolResult,
@@ -97,6 +99,56 @@ HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
                 "items": {"type": "string"},
             },
             "limitations": {"type": "array", "items": {"type": "string"}},
+            "parameter_findings_draft": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "parameter_id": {"type": "string"},
+                        "lot_hist_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["parameter_id", "lot_hist_ids"],
+                },
+            },
+            "origin_claim": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "UPSTREAM",
+                            "DOWNSTREAM",
+                            "CURRENT_CHAMBER",
+                            "EQUIPMENT_COMMON",
+                            "UNDETERMINED",
+                        ],
+                    },
+                    "basis_refs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "namespace": {
+                                    "type": "string",
+                                    "enum": [
+                                        "ALARM",
+                                        "CHUNK",
+                                        "RELATION",
+                                        "LOT_HIST",
+                                        "PARAMETER",
+                                    ],
+                                },
+                                "id": {"type": "string"},
+                            },
+                            "required": ["namespace", "id"],
+                        },
+                    },
+                },
+                "required": ["scope", "basis_refs"],
+            },
         },
         "required": [
             "predicted_fault_code",
@@ -114,6 +166,8 @@ HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
             "impact_summary",
             "verification_steps",
             "limitations",
+            "parameter_findings_draft",
+            "origin_claim",
         ],
     },
 }
@@ -134,6 +188,8 @@ HYPOTHESIS_OUTPUT_KEYS: Final[frozenset[str]] = frozenset(
         "impact_summary",
         "verification_steps",
         "limitations",
+        "parameter_findings_draft",
+        "origin_claim",
     }
 )
 ERROR_CODES: Final[frozenset[str]] = frozenset(
@@ -273,8 +329,6 @@ def _citation_reason(
         for relation_id in item.relation_ids
     }
     cited_relations = set(hypothesis.supporting_relation_ids)
-    if allowed_relations and not cited_relations:
-        return "RELATION_CITATION_REQUIRED"
     if not cited_relations <= allowed_relations:
         return "RELATION_CITATION_OUTSIDE_EVIDENCE"
     allowed_lot_history = set(diagnostic_snapshot.source_ids.lot_hist_ids)
@@ -295,6 +349,7 @@ def generate_hypothesis(
     document_evidence: DocumentSearchToolResult | None,
     route: ResolvedIncidentRoute,
     extra_data_gaps: Sequence[str] = (),
+    investigation: InvestigationEvidence | None = None,
     *,
     seed: int | None = None,
 ) -> HypothesisOutcome:
@@ -303,6 +358,7 @@ def generate_hypothesis(
     fdc_items = (
         tuple(fdc_evidence) if isinstance(fdc_evidence, Sequence) else (fdc_evidence,)
     )
+    investigation = investigation or InvestigationEvidence()
     try:
         diagnostic_snapshot = build_diagnostic_snapshot(
             fdc_items,
@@ -336,6 +392,8 @@ def generate_hypothesis(
                 diagnostic_snapshot=diagnostic_snapshot,
                 evidence_assessment=evidence_assessment,
                 impact_scope=impact_scope,
+                investigation=investigation,
+                compared=comparison_matrix(route, investigation),
             )
         except HypothesisPromptError as exc:
             raise HypothesisGenerationError(exc.code, usage=accumulated) from exc
@@ -380,7 +438,7 @@ def generate_hypothesis(
                     ]
                 )
                 continue
-            hypothesis = Hypothesis.model_validate(payload)
+            draft = HypothesisDraftV3.model_validate(payload)
         except ValidationError as exc:
             fields = sorted(
                 {
@@ -392,6 +450,19 @@ def generate_hypothesis(
             continue
         except (json.JSONDecodeError, TypeError, ValueError):
             correction_reason = "JSON_INVALID"
+            continue
+
+        try:
+            hypothesis = finalize_hypothesis(
+                draft,
+                fdc_items,
+                route,
+                diagnostic_snapshot,
+                document_evidence,
+                investigation,
+            )
+        except ValueError as exc:
+            correction_reason = str(exc)
             continue
 
         correction_reason = _korean_output_reason(hypothesis)

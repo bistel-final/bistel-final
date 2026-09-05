@@ -1775,8 +1775,9 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
 
     _endpoint, engine = runtime
     _seed_runtime(engine)
-    # `agent-hypothesis-v2-ko1`의 구조화 계약을 그대로 만족시킨다. v1 7필드만 주면
-    # STRUCTURE_INVALID로 거부돼 prediction이 저장되지 않고, 아래 조회가 NoResultFound가 된다.
+    # `agent-hypothesis-v3-ko1`의 구조화 계약을 그대로 만족시킨다. v1 7필드만 주면
+    # STRUCTURE_INVALID로 거부돼 prediction이 저장되지 않는다.
+    # 이 경우 아래 조회가 NoResultFound가 된다.
     content = json.dumps(
         {
             "predicted_fault_code": "OTH",
@@ -1799,6 +1800,8 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
             "impact_summary": "현재 incident의 직접 범위를 우선 확인해야 합니다.",
             "verification_steps": ["인용된 근거를 다시 확인합니다."],
             "limitations": ["이력 범위가 제한적입니다."],
+            "parameter_findings_draft": [],
+            "origin_claim": {"scope": "UNDETERMINED", "basis_refs": []},
         }
     )
     monkeypatch.setattr(
@@ -1847,7 +1850,6 @@ def test_real_hypothesis_adapter_runs_in_the_real_node_and_persists_usage(
         run.prompt_version == prediction.prompt_version == graph_module.PROMPT_VERSION
     )
     assert (run.input_tokens, run.output_tokens) == (31, 12)
-    # 확장에서 진단 snapshot이 붙으면서 evidence schema가 v2로 올라갔다(graph.py `_prediction_evidence`).
-    # v1 기대값은 낡은 계약이다. 읽기 계층은 v1·v2를 모두 수용하므로 기존 run 호환은 유지된다.
-    assert prediction.evidence["schema_version"] == "agent-evidence-v2"
+    # code-owned finding과 compared가 v3에 저장된다. 읽기 계층은 v1·v2도 수용한다.
+    assert prediction.evidence["schema_version"] == "agent-evidence-v3"
     assert state["hypothesis"].supporting_relation_ids == ("REL-PART",)

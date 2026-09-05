@@ -46,9 +46,11 @@ from app.agent.public_schemas import (
     PublicApprovalItem,
     PublicDeliveryItem,
     PublicToolCallItem,
+    ReactStepPublic,
     RunAlarmEvidence,
     RunEvidenceItem,
 )
+from app.agent.react import ReactStep
 from app.agent.repository import (
     PublicActionRecord,
     PublicAgentRunRecord,
@@ -79,7 +81,12 @@ from app.common.tool_contracts import (
 
 _KST: Final = ZoneInfo("Asia/Seoul")
 _V2_PROMPTS: Final = frozenset(
-    {"agent-hypothesis-v2", "agent-hypothesis-v2-ko", "agent-hypothesis-v2-ko1"}
+    {
+        "agent-hypothesis-v2",
+        "agent-hypothesis-v2-ko",
+        "agent-hypothesis-v2-ko1",
+        "agent-hypothesis-v3-ko1",
+    }
 )
 
 # 결과 본문·에러 문자열은 요약에 사용하지 않는다. 이름도 Runtime Agent가 호출할 수 있는
@@ -90,6 +97,8 @@ _SUCCESS_SUMMARIES: Final = MappingProxyType(
         "get_equipment_context": "Equipment context loaded",
         "search_documents": "Document search completed",
         "send_action": "Action delivery processed",
+        "get_chamber_parameter_history": "Chamber parameter history loaded",
+        "get_metrology_result": "Metrology result loaded",
     }
 )
 _ERROR_SUMMARIES: Final = MappingProxyType(
@@ -98,6 +107,8 @@ _ERROR_SUMMARIES: Final = MappingProxyType(
         "get_equipment_context": "Equipment context unavailable",
         "search_documents": "Document search unavailable",
         "send_action": "Action delivery unavailable",
+        "get_chamber_parameter_history": "Chamber parameter history unavailable",
+        "get_metrology_result": "Metrology result unavailable",
     }
 )
 _TIMEOUT_SUMMARIES: Final = MappingProxyType(
@@ -106,6 +117,8 @@ _TIMEOUT_SUMMARIES: Final = MappingProxyType(
         "get_equipment_context": "Equipment context timed out",
         "search_documents": "Document search timed out",
         "send_action": "Action delivery timed out",
+        "get_chamber_parameter_history": "Chamber parameter history timed out",
+        "get_metrology_result": "Metrology result timed out",
     }
 )
 
@@ -429,7 +442,10 @@ def _prediction_citations(
 def _diagnostic_snapshot(
     evidence: dict[str, object] | None,
 ) -> IncidentDiagnosticSnapshot | None:
-    if evidence is None or evidence.get("schema_version") != "agent-evidence-v2":
+    if evidence is None or evidence.get("schema_version") not in {
+        "agent-evidence-v2",
+        "agent-evidence-v3",
+    }:
         return None
     raw = evidence.get("diagnostic_snapshot")
     if raw is None:
@@ -438,6 +454,31 @@ def _diagnostic_snapshot(
         return IncidentDiagnosticSnapshot.model_validate(raw)
     except (ValidationError, TypeError, ValueError) as exc:
         raise RepositoryContractError("PUBLIC_DIAGNOSTIC_SNAPSHOT_INVALID") from exc
+
+
+def _public_trace(record: PublicAgentRunRecord) -> dict[str, object]:
+    if record.autonomy_level != 3:
+        return {"trace_state": "NOT_APPLICABLE", "react_trace": []}
+    if record.status in {RunStatus.RUNNING, RunStatus.WAITING_APPROVAL}:
+        return {"trace_state": "PENDING", "react_trace": []}
+    raw = (record.run_evidence or {}).get("react_trace")
+    if raw is None:
+        return {"trace_state": "UNAVAILABLE", "react_trace": []}
+    try:
+        if not isinstance(raw, list) or len(raw) > 11:
+            raise ValueError("trace bound")
+        steps = [ReactStep.model_validate(item) for item in raw]
+        if [step.seq for step in steps] != list(range(1, len(steps) + 1)):
+            raise ValueError("trace sequence")
+        public = [
+            ReactStepPublic.model_validate(
+                step.model_dump(exclude={"argument_digest", "llm_model"})
+            )
+            for step in steps
+        ]
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_REACT_TRACE_INVALID") from exc
+    return {"trace_state": "AVAILABLE", "react_trace": public}
 
 
 def _diagnosis_block(
@@ -471,6 +512,8 @@ def _diagnosis_block(
             alternative_hypotheses=tuple(raw.get("alternative_hypotheses", ())),
             verification_steps=tuple(raw.get("verification_steps", ())),
             limitations=tuple(raw.get("limitations", ())),
+            parameter_findings=tuple(raw.get("parameter_findings", ())),
+            origin_assessment=raw.get("origin_assessment"),
             diagnostic_coverage=(
                 f"상세 진단 {snapshot.observed_wafer_count} / "
                 f"대상 WAFER {snapshot.target_wafer_count} · "
@@ -705,7 +748,7 @@ def load_public_agent_run_detail(
         if (
             raw is None
             or raw.get("schema_version")
-            not in {"agent-evidence-v1", "agent-evidence-v2"}
+            not in {"agent-evidence-v1", "agent-evidence-v2", "agent-evidence-v3"}
             or record.prediction_cause_summary is None
             or record.prediction_llm_model is None
             or record.prediction_prompt_version is None
@@ -811,6 +854,13 @@ def load_public_agent_run_detail(
             impact_scope=_impact_block(record.prediction_evidence),
             similar_incidents=_similar_incidents(connection, record, snapshot),
             post_action_observation=PostActionObservationBlock(),
+            autonomy_level=record.autonomy_level,
+            remaining_read_calls=max(
+                0,
+                (8 if record.autonomy_level == 3 else 6)
+                - sum(1 for tool in record.tools if tool.tool_name != "send_action"),
+            ),
+            **_public_trace(record),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RepositoryContractError("PUBLIC_AGENT_RUN_DETAIL_INVALID") from exc

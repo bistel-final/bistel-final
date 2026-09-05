@@ -274,12 +274,12 @@ def test_snapshot_json_has_no_runtime_secret_or_label_fields() -> None:
     assert "approval_email" not in flattened
 
 
-def test_build_rehydrates_all_25_channels_without_tool_or_llm(
+def test_build_rehydrates_all_channels_without_tool_or_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch)
     payload = subject.build_rehydrated_state(object(), "RUN-1")
-    assert len(payload) == 33
+    assert len(payload) == 36
     assert payload["graph_evidence"] is None  # Level 2 skip 보존
     assert payload["errors"][0].code == "TOOL_BUDGET_EXCEEDED"
     assert payload["terminal_error"] is None
@@ -308,6 +308,9 @@ def test_level_three_rehydrates_trace_and_internal_loop_state(
             "react_trace": (step.model_dump(mode="json"),),
             "react_steps": 1,
             "react_guard_rejections": 0,
+            "react_candidates": react.ReactCandidates(run_id="RUN-1").model_dump(
+                mode="json"
+            ),
         }
     )
     snapshot = subject.RehydrationSnapshot.from_seed(
@@ -326,6 +329,25 @@ def test_level_three_rehydrates_trace_and_internal_loop_state(
     assert payload["react_steps"] == 1
     assert payload["react_pending"] is None
     assert payload["hypothesis"] == Hypothesis.model_validate(payload["hypothesis"])
+
+
+@pytest.mark.parametrize(
+    "candidates,code",
+    [
+        ({"run_id": "OTHER-RUN"}, "REHYDRATE_BUNDLE_MISMATCH"),
+        ({"fdc": []}, "REHYDRATE_SNAPSHOT_MISSING"),
+    ],
+)
+def test_rehydration_rejects_foreign_or_invalid_candidate_map(
+    monkeypatch, candidates, code
+):
+    state = _wire(monkeypatch, autonomy_level=3)
+    state.run.evidence[subject.REHYDRATION_SNAPSHOT_KEY]["react_candidates"] = (
+        candidates
+    )
+    with pytest.raises(subject.RehydrationError) as caught:
+        subject.build_rehydrated_state(object(), "RUN-1")
+    assert caught.value.code == code
 
 
 def test_canonical_projection_ignores_tuple_list_round_trip(

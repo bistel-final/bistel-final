@@ -752,10 +752,20 @@ class TestSharedToolRules:
             "get_fdc_summary",
             "get_equipment_context",
             "search_documents",
+            "get_chamber_parameter_history",
+            "get_metrology_result",
             "send_action",
             "generate_analysis_plan",
         }
         assert "generate_analysis_plan" not in AGENT_TOOL_NAMES
+        assert set(AGENT_TOOL_NAMES) == {
+            "get_fdc_summary",
+            "get_equipment_context",
+            "search_documents",
+            "get_chamber_parameter_history",
+            "get_metrology_result",
+            "send_action",
+        }
 
 
 class TestInputBoundaries:

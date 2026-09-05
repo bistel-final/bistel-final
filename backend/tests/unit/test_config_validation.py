@@ -23,6 +23,7 @@ BASE_ENV = {
     "AGENT_LEVEL3_ENABLED": "false",
     "AGENT_LEVEL3_DEMO_ACK": "",
     "AGENT_MAX_TOOL_CALLS": "8",
+    "AGENT_LEVEL3_MAX_TOOL_CALLS": "10",
     "AGENT_MAX_RETRY": "3",
     "HITL_REQUIRED_SEVERITY": "HIGH",
     "MODEL_SIGNAL_ENABLED": "false",
@@ -50,6 +51,7 @@ class TestDefaults:
         assert config.AGENT_AUTONOMY_LEVEL == 2
         assert config.AGENT_LEVEL3_ENABLED is False
         assert config.AGENT_MAX_TOOL_CALLS == 8
+        assert config.AGENT_LEVEL3_MAX_TOOL_CALLS == 10
         assert config.AGENT_MAX_RETRY == 3
         assert config.HITL_REQUIRED_SEVERITY == "HIGH"
         assert config.MODEL_SIGNAL_ENABLED is False
@@ -176,6 +178,15 @@ class TestBudgetBounds:
 
     def test_retry_allows_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert load_config(monkeypatch, AGENT_MAX_RETRY="0").AGENT_MAX_RETRY == 0
+
+    @pytest.mark.parametrize("value", ["0", "1", "-1"])
+    def test_level_three_budget_reserves_two_send_slots(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="AGENT_LEVEL3_MAX_TOOL_CALLS"):
+            load_config(monkeypatch, AGENT_LEVEL3_MAX_TOOL_CALLS=value)
 
     def test_retry_rejects_negative(self, monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(RuntimeError, match="AGENT_MAX_RETRY"):

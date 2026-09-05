@@ -14,6 +14,7 @@
     "test:navigation": "node scripts/navigation-contract.test.mjs",
     "test:shared-client": "node scripts/shared-client-contract.test.mjs",
     "test:agent-screen": "node scripts/agent-run-view-state.test.mjs",
+    "test:agent-investigation": "node scripts/agent-investigation.test.mjs",
     "test:detection-screen": "node scripts/detection-screen-state.test.mjs",
     "test:ontology": "node scripts/ontology-graph.test.mjs",
     "test:api-schema": "node scripts/api-schema.test.mjs",

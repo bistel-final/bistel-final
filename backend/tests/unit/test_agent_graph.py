@@ -276,6 +276,7 @@ class _BudgetBlockedTools(_FakeTools):
                     "send_action": 2,
                 },
                 pending_reservations=1,
+                autonomy_level=2,
             ),
         )
 
@@ -299,6 +300,7 @@ class _Ports:
         docs: Any,
         route: Any,
         extra_data_gaps: tuple[str, ...],
+        investigation: Any = None,
     ) -> Any:
         self.calls.append("generate_hypothesis")
         self.hypothesis_extra_data_gaps = extra_data_gaps
@@ -1098,6 +1100,7 @@ def test_safe_node_keeps_budget_block_nonterminal_for_future_tool_nodes() -> Non
         total=8,
         by_tool={"get_fdc_summary": 4, "send_action": 2, "search_documents": 2},
         pending_reservations=0,
+        autonomy_level=2,
     )
 
     def blocked(_state: Any) -> dict[str, Any]:

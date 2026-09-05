@@ -112,6 +112,10 @@ jobs:
         working-directory: frontend
         run: npm run test:agent-screen
 
+      - name: Verify Agent investigation components and public trace fixture
+        working-directory: frontend
+        run: npm run test:agent-investigation
+
       - name: Verify API schema-derived mock contract
         working-directory: frontend
         run: npm run test:api-schema
@@ -271,6 +275,11 @@ jobs:
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py
           tests/unit/test_agent_react.py
+          tests/unit/test_agent_hypothesis_v3.py
+          tests/unit/test_agent_investigation.py
+          tests/unit/test_agent_react_public.py
+          tests/unit/test_agent_runtime_readback.py
+          tests/unit/test_agent_release.py
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
           tests/unit/test_analysis_plan_tool.py
@@ -814,11 +823,22 @@ jobs:
       # **이 축은 실제 View가 아니면 성립하지 않는다.** `unnest` 두 배열의 순서쌍 대응,
       # source별 join 형상이 만드는 owner resolve, `(lot_id, wafer_id, chamber_id)`
       # unique 제약 부재가 만드는 fan-out은 단위 fake로 재현되지 않는다.
+      - name: Verify generated Level 3 lifecycle schema and failure tables
+        working-directory: backend
+        run: python scripts/render_level3_lifecycle_contract.py --check
+
       - name: Prove WAFER route scope against the real alarm view
         working-directory: backend
         run: >-
           python -m pytest -q -m container
           tests/unit/test_agent_routing_container.py
+          -rs --no-header
+
+      - name: Prove investigation history and metrology against final data
+        working-directory: backend
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_investigation_container.py
           -rs --no-header
 
       # **이 축은 동시성이라 실제 DB가 아니면 성립하지 않는다.** advisory lock이 두

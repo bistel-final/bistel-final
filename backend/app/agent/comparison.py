@@ -29,6 +29,8 @@ EXPECTED_ACTION_DISTRIBUTION: Final = {
     "WARNING": 4,
     "EQP_HOLD": 3,
 }
+# Immutable v1 artifact validation pins, NOT current runtime/U10 configuration.
+# Do not update these prompt versions to rerun the historical v1 experiment.
 EXPECTED_LEVEL_CONFIGS: Final = [
     {
         "level": level,
