@@ -327,6 +327,35 @@ production 후보 생성 규칙을 재사용하며, 조사 중인 Agent의 성�
 회귀는 최소 스키마의 메모리 SQLite에서 SQL을 실행하고 PostgreSQL dialect 컴파일을 확인한다.
 실 PostgreSQL 타입·권한·격리/동시성 검증이나 실제 CF 8종의 관측 증거로 주장하지 않는다.
 
+15차 권장 회귀는 CURRENT step과 graph step 불일치, 두 CURRENT wafer의 step 불일치가
+각각 SQL 전에 `U10_INVENTORY_SCOPE_INVALID`로 차단됨을 확인한다. 두 번째 회귀는 첫
+wafer의 step을 graph와 일치시켜 step 유일성 가드만 제거해도 탐지되도록 구성했다.
+
+## 명시적 revision과 로컬 실행 기준 검사
+
+`u10_revision.read_revision_identity(repository, revision)`는 명시한 저장소 **루트**와 전체
+commit ID만 사용한다. 하위 디렉터리를 루트로 간주하지 않으며 `HEAD`·branch·짧은 SHA를
+revision 입력으로 허용하지 않는다. 출력은 canonical repository root, evaluated revision,
+실제 Git object format, 그 commit의 `backend`·`frontend`·`deploy` tree OID다. 경로가
+없거나 blob/gitlink이면 정상 tree로 반환하지 않는다. 파일 SHA-256과 Git object ID를 구별한다.
+
+- `verify_execution_revision(repository, expected_revision)`는 현재 artifact 계약의 40자리
+  lowercase revision R을 받는다. **local main · HEAD=R · Git clean 상태**를 tree 조회 전후로
+  확인하고 다르면 거부한다. tree 조회 중 branch/HEAD/dirty 변경을 주입한 회귀도 거부한다.
+- Git 명령은 모두 읽기이며 pull/fetch/checkout/commit을 하지 않는다. 외부 `GIT_DIR`·
+  `GIT_WORK_TREE`·index/config/trace 환경 재지정을 제외하고, optional lock·replace object·
+  lazy fetch·fsmonitor를 억제한다. 명령 실패/timeout은 stderr·환경값 없이 고정 코드로 반환한다.
+- 저수준 identity reader는 실제 SHA-1/256 object format에 맞는 전체 OID를 읽는다.
+  실행 guard는 **현행 U10 Artifact의 R=40자리 계약**을 유지하므로 SHA-256 저장소의 64자리
+  revision을 실험 실행 revision으로 수용하지 않는다. 기존 artifact schema를 확장하지 않았다.
+
+이는 **시점 관측**이며 workspace lock, 원격 merge/CI PASS, main pull 완료를 증명하지 않는다.
+Git status의 통상 ignored-file 규칙을 따르므로 ignored cache의 바이트나 실행 중 import된
+모듈까지 증명하지 않는다. caller가 실실행 동안 저장소를 고정하고 사용 시 재검증해야 한다.
+이미지 label/tree 대조·receipt·`execute_batch`/live CLI 연결은 아직 남아 있다. 현재 feature
+브랜치에서 이 검사기를 구현한 것이 최종 R을 고정했거나 U10 실행을 승인했다는 뜻은 아니다.
+회귀의 commit/checkout/replace는 pytest 임시 저장소에서만 수행하며 프로젝트 Git은 읽기만 한다.
+
 ## 아직 증명하지 않는 것
 
 13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
@@ -338,7 +367,7 @@ timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도
   CF 8종 fixture/oracle의 적합성 및 각 입력 파일 SHA 검증.
 - provider 호출·selector 결정별 실행 trace의 진위, 32건의 실제 실행, latency/token 실측.
   단위 테스트의 CF ID와 model 이름은 계약 검사용 가짜 입력이며 실험 결과가 아니다.
-- revision의 clean main 여부·이미지 label, 데이터 반출 승인, robustness·delivery,
+- 최종 실실행 revision의 clean main 검사기 연결·이미지 label 대조, 데이터 반출 승인, robustness·delivery,
   receipt/seal·immutable 게시·production 전환의 4축 검증.
 
 다음 단위에서 실제 runner/기록·CF fixture를 연결하고 독립 검증을 추가한다.

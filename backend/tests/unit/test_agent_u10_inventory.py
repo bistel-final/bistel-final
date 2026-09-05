@@ -242,6 +242,39 @@ def test_inconsistent_route_is_rejected_before_read(db):
         subject.read_inventory(db, **args)
 
 
+def test_current_step_must_match_graph_before_sql(db):
+    args = params(db)
+    route = args["route"]
+    args["route"] = replace(
+        route,
+        graph_evidence=(replace(route.graph_evidence[0], process_step_id="OTHER"),),
+    )
+
+    class NoRead:
+        def execute(self, *_):
+            pytest.fail("SQL before step validation")
+
+    with pytest.raises(EvidenceError, match="^U10_INVENTORY_SCOPE_INVALID$"):
+        subject.read_inventory(NoRead(), **args)
+
+
+def test_current_wafers_must_share_one_step_before_sql(db):
+    args = params(db, two_wafers=True)
+    route = args["route"]
+    first, second = route.wafer_routes
+    # Keep the first CURRENT step equal to graph.process_step_id so that only
+    # the step-uniqueness guard rejects this route, not the graph-step guard.
+    second = replace(second, steps=(replace(second.steps[0], step_id="OTHER"),))
+    args["route"] = replace(route, wafer_routes=(first, second))
+
+    class NoRead:
+        def execute(self, *_):
+            pytest.fail("SQL before CURRENT step uniqueness validation")
+
+    with pytest.raises(EvidenceError, match="^U10_INVENTORY_SCOPE_INVALID$"):
+        subject.read_inventory(NoRead(), **args)
+
+
 @pytest.mark.parametrize("siblings", [("EQP01-PM1",), ("S1", "S2")])
 def test_self_or_ambiguous_sibling_is_not_invented(db, siblings):
     args = params(db)
