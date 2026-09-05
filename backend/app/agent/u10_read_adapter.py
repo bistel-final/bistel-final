@@ -1,7 +1,7 @@
 """U10 authorize/read/validate/project/record adapter for five read-only tools.
 
-No connection or provider is created on import. A verified snapshot context,
-caller-owned deadline runner and code-owned evidence projector are required.
+No connection or provider is created on import. A verified snapshot context and
+caller-owned deadline runner are required. Default projection is U10 code-owned.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_comparison import EvidenceIds
+from app.agent.u10_evidence import project_read_evidence
 from app.agent.u10_observations import ObservationContext
 from app.agent.u10_read_execution import ReadObservation
 from app.common.tool_deadlines import READ_TOOL_CALLER_DEADLINE_SECONDS
@@ -54,7 +55,7 @@ class ReadAdapter:
         context: ObservationContext,
         ports: ReadPorts,
         deadline: Deadline,
-        project_evidence: Callable[[str, Any], EvidenceIds],
+        project_evidence: Callable[[str, Any], EvidenceIds] = project_read_evidence,
     ) -> None:
         self._context = context
         self._deadline = deadline

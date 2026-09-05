@@ -2,7 +2,7 @@
 
 The caller supplies a verified incident route and actual Tool DTOs. This module
 authorizes their scope and rebuilds selector observations with production code;
-it does not attest to DB snapshot truth or issue comparison evidence IDs.
+it does not attest to DB snapshot truth. Initial IDs use U10's code-owned mapping.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from app.agent.release_artifacts import EvidenceError, canonical_json
+from app.agent.u10_comparison import EvidenceIds
 
 if TYPE_CHECKING:
     from app.agent.react import ReactContext
@@ -61,6 +62,11 @@ class ObservationContext:
             "get_chamber_parameter_history": [],
             "get_metrology_result": [],
         }
+
+    def initial_evidence_ids(self) -> EvidenceIds:
+        from app.agent.u10_evidence import project_initial_evidence
+
+        return project_initial_evidence(self._route)
 
     def build_context(self) -> ReactContext:
         from app.agent import react

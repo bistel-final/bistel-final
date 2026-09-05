@@ -125,7 +125,8 @@ DB 출처/수치의 진위를 증명하지 않고, 조회·timeout·evidence ID 
 ## 읽기 어댑터 연결
 
 `u10_read_adapter.ReadAdapter`는 `ObservationContext`, 읽기 포트 5개, caller 소유 deadline
-runner, code-owned evidence projector를 필수로 받는다. 전송 포트는 없다.
+runner를 필수로 받는다. 기본 projector는 아래 `project_read_evidence()`이며
+테스트용 projector 주입은 유지한다. 전송 포트는 없다.
 `ReadPorts.production()`은 기존 `ToolBoundary.production()`을 인자 없이 호출해 읽기 포트만
 복사하며 send-action factory를 구성하지 않는다. module import 자체는 factory를 실행하지 않는다.
 
@@ -142,9 +143,38 @@ runner, code-owned evidence projector를 필수로 받는다. 전송 포트는 �
   canonical 정렬·SHA를 검증하고 **마지막에만** `record()`한다. DTO/scope/projection 오류 시
   성공 관찰은 0건이다. 입력·내부 문맥·projector/반환 값의 mutation과 어댑터 재진입을 격리한다.
 
-근거 ID의 의미와 oracle 매핑은 후속 CF fixture의 code-owned projector가 정의해야 한다.
 이 어댑터는 주입 projector의 ID가 실제 oracle 의미에 맞는지 증명하지 않는다. 현재 테스트는
 fake read 포트/실 Tool DTO/로컬 ThreadDeadlineRunner로 연결 순서를 검증하며 공용 DB에는 접속하지 않는다.
+
+## 실제 DTO의 근거 ID 투영
+
+`u10_evidence.py`는 U10 전용 `u10-evidence-v1` 규칙이다. ID는 `namespace:exact_id`로
+표현하고 정렬·중복 제거 후 canonical SHA를 계산한다. 예를 들어 `CHUNK:X`와 `PARAMETER:X`는
+다른 근거다. 실제 ID를 hash로 대체하거나 문자열 내용에서 ID를 추측하지 않는다.
+기존 발급 v1/v2의 raw ID 계약과 historical artifact는 바꾸지 않는다.
+
+| 입력 | 발급되는 근거 |
+|---|---|
+| 검증된 초기 route | member alarm의 `ALARM:to_token()` 및 graph의 실제 `RELATION:relation_id` |
+| 성공 FDC DTO | `LOT_HIST:wafer.lot_hist_id`, `PARAMETER:parameter_id` |
+| 성공 문서 검색 DTO | `CHUNK:chunk_id` — 문서 제목·본문·document_id는 제외 |
+| compact 설비·이력·계측 DTO | 빈 ID 목록 — 현 가설 v3에 대응하는 독립 인용 ID가 없음 |
+| 최종 Hypothesis | supporting 5종 + origin basis + parameter findings의 ID 합집합 |
+
+설비 parameter metadata는 FDC 측정값이 아니며 compact DTO에는 relation ID가 없다.
+후보 route의 lot_hist를 조회 성공으로 간주하지 않는다. 이력·계측은 **읽기 성공·compared에는
+집계되지만 독립 citation recall에는 집계되지 않는 한계**가 있다. 이를 가상의 이력/계측 ID로
+메우지 않는다. CF-7/8 oracle의 실제 근거 적합성은 후속 fixture 작업에서 별도로 검증해야 한다.
+
+`ObservationContext.initial_evidence_ids()`는 저장된 초기 route만 투영한다. 성공 읽기는
+`ReadAdapter` 기본 projector가 같은 규칙으로 변환한다. `project_hypothesis_citations()`는
+허용 근거와 교집합을 취하지 않아 미지원 인용이 평가 전에 사라지지 않는다. 이 함수는 DTO 형식
+검사이지 가설 생성·진위 검증기가 아니다. production 가설 검증과 최종 evaluator는 여전히 필요하다.
+
+`projection_spec()`/`projection_sha256()`은 새 규칙의 canonical 결속 입력을 제공한다.
+향후 실제 benchmark runner는 이 규칙을 tool contract SHA에 포함하고 초기·읽기·인용·oracle
+모두 같은 인코딩을 써야 한다. **현재 오프라인 validator가 이 source SHA 결속까지 증명하는 것은
+아니다.** 아직 발급하지 않은 U10 runner의 잔여 사항이며 단위 테스트의 fake raw-ID 계약과 구분한다.
 
 ## 아직 증명하지 않는 것
 
