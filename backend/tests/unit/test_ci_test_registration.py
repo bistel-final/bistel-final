@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from pathlib import Path
+
+import pytest
+import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_TEST_ROOT = REPOSITORY_ROOT / "backend" / "tests"
@@ -124,3 +128,70 @@ def test_container_only_name_in_an_unselected_step_is_not_registration() -> None
 
     assert test_path not in _registered_backend_tests(unselected)
     assert test_path in _registered_backend_tests(selected)
+
+
+AGENT_IMPORT_ENV = {
+    "POSTGRES_DB": "kosa_agent",
+    "POSTGRES_HOST": "localhost",
+    "READONLY_USER": "kosa_readonly",
+    "READONLY_PASSWORD": "ci-not-a-secret",
+    "NEO4J_USER": "neo4j",
+    "NEO4J_PASSWORD": "ci-not-a-secret",
+    "NEO4J_URI": "bolt://localhost:7687",
+    "N8N_WEBHOOK_URL": "http://localhost:5678/webhook/fdc-notify-email",
+}
+
+
+def _assert_agent_container_env(workflow: dict) -> None:
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            run = step.get("run", "")
+            if (
+                step.get("working-directory") != "backend"
+                or not _CONTAINER_SELECTION.search(run)
+                or not re.search(r"tests/\S*/test_agent_\w+\.py", run)
+            ):
+                continue
+            effective = {
+                **workflow.get("env", {}),
+                **job.get("env", {}),
+                **step.get("env", {}),
+            }
+            for key, value in AGENT_IMPORT_ENV.items():
+                assert effective.get(key) == value, f"{step['name']}: {key}"
+
+
+def test_agent_container_steps_have_equivalent_import_environment() -> None:
+    _assert_agent_container_env(yaml.safe_load(PR_POLICY.read_text()))
+
+
+@pytest.mark.parametrize("key", sorted(AGENT_IMPORT_ENV))
+def test_missing_or_empty_agent_import_env_is_detected(key: str) -> None:
+    workflow = yaml.safe_load(PR_POLICY.read_text())
+    job = workflow["jobs"]["schema-rehearsal-container"]
+    step = next(s for s in job["steps"] if "investigation history" in s["name"])
+    job["steps"] = [step]
+    job["env"].pop(key, None)
+    step["env"].pop(key, None)
+    with pytest.raises(AssertionError, match=key):
+        _assert_agent_container_env(workflow)
+    empty_override = deepcopy(workflow)
+    empty_job = empty_override["jobs"]["schema-rehearsal-container"]
+    empty_job["env"][key] = AGENT_IMPORT_ENV[key]
+    empty_job["steps"][0]["env"][key] = ""
+    with pytest.raises(AssertionError, match=key):
+        _assert_agent_container_env(empty_override)
+
+
+def test_investigation_runs_after_archive_fetch_and_missing_archive_is_reported():
+    workflow = yaml.safe_load(PR_POLICY.read_text())
+    steps = workflow["jobs"]["schema-rehearsal-container"]["steps"]
+    fetch = next(
+        i for i, s in enumerate(steps) if s["name"] == "Fetch the final archive"
+    )
+    investigation = next(
+        i for i, s in enumerate(steps) if "investigation history" in s["name"]
+    )
+    assert fetch < investigation
+    warning = next(s for s in steps if s["name"].startswith("Warn that"))
+    assert "investigation history/metrology" in warning["run"]

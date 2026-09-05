@@ -271,6 +271,7 @@ jobs:
           tests/unit/test_agent_evaluation_read_model.py
           tests/unit/test_agent_public_api.py
           tests/unit/test_agent_comparison.py
+          tests/unit/test_agent_u10_comparison.py
           tests/unit/test_agent_experiment.py
           tests/unit/test_agent_level3_gate.py
           tests/unit/test_agent_observation.py
@@ -367,6 +368,15 @@ jobs:
       # 최종 ZIP이 붙어 있는 release tag. **비밀이 아니라 repo variable이다** — 값 자체는
       # 태그 이름일 뿐이고, private asset 다운로드 권한은 `GITHUB_TOKEN`이 가진다.
       FINAL_ARCHIVE_RELEASE: ${{ vars.MENTOR_FINAL_ARCHIVE_RELEASE }}
+      # Agent import의 공통 설정. 실제 DB 접속은 각 테스트의 one-off endpoint를 쓴다.
+      POSTGRES_DB: kosa_agent
+      POSTGRES_HOST: localhost
+      READONLY_USER: kosa_readonly
+      READONLY_PASSWORD: ci-not-a-secret
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-not-a-secret
+      NEO4J_URI: bolt://localhost:7687
+      N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
 
     steps:
       - name: Check out repository
@@ -835,13 +845,6 @@ jobs:
           tests/unit/test_agent_routing_container.py
           -rs --no-header
 
-      - name: Prove investigation history and metrology against final data
-        working-directory: backend
-        run: >-
-          python -m pytest -q -m container
-          tests/unit/test_agent_investigation_container.py
-          -rs --no-header
-
       # **이 축은 동시성이라 실제 DB가 아니면 성립하지 않는다.** advisory lock이 두
       # transaction을 실제로 직렬화하는지, commit·rollback에서 자동 해제되는지,
       # partial unique가 마지막 방어로 발화하는지, 기본 격리 수준이 실제로
@@ -876,6 +879,22 @@ jobs:
           # hash 대조는 테스트의 `assert_archive_is_pinned()`가 한다. 다른 ZIP을 붙여도
           # 여기서 통과하고 거기서 실패한다.
           echo "MENTOR_FINAL_ARCHIVE=${target}" >> "${GITHUB_ENV}"
+
+      - name: Prove investigation history and metrology against final data
+        working-directory: backend
+        env:
+          POSTGRES_DB: kosa_agent
+          POSTGRES_HOST: localhost
+          READONLY_USER: kosa_readonly
+          READONLY_PASSWORD: ci-not-a-secret
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: ci-not-a-secret
+          NEO4J_URI: bolt://localhost:7687
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook/fdc-notify-email
+        run: >-
+          python -m pytest -q -m container
+          tests/unit/test_agent_investigation_container.py
+          -rs --no-header
 
       - name: Prove the three-target transition with the actual final archive
         if: ${{ env.MENTOR_FINAL_ARCHIVE != '' }}
@@ -917,6 +936,7 @@ jobs:
             echo "- CM-3.1 최종 ZIP 9 CSV 기반 0/189·3/192·TRACE 138·SUMMARY 51 실증"
             echo "- CM-3.2 Runtime 002 runner — rehearsal rollback·fresh apply·adopt·no-op과"
             echo "  final data gate(TRACE 138·SUMMARY 51·null owner 0·R03 0/3) 음성 회귀"
+            echo "- C-7.1 investigation history/metrology — 최종 데이터 실조회 미검증"
             echo
             echo "archive 없이 도는 회귀는 위 step에서 실행됐다(skip 목록은 \`-rs\` 출력)."
             echo
