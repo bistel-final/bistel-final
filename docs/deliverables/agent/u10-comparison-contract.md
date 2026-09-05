@@ -98,8 +98,29 @@ hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSess
   만들지 않는다. 특히 동일 도구 cap 때문에 마지막 실패의 retry를 수행하지 못한 조사나
   불완전한 측정 결과를 caller가 임의로 성공 artifact로 바꾸면 안 된다.
 
-실제 context builder와 read adapter는 아직 미연결이다. 현재 회귀는 기존 production 가드에
-테스트 selector/read 포트를 주입한 검증이며 실 LLM 관측·DB snapshot 재조회가 아니다.
+관찰 DTO 기반 context builder는 아래 모듈로 연결한다. 실제 DB snapshot/read adapter와
+provider는 아직 미연결이며 회귀는 실 LLM 관측·DB snapshot 재조회가 아니다.
+
+## Tool DTO 기반 관찰 문맥
+
+`u10_observations.ObservationContext`는 검증된 `ResolvedIncidentRoute`와 현재 FDC 대상 ID,
+문서 model code를 받는다. 기존 `build_initial_candidates`·`refresh_history_candidates`·
+`build_context`를 재사용하며 임의의 관찰 문자열을 입력받지 않는다.
+
+1. 읽기 어댑터는 외부 조회 **전에** `authorize(tool, request, internal)`를 호출한다.
+   FDC/설비/현재 계측의 대상, 관찰된 parameter의 history 후보·cutoff·n_lots=3·내부 lot/scope,
+   문서 model/query 경계를 검사한다. history는 canonical JSON을 대조해 `True == 1` 우회도 막는다.
+2. 실제 Tool DTO를 받으면 `record(...)`로 형식·요청 대상과의 일치 여부를 검사한다.
+   성공만 관찰에 추가하고 실패는 제외한다. FDC lot/lot_hist/chamber/step, 설비의 graph revision·
+   model·형제 집합, history의 현재 lot/scope, 계측 lot/step, 문서 model을 대조한다.
+3. `build_context()`가 관찰 요약과 후보를 재계산한다. FDC 성공 후에만 현재 history 후보가,
+   설비 성공으로 형제가 확인된 뒤에만 sibling history 후보가 생긴다. 완전히 같은 성공 DTO는
+   중복 추가하지 않고, 입력/반환을 복사하여 외부 변경이 내부 문맥을 바꾸지 않게 한다.
+
+`execute_react_policy(..., state.build_context, ..., invoke, ...)`에 연결하는 회귀를 제공한다.
+예산은 여전히 정책 실행기가 덮어쓰며 이 builder가 집행하지 않는다. 이 모듈은 DTO의 실제
+DB 출처/수치의 진위를 증명하지 않고, 조회·timeout·evidence ID 발급·가설 생성도 하지 않는다.
+다음 snapshot/read adapter가 `authorize → 실제 조회 → record` 순서를 보장해야 한다.
 
 ## 아직 증명하지 않는 것
 

@@ -115,6 +115,20 @@ def test_duplicate_successful_query_is_blocked_using_real_call_history():
     ] * 2
 
 
+def test_second_document_selection_is_recorded_as_document_two():
+    choices = iter(
+        [
+            outcome("search_documents", query="first query"),
+            outcome("search_documents", query="second query"),
+            outcome("stop"),
+        ]
+    )
+    result = run(lambda _: next(choices))
+    assert [call.slot for call in result.calls] == ["DOCUMENT_1", "DOCUMENT_2"]
+    assert [call.selection for call in result.calls] == [1, 2]
+    assert result.stop_reason == "LLM_STOP"
+
+
 def test_retry_does_not_reselect_and_history_internal_context_is_isolated():
     choices = iter(
         [
