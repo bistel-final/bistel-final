@@ -294,6 +294,39 @@ token·latency는 0이며 가설은 ReAct와 같은 seed/model을 사용한다.
 한 DTO 시나리오를 CF ID 8개에 복사한 합성 입력과 테스트 승인/read/selector/generator/observer를
 사용한다. 32건 호출 순서·격리·재검증의 검증이지 CF 8종 실제 시나리오나 LLM 관측 결과가 아니다.
 
+14차 리뷰 권장 회귀는 반환 행의 LLM SHA 변조 시 첫 scope 정리 후 중단(1건), 두 모델의
+65자/앞뒤 공백을 첫 승인 전에 거부(6건), dict/None 환경을 정리 후 거부(2건)를 추가했다.
+배치 실행 코드는 변경하지 않았으며 M8/M9/M10 검사 제거 변이를 탐지한다.
+
+## Inventory 읽기 재계산 경계
+
+`u10_inventory.read_inventory()`는 caller가 제공한 연결에서 **단일 읽기 SQL**을 실행한다.
+연결 생성·commit·close·DDL·외부 provider 호출은 하지 않는다. 사전 검증용 별도 문맥으로
+production 후보 생성 규칙을 재사용하며, 조사 중인 Agent의 성공 관찰이나 읽기 예산을 채우지 않는다.
+
+- route의 현재/상류/하류 후보 ID를 실제 `lot_history`의 lot·wafer·chamber·step과 대조한다.
+  누락/교환은 거부하고 distinct wafer 수로 current/adjacent를 계산한다. 양쪽 인접 방향이
+  있으면 fixed 정책처럼 상류를 우선한다. 이 조회는 **제공된 route 후보 집합**을 검증하며
+  route 생성 자체나 후보 모집단의 완전성을 증명하지는 않는다.
+- 과거 LOT은 현재 chamber·step에서 LOT별 최신 track-in이 현재 LOT의 최초 track-in보다
+  **엄격히 이전**인 것만, 현재 LOT 제외·최신순·최대 3건으로 집계한다. cutoff는 후보 WAFER의
+  시각을 믿지 않고 DB의 현재 LOT 전체에서 다시 구한다. prior 0도 history AVAILABLE이다.
+- 계측은 현재 lot·step의 실제 `metrology_id` 행 수다. alarm_result·측정값·fault_code는
+  SELECT하지 않는다. 실패/timeout은 예외로 전파하고 0건으로 바꾸지 않는다.
+- sibling은 제공된 현재 chamber의 graph 근거에서 얻는다. 자기 자신이나 2개 이상 후보는
+  거부하며 임의 tie-break를 추가하지 않는다(최종 graph의 chamber당 형제 1개 계약).
+  문서는 같은 모델 범위의 성공 검색 DTO를 요구한다. 성공한 빈 결과는 조회 가능한 도구이며,
+  실패 DTO·다른 모델 hit·잘못된 타입은 SQL 전에 거부한다. 실제 검색/graph 조회는 하지 않는다.
+- `verify_fixture_inventory()`는 선언된 inventory/expected_compared와 재계산 결과를 대조하며
+  불일치를 보정하지 않고 `U10_INVENTORY_MISMATCH`로 거부한다. oracle을 SQL에 전달하거나
+  변경하지 않는다. snapshot SHA·초기 evidence·oracle 적합성 검사기를 대체하지 않는다.
+
+이 경계는 **아직 `execute_batch.prepare`나 live CLI에 자동 연결되지 않았다.** 후속 runner가
+격리/read-only DB 신원·route/graph/document probe의 같은 snapshot 출처를 검증하고 배치의
+실제 준비 경로에 연결해야 한다. 실제 CF-1~8 snapshot 파일과 oracle도 미발급이다.
+회귀는 최소 스키마의 메모리 SQLite에서 SQL을 실행하고 PostgreSQL dialect 컴파일을 확인한다.
+실 PostgreSQL 타입·권한·격리/동시성 검증이나 실제 CF 8종의 관측 증거로 주장하지 않는다.
+
 ## 아직 증명하지 않는 것
 
 13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
@@ -301,7 +334,7 @@ timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도
 정상 binding 양성 대조 후 CURRENT/ADJACENT target 교환 거부(상류·하류 2건)를 검증한다.
 각각 F5/O1/O3 가드 무력화 변이를 탐지하며, 이 테스트 fixture를 실제 DB snapshot으로 주장하지 않는다.
 
-- inventory의 실제 DB 재조회, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
+- inventory 재계산기의 실제 격리 PostgreSQL 연결, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
   CF 8종 fixture/oracle의 적합성 및 각 입력 파일 SHA 검증.
 - provider 호출·selector 결정별 실행 trace의 진위, 32건의 실제 실행, latency/token 실측.
   단위 테스트의 CF ID와 model 이름은 계약 검사용 가짜 입력이며 실험 결과가 아니다.

@@ -248,6 +248,53 @@ def test_row_identity_tampering_is_rejected_before_next_scope(monkeypatch):
     assert events[-1] == ("close", 1)
 
 
+def test_row_llm_config_tampering_is_rejected_before_next_scope(monkeypatch):
+    actual = subject.execute_fixed_attempt
+
+    def tampered(**kwargs):
+        result = actual(**kwargs)
+        return replace(
+            result,
+            attempt=result.attempt.model_copy(update={"llm_config_sha256": "0" * 64}),
+        )
+
+    monkeypatch.setattr(subject, "execute_fixed_attempt", tampered)
+    params, events, _, _ = inputs()
+    with pytest.raises(EvidenceError, match="^LLM_CONFIG_MISMATCH$"):
+        subject.execute_batch(**params)
+    assert events == [("authorize", 1), ("prepare", 1), ("close", 1)]
+
+
+@pytest.mark.parametrize(
+    "field", ["hypothesis_model_revision", "selector_model_revision"]
+)
+@pytest.mark.parametrize("model", ["x" * 65, " model", "model "])
+def test_invalid_model_revision_is_rejected_before_authorization(field, model):
+    params, events, _, _ = inputs()
+    params["llm"] = params["llm"].model_copy(update={field: model})
+    with pytest.raises(EvidenceError, match="^LLM_CONFIG_MISMATCH$"):
+        subject.execute_batch(**params)
+    assert events == []
+
+
+@pytest.mark.parametrize("env", [None, {}])
+def test_wrong_environment_type_is_rejected_and_scope_is_closed(env):
+    params, events, _, _ = inputs()
+
+    @contextmanager
+    def prepare(key):
+        events.append(("prepare", key.execution_order))
+        try:
+            yield env
+        finally:
+            events.append(("close", key.execution_order))
+
+    params["prepare"] = prepare
+    with pytest.raises(EvidenceError, match="^U10_ATTEMPT_ENVIRONMENT_INVALID$"):
+        subject.execute_batch(**params)
+    assert events == [("authorize", 1), ("prepare", 1), ("close", 1)]
+
+
 @pytest.mark.parametrize(
     "order,field", [(1, "bound_inputs"), (1, "document_context"), (2, "select")]
 )
