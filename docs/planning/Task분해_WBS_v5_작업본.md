@@ -60,8 +60,8 @@ Runtime table 설계  9종 + action/severity pair CHECK (설계 §3.4 확정본)
 | D Analytics·Audit | 천승현 | 18.5h | 자연어 분석·질의/평가 이력·화면 6, 전역 감사 화면 7 |
 | **합계** | | **253.5h** | P2 도전 과제 제외 |
 
-우선순위별 공수는 **P0 176.5h / P1 77.0h**이며 P2 3.5h는 합계에서 제외한다.
-Task 수는 100건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른세 개다.
+우선순위별 공수는 **P0 176.5h / P1 77.0h**이며 P2 25.9h(V5-C-7.1 19.9 · 7.2 3.0 · 7.3 1.5 · V5-D-3.1 1.5)는 합계에서 제외한다.
+Task 수는 102건(P2 4건 포함)이다. 대부분의 Task는 1.0~2.0h이며 예외가 서른다섯 개다.
 
 - `V5-CM-1.6` **3.0h** — legacy cleanup. 구 corrected 구현 3,875줄 삭제와 verifier·Agent
   Runtime 대체 구현을 원자적으로 수행해야 소비자가 끊어진 중간 상태가 남지 않는다.
@@ -172,6 +172,8 @@ Task 수는 100건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 �
   prediction freeze 뒤 evaluation role로만 전체 incident member 라벨을 읽는다. 두 DB
   identity·600행 shared-key hash, 7/5/0·5-class 지표, run-scoped citation, provenance와
   no-clobber artifact를 단위·계약·격리 PostgreSQL 회귀로 한 평가 경계에서 닫는다.
+- `V5-C-7.1` **19.9h** — Level 3 ReAct 범위 확장(2026-09-04 사용자 승인 · 원문 2.0h). 조사 Tool 3종·가설 v3·판정 카드/타임라인·2-key opt-in·12-run 단일 배치 견고성·3-Gate 상시 전환·U10 고정 정책 비교·SMTP 승인 lifecycle을 한 Task로 묶어야 평가 revision R 하나에 결속된다. 상세는 `output/V5-C-7.1_작업계획.md`.
+- `V5-C-7.2` **3.0h** — Agent 실행 흐름 xyflow 시각화(추정 · 계획리뷰에서 확정). B-4.2 shared 표현 재사용이라 새 API는 없지만 노드별 `react_trace`·HITL·delivery 상태 결속과 승인 UI 축소·4상태 회귀가 붙는다.
 
 ---
 
@@ -320,14 +322,14 @@ Task 수는 100건(P2 2건 포함)이다. 대부분의 Task는 1.0~2.0h이며 �
 | V5-C-5.3 | P0 | incident 일회성 자동 배치 관리 명령. 완료: Runtime run 이력이 전혀 없는 incident만 stable order로 선택해 대표 `AlarmRef`로 기존 Agent runtime을 incident당 1회 실행하는 `run_pending_incidents.py --once`를 제공한다. start 뒤 continue 실패는 exact run을 FAILED로 보상하고 postcondition을 재조회하며, 이전 `RUNNING` run은 `INCOMPLETE_RUN`으로 정상 race와 구분한다. 기존 이력이 있으면 FAILED를 포함해 자동 재선택하지 않고 public 수동 재실행에 맡기며, 즉시 2회차 실행의 신규 run·action·delivery가 모두 0임을 검증한다. 상시 scheduler·public batch API/UI·n8n WF1은 만들지 않는다 | FR-C-09, FR-C-14 | V5-C-5.1 | 3.0h |
 | V5-C-6.1 | P0 | golden flow E2E. 완료: `kosa_agent_e2e`에서 C-5.3 batch command 1회로 incident 12개를 실행해 MONITORING 5/WARNING 4/EQP_HOLD 3, n8n EMAIL, 승인 전 Kafka 0, 승인 후 MES Mock, 2회차 batch 신규 run·action·delivery 0, 수동 재실행·동시 승인·UNKNOWN·복구를 `send_action` 경유로 검증하고 동일 fixture의 Level 1·2 완료율·실제 Tool 호출·wall-clock 지연·LLM token 비교를 기록한다 | FR-C-02, FR-C-09, NFR-04, NFR-18, NFR-20 | V5-C-4.6-1, V5-C-5.1, V5-C-5.3, V5-C-3.4, V5-CM-4.7 | 4.0h |
 | V5-C-6.2 | P1 | Fault 5-class 평가. 완료: C-6.1 원 evidence의 round-2 baseline run 12건에서 Runtime prediction hash를 label 접근 전에 고정한다. evaluation role로 각 incident 전체 member를 읽어 distinct non-NRM 1종 7건만 Accuracy·고정 5-class Macro-F1·class별 Precision/Recall/F1로 보고하고, 0종 5건은 `NO_INJECTED_FAULT`, 2종 이상은 `AMBIGUOUS_LABEL`로 제외한다. 구조화 prediction·run-scoped 근거·규칙 조치 일치 12/12만 hard Gate로 삼고 합성 GT metadata 4종·두 DB provenance/shared-key hash·분모·제외 사유를 불변 artifact에 기록한다 | FR-C-15, NFR-19 | V5-C-6.1, V5-A-2.3 | 4.0h |
-| V5-C-7.1 | P2 | Level 3 ReAct — **자율 Tool 선택 조사 루프와 production 상시 전환**(개정 2026-09-04). 완료: ① 조사 Tool 확장(상류·하류 target·chamber 이력·형제·metrology) ② 가설 v3(`parameter_findings`·`origin_assessment`) ③ Agent 상세 판정 카드·조사 타임라인 ④ 2-key opt-in·DB allowlist ⑤ **Level 3 12-run 단일 배치 견고성**과 `integrity && robustness && delivery_integrity` 3-Gate 전환 ⑥ U10 고정 정책 비교(**보고 지표** · 배포 Gate 아님). 외부 효과는 **SMTP 실발송 승인(`SMTP_SEND_GRANT`) 뒤에만** 발생한다 | FR-C-11, FR-C-08, NFR-03 | V5-C-6.2, V5-CM-5.2 | **≈19.9h**(원문 P2 2.0h → 2026-09-04 범위 확장 · 전액 승인) |
-| V5-C-7.2 | P2 | Agent 실행 흐름 시각화. 완료: run 상세에 LangGraph 노드 흐름(`load_incident → collect → react 루프 → generate_hypothesis → decide_action → delivery/HITL → finalize`)을 **B-4.2와 같은 shared xyflow 표현**으로 그리고, 각 노드에 `react_trace` step·HITL 대기·delivery 상태를 결속한다. 승인 UI는 제거하지 않고 **축소**한다(9-03 결정). Loading·Error·Empty·Success 4상태·기존 polling 계약 유지. 읽기 전용이며 새 API를 만들지 않고 `GET /agent/runs/{run_id}` additive 필드만 소비한다 | FR-C-11 연계(**화면 요구는 요구사항 개정 대상 — 등록 시 FR 번호 확정**) | V5-C-7.1(U2-lite·U3), V5-B-4.2 | **≈3.0h(추정 · 계획리뷰에서 확정)** |
-| V5-C-7.3 | P2 | 영향 규모 정량화(`impact_scope`). 완료: 하류를 `CHECKED`한 Level 3 run에 한해 **code가 SQL로** `{downstream_step, total_wafers, ooc_wafers, metrology_fail}`을 집계해 `agent_prediction.evidence`(additive)와 판정 카드 한 줄에 표시한다. LLM 호출·ReAct 루프·Tool 예산·lifecycle 계약 **무변경**. 실측 근거: PHOTO chamber별 하류 wafer 48~52장이 ETCH chamber 1곳으로 감(2026-09-05 `kosa_readonly`). 조치 규칙은 바꾸지 않는다(기준표 README §170) | FR-C-11 연계 | V5-C-7.1(⑬ U6 뒤) | **≈1.5h** |
+| V5-C-7.1 | P2 | Level 3 ReAct — **자율 Tool 선택 조사 루프와 production 상시 전환**(개정 2026-09-04). 완료: ① 조사 Tool 확장(상류·하류 target·chamber 이력·형제·metrology) ② 가설 v3(`parameter_findings`·`origin_assessment`) ③ Agent 상세 판정 카드·조사 타임라인 ④ 2-key opt-in·DB allowlist ⑤ **Level 3 12-run 단일 배치 견고성**과 `integrity && robustness && delivery_integrity` 3-Gate 전환 ⑥ U10 고정 정책 비교(**보고 지표** · 배포 Gate 아님). 외부 효과는 **SMTP 실발송 승인(`SMTP_SEND_GRANT`) 뒤에만** 발생한다 (원문 P2 2.0h → 2026-09-04 범위 확장 · 전액 승인) | FR-C-11, FR-C-08, NFR-03 | V5-C-6.2, V5-CM-5.2 | 19.9h |
+| V5-C-7.2 | P2 | Agent 실행 흐름 시각화. 완료: run 상세에 LangGraph 노드 흐름(`load_incident → collect → react 루프 → generate_hypothesis → decide_action → delivery/HITL → finalize`)을 **B-4.2와 같은 shared xyflow 표현**으로 그리고, 각 노드에 `react_trace` step·HITL 대기·delivery 상태를 결속한다. 승인 UI는 제거하지 않고 **축소**한다(9-03 결정). Loading·Error·Empty·Success 4상태·기존 polling 계약 유지. 읽기 전용이며 새 API를 만들지 않고 `GET /agent/runs/{run_id}` additive 필드만 소비한다 (공수는 추정 · 계획리뷰에서 확정 · U2-lite·U3 뒤) | FR-C-11 연계(**화면 요구는 요구사항 개정 대상 — 등록 시 FR 번호 확정**) | V5-C-7.1, V5-B-4.2 | 3.0h |
+| V5-C-7.3 | P2 | 영향 규모 정량화(`impact_scope`). 완료: 하류를 `CHECKED`한 Level 3 run에 한해 **code가 SQL로** `{downstream_step, total_wafers, ooc_wafers, metrology_fail}`을 집계해 `agent_prediction.evidence`(additive)와 판정 카드 한 줄에 표시한다. LLM 호출·ReAct 루프·Tool 예산·lifecycle 계약 **무변경**. 실측 근거: PHOTO chamber별 하류 wafer 48~52장이 ETCH chamber 1곳으로 감(2026-09-05 `kosa_readonly`). 조치 규칙은 바꾸지 않는다(기준표 README §170) (⑬ U6 뒤 착수) | FR-C-11 연계 | V5-C-7.1 | 1.5h |
 > **V5-C-7.1 범위 개정(2026-09-04 · 2026-09-05 재적용)**: 원문은 `P2 · Level 3 ReAct 비교 · FR-C-11 · V5-C-6.2 · 2.0h`였다. 멘토 피드백("규칙 기반 DB 메소드 호출과 다를 게 없다")에 답하기 위해 조사 완결성과 production 상시 Level 3 전환까지 **같은 Task ID 안에서 확장**했다. 선행에 `V5-CM-5.2`가 추가된다 — 견고성 12-run이 CM-5.2 Stage2 attempt 안에서 수행되기 때문이다. **Common 소유 경계**: `deploy/compose/cm52_stage2.sh`의 mode 확장(`--prepare-only`/`--resume-workload`/`--abort-prepared`/`--recover-prepared`)과 `output/V5-CM-5.2_stage2_실행절차.md` 갱신은 **C-7.1이 수행하고 Common(방대혁)이 인계**받으며, **기존 Level 2 CM-5.2 계약 무변경**이 선행 Gate다. `backend/scripts/orchestrate_e2e_reset_evidence.py`(V5-CM-4.7)는 변경하지 않는다. 이 개정은 2026-09-04에 작업 트리에 적용됐으나 커밋 `c1278c2` 전 격리 정리에서 되돌려져 2026-09-05 재적용했다. 상세 계획은 `output/V5-C-7.1_작업계획.md`.
 > **V5-C-7.2·7.3 신설(2026-09-05 · 사용자 지시 "7.2도 wbs에 넣어주고 영향규모 정량화도")**: 7.2는 계획 v4부터 "별 Task · 이 계획의 완료 판정에 포함하지 않음"으로 분리돼 있던 항목이고, 7.3은 2026-09-05 상류·하류 조사 범위 논의에서 후속으로 확정한 항목이다(여러 단계 추적은 route가 `CT-PHOTO → CT-ETCH` 2단계뿐이라 하지 않는다). 9-03에 "제외"로 기록된 구 C-7.3은 정의 없이 폐기된 ID라 재사용한다. 둘 다 C-7.1 ⑬ U6 뒤에 착수한다.
 
 
-**C 합계: 107.5h** (P2 3 Task **≈24.4h** 제외 — V5-C-7.1 ≈19.9h 승인 · 7.2 ≈3.0h 추정 · 7.3 ≈1.5h)
+**C 합계: 107.5h** (P2 3 Task 24.4h 제외 — V5-C-7.1 19.9h 승인 · 7.2 3.0h 추정 · 7.3 1.5h)
 
 ---
 
