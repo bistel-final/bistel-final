@@ -513,7 +513,37 @@ agent_verdict·robustness·delivery_integrity·allowed_actions를 발급하지 �
 증명하지 않는다. SHA 원천과 파일 발급 책임은 별도다. tree OID는 이 단위에서 Git을 조회하지
 않으며 이후 검사 4에 전달해야 한다. 전체 preflight의 `integrity`나 allowed_actions는 발급하지
 않는다. CLI subprocess exit 재실행 대신 같은 순수 검증 함수를 호출하며 예외가 실패를 나타낸다.
-최종 CLI의 exit 0/1 및 4축 출력, 이 평가 결과와 검사 4~8 동일 R/tree 연결은 후속 조립 대상이다.
+이 평가 결과와 검사 4~8의 동일 R/tree 연결은 아래 무결성 조립기가 담당한다.
+최종 CLI의 exit 0/1 및 4축 출력은 후속 조립 대상이다.
+
+## 검사 1~8 무결성 조립
+
+`u10_integrity.verify_preflight_integrity()`는 평가 파일 검증 → 명시 repository HEAD 관측 →
+배포 검사 4~8 → 평가 파일 재검증 → HEAD 재관측 순서로 실행한다. **R/tree를 별도 인자로 받지
+않고 오직 검증된 evaluation receipt에서 배포 검사로 전달**한다(21차 리뷰 §5).
+
+- `read_repository_head()`는 기존 Git 환경 격리/명시 root 규칙으로 HEAD commit과 object format을
+  읽는다. receipt object format과 일치해야 하며 두 HEAD 관측도 같아야 한다. HEAD가 R과 달라도
+  R/tree 검사는 receipt 기준으로 진행한다. main/clean 실행 revision 검증을 대체하지 않는다.
+- 배포 관측 뒤 artifact·receipt·benchmark bytes와 의미를 다시 검증한다. 유효한 JSON에
+  공백만 추가돼도 raw SHA 차이로 거부한다. 파일이 유효한 다른 receipt로 교체돼도 최초 관측과
+  다르면 `U10_EVALUATION_DRIFT`다. 저장소 HEAD 변경은 `U10_REPOSITORY_HEAD_DRIFT`다.
+- image/container pin은 caller map에서 복사한다. production ACK의 독립 attempt는 기존처럼
+  runtime 검사에 전달한다. profile·phase·repository_root·실제 head·최종 checked_at과 평가/
+  배포 관측을 묶고, 모든 검사가 통과했을 때만 내부 DTO의 `integrity=PASS`를 반환한다.
+  실패는 고정 코드 예외다. 부정 연구 판정과 사유는 평가 DTO 안에 그대로 남긴다.
+- 전체 clock 관측은 원래 마이크로초 정밀도로 단조 순서를 요구한다. 최종 파일/HEAD 재검증 뒤
+  읽은 시각도 역행하면 거부하고, 출력은 기존 초 단위 UTC 형식으로 직렬화한다.
+- 회귀는 실제 임시 Git 저장소·private 파일·상위 validator를 사용하고 Docker/HTTP만 대체한다.
+  세 profile×정/부정 판정, HEAD≠R 양성, receipt tree/format 불일치, 실행 중 파일·HEAD 변경,
+  시각 역행, 반복 호출 시 파일·Git 작업 트리 무변경을 검증한다.
+
+이 모듈은 읽기 전용이며 저장된 preflight 상태를 만들지 않는다. `integrity=PASS`는 **검사 1~8의
+관측 결과**이지 production 활성화 허가가 아니다. robustness/delivery 검증기·4축 출력·
+allowed_actions·실패 JSON/exit 0/1·최종 CLI·Stage2 연결은 남아 있다. caller는 내부 DTO 전체를
+공개 stdout으로 덤프하지 말고 최종 계약의 비밀 제외 필드만 투영해야 한다.
+재검사 뒤 변경, 변경 후 원상 복구, 실제 실행/발급자 진위와 gateway port 소유권은 이 시점
+대조로 보장하지 않는다. 기존 준비 격리와 승인 조건은 유지된다.
 
 ## 아직 증명하지 않는 것
 

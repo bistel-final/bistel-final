@@ -76,6 +76,17 @@ def test_low_level_reader_uses_requested_commit_not_head(repository):
         subject.verify_execution_revision(repo, revision)
 
 
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_head_reader_observes_actual_format_and_exact_root(tmp_path, object_format):
+    repo, revision = make_repo(tmp_path / "head-repo", object_format=object_format)
+    result = subject.read_repository_head(repo)
+    assert result.head == revision
+    assert result.git_object_format == object_format
+    assert result.repository_root == str(repo.resolve())
+    with pytest.raises(EvidenceError, match="^U10_REPOSITORY_ROOT_MISMATCH$"):
+        subject.read_repository_head(repo / "backend")
+
+
 @pytest.mark.parametrize("state", ["unstaged", "staged", "untracked", "deleted"])
 def test_dirty_tree_is_rejected_without_cleaning(repository, state):
     repo, revision = repository

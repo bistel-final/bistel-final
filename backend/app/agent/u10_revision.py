@@ -31,6 +31,12 @@ class RevisionIdentity(EvidenceModel):
     evaluated_tree_oid: RevisionTrees
 
 
+class RepositoryHead(EvidenceModel):
+    repository_root: str
+    head: str
+    git_object_format: Literal["sha1", "sha256"]
+
+
 def _git(repository: Path, *arguments: str) -> str:
     # Do not inherit GIT_DIR/WORK_TREE/INDEX_FILE/CONFIG overrides that could
     # silently inspect a different repository. Never echo environment or stderr.
@@ -107,6 +113,21 @@ def read_revision_identity(repository: Path, revision: str) -> RevisionIdentity:
         evaluated_revision=revision,
         git_object_format=object_format,
         evaluated_tree_oid=RevisionTrees(**trees),
+    )
+
+
+def read_repository_head(repository: Path) -> RepositoryHead:
+    """Observe explicit repository HEAD, without requiring it to equal receipt R."""
+    root = _root(repository)
+    object_format = _git(root, "rev-parse", "--show-object-format")
+    size = {"sha1": 40, "sha256": 64}.get(object_format)
+    if size is None:
+        raise EvidenceError("U10_GIT_OBJECT_FORMAT_INVALID")
+    head = _git(root, "rev-parse", "--verify", "HEAD^{commit}")
+    if not re.fullmatch(r"[0-9a-f]{" + str(size) + "}", head):
+        raise EvidenceError("U10_HEAD_INVALID")
+    return RepositoryHead(
+        repository_root=str(root), head=head, git_object_format=object_format
     )
 
 
