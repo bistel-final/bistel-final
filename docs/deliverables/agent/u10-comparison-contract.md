@@ -451,9 +451,36 @@ runner/lifecycle 연결은 남아 있다. 실환경 6-check PASS 증거는 아�
 caller는 **검증된 image bindings와 동일한 container ID**, 독립 검증한 attempt를 제공해야 한다.
 이 단위는 ID와 관측 payload를 메모리 DTO로 돌려주며 image/project/revision·시각·PID·DB server
 system_identifier를 증명하지 않는다. exec는 새 Python process이므로 기존 장기 실행 process의
-메모리를 읽는 것도 아니다. readback 전후 배포 drift 확인, 1~8 wrapper 조립과 실운영 연결은 남아
-있다. `integrity`·`allowed_actions`·SMTP/LLM 승인·파일 발급·workload 실행은 하지 않는다.
+메모리를 읽는 것도 아니다. readback 전후 배포 drift 확인은 아래 조립기가 담당하고,
+1~8 최종 wrapper와 실운영 연결은 남아 있다. `integrity`·`allowed_actions`·SMTP/LLM 승인·
+파일 발급·workload 실행은 하지 않는다.
 회귀는 합성 readback/subprocess와 실제 코드 validator를 사용하며 Docker/DB에는 접속하지 않는다.
+
+## 검사 4~8 관측 구간 조립
+
+`u10_deployment.observe_deployment()`는 별도 검사기를 **image/revision 결속 → runtime readback →
+readiness → image/revision 재검사** 순으로 연결한다. 19차 리뷰의 동일 container ID 전달과
+readback 전후 drift 확인 요구를 구현한다. **전체 `u10_preflight` 또는 4축 판정기는 아니다.**
+
+- caller가 독립 고정한 image/container ID map을 최초 IO 전에 복사한다. runtime에는 이 map의
+  backend(및 E2E runner)만 전달하고, frontend는 image/readiness 검사에서 유지한다. 주입 callback이
+  caller의 원래 map을 바꿔도 뒤의 조회 대상이 바뀌지 않는다.
+- 두 image 검사 모두 같은 repository·R·tree·image ID·container ID를 사용한다. 기존 검사기의
+  각 회차 내부 재조회도 유지한다. 회차 사이 시작 시각/결속이 바뀌면 `U10_DEPLOYMENT_DRIFT`,
+  중지/ID/label 변경은 기존 검사기의 고정 오류로 거부한다. 첫 실패 뒤 다음 단계는 실행하지 않는다.
+- profile과 `phase=pre_u9|post_start_pre_enable`, 관측 시작/완료 UTC 시각을 결과 DTO에 묶는다.
+  naive/잘못된 시각·완료 시각 역행을 거부한다. phase는 관측 라벨이며 여기서 lifecycle 단계의
+  허용 여부나 실행 권한을 판정하지 않는다. 기본 clock은 UTC wall clock이며 deadline/lock은 아니다.
+- 테스트는 상위 검사기 자체를 대체하지 않는다. 실제 image/runtime/readiness 검증을 연결하고
+  Git 조회·inspect·readback·HTTP만 합성 포트로 대체한다. 세 profile·두 phase의 exact 순서,
+  backend/frontend/runner의 runtime·HTTP 중 재시작, 중지, 실패 시 후속 호출 0건을 검증한다.
+
+이는 관측 구간의 **시점 대조**다. 검사 사이 변경 뒤 원상 복구, 종료 후 변경, gateway의 실제
+published-port 소유 container, 장기 실행 process 메모리의 동일성까지 증명하지 않는다.
+현재 반환값은 image/runtime/readiness DTO·profile/phase/시각이며 `head`·overall integrity·
+agent_verdict·robustness·delivery_integrity·allowed_actions를 발급하지 않는다.
+검사 1~3의 artifact/evaluation receipt 연결, 최종 4축 CLI, Stage2 lifecycle 연결이 남아 있다.
+공용 배포·실서비스 조회·artifact 발급은 수행하지 않았다.
 
 ## 아직 증명하지 않는 것
 
