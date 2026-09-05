@@ -1,7 +1,8 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
 담당 방대혁(C). 계획 v58의 **부분 구현**이다. 32 attempt의 구조와 판정 재계산 및
-고정 정책/공통 읽기 실행 코어를 제공한다. 실제 CF 데이터·provider 연결·운영 전환 Gate는 아니다.
+고정 정책/공통 읽기와 32건 메모리 배치 실행 코어를 제공한다.
+실제 CF 데이터·provider 연결·운영 전환 Gate는 아니다.
 기존 `comparison.py`의 historical v1/v2 발급물은 변경하지 않는다.
 
 ## 입력과 결속
@@ -206,7 +207,8 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
 이때의 `compared`는 **production 가설의 route 기반 matrix**다. U10 artifact의
 `candidate_inventory` 기반 matrix·attempt completion·action·available/required 근거 집합
 검증을 대체하지 않는다. 어댑터에 주입 가능한 테스트 generator가 실제 LLM이라는 보증도 아니다.
-실제 실행과 model/config/seed/SHA 결속·승인 검증은 32-attempt runner의 잔여다.
+model/config/seed/SHA 대조는 아래 단일 attempt/배치 코어에서 수행한다.
+실제 provider·승인 검증기·출처 SHA 결속은 실실행 runner의 잔여다.
 
 ## ReAct 단일 attempt 실행 연결
 
@@ -227,14 +229,15 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
   계산한다. 동일 도구 4번째 실패 뒤 retry를 못 한 경우(<8 read)는 가설 성공이어도 false다.
   timeout/실패의 부분 usage는 남긴다. 조치는 기존 `decision.decide_action(route)`이며 send가 아니다.
 - `observe_effects()`는 필수이며 실행 **뒤에** 받은 safety/외부 효과 값을 그대로 보존한다.
-  nonzero는 숨기지 않고 최종 32건 evaluator가 부정 판정하도록 남긴다. 관측 함수의 진위를
-  자체 보증하지 않으며 실제 observer/격리 sandbox 연결은 batch runner 책임이다.
+  nonzero는 숨기지 않고 단일 attempt에 남긴다. offline evaluator는 부정 판정하며,
+  아래 배치 코어는 격리 위반으로 즉시 중단한다. 관측 함수의 진위를 자체 보증하지 않으며
+  실제 observer/격리 sandbox 연결은 실실행 runner 책임이다.
 - ReAct의 교차 순서 번호는 CF별 첫 attempt=2, 둘째=3(다음 CF는 +4)으로 고정한다.
   이는 번호 결속일 뿐, fixed 쪽 실행이나 실제 교차 순서를 실행했다는 증명이 아니다.
 
-반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 32건 interleave/배치·
-CF inventory 재조회·source/tool contract SHA·승인/receipt/이미지 결속은
-아직 남아 있다. 단위 테스트는 테스트 read/selector/generator/observer를 사용하며 실험 성과가 아니다.
+반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 아래 배치 코어가
+32건 interleave를 조립한다. CF inventory 재조회·source/tool contract SHA·실제 승인/receipt/
+이미지 결속은 남아 있다. 테스트 read/selector/generator/observer를 쓰는 검증은 실험 성과가 아니다.
 
 ## 고정 정책 단일 attempt 실행 연결
 
@@ -256,12 +259,40 @@ token·latency는 0이며 가설은 ReAct와 같은 seed/model을 사용한다.
 - candidate가 없는 slot만 NO_CANDIDATE로 skip한다. ERROR/TIMEOUT 공통 1회 재시도와
   read 8회 예산을 그대로 쓰며 예산 소진 후 미실행 문서를 추가 호출하지 않는다.
 - fixed 교차 번호는 CF별 첫 attempt=1, 둘째=4(+4씩)다. 두 policy 번호가 맞아도 실제
-  32건 interleave를 수행했다는 증명은 아니며, 배치 실행기는 후속 작업이다.
+  32건 interleave를 수행했다는 증명은 아니며, 아래 배치 코어가 실제 호출 순서를 소유한다.
 
 반환물은 메모리 `FixedAttemptResult(attempt, calls, skipped_slots, hypothesis)`다.
 공유 조립 경계의 ReAct 회귀와 고정 정책의 문서/현재·형제 history/예산 경계를 함께 검증한다.
 실 DB·LLM·observer 연결, 데이터 반출 승인, revision/image/receipt·immutable artifact 발급은
 여전히 후속 실행기에서 처리해야 한다.
+
+## 32건 메모리 배치 실행 코어
+
+`u10_batch.execute_batch()`는 CF-1~8 순서로 fixture마다 fixed→ReAct, ReAct→fixed를
+직렬 실행한다. 기존 두 단일 attempt 경로를 호출하며 전체 attempt 재시도·선별·대체는 없다.
+
+- 입력 benchmark/LLM 설정을 재검증하고 복사한다. 40자리 revision 형식, caller가 별도로
+  제공한 benchmark canonical SHA와 tool contract SHA, 실제 코드의 fixed-policy SHA를
+  첫 승인 확인 전에 대조한다. revision의 clean main 여부와 tool/projection 소스 진위를
+  확인하는 기능은 아니며 실제 출처 검증기는 별도로 필요하다.
+- 매 attempt의 자원 준비 **전에** 필수 `authorize(BatchBinding)`를 호출한다. 정확한
+  `True`만 허용하며, 만료·철회·데이터 반출 범위를 확인하는 실제 검증기는 caller 책임이다.
+  기본 승인 구현은 없고 구현 공수 승인을 데이터 반출 승인으로 사용하지 않는다.
+- `prepare(AttemptKey)`는 fixture ID·attempt 번호·policy·실행 순서만 받는다.
+  oracle/inventory/required ID를 포트 팩토리에 전달하지 않는다. 자원 생성·폐기 및 예외를
+  삼키지 않는 context manager는 caller가 제공한다. 문맥 객체의 동일성 재사용을 거부하고,
+  각 snapshot/초기 근거와 fixed 입력·ReAct selector 요구사항은 기존 단일 경계에서 검사한다.
+- 한 scope의 정리가 완료되어야 다음 승인/준비를 시작한다. 준비·실행·정리 오류는 전파하고
+  완전한 artifact를 반환하지 않는다. 실제 외부 효과 또는 safety 비제로도 즉시 중단한다.
+  이는 실행 격리 위반 시 후속 호출을 막는 정책이며 기존 offline 부정 판정 규칙 변경은 아니다.
+- usage가 측정된 가설 실패/미완료는 그대로 32건에 포함하여 부정 판정한다. 누락 usage를
+  0으로 채우거나 실패 attempt를 새 것으로 교체하지 않는다. 각 반환 행의 키·순서·설정 SHA와
+  기존 `_check_attempt()`를 대조하고, 32건 조립 뒤 별도의 `validate_artifact()`로
+  population·교차 순서·지표·판정을 재계산한다. 판정 함수를 위조한 회귀도 최종 단계에서 거부한다.
+
+반환물은 **메모리 `Artifact` DTO**이며 파일 발급/게시 CLI가 아니다. 신규 배치 테스트는
+한 DTO 시나리오를 CF ID 8개에 복사한 합성 입력과 테스트 승인/read/selector/generator/observer를
+사용한다. 32건 호출 순서·격리·재검증의 검증이지 CF 8종 실제 시나리오나 LLM 관측 결과가 아니다.
 
 ## 아직 증명하지 않는 것
 
