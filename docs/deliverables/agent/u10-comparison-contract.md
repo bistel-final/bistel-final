@@ -1,8 +1,9 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
-담당 방대혁(C). 계획 v59의 **부분 구현**이다. 32 attempt의 구조와 판정 재계산 및
-고정 정책/공통 읽기와 32건 메모리 배치 실행 코어를 제공한다.
-실제 CF 데이터·provider 연결·운영 전환 Gate는 아니다.
+담당 방대혁(C). 계획 v60의 **묶음 B 구현·로컬 검증 범위**다. CF8·32 attempt 코어와
+실 provider/관측 경계·private 발급 runner를 연결했다. 25차 구현리뷰의 회귀 누락을 보완했으며
+묶음 B 전체 25차-1 재리뷰 대기다. 실 LLM 실행은 미수행이다.
+운영 전환 Gate 완성은 아니며 묶음 C(Stage2·robustness·delivery)는 별도다.
 기존 `comparison.py`의 historical v1/v2 발급물은 변경하지 않는다.
 
 ## 입력과 결속
@@ -62,7 +63,7 @@ hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSess
 - `fixed_policy_document_query()`는 snapshot의 model/parameter ID만 받아 중복 제거·정렬한
   식별자와 두 code-owned suffix로 검색어를 만든다. 최대 200자이며 oracle/가설 입력은 없다.
   `fixed_policy_sha256()`는 query 규칙·slot·budget의 canonical spec SHA를 제공한다.
-  실제 benchmark에 이 SHA를 결속하는 runner는 아직 미연결이다.
+  실제 benchmark/runner 결속은 아래 묶음 B 조립 절에서 수행한다.
 - 시작 전 전체 fixed 입력의 slot 집합/JSON 크기를 검사한다. 문서 검색어 override는 거부한다.
   snapshot별 식별자 allowlist와 사실상 inventory 검증은 후속 adapter의 책임이다.
 - ERROR/TIMEOUT은 동일 선택·canonical 입력으로 1회 재시도한다. 매 호출 직전 예산을 소비하며
@@ -99,8 +100,8 @@ hypothesis를 호출하지 않는다. 미래 ReAct 어댑터도 같은 `ReadSess
   만들지 않는다. 특히 동일 도구 cap 때문에 마지막 실패의 retry를 수행하지 못한 조사나
   불완전한 측정 결과를 caller가 임의로 성공 artifact로 바꾸면 안 된다.
 
-관찰 DTO 기반 context builder와 읽기 어댑터는 아래 모듈로 연결한다. 실제 CF snapshot과
-provider 실행은 아직 미연결이며 회귀는 실 LLM 관측·DB snapshot 재조회가 아니다.
+관찰 DTO 기반 context builder와 읽기 어댑터는 아래 모듈로 연결한다. 실제 CF/provider 조립은
+묶음 B 절을 따른다. 이 코어의 회귀 자체는 실 LLM 관측·DB snapshot 재조회가 아니다.
 
 ## Tool DTO 기반 관찰 문맥
 
@@ -175,7 +176,7 @@ fake read 포트/실 Tool DTO/로컬 ThreadDeadlineRunner로 연결 순서를 �
 `projection_spec()`/`projection_sha256()`은 새 규칙의 canonical 결속 입력을 제공한다.
 향후 실제 benchmark runner는 이 규칙을 tool contract SHA에 포함하고 초기·읽기·인용·oracle
 모두 같은 인코딩을 써야 한다. **현재 오프라인 validator가 이 source SHA 결속까지 증명하는 것은
-아니다.** 아직 발급하지 않은 U10 runner의 잔여 사항이며 단위 테스트의 fake raw-ID 계약과 구분한다.
+아니다.** 아래 source binding/runner가 이 경계를 담당하며 단위 테스트의 fake raw-ID 계약과 구분한다.
 
 ## 관찰에서 가설 v3 생성까지
 
@@ -208,7 +209,7 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
 `candidate_inventory` 기반 matrix·attempt completion·action·available/required 근거 집합
 검증을 대체하지 않는다. 어댑터에 주입 가능한 테스트 generator가 실제 LLM이라는 보증도 아니다.
 model/config/seed/SHA 대조는 아래 단일 attempt/배치 코어에서 수행한다.
-실제 provider·승인 검증기·출처 SHA 결속은 실실행 runner의 잔여다.
+실제 provider·승인 검증기·출처 SHA 결속은 아래 묶음 B runner가 담당한다.
 
 ## ReAct 단일 attempt 실행 연결
 
@@ -237,7 +238,8 @@ model/config/seed/SHA 대조는 아래 단일 attempt/배치 코어에서 수행
 
 반환물은 메모리의 `ReactAttemptResult(attempt, reads, hypothesis)`다. 아래 배치 코어가
 32건 interleave를 조립한다. CF inventory 재조회·source/tool contract SHA·실제 승인/receipt/
-이미지 결속은 남아 있다. 테스트 read/selector/generator/observer를 쓰는 검증은 실험 성과가 아니다.
+이미지 결속은 이 단일 attempt 모듈의 책임이 아니다. 아래 묶음 B에서 실행 조립하며,
+테스트 read/selector/generator/observer를 쓰는 검증은 실험 성과가 아니다.
 
 ## 고정 정책 단일 attempt 실행 연결
 
@@ -321,9 +323,8 @@ production 후보 생성 규칙을 재사용하며, 조사 중인 Agent의 성�
   불일치를 보정하지 않고 `U10_INVENTORY_MISMATCH`로 거부한다. oracle을 SQL에 전달하거나
   변경하지 않는다. snapshot SHA·초기 evidence·oracle 적합성 검사기를 대체하지 않는다.
 
-이 경계는 **아직 `execute_batch.prepare`나 live CLI에 자동 연결되지 않았다.** 후속 runner가
-격리/read-only DB 신원·route/graph/document probe의 같은 snapshot 출처를 검증하고 배치의
-실제 준비 경로에 연결해야 한다. 실제 CF-1~8 snapshot 파일과 oracle도 미발급이다.
+이 모듈 단독으로는 배치를 실행하지 않는다. 아래 묶음 B의 원천 고정 CF8·격리 DB loader와
+`verified_preparer`가 `execute_batch.prepare`/실실행 CLI에 연결한다.
 회귀는 최소 스키마의 메모리 SQLite에서 SQL을 실행하고 PostgreSQL dialect 컴파일을 확인한다.
 실 PostgreSQL 타입·권한·격리/동시성 검증이나 실제 CF 8종의 관측 증거로 주장하지 않는다.
 
@@ -352,7 +353,7 @@ revision 입력으로 허용하지 않는다. 출력은 canonical repository roo
 이는 **시점 관측**이며 workspace lock, 원격 merge/CI PASS, main pull 완료를 증명하지 않는다.
 Git status의 통상 ignored-file 규칙을 따르므로 ignored cache의 바이트나 실행 중 import된
 모듈까지 증명하지 않는다. caller가 실실행 동안 저장소를 고정하고 사용 시 재검증해야 한다.
-이미지 label/tree는 아래 검사기가 담당하며 receipt·`execute_batch`/live CLI 연결은 남아 있다. 현재 feature
+이미지 label/tree는 아래 검사기가 담당하며 receipt·`execute_batch`/live CLI는 묶음 B에서 연결한다. 현재 feature
 브랜치에서 이 검사기를 구현한 것이 최종 R을 고정했거나 U10 실행을 승인했다는 뜻은 아니다.
 회귀의 commit/checkout/replace는 pytest 임시 저장소에서만 수행하며 프로젝트 Git은 읽기만 한다.
 
@@ -602,6 +603,183 @@ preflight CLI에 넘긴다. preflight의 상위 validator들은 실제 실행하
 발급 no-clobber·권한·symlink·dirty/feature·검증 실패·입력/HEAD drift를 함께 검증한다.
 실제 프로젝트에 새 실험 artifact/receipt를 발급하거나 배포한 증거는 아니다.
 
+## 묶음 B 진행 — 입력 결속·반출 승인·prepare 연결
+
+23차 구현리뷰(묶음 A)는 필수 0·권장 1이었다. 권장 pin 정규식 회귀는
+`backend=bistel-backend:latest`와 이름 기반 container ID를 각각
+`U10_CLI_PIN_INVALID`로 IO 전에 거부하는 2건으로 보완했다.
+
+`u10_source.py`는 실행 중인 패키지의 코드 소유 파일 목록에서 source bytes SHA를 구한다.
+selector JSON schema, 실제 5 Tool input/result schema, evidence projection SHA,
+fixed policy SHA와 그 구현 소스를 하나의 `u10-tool-source-v1` canonical SHA에 결속한다.
+null matrix·candidate resolver·history trend는 수동 복제한 규칙 대신 해당 구현 파일 bytes로
+결속된다. benchmark의 선언값을 expected 값으로 다시 사용하는 자기 대조는 하지 않는다.
+이는 지정 파일의 로컬 결속이며 전체 배포/실행 증명이 아니다. 최종 runner의 clean main R 검사와
+CF source·시나리오·도구·bundle·격리 DB·provider/observer·실행/dry-run CLI와
+Common LLM/config·intake/parser/R03/route 의존 소스를 결속 목록에 추가했다.
+
+`u10_export.py`의 `ExportAuthorization`은 별도로 승인받아 준비된 private JSON과 독립 raw SHA를
+매번 재검증한다. `u10-data-export-grant-v1`의 필드는 정확히
+`schema_version/purpose/approved_by/binding/issued_at/expires_at`이며 purpose는
+`U10_DATA_EXPORT_GRANT`, 승인자는 담당자 방대혁이다. binding은 기존 `BatchBinding`의
+R·benchmark/LLM config/tool/fixed policy SHA·attempt_count=32 여섯 필드다.
+`issued_at <= now < expires_at`, UTC 달력값, 0700/0600, 원본 SHA와 exact binding을 요구한다.
+삭제·교체·만료는 다음 검사에서 거부한다. 이 모듈은 승인 파일을 생성하지 않으며 공수/SMTP 승인을
+받아들이지 않는다. 로컬 operator acknowledgement일 뿐 사람 신원을 암호학적으로 증명하지 않는다.
+
+`u10_preparation.verified_preparer()`는 기존 `execute_batch.prepare`에 연결한다.
+
+1. CF-1~8 exact 경로 집합, batch binding, 실제 source pin을 검사한다.
+2. 매 준비마다 source/승인을 재검증하고 private snapshot bytes SHA를 fixture와 대조한다.
+3. loader에는 attempt key와 bytes만 넘긴다. oracle/기대 inventory를 넘기지 않는다.
+4. loader가 연 connection에서 `verify_fixture_inventory` SQL을 실제 실행하고,
+   inventory용 route·current target과 실행용 `ObservationContext`가 같은지도 검사한다.
+5. selector/가설 port 진입마다 승인 재검증 wrapper를 적용한다.
+6. 실행 뒤 snapshot/source drift를 검사하고 loader 정리가 끝나야 다음 attempt로 진행한다.
+
+**한계:** `SnapshotSession`의 DB 격리·snapshot 복원·read port·effect observer 진위는 loader의
+책임이다. 이 seam이 임의 connection을 격리 DB로 인증하지 않는다. 승인 wrapper는 port 진입을
+보호한다. 가설 내부 correction/HTTP retry의 재검증은 아래 `RealProvider`가 추가한다.
+seam 단독 사용과 실제 CLI의 고정 조립을 구별한다.
+
+39개 신규 준비 회귀는 private grant/snapshot, 실제 SQL, 기존 두 정책과 32건 coordinator를
+연결한다. 이때 CF ID 8개에 복제한 DTO는 연결 검사용 합성 fixture이며 과학적 CF 8종이 아니다.
+별도의 일회용 PostgreSQL에서도 inventory 준비 검사를 1회 실행했다(LLM 0회·cleanup 완료).
+이 1건은 실제 CF snapshot/oracle의 PostgreSQL 실측을 완료했다는 뜻은 아니다.
+
+### CF8 입력·격리 loader·no-LLM dry-run 추가
+
+`u10_fixture_source.py`는 Common intake의 최종 ZIP/member SHA를 재사용하고, 추출이나
+Cypher 실행 없이 bounded read/parse한다. lot_history의 `fault_code`는 allowlist projection에서
+즉시 제외한다. 관측 전 실측한 label-free projection SHA
+`178e72098f16978d208d7ee45db9f28ed828cb55735c91126d67169f126013c8`을 코드에 고정하므로
+snapshot 내용과 자체 hash를 같이 바꿔도 복원이 거부된다.
+
+`u10_counterfactual.py`는 실제 member alarm·R03 순수 규칙·두 공정 route·최종 graph를 구성한다.
+`u10_fixture_tools.py`의 수치는 **의도적으로 합성한 CF 관측값**이며 원본 측정 성능을 주장하지 않는다.
+CF-2는 두 번째 현재 wafer의 추가 파라미터, CF-6은 실제 PHOTO 파라미터를 가진 상류 이탈,
+CF-7은 정상 형제 대조, CF-8은 이전 lot 2개 이상에서 계산되는 DRIFT를 검증한다.
+문서의 첫 실패(CF-3)는 attempt마다 초기화하며 inventory probe가 그 상태를 소비하지 않는다.
+
+`u10_fixture_bundle.py`는 snapshot과 분리해 oracle을 구성한다. 각 최소 2개 근거는 실제
+FDC/문서 evidence projection으로 얻을 수 있는 ID다. CF-6은 상류 LOT_HIST도 요구한다.
+CF-7/8의 집계 자체에는 인용 ID가 없으므로 sibling/history 필수 차원은 별도로 확인한다.
+이는 해당 차원의 citation recall을 직접 측정한다는 뜻이 아니다.
+
+`u10_fixture_database.py`는 caller DSN을 받지 않고 로컬 image ID로 일회용 PostgreSQL을
+생성한다. pull을 금지하고, attempt별 새 연결의 TEMP inventory 2개 테이블만 복원한다.
+실제 inventory SQL을 읽기 전용 transaction에서 실행한다. 이는 전체 production DB 복원이나
+실제 T2/FDC 원본 측정 재실행이 아니라 **사실 재고 + 합성 관측**의 분리된 실험 입력이다.
+`counterfactual_loader()`는 이를 `verified_preparer()`의 SnapshotSession에 연결한다.
+live runtime의 deadline/provider/effect observer는 모두 필수 주입이며 가짜 기본값이 없다.
+
+단일 명령(backend cwd, output은 존재하지 않는 새 디렉터리):
+
+```sh
+../.venv/bin/python scripts/prepare_u10_fixtures.py \
+  --source-archive /absolute/path/project.zip \
+  --output /absolute/private/parent/new-u10-inputs \
+  --postgres-image-id sha256:<local-image-id-64hex> --dry-run
+```
+
+CF 8종·32개 독립 준비 상태·inventory·빈 관측 context를 검사한 뒤 cleanup까지 성공해야
+0700 디렉터리/0600 입력 파일을 no-clobber 발급한다. 출력은 `DRY_RUN_INPUTS_ONLY`,
+`attempts_executed=0`, `llm_calls=0`, artifact/receipt 발급 false다. dry runtime은 어떤
+provider/effect 호출도 성공시키지 않고 즉시 거부한다. **데이터 반출 승인을 생성하거나 사용하지 않는다.**
+실제 최종 ZIP과 로컬 PostgreSQL에서도 이 경로를 검증했다. 이 입력 bundle은 개발 중 source에
+결속된 rehearsal 산출물이므로 최종 merged clean main R의 연구 artifact로 재사용하지 않는다.
+
+검증: 신규 fixture/loader 회귀 36건, 최종 관련 선택 회귀 1120 passed, 추가 메모리 변이
+8/8 탐지. 실제 원본 ZIP/일회용 PostgreSQL에서도 CF8·32 preparation PASS이며 LLM 0회다.
+결과와 private 개발용 입력 SHA는 `output/V5-C-7.1_구현보고.md`의 묶음 B 절에 기록했다.
+
+### 실 provider·관측 경계·32-run 발급 runner
+
+`u10_provider.RealProvider`는 실제 `generate_hypothesis`/`select_next_step`의 parsing,
+교정, usage 누적을 재사용한다. 두 함수에 선택적 `completion_port`, Common LLM에
+선택적 `request_port`만 추가했고 미주입 production 동작은 그대로다. 실제 HTTP 요청마다
+승인 파일·binding·시간, model/temperature/seed, endpoint/credential의 시작값 일치를 검사한다.
+따라서 503 retry와 가설 correction도 각각 재검증한다. 성공/실패의 usage를 꾸며내지 않는다.
+
+현재 조립은 Common의 단일 model 설정을 사용하므로 selector/hypothesis model revision이
+같아야 한다. temperature=0을 실제 보내지 않는 reasoning model은 fail-closed 거부한다.
+remote는 HTTPS, HTTP는 loopback만 허용하며 proxy env와 redirect는 비활성화한다.
+이는 기본 production LLM 설정을 변경하거나 승인 record를 자동 생성하는 경로가 아니다.
+
+`u10_observer.EffectObserver`는 전용 CLI process의 attempt 동안 Python audit hook으로
+허용 provider 주소 외 connect/sendto, 파일 쓰기/삭제, 하위 프로세스를 차단·계수한다.
+allowlist 주소라도 해당 attempt의 provider 요청 구간/호출 thread에서만 허용한다.
+hook 설치 성공은 실제 audit probe로 검사한다. 원시 selector 응답의 `send_action` 선택도
+구조 파싱 실패에 묻히지 않고 별도로 기록한다. 지연된 read worker를 같은 관측 범위 안에서
+join하고, 차단된 IO나 send 선택이 있으면 clean 결과를 발급하지 않는다.
+
+**관측 한계:** 이것은 OS/container 네트워크 sandbox가 아니다. 임의 native extension이나
+사전에 열린 외부 descriptor까지 증명하지 않는다. CLI는 자체 소유 PG 연결과 5개 메모리
+read port, 단일 provider만 조립하며 production DB/send/HITL/MES factory를 만들지 않는다.
+따라서 다른 앱 process에 embedding하거나 이미 외부 연결이 있는 process에서 재사용하지 않는다.
+관측 파일에도 `DEDICATED_PROCESS_PYTHON_AUDIT_NOT_OS_SANDBOX`를 명시한다.
+실행 전 로깅 핸들러가 **stdout만 사용**하는지 확인한다. attempt 안의 파일 로깅도
+쓰기 차단 대상이므로 파일 핸들러가 있으면 fail-closed될 수 있다.
+
+`run_u10_comparison.py --execute`의 순서:
+
+1. 명시 repository의 clean local main HEAD=R, 실행 패키지 위치 일치, private 입력 SHA,
+   실제 source/tool pin, 별도 반출 grant, CF8 snapshot/source를 확인한다.
+2. `<repo>/output/v5-c-7.1/<R>/u10-execution-claim.json`을 O_EXCL/0600으로 선점한다.
+   경쟁/중복 실행은 Docker·DNS·provider 호출 전에 거부한다.
+3. 로컬-only 일회용 PG에서 전체 benchmark/독립 oracle을 다시 구성해 선언값과 exact 대조한다.
+4. fresh loader/provider scope를 32개 interleave한다. 매 attempt 전후 main/입력/source를 재검사하고,
+   IO fence 안에서는 subprocess 없이 매 transport 승인을 재검사한다.
+5. 32개 observer scope와 PG cleanup이 성공한 뒤 IO 관측과 `u10-comparison.json`을 private 발급한다.
+6. 기존 **A receipt CLI를 실제 subprocess로 실행**하고 receipt bytes/SHA/identity를 대조한 뒤
+   `u10-execution-complete.json`에 artifact/IO/receipt SHA를 결속한다. production은 항상 false다.
+
+```sh
+../.venv/bin/python scripts/run_u10_comparison.py --execute \
+  --repository /absolute/repository --revision <clean-main-40hex> \
+  --inputs /absolute/private/u10-inputs --benchmark-sha256 <raw-sha256> \
+  --llm-config /absolute/private/llm.json --llm-config-sha256 <raw-sha256> \
+  --export-grant /absolute/private/export.json --export-grant-sha256 <raw-sha256> \
+  --postgres-image-id sha256:<local-image-id-64hex>
+```
+
+`llm.json`은 `LlmConfiguration`의 6필드(두 model revision, 두 prompt version, temperature,
+seed)만 가진다. grant는 위의 별도 승인 스키마를 따른다. 파일/부모는 0600/0700이다.
+실패 시 claim과 이미 발급한 파일을 **삭제/덮어쓰기/자동 재시도하지 않는다**. receipt만 실패한 경우
+artifact는 보존되고 완료 파일은 없다. 승인·실행 기록 확인 후 기존 A receipt CLI로만 복구할 수 있다.
+failed batch를 새 32-run으로 자동 치환하지 않는다.
+
+묶음 B의 25차 리뷰 보완 후 **묶음 전체 25차-1 독립 재리뷰 대기**로 인계한다. 실 LLM 연구 실행과
+최종 R 발급을 완료했다는 뜻은 아니다. 묶음 C는 착수하지 않았다.
+
+25차 보완 전 관련 선택 회귀 1174 passed, provider/runner/CI 집중 회귀 45 passed, runtime 변경
+메모리 변이 8/8 탐지. 원본 ZIP/실 PostgreSQL dry-run은 CF8/32 preparation PASS·LLM 0회다.
+
+25차 회귀 보완은 production 코드 변경 없이 다음 검사의 호출 경로를 검증한다.
+
+- R3: oracle 변조 후 DTO/canonical/raw SHA와 테스트 grant까지 재결속해 앞선 검사를 통과시킨다.
+  DB 재계산에서 `U10_BENCHMARK_RECOUNT_MISMATCH`, provider 생성/HTTP 0, claim만 보존한다.
+  재계산에는 DB 진입이 필요하므로 단위 검증은 SQLite open/close 1회이며 실제 Docker는 0이다.
+- R4: 정상 32회 종료 뒤 observer의 행 누락·key·요청 수 0·차단·send 계수 5종을 변조한다.
+  `U10_OBSERVER_POPULATION_INVALID`로 IO/연구 artifact/receipt/completion 모두 미발급이다.
+- R5: 첫 실제 provider scope의 IO fence 종료 직후 benchmark bytes를 바꾼다.
+  `U10_EXECUTION_INPUT_DRIFT`로 다음 attempt에 진입하지 않는다.
+- R6: 실제 receipt CLI subprocess가 성공한 뒤 stdout의 receipt SHA/artifact SHA/path/revision
+  4필드를 각각 변조한다. `U10_RECEIPT_CLI_FAILED`, 원 artifact/receipt bytes 보존, completion 0이다.
+- V4: 원격 HTTP·userinfo·query·fragment endpoint 4종은 `U10_PROVIDER_ENDPOINT_INVALID`, DNS 0이다.
+- F2: 원천/SQL은 유지하고 CF-8 history treatment만 깨뜨려 `build_benchmark()` 자체가
+  `U10_CF_TREATMENT_INVALID`를 내는지 확인한다. 직접 treatment 검사만 호출하는 테스트와 별개다.
+
+보완 후 관련 선택 회귀 **1190 passed**, fixtures/provider/runner **84 passed**(신규 16건),
+위 검사 제거 메모리 변이 **9/9 탐지**. 전체 저장소 테스트·원격 CI 결과는 아니다.
+R6의 네 필드는 개별 제거했다. pytest exit 1만 탐지로 세며 수집 오류는 제외한다.
+저장소 production 코드는 변이하지 않았고 실제 HTTP/LLM 반출·Docker 실행은 하지 않았다.
+
+실행 입력 준비는 최종 R에서 다시 한다. 개발용 `dryrun-01~03`은 보존하되 실행 증거로 사용하지 않는다.
+⑨ 직전 별도 사용자 반출 재승인 뒤 Claude가 R/benchmark/LLM/tool/fixed SHA에 결속된
+`export.json`을 초안 작성하고, 사용자 확인 뒤 0600 저장·독립 raw SHA를 고정한다.
+만료는 짧은 실행 창(예: 3시간)으로 한정한다. 공수 승인을 반출 승인으로 대신하지 않는다.
+
 ## 아직 증명하지 않는 것
 
 13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
@@ -609,13 +787,15 @@ timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도
 정상 binding 양성 대조 후 CURRENT/ADJACENT target 교환 거부(상류·하류 2건)를 검증한다.
 각각 F5/O1/O3 가드 무력화 변이를 탐지하며, 이 테스트 fixture를 실제 DB snapshot으로 주장하지 않는다.
 
-- inventory 재계산기의 실제 격리 PostgreSQL 연결, CF-6 상류/CF-7 정상 형제/CF-8 이력 drift를 포함한 실제
-  CF 8종 fixture/oracle의 적합성 및 각 입력 파일 SHA 검증.
+- CF 8종 synthetic 시나리오가 실제 현장의 고장 분포/성능을 대표한다는 주장.
+  재고·원천 pin·합성 treatment 완전성은 확인하지만 실험 설계의 외적 타당성은 별개다.
+  CF-1/6·CF-2/7·CF-5/8은 같은 factual incident를 공유하고 합성 treatment만 다르므로
+  서로 독립인 현장 incident 8건으로 해석하지 않는다. U6 보고에도 이 한계를 명시한다.
 - provider 호출·selector 결정별 실행 trace의 진위, 32건의 실제 실행, latency/token 실측.
   단위 테스트의 CF ID와 model 이름은 계약 검사용 가짜 입력이며 실험 결과가 아니다.
-- 최종 실실행 revision의 clean main·이미지 결속 검사기 live 연결, 데이터 반출 승인, robustness·delivery,
+- 최종 실실행 revision에서의 main/이미지 실관측·반출 승인·실 LLM 실행, robustness·delivery,
   receipt/seal·immutable 게시·production 전환의 4축 검증.
 
-다음 단위에서 실제 runner/기록·CF fixture를 연결하고 독립 검증을 추가한다.
+다음은 묶음 B 전체 25차-1 독립 재리뷰·Claude 커밋/CI, 그 뒤 묶음 C다.
 실행 코드가 완성되어도 최종 merged clean main R과 **별도 LLM 데이터 반출 승인** 전에는
 32회 실실행을 하지 않는다. SMTP 7통 승인 역시 별개다.

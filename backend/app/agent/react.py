@@ -910,12 +910,13 @@ def select_next_step(
     context: ReactContext,
     *,
     seed: int | None = None,
+    completion_port: Callable[..., llm.ChatCompletion] | None = None,
 ) -> ReactSelectionOutcome:
     """LLM 1회 호출로 다음 행동을 고른다. 구조 위반은 fail-closed."""
 
     messages = build_react_select_messages(context)
     try:
-        completion = llm.chat_with_usage(
+        completion = (completion_port or llm.chat_with_usage)(
             messages,
             json_schema=REACT_SELECT_SCHEMA,
             **({} if seed is None else {"seed": seed}),

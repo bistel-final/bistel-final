@@ -272,6 +272,25 @@ def test_duplicate_pins_fail_before_runtime(tmp_path, monkeypatch, capsys):
     assert events == []
 
 
+@pytest.mark.parametrize(
+    "option,value",
+    [
+        ("--image-id", "backend=bistel-backend:latest"),
+        ("--container-id", "backend=bistel-backend"),
+    ],
+)
+def test_mutable_pins_fail_at_cli_before_runtime(
+    tmp_path, monkeypatch, capsys, option, value
+):
+    args, _, events, _ = setup(tmp_path, monkeypatch)
+    argv = preflight_argv(args)
+    index = argv.index(option)
+    argv[index + 1] = value
+    assert run_preflight(args, argv) == 1
+    assert output(capsys)["failed_checks"] == ["U10_CLI_PIN_INVALID"]
+    assert events == []
+
+
 def test_receipt_no_clobber_preserves_original(tmp_path, monkeypatch, capsys):
     args, _, _, _ = setup(tmp_path, monkeypatch)
     emit(args, capsys)

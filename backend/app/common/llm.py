@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -185,6 +186,7 @@ def _request(
     json_object: bool = False,
     json_schema: dict[str, Any] | None = None,
     seed: int | None = None,
+    request_port: Callable[..., httpx.Response] | None = None,
 ) -> dict[str, Any]:
     """OpenAI 호환 응답 JSON을 받는 공통 HTTP 경계."""
     if json_object and json_schema is not None:
@@ -233,7 +235,7 @@ def _request(
                 )
             elif json_object:
                 request_body["response_format"] = {"type": "json_object"}
-            response = httpx.post(
+            response = (request_port or httpx.post)(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=request_body,
@@ -302,6 +304,7 @@ def chat_with_usage(
     json_object: bool = False,
     json_schema: dict[str, Any] | None = None,
     seed: int | None = None,
+    request_port: Callable[..., httpx.Response] | None = None,
 ) -> ChatCompletion:
     """응답 본문과 provider 실제 model·usage를 엄격하게 반환한다."""
 
@@ -310,6 +313,7 @@ def chat_with_usage(
         json_object=json_object,
         json_schema=json_schema,
         seed=seed,
+        **({} if request_port is None else {"request_port": request_port}),
     )
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip() or len(model.strip()) > 64:
