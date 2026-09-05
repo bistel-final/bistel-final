@@ -5,16 +5,20 @@
 //   2. 반복 제거 — 같은 그림 3장(챔버·설비·파라미터)은 탭 1장으로
 //   3. 숫자는 크게, 장식은 없이 — 축 12px · 범례 13px · 제목 15px · 히어로 60px
 //
-// 팔레트는 앱 정체성(navy 사이드바 + blue 포인트) 단색 계열 — 위계는 색상이 아니라 명도로.
-//   navy(심각·OOS) > blue(주의·OOC) > sky(3순위) > gray(중립)
+// 파레트: 판정은 전 화면 공통 토큰(OOS 크림슨 · OOC 앰버), 그 외는 navy 계열 단색 — 위계는 명도로.
+//   OOS(규격 이탈) > OOC(관리한계 이탈) 은 색상으로, navy · navy-2 · gray 는 중립 위계로.
 // 빨강은 데이터 범주가 아니라 시스템 이상(거부·실패 배지)에만 쓴다.
 import { useState } from 'react'
 import { Card } from '../../../shared/components/ui/Card.jsx'
 
-export const OOS_HEX = '#1c3150' // navy — OOS(심각)
-export const OOC_HEX = '#2f5fa8' // steel blue — OOC(주의) = --color-blue
+// 판정색은 전 화면 공통 토큰 — OOS 크림슨 · OOC 앰버 (index.css --color-oos / --color-ooc).
+// 보족 색은 navy 계열: 중립·합계는 navy, 3순위 범주는 연한 navy, 없으면 gray.
+export const OOS_HEX = 'var(--color-oos)' // OOS(규격 이탈) — 크림슨
+export const OOC_HEX = 'var(--color-ooc)' // OOC(관리한계 이탈) — 앰버
+export const OOS_TEXT_HEX = 'var(--color-oos-text)'
+export const OOC_TEXT_HEX = 'var(--color-ooc-text)'
 export const BLUE_HEX = '#2f5fa8'
-export const SKY_HEX = '#a9c0e4' // = --color-tint-blue-line — 3순위 범주
+export const SKY_HEX = 'var(--color-navy-2)' // 3순위 범주 — navy 램프 L72
 export const GREEN_HEX = '#2f5fa8' // (하위 호환) 대시보드에서 초록은 퇴장 — blue 로 수렴
 export const GRAY_HEX = '#94a3b8'
 
@@ -135,7 +139,6 @@ export function TrendLine({ data, height = 300 }) {
   const y = (v) => B - (v / max) * (B - T)
   const pts = (k) => data.map((d, i) => `${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(' ')
   const last = n - 1
-  const area = n ? `${L},${B} ${pts('oos')} ${x(last).toFixed(1)},${B}` : ''
 
   const handleMove = (event) => {
     if (!n) return
@@ -168,7 +171,6 @@ export function TrendLine({ data, height = 300 }) {
           </g>
         ))}
         <line x1={L} y1={B} x2={R} y2={B} stroke="var(--color-line)" />
-        {n > 0 && <polygon points={area} fill={OOS_HEX} opacity="0.06" />}
         {point && (
           <line x1={x(hover.i)} y1={T - 10} x2={x(hover.i)} y2={B} stroke="var(--color-line)" strokeDasharray="4 4" />
         )}
@@ -191,10 +193,10 @@ export function TrendLine({ data, height = 300 }) {
         )}
         {n > 0 && (
           <>
-            <text x={x(last) + 12} y={y(data[last].oos) + 4} fontSize="13" fontWeight="700" fill={OOS_HEX} textAnchor="start" fontFamily={MONO}>
+            <text x={x(last) + 12} y={y(data[last].oos) + 4} fontSize="13" fontWeight="700" fill={OOS_TEXT_HEX} textAnchor="start" fontFamily={MONO}>
               {data[last].oos}
             </text>
-            <text x={x(last) + 12} y={y(data[last].ooc) + 4} fontSize="13" fontWeight="700" fill={OOC_HEX} textAnchor="start" fontFamily={MONO}>
+            <text x={x(last) + 12} y={y(data[last].ooc) + 4} fontSize="13" fontWeight="700" fill={OOC_TEXT_HEX} textAnchor="start" fontFamily={MONO}>
               {data[last].ooc}
             </text>
           </>
