@@ -86,6 +86,8 @@ function AnalyticsPage() {
         const items = []
         for (const it of res?.items ?? []) {
           if (seen.has(it.question)) continue
+          // 사용자가 SQL 을 직접 고쳐 실행한 기록은 질문이 아니다 — 관리자 목록에서 숨긴다 (개발자 흔적)
+          if (/^\s*(select|with)\b/i.test(it.question)) continue
           seen.add(it.question)
           items.push({
             question: it.question,
@@ -117,6 +119,7 @@ function AnalyticsPage() {
 
   // 새 질의는 목록 맨 위로. 같은 질문이 이미 있으면 그것을 위로 올린다 (중복 항목 생성 없음).
   const pushHistory = (entry) => {
+    if (/^\s*(select|with)\b/i.test(entry.question)) return // SQL 직접 실행은 질문 목록에 올리지 않는다
     setHistory((h) => [entry, ...h.filter((x) => x.question !== entry.question)].slice(0, HIST_MAX))
     setHistPage(1)
   }
@@ -185,7 +188,7 @@ function AnalyticsPage() {
             // 기본 탭: 교차확인이 돌았으면 그래프(두 저장소가 같은 답이란 걸 바로 보여준다),
             // 아니면 서버가 정한 차트 유형(line/bar/histogram)이면 차트, 그 외에는 표
             const crossRan = ['MATCH', 'MISMATCH'].includes(d.cross_check?.status)
-            setTab(crossRan ? 'graph' : ['line', 'bar', 'histogram'].includes(d.visualization?.chart_type) ? 'chart' : 'table')
+            setTab(crossRan ? 'graph' : ['line', 'bar'].includes(d.visualization?.chart_type) ? 'chart' : 'table')
             setPhase('run')
             verify(d.generated_sql, false)
             after(800, () => {
@@ -396,7 +399,7 @@ function AnalyticsPage() {
         <div className="flex w-[360px] flex-none flex-col gap-2.5">
           <div className="flex gap-2">
             <Button sm variant={sideTab === 'history' ? 'primary' : 'outline'} onClick={() => setSideTab('history')}>
-              최근 질의
+              최근 질문
             </Button>
             <Button sm variant={sideTab === 'evaluation' ? 'primary' : 'outline'} onClick={() => setSideTab('evaluation')}>
               평가
