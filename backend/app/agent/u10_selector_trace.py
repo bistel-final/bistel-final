@@ -211,5 +211,20 @@ def check_selector_trace(attempt) -> None:
                     _require(schema_streak == 2)
                 if event.stop_reason == "STEP_CAP":
                     _require(attempt.selector_calls == 10)
+                if event.stop_reason == "BUDGET_EXHAUSTED":
+                    # The executor stops after the eighth read, or while the
+                    # fourth same-tool failed read awaits its mandatory retry.
+                    # Neither path can follow an uncompleted selector retry.
+                    _require(index > 0 and events[index - 1].phase == "OBSERVED")
+                    last = attempt.calls[-1] if attempt.calls else None
+                    _require(
+                        len(attempt.calls) == 8
+                        or (
+                            last is not None
+                            and last.retry == 0
+                            and last.status in {"ERROR", "TIMEOUT"}
+                            and sum(c.tool == last.tool for c in attempt.calls) == 4
+                        )
+                    )
     _require(selected == len(first_calls) and observed == len(attempt.calls))
     _require((attempt.read_stop_reason == "GUARD_LIMIT") == (rejected == 2))

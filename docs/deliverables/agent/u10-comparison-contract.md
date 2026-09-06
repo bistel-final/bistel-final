@@ -25,7 +25,11 @@ event는 seq·phase·tool·slot·retry·guard_code·stop_reason·llm_call만 포
 - selector_calls와 transport 재시도·가설 요청을 포함한 provider_requests는 다른 계수다.
 
 현재 구현/단위 테스트는 실제 모델 선택 품질 향상이나 NO_GAIN 해소의 증거가 아니다.
-형제 chamber 정상/이상 수치 손실과 가설 검증 결함은 후속 범위다. 실 LLM 재실험·공용 적용은
+2026-09-07 사용자 후속 지시로 형제/FDC/계측 수치·대상 보존, 정상 대조·표본 문맥,
+최신 문서 중복 제거, 가설 한계/확정 주장 구분·설비 공통 근거 검사를 같은 묶음에서 보완했다.
+history resolver는 실제 Tool DTO JSON 인코딩을 사용하며 BUDGET trace는 실제 소진 조건까지
+검사한다. 가드/예산·Fixed 정책·연구 임계 변경이나 새 도구/LLM 단계 추가는 없다.
+실 LLM 재실험·공용 적용은
 별도 승인 대상이며 기존 R/R′/R″/R‴/R⁗ artifact·receipt·claim은 변경하지 않는다.
 
 > **2026-09-06 R‴ 범위 불일치 보완**: U10 selector에는 공통 inventory가 실행할 수 있는 후보만

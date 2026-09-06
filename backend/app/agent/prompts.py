@@ -22,6 +22,7 @@ from app.agent.origin_diagnostics import rejection_code
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
@@ -32,6 +33,8 @@ MAX_PROMPT_CHARS: Final = 12_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
 MAX_PROMPT_MEMBER_ALARMS: Final = 12
 MAX_PROMPT_WAFER_OBSERVATIONS: Final = 6
+_MAX_PROMPT_HISTORY_RESULTS: Final = 4
+_MAX_PROMPT_PRIOR_LOTS: Final = 3
 TRUNCATION_MARKER: Final = "…[truncated]"
 
 # `_`는 regex word 문자이므로 predicted_fault_code 안의 부분 문자열은
@@ -177,7 +180,7 @@ def _observation_rank(observation: WaferParameterObservation) -> tuple[Any, ...]
 def _prompt_wafer_observations(
     snapshot: IncidentDiagnosticSnapshot,
 ) -> list[WaferParameterObservation]:
-    """WAFER별 대표를 먼저 보존하고 나머지는 이상 심각도 순으로 제한한다."""
+    """같은 상한에서 이상과 정상 대조를 보존한 뒤 WAFER 대표를 채운다."""
 
     observations = tuple(snapshot.wafer_observations)
     selected: list[WaferParameterObservation] = []
@@ -198,6 +201,42 @@ def _prompt_wafer_observations(
         seen.add(key)
         selected.append(item)
 
+    ranked = sorted(observations, key=_observation_rank)
+    abnormal = [item for item in ranked if item.alarm_type.value != "IN"]
+    controls = [
+        item
+        for item in ranked
+        if item.alarm_type.value == "IN"
+        and item.point_count > 0
+        and item.ooc_point_count == item.oos_point_count == 0
+        and any(
+            value is not None
+            for value in (item.value_mean, item.value_min, item.value_max)
+        )
+    ]
+    if len(observations) > MAX_PROMPT_WAFER_OBSERVATIONS and abnormal and controls:
+        # Sorting only by severity can erase every normal contrast. Reserve one
+        # measured control, preferring the same parameter/process/recipe step.
+        # This is sampling, not a new finding or a claim that the control is causal.
+        def comparison_key(item: WaferParameterObservation) -> tuple[str, str, int]:
+            return item.parameter_id, item.step_id, item.recipe_step_no
+
+        abnormal_keys = {comparison_key(item) for item in abnormal}
+        control = min(
+            controls,
+            key=lambda item: (
+                comparison_key(item) not in abnormal_keys,
+                _observation_rank(item),
+            ),
+        )
+        add(abnormal[0])
+        matching = [
+            item for item in abnormal if comparison_key(item) == comparison_key(control)
+        ]
+        if matching:
+            add(matching[0])
+        add(control)
+
     wafer_keys = sorted({(item.lot_hist_id, item.wafer_id) for item in observations})
     for wafer_key in wafer_keys:
         candidates = [
@@ -206,7 +245,7 @@ def _prompt_wafer_observations(
             if (item.lot_hist_id, item.wafer_id) == wafer_key
         ]
         add(min(candidates, key=_observation_rank))
-    for observation in sorted(observations, key=_observation_rank):
+    for observation in ranked:
         add(observation)
     return selected
 
@@ -261,6 +300,50 @@ def _document_payload(result: DocumentSearchToolResult | None) -> Any:
     }
 
 
+def _history_payload(result: ChamberParameterHistoryToolResult) -> dict[str, Any]:
+    """Keep sample denominators and gaps alongside observed means, not raw rows."""
+
+    prior = result.prior[:_MAX_PROMPT_PRIOR_LOTS]
+    current = result.current
+    baseline = result.baseline
+    return {
+        "scope": result.scope,
+        "chamber_id": result.chamber_id,
+        "parameter_id": result.parameter_id,
+        "step_no": result.step_no,
+        "trend": result.trend,
+        "sample_count": result.sample_count,
+        "current": None
+        if current is None
+        else {
+            "lot_id": current.lot_id,
+            "lot_mean": current.lot_mean,
+            "wafer_count": current.wafer_count,
+            "ooc_wafers": current.ooc_wafers,
+            "oos_wafers": current.oos_wafers,
+            "evaluation_missing": current.evaluation_missing,
+        },
+        "baseline": None
+        if baseline is None
+        else {
+            "mean_hist": baseline.mean_hist,
+            "sd_hist": baseline.sd_hist,
+            "prior_lot_count": baseline.prior_lot_count,
+        },
+        "prior_means": [item.lot_mean for item in prior],
+        "prior_samples": [
+            {
+                "lot_id": item.lot_id,
+                "wafer_count": item.wafer_count,
+                "evaluation_missing": item.evaluation_missing,
+            }
+            for item in prior
+        ],
+        "prior_count": len(result.prior),
+        "prior_omitted_count": len(result.prior) - len(prior),
+    }
+
+
 def build_hypothesis_messages(
     fdc_evidence: FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
     graph_evidence: EquipmentContextToolResult | None,
@@ -278,6 +361,11 @@ def build_hypothesis_messages(
 
     fdc_items = (
         list(fdc_evidence) if isinstance(fdc_evidence, Sequence) else [fdc_evidence]
+    )
+    history = tuple(
+        item
+        for item in (() if investigation is None else investigation.history)
+        if item.ok
     )
     evidence = {
         "diagnostic_snapshot": (
@@ -305,24 +393,10 @@ def build_hypothesis_messages(
         "investigation": {
             "compared": None if compared is None else compared.model_dump(),
             "history": [
-                {
-                    "scope": item.scope,
-                    "parameter_id": item.parameter_id,
-                    "step_no": item.step_no,
-                    "trend": item.trend,
-                    "sample_count": item.sample_count,
-                    "current": None
-                    if item.current is None
-                    else {
-                        "lot_mean": item.current.lot_mean,
-                        "ooc_wafers": item.current.ooc_wafers,
-                        "oos_wafers": item.current.oos_wafers,
-                    },
-                    "prior_means": [prior.lot_mean for prior in item.prior],
-                }
-                for item in (() if investigation is None else investigation.history)
-                if item.ok
+                _history_payload(item) for item in history[:_MAX_PROMPT_HISTORY_RESULTS]
             ],
+            "history_count": len(history),
+            "history_omitted_count": max(0, len(history) - _MAX_PROMPT_HISTORY_RESULTS),
             "metrology": [
                 item.model_dump(mode="json")
                 for item in (() if investigation is None else investigation.metrology)

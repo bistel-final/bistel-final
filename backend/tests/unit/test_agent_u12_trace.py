@@ -196,7 +196,8 @@ def test_impossible_thirteen_selector_calls_are_rejected():
         trace.check_selector_trace(invalid)
 
 
-def test_eight_reads_with_one_retry_use_seven_selections_and_system_stop():
+@pytest.mark.parametrize("timeout_reads", [{1}, {1, 8}, {7, 8}])
+def test_eight_reads_with_one_retry_use_seven_selections_and_system_stop(timeout_reads):
     from types import SimpleNamespace
 
     choices = iter(
@@ -213,7 +214,7 @@ def test_eight_reads_with_one_retry_use_seven_selections_and_system_stop():
     def invoke(*_):
         nonlocal reads
         reads += 1
-        if reads == 1:
+        if reads in timeout_reads:
             raise TimeoutError()
         return fixture.success()
 
@@ -267,3 +268,94 @@ def test_two_guard_rejections_are_not_schema_rejections():
                 read_stop_reason="LLM_STOP",
             )
         )
+
+
+def test_schema_retry_cannot_be_relabelled_as_budget_stop_in_artifact():
+    from app.agent.u10_batch import execute_batch
+    from app.agent.u10_comparison import validate_artifact
+    from tests.unit.test_agent_u10_batch import inputs
+
+    params, *_ = inputs()
+    params["llm"] = params["llm"].model_copy(
+        update={"selector_prompt_version": "agent-react-v2-ko2"}
+    )
+    payload = execute_batch(**params).model_dump(mode="json")
+    row = next(a for a in payload["attempts"] if a["policy"] == "REACT_V2")
+    assert len(row["calls"]) == 1 and row["selector_calls"] == 2
+    row["read_stop_reason"] = "BUDGET_EXHAUSTED"
+    row["selector_trace"][-1].update(
+        seq=4, tool=None, stop_reason="BUDGET_EXHAUSTED", llm_call=False
+    )
+    row["selector_trace"].insert(
+        -1,
+        dict(
+            seq=3,
+            phase="REJECTED",
+            tool=None,
+            slot=None,
+            retry=None,
+            guard_code="REACT_SCHEMA_INVALID",
+            stop_reason=None,
+            llm_call=True,
+        ),
+    )
+    # No metric/result changes: this used to pass the complete artifact verifier.
+    with pytest.raises(EvidenceError, match="U10_DIAGNOSTIC_INCONSISTENT"):
+        validate_artifact(payload, params["benchmark"].model_dump(mode="json"))
+
+
+def test_budget_stop_requires_read_or_same_tool_retry_exhaustion():
+    config = attempt_fixture.setup()["llm"].model_copy(
+        update={"selector_prompt_version": "agent-react-v2-ko2"}
+    )
+    attempt = attempt_fixture.run(llm=config).attempt
+    attempt.selector_trace[-1] = attempt.selector_trace[-1].model_copy(
+        update={"tool": None, "stop_reason": "BUDGET_EXHAUSTED", "llm_call": False}
+    )
+    invalid = attempt.model_copy(
+        update={"selector_calls": 1, "read_stop_reason": "BUDGET_EXHAUSTED"}
+    )
+    # The previous event is OBSERVED, but a single successful read uses neither cap.
+    with pytest.raises(EvidenceError, match="U10_DIAGNOSTIC_INCONSISTENT"):
+        trace.check_selector_trace(invalid)
+
+
+@pytest.mark.parametrize("failure", ["TIMEOUT: test", "DEPENDENCY_ERROR: test"])
+def test_fourth_same_tool_failed_read_preserves_budget_stop(failure):
+    from dataclasses import replace
+
+    from app.common.tool_contracts import DocumentSearchToolResult
+
+    choices = iter(
+        [fixture.outcome("get_fdc_summary", fdc_candidate_id="F1")]
+        + [
+            fixture.outcome("search_documents", query=f"FDC check {i}")
+            for i in range(4)
+        ]
+    )
+    document_calls = 0
+
+    def documents(_):
+        nonlocal document_calls
+        document_calls += 1
+        if document_calls == 4:
+            return DocumentSearchToolResult(ok=False, reason=failure)
+        return attempt_fixture.docs((f"C{document_calls}", 0.5))
+
+    config = attempt_fixture.setup()["llm"].model_copy(
+        update={"selector_prompt_version": "agent-react-v2-ko2"}
+    )
+    result = attempt_fixture.run(
+        llm=config,
+        select=lambda ctx, *, seed: next(choices),
+        read_ports=replace(
+            attempt_fixture.ports(lambda _: attempt_fixture._fdc()),
+            document_search=documents,
+        ),
+    )
+    assert document_calls == 4 and len(result.attempt.calls) == 5
+    assert result.attempt.calls[-1].retry == 0
+    assert result.attempt.calls[-1].status in {"ERROR", "TIMEOUT"}
+    assert result.attempt.read_stop_reason == "BUDGET_EXHAUSTED"
+    assert result.attempt.completion is False
+    trace.check_selector_trace(result.attempt)
