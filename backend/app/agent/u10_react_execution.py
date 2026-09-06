@@ -44,6 +44,44 @@ class ReactReadResult:
         ]
 
 
+def inventory_scoped_context(
+    context: ReactContext, inventory: Inventory
+) -> ReactContext:
+    """Offer only targets represented by the shared U10 inventory/read slots.
+
+    Production route candidates can include both process steps for metrology;
+    U10's fixed policy and fixture adapter support current-step metrology only.
+    Keep issued IDs (never renumber), current FDC alternatives, and in-scope
+    adjacent/sibling choices. No oracle or required-evidence input is used.
+    This projection does not change production candidate generation.
+    """
+    candidates = context.candidates.model_copy(deep=True)
+    candidates = candidates.model_copy(
+        update={
+            "fdc": tuple(
+                c
+                for c in candidates.fdc
+                if c.relation == "CURRENT"
+                or (
+                    inventory.adjacent.wafers > 0
+                    and c.relation == inventory.adjacent.relation
+                )
+            ),
+            "history": tuple(
+                c
+                for c in candidates.history
+                if c.scope == "CURRENT" or c.chamber_id == inventory.sibling_chamber_id
+            ),
+            "metrology": tuple(
+                c
+                for c in candidates.metrology
+                if c.relation == "CURRENT" and inventory.metrology_samples > 0
+            ),
+        },
+    )
+    return context.model_copy(deep=True, update={"candidates": candidates})
+
+
 def execute_react_policy(
     inventory: Inventory,
     build_context: Callable[[], ReactContext],
@@ -133,6 +171,9 @@ def execute_react_policy(
                 if key in tokens and tokens[key] != sha:
                     raise EvidenceError("U10_CANDIDATE_REBOUND")
                 tokens[key] = sha
+        # Apply the same candidate availability used by the fixed-policy slots
+        # BEFORE selector/guard, rather than advertising targets that later abort.
+        context = inventory_scoped_context(context, inventory)
         context = context.model_copy(
             update={
                 "remaining_tool_calls": 8 - len(session.calls),

@@ -8,7 +8,7 @@ import pytest
 
 from app.agent import react
 from app.agent.release_artifacts import EvidenceError
-from app.agent.u10_react_execution import execute_react_policy
+from app.agent.u10_react_execution import execute_react_policy, inventory_scoped_context
 from tests.unit.test_agent_react import _context, _selection, _usage
 from tests.unit.test_agent_u10_read_execution import Clock, inventory, success
 
@@ -269,12 +269,115 @@ def test_context_rebinding_fails_before_second_selector(change, code):
 
 def test_inventory_relation_mismatch_never_calls_adapter():
     observed = []
-    with pytest.raises(EvidenceError, match="^U10_INVENTORY_SCOPE_MISMATCH$"):
-        run(
-            lambda _: outcome("get_fdc_summary", fdc_candidate_id="F2"),
-            lambda *args: observed.append(args),
-        )
+    result = run(
+        lambda _: outcome("get_fdc_summary", fdc_candidate_id="F2"),
+        lambda *args: observed.append(args),
+    )
     assert observed == []
+    assert result.stop_reason == "GUARD_LIMIT"
+    assert [s.guard_code for s in result.trace if s.phase == "REJECTED"] == [
+        "REACT_GUARD_CANDIDATE_UNKNOWN"
+    ] * 2
+
+
+@pytest.mark.parametrize("relation", ["UPSTREAM", "DOWNSTREAM"])
+def test_outside_metrology_candidate_is_not_offered_and_can_be_corrected(relation):
+    ctx = _context()
+    ctx.candidates.metrology += (
+        ctx.candidates.metrology[0].model_copy(
+            update={"candidate_id": "M2", "relation": relation, "step_id": "CT-ETCH"}
+        ),
+    )
+    observed = []
+    contexts = []
+
+    def select(current):
+        contexts.append(current)
+        assert [c.candidate_id for c in current.candidates.metrology] == ["M1"]
+        if len(contexts) == 1:
+            # Even a hallucinated/previously seen out-of-scope token is guarded.
+            return outcome("get_metrology_result", metrology_candidate_id="M2")
+        assert "get_metrology_result: REJECTED REACT_GUARD_CANDIDATE_UNKNOWN" in (
+            current.recent_tool_events
+        )
+        if len(contexts) == 2:
+            return outcome("get_metrology_result", metrology_candidate_id="M1")
+        return outcome("stop")
+
+    result = run(
+        select,
+        lambda *args: observed.append(args) or success(),
+        build_context=lambda: ctx,
+    )
+    assert result.stop_reason == "LLM_STOP"
+    assert len(observed) == 1 and observed[0][1]["step_id"] == "CT-PHOTO"
+    assert [c.slot for c in result.calls] == ["METROLOGY"]
+    assert len(ctx.candidates.metrology) == 2  # Caller/production candidates intact.
+
+
+def test_inventory_projection_preserves_allowed_fdc_and_filters_missing_slots():
+    ctx = _context()
+    ctx.candidates.fdc[1].relation = "UPSTREAM"
+    ctx.candidates.history += (
+        ctx.candidates.history[0].model_copy(
+            update={"candidate_id": "H2", "scope": "SIBLING", "chamber_id": "OTHER"}
+        ),
+    )
+    inv = inventory().model_copy(update={"metrology_samples": 0})
+
+    def select(current):
+        assert [c.candidate_id for c in current.candidates.fdc] == ["F1", "F2"]
+        assert [c.candidate_id for c in current.candidates.history] == ["H1"]
+        assert current.candidates.metrology == ()
+        return outcome("stop")
+
+    result = execute_react_policy(
+        inv,
+        lambda: ctx,
+        select,
+        lambda *_: pytest.fail("must not read"),
+        document_model_code="PH-9000",
+        expected_selector_model="fixture-model",
+        clock_ns=Clock(),
+    )
+    assert result.stop_reason == "LLM_STOP"
+
+
+@pytest.mark.parametrize("relation", ["NONE", "UPSTREAM", "DOWNSTREAM"])
+@pytest.mark.parametrize("sibling", [None, "C2"])
+@pytest.mark.parametrize("samples", [0, 2])
+def test_candidate_projection_matches_slot_availability_without_renumbering(
+    relation, sibling, samples
+):
+    inv = inventory()
+    inv = inv.model_copy(
+        update={
+            "adjacent": inv.adjacent.model_copy(
+                update={"relation": relation, "wafers": 0 if relation == "NONE" else 1}
+            ),
+            "sibling_chamber_id": sibling,
+            "metrology_samples": samples,
+        }
+    )
+    ctx = _context()
+    ctx.candidates.history += (
+        ctx.candidates.history[0].model_copy(
+            update={"candidate_id": "H3", "scope": "SIBLING", "chamber_id": "C2"}
+        ),
+    )
+    before = ctx.model_dump()
+    projected = inventory_scoped_context(ctx, inv)
+    assert [c.candidate_id for c in projected.candidates.fdc] == (
+        ["F1", "F2"] if relation == "DOWNSTREAM" else ["F1"]
+    )
+    assert [c.candidate_id for c in projected.candidates.history] == (
+        ["H1", "H3"] if sibling else ["H1"]
+    )
+    assert [c.candidate_id for c in projected.candidates.metrology] == (
+        ["M1"] if samples else []
+    )
+    projected.candidates.fdc[0].lot_hist_id = "MUTATED_COPY"
+    assert ctx.model_dump() == before
 
 
 def test_read_cap_exhaustion_retains_failed_eighth_call_and_observed_trace():
