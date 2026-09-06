@@ -1,5 +1,12 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
+> **2026-09-06 R‴ 범위 불일치 보완**: U10 selector에는 공통 inventory가 실행할 수 있는 후보만
+> 투영한다. CURRENT FDC와 inventory 방향의 인접 FDC, 현재 이력과 지정 sibling chamber,
+> 표본이 있을 때의 CURRENT metrology를 유지한다. 후보 ID 재번호 부여·oracle 참조·도구 순서
+> 강제는 없다. U10 fixture/Fixed의 기존 CURRENT-only 계측 범위를 확대하지 않으며 production
+> 후보 생성은 변경하지 않는다. 제외된 token을 모델이 선택하면 기존 CANDIDATE_UNKNOWN
+> guard/피드백/상한으로 처리하고 범위 밖 Tool은 호출하지 않는다. 방어용 scope 검사는 유지한다.
+
 > **2026-09-06 R″ 후속 피드백 배선 보완**: production graph와 U10 selector의 기존
 > `observations.recent_tools`에 실제 OBSERVED 결과 및 REJECTED의 도구명·허용된 guard 코드만
 > 최근 4개까지 연결한다. 거부된 인자/query/rationale는 다시 전달하지 않는다. 기존 prompt
