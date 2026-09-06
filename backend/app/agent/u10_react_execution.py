@@ -139,6 +139,9 @@ def execute_react_policy(
                 "remaining_steps": react.REACT_MAX_STEPS - len(measurements),
                 "guard_rejections": rejections,
                 "structure_retry": False,
+                "recent_tool_events": react.selector_tool_events(
+                    [step.model_dump(mode="json") for step in trace]
+                ),
             }
         )
         outcome = None

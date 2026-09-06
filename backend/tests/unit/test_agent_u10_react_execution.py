@@ -129,6 +129,26 @@ def test_second_document_selection_is_recorded_as_document_two():
     assert result.stop_reason == "LLM_STOP"
 
 
+def test_guard_feedback_allows_selector_to_change_tool_then_stop():
+    contexts = []
+
+    def select(context):
+        contexts.append(context)
+        if len(contexts) == 1:
+            return outcome("get_fdc_summary", fdc_candidate_id="F99")
+        events = context.recent_tool_events
+        assert "get_fdc_summary: REJECTED REACT_GUARD_CANDIDATE_UNKNOWN" in events
+        if len(contexts) == 2:
+            return outcome("search_documents", query="PH_FOCUS upper")
+        assert any("search_documents: SUCCESS" in event for event in events)
+        return outcome("stop")
+
+    result = run(select)
+    assert result.stop_reason == "LLM_STOP"
+    assert [c.slot for c in result.calls] == ["DOCUMENT_1"]
+    assert [c.guard_rejections for c in contexts] == [0, 1, 1]
+
+
 def test_retry_does_not_reselect_and_history_internal_context_is_isolated():
     choices = iter(
         [

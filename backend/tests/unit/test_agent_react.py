@@ -355,6 +355,32 @@ def test_failed_tool_observation_is_visible_to_the_next_selection() -> None:
     assert payload["observations"]["recent_tools"] == ["search_documents: 실패 TIMEOUT"]
 
 
+def test_rejection_feedback_excludes_untrusted_text_and_unknown_codes() -> None:
+    events = react.selector_tool_events(
+        (
+            {
+                "phase": "REJECTED",
+                "tool": "search_documents",
+                "guard_code": "REACT_GUARD_QUERY_INVALID",
+                "rationale_summary": "RAW_SECRET_DO_NOT_REPEAT",
+                "argument_summary": "RAW_QUERY_DO_NOT_REPEAT",
+            },
+            {
+                "phase": "REJECTED",
+                "tool": "search_documents",
+                "guard_code": "REACT_GUARD_RAW_SECRET",
+            },
+            {
+                "phase": "REJECTED",
+                "tool": "RAW_TOOL",
+                "guard_code": "REACT_GUARD_QUERY_INVALID",
+            },
+        )
+    )
+    assert events == ("search_documents: REJECTED REACT_GUARD_QUERY_INVALID",)
+    assert "RAW_" not in str(events)
+
+
 def test_schema_has_no_send_action_and_selection_rejects_unknown_tool() -> None:
     schema = react.REACT_SELECT_SCHEMA["schema"]  # type: ignore[index]
     choices = schema["properties"]["next"]["enum"]  # type: ignore[index]
@@ -551,6 +577,33 @@ def test_level3_executes_history_and_metrology_only_through_candidate_tokens(
     assert "fail_count=0" in trace[1]["observation_summary"]
     assert "LOT001" not in trace[0]["argument_summary"]
     assert "CT-PHOTO" not in trace[1]["argument_summary"]
+
+
+def test_level3_guard_feedback_reaches_next_selection_and_allows_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contexts = []
+
+    def select(context):
+        contexts.append(context)
+        if len(contexts) == 1:
+            choice = _selection("get_fdc_summary", fdc_candidate_id="F999")
+        else:
+            payload = json.loads(
+                react.build_react_select_messages(context)[1]["content"]
+            )
+            assert payload["observations"]["recent_tools"][-1] == (
+                "get_fdc_summary: REJECTED REACT_GUARD_CANDIDATE_UNKNOWN"
+            )
+            choice = _selection("stop")
+        return react.ReactSelectionOutcome(selection=choice, llm_usage=_usage())
+
+    (graph, _tools, _ports, finishes, _), _ = _level3(monkeypatch, select)
+    harness._invoke(graph, level=3)
+    trace = finishes[0][1]["evidence"]["react_trace"]
+    assert [step["phase"] for step in trace] == ["REJECTED", "STOPPED"]
+    assert trace[-1]["stop_reason"] == "LLM_STOP"
+    assert len(contexts) == 2
 
 
 def test_level3_guard_rejections_stop_after_limit_without_failing_run(

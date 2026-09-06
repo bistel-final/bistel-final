@@ -1,5 +1,13 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
+> **2026-09-06 R″ 후속 피드백 배선 보완**: production graph와 U10 selector의 기존
+> `observations.recent_tools`에 실제 OBSERVED 결과 및 REJECTED의 도구명·허용된 guard 코드만
+> 최근 4개까지 연결한다. 거부된 인자/query/rationale는 다시 전달하지 않는다. 기존 prompt
+> 템플릿·출력 schema·버전 문자열은 유지하며 context 배선 변경은 source/tool-contract SHA로
+> 구별한다. 도구 순서 강제·가드/예산 상향·판정식 변경은 없다. 기존 R″ 결과는 수정하지 않으며
+> 새 실행은 새 clean revision·입력 결속·반출 승인이 필요하다. 과거 U10 artifact는 거부 trace를
+> 보존하지 않으므로 `GUARD_LIMIT`만으로 세부 거부 원인을 소급 단정할 수 없다.
+
 > **2026-09-06 Luna 호환 보완(계획 v66)**: U10 LLM 설정은 legacy 6필드 또는
 > `U10-LUNA-REASONING-V1` 9필드다. 아래 temperature=0·정수 seed는 legacy에 한정한다.
 > Luna는 temperature/seed null(미전송)·effort low·출력 토큰 상한을 결속하며 재현성을 주장하지 않는다.
