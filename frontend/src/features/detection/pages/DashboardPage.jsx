@@ -88,12 +88,12 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
 // ── 분포 카드 — 챔버 | 설비 | 파라미터 탭 (같은 그림 3장을 1장으로) ──
 // 추이 차트와 같은 전폭·같은 높이로 둔다(멘토 피드백 #2).
 const DIST_TABS = [
-  { key: 'chamber', label: '챔버' },
   { key: 'equipment', label: '설비' },
+  { key: 'chamber', label: '챔버' },
   { key: 'sensor', label: '파라미터' },
 ]
 function DistributionCard({ agg }) {
-  const [tab, setTab] = useState('chamber')
+  const [tab, setTab] = useState('equipment')
   const data = tab === 'chamber' ? agg.byChamber : tab === 'equipment' ? agg.byEquipment : agg.bySensor
   return (
     <ChartCard
