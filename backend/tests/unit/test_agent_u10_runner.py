@@ -31,6 +31,7 @@ from tests.unit.test_agent_u10_fixtures import engine, source  # noqa: F401
 from tests.unit.test_agent_u10_provider import (  # noqa: F401
     completion,
     config,
+    luna_config,
     settings,
     stop_payload,
 )
@@ -44,7 +45,7 @@ def git(root, *args):
 
 
 @pytest.fixture
-def setup(source, engine, settings, tmp_path, monkeypatch):  # noqa: F811
+def setup(source, engine, settings, tmp_path, monkeypatch, request):  # noqa: F811
     import httpx
 
     root = tmp_path / "repo"
@@ -78,6 +79,14 @@ def setup(source, engine, settings, tmp_path, monkeypatch):  # noqa: F811
         benchmark, snapshots = build_benchmark(source, conn)
     benchmark_sha = write_bundle(inputs, benchmark, snapshots)
     cfg = config()
+    if getattr(request, "param", "legacy") == "luna":
+        from app.common import llm
+
+        cfg = luna_config()
+        monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "gpt-5.6-luna")
+        monkeypatch.setattr(llm, "LLM_TEMPERATURE", 0.1)
+        monkeypatch.setattr(llm, "LLM_MAX_TOKENS", 1500)
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
     write_private(inputs, "llm.json", cfg)
     binding = BatchBinding(
         revision,
@@ -143,7 +152,7 @@ def setup(source, engine, settings, tmp_path, monkeypatch):  # noqa: F811
 
     def post(*args, **kwargs):
         events.append("mock_http")
-        return completion(desired[0])
+        return completion(desired[0], cfg.hypothesis_model_revision)
 
     monkeypatch.setattr(hypothesis, "generate_hypothesis", generate)
     monkeypatch.setattr(react, "select_next_step", select)
@@ -161,6 +170,7 @@ def setup(source, engine, settings, tmp_path, monkeypatch):  # noqa: F811
     ), events
 
 
+@pytest.mark.parametrize("setup", ["legacy", "luna"], indirect=True)
 def test_32_real_policy_paths_to_private_artifact_and_actual_receipt_cli(setup):
     args, events = setup
     result = runner.run_comparison(**args)
@@ -168,6 +178,7 @@ def test_32_real_policy_paths_to_private_artifact_and_actual_receipt_cli(setup):
     assert result["production_enabled"] is False
     directory = args["repository"] / "output/v5-c-7.1" / args["revision"]
     artifact = json.loads((directory / "u10-comparison.json").read_bytes())
+    assert artifact["llm"] == json.loads(args["llm_config"].read_bytes())
     assert len(artifact["attempts"]) == 32
     assert all(a["external_effects"] == 0 for a in artifact["attempts"])
     assert all(a["completion"] for a in artifact["attempts"])
@@ -186,11 +197,31 @@ def test_32_real_policy_paths_to_private_artifact_and_actual_receipt_cli(setup):
 
 
 @pytest.mark.parametrize(
-    "kind",
-    ["dirty", "branch", "package", "grant", "benchmark", "llm", "snapshot", "claim"],
+    ("kind", "setup"),
+    [
+        ("dirty", "legacy"),
+        ("branch", "legacy"),
+        ("package", "legacy"),
+        ("grant", "legacy"),
+        ("benchmark", "legacy"),
+        ("llm", "legacy"),
+        ("snapshot", "legacy"),
+        ("claim", "legacy"),
+        ("runtime_config", "legacy"),
+        ("runtime_effort", "luna"),
+    ],
+    indirect=["setup"],
 )
 def test_prework_fail_closed(setup, monkeypatch, kind):
+    import socket
+
     args, events = setup
+
+    def dns(*args, **kwargs):
+        events.append("dns")
+        return []
+
+    monkeypatch.setattr(socket, "getaddrinfo", dns)
     if kind == "dirty":
         (args["repository"] / "backend/marker").write_text("changed")
     elif kind == "branch":
@@ -206,11 +237,19 @@ def test_prework_fail_closed(setup, monkeypatch, kind):
         args[field] = "0" * 64
     elif kind == "snapshot":
         (args["inputs"] / "CF-8.json").write_bytes(b"{}")
+    elif kind == "runtime_config":
+        from app.common import llm
+
+        monkeypatch.setattr(llm, "LLM_TEMPERATURE", 0.1)
+    elif kind == "runtime_effort":
+        # Initial drift must fail before claim, not at the later wire guard.
+        monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
     else:
         path = args["repository"] / "output/v5-c-7.1" / args["revision"]
         path.mkdir(parents=True, mode=0o700)
         write_private(path, "u10-execution-claim.json", {"previous": True})
-    with pytest.raises(EvidenceError):
+    expected = "LLM_CONFIG_MISMATCH" if kind == "runtime_effort" else None
+    with pytest.raises(EvidenceError, match=expected):
         runner.run_comparison(**args)
     assert events == []
     claim = (

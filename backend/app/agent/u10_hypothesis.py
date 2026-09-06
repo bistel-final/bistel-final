@@ -46,7 +46,7 @@ def execute_hypothesis(
     generate: Callable[..., HypothesisOutcome],
     *,
     expected_model: str,
-    seed: int,
+    seed: int | None,
     clock_ns: Callable[[], int] = time.monotonic_ns,
 ) -> HypothesisResult:
     """One production generation (which owns correction retries and usage).
@@ -64,8 +64,7 @@ def execute_hypothesis(
         or not expected_model.strip()
         or expected_model != expected_model.strip()
         or len(expected_model) > 64
-        or type(seed) is not int
-        or seed < 0
+        or (seed is not None and (type(seed) is not int or seed < 0))
         or PROMPT_VERSION != "agent-hypothesis-v3-ko1"
     ):
         raise EvidenceError("U10_HYPOTHESIS_CONFIG_INVALID")

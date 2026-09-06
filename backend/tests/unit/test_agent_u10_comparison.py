@@ -7,6 +7,7 @@ from copy import deepcopy
 from statistics import mean, median
 
 import pytest
+from pydantic import ValidationError
 
 from app.agent import u10_comparison as u10
 from app.agent.release_artifacts import (
@@ -25,6 +26,56 @@ LLM = {
     "temperature": 0.0,
     "seed": 0,
 }
+
+
+def test_legacy_llm_serialization_and_nested_artifact_hash_are_unchanged():
+    cfg = u10.LlmConfiguration.model_validate(LLM)
+    assert cfg.model_dump() == LLM
+    assert json.loads(cfg.model_dump_json()) == LLM
+    assert digest(canonical_json(cfg)) == digest(canonical_json(LLM))
+    payload, _ = artifact_payload()
+    artifact = u10.Artifact.model_validate(payload)
+    assert artifact.model_dump()["llm"] == LLM
+    assert digest(canonical_json(artifact)) == digest(canonical_json(payload))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"temperature": 0.0},
+        {"seed": 0},
+        {"request_policy": None},
+        {"reasoning_effort": None},
+        {"reasoning_effort": "high"},
+        {"max_completion_tokens": None},
+        {"max_completion_tokens": 0},
+        {"max_completion_tokens": True},
+        {"max_completion_tokens": 128001},
+        {"hypothesis_model_revision": "gpt-5-other"},
+        {"selector_model_revision": "actual-model"},
+    ],
+)
+def test_luna_configuration_rejects_partial_or_false_parameter_claims(change):
+    from tests.unit.test_agent_u10_provider import luna_config
+
+    payload = luna_config().model_dump()
+    payload.update(change)
+    with pytest.raises(ValidationError):
+        u10.LlmConfiguration.model_validate(payload)
+
+
+def test_luna_policy_and_effective_parameters_are_bound_in_canonical_hash():
+    from tests.unit.test_agent_u10_provider import luna_config
+
+    cfg = luna_config()
+    raw = canonical_json(cfg)
+    assert u10.LlmConfiguration.model_validate_json(raw) == cfg
+    assert cfg.model_dump()["temperature"] is None
+    assert cfg.model_dump()["seed"] is None
+    changed = u10.LlmConfiguration.model_validate(
+        {**cfg.model_dump(), "max_completion_tokens": 1600}
+    )
+    assert digest(raw) != digest(canonical_json(changed))
 
 
 def ids(*values):
