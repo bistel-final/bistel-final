@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
 from app.agent import react as react_module
@@ -553,6 +552,10 @@ def build_agent_graph(
     interrupt_after: tuple[str, ...] | None = None,
 ) -> Any:
     """canonical graph node와 내부 ``fail_run``을 조립한다."""
+
+    # Offline evidence readers reuse the pure projection helpers in this module.
+    # Load checkpoint/serializer dependencies only when building an executor.
+    from langgraph.graph import END, START, StateGraph
 
     if interrupt_after and checkpointer is None:
         raise ValueError("HITL_CHECKPOINTER_REQUIRED")

@@ -296,6 +296,7 @@ def test_run_detail_uses_only_valid_stored_outputs_and_deduplicates(
         "reason",
         "approval_status",
         "deliveries",
+        "delivery_policy",
     }
     assert payload["prediction"] == {
         "predicted_fault_code": "RFM",

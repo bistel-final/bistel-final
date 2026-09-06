@@ -5574,7 +5574,7 @@
 - 정렬·제약: 단건
 - 호환·경계: 근거 ID provenance; diagnosis·evidence_assessment·impact_scope·similar_incidents·post_action_observation 5블록 필수, 구버전은 명시적 Empty
 - 계약 규칙:
-  - 없음
+  - delivery_policy 누락은 ACTION-POLICY-V1 호환이며 MOCK-NOTIFY-V1은 승인/반려·확인 기록 없이 이메일 및 자동 Kafka/MES Mock을 연동한다; 승인 상태는 null이다
 
 ```json
 {
@@ -5698,6 +5698,18 @@
                       "type": "object"
                     },
                     "type": "array"
+                  }
+                },
+                "delivery_policy": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": "ACTION-POLICY-V1",
+                    "enum": [
+                      "ACTION-POLICY-V1",
+                      "MOCK-NOTIFY-V1"
+                    ],
+                    "type": "string"
                   }
                 },
                 "reason": {
@@ -7477,6 +7489,7 @@
 - 정렬·제약: read-only immutable artifact projection
 - 호환·경계: 두 artifact는 독립 Empty 상태; aggregate allowlist만 공개; raw label·hash·경로 비노출
 - 계약 규칙:
+  - MOCK-NOTIFY-V1 golden_flow는 protocol을 명시하고 live 5 phase와 UNKNOWN/MANUAL_RETRY NOT_LIVE를 분리한다; 기존 V1 및 null Empty 응답은 보존한다
   - fault_5class와 golden_flow는 서로 독립적인 Empty 상태다
   - 원본 artifact 경로·hash·incident label은 공개하지 않는다
 
@@ -7921,93 +7934,195 @@
             }
           },
           "golden_flow": {
-            "nullable": true,
+            "nullable": false,
             "required": true,
             "schema": {
-              "additional_properties": false,
-              "fields": {
-                "dataset_epoch": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "min_length": 1,
-                    "type": "string"
-                  }
-                },
-                "phases": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "items": {
-                      "additional_properties": false,
-                      "fields": {
-                        "metrics": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "additional_properties": true,
-                            "fields": {},
-                            "type": "object"
-                          }
-                        },
-                        "phase": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "enum": [
-                              "BATCH_BASELINE",
-                              "DECISIONS",
-                              "MANUAL_RETRY",
-                              "PREFLIGHT",
-                              "PRE_APPROVAL",
-                              "SECOND_BATCH",
-                              "UNKNOWN"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "reasons": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "items": {
-                              "type": "string"
-                            },
-                            "type": "array"
-                          }
-                        },
-                        "status": {
-                          "nullable": false,
-                          "required": true,
-                          "schema": {
-                            "enum": [
-                              "EVIDENCE_INCOMPLETE",
-                              "FAIL",
-                              "PASS"
-                            ],
-                            "type": "string"
-                          }
-                        }
-                      },
-                      "type": "object"
+              "type": "union",
+              "variants": [
+                {
+                  "additional_properties": false,
+                  "fields": {
+                    "dataset_epoch": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
                     },
-                    "type": "array"
-                  }
+                    "phases": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "items": {
+                          "additional_properties": false,
+                          "fields": {
+                            "metrics": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "additional_properties": true,
+                                "fields": {},
+                                "type": "object"
+                              }
+                            },
+                            "phase": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "BATCH_BASELINE",
+                                  "DECISIONS",
+                                  "MANUAL_RETRY",
+                                  "PREFLIGHT",
+                                  "PRE_APPROVAL",
+                                  "SECOND_BATCH",
+                                  "UNKNOWN"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "reasons": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "status": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "EVIDENCE_INCOMPLETE",
+                                  "FAIL",
+                                  "PASS"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "status": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "EVIDENCE_INCOMPLETE",
+                          "FAIL",
+                          "PASS"
+                        ],
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": "object"
                 },
-                "status": {
-                  "nullable": false,
-                  "required": true,
-                  "schema": {
-                    "enum": [
-                      "EVIDENCE_INCOMPLETE",
-                      "FAIL",
-                      "PASS"
-                    ],
-                    "type": "string"
-                  }
+                {
+                  "additional_properties": false,
+                  "fields": {
+                    "dataset_epoch": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "min_length": 1,
+                        "type": "string"
+                      }
+                    },
+                    "phases": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "items": {
+                          "additional_properties": false,
+                          "fields": {
+                            "metrics": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "additional_properties": true,
+                                "fields": {},
+                                "type": "object"
+                              }
+                            },
+                            "phase": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "BATCH_BASELINE",
+                                  "MANUAL_RETRY",
+                                  "MOCK_RESULTS",
+                                  "NO_DECISIONS",
+                                  "PREFLIGHT",
+                                  "SECOND_BATCH",
+                                  "UNKNOWN"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "reasons": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              }
+                            },
+                            "status": {
+                              "nullable": false,
+                              "required": true,
+                              "schema": {
+                                "enum": [
+                                  "EVIDENCE_INCOMPLETE",
+                                  "FAIL",
+                                  "NOT_LIVE",
+                                  "PASS"
+                                ],
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "protocol": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "type": "string"
+                      }
+                    },
+                    "status": {
+                      "nullable": false,
+                      "required": true,
+                      "schema": {
+                        "enum": [
+                          "EVIDENCE_INCOMPLETE",
+                          "FAIL",
+                          "PASS"
+                        ],
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
                 }
-              },
-              "type": "object"
+              ]
             }
           },
           "golden_flow_empty_reason": {
@@ -8079,7 +8194,7 @@
 - 정렬·제약: created_at DESC
 - 호환·경계: delivery summary 포함
 - 계약 규칙:
-  - 없음
+  - delivery_policy 누락은 ACTION-POLICY-V1 호환이며 MOCK-NOTIFY-V1은 승인/반려·확인 기록 없이 이메일 및 자동 Kafka/MES Mock을 연동한다; 승인 상태는 null이다
 
 ```json
 {
@@ -8218,6 +8333,18 @@
                   "type": "object"
                 },
                 "type": "array"
+              }
+            },
+            "delivery_policy": {
+              "nullable": false,
+              "required": false,
+              "schema": {
+                "default": "ACTION-POLICY-V1",
+                "enum": [
+                  "ACTION-POLICY-V1",
+                  "MOCK-NOTIFY-V1"
+                ],
+                "type": "string"
               }
             },
             "equipment": {
@@ -8374,7 +8501,7 @@
 - 정렬·제약: 단건
 - 호환·경계: channel별 상태
 - 계약 규칙:
-  - 없음
+  - delivery_policy 누락은 ACTION-POLICY-V1 호환이며 MOCK-NOTIFY-V1은 승인/반려·확인 기록 없이 이메일 및 자동 Kafka/MES Mock을 연동한다; 승인 상태는 null이다
 
 ```json
 {
@@ -8524,6 +8651,18 @@
                 "type": "object"
               },
               "type": "array"
+            }
+          },
+          "delivery_policy": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "ACTION-POLICY-V1",
+              "enum": [
+                "ACTION-POLICY-V1",
+                "MOCK-NOTIFY-V1"
+              ],
+              "type": "string"
             }
           },
           "equipment": {
@@ -11575,6 +11714,18 @@
         "type": "array"
       }
     },
+    "delivery_policy": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "ACTION-POLICY-V1",
+        "enum": [
+          "ACTION-POLICY-V1",
+          "MOCK-NOTIFY-V1"
+        ],
+        "type": "string"
+      }
+    },
     "equipment": {
       "nullable": true,
       "required": true,
@@ -11736,6 +11887,18 @@
           "type": "object"
         },
         "type": "array"
+      }
+    },
+    "delivery_policy": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "ACTION-POLICY-V1",
+        "enum": [
+          "ACTION-POLICY-V1",
+          "MOCK-NOTIFY-V1"
+        ],
+        "type": "string"
       }
     },
     "equipment": {
@@ -12716,93 +12879,195 @@
       }
     },
     "golden_flow": {
-      "nullable": true,
+      "nullable": false,
       "required": true,
       "schema": {
-        "additional_properties": false,
-        "fields": {
-          "dataset_epoch": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "min_length": 1,
-              "type": "string"
-            }
-          },
-          "phases": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "items": {
-                "additional_properties": false,
-                "fields": {
-                  "metrics": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "additional_properties": true,
-                      "fields": {},
-                      "type": "object"
-                    }
-                  },
-                  "phase": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "BATCH_BASELINE",
-                        "DECISIONS",
-                        "MANUAL_RETRY",
-                        "PREFLIGHT",
-                        "PRE_APPROVAL",
-                        "SECOND_BATCH",
-                        "UNKNOWN"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "reasons": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "status": {
-                    "nullable": false,
-                    "required": true,
-                    "schema": {
-                      "enum": [
-                        "EVIDENCE_INCOMPLETE",
-                        "FAIL",
-                        "PASS"
-                      ],
-                      "type": "string"
-                    }
-                  }
-                },
-                "type": "object"
+        "type": "union",
+        "variants": [
+          {
+            "additional_properties": false,
+            "fields": {
+              "dataset_epoch": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
               },
-              "type": "array"
-            }
+              "phases": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "metrics": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": true,
+                          "fields": {},
+                          "type": "object"
+                        }
+                      },
+                      "phase": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "BATCH_BASELINE",
+                            "DECISIONS",
+                            "MANUAL_RETRY",
+                            "PREFLIGHT",
+                            "PRE_APPROVAL",
+                            "SECOND_BATCH",
+                            "UNKNOWN"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "reasons": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "EVIDENCE_INCOMPLETE",
+                            "FAIL",
+                            "PASS"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "EVIDENCE_INCOMPLETE",
+                    "FAIL",
+                    "PASS"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
           },
-          "status": {
-            "nullable": false,
-            "required": true,
-            "schema": {
-              "enum": [
-                "EVIDENCE_INCOMPLETE",
-                "FAIL",
-                "PASS"
-              ],
-              "type": "string"
-            }
+          {
+            "additional_properties": false,
+            "fields": {
+              "dataset_epoch": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "min_length": 1,
+                  "type": "string"
+                }
+              },
+              "phases": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "items": {
+                    "additional_properties": false,
+                    "fields": {
+                      "metrics": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "additional_properties": true,
+                          "fields": {},
+                          "type": "object"
+                        }
+                      },
+                      "phase": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "BATCH_BASELINE",
+                            "MANUAL_RETRY",
+                            "MOCK_RESULTS",
+                            "NO_DECISIONS",
+                            "PREFLIGHT",
+                            "SECOND_BATCH",
+                            "UNKNOWN"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "reasons": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "status": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "EVIDENCE_INCOMPLETE",
+                            "FAIL",
+                            "NOT_LIVE",
+                            "PASS"
+                          ],
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "protocol": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "status": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "EVIDENCE_INCOMPLETE",
+                    "FAIL",
+                    "PASS"
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
           }
-        },
-        "type": "object"
+        ]
       }
     },
     "golden_flow_empty_reason": {
@@ -13185,6 +13450,18 @@
         "type": "array"
       }
     },
+    "delivery_policy": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": "ACTION-POLICY-V1",
+        "enum": [
+          "ACTION-POLICY-V1",
+          "MOCK-NOTIFY-V1"
+        ],
+        "type": "string"
+      }
+    },
     "reason": {
       "nullable": false,
       "required": true,
@@ -13457,6 +13734,18 @@
                 "type": "object"
               },
               "type": "array"
+            }
+          },
+          "delivery_policy": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "default": "ACTION-POLICY-V1",
+              "enum": [
+                "ACTION-POLICY-V1",
+                "MOCK-NOTIFY-V1"
+              ],
+              "type": "string"
             }
           },
           "reason": {

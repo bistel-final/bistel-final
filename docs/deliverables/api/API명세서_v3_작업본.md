@@ -4,6 +4,12 @@
 
 **PhotoEtch FDC Agent Pilot — 최종 데이터 전환 작업본**
 
+> **2026-09-06 API 동기 보완(V5-C-7.1 / 구현리뷰 27차-2)**: `GET /agent/evaluations`의
+> `golden_flow`는 기존 V1 객체, `protocol=MOCK-NOTIFY-V1` 객체, 미설정 `null`을 모두 허용한다.
+> 새 정책은 `PREFLIGHT → BATCH_BASELINE → MOCK_RESULTS → NO_DECISIONS → SECOND_BATCH`의
+> live 5단과 `UNKNOWN`·`MANUAL_RETRY`의 `NOT_LIVE`를 구분하며 private evidence를 공개하지 않는다.
+> `delivery_policy`의 V1 기본값 및 신규 union을 `api_spec_v3.json`과 생성 MD·CSV·PDF에 함께 반영한다.
+
 ---
 
 ## 1. 문서 정보

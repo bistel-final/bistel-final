@@ -85,13 +85,15 @@ while (($#)); do
       ((WORKLOAD_OPTION == 0)) || usage
       WORKLOAD_OPTION=1; shift ;;
     --prepared-attempt|--abort-prepared|--recover-prepared)
-      (($# >= 2)) && [[ -n "$2" && "$2" != --* && -z "$PREPARED_PATH" ]] || usage
+      (($# >= 2)) || usage
+      [[ -n "$2" && "$2" != --* && -z "$PREPARED_PATH" ]] || usage
       PREPARED_PATH=$2
       [[ "$1" != --abort-prepared ]] || ABORT_OPTION=1
       [[ "$1" != --recover-prepared ]] || RECOVER_OPTION=1
       shift 2 ;;
     --approval-record)
-      (($# >= 2)) && [[ -n "$2" && "$2" != --* && -z "$APPROVAL_PATH" ]] || usage
+      (($# >= 2)) || usage
+      [[ -n "$2" && "$2" != --* && -z "$APPROVAL_PATH" ]] || usage
       APPROVAL_PATH=$2; shift 2 ;;
     *) usage ;;
   esac
@@ -108,7 +110,8 @@ if ((PREPARE_OPTION || WORKLOAD_OPTION)); then
     MODE=resume_workload
   fi
 elif ((ABORT_OPTION || RECOVER_OPTION)); then
-  ((HOLD_OPTION == 0)) && [[ -z "$APPROVAL_PATH" ]] || usage
+  ((HOLD_OPTION == 0)) || usage
+  [[ -z "$APPROVAL_PATH" ]] || usage
   if ((ABORT_OPTION)); then MODE=abort; else MODE=recover; fi
 else
   [[ -z "$PREPARED_PATH" && -z "$APPROVAL_PATH" ]] || usage
@@ -126,12 +129,14 @@ fi
 if [[ "$MODE" == resume ]] && jq -e '.schema_version == "level3-prepared-attempt-v2"' \
   "${CM52_REPORT_ROOT:-$CM52_REPO_ROOT/infra/bootstrap/reports}/cm-5.2/$ATTEMPT/robustness/prepared-attempt.json" >/dev/null 2>&1; then
   # Keep the public seven-mode parser; the leaf phase is named PUBLISH.
+  # Checked independently; this branch intentionally exits in the sourced owner.
+  # shellcheck source=/dev/null
   source "$SCRIPT_DIR/cm52_level3.sh"
   exit 1
 fi
 case "$MODE" in
   prepare|resume_workload)
-    # shellcheck source=cm52_level3.sh
+    # shellcheck source=/dev/null
     source "$SCRIPT_DIR/cm52_level3.sh"
     exit 1 ;;
 esac
@@ -163,6 +168,8 @@ if [[ "$MODE" == abort || "$MODE" == recover ]]; then
   RECOVERY_CLAIMED=0
   RECOVERY_CLEANUP_STARTED=0
   PHASE_RECORD=""
+  # Called through the EXIT trap below, not through ordinary control flow.
+  # shellcheck disable=SC2317,SC2329
   recovery_cleanup() {
     local original_rc=$1 cleanup_result=FAILED restore_result=FAILED result terminal code
     ((RECOVERY_CLEANUP_STARTED == 0)) || return

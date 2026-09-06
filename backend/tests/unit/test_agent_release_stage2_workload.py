@@ -56,6 +56,8 @@ def test_batch_stdout_is_reserved_before_exec_and_never_replayed(
         ("success", None),
         ("offsets", "GOLDEN_MOCK_BEFORE_OFFSETS_MISMATCH"),
         ("plan", "STAGE2_PENDING_POPULATION_INVALID"),
+        ("rejected", "STAGE2_PENDING_POPULATION_INVALID"),
+        ("incomplete", "STAGE2_PENDING_POPULATION_INVALID"),
         ("postcondition", "STAGE2_BATCH_POSTCONDITION_FAILED"),
     ],
 )
@@ -86,6 +88,10 @@ def test_execute_checks_population_before_once_and_snapshots_only_full_success(
         incomplete=[],
         excluded=dict(canonical_null_rows=0, canonical_null_by_source={}),
     )
+    if case in ("rejected", "incomplete"):
+        plan[case] = [
+            dict(lot_id="LOT002", chamber_id="EQP05-PM2", reason="INCOMPLETE_RUN")
+        ]
     events = []
     running = SimpleNamespace(
         containers={"runner": SimpleNamespace(container_id="a" * 64)}
@@ -140,7 +146,7 @@ def test_execute_checks_population_before_once_and_snapshots_only_full_success(
     expected = ["analytics", "offsets"]
     if case != "offsets":
         expected.append("plan")
-    if case not in ("offsets", "plan"):
+    if case not in ("offsets", "plan", "rejected", "incomplete"):
         expected.append("once")
     if case == "success":
         expected.append("BATCH_BASELINE")

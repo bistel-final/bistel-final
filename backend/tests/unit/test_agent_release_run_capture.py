@@ -1,7 +1,10 @@
 """Real persisted-row projection and scope validators with synthetic DTOs."""
 
+import subprocess
+import sys
 from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +19,32 @@ from scripts.read_release_runs import main
 from tests.unit.test_agent_release import S
 from tests.unit.test_agent_release_context import projection
 from tests.unit.test_agent_release_round import template  # noqa: F401
+
+
+@pytest.mark.parametrize("module", ["emit_level3_robustness", "stage2_level3_phase"])
+def test_offline_release_cli_import_never_loads_langgraph_checkpoint(module):
+    code = f"""
+import builtins, importlib, sys
+original = builtins.__import__
+def guard(name, *args, **kwargs):
+    if name.startswith('langgraph'):
+        raise AssertionError('OFFLINE_CHECKPOINT_IMPORT_FORBIDDEN')
+    return original(name, *args, **kwargs)
+builtins.__import__ = guard
+importlib.import_module('scripts.{module}')
+assert not any(name.startswith('langgraph') for name in sys.modules)
+print('OFFLINE_IMPORT_PASS')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == "OFFLINE_IMPORT_PASS\n"
+    assert result.stderr == ""
 
 
 def capture_args(raw, model):
