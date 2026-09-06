@@ -46,6 +46,22 @@ _RATIONALE_MAX: Final = 120
 _OBSERVATION_MAX: Final = 160
 _QUERY_MAX: Final = 200
 _FORBIDDEN_QUERY_CHARS: Final = frozenset("<>{}[]|\\`")
+_FEEDBACK_GUARD_CODES: Final = frozenset(
+    {
+        "REACT_GUARD_ARGUMENT_MATRIX",
+        "REACT_GUARD_BUDGET_EXHAUSTED",
+        "REACT_GUARD_CANDIDATE_UNKNOWN",
+        "REACT_GUARD_TARGET_REPEATED",
+        "REACT_GUARD_PARAMETER_NOT_OBSERVED",
+        "REACT_GUARD_SIBLING_UNRESOLVED",
+        "REACT_GUARD_CHAMBER_NOT_ALLOWED",
+        "REACT_GUARD_QUERY_EMPTY",
+        "REACT_GUARD_QUERY_INVALID",
+        "REACT_GUARD_QUERY_REPEATED",
+        "REACT_GUARD_EQUIPMENT_REPEATED",
+        "REACT_GUARD_TOOL_NOT_ALLOWED",
+    }
+)
 
 ReactNext = Literal[
     "get_fdc_summary",
@@ -955,6 +971,31 @@ def production_port() -> ReactSelectPort:
     return select_next_step
 
 
+def selector_tool_events(trace: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
+    """Feed observed outcomes and code-owned rejections back to the selector.
+
+    Never echo rejected arguments, rationale, or arbitrary guard-code suffixes.
+    The existing recent_tools prompt field and its four-event bound are reused.
+    """
+    events = []
+    for step in trace:
+        tool = step.get("tool")
+        if tool not in (*REACT_TOOLS, "stop"):
+            continue
+        if step.get("phase") == "OBSERVED" and isinstance(
+            step.get("observation_summary"), str
+        ):
+            events.append(
+                _clip(f"{tool}: {step['observation_summary']}", _OBSERVATION_MAX)
+            )
+        elif (
+            step.get("phase") == "REJECTED"
+            and step.get("guard_code") in _FEEDBACK_GUARD_CODES
+        ):
+            events.append(f"{tool}: REJECTED {step['guard_code']}")
+    return tuple(events[-4:])
+
+
 def build_context(
     *,
     run_id: str,
@@ -1040,16 +1081,7 @@ def build_context(
         remaining_tool_calls=max(0, remaining_tool_calls),
         remaining_steps=max(0, remaining_steps),
         guard_rejections=guard_rejections,
-        recent_tool_events=tuple(
-            _clip(
-                f"{step.get('tool') or 'unknown'}: "
-                f"{step.get('observation_summary')}",
-                _OBSERVATION_MAX,
-            )
-            for step in react_trace
-            if step.get("phase") == "OBSERVED"
-            and isinstance(step.get("observation_summary"), str)
-        ),
+        recent_tool_events=selector_tool_events(react_trace),
     )
 
 

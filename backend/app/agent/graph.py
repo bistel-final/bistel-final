@@ -1058,6 +1058,7 @@ def build_agent_graph(
                 update={
                     "guard_rejections": rejections,
                     "remaining_steps": max(0, react_module.REACT_MAX_STEPS - steps),
+                    "recent_tool_events": react_module.selector_tool_events(trace),
                 }
             )
         if selection.next == "stop":
