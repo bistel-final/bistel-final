@@ -72,6 +72,7 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     action_id: CORE_AGENT_RUN.action_id,
     agent_run_id: CORE_AGENT_RUN.agent_run_id,
     action_code: CORE_AGENT_RUN.recommended_action,
+    delivery_policy: 'ACTION-POLICY-V1',
     reason: CORE_APPROVAL.reason,
     approval_status: CORE_APPROVAL.status,
     deliveries: CORE_AGENT_RUN.deliveries.map((delivery) => ({
