@@ -27,6 +27,7 @@ SOURCE_FILES = (
     "app/agent/u10_attempt.py",
     "app/agent/u10_batch.py",
     "app/agent/u10_comparison.py",
+    "app/agent/u10_selector_trace.py",
     "app/agent/u10_inventory.py",
     "app/agent/u10_source.py",
     "app/agent/u10_export.py",

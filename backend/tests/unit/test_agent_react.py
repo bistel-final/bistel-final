@@ -447,6 +447,7 @@ def test_prompt_and_trace_never_carry_raw_documents_or_secrets() -> None:
         "candidates",
         "observations",
         "budget",
+        "checked_dimensions",
     }
     entry = react.trace_entry(
         seq=1,

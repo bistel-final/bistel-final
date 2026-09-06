@@ -122,6 +122,74 @@ def _excursion(parameter: ParameterSummaryItem) -> tuple[str, float] | None:
     return "BOTH" if above and below else "ABOVE" if above else "BELOW", max(ratios)
 
 
+_ORIGIN_MENTION = re.compile(
+    r"(?P<UPSTREAM>상류|upstream)|(?P<DOWNSTREAM>하류|downstream)|"
+    r"(?P<EQUIPMENT_COMMON>설비\s*공통|장비\s*공통|공통\s*(?:설비|장비|원인)|"
+    r"equipment_common)",
+    re.I,
+)
+_CLAUSE_BOUNDARY = re.compile(r"[.!?;\n]|지만|(?:이며|이고)\s+|그러나|반면")
+_EXPLICIT_ASSERTION = re.compile(
+    r"(?:확인|확정|입증|검증)(?:됨|되었|됐|되었습니다|되었다|했다|하였)|"
+    r"(?:원인|영향)(?:이다|입니다)|(?:confirmed|established)",
+    re.I,
+)
+_ORIGIN_LIMITATION = re.compile(
+    r"미(?:조사|확인|검증)|"
+    r"(?:조사|조회|검증|확인)(?:하지|되지|하지는|되지는)\s*않|"
+    r"(?:확정|판단|단정|확인|배제)(?:할|하기|하기는)?\s*"
+    r"(?:수\s*(?:없|없는)|불가|어렵|못)|"
+    r"(?:정보|근거|자료)(?:가|는)?\s*(?:부족|없)|"
+    r"(?:조사|조회|확인|검증)(?:이|가)?\s*(?:필요|예정|대상)|"
+    r"가능성|가설|후보|의심",
+    re.I,
+)
+
+
+def _narrative_origin_claims(draft: HypothesisDraftV3) -> set[str]:
+    """Separate findings from proposed checks; a direction word is not a claim.
+
+    This is a bounded consistency check, not general natural-language proof.
+    A caveat applies only to its own clause/scope mention, never to another
+    sentence or an explicit completed finding. Structured claims remain subject
+    to the observation/citation checks even when prose contains a caveat.
+    """
+    findings = (
+        draft.cause_summary,
+        draft.evidence_synthesis,
+        draft.impact_summary,
+        *draft.observations,
+    )
+    proposals = (
+        draft.uncertainty,
+        *draft.verification_steps,
+        *draft.limitations,
+        *(
+            text
+            for alternative in draft.alternative_hypotheses
+            for text in (alternative.summary, alternative.lower_rank_reason)
+        ),
+    )
+    claimed: set[str] = set()
+    for texts, finding_field in ((findings, True), (proposals, False)):
+        for text in texts:
+            for clause in _CLAUSE_BOUNDARY.split(text):
+                mentions = tuple(_ORIGIN_MENTION.finditer(clause))
+                for index, mention in enumerate(mentions):
+                    end = (
+                        mentions[index + 1].start()
+                        if index + 1 < len(mentions)
+                        else len(clause)
+                    )
+                    statement = clause[mention.start() : end]
+                    explicit = _EXPLICIT_ASSERTION.search(statement) is not None
+                    limitation = _ORIGIN_LIMITATION.search(statement) is not None
+                    if explicit or (finding_field and not limitation):
+                        assert mention.lastgroup is not None
+                        claimed.add(mention.lastgroup)
+    return claimed
+
+
 def finalize_hypothesis(
     draft: HypothesisDraftV3,
     fdc_results: Sequence[FdcSummaryToolResult | None],
@@ -193,13 +261,9 @@ def finalize_hypothesis(
         "PARAMETER": set(snapshot.source_ids.parameter_ids),
     }
     compared = comparison_matrix(route, investigation)
-    for dimension, pattern in (
-        ("UPSTREAM", r"상류|upstream"),
-        ("DOWNSTREAM", r"하류|downstream"),
-    ):
-        if draft.origin_claim.scope == dimension or re.search(
-            pattern, draft.cause_summary, re.I
-        ):
+    narrative_claims = _narrative_origin_claims(draft)
+    for dimension in ("UPSTREAM", "DOWNSTREAM"):
+        if draft.origin_claim.scope == dimension or dimension in narrative_claims:
             if getattr(compared, dimension.lower()) != "CHECKED" or not any(
                 relations.get(key) == dimension for key in draft.supporting_lot_hist_ids
             ):
@@ -221,6 +285,11 @@ def finalize_hypothesis(
             scope = "UNDETERMINED"
         if diagnostics is not None:
             diagnostics.append(capture_dropped(dropped))
+    # Preserve the established all-dropped -> UNDETERMINED recovery, but do not
+    # accept an originally empty basis or an unchecked cross-chamber claim.
+    if scope == "EQUIPMENT_COMMON" or "EQUIPMENT_COMMON" in narrative_claims:
+        if not basis or compared.sibling != "CHECKED":
+            raise ValueError("ORIGIN_CLAIM_UNSUPPORTED")
     return Hypothesis(
         **draft.model_dump(exclude={"parameter_findings_draft", "origin_claim"}),
         parameter_findings=tuple(findings),

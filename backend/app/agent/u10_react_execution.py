@@ -14,8 +14,15 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from app.agent.investigation_models import ComparisonMatrix
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
-from app.agent.u10_comparison import Inventory, ReadCall, SelectorCall, Tokens
+from app.agent.u10_comparison import (
+    Inventory,
+    ReadCall,
+    SelectorCall,
+    Tokens,
+    derive_compared,
+)
 from app.agent.u10_read_execution import ReadObservation, ReadRequest, ReadSession
 
 if TYPE_CHECKING:
@@ -180,6 +187,15 @@ def execute_react_policy(
                 "remaining_steps": react.REACT_MAX_STEPS - len(measurements),
                 "guard_rejections": rejections,
                 "structure_retry": False,
+                "successful_inputs": tuple(
+                    {"tool": c.tool_name, "request": c.input.copy()}
+                    for c in history
+                    if c.status is ToolCallStatus.SUCCESS
+                ),
+                "checked_dimensions": ComparisonMatrix.model_validate(
+                    derive_compared(inventory, session.calls).model_dump()
+                ),
+                "documents_available": inventory.documents,
                 "recent_tool_events": react.selector_tool_events(
                     [step.model_dump(mode="json") for step in trace]
                 ),

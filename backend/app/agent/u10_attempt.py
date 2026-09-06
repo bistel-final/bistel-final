@@ -137,6 +137,7 @@ def execute_react_attempt(
             "STEP_CAP",
         },
         read_stop_reason=reads.stop_reason,
+        selector_trace=reads,
         observe_effects=observe_effects,
         started=started,
         clock_ns=clock_ns,
@@ -210,6 +211,7 @@ def execute_fixed_attempt(
         hypothesis=hypothesis,
         read_complete=True,
         read_stop_reason="FIXED_PATH",
+        selector_trace=None,
         observe_effects=observe_effects,
         started=started,
         clock_ns=clock_ns,
@@ -231,6 +233,7 @@ def _finish(
     hypothesis,
     read_complete,
     read_stop_reason,
+    selector_trace,
     observe_effects,
     started,
     clock_ns,
@@ -288,6 +291,13 @@ def _finish(
             read_stop_reason=read_stop_reason,
         )
     action = decide_action(route).action if ok else None
+    if llm.selector_prompt_version == "agent-react-v2-ko2":
+        from app.agent.u10_selector_trace import project_selector_trace
+
+        diagnostics["selector_trace"] = (
+            [] if selector_trace is None else project_selector_trace(selector_trace)
+        )
+        diagnostics["read_stop_reason"] = read_stop_reason
     safety, effects = observe_effects()
     elapsed = clock_ns() - started
     if elapsed <= 0:

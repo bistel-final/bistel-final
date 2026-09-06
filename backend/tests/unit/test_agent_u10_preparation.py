@@ -135,12 +135,15 @@ def test_source_contract_uses_real_schemas_and_projection():
         in spec["selector"]["schema"]["properties"]["arguments"]["properties"]
     )
     assert set(spec["source_sha256"]) == set(source.SOURCE_FILES)
+    assert "app/agent/u10_selector_trace.py" in spec["source_sha256"]
     assert source.tool_contract_sha256() == digest(canonical_json(spec))
     spec["selector"]["schema"]["type"] = "null"
     assert source.tool_contract_spec()["selector"]["schema"]["type"] == "object"
 
 
-@pytest.mark.parametrize("change", ["projection", "source", "schema", "fixed"])
+@pytest.mark.parametrize(
+    "change", ["projection", "source", "selector_trace", "schema", "fixed"]
+)
 def test_source_change_invalidates_pin(monkeypatch, change):
     params, _, _, _ = inputs()
     b = params["benchmark"].model_copy(
@@ -149,9 +152,10 @@ def test_source_change_invalidates_pin(monkeypatch, change):
     assert source.verify_source_binding(b) == b.tool_contract_sha256
     if change == "projection":
         monkeypatch.setattr(source, "projection_sha256", lambda: "0" * 64)
-    elif change == "source":
+    elif change in {"source", "selector_trace"}:
         actual = source.source_hashes()
-        actual["app/agent/react.py"] = "0" * 64
+        name = "react" if change == "source" else "u10_selector_trace"
+        actual[f"app/agent/{name}.py"] = "0" * 64
         monkeypatch.setattr(source, "source_hashes", lambda: actual)
     elif change == "fixed":
         b = b.model_copy(update={"fixed_policy_sha256": "0" * 64})
