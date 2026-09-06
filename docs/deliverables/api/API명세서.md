@@ -7057,6 +7057,10 @@
                     "nullable": true,
                     "required": false,
                     "schema": {
+                      "enum": [
+                        "agent-react-v2-ko1",
+                        "agent-react-v2-ko2"
+                      ],
                       "type": "string"
                     }
                   },
@@ -15151,6 +15155,10 @@
               "nullable": true,
               "required": false,
               "schema": {
+                "enum": [
+                  "agent-react-v2-ko1",
+                  "agent-react-v2-ko2"
+                ],
                 "type": "string"
               }
             },
@@ -21517,6 +21525,10 @@
       "nullable": true,
       "required": false,
       "schema": {
+        "enum": [
+          "agent-react-v2-ko1",
+          "agent-react-v2-ko2"
+        ],
         "type": "string"
       }
     },

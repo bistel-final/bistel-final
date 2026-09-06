@@ -893,8 +893,15 @@ def build_agent_graph(
 
     # ---- V5-C-7.1 Level 3 ReAct: 조사는 에이전트가, 조치는 규칙이 ----
     def _react_context(state: AgentGraphState) -> react_module.ReactContext:
+        from app.agent.hypothesis_v3 import comparison_matrix
+
         budget = state["tool_budget"]
         remaining = max(0, budget.max_calls - budget.used - budget.send_budget)
+        successful = tuple(
+            {"tool_name": call.tool_name, "input": call.input}
+            for call in dependencies.tools.history(state["run_id"])
+            if call.status.value == "SUCCESS"
+        )
         return react_module.build_context(
             run_id=state["run_id"],
             lot_id=state["lot_id"],
@@ -912,6 +919,19 @@ def build_agent_graph(
             remaining_steps=react_module.REACT_MAX_STEPS - state.get("react_steps", 0),
             guard_rejections=state.get("react_guard_rejections", 0),
             react_trace=state.get("react_trace", ()),
+            successful_inputs=tuple(
+                {"tool": c["tool_name"], "request": c["input"]} for c in successful
+            ),
+            checked_dimensions=comparison_matrix(
+                state["route"], InvestigationEvidence(successful_calls=successful)
+            ),
+            documents_available=callable(
+                getattr(
+                    getattr(dependencies.tools, "boundary", dependencies.tools),
+                    "document_search",
+                    None,
+                )
+            ),
         )
 
     def react_select(state: AgentGraphState) -> dict[str, Any]:

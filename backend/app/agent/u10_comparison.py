@@ -27,6 +27,7 @@ from app.agent.release_artifacts import (
     canonical_json,
     digest,
 )
+from app.agent.u10_selector_trace import SelectorStep, check_selector_trace
 
 DIAGNOSTIC_FIELDS = frozenset(
     {
@@ -361,6 +362,7 @@ class Attempt(EvidenceModel):
         Annotated[list[DroppedBasisRef], Field(max_length=16)] | None
     ) = None
     read_stop_reason: ReadStopReason | None = None
+    selector_trace: Annotated[list[SelectorStep], Field(max_length=30)] | None = None
 
 
 def _require(condition: bool, code: str) -> None:
@@ -373,6 +375,8 @@ def _sum_tokens(calls: list[SelectorCall]) -> dict[str, int]:
 
 
 def _check_attempt(a: Attempt, fixture: Fixture, order: int) -> dict[str, Any]:
+    if a.selector_trace is not None:
+        check_selector_trace(a)
     _require(a.execution_order == order, "EXECUTION_ORDER_MISMATCH")
     _require(
         a.initial_snapshot_sha256 == fixture.initial_snapshot_sha256,
@@ -722,7 +726,7 @@ class LlmConfiguration(EvidenceModel):
     hypothesis_prompt_version: Literal[
         "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
     ]
-    selector_prompt_version: Literal["agent-react-v2-ko1"]
+    selector_prompt_version: Literal["agent-react-v2-ko1", "agent-react-v2-ko2"]
     temperature: Annotated[float, Field(ge=0, le=0)] | None
     seed: Count | None
     request_policy: Literal["U10-LUNA-REASONING-V1"] | None = None
@@ -783,6 +787,20 @@ class Artifact(EvidenceModel):
                 else getattr(llm, "hypothesis_prompt_version", None)
             )
             rows = value.get("attempts", [])
+            selector_version = (
+                llm.get("selector_prompt_version")
+                if isinstance(llm, dict)
+                else getattr(llm, "selector_prompt_version", None)
+            )
+            if selector_version == "agent-react-v2-ko2" and isinstance(rows, list):
+                for row in rows:
+                    keys = (
+                        row.keys()
+                        if isinstance(row, dict)
+                        else getattr(row, "model_fields_set", set())
+                    )
+                    if "selector_trace" not in keys:
+                        raise ValueError("U10_SCHEMA_INVALID")
             if version == "agent-hypothesis-v3-ko2" and isinstance(rows, list):
                 for row in rows:
                     keys = (
@@ -797,6 +815,10 @@ class Artifact(EvidenceModel):
     @model_validator(mode="after")
     def diagnostic_version(self):
         for row in self.attempts:
+            if self.llm.selector_prompt_version == "agent-react-v2-ko2":
+                check_selector_trace(row)
+            else:
+                _require(row.selector_trace is None, "U10_SCHEMA_INVALID")
             if self.llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko1":
                 _require(
                     all(getattr(row, key) is None for key in DIAGNOSTIC_FIELDS),
@@ -809,6 +831,9 @@ class Artifact(EvidenceModel):
     @model_serializer(mode="wrap")
     def serialize_diagnostics(self, handler):
         value = handler(self)
+        if self.llm.selector_prompt_version == "agent-react-v2-ko1":
+            for row in value["attempts"]:
+                row.pop("selector_trace", None)
         if self.llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko1":
             for row in value["attempts"]:
                 for key in DIAGNOSTIC_FIELDS:

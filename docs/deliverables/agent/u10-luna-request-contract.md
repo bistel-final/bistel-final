@@ -28,7 +28,7 @@ temperature=0 실험이 아니다. 실제 제공자 호환성·성능은 승인 
   "hypothesis_model_revision": "gpt-5.6-luna",
   "selector_model_revision": "gpt-5.6-luna",
   "hypothesis_prompt_version": "agent-hypothesis-v3-ko2",
-  "selector_prompt_version": "agent-react-v2-ko1",
+  "selector_prompt_version": "agent-react-v2-ko2",
   "temperature": null,
   "seed": null,
   "request_policy": "U10-LUNA-REASONING-V1",
@@ -47,6 +47,11 @@ temperature=0 실험이 아니다. 실제 제공자 호환성·성능은 승인 
   명시적 정책을 additive로 기록하며 이전 코드가 새 프로필을 검증할 수 있다고 주장하지 않는다.
 
 ## 실행 전 / HTTP 경계
+
+U12부터 신규 selector는 `agent-react-v2-ko2`다. ko1 저장본은 읽지만 새 실행 admission은
+실제 prompt 상수와 exact 대조하므로 ko1 설정을 거부한다. 위 예시는 새 승인이 아니며
+기존 llm/export 파일·claim을 수정하지 않는다. 합성 문서의 bounded 발췌가 가설뿐 아니라
+selector 입력에도 전달됨을 새 export 범위 확인에 포함한다.
 
 1. revision·raw SHA·export 승인 검증 후, claim·DB·DNS 전에 런타임 설정을 검증한다.
 2. 모델·reasoning effort·출력 토큰 상한이 승인 설정과 일치해야 한다. 런타임 temperature는

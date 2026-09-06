@@ -1,5 +1,33 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
+> **2026-09-07 U12 구현**: selector `agent-react-v2-ko2`에 가드 규칙·도구의 조사 목적·
+> 자율 종료 기준과 성공 request 기반 history/metrology observed, 기존 5차원 조사 상태 및
+> documents 조회 상태를 전달한다. 문서의 `chunk_id/title/section/excerpt`는 selector 전용이며
+> 최대 3 hit·발췌 120자·객체 배열 480자다. 공개 trace는 기존 title/section 요약을 유지한다.
+> 발췌는 신뢰하지 않는 자료이며 지시로 실행하지 않는다. 새 도구·새 요약 LLM 호출은 없다.
+> 같은 합성 문서 발췌가 selector에도 반출됨을 새 export 범위 확인에 포함한다.
+
+## U12 private selector trace
+
+ko2 artifact의 모든 attempt는 `selector_trace` 키가 필수다. REACT는 실제 trace와 ReadCall의
+선택 순서/slot/retry를 결속한 non-empty 배열, FIXED는 selector 미실행을 나타내는 `[]`다.
+ko1 artifact는 해당 키 없이 재직렬화해 기존 bytes/SHA를 보존한다.
+event는 seq·phase·tool·slot·retry·guard_code·stop_reason·llm_call만 포함한다.
+인자/query/rationale/관찰 본문을 평가 artifact에 복사하지 않는다.
+
+- SELECTED와 REJECTED는 selector 호출을 계수하고 OBSERVED는 실제 read(retry 포함)만 센다.
+- schema 오류 두 번은 REJECTED-schema 두 건에서 각각 계수한다. REACT_STRUCTURE_INVALID
+  terminal은 추가 호출이 아니다. LLM_STOP과 timeout/dependency terminal은 각 호출을 계수한다.
+- `Σ llm_call == selector_calls <= 10`, 실제 read 순서/slot/retry, GUARD_LIMIT·terminal 사유를
+  검사한다. 불일치는 `U10_DIAGNOSTIC_INCONSISTENT`이며 기존 연구 판정식을 바꾸지 않는다.
+- usage 미관측 timeout 등은 `METRIC_PRECONDITION_INVALID`, artifact 미발급·claim 보존이다.
+  미관측 사용량을 0으로 합성하지 않는다. timeout trace는 executor 메모리 단위에서만 검증한다.
+- selector_calls와 transport 재시도·가설 요청을 포함한 provider_requests는 다른 계수다.
+
+현재 구현/단위 테스트는 실제 모델 선택 품질 향상이나 NO_GAIN 해소의 증거가 아니다.
+형제 chamber 정상/이상 수치 손실과 가설 검증 결함은 후속 범위다. 실 LLM 재실험·공용 적용은
+별도 승인 대상이며 기존 R/R′/R″/R‴/R⁗ artifact·receipt·claim은 변경하지 않는다.
+
 > **2026-09-06 R‴ 범위 불일치 보완**: U10 selector에는 공통 inventory가 실행할 수 있는 후보만
 > 투영한다. CURRENT FDC와 inventory 방향의 인접 FDC, 현재 이력과 지정 sibling chamber,
 > 표본이 있을 때의 CURRENT metrology를 유지한다. 후보 ID 재번호 부여·oracle 참조·도구 순서

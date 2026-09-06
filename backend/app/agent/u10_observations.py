@@ -165,6 +165,10 @@ class ObservationContext:
             remaining_tool_calls=0,
             remaining_steps=0,
             guard_rejections=0,
+            successful_inputs=tuple(
+                {"tool": c["tool_name"], "request": c["input"]}
+                for c in self._successful_calls
+            ),
         ).model_copy(deep=True)
 
     def authorize(

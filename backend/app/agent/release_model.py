@@ -35,7 +35,7 @@ class RuntimeLlmConfiguration(EvidenceModel):
     hypothesis_prompt_version: Literal[
         "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
     ]
-    selector_prompt_version: Literal["agent-react-v2-ko1"]
+    selector_prompt_version: Literal["agent-react-v2-ko1", "agent-react-v2-ko2"]
     temperature: float | None = Field(ge=0, le=2, allow_inf_nan=False)
     seed: None
 
