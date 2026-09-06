@@ -27,6 +27,7 @@ class HypothesisResult:
     cited_evidence_ids: EvidenceIds | None
     latency_ms: int
     error_code: str | None
+    error_detail: str | None = None
 
     def measured_tokens(self) -> Tokens:
         if self.usage is None:
@@ -54,6 +55,7 @@ def execute_hypothesis(
     Call after the read loop. This neither declares attempt completion nor
     derives U10's inventory-bound compared matrix or an action/delivery.
     """
+    from app.agent.hypothesis import PROMPT_VERSION as GENERATOR_PROMPT_VERSION
     from app.agent.hypothesis import HypothesisGenerationError
     from app.agent.hypothesis_v3 import comparison_matrix
     from app.agent.prompts import PROMPT_VERSION
@@ -65,7 +67,7 @@ def execute_hypothesis(
         or expected_model != expected_model.strip()
         or len(expected_model) > 64
         or (seed is not None and (type(seed) is not int or seed < 0))
-        or PROMPT_VERSION != "agent-hypothesis-v3-ko1"
+        or PROMPT_VERSION != GENERATOR_PROMPT_VERSION
     ):
         raise EvidenceError("U10_HYPOTHESIS_CONFIG_INVALID")
     inputs = context.hypothesis_inputs()
@@ -86,11 +88,12 @@ def execute_hypothesis(
         return value
 
     start = clock_ns()
-    raw_outcome, raw_usage, error = None, None, None
+    raw_outcome, raw_usage, error, detail = None, None, None, None
     try:
         raw_outcome = generate(**inputs, seed=seed)
     except HypothesisGenerationError as exc:
         raw_usage, error = exc.usage_or_none, exc.code
+        detail = exc.last_rejection_reason
     except Exception:
         # Unknown exceptions cannot prove usage. Never fabricate zero tokens or
         # retain provider text/URLs/credentials in a comparison result.
@@ -100,7 +103,9 @@ def execute_hypothesis(
         raise EvidenceError("MONOTONIC_CLOCK_INVALID")
     latency = elapsed // 1_000_000
     if error is not None:
-        return HypothesisResult(None, usage_value(raw_usage), None, latency, error)
+        return HypothesisResult(
+            None, usage_value(raw_usage), None, latency, error, detail or error
+        )
     if not isinstance(raw_outcome, HypothesisOutcome):
         raise EvidenceError("U10_HYPOTHESIS_RESULT_INVALID")
     outcome = HypothesisOutcome.model_validate(raw_outcome.model_dump()).model_copy(
@@ -113,7 +118,9 @@ def execute_hypothesis(
     return HypothesisResult(
         outcome,
         usage,
-        project_hypothesis_citations(outcome.hypothesis),
+        project_hypothesis_citations(
+            outcome.hypothesis, dropped=outcome.origin_diagnostics
+        ),
         latency,
         None,
     )

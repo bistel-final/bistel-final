@@ -158,9 +158,14 @@ def execute_batch(
                 if env.select is None:
                     raise EvidenceError("U10_ATTEMPT_ENVIRONMENT_INVALID")
                 result = execute_react_attempt(**common, select=env.select)
-            row = Attempt.model_validate(result.attempt.model_dump()).model_copy(
-                deep=True
-            )
+            # Preserve explicit presence; a defaulted null must not become an
+            # observed ko2 field through a standalone dump before Artifact sees it.
+            row = Attempt.model_validate(
+                {
+                    name: getattr(result.attempt, name)
+                    for name in result.attempt.model_fields_set
+                }
+            ).model_copy(deep=True)
             if (row.fixture_id, row.attempt_no, row.policy, row.execution_order) != (
                 key.fixture_id,
                 key.attempt_no,

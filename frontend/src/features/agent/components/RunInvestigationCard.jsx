@@ -15,6 +15,9 @@ export default function RunInvestigationCard({ diagnosis }) {
         <h2 className="text-[15px] font-extrabold text-navy">파라미터 판정 · 조사 범위</h2>
         <span className="text-sm text-g1">소재 판정: {ORIGIN_LABELS[origin.scope] ?? '미확정'}</span>
       </div>
+      {origin.degraded && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="status">
+        출처 근거 일부 검증 불가(강등 {origin.dropped_basis_count}건)
+      </p>}
       {findings.length ? (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-left text-sm">

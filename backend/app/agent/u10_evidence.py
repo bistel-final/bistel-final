@@ -104,7 +104,9 @@ def project_read_evidence(tool: str, result: Any) -> EvidenceIds:
     return _ids(())
 
 
-def project_hypothesis_citations(hypothesis: Hypothesis) -> EvidenceIds:
+def project_hypothesis_citations(
+    hypothesis: Hypothesis, *, dropped=None
+) -> EvidenceIds:
     """Keep unsupported citations for the evaluator; never intersect available.
 
     This checks shape, NOT truth or generation provenance. Production hypothesis
@@ -128,4 +130,11 @@ def project_hypothesis_citations(hypothesis: Hypothesis) -> EvidenceIds:
     for finding in value.parameter_findings:
         refs.append(("PARAMETER", finding.parameter_id))
         refs.extend(("LOT_HIST", item) for item in finding.lot_hist_ids)
+    if dropped is not None:
+        from app.agent.origin_diagnostics import OriginDiagnostics
+
+        dropped = OriginDiagnostics.model_validate(dropped.model_dump())
+        refs.extend(
+            tuple(token.split(":", 1)) for token in dropped.dropped_evidence_ids
+        )
     return _ids(refs)

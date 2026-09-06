@@ -250,6 +250,31 @@ def evaluate(evidence):
     return subject.assess_round(subject.RoundEvidence.model_validate(evidence))
 
 
+def test_origin_degradation_is_reported_without_changing_round_gate(evidence):
+    baseline, _ = evaluate(evidence)
+    evidence["llm"]["hypothesis_prompt_version"] = "agent-hypothesis-v3-ko2"
+    config_sha = digest(
+        canonical_json(
+            dict(llm=evidence["llm"], endpoint_sha256=evidence["model_endpoint_sha256"])
+        )
+    )
+    evidence["model_config_digest"] = config_sha
+    for run in evidence["runs"]:
+        run["hypothesis_prompt_version"] = "agent-hypothesis-v3-ko2"
+        run["model_config_digest"] = config_sha
+    origin = evidence["runs"][0]["hypothesis"]["origin_assessment"]
+    origin.update(
+        degraded=True,
+        degraded_reasons=["ORIGIN_BASIS_OUTSIDE_EVIDENCE"],
+        dropped_basis_count=2,
+    )
+    summary, _ = evaluate(evidence)
+    assert summary.degraded_origin_count == 1
+    assert summary.robustness_verdict == baseline.robustness_verdict == "PASS"
+    assert summary.failed_checks == baseline.failed_checks == []
+    assert summary.run_assessments[0].origin_degraded
+
+
 def test_twelve_scoped_runs_recompute_counts_citations_arithmetic_and_cost(evidence):
     summary, targets = evaluate(evidence)
     assert summary.robustness_verdict == summary.delivery_snapshot_verdict == "PASS"

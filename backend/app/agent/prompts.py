@@ -18,6 +18,7 @@ from app.agent.diagnostics import (
     WaferParameterObservation,
 )
 from app.agent.investigation_models import ComparisonMatrix, InvestigationEvidence
+from app.agent.origin_diagnostics import rejection_code
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
@@ -26,7 +27,7 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-PROMPT_VERSION: Final = "agent-hypothesis-v3-ko1"
+PROMPT_VERSION: Final = "agent-hypothesis-v3-ko2"
 MAX_PROMPT_CHARS: Final = 12_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
 MAX_PROMPT_MEMBER_ALARMS: Final = 12
@@ -367,8 +368,15 @@ def build_hypothesis_messages(
         "이탈 방향·크기·wafer_scope·compared는 코드가 계산하므로 출력에 넣지 마세요. "
         "non-OTH는 유효 이탈 finding이 필요하고 cause_summary에 해당 parameter_id를 "
         "모두 포함하세요. origin_claim.scope와 basis_refs를 고르고 "
-        "namespace별 제공 ID만 "
-        "인용하세요. 상류/하류 주장은 그 차원이 CHECKED이며 해당 방향 lot_hist를 "
+        "basis_refs의 namespace→id 복사 원본은 다음과 같습니다: "
+        "ALARM=diagnostic_snapshot.source_ids.alarm_refs의 토큰 문자열 그대로 "
+        "(supporting_alarms 객체나 alarm_id가 아님); CHUNK=document.hits[].chunk_id; "
+        "RELATION=route.graph_evidence[].relation_ids; "
+        "LOT_HIST=diagnostic_snapshot.source_ids.lot_hist_ids; "
+        "PARAMETER=diagnostic_snapshot.source_ids.parameter_ids. "
+        "확신이 없으면 basis_refs: []와 scope: UNDETERMINED를 사용하세요. "
+        "빈 배열은 유효합니다. "
+        "상류/하류 주장은 그 차원이 CHECKED이며 해당 방향 lot_hist를 "
         "실제로 인용할 때만 허용됩니다. 미조사는 NOT_CHECKED, 대상 부재는 "
         "NOT_AVAILABLE이며 서로 다릅니다. 계측 결과는 품질 근거입니다. "
         "추가 키 없이 다음 17개 키와 값 형태를 정확히 사용하세요: "
@@ -389,9 +397,30 @@ def build_hypothesis_messages(
     if correction_reason is not None:
         user += (
             "\n이전 출력은 다음 안전 사유 코드로 거부되었습니다: "
-            f"{correction_reason}. 같은 근거로 JSON을 다시 작성하세요. 인용 "
+            f"{rejection_code(correction_reason)}. 같은 근거로 JSON을 다시 작성하세요. "
+            "인용 "
             "식별자는 시스템 지시에 명시된 배열에서 정확히 복사하고 document_id, "
             "title, chamber_id 또는 추론한 식별자로 대체하지 마세요."
+        )
+        sources = diagnostic_snapshot.source_ids if diagnostic_snapshot else None
+        allowed = {
+            "ALARM": sources.alarm_refs if sources else [],
+            "CHUNK": [h.chunk_id for h in document_evidence.hits]
+            if document_evidence is not None and document_evidence.ok
+            else [],
+            "RELATION": sources.relation_ids if sources else [],
+            "LOT_HIST": sources.lot_hist_ids if sources else [],
+            "PARAMETER": sources.parameter_ids if sources else [],
+        }
+        summaries = {}
+        for namespace, values in allowed.items():
+            # Only bounded identifier tokens, never paths or model-rejected text.
+            ids = sorted(
+                {v for v in values if re.fullmatch(r"[A-Za-z0-9:_\-]{1,64}", v)}
+            )
+            summaries[namespace] = {"ids": ids[:12], "omitted_count": len(ids[12:])}
+        user += "\n허용 ID 요약(생략분은 원 Evidence JSON 참조): " + json.dumps(
+            summaries, ensure_ascii=False, separators=(",", ":")
         )
     messages = [
         {"role": "system", "content": system},

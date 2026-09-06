@@ -211,7 +211,30 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
 
 - 성공 FDC가 하나도 없으면 generator 호출 없이 `HYPOTHESIS_EVIDENCE_INSUFFICIENT`를 반환한다.
 - 수정 재시도와 사용량 합산은 기존 가설 v3가 소유한다. 어댑터는 재시도를 추가하지 않는다.
-- 성공·실패 모두 실제 usage의 model 및 `agent-hypothesis-v3-ko1`을 대조한다.
+- 성공·실패 모두 실제 usage의 model 및 현재 `prompts.PROMPT_VERSION`을 대조한다.
+  U11 신규 실행은 `agent-hypothesis-v3-ko2`이며 ko1 artifact 읽기 호환은 유지한다.
+
+### U11 ko2 진단 계약
+
+Artifact의 llm 버전이 진단 직렬화/검증을 소유한다. ko1은 진단 미관측(None)을 그대로
+유지하고 아래 7키를 출력하지 않는다. ko2는 원 입력에서 7키 존재를 먼저 검사한다.
+`hypothesis_final_reason`만 nullable이며 정상 strict 완료는 명시적 null, 강등은
+`DEGRADED:ORIGIN_BASIS_OUTSIDE_EVIDENCE`, 거부는 안전 코드, 정상 가설의 읽기 미완료는
+`READ_LOOP_INCOMPLETE`다. 나머지 6키는 null을 허용하지 않는다.
+
+- `service_completion`, `origin_degraded`, `dropped_basis_count`, `dropped_basis_unique`,
+  `hypothesis_final_reason`, `dropped_basis_refs`, `read_stop_reason`.
+- 강등된 결과는 strict `completion=false`다. 서비스 완료는 읽기 종료/재시도 조건을
+  통과한 경우만 true이며 verdict에 쓰지 않는다. strict 변화와 서비스 증가분을 별도 보고한다.
+- ReAct 종료 코드는 실제 executor에서 전달한다. 성공 read 뒤 selector dependency 종료도
+  서비스 완료가 아니다. Fixed는 `FIXED_PATH`와 기존 전체 경로/예산 조건을 검사한다.
+- 표시용 제거 ID는 안전 형식/64자/16개 상한이다. 지표는 제거된 모든 namespace/raw-id의
+  `namespace:DROPPED#<sha256(raw_id) 앞 16hex>`를 인용 집합에 포함해 중복 관계를 유지한다.
+  `unsupported_count=len(cited-available)`와 판정식/rules SHA는 변경하지 않는다.
+  available/required의 예약 접두는 금지하고, count·unique·인용 토큰 수를 교차 검증한다.
+- 신규 실행 admission은 claim 전과 매 HTTP 전에 실제 가설/selector 모듈 버전과 설정을
+  비교한다. 과거 ko1 설정은 새 실행에 사용할 수 없다. 원본 부정 결과/receipt는 보존하며
+  새 R″의 입력·설정 결속과 별도 반출 재승인 이후에만 재실행한다.
   usage 미관측은 `None`으로 보존하며 `measured_tokens()`는 이를 0으로 바꾸지 않고
   `METRIC_PRECONDITION_INVALID`로 거부한다. timeout 전 관측된 부분 usage는 보존한다.
 - 안전한 오류 코드와 generator 구간 monotonic latency만 반환한다. 예외 원문은 저장하지 않는다.

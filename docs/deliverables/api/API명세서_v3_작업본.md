@@ -1068,7 +1068,11 @@ selector provider model은 trace 공개 필드에 포함하지 않는다. 선택
 (`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된
 namespace별 근거와 상류·하류·형제·이력·계측의 `CHECKED|NOT_CHECKED|NOT_AVAILABLE`를 담는다.
 LLM draft에 산술·compared 필드를 받지 않는다. 새 prediction은 `agent-evidence-v3`,
-가설 prompt는 `agent-hypothesis-v3-ko1`이며 v1·v2 저장본 읽기를 유지한다. 경로·status code와
+신규 가설 prompt는 `agent-hypothesis-v3-ko2`이며 `agent-hypothesis-v3-ko1`과
+v1·v2 저장본 읽기를 유지한다. `origin_assessment`에는 `degraded`(기본 false),
+`degraded_reasons`(기본 [], 강등 시 `ORIGIN_BASIS_OUTSIDE_EVIDENCE`),
+`dropped_basis_count`(기본 0, 최대 40)를 추가한다. 제거된 ID·private 진단은 공개하지 않는다.
+화면은 "출처 근거 일부 검증 불가(강등 n건)"으로 표시하며 조치 규칙은 변경하지 않는다. 경로·status code와
 CM-5.1 operation 모집단(20/30/36)은 변하지 않는다.
 
 ### 5.3 팀 release 필수 확장 API

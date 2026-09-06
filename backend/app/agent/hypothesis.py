@@ -18,6 +18,7 @@ from app.agent.diagnostics import (
 )
 from app.agent.hypothesis_v3 import comparison_matrix, finalize_hypothesis
 from app.agent.investigation_models import InvestigationEvidence
+from app.agent.origin_diagnostics import OriginDiagnostics, rejection_code
 from app.agent.prompts import (
     PROMPT_VERSION,
     HypothesisPromptError,
@@ -208,12 +209,19 @@ ERROR_CODES: Final[frozenset[str]] = frozenset(
 class HypothesisGenerationError(RuntimeError):
     """원문 응답·URL·key·provider 예외를 노출하지 않는 가설 오류."""
 
-    def __init__(self, code: str, *, usage: LlmUsage | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        usage: LlmUsage | None = None,
+        last_rejection_reason: str | None = None,
+    ) -> None:
         if code not in ERROR_CODES:
             code = "LLM_DEPENDENCY"
         super().__init__(code)
         self.code = code
         self._usage = usage
+        self.last_rejection_reason = rejection_code(last_rejection_reason, code)
 
     @property
     def usage_or_none(self) -> LlmUsage | None:
@@ -453,6 +461,7 @@ def generate_hypothesis(
             correction_reason = "JSON_INVALID"
             continue
 
+        diagnostics: list[OriginDiagnostics] = []
         try:
             hypothesis = finalize_hypothesis(
                 draft,
@@ -461,6 +470,8 @@ def generate_hypothesis(
                 diagnostic_snapshot,
                 document_evidence,
                 investigation,
+                degrade_origin=_round == MAX_GENERATION_ROUNDS - 1,
+                diagnostics=diagnostics,
             )
         except ValueError as exc:
             correction_reason = str(exc)
@@ -484,13 +495,18 @@ def generate_hypothesis(
                 diagnostic_snapshot=diagnostic_snapshot,
                 evidence_assessment=evidence_assessment,
                 impact_scope=impact_scope,
+                origin_diagnostics=diagnostics[0] if diagnostics else None,
             )
 
     logger.warning(
         "hypothesis output rejected after correction (reason=%s)",
-        correction_reason or "STRUCTURE_INVALID",
+        rejection_code(correction_reason),
     )
-    raise HypothesisGenerationError("HYPOTHESIS_STRUCTURE_INVALID", usage=accumulated)
+    raise HypothesisGenerationError(
+        "HYPOTHESIS_STRUCTURE_INVALID",
+        usage=accumulated,
+        last_rejection_reason=rejection_code(correction_reason),
+    )
 
 
 def production_port() -> (

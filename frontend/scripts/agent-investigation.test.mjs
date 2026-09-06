@@ -36,6 +36,13 @@ try {
   } } }
   const html = renderToStaticMarkup(React.createElement(Card, { diagnosis }))
   for (const text of ['양방향 이탈', '300%', '확인', '미확인', '대상 없음']) assert.ok(html.includes(text))
+  assert.doesNotMatch(html, /출처 근거 일부 검증 불가/)
+  const degraded = { ...diagnosis, origin_assessment: { ...diagnosis.origin_assessment,
+    degraded: true, degraded_reasons: ['ORIGIN_BASIS_OUTSIDE_EVIDENCE'], dropped_basis_count: 2,
+  } }
+  const badge = renderToStaticMarkup(React.createElement(Card, { diagnosis: degraded }))
+  assert.match(badge, /출처 근거 일부 검증 불가\(강등 2건\)/)
+  assert.doesNotMatch(badge, /DROPPED#|INVALID_FORMAT|ORIGIN_BASIS_OUTSIDE_EVIDENCE/)
 } finally {
   await server.close()
 }

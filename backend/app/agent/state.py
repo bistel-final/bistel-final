@@ -35,6 +35,7 @@ from app.agent.investigation_models import (
     ParameterFinding,
     ParameterFindingDraft,
 )
+from app.agent.origin_diagnostics import OriginDiagnostics
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.config import AGENT_MAX_TOOL_CALLS
 from app.common.enums import (
@@ -171,6 +172,8 @@ class HypothesisOutcome(StateModel):
     diagnostic_snapshot: IncidentDiagnosticSnapshot | None = None
     evidence_assessment: EvidenceAssessmentBlock | None = None
     impact_scope: ImpactScopeBlock | None = None
+    # Never forwarded to graph State/prediction/DTO; U10 consumes it in memory.
+    origin_diagnostics: OriginDiagnostics | None = None
 
 
 class ActionDecision(StateModel):

@@ -6125,6 +6125,35 @@
                           "type": "object"
                         }
                       },
+                      "degraded": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "degraded_reasons": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": [],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "dropped_basis_count": {
+                        "nullable": false,
+                        "required": false,
+                        "schema": {
+                          "default": 0,
+                          "maximum": 40,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
                       "scope": {
                         "nullable": false,
                         "required": true,
@@ -14161,6 +14190,35 @@
                     "type": "object"
                   }
                 },
+                "degraded": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "degraded_reasons": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": [],
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "dropped_basis_count": {
+                  "nullable": false,
+                  "required": false,
+                  "schema": {
+                    "default": 0,
+                    "maximum": 40,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
                 "scope": {
                   "nullable": false,
                   "required": true,
@@ -14328,6 +14386,35 @@
                 "type": "string"
               },
               "type": "array"
+            }
+          },
+          "degraded": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          "degraded_reasons": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "ORIGIN_BASIS_OUTSIDE_EVIDENCE"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "dropped_basis_count": {
+            "nullable": false,
+            "required": false,
+            "schema": {
+              "maximum": 40,
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "missing_sources": {
@@ -20463,6 +20550,35 @@
           }
         },
         "type": "object"
+      }
+    },
+    "degraded": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": false,
+        "type": "boolean"
+      }
+    },
+    "degraded_reasons": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "dropped_basis_count": {
+      "nullable": false,
+      "required": false,
+      "schema": {
+        "default": 0,
+        "maximum": 40,
+        "minimum": 0,
+        "type": "integer"
       }
     },
     "scope": {
