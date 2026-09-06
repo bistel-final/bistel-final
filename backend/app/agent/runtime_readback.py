@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 PROFILES = {
@@ -15,6 +17,11 @@ PROFILES = {
 def validate_readback(payload: Mapping[str, Any], profile: str) -> None:
     if type(profile) is not str or profile not in PROFILES:
         raise ValueError("READBACK_PROFILE_INVALID")
+    if payload.get("schema_version") == "agent-runtime-readback-v2" and (
+        payload.get("action_policy") != "MOCK-NOTIFY-V1"
+        or profile == "production_level2"
+    ):
+        raise ValueError("AUTONOMY_LEVEL_NOT_READY")
     if (
         type(payload.get("autonomy_level")) is not int
         or type(payload.get("level3_enabled")) is not bool
@@ -61,6 +68,10 @@ def collect_readback() -> dict[str, Any]:
     from app.common import config
     from app.common.db import get_app_engine
 
+    policy = getattr(config, "AGENT_ACTION_POLICY", "ACTION-POLICY-V1")
+    if policy not in {"ACTION-POLICY-V1", "MOCK-NOTIFY-V1"}:
+        raise ValueError("AUTONOMY_LEVEL_NOT_READY")
+
     try:
         with get_app_engine().connect() as connection:
             database, user = connection.execute(
@@ -69,20 +80,34 @@ def collect_readback() -> dict[str, Any]:
     except Exception as exc:
         raise ValueError("RUNTIME_IDENTITY_UNAVAILABLE") from exc
     ack = config.AGENT_LEVEL3_DEMO_ACK
+
+    def validator(attempt):
+        return receipt_matches(
+            attempt, evaluation_artifact_path=config.AGENT_FAULT_EVAL_ARTIFACT_PATH
+        )
+
+    if policy == "MOCK-NOTIFY-V1":
+        from app.agent.release_grant import release_grant_matches
+
+        def validator(attempt):
+            return release_grant_matches(
+                reports_root=Path("/reports"),
+                expected_attempt_id=attempt,
+                expected_revision=os.environ.get("BISTEL_SOURCE_REVISION", ""),
+                expected_policy=policy,
+            )
+
     return {
-        "schema_version": "agent-runtime-readback-v1",
+        "schema_version": "agent-runtime-readback-v2"
+        if policy == "MOCK-NOTIFY-V1"
+        else "agent-runtime-readback-v1",
+        **({"action_policy": policy} if policy == "MOCK-NOTIFY-V1" else {}),
         "database": database,
         "database_user": user,
         "autonomy_level": config.AGENT_AUTONOMY_LEVEL,
         "level3_enabled": config.AGENT_LEVEL3_ENABLED,
         "demo_ack": ack,
-        "ack_matches_receipt": bool(
-            ack
-            and receipt_matches(
-                ack,
-                evaluation_artifact_path=config.AGENT_FAULT_EVAL_ARTIFACT_PATH,
-            )
-        ),
+        "ack_matches_receipt": bool(ack and validator(ack)),
         "budget_policy": {
             "level12_total": config.AGENT_MAX_TOOL_CALLS,
             "level3_total": config.AGENT_LEVEL3_MAX_TOOL_CALLS,

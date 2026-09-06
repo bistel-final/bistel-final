@@ -55,6 +55,7 @@ class EvaluationPopulation:
     baseline_snapshot_artifact_sha256: str
     oracle_sha256: str
     population_sha256: str
+    prediction_hash: str | None = None
 
     @property
     def run_ids(self) -> tuple[str, ...]:
@@ -134,6 +135,10 @@ def _population_sha256(members: tuple[PopulationMember, ...]) -> str:
 
 def load_evaluation_population(evidence_path: Path) -> EvaluationPopulation:
     """원 evidence를 완전 검증한 뒤 baseline exact 모집단을 다시 도출한다."""
+
+    raw = _json_object(evidence_path)
+    if raw.get("schema_version") == "mock-notify-golden-evidence-v1":
+        return _load_mock_population(evidence_path, raw)
 
     try:
         bundle = load_evidence_bundle(evidence_path)
@@ -218,6 +223,71 @@ def load_evaluation_population(evidence_path: Path) -> EvaluationPopulation:
         oracle_sha256=_file_sha256(ORACLE_PATH),
         population_sha256=_population_sha256(ordered),
     )
+
+
+def _load_mock_population(evidence_path, raw):
+    """Freeze the original 12 CREATED L3 IDs, never a later retry/query population."""
+    from app.agent.release_artifacts import Component
+    from app.agent.release_golden import verify_mock_golden
+
+    try:
+        if (
+            evidence_path.name != "mock-notify-evidence.json"
+            or evidence_path.parent.name != "evidence"
+        ):
+            raise ValueError
+        root = evidence_path.parent.parent
+        _, manifest, snapshot = verify_mock_golden(
+            root=root,
+            evidence=Component(
+                relative_path="evidence/mock-notify-evidence.json",
+                sha256=_file_sha256(evidence_path),
+            ),
+            expected_attempt_id=raw["attempt_id"],
+            expected_revision=raw["R"],
+        )
+        oracle = _load_oracle()
+        oracle_by_key = {
+            IncidentKey(i.lot_id, i.chamber_id): i for i in oracle.incidents
+        }
+        runs = {r.agent_run_id: r for r in snapshot.runs}
+        members = []
+        for action in snapshot.actions:
+            key = IncidentKey(action.lot_id, action.chamber_id)
+            run = runs[action.agent_run_id]
+            if (
+                key not in oracle_by_key
+                or run.autonomy_level != 3
+                or run.retry_of_run_id is not None
+                or action.link_role != "CREATED"
+                or action.action_code != run.action
+            ):
+                raise ValueError
+            members.append(
+                PopulationMember(
+                    incident=key,
+                    agent_run_id=run.agent_run_id,
+                    action_id=action.action_id,
+                    expected_action=oracle_by_key[key].expected_action,
+                )
+            )
+        if len(members) != 12 or {m.incident for m in members} != set(oracle_by_key):
+            raise ValueError
+        ordered = tuple(sorted(members))
+        return EvaluationPopulation(
+            members=ordered,
+            golden_evidence_sha256=_file_sha256(evidence_path),
+            baseline_snapshot_artifact_sha256=manifest.snapshots[
+                "BATCH_BASELINE"
+            ].sha256,
+            oracle_sha256=_file_sha256(ORACLE_PATH),
+            population_sha256=_population_sha256(ordered),
+            prediction_hash=_json_object(
+                root / manifest.snapshots["BATCH_BASELINE"].relative_path
+            )["prediction_hash"],
+        )
+    except Exception:
+        raise PopulationEvidenceInvalid("EVIDENCE_INVALID") from None
 
 
 __all__ = [

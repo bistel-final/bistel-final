@@ -32,8 +32,9 @@ from app.agent.release_lifecycle import (  # noqa: E402
 )
 from app.agent.release_prepared import (  # noqa: E402
     SMTP_APPROVERS,
-    PreparedAttempt,
     SmtpGrant,
+    SmtpGrantV2,
+    parse_prepared,
     validate_grant,
 )
 
@@ -52,17 +53,18 @@ def issue_grant(
     with lifecycle_lock(root):
         if classify_state(read_lifecycle(root)) != "PREPARED":
             raise EvidenceError("LIFECYCLE_TRANSITION_INVALID")
-        prepared = PreparedAttempt.model_validate(
-            parse_json(read_private(root, prepared_path.name))
-        )
+        prepared = parse_prepared(parse_json(read_private(root, prepared_path.name)))
         expected = (
             f"SMTP_SEND_GRANT {prepared.attempt_id} "
             f"{prepared.recipient.canonical_hash} 7"
         )
         if confirmation != expected:
             raise EvidenceError("SMTP_EXPLICIT_CONFIRMATION_REQUIRED")
-        grant = SmtpGrant(
-            schema_version="smtp-send-grant-v1",
+        is_mock = prepared.schema_version == "level3-prepared-attempt-v2"
+        grant_model = SmtpGrantV2 if is_mock else SmtpGrant
+        grant = grant_model(
+            schema_version="smtp-send-grant-v2" if is_mock else "smtp-send-grant-v1",
+            **({"action_policy_version": "MOCK-NOTIFY-V1"} if is_mock else {}),
             grant_type="SMTP_SEND_GRANT",
             attempt_id=prepared.attempt_id,
             prepared_attempt=component_ref(root, prepared_path.name),

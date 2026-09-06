@@ -101,6 +101,12 @@ AGENT_EMAIL_RECIPIENTS = os.getenv("AGENT_EMAIL_RECIPIENTS")
 # production factory가 DB 접근 전에 exact path와 secret을 함께 검증한다(V5-C-4.5).
 N8N_WF3_URL = os.getenv("N8N_WF3_URL")
 
+# Explicit rollout preserves existing approval-gated runs/artifacts until the
+# workflow import and new execution evidence are verified. No new schema is needed.
+AGENT_ACTION_POLICY = os.getenv("AGENT_ACTION_POLICY", "ACTION-POLICY-V1")
+if AGENT_ACTION_POLICY not in {"ACTION-POLICY-V1", "MOCK-NOTIFY-V1"}:
+    raise RuntimeError("ACTION_POLICY_INVALID")
+
 # FastAPI
 API_HOST = get_env("API_HOST", "0.0.0.0")
 API_PORT = int(get_env("API_PORT", "8000"))

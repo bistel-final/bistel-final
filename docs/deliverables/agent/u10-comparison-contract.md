@@ -1,9 +1,19 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
-담당 방대혁(C). 계획 v60의 **묶음 B 구현·로컬 검증 범위**다. CF8·32 attempt 코어와
-실 provider/관측 경계·private 발급 runner를 연결했다. 25차 구현리뷰의 회귀 누락을 보완했으며
-묶음 B 전체 25차-1 재리뷰 대기다. 실 LLM 실행은 미수행이다.
-운영 전환 Gate 완성은 아니며 묶음 C(Stage2·robustness·delivery)는 별도다.
+> 2026-09-06 사용자 승인 변경: 아래 release 증적은 기존 `ACTION-POLICY-V1` 전용이다.
+> 새 `MOCK-NOTIFY-V1`은 확인 기록 없이 이메일 + 자동 MES Mock이며 9/3 대기·pre-HITL Kafka 0·승인
+> 증적을 재사용할 수 없다. 기존 Stage2/readback/production Level 3는 새 정책을 거부한다.
+> [새 정책 계약과 후속 증적 전환](mock-notify-contract.md). 이 변경은 기존 묶음 B 리뷰 통과 범위가 아니다.
+
+담당 방대혁(C). 계획 v60. 묶음 B는 25차-1 리뷰 **필수·권장·편집 0** 후 `7e5ce22`에 반영됐다.
+CF8·32 attempt 코어와 실 provider/관측 경계·private 발급 runner를 연결했다.
+현재 **묶음 C 구현 진행 중**이며 delivery/completion/round 검증·aggregate offline 발급과
+WF2 읽기 전용 API 수집·DB callback 조립부, 고정 이미지/지속 runner의 하위 실행 어댑터를
+추가했다. private prepared 발급 helper와 A preflight/n8n probe·container context 수집
+조립부를 연결했다. 2026-09-06 후속으로 실제 모델/게시 SHA readback, production preflight
+세 Gate와 fence/rollback wrapper, 현재 SMTP observer, 재개 검증·phase helper 및 checkpoint/DB
+12-run 읽기 수집부를 추가했다. **Stage2 7-mode의 실행·정리·발급 연결은 미완료**이며,
+운영 전환이나 실 LLM/SMTP 배치를 수행한 것은 아니다.
 기존 `comparison.py`의 historical v1/v2 발급물은 변경하지 않는다.
 
 ## 입력과 결속
@@ -749,8 +759,8 @@ seed)만 가진다. grant는 위의 별도 승인 스키마를 따른다. 파일
 artifact는 보존되고 완료 파일은 없다. 승인·실행 기록 확인 후 기존 A receipt CLI로만 복구할 수 있다.
 failed batch를 새 32-run으로 자동 치환하지 않는다.
 
-묶음 B의 25차 리뷰 보완 후 **묶음 전체 25차-1 독립 재리뷰 대기**로 인계한다. 실 LLM 연구 실행과
-최종 R 발급을 완료했다는 뜻은 아니다. 묶음 C는 착수하지 않았다.
+묶음 B는 25차 리뷰 보완 후 25차-1 독립 재리뷰를 통과했다. 실 LLM 연구 실행과
+최종 R 발급을 완료했다는 뜻은 아니다. 후속 묶음 C의 진행 범위는 아래 절과 구분한다.
 
 25차 보완 전 관련 선택 회귀 1174 passed, provider/runner/CI 집중 회귀 45 passed, runtime 변경
 메모리 변이 8/8 탐지. 원본 ZIP/실 PostgreSQL dry-run은 CF8/32 preparation PASS·LLM 0회다.
@@ -780,6 +790,522 @@ R6의 네 필드는 개별 제거했다. pytest exit 1만 탐지로 세며 수�
 `export.json`을 초안 작성하고, 사용자 확인 뒤 0600 저장·독립 raw SHA를 고정한다.
 만료는 짧은 실행 창(예: 3시간)으로 한정한다. 공수 승인을 반출 승인으로 대신하지 않는다.
 
+## 묶음 C 진행 — delivery/completion component 검증
+
+`release_delivery.verify_delivery()`는 round validator가 독립 검증한 EMAIL target 7개,
+round가 결속한 component 3개(`delivery_receipts`, `prepared_attempt`, `smtp_approval`),
+R/attempt/resume/capture 시각을 입력으로 받는다. 파일 위치는 private bundle root와 고정
+파일명으로만 resolve하며 SHA → strict schema → 상호 결속 순서로 검사한다.
+
+- target은 WARNING 4·EQP_HOLD 3, 고유 action ID/멱등 request hash 7개다.
+- `level3-delivery-receipts-v1`은 `PRE_HITL` 시점의 DB callback projection과 WF2 execution
+  projection을 별도 배열로 보존한다. 각 7개를 action ID/request hash로 1:1 대조한다.
+- callback `SENT`, n8n `success`, 고유 execution/message ID, DB/provider message ID 일치,
+  수신자 목록에서 재계산한 v2 hash, 기존 승인요청 3건 execution ID 집합을 검사한다.
+- prepared/grant/R/attempt·config allowlist와 **당시 resume 시각**의 승인을 다시 확인한다.
+  오프라인 재검증 시각으로 TTL을 판정하지 않는다. `resume_at == expires_at`은 거부한다.
+- 확인한 모든 파일을 재조회해 중간 교체도 거부한다. 성공 결과에는 주소·원문을 넣지 않는다.
+  DB 7행이나 execution ID만으로 SMTP acceptance를 통과시키지 않는다. 수신함 도달 검증은 아니다.
+
+`release_completion.verify_completion()`은 completion에서 실제 resume claim/HELD outcome/
+publish claim/prepared/round1까지 결속을 추적한다. 기존 `classify_state()`와 exact completion
+schema를 재사용하고, caller가 검증한 R/attempt/round SHA/capture 시각을 대조한다.
+caller가 독립 지정한 게시 root의 `attempt.json`, `golden-flow.json`, `fault-5class.json` bytes를
+실제로 읽어 completion의 SHA와 비교한 뒤 lifecycle·게시 파일 drift를 다시 확인한다.
+expired grant를 publish 시점에 새로 소비하지 않는다. FAIL completion·잘못된 phase·추가 abort
+claim·누락된 연결·다른 R/attempt·다른 게시 bytes는 통과할 수 없다.
+
+`release_round.assess_round()`와 `verify_round()`는 **BATCH_BASELINE_PRE_HITL** 시점의
+12-run 입력을 production DTO·`ObservationContext`로 재생한다. canonical incident 12개와
+고유 run/action ID, member alarm의 조치 5/4/3, 상태 9/3, R/3종 image label·dataset·fixture·
+budget·모델/프롬프트 provenance를 확인한다. Tool의 성공 응답만 조사 근거로 받아들이고
+실제 조회 범위·`compared`·가설 인용·파라미터 이탈 산술을 기존 production 함수로 재계산한다.
+중첩 DTO에서도 추가 필드·bool/string 수치 위장을 거부하며 lot-history 고유성과 FDC의
+wafer 번호·설비·recipe 식별자를 route에 대조한다.
+
+`selector_seq=null`은 mandatory initial FDC(+실패 뒤 1회 retry)에만 허용한다.
+나머지 조회는 production graph의 **SELECTED를 덮어쓴 OBSERVED 슬롯**에 1:1 결속하고
+tool/실제 argument digest/순서를 검사한다. U10 연구 실행기의 SELECTED+OBSERVED 쌍을
+그대로 넣는 형식이 아니다. read 8회·동일 Tool 4회·selector 10회 제한, 정상 stop·degraded·
+조사 축 coverage를 판정하고 token 합계/read 횟수/nearest-rank p50·p95를 다시 계산한다.
+SMTP 상태·채널/멱등 key·pre-HITL Kafka offset 변화는 **delivery_snapshot_verdict**로
+분리한다. 이는 기존 provider acceptance 검사와 합쳐야 하며, DB snapshot만으로
+`delivery_integrity=PASS`라고 판단하지 않는다. `batch_summary`를 신뢰하지 않고 재계산해
+비교하며 `round1.json`의 private SHA와 검사 중 drift를 검증한다.
+
+`release_aggregate.assess_aggregate()`는 이제 위 세 검사를 **2-component aggregate**로
+연결한다. `round1`·`round1_completion`을 시작점으로 prepared/grant/delivery와 resume claim/
+HELD outcome/publish claim까지 실제 SHA를 따라가며, caller가 별도로 준 R·ACK attempt와
+prepared의 image ID 3종·preflight SHA를 대조한다. completion은 PASS만 수용한다.
+게시 root도 caller가 지정하며 artifact 안의 절대경로를 소비하지 않는다.
+
+CM52의 `attempt.json` 기존 6필드·backend/frontend ID+label 문자열을 확인하고,
+golden/fault는 **기존 `validate_golden_summary`·`validate_artifact`**로 의미를 검증한다.
+golden PASS·fault hard Gate·R·hypothesis model/prompt·정책·공통 evidence SHA를 대조하고
+이 검사를 통과한 **바로 그 bytes**를 completion SHA와 다시 비교한다. 검사 종료 시
+payload·lifecycle 파일 집합 및 게시 bytes를 재조회한다. 조사 FAIL은 전달 축을 오염시키지
+않으며 SMTP provider/grant 실패는 `delivery_integrity=FAIL`에만 반영한다.
+
+aggregate에는 `qualification_scope=SINGLE_STAGE2_BATCH`, `round_count=1`, `run_count=12`,
+`repeatability=NOT_MEASURED`와 재계산한 batch summary가 들어간다. `verify_aggregate()`는
+저장된 verdict·집계·수신자 hash/count를 다시 계산해 대조한다. 다른 attempt·경로 탈출·symlink·
+missing claim·변조된 SHA·거짓 PASS는 거부한다. 이는 반복 재현성을 측정했다는 뜻이 아니다.
+
+`emit_level3_robustness.py --aggregate`는 이미 존재하는 증적을 받아 **repo 밖 0700 root**에
+`aggregate.json`만 0600·O_EXCL로 발급한다. 기존 aggregate나 MANIFEST가 있으면 거부한다.
+`validate_level3_robustness.py --artifact`는 읽기 전용 offline validator다. 두 명령은 별도의
+`--published-root`, `--expect-revision`, `--expect-attempt-id`를 요구하고, emitter는 추가로
+`--bundle-root`, `--repository`가 필요하다. 양 축 PASS만 exit 0이고 실패 축은 exit 1이며,
+무결성이 검증된 FAIL aggregate는 보존한다. parser/예외 출력에 입력 원문을 복사하지 않고
+항상 `deployment_authorized=false`를 명시한다. 후속에서 `--seal`·`--copy-seal`·`--public`을
+추가했다(아래 절). **아직 round/completion live capture mode는 없다.**
+
+발급 lock 최초 생성 경합에서 macOS의 `O_CREAT|O_NOFOLLOW` open이 ENOENT로 실패한 사례를
+재현했다. 공통 `lifecycle_lock()`은 O_EXCL 생성 후 EEXIST이면 **기존 inode를 열어 flock**하는
+방식으로 보완했다. inode 교체·삭제·잠금 재시도 없이 동시 발급을 차단한다.
+
+**당시 경계(아래 2026-09-06 후속 절에서 갱신):** aggregate offline 연결까지 구현했으며 실 수집기·runtime preflight 연결은 아니었다.
+round/completion 발급 연결과 DB/n8n capture 진위는
+후속 구현해야 한다. 합성 단위 테스트의 `round1`/게시 payload를
+진짜 견고성 산출물로 사용하지 않는다. 당시 `u10_preflight` CLI의 robustness/delivery는 NOT_RUN이며
+production 허용은 false였다. Stage2의 Level 3 plain full/hold 차단은 계속 유지한다.
+
+신규 회귀 62건, release/CI 집중 212 passed, 메모리 검사 제거 변이 9/9 탐지(rc=1만 RED).
+관련 선택 회귀 1295 passed·1 skipped. skip은 기존 Stage2 shellcheck 검사(도구 미설치)이며,
+Stage2 실행 회귀는 별도 재확인에서도 43 passed다. 원격 CI 결과는 아니다.
+실 SMTP·LLM·DB·Docker 실행 및 사용자 grant 발급은 하지 않았다.
+후속 round 재계산 회귀 60건 추가, release/CI 집중 **272 passed**.
+후속 최종 코드의 관련 선택 회귀 **1355 passed·1 skipped**(255.84초, exit 0).
+skip은 동일한 shellcheck 미설치 검사이며 실 실행/배포 결과가 아니다.
+모집단·pin·trace/조회·산술·compared·예산·전달·Kafka·집계·자료형·식별자 검사 제거 변이
+**12/12 탐지**(rc=1만 RED, source bytes 보존).
+양성 fixture는 canonical incident **키만** 빌리며 route·alarm·수치·LLM·전달 상태는
+합성이다. 실제 최종 데이터셋 12-run 결과나 운영 qualification으로 해석하지 않는다.
+aggregate/CLI/동시 발급/공통 lock 보완 회귀 55건 추가, release/CI 집중 **327 passed**.
+실 subprocess 2개 동시 발급 시험을 별도로 5회 반복해 모두 단일 발급·기존 증적 보존을 확인했다.
+aggregate chain·판정·게시/schema/SHA·drift·lock 검사를 제거한 메모리 변이 **11/11 탐지**
+(pytest rc=1만 RED, 원본 source bytes 보존).
+이번 최종 선택 회귀 **1410 passed·1 skipped**(259.29초, exit 0), skip은 shellcheck 미설치다.
+**묶음 C 전체 완료·독립 리뷰 요청 상태는 아니다.** 남은 연결을 같은 묶음으로 이어서 구현한다.
+
+### 후속: WF2 실제 API 읽기 경계 (방대혁/C · V5-C-7.1 · 묶음 C 진행 중)
+
+`release_n8n.py`는 Stage2에 연결할 **읽기 전용 어댑터**다. 자동 실행하거나 공용 n8n 설정을
+바꾸지 않는다. `N8nEvidenceApi`는 명시한 origin의 public API GET(workflow·execution·목록)만
+사용하며 API key는 메모리/header로만 받는다. redirect·환경 proxy·retry 호출은 없고 응답은
+4 MiB, 목록은 100건×20페이지 상한이다. 불완전 페이지·중복 cursor/ID를 성공으로 축약하지 않는다.
+
+- `probe_evidence`: 준비 단계에서 독립 pin한 WF2 ID/version·active와 성공/실패 데이터 저장
+  `all`을 확인하고 **이미 존재하는** webhook execution의 실제 payload/SMTP 결과를 읽는다.
+  시험 메일을 만들지 않는다. workflow를 다시 읽어 변경도 검사한다.
+- **현재 저장소 WF2 기본 설정은 성공/실패 저장 모두 `none`**이므로 해당 설정 그대로면
+  `N8N_EVIDENCE_RETENTION_REQUIRED`로 차단한다. 준비를 통과시키려고 저장 정책을 자동 수정하지
+  않는다. 공용 담당자가 비밀/수신자 데이터 보존 정책·접근권한·보존 기간을 검토하고 실제 설정과
+  기존 execution을 제공해야 한다. 이 어댑터 추가는 공용 설정 또는 API 접근 승인 자체가 아니다.
+- `collect_acceptances`: resume 이후 WF2의 **전체 상태** 목록을 순회한 뒤 exact 7건을 읽는다.
+  잘된 7건만 고르는 status filter나 action 필터는 없다. 같은 WF2에 추가 실행·retry가 있으면
+  차단하며 오래된 실행은 metadata만 확인한다. 목록 2회·projection 2회·workflow 2회 비교로
+  관측 중 drift를 검사한다. n8n 원자적 snapshot 또는 이후 추가 실행 부재의 증명은 아니다.
+- 실제 `Validate Email Payload`와 `Send Email` node 결과를 사용한다. 요청 recipients와
+  SMTP `envelope.to`·`accepted`가 모두 일치하고 `rejected=[]`인지 확인하며
+  `messageId`가 있어야 한다. 도메인만 casefold하고 local part는 보존한다. 다중 node 실행/아이템/
+  분기·누락/정리된 원문·실패 결과를 첫 성공으로 대체하지 않는다. n8n 비-success status는
+  성공으로 바꾸지 않고 기존 delivery validator가 별도 축에서 판정한다.
+- 외부 시각은 n8n RFC3339 milliseconds를 검증하고 출력은 기존 UTC 초 schema로 정규화한다.
+  키·메일 본문·webhook header/HMAC·workflow credentials/raw JSON은 저장/로그/출력하지 않는다.
+  반환 DTO는 기존 private `ProviderAcceptance`뿐이다. 최종 수신자 hash와 독립 DB callback·
+  grant·config·approval receipt 조인은 기존 `verify_delivery()`가 담당한다.
+
+upstream 근거: [n8n public API 인증 정의](https://github.com/n8n-io/n8n/blob/master/packages/cli/src/public-api/v1/openapi.yml),
+[Email Send 구현의 SMTP 결과 반환](https://github.com/n8n-io/n8n/blob/master/packages/nodes-base/nodes/EmailSend/v2/send.operation.ts).
+배포된 n8n의 API/실행 저장본 호환성은 실제 준비 probe에서 확인해야 하며, 테스트 응답을 공용 관측으로
+간주하지 않는다. `test_agent_release_n8n.py`의 합성 응답 회귀와 기존 delivery chain 연결 검증을
+CI에 등록했다. DB callback 조립은 아래 후속 구현이며 실제 SMTP config reader·prepared writer·
+Stage2 7-mode·실 capture 발급은 남았다.
+
+### 후속: DB callback·WF2 조립 (2026-09-06 · 방대혁/C · V5-C-7.1)
+
+`release_database.read_delivery_database()`는 caller가 제공한 engine의 host alias·E2E database·
+`kosa_app` 설정을 접속 전에 검사한다. 접속 뒤 `REPEATABLE READ READ ONLY`를 명시하고
+statement/lock timeout을 적용한 다음, 실제 database/role·transaction readback과
+`pg_control_system().system_identifier`를 prepared identity와 대조한다. 확인할 수 없으면
+실패하며 관리자 계정으로 재접속하거나 권한을 자동 부여하지 않는다.
+[PostgreSQL의 system identifier는 cluster 단위 값](https://www.postgresql.org/docs/16/functions-info.html#FUNCTIONS-CONTROLDATA)이므로
+database 이름도 함께 비교한다. 실제 서버의 함수 접근권한/identity probe는 아직 미검증이다.
+
+- run/action/link 12개·approval 3개·delivery 10개를 각각 `public` 테이블에서 읽는다.
+  조인이나 run 필터로 orphan/추가 행을 숨기지 않고, 상한+1행을 읽어 초과를 거부한다.
+  raw evidence·LLM prompt·평가 label·메일 본문·delivery result/error·승인자 정보는 SELECT하지 않는다.
+- 독립 batch run→action pin 12쌍, canonical incident 12개, CREATED/retry 없음·Level 3·
+  run/link/action lot/chamber·조치 일치·5/4/3, 정확한 HOLD 소유 approval PENDING 3개를 대조한다.
+  채널/key는 EMAIL 7+MES_MOCK 3으로 결속한다. FAILED run이나 WAITING/UNKNOWN 등 delivery
+  상태를 SENT로 바꾸지 않는다. 조치 규칙과 조사 품질 PASS는 기존 round validator가 판정한다.
+- `collect_delivery_receipts()`는 DB snapshot → live config port → WF2 → **새 DB transaction**
+  → config 재조회 순서다. HTTP 동안 DB transaction을 열어 두지 않는다. 초 미만 완료 시각까지
+  포함해 DB drift를 검사한 뒤에만 기존 UTC 초 단위 callback DTO로 변환한다.
+  config는 prepared digest allowlist에서 값 자체를 복원하지 않고 caller의 명시적 live reader로
+  받아 pin/drift를 확인한다. 그 live reader의 운영 어댑터는 후속 작업이며 기본 성공값은 없다.
+- 승인 메일의 독립 execution ID 3개는 SHA-pinned `PRE_APPROVAL/n8n-wf2.json` 입력을 받으며
+  WF2 결과에서 추측하지 않는다. 파일의 action 모집단을 DB target에 대조하고 HTTP 이후에는
+  action별 execution ID가 정확히 같은지 비교한다(동일 ID 집합만 비교하지 않는다).
+  반환은 private snapshot/`DeliveryReceipts` 모델뿐이다. **이 함수는 SMTP 승인 검증·artifact
+  발급·qualification 판정기가 아니다.** Stage2 lock/grant/runtime/시점/파일 결속 뒤 기존
+  `verify_delivery()`가 DB callback↔provider message ID·수신자·grant 전체를 재검증해야 한다.
+- private delivery DTO의 `PENDING` 오기를 실제 공통 Enum의 **`WAITING`**으로 수정했다.
+  EMAIL DTO도 공통 전송 7상태를 보존하며 `PENDING`은 approval 전용이다. 아직 실 qualification
+  발급 전인 묶음 C 내부 수정이고 runtime/public API 상태 계약은 변경하지 않았다.
+
+신규 회귀는 실제 SELECT를 합성 SQLite에서 실행하고 PostgreSQL identity/transaction 응답만
+명시적으로 대체한다. HTTP는 MockTransport다. SQL→WF2→private DTO→기존 offline delivery
+validator 양성 연결과 불일치/누락/초과/타임스탬프·config drift/비밀 미노출을 검증한다.
+**공용 PostgreSQL·SMTP·n8n 실검증 결과로 해석하지 않는다.** 묶음 C 전체 완료 후 독립 리뷰한다.
+
+### v61: HELD 전 독립 n8n 실행 증적 (2026-09-06 · 사용자 보완 승인)
+
+기존 golden-flow SMTP receipt는 `{action_id,status,receipt_id}`이며 execution ID가 아니다.
+실행 ID의 출처를 별도 N8N_EXECUTIONS 증적의 `{workflow,action_id,status,execution_id}`로
+정정했다. 기존 public/golden-flow schema는 바꾸지 않는다. Level 3에서만 해당 n8n 파일의
+수집을 **12-run 이후·round1/HELD 이전**으로 옮긴다. inbox receipt는 HELD 이후 별도 수집한다.
+
+- `record_release_approval_evidence.py`: 사람이 실제 n8n 실행 상세에서 확인한 3쌍을
+  `$A/evidence/artifacts/PRE_APPROVAL/n8n-wf2.json`에 O_EXCL·0600으로 기록한다.
+  동일 attempt의 실행 중인 resume claim SHA·owner 생존을 확인하고, source fsync 뒤
+  `$A/approval-execution-evidence.ready` 빈 0600 파일을 O_EXCL로 만든다. 두 파일 모두
+  private 수집 입력이며 robustness 정본 bundle 밖이다. 기존 파일은 덮어쓰지 않는다.
+- `wait_release_approval_evidence.py`: Stage2의 inherited EX lock/부모 PID·host/boot/birth·
+  UNRESOLVED resume claim을 전후 검사하며 완료 표시 부재만 최대 300초 대기한다.
+  완료 표시가 보이면 source 파일을 SHA 고정·strict parse·재조회한다. 쓰는 중인 JSON을
+  성공 입력으로 보지 않으며, 게시된 bad input은 polling으로 복구하지 않는다.
+- `collect_delivery_receipts`는 이제 **파일 root + Component**를 필수로 받는다. 무출처
+  ID 목록 입력은 제거했다. DB target action 3개 → fresh WF2 7건의 action↔ID 매핑 →
+  DB/config/source 전후 동일성을 검사한다. receipt_id 전용, 누락/중복/다른 action,
+  동일 집합 내 ID 뒤바뀜, source 공백 1바이트 변경도 실패한다.
+- owner만 cleanup/terminal을 발급한다. timeout/불일치는 resume의 STAGE2_STEP_FAILED로
+  정리할 조건이며, 이 reader/writer가 새 claim·HELD·abort·배포·메일을 만들지는 않는다.
+  Level 2는 기존 HELD 이후 수동 수집을 유지하고 새 완료 표시나 phase artifact를 만들지 않는다.
+- 독립성은 **별도 관측·입력 경로**를 뜻한다. n8n과 다른 서비스의 증명 또는 사람이 올바르게
+  관측했다는 암호학적 증명은 아니다. 실제 callback↔SMTP messageId·recipient·grant 교차검증은
+  기존 validator가 계속 수행하며 inbox 도달 여부와 구분한다.
+
+새 barrier는 owner가 호출할 leaf이며 **Stage2 7-mode 전체 연결 완료를 뜻하지 않는다**.
+Claude 묶음 C 리뷰에서 입력 출처·수집 순서·부분 파일 경쟁·1:1 join·lock/cleanup/Level 2를 확인한다.
+
+### 후속: Stage2 고정 이미지·지속 runner 하위 실행부 (방대혁/C · V5-C-7.1)
+
+`release_runtime.ComposeRuntime`은 Stage2가 호출할 **하위 Docker adapter**다. 별도 상위
+controller/운영 CLI를 만들지 않았고 `cm52_stage2.sh`의 승인 없는 Level 3 실행 차단은 유지한다.
+team down/복원·reset·승인·lock·preflight·workload 선택·artifact 발급은 이 adapter의 책임이 아니다.
+
+- 팀 env는 0600·현재 owner·regular·single-link·NOFOLLOW로 읽고 원본 bytes를 결속한다.
+  host export의 Compose 우선순위로 DB/recipient/credential 설정이 바뀌지 않도록 파일에
+  정의된 키와 AGENT_/COMPOSE_/CM52_PIN_/revision/tag override를 자식 환경에서 제거한 뒤
+  검증된 R·이미지·reports/runner pin만 넣는다. `${...}` indirection은 지원하지 않는다.
+  이미지 inspect 및 각 Docker 명령 직전에 파일 조건/bytes를 다시 대조해 변경 시 다음
+  명령을 차단한다. 두 관측 사이 변경 후 원복 및 최종 확인과 Docker read 사이 race까지
+  원자적으로 방지한다는 의미는 아니다.
+- `create()`: checked-in Compose 경로와 저장소 밖 owner-only reports root, role별 immutable
+  image ID/40자 label을 검사한다. 기존 대상 service/one-off container가 있으면 거부한다.
+  Level 3 전용 override로 Compose가 3개 service를 `--no-build --pull never --no-recreate`로
+  **생성만** 하고, 실제 `.Image`/project/service/상태를 두 번 확인한다. `create`의 생성 전용·
+  빌드/당겨오기 옵션은 [Docker 공식 계약](https://docs.docker.com/reference/cli/docker/compose/create/)을 따른다.
+- `start(created)`: 관측한 ID/image/설정/created 상태를 다시 대조한 뒤 **그 container ID 3개만**
+  `docker start`한다. 이미 started/recreated된 대상은 재사용하지 않는다. running 상태와
+  StartedAt를 다시 관측하며, frontend readiness 및 DB/effective env는 이후 A preflight가 맡는다.
+- `exec_runner(running, argv)`: 세 service의 ID·StartedAt/설정 drift를 재확인하고 동일 runner에
+  `docker exec --user … --workdir /workspace/backend`한다. `compose run --rm`이나 재생성은 없다.
+  **이 함수 자체가 grant를 검증하지 않는다.** Stage2 owner가 같은 lifecycle lock 안에서
+  prepared/runtime/grant 검증을 끝낸 후에만 workload 명령을 전달해야 한다.
+- `docker-compose.e2e-level3.yml`은 이 adapter에서만 추가한다. 기본 team/E2E 파일 및 기존
+  Level 2 경로는 변경하지 않는다. backend/runner `3/true`, artifact path/ACK 빈 값, 이미지
+  3개를 고정하며 runner는 기존 env·network·secret·mount 상속을 유지한다.
+- checked-in `scripts/e2e_runner_idle.py`는 Python signal 대기만 한다. ASGI/worker·config
+  import·network·`sleep infinity` 의존이 없고 SIGTERM/SIGINT를 처리한다. 실제 inspect에서
+  inert command/entrypoint·init/restart·user/workdir, reports 쓰기/읽기 권한과 Kafka secret
+  mount 두 개를 검사한다. raw Env·다른 label·secret 원본 경로·driver stderr는 내보내지 않는다.
+
+검증은 합성 Docker command/inspect 응답과 **daemon 없는 실제 Compose config 렌더링**이다.
+실 컨테이너 생성/기동·이미지 label 관측·readiness·외부 효과를 검증한 것은 아니다. 두 번의
+관측은 원자적 Docker 잠금이 아니며 caller lock/후속 readback을 대체하지 않는다. 부분 실패는
+재시도/자동 정리하지 않고 오류를 반환한다. Stage2가 먼저 cleanup trap을 설치해야 한다.
+Kafka 등 보조 서비스 준비/정리도 Stage2 소유이며 이 하위 adapter는 대상 3-service만 다룬다.
+실행계획의 prepared writer·7-mode·preflight 연결이 남아 있으므로 운영 명령으로 안내하지 않는다.
+
+### 후속: private prepared 발급부 (방대혁/C · V5-C-7.1 · 묶음 C 진행)
+
+`release_prepare.py`와 `scripts/emit_prepared_attempt.py`는 Stage2가 수집한 private 입력을
+`$A/robustness/prepared-attempt.json`으로 고정하는 helper다. **새 live capture/상위 실행기가
+아니며** DB/n8n/Docker를 호출하지 않는다. Git은 local clean main/40자 R만 읽고 변경하지 않는다.
+
+- 입력은 `$A/preparation-capture.json`(내부 `level3-preparation-capture-v1`),
+  `$A/e2e-level3-preflight.json`(A CLI 출력), `observer-baseline.json`, `stage2-log.jsonl`,
+  report root 기준 별도 CM-4.7 final receipt다. 모든 파일은 private이며 capture에는 exact
+  recipient가 있다. **이 transport 파일은 canonical bundle 또는 public artifact가 아니다.**
+- capture의 `IntegrityObservation`·지속 runtime snapshot·backend/runner DB identity·recipient·
+  비밀 제외 SMTP config·n8n probe·이전 production 복원 context를 strict 모델로 검사한다.
+  독립 caller R/image 3개와 capture/preflight/reset SHA pin, A 결과와 실제 preflight 출력,
+  container ID/StartedAt/image·Level 3 budget/env·6-check READY·두 runtime의 DB/recipient를 결속한다.
+  U10 연구 verdict가 부정이어도 그 이유만으로 prepare를 막지 않는다.
+- CM-4.7 final의 version/task/epoch/run ID·PASS·pre/applied/post SHA 형식과 observer 불변
+  envelope, baseline 3축/로그 counter와 시각을 확인한다. **CM-4.7 pre/applied/post 전체 chain을
+  재검증하거나 reset의 진위를 증명하는 것은 아니다.** 해당 확인은 기존 수동 선행 절차 소유다.
+  CM-4.7 도구는 수정하거나 실행하지 않았다.
+- 로그는 step 3/3a/3b PASS prefix이며 마지막은 3b여야 한다. workload/hold/cleanup 기록은
+  거부한다. prefix 길이/SHA·preflight/reset/baseline SHA·config digest는 실제 bytes에서 계산한다.
+  bound 이전 artifact는 고정된 복원 경로의 private bytes/SHA를 다시 검사하고 context를 보존한다.
+- `prepared_at`은 capture 완료 UTC 초, `expires_at`은 그 시각 +30분이다. writer 시각은 그
+  구간 안이어야 하며 오래된 입력을 뒤늦게 저장해 lease를 갱신하지 않는다. 최종 쓰기 직전에도
+  시각·Git·입력 bytes를 재확인한다. 빈 bundle만 허용하며 lock/O_EXCL/0600으로 prepared 1개만
+  발급한다. grant·claim·outcome·hold·round는 생성하지 않는다.
+- `lifecycle_lock(..., relative_directory=...)`를 추가해 writer의 lock/read/write를 protected
+  report root부터 directory FD로 순회한다. 중간 `cm-5.2`/attempt/robustness symlink도 거부한다.
+  기존 caller의 기본 lock 경로/동작은 유지한다.
+- stdout에는 SHA·시각·hash/count·`production is DOWN`과 다음 mode만 있으며 exact recipient/
+  config/secret/경로는 없다. `smtp_send_authorized=false`, `deployment_authorized=false`다.
+  실제 SMTP grant는 별도 사람이 확인한 `grant_smtp_send.py`만 발급한다.
+
+검증은 임시 Git/합성 capture·receipt, 실제 A validator 함수와 실제 writer CLI subprocess다.
+**저장된 typed observation 자체는 live 관측의 진위 증명이 아니다.** Stage2의 A preflight/probe/
+live identity·SMTP config collector와 prepared writer 호출, lifecycle lock 소유·cleanup 처리는
+아직 연결 전이다. CLI를 독립 운영 절차로 사용하거나 prepared만으로 workload를 시작하지 않는다.
+helper는 기본적으로 발급 구간 lock을 직접 잡는다. 상위 owner가 이미 같은 lock을 보유했다면
+이제 실제 상속 FD를 검증해 이어 쓸 수 있다(아래 후속 절). Stage2가 이 FD를 전달하고 cleanup까지
+보유하는 호출 경로 자체는 아직 미연결이며 lock 검사를 생략하는 옵션은 없다.
+
+### 후속: prepare 관측 수집 연결 (방대혁/C · V5-C-7.1 · 묶음 C 진행)
+
+`release_context.py`·`read_preparation_context.py`는 실제 Backend/runner container에서
+준비용 DB identity와 effective recipient만 읽는 private 경계다. public health는 바꾸지 않는다.
+
+- 고정 container ID로 `docker exec`하며 환경변수/DSN/recipient override를 받지 않는다.
+  stdout은 **exact recipient가 있는 private transport**다. 공개 로그에 tee하거나 게시하지 않는다.
+- 실제 app engine URL이 E2E DB/app role인지 접속 전에 검사한다. 새 read-only/repeatable-read
+  transaction에서 `current_database/current_user/pg_control_system`을 읽고 rollback/close한다.
+  business table SELECT·commit·DDL·고권한 fallback은 없다. system identifier를 읽을 권한이
+  없으면 실패하며 host alias는 실제 연결 URL에서 얻는다.
+- Level 3/true/ACK 없음과 production recipient parser의 effective 목록을 확인한다.
+  recipient v2 결과와 다르면 거부하므로 production parser가 local-part case-fold로 제거한
+  주소를 그대로 승인 대상으로 저장하지 않는다. config/engine은 명시 live 호출에서만 import한다.
+- subprocess의 고정 timeout/출력 상한/strict schema를 검사하고 실패에는 비밀·DSN·원본
+  주소·stderr 대신 고정 오류 코드만 반환한다. 성공 projection 자체는 private다.
+
+`release_capture.collect_preparation()`은 새 상위 실행기가 아니라 Stage2가 호출할 읽기 조립부다.
+
+1. local clean main/R 검사, 지속 runtime의 3개 image/ID/StartedAt/mount 재검사.
+2. Backend·runner context와 **필수 live 비밀 제외 SMTP reader** 결과 수집/교차 결속.
+3. 기존 A `verify_preflight_integrity`를 `e2e_level3/pre_u9`로 **정확히 1회** 실행.
+4. 관측한 workflow version으로 n8n **기존 execution 1건** read-only probe. 테스트 메일은 없다.
+5. context/SMTP/runtime을 다시 읽어 drift를 확인하고 A의 private 평가 파일도 다시 검증한다.
+   이 파일 검증은 두 번째 preflight/배포가 아니다. Git/시각을 재확인해 `PreparationCapture`를 반환한다.
+
+U10 부정 연구 verdict는 보존하며 prepare만으로 production을 허용하지 않는다. collector에는
+파일 발급·SMTP grant·lifecycle claim·reset·서비스 생성/기동·workload 코드가 없다. capture와
+A report를 private 저장하고 prepared writer를 호출할 책임/lock/cleanup은 Stage2에 남는다.
+
+**아직 운영 연결은 미완료다.** `read_smtp_config`의 실 runtime 구현은 남아 있으며 인자에
+reader가 없거나 실패하면 차단한다. n8n public API가 반환하는 credential ID를 SMTP host/port로
+추정하거나 저장된 allowlist를 live 설정으로 대신 쓰지 않는다. credential export나 retention
+자동 변경도 하지 않는다. 동일한 포트는 delivery 수집부에서도 사용해야 한다.
+
+검증은 임시 Git·합성 PG identity/transaction·가짜 Docker process·HTTP MockTransport다.
+실제 A/runtime/n8n validator를 사용하고 수집 → private prepared 발급까지 연결하지만,
+**공용 DB·n8n·SMTP·Docker daemon 실관측 결과가 아니다.** 반복 읽기는 원자적 snapshot이 아니며
+중간에 바뀌었다가 돌아온 상태를 모두 감지한다는 보장도 없다. Stage2 7-mode와 lock/cleanup,
+실 SMTP config·round capture·전환·seal 연결은 계속 구현한다.
+
+### 후속: 부모·자식 lifecycle lock 공유 (방대혁/C · V5-C-7.1 · 묶음 C 진행)
+
+`lifecycle_lock()`은 획득한 non-inheritable FD를 반환한다. 기존 caller가 반환값을 무시하는
+경로는 그대로 동작한다. 부모가 자식을 동기적으로 호출할 때만 `subprocess.pass_fds`로 같은
+open-file description을 명시 상속하고, 자식은 `inherited_fd`로 이를 빌려 쓴다.
+
+- protected report root에서 상대 디렉토리를 FD로 순회한다. private regular file·0600·owner·
+  single link, RDWR access, 대상 `.lifecycle.lock`과 device/inode 일치를 확인한다.
+- 별도 FD의 SH nonblocking probe가 차단되는지와 전달 FD의 EX nonblocking flock이
+  성공하는지를 모두 검사한다. unlocked/shared FD나 같은 inode를 따로 연 FD는 불충분하다.
+  다른 attempt의 lock, symlink/교체된 inode, FD 번호만 전달하는 호출은 거부한다.
+- 자식은 FD를 복제해 쓰고 close만 한다. **자식은 LOCK_UN을 하지 않는다.** 부모는 자식이
+  끝나기 전에 owner context를 종료하면 안 되며 분류→실행→cleanup→terminal까지 보유한다.
+  상속받은 여러 자식을 병렬 실행해도 각각 별도 mutex가 생기는 것은 아니다. 직렬 호출은
+  owner 책임이다. 이 primitive는 process 실행/대기, source-state 판정, claim 발급을 대행하지 않는다.
+- `issue_prepared(..., lifecycle_lock_fd=...)`와 내부 CLI `--lifecycle-lock-fd`를 연결했다.
+  이 옵션은 lock 우회가 아니라 실제 소유권 검증 입력이다. 없으면 기존 직접 획득 경로다.
+  prepared 파일 쓰기 직전에도 lock 경로/inode/소유권을 다시 검사한다. CLI output에 FD나
+  recipient를 새로 노출하지 않으며 SMTP/production 허용은 계속 false다.
+
+검증은 로컬 OS flock와 실제 Python 자식 프로세스, 임시 Git/private prepared fixture를 쓴다.
+자식의 정상/오류/강제 종료 뒤 부모 lock 유지, 부모 비정상 종료 뒤 살아 있는 자식의 lock 유지와
+자식 종료 후 해제를 확인했다. 이는 **현재 lock 소유** 확인이지 과거 전 구간 소유 증명이 아니다.
+Stage2의 실제 7-mode 호출·자식 대기·cleanup/terminal·stale owner 복구 연결은 여전히 남아 있다.
+새 상위 controller를 만들거나 Stage2의 기존 Level 3 실행 차단을 해제하지 않았다.
+
+### 후속: Stage2 7-mode 진입 검증 (방대혁/C · V5-C-7.1)
+
+`cm52_stage2.sh` parser는 `full|hold|prepare|resume_workload|resume|abort|recover`를
+옵션 순서와 무관하게 결정한다. 잘못된 조합·승인 인자 누락은 파일/lock/cleanup 전에 거부한다.
+`release_entry.py`/`inspect_stage2_prepared.py`는 repo 밖 protected root에서 exact prepared
+경로와 lifecycle을 directory FD로 읽고 두 번 대조한다. 출력의 `execution_authorized=false`는
+의도적이다. **7-mode 실제 runtime/claim/cleanup 연결은 아직 미완성**이며 새 실행 mode는
+`LEVEL3_STAGE2_INTEGRATION_INCOMPLETE`로 차단된다. read-only 분류는 lock 아래 재검증,
+TTL/grant/live drift 검사나 stale owner 사망 입증을 대신하지 않는다.
+
+### 후속: private seal·public derivation (2026-09-06 · 방대혁/C · V5-C-7.1)
+
+`release_seal.PRIVATE_PAYLOAD_NAMES`가 정상 경로의 immutable payload **9파일** 집합을
+소유한다. aggregate의 기존 8파일 + `aggregate.json`이며 `MANIFEST.sha256`/`.lifecycle.lock`
+자체는 manifest에서 제외한다. seal writer는 lifecycle lock 아래 실제 aggregate 전체를
+재검산하고 파일 집합/bytes drift를 확인한 뒤 정렬된 `sha256  relative_path` LF 목록을
+0600·O_EXCL로 발급한다. 누락·extra/abort 파일·nested directory·symlink·hardlink·잘못된 권한·
+manifest 순서/CRLF/중복/자기 참조는 거부한다. 일치하는 manifest만으로 PASS를 인정하지 않는다.
+
+`emit_level3_robustness.py --seal`로 봉인, `--copy-seal --destination <protected-empty-dir>`로
+**9payload + manifest 전체 byte-identical 복제**가 가능하다. 두 root는 repo 밖 0700이어야 하며
+서로 중첩될 수 없다. copy는 manifest-last이고 실패한 부분 파일은 복구 증거로 보존한다.
+재시도 overwrite/삭제/부분 복사 seal 간주는 없다. 검증은
+`validate_level3_robustness.py --artifact <aggregate.json> --sealed`이다.
+
+공개 파생은 `emit_level3_robustness.py --public --public-root <repo>/output/v5-c-7.1/<R>`이다.
+해당 revision 디렉터리는 호출자가 0700으로 먼저 준비한다. 별도 schema
+`level3-robustness-public-v1`/`robustness-public.json`만 발급하며 exact recipient·raw delivery/
+workflow/prompt/credential은 투영하지 않는다. 1회/12건/재현성 미측정과 전체 batch_summary,
+recipient hash/version/count, 완성 manifest SHA와 코드 소유 derivation rule SHA를 포함한다.
+emitter/validator 모두 원본 재검산·manifest SHA·canonical encoding·exact recipient/email/
+URL/credential marker scan을 수행한다. scan은 추가 방어선이며 임의 비밀 탐지 보장은 아니다.
+공개 파일은 `--robustness-artifact`의 canonical 입력으로 사용할 수 없다.
+
+공개 검증은 `validate_level3_robustness.py --artifact <robustness-public.json>
+--public-bundle-root <private-root>`로 원본에서 다시 파생해 exact 대조한다. 모든 emitter와
+validator는 `--published-root`·독립 기대 R/attempt를 요구하고 배포 허용은 항상 false다.
+CI 회귀도 동일 `PRIVATE_PAYLOAD_NAMES`를 사용해 향후 모든 `upload-artifact` step이
+9파일+manifest의 `!**/<name>` 제외를 전부 선언하도록 강제한다. 현재 uploader는 없다.
+
+### 후속: 공용 n8n session 읽기 호환 (2026-09-06 · 방대혁/C · V5-C-7.1)
+
+실제 공용 n8n은 `2.32.7`이며 로컬 env에 UI 계정은 있지만 public API key는 없다.
+`release_n8n_session.N8nSessionEvidenceApi`는 명시 계정으로 로그인한 뒤 GET만 제공한다.
+HTTP는 caller의 명시 `allow_insecure_http=True`가 필요하며 URL만 보고 승인하지 않는다.
+POST는 로그인 하나뿐이고 key 생성·credential test/export·workflow update/retry는 없다.
+세션 cookie·비밀번호·원 execution은 메모리에만 머물며 redirect/proxy/retry를 사용하지 않는다.
+UI 계약은 현재 버전에 pin해 다른 버전은 차단한다.
+
+워크플로 retention 생략/DEFAULT는 **매번 읽은** instance 기본값에서 결정하고 declared/default
+둘을 private memory에 남겨 drift를 비교한다. 명시 `none`을 `all`로 바꾸지 않는다.
+실행의 flatted JSON은 reference/depth/방문 수/확장 bytes를 제한해 복원한다. 저장 버전은
+기존 workflowData.versionId 또는 실제 n8n의 workflowVersionId이며 둘 다 있으면 일치해야 한다.
+editor 실행 목록은 public API pagination과 다르므로 **estimated=false, count=실제 목록 길이,
+100건 이하인 완전한 한 페이지**만 수용한다. 초과를 잘라 성공시키지 않고 명시 차단한다.
+
+`smtp_transport()`는 활성 published WF2의 연결 credential을 서버측 마스킹된 UI GET으로
+읽고 host/port/from/secure만 투영한다. 생략된 port/secure는 pin된 타입의 465/true 기본값을
+사용한다. 근거: [n8n 2.32.7 credential service](https://github.com/n8n-io/n8n/blob/n8n%402.32.7/packages/cli/src/credentials/credentials.service.ts),
+[SMTP type](https://github.com/n8n-io/n8n/blob/n8n%402.32.7/packages/nodes-base/credentials/Smtp.credentials.ts).
+**이는 완성된 SmtpConfigSnapshot이 아니다.** recipient는 실제 backend/runner context에서,
+WF2 callback endpoint는 현재 n8n `BACKEND_BASE_URL`에서 별도로 읽어야 한다.
+이전 execution URL이나 로컬 `.env.team` 값을 현재 n8n 환경값으로 추정하지 않는다.
+
+승인된 실제 읽기 검증: HTTP 로그인 PASS, 활성 WF2/SMTP 비밀 제외 조회 PASS, 기존 execution
+89에 대한 실제 `probe_evidence` PASS. 저장소/공용 WF 설정은 변경하지 않았고 신규 SMTP/LLM/
+Kafka 효과 0이다. 이 probe는 과거 한 건의 조회 가능성이지 새 12-run의 delivery PASS가 아니다.
+브라우저에서도 활성 WF2의 `$env.BACKEND_BASE_URL` 참조를 직접 확인했다. UI의 기존 실행
+preview는 과거 데이터이며 현재 env 증명이 아니다. Environments/Variables 화면에서도
+현재 process env 조회 기능은 확인되지 않았다. 기존 WF를 임의 수정하거나 Execute step으로
+이전 SMTP/callback을 재실행하지 않는다.
+
+후속으로 사용자가 새 조회용 workflow 생성·1회 실행·삭제를 명시 승인했다. 2026-09-06
+09:47:42 KST에 비활성 임시 workflow `c7pef22239a4e754`의 수동 execution `90`으로
+`$env.BACKEND_BASE_URL` 하나만 직접 읽었다. Manual Trigger/Code 두 노드만 사용했고
+credentials·SMTP·Kafka·HTTP 요청 노드는 없었다. 조회 success 후 정확한 생성 대상의
+ID/name/nodes/connections/비활성 상태를 대조해 archive/delete했다. 사후 workflow
+`exists=false`, scoped execution 목록 0건, 실행 GET `200 {}`로 실행 data 부재를 확인했다.
+기존 WF2·3·4의 설정/노드/버전 projection SHA는 전후 동일했다. 비밀 제외 관측값은
+`output/V5-C-7.1_구현보고.md`에 기록하며 일반 공개 qualification artifact로 발급하지 않는다.
+
+이 작업은 **단발성 운영 진단**이며 `N8nSessionEvidenceApi`에 mutation 권한을 추가하지 않는다.
+삭제된 임시 workflow를 permanent observer로 간주하지 않으며, 이번 수동 실행의 값은 이후
+prepare/resume 시점의 current config 증명을 대신하지 않는다. callback 네트워크 도달성이나
+실 delivery PASS도 아니다. 재관측 경로/권한과 Stage2 live 연결은 여전히 남아 있다.
+API 계약 근거: [n8n 2.32.7 workflow controller](https://github.com/n8n-io/n8n/blob/n8n%402.32.7/packages/cli/src/workflows/workflows.controller.ts),
+[수동 실행 DTO](https://github.com/n8n-io/n8n/blob/n8n%402.32.7/packages/%40n8n/api-types/src/dto/workflows/manual-run.dto.ts),
+[임시 대상 archive/delete](https://github.com/n8n-io/n8n/blob/n8n%402.32.7/packages/cli/src/workflows/workflow.service.ts).
+
+### 후속: 생산 세 Gate·현재 설정·phase 연결부 (2026-09-06 · 방대혁/C · V5-C-7.1)
+
+위 묶음 A의 `NOT_RUN` 설명은 당시 구현 이력이다. 현재 `u10_preflight.py`는
+`production_level3`에서 `--robustness-artifact <private aggregate.json>`와
+`--robustness-published-root <CM52 게시물 디렉터리>`를 받아 전체 원본을 다시 검산한다.
+다른 profile은 두 인자를 거부하며 기존 NOT_RUN 출력 계약을 유지한다. production_level3에서
+인자가 없거나 증적이 부적합하면 robustness/delivery는 FAIL이다. **exit는 계속 integrity만
+표현한다**. `allowed_actions.production_level3`의 세 축 AND를 읽어야 한다.
+
+`release_gate.py`는 aggregate 선언 PASS를 신뢰하지 않고 round/completion/manifest 전 단계의
+원본 및 CM52 게시물 의미를 검산한다. delivery 파일만 잘못된 경우 조사 robustness와 분리한다.
+실제 backend의 모델·prompt·endpoint SHA/config digest·게시 attempt와 **실제 `/reports`의
+attempt/golden/fault raw SHA**를 비교한다. 같은 attempt 경로지만 다른 내용인 게시물을 허용하지
+않는다. 전체 읽기 전후 원본·runtime을 다시 대조한다. 연구 부정 판정 자체는 enable 차단축이 아니다.
+
+`release_model.RuntimeLlmConfiguration`은 U10 실험 DTO와 별개다. 실제 graph는 seed를 보내지
+않으므로 null이며, 실제 `LLM_TEMPERATURE`를 기록하고 reasoning 모델에서는 null이다.
+U10의 temperature 0·명시 seed를 생산 실행에 허위 기재하거나 생산 모델 호출을 변경하지 않는다.
+현재까지 실제 qualification round가 발급되지 않은 상태에서 이 차이를 정정했다.
+
+`enable_production_level3.py`는 명시 operator 전환 CLI이며 **호출하면 실제 env/서비스를 변경**한다.
+backend/frontend 고정 이미지와 R·private root·readonly reports mount를 확인하고,
+지속 CLOSED fence → 모든 RUNNING/WAITING_APPROVAL 0 → Level 2 검증 → 3 전환/검증 →
+2 rollback 리허설/검증 → 다시 3 전환/세 Gate 검증 → OPEN 순서다. Agent/메일/Kafka/reset은
+실행하지 않는다. env의 autonomy/enabled/demo ACK 세 키만 변경하며 build/pull/down은 없다.
+실패·첫 SIGINT/SIGTERM에서는 한 차례 Level 2 복원을 시도하고 검증 후에만 OPEN한다.
+SIGKILL·복원 실패는 CLOSED가 지속된다. `--restore-level2`도 정상 backend에서 quiescence를
+읽을 수 있어야 하므로 backend 자체가 내려가 DB를 읽을 수 없는 상황은 자동 복구 완료로
+주장하지 않는다. frontend만 없는 경우에는 backend 관측 후 복원을 시도할 수 있다.
+
+`AgentRuntime.start_run`은 초기 등록 동안 shared lock을 보유한다. 생산 Level 3는 현재
+`BISTEL_SOURCE_REVISION`/ACK와 동일한 OPEN Level 3 fence를 필수로 요구하며, 파일이 없거나
+binding이 다르면 503이다. Level 1/2·격리 E2E의 파일 미존재는 기존 동작을 보존하지만 존재하는
+CLOSED 파일은 신규 등록을 차단한다. 기존 실행 이어가기/승인 결정 경로는 이 등록 fence를 거치지 않는다.
+
+`release_n8n_probe.CallbackObserver`는 읽기 전용 session과 분리된 **임시 metadata 변경** adapter다.
+명시 `allow_temporary_workflow=True` 없이는 로그인조차 하지 않는다. 코드 소유 두 노드만
+생성·1회 실행·exact 대상 archive/delete하며, cleanup 확인 실패 시 현재값을 반환하지 않는다.
+SMTP·Kafka·callback HTTP 노드는 없다. `read_smtp_snapshot`은 동일 session의 WF2/3/4 전후
+버전/설정과 SMTP transport를 대조하고 checked-in callback builder의 정확한 parameters를 검증한다.
+이 반복 동작의 실제 운영 승인은 별도이며, 이번 구현 검증에서는 Mock HTTP만 실행했다.
+
+`release_resume.observe_resume`는 saved PASS 대신 현재 고정 컨테이너·DB/app role·recipient·
+runtime budget·SMTP digest를 전후로 읽는다. `release_phase`는 Bash가 보유한 lock FD를 빌려
+분류/승인 검증 후 claim을 쓰고 cleanup/restore 결과 이후 terminal을 O_EXCL 발급한다.
+잘못된 grant/만료/runtime drift는 resume claim 전에 ABORT로 분기한다. PUBLISH는 TTL을
+재검증하지 않고, 실패하더라도 HELD의 **pre-HITL 관측 7/3** 범위를 보존한다. stale recovery는
+새 claim/작업 실행을 하지 않고 외부 효과 미확인을 임의의 0으로 바꾸지 않는다.
+
+`read_release_runs.py`는 기존 graph checkpoint와 실제 Tool 감사 입력/결과를 읽는다.
+12-run/최대 100 audit row씩으로 제한하고 E2E app-role readonly transaction과 model/checkpoint
+전후 일치를 확인한다. 별도 Agent 실행기나 LLM 재호출은 없다. stdout은 private 원본이므로
+공개 로그에 출력하면 안 된다. 이것만으로 완성 round/delivery/Kafka qualification은 발급되지 않는다.
+
+### 후속: Stage2 abort/recover 실제 연결 (2026-09-06 · 방대혁/C · V5-C-7.1)
+
+두 mode는 이제 초기 차단 대신 실제 흐름을 호출한다. `lock_stage2.py`가 동일 PID로 정본
+Bash를 exec하고 EX FD를 전달하며, Bash가 begin→cleanup→restore→finish를 소유한다.
+각 leaf는 private root/준비 SHA/claim SHA/parent/FD를 검사한다. 별도 controller나 8번째
+mode는 없고, 거부된 전이·살아 있는 owner·잠금 경합에는 cleanup을 허용하지 않는다.
+
+cleanup은 prepared ID/image와 E2E project/service를 대조하여 정확한 container만 stop/rm한다.
+같은 프로젝트의 Kafka/MES는 기존 두 service만 허용하며 volume은 삭제하지 않는다.
+E2E 부재는 `CLEANUP_E2E_ABSENT`를 포함한 NOT_ATTEMPTED다. 정본 §0′에 맞춰 ABORTED의
+과거 OK/OK-only 제한을 보완했지만, basis 없는 NOT_ATTEMPTED나 FAILED 결과는 계속 거부한다.
+
+복원은 E2E 잔존 0→production fence CLOSED→고정 이미지의 read-only quiescence 프로세스→
+env 3키/이전 artifact 2경로의 expected bytes 재확인·원자 교체→인프라/고정 application pair
+복원→A Level2 preflight/이전 artifact/실 env/평가 API 확인→OPEN 순서다. env 교체를 비협조
+외부 writer와의 전역 원자 transaction이라고 주장하지 않는다. U10 기존 CLI 입력은 host 변수
+`CM52_U10_ARTIFACT`·`CM52_U10_EVALUATION_RECEIPT`·`CM52_U10_BENCHMARK`·
+`CM52_U10_BENCHMARK_SHA256`로 전달하며 누락/실패를 저장된 PASS로 대신하지 않는다.
+
+terminal은 cleanup/restore 후 O_EXCL 1회 발급한다. recover의 기존 효과는 INDETERMINATE이며,
+stale publish는 기존 게시물 SHA를 포함한 FAIL completion만 만든다. aggregate/seal은 발급하지
+않는다. 실 Bash/exec/FD/claim/terminal 및 명시 Docker/HTTP/OS leaf fake 회귀로 검증했고,
+공용 배포 실증이나 Claude 독립 리뷰 완료는 아니다. prepare/resume_workload/정상 publish,
+step 8 backend 교체 rebind·receipt/round·scan·aggregate/seal 연결은 아직 남아 있다.
+
 ## 아직 증명하지 않는 것
 
 13차 리뷰 보완 회귀는 비정상 selector 종료 뒤 가설 성공이어도 completion false(구조 오류·
@@ -796,6 +1322,10 @@ timeout·dependency 3건), graph 목록에 현재 chamber가 잘못 포함돼도
 - 최종 실실행 revision에서의 main/이미지 실관측·반출 승인·실 LLM 실행, robustness·delivery,
   receipt/seal·immutable 게시·production 전환의 4축 검증.
 
-다음은 묶음 B 전체 25차-1 독립 재리뷰·Claude 커밋/CI, 그 뒤 묶음 C다.
+다음은 묶음 C의 prepare/resume_workload/정상 publish 호출·Kafka 보조 서비스 수명과
+backend 교체 rebind·receipt/round 발급·scan/seal 연결, SMTP observer 연결 및 Common 인계다.
+production preflight/wrapper와 seal/public 하위 경로는 구현됐지만 Stage2 실제 연결과
+묶음 C 전체는 미완성이다.
+묶음 C 전체를 완성한 뒤 독립 리뷰한다.
 실행 코드가 완성되어도 최종 merged clean main R과 **별도 LLM 데이터 반출 승인** 전에는
 32회 실실행을 하지 않는다. SMTP 7통 승인 역시 별개다.

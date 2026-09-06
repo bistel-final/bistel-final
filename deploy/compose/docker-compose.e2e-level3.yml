@@ -1,0 +1,29 @@
+# Only the Level 3 preparation adapter adds this override. Legacy Level 2's
+# ephemeral `compose run --rm` and the production Compose files are unchanged.
+services:
+  backend:
+    image: ${CM52_PIN_BACKEND_IMAGE:?CM52_PIN_BACKEND_IMAGE is required}
+    environment:
+      AGENT_AUTONOMY_LEVEL: "3"
+      AGENT_LEVEL3_ENABLED: "true"
+      AGENT_LEVEL3_DEMO_ACK: ""
+      AGENT_ACTION_POLICY: ${CM52_PIN_ACTION_POLICY:-ACTION-POLICY-V1}
+      AGENT_FAULT_EVAL_ARTIFACT_PATH: ""
+      AGENT_GOLDEN_FLOW_SUMMARY_PATH: ""
+  frontend:
+    image: ${CM52_PIN_FRONTEND_IMAGE:?CM52_PIN_FRONTEND_IMAGE is required}
+  e2e-runner:
+    image: ${CM52_PIN_RUNNER_IMAGE:?CM52_PIN_RUNNER_IMAGE is required}
+    environment:
+      AGENT_AUTONOMY_LEVEL: "3"
+      AGENT_LEVEL3_ENABLED: "true"
+      AGENT_LEVEL3_DEMO_ACK: ""
+      AGENT_ACTION_POLICY: ${CM52_PIN_ACTION_POLICY:-ACTION-POLICY-V1}
+      AGENT_FAULT_EVAL_ARTIFACT_PATH: ""
+      AGENT_GOLDEN_FLOW_SUMMARY_PATH: ""
+    init: true
+    entrypoint: []
+    command: ["python", "scripts/e2e_runner_idle.py"]
+    user: ${CM52_RUNNER_UID:?CM52_RUNNER_UID is required}:${CM52_RUNNER_GID:?CM52_RUNNER_GID is required}
+    working_dir: /workspace/backend
+    restart: "no"

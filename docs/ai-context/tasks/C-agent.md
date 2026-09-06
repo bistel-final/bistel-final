@@ -1,5 +1,11 @@
 # C — Agent · HITL · n8n · Kafka
 
+> **2026-09-06 사용자 승인 변경 · 방대혁(C/Common) · `V5-C-7.1`: 신규 MOCK-NOTIFY-V1은 승인/반려·이메일 확인 없이 이메일 알림 + 자동 Kafka/MES Mock 연동이다. 아래 HITL 절차는 과거 V1 유지 범위다. 확인 API/테이블은 만들지 않으며 데이터/승인 이력과 기존 증적은 변경하지 않는다. 공용 배포와 새 Stage2 증적은 아직 미완료다. [상세 계약](../../deliverables/agent/mock-notify-contract.md).**
+
+> 묶음 C 실행기·v2 증적·Gate 연결분 구현 인계:
+> [새 Stage2 runbook](../../deliverables/agent/mock-notify-stage2-runbook.md).
+> 코드 연결과 공용 실측 완료를 구분한다. Claude 구현리뷰·CI/머지 뒤 clean R에서 실제 발급한다.
+
 > 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`
 > 기준 문서: 요구사항 v2.1 · 시스템설계서 v2.1 · 역할분담 v10.1 · API v3 · WBS v5
 > 마지막 동기화: 2026-09-01

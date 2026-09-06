@@ -704,6 +704,7 @@ def test_graph_edges_are_the_reviewed_canonical_and_failure_routes(
         ("persist_action", "notify_email"),
         ("persist_action", "approval_email"),
         ("notify_email", "finalize"),
+        ("notify_email", "publish_mes"),
         ("approval_email", "hitl_interrupt"),
         ("hitl_interrupt", "publish_mes"),
         ("hitl_interrupt", "cancel_mes"),

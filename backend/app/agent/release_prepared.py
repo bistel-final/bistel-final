@@ -256,6 +256,32 @@ class PreparedAttempt(EvidenceModel):
         return self
 
 
+class EffectiveEnvV2(EffectiveEnv):
+    AGENT_ACTION_POLICY: Literal["MOCK-NOTIFY-V1"]
+
+
+class N8nEvidenceProbeV2(N8nEvidenceProbe):
+    wf3_execution_detail_retained: Literal[True]
+    wf4_execution_detail_retained: Literal[True]
+    callback_trail_writable: Literal[True]
+
+
+class PreparedAttemptV2(PreparedAttempt):
+    schema_version: Literal["level3-prepared-attempt-v2"]
+    effective_env: EffectiveEnvV2
+    n8n_evidence_probe: N8nEvidenceProbeV2
+    preflight_snapshot_sha256: Sha256
+
+
+def parse_prepared(value):
+    model = (
+        PreparedAttemptV2
+        if value.get("schema_version") == "level3-prepared-attempt-v2"
+        else PreparedAttempt
+    )
+    return model.model_validate(value)
+
+
 class SmtpGrant(EvidenceModel):
     schema_version: Literal["smtp-send-grant-v1"]
     grant_type: Literal["SMTP_SEND_GRANT"]
@@ -285,6 +311,20 @@ class SmtpGrant(EvidenceModel):
         return self
 
 
+class SmtpGrantV2(SmtpGrant):
+    schema_version: Literal["smtp-send-grant-v2"]
+    action_policy_version: Literal["MOCK-NOTIFY-V1"]
+
+
+def parse_smtp_grant(value):
+    model = (
+        SmtpGrantV2
+        if value.get("schema_version") == "smtp-send-grant-v2"
+        else SmtpGrant
+    )
+    return model.model_validate(value)
+
+
 def validate_grant(
     root: Path,
     prepared: PreparedAttempt,
@@ -292,10 +332,12 @@ def validate_grant(
     *,
     resume_at: str,
 ) -> None:
-    bound = PreparedAttempt.model_validate(
-        resolve_component(root, grant.prepared_attempt)
-    )
-    if bound != prepared or grant.attempt_id != prepared.attempt_id:
+    bound = parse_prepared(resolve_component(root, grant.prepared_attempt))
+    if (
+        bound != prepared
+        or grant.attempt_id != prepared.attempt_id
+        or isinstance(prepared, PreparedAttemptV2) != isinstance(grant, SmtpGrantV2)
+    ):
         raise EvidenceError("EXTERNAL_EFFECT_APPROVAL_MISSING")
     recipient = prepared.recipient
     if (

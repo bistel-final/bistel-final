@@ -29,10 +29,24 @@ class RuntimeReadback(EvidenceModel):
     budget_policy: dict[str, int]
 
 
+class RuntimeReadbackV2(RuntimeReadback):
+    schema_version: Literal["agent-runtime-readback-v2"]
+    action_policy: Literal["MOCK-NOTIFY-V1"]
+
+
+def parse_readback(payload):
+    model = (
+        RuntimeReadbackV2
+        if payload.get("schema_version") == "agent-runtime-readback-v2"
+        else RuntimeReadback
+    )
+    return model.model_validate(payload)
+
+
 class RuntimeObservation(EvidenceModel):
     profile: Profile
     container_ids: dict[str, str]
-    readbacks: dict[str, RuntimeReadback]
+    readbacks: dict[str, RuntimeReadback | RuntimeReadbackV2]
 
 
 def _profile(profile: str) -> None:
@@ -114,7 +128,7 @@ def verify_runtime_readbacks(
             payload = read(ids[role], profile)
             if type(payload) is not dict:
                 raise ValueError("payload type invalid")
-            observed = RuntimeReadback.model_validate(payload)
+            observed = parse_readback(payload)
             if observed.profile != profile:
                 raise ValueError("profile mismatch")
             validate_readback(observed.model_dump(), profile)
@@ -126,4 +140,6 @@ def verify_runtime_readbacks(
         except (ValueError, OSError, subprocess.TimeoutExpired):
             raise EvidenceError("U10_RUNTIME_READBACK_INVALID") from None
         readbacks[role] = observed
+    if len({row.schema_version for row in readbacks.values()}) != 1:
+        raise EvidenceError("U10_RUNTIME_POLICY_MISMATCH")
     return RuntimeObservation(profile=profile, container_ids=ids, readbacks=readbacks)

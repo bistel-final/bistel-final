@@ -1,6 +1,7 @@
 """Four independent axes and allowlisted output. No IO or gate verification."""
 
 from app.agent.release_artifacts import EvidenceError
+from app.agent.release_gate import ReleaseAxes
 from app.agent.u10_integrity import IntegrityObservation
 
 
@@ -30,14 +31,13 @@ def preflight_report(
     phase: str | None,
     checked_at: str,
     failed_checks: list[str],
+    release: ReleaseAxes | None = None,
 ) -> dict:
-    """Bundle A has no robustness/delivery verifier: never turn either axis PASS.
-
-    The reset attempt is not inferred from the production ACK. Bundle C must
-    supply verified reset lineage, so this version explicitly outputs null.
-    """
+    """Project independent release results; never infer lineage from ACK alone."""
     valid = observation is not None and not failed_checks
-    return {
+    robustness = release.robustness if release else "NOT_RUN"
+    delivery = release.delivery_integrity if release else "NOT_RUN"
+    result = {
         "profile": observation.profile if valid else profile,
         "phase": observation.phase if valid else phase,
         "checked_at": observation.checked_at if valid else checked_at,
@@ -50,10 +50,10 @@ def preflight_report(
         "failed_checks": failed_checks,
         "agent_verdict": observation.evaluation.agent_verdict if valid else None,
         "verdict_reason": observation.evaluation.verdict_reason if valid else None,
-        "robustness": "NOT_RUN",
-        "delivery_integrity": "NOT_RUN",
+        "robustness": robustness,
+        "delivery_integrity": delivery,
         "allowed_actions": allowed_actions(
-            "PASS" if valid else "FAIL", "NOT_RUN", "NOT_RUN"
+            "PASS" if valid else "FAIL", robustness, delivery
         ),
         "image_ids": {
             k: v.image_id
@@ -61,5 +61,12 @@ def preflight_report(
         }
         if valid
         else {},
-        "reset_attempt_id": None,
+        "reset_attempt_id": release.reset_attempt_id if release else None,
     }
+    if release is not None:
+        result.update(
+            robustness_artifact_sha256=release.artifact_sha256,
+            robustness_failed_checks=list(release.robustness_failed_checks),
+            delivery_failed_checks=list(release.delivery_failed_checks),
+        )
+    return result

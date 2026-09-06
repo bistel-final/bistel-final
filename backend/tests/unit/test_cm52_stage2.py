@@ -213,6 +213,43 @@ def test_assert_owned_0600_rejects_mode_and_symlink_without_path_leak(
     assert linked.returncode == 1
 
 
+@pytest.mark.parametrize("invalid", [None, "secret", "directory", "missing", "symlink"])
+def test_publication_only_scan_never_certifies_private_bundle(tmp_path, invalid):
+    env_file = tmp_path / ".env.team"
+    _env_file(env_file)
+    attempt = tmp_path / "attempt"
+    attempt.mkdir()
+    for name in ("attempt.json", "golden-flow.json", "fault-5class.json"):
+        (attempt / name).write_text('{"status":"PASS"}')
+    (attempt / "private.json").write_text("do-not-print-this-secret")
+    target = attempt / "golden-flow.json"
+    if invalid == "secret":
+        target.write_text("do-not-print-this-secret")
+    elif invalid in ("directory", "missing", "symlink"):
+        target.unlink()
+        if invalid == "directory":
+            target.mkdir()
+        elif invalid == "symlink":
+            target.symlink_to(attempt / "attempt.json")
+    result = subprocess.run(
+        [
+            "python3",
+            str(SECRET_SCAN),
+            "--root",
+            str(attempt),
+            "--env-file",
+            str(env_file),
+            "--publications-only",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == (0 if invalid is None else 1)
+    assert "do-not-print-this-secret" not in result.stdout + result.stderr
+    if invalid is None:
+        assert result.stdout.strip() == "PUBLICATIONS_ONLY_PASS"
+
+
 def test_attempt_secret_scan_blocks_env_values_and_fixed_questions(
     tmp_path: Path,
 ) -> None:

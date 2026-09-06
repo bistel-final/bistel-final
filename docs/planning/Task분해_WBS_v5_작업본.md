@@ -1,5 +1,7 @@
 # Task 분해 · WBS v5 (작업본)
 
+> **2026-09-06 사용자 승인 변경 · 방대혁(C/Common) · `V5-C-7.1`: 새 MOCK-NOTIFY-V1은 승인/반려·이메일 확인 기록 없이 이메일 및 Kafka/MES Mock을 자동 연동한다. 기존 C-3.3/4.3/4.5/5.2 완료 이력은 보존한다. 아래 HITL 완료 기준은 기존 V1 전용이다. 새 정책의 12 COMPLETED·5/4/3·메일 7·Mock 3·승인 0 증적은 별도 발급해야 하며 코드 회귀와 공용/Stage2/Gate 완료를 구분한다. [변경 계약·미완료 경계](../deliverables/agent/mock-notify-contract.md).**
+
 > 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`
 > 기준 문서: 요구사항정의서 v2.1 · 시스템설계서 v2.1 · 역할분담 v10.1 · API명세서 v3
 > 데이터 기준표: `docs/reference/mentor-final-20260818/README.md`

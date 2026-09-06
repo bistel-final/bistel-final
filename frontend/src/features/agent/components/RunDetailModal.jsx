@@ -8,23 +8,23 @@ import { approvalText } from './agentModel.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
 import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
+import { isNotificationAction } from '../notification-state.js'
 
 // 근거 · 조치 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
 // 이전 시안의 상세 모달 안에서 C-5.2의 공개 근거·승인·감사 계약을 함께 제공한다.
 const TABS = [
   { key: 'rag', label: 'RAG 문서 근거' },
   { key: 'graph', label: '그래프 근거' },
-  { key: 'act', label: '권고 조치 · 승인' },
+  { key: 'act', label: '권고 조치 · 알림' },
   { key: 'audit', label: '감사 이력' },
 ]
 
-// 조치 절차 체크리스트 — EQP_HOLD 4단계 / 그 외 3단계 (시안 고정 문안)
+// 경로 안내이며 실행 완료 증명이 아니다. 실제 결과는 DeliveryFlow를 따른다.
 const CHECKLIST = {
   EQP_HOLD: [
-    '설비 투입 중단 — MES에 EQP HOLD 등록',
-    '진행 중 LOT 배출 확인',
-    '담당 엔지니어 점검 배정',
-    '점검 완료 후 HOLD 해제 · 재가동',
+    'n8n 조치 알림 이메일 발송',
+    'Kafka로 HOLD 요청을 MES Mock에 전달',
+    'MES Mock의 모의 처리 응답을 시스템에 반영',
   ],
   WARNING: ['이상 경고 이메일 발송', '다음 LOT 처리 결과 확인', '재발 시 조치 상향 검토'],
   MONITORING: ['해당 챔버 모니터링 강화 등록', '다음 LOT 처리 결과 확인', '재발 시 조치 상향 검토'],
@@ -55,7 +55,10 @@ function RunDetailModal({
   const actionReason = action?.reason ?? '규칙 기반 조치 사유 미제공'
   const verificationSteps = detail?.diagnosis?.verification_steps ?? []
   const isHold = actionCode === 'EQP_HOLD'
-  const steps = CHECKLIST[actionCode] ?? CHECKLIST.MONITORING
+  const notification = isNotificationAction(action)
+  const steps = isHold && !notification
+    ? ['이전 정책의 승인 요청 이메일', '이전 정책의 승인 후 Kafka·MES Mock 연동', '모의 처리 응답 반영 (실제 설비 제어 아님)']
+    : CHECKLIST[actionCode] ?? CHECKLIST.MONITORING
   const deciding = approvalState?.phase === 'pending'
 
   const tabCls = (on) =>
@@ -121,7 +124,7 @@ function RunDetailModal({
               </div>
 
               <div>
-                <div className="mb-2 text-[11px] font-bold text-g2">조치 실행 절차</div>
+                <div className="mb-2 text-[11px] font-bold text-g2">조치 경로 안내 · 실행 결과는 전달 기록 기준</div>
                 <div className="flex flex-col gap-2.5">
                   {steps.map((s, i) => (
                     <div key={s} className="flex items-center gap-3">
@@ -139,12 +142,14 @@ function RunDetailModal({
                 <DeliveryFlow action={action} />
               </div>
 
-              {isHold ? (
+              {notification ? (
+                <p className="text-[12px] text-g2">이메일 발송 결과와 자동 모의 연동 결과만 기록합니다. 사용자 승인·반려나 메일 열람·확인 기록은 필요하지 않습니다.</p>
+              ) : isHold ? (
                 status === 'PENDING' ? (
                   <div className="rounded-[10px] border border-tint-red-line bg-row-red p-4">
-                    <div className="text-[12.5px] font-bold text-red">EQP_HOLD 승인 대기 — 설비 정지는 사람이 최종 결정합니다</div>
+                    <div className="text-[12.5px] font-bold text-red">이전 정책의 승인 대기 이력 — MES Mock 요청 전송 여부를 결정합니다</div>
                     <div className="mt-1 text-[11.5px] text-g1">
-                      승인 시 MES로 HOLD 이벤트가 전송되고, 반려 시 전송이 취소됩니다.
+                      승인 시 MES Mock으로 HOLD 요청이 전송되고, 반려 시 전송이 취소됩니다. 실제 설비 제어는 아닙니다.
                       {approval && <span className="ml-1 font-mono text-g2">({approval.approval_id})</span>}
                     </div>
                     <div className="mt-3 flex gap-2">

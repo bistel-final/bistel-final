@@ -290,6 +290,7 @@ def _public_action(record: PublicActionRecord) -> ActionItem:
         else to_public_approval_status(record.approval_status)
     )
     return ActionItem(
+        delivery_policy=record.delivery_policy,
         action_id=record.action_id,
         agent_run_id=record.agent_run_id,
         created_by_agent_run_id=record.agent_run_id,
@@ -703,6 +704,7 @@ def load_public_agent_run_detail(
         None
         if action_detail is None
         else AgentRunActionItem(
+            delivery_policy=action_detail.delivery_policy,
             action_id=action_detail.action_id,
             agent_run_id=action_detail.agent_run_id,
             action_code=action_detail.action_code,

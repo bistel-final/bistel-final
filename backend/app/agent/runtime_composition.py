@@ -8,11 +8,13 @@ checkpointer pool과 설정을 확인하고, 그 뒤 같은 graph·pool·executo
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any, Protocol
 
@@ -201,7 +203,7 @@ def _production_resources(llm_model: str) -> RuntimeResources:
         mes = mes_production_ports(settings, transactions)
         ports: AgentNodePorts = _ProductionNodePorts(  # type: ignore[assignment]
             generate_hypothesis=hypothesis.production_port(),
-            decide_action=decision.production_port(),
+            decide_action=decision.production_port(settings.AGENT_ACTION_POLICY),
             persist_action=action_store.production_port(transactions),
             notify_email=email.notify_email,
             approval_email=approval_email_port(
@@ -307,12 +309,30 @@ class AgentRuntime:
             raise AgentRuntimeError("AGENT_RUNTIME_CLOSED")
 
     def _require_autonomy_ready(self) -> None:
+        validator = self._demo_receipt_validator
+        if (
+            self._autonomy_level == 3
+            and self._database_name == "kosa_agent"
+            and settings.AGENT_ACTION_POLICY == "MOCK-NOTIFY-V1"
+        ):
+            from app.agent.release_grant import release_grant_matches
+
+            # New policy never accepts a legacy receipt or an injected legacy
+            # receipt callback. The fixed read-only mount binds qualified bytes.
+            def validator(attempt):
+                return release_grant_matches(
+                    reports_root=Path("/reports"),
+                    expected_attempt_id=attempt,
+                    expected_revision=os.environ.get("BISTEL_SOURCE_REVISION", ""),
+                    expected_policy=settings.AGENT_ACTION_POLICY,
+                )
+
         if self._autonomy_level not in (1, 2, 3) or not production_level3_allowed(
             autonomy_level=self._autonomy_level,
             enabled=self._level3_enabled,
             database=self._database_name,
             demo_ack=self._demo_ack,
-            receipt_validator=self._demo_receipt_validator,
+            receipt_validator=validator,
         ):
             raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
 
@@ -425,6 +445,23 @@ class AgentRuntime:
             return None
 
     def start_run(self, alarm: AlarmRef) -> StartedPublicRun:
+        from app.agent.release_artifacts import EvidenceError
+        from app.agent.release_fence import admit_new_run
+
+        try:
+            required_binding = (
+                (os.environ.get("BISTEL_SOURCE_REVISION"), self._demo_ack)
+                if self._autonomy_level == 3 and self._database_name == "kosa_agent"
+                else None
+            )
+            with admit_new_run(required_binding=required_binding):
+                return self._start_admitted_run(alarm)
+        except EvidenceError:
+            raise DependencyNotReadyError(
+                "Agent 신규 실행이 전환 검증 중 차단되었습니다."
+            ) from None
+
+    def _start_admitted_run(self, alarm: AlarmRef) -> StartedPublicRun:
         resources = self.preflight()
         thread_id = new_thread_id()
         config = build_thread_config(thread_id)

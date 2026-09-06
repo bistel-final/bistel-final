@@ -123,6 +123,35 @@ def _validated_plan(
         return None
     statuses = _status_by_channel(rows)
 
+    if bundle.delivery_policy == "MOCK-NOTIFY-V1":
+        expected = (
+            _EMAIL_PLAN if bundle.action_code is ActionCode.WARNING else _HOLD_PLAN
+        )
+        if (
+            bundle.action_code not in {ActionCode.WARNING, ActionCode.EQP_HOLD}
+            or channels != expected
+            or any(
+                value is not None
+                for value in (
+                    bundle.approval_id,
+                    bundle.approval_status,
+                    bundle.approval_agent_run_id,
+                )
+            )
+            or any(
+                status not in _EMAIL_NO_CALL | {DeliveryStatus.WAITING}
+                for status in statuses.values()
+            )
+        ):
+            return None
+        if statuses[DeliveryChannel.EMAIL] is DeliveryStatus.WAITING:
+            return _ExecutionPlan(bundle, rows, DeliveryChannel.EMAIL)
+        if statuses.get(DeliveryChannel.MES_MOCK) is DeliveryStatus.WAITING:
+            return _ExecutionPlan(bundle, rows, DeliveryChannel.MES_MOCK)
+        return _ExecutionPlan(bundle, rows, None)
+    if bundle.delivery_policy != "ACTION-POLICY-V1":
+        return None
+
     if bundle.action_code is ActionCode.MONITORING:
         return None
 
@@ -275,7 +304,9 @@ class SendActionService:
         outcome: EmailDeliveryResult | MesDeliveryResult
         try:
             if plan.channel is DeliveryChannel.EMAIL:
-                if bundle.action_code is ActionCode.WARNING:
+                if bundle.delivery_policy == "MOCK-NOTIFY-V1":
+                    outcome = self.email.send_notification(request.action_id)
+                elif bundle.action_code is ActionCode.WARNING:
                     outcome = self.email.send_warning(request.action_id)
                 else:
                     if bundle.approval_id is None:  # pre-I/O 검증의 방어적 이중화

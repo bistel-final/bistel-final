@@ -1,5 +1,7 @@
 # API 명세서
 
+> **2026-09-06 추가 호환 계약: 공개 action 객체에 `delivery_policy: ACTION-POLICY-V1 | MOCK-NOTIFY-V1`을 추가한다(누락 시 V1 호환). 새 정책은 EQP_HOLD도 `approval_status=null`, 상세 approval 없음이며 기존 승인/반려 API를 호출하지 않는다. 확인/메일 열람 API는 추가하지 않고 7화면 경로와 채널 enum을 유지한다. WF2는 WARNING/EQP_HOLD의 ACTION_NOTIFY·approval_id=null을 추가 허용한다. WF3 decided_by의 `policy:MOCK-NOTIFY-V1`은 시스템 정책 actor다. 본문의 승인 필수 조건은 기존 V1 전용이다. [상세 계약](../agent/mock-notify-contract.md).**
+
 **PhotoEtch FDC Agent Pilot — 최종 데이터 전환 작업본**
 
 ---

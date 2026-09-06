@@ -28,7 +28,12 @@ from app.agent.release_artifacts import (
     parse_json,
     read_private,
 )
-from app.agent.release_prepared import Attempt, PreparedAttempt, UtcTime, utc
+from app.agent.release_prepared import (
+    Attempt,
+    UtcTime,
+    parse_prepared,
+    utc,
+)
 
 Phase = Literal["RESUME_WORKLOAD", "PUBLISH", "ABORT"]
 Result = Literal["NOT_ATTEMPTED", "OK", "FAILED"]
@@ -102,11 +107,35 @@ class ExternalEffects(EvidenceModel):
     mes_blocked: int | None = Field(ge=0)
     basis: str = Field(min_length=1, max_length=1000)
 
+    @property
+    def mes_count(self):
+        return self.mes_blocked
+
     @model_validator(mode="after")
     def null_matrix(self) -> ExternalEffects:
         if any(
             (value is None) != (self.state == "INDETERMINATE")
             for value in (self.email_sent, self.mes_blocked)
+        ):
+            raise ValueError("EXTERNAL_EFFECTS_NULL_MATRIX")
+        return self
+
+
+class ExternalEffectsV2(EvidenceModel):
+    state: Literal["KNOWN", "INDETERMINATE"]
+    email_sent: int | None = Field(ge=0)
+    mes_sent: int | None = Field(ge=0)
+    basis: str = Field(min_length=1, max_length=1000)
+
+    @property
+    def mes_count(self):
+        return self.mes_sent
+
+    @model_validator(mode="after")
+    def null_matrix(self):
+        if any(
+            (v is None) != (self.state == "INDETERMINATE")
+            for v in (self.email_sent, self.mes_sent)
         ):
             raise ValueError("EXTERNAL_EFFECTS_NULL_MATRIX")
         return self
@@ -199,7 +228,7 @@ class LifecycleOutcome(TerminalResult):
                 raise ValueError("LIFECYCLE_ABORT_REASON_REQUIRED")
             if self.external_effects.state != "KNOWN" or (
                 self.external_effects.email_sent,
-                self.external_effects.mes_blocked,
+                self.external_effects.mes_count,
             ) != (0, 0):
                 raise ValueError("LIFECYCLE_ABORT_EFFECT_INVALID")
         elif self.reason_code is not None:
@@ -212,15 +241,17 @@ class LifecycleOutcome(TerminalResult):
                 or (self.cleanup_result, self.restore_result)
                 != ("NOT_ATTEMPTED", "NOT_ATTEMPTED")
                 or self.external_effects.state != "KNOWN"
-                or (self.external_effects.email_sent, self.external_effects.mes_blocked)
+                or (self.external_effects.email_sent, self.external_effects.mes_count)
                 != (7, 3)
             ):
                 raise ValueError("LIFECYCLE_HELD_INVALID")
         elif self.outcome == "ABORTED":
-            if self.failure_code is not None or (
+            # v61 §0′ permits an observed no-op (with the basis checked above),
+            # e.g. an operator already removed E2E before explicit abort.
+            if self.failure_code is not None or "FAILED" in (
                 self.cleanup_result,
                 self.restore_result,
-            ) != ("OK", "OK"):
+            ):
                 raise ValueError("LIFECYCLE_ABORTED_INVALID")
         elif self.failure_code is None:
             raise ValueError("LIFECYCLE_FAILURE_REQUIRED")
@@ -283,13 +314,48 @@ class RoundCompletion(TerminalResult):
                         self.fault_5class_sha256,
                     )
                 )
-                or (self.external_effects.email_sent, self.external_effects.mes_blocked)
+                or (self.external_effects.email_sent, self.external_effects.mes_count)
                 != (7, 3)
             ):
                 raise ValueError("COMPLETION_PASS_INVALID")
         elif self.failure_code is None:
             raise ValueError("COMPLETION_FAILURE_REQUIRED")
         return self
+
+
+class LifecycleOutcomeV2(LifecycleOutcome):
+    schema_version: Literal["level3-lifecycle-outcome-v2"]
+    external_effects: ExternalEffectsV2
+
+
+class RoundCompletionV2(RoundCompletion):
+    schema_version: Literal["level3-round1-completion-v2"]
+    external_effects: ExternalEffectsV2
+    post_freeze_callbacks: int | None = Field(ge=0)
+
+    @model_validator(mode="after")
+    def observed_callbacks(self):
+        if self.final_status == "PASS" and self.post_freeze_callbacks is None:
+            raise ValueError("POST_FREEZE_CALLBACK_OBSERVATION_REQUIRED")
+        return self
+
+
+def parse_outcome(value):
+    model = (
+        LifecycleOutcomeV2
+        if value.get("schema_version") == "level3-lifecycle-outcome-v2"
+        else LifecycleOutcome
+    )
+    return model.model_validate(value)
+
+
+def parse_completion(value):
+    model = (
+        RoundCompletionV2
+        if value.get("schema_version") == "level3-round1-completion-v2"
+        else RoundCompletion
+    )
+    return model.model_validate(value)
 
 
 def claim_filename(phase: str) -> str:
@@ -326,9 +392,7 @@ def classify_state(files: Mapping[str, bytes]) -> State:
         raise EvidenceError("LIFECYCLE_PHASE_INVALID")
     if "prepared-attempt.json" not in files:
         raise EvidenceError("LIFECYCLE_PREPARED_REQUIRED")
-    prepared = PreparedAttempt.model_validate(
-        parse_json(files["prepared-attempt.json"])
-    )
+    prepared = parse_prepared(parse_json(files["prepared-attempt.json"]))
     claims: dict[str, LifecycleClaim] = {}
     terminals: dict[str, LifecycleOutcome | RoundCompletion] = {}
     for phase in PHASES:
@@ -346,7 +410,7 @@ def classify_state(files: Mapping[str, bytes]) -> State:
             if phase not in claims:
                 raise EvidenceError("LIFECYCLE_CLAIM_REQUIRED")
             if phase == "PUBLISH":
-                completion = RoundCompletion.model_validate(parse_json(files[filename]))
+                completion = parse_completion(parse_json(files[filename]))
                 if completion.cm52_attempt_id != prepared.attempt_id:
                     raise EvidenceError("LIFECYCLE_ATTEMPT_MISMATCH")
                 for component in (
@@ -359,7 +423,7 @@ def classify_state(files: Mapping[str, bytes]) -> State:
                 finished = completion.completed_at
                 terminals[phase] = completion
             else:
-                outcome = LifecycleOutcome.model_validate(parse_json(files[filename]))
+                outcome = parse_outcome(parse_json(files[filename]))
                 if outcome.phase != phase:
                     raise EvidenceError("LIFECYCLE_PHASE_MISMATCH")
                 _bound(files, outcome.claim)
@@ -367,6 +431,10 @@ def classify_state(files: Mapping[str, bytes]) -> State:
                 terminals[phase] = outcome
             if utc(finished) < utc(claims[phase].claimed_at):
                 raise EvidenceError("LIFECYCLE_TIME_INVALID")
+            if terminals[phase].schema_version.endswith(
+                "-v2"
+            ) != prepared.schema_version.endswith("-v2"):
+                raise EvidenceError("LIFECYCLE_POLICY_MISMATCH")
     unresolved = set(claims) - set(terminals)
     if len(unresolved) > 1:
         raise EvidenceError("LIFECYCLE_MULTIPLE_UNRESOLVED")
@@ -400,7 +468,9 @@ def authorize_transition(state: State, mode: str) -> Literal["ALLOW"]:
     return "ALLOW"
 
 
-def read_lifecycle(root: Path) -> dict[str, bytes]:
+def read_lifecycle(
+    root: Path, *, relative_directory: str | None = None
+) -> dict[str, bytes]:
     names = {
         "prepared-attempt.json",
         "round1.json",
@@ -410,28 +480,114 @@ def read_lifecycle(root: Path) -> dict[str, bytes]:
     }
     names.update(claim_filename(phase) for phase in PHASES)
     names.update(terminal_filename(phase) for phase in PHASES)
+    prefix = "" if relative_directory is None else relative_directory + "/"
+    # Anchor enumeration and each read at the protected report root. A lock
+    # inode need not exist for this read-only observation.
+    with component_parent(root, prefix + ".lifecycle.lock") as (parent, _):
+        entries = set(os.listdir(parent))
     # Generic/unknown phase files cannot masquerade as "claim count = 0".
-    if any(
-        path.name.startswith("lifecycle-") and path.name not in names
-        for path in root.iterdir()
-    ):
+    if any(name.startswith("lifecycle-") and name not in names for name in entries):
         raise EvidenceError("LIFECYCLE_PHASE_INVALID")
     return {
-        name: read_private(root, name)
+        name: read_private(root, prefix + name)
         for name in sorted(names)
-        if os.path.lexists(root / name)
+        if name in entries
     }
 
 
-@contextmanager
-def lifecycle_lock(root: Path) -> Iterator[None]:
-    """Nonblocking OS flock. Keep held across cleanup AND terminal emission."""
+def _lock_path(relative_directory: str | None) -> str:
+    return (
+        ".lifecycle.lock"
+        if relative_directory is None
+        else f"{relative_directory}/.lifecycle.lock"
+    )
+
+
+def _verify_lock_descriptor(parent: int, name: str, descriptor: int) -> None:
+    """Prove a private path's exclusive flock belongs to this open description.
+
+    A separate SH probe must be blocked, then EX on the supplied description
+    must succeed. A path-matching but independently opened FD is not sufficient.
+    Never unlock the supplied FD. This proves present ownership, not history.
+    """
     from app.agent.release_artifacts import _check_file
 
-    with component_parent(root, ".lifecycle.lock") as (parent, name):
-        descriptor = os.open(
-            name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=parent
-        )
+    if type(descriptor) is not int or descriptor < 3:
+        raise EvidenceError("LIFECYCLE_LOCK_DESCRIPTOR_INVALID")
+    probe = None
+    try:
+        held = os.fstat(descriptor)
+        _check_file(held)
+        if fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDWR:
+            raise ValueError
+        probe = os.open(name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=parent)
+        current = os.fstat(probe)
+        _check_file(current)
+        if (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
+            raise ValueError
+        try:
+            fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            # No exclusive owner (or only a shared owner): not an inherited
+            # exclusive lock. close(probe) releases only the probe's SH lock.
+            raise ValueError
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, ValueError):
+        raise EvidenceError("LIFECYCLE_LOCK_DESCRIPTOR_INVALID") from None
+    finally:
+        if probe is not None:
+            os.close(probe)
+
+
+def verify_lifecycle_lock(
+    root: Path, descriptor: int, *, relative_directory: str | None = None
+) -> None:
+    """Recheck path/inode/ownership before publication; no create or unlock."""
+    with component_parent(root, _lock_path(relative_directory)) as (parent, name):
+        _verify_lock_descriptor(parent, name, descriptor)
+
+
+@contextmanager
+def lifecycle_lock(
+    root: Path,
+    *,
+    relative_directory: str | None = None,
+    inherited_fd: int | None = None,
+) -> Iterator[int]:
+    """Exclusive OS lock through cleanup/terminal, optionally borrowed by child.
+
+    Owner yields a non-inheritable FD. Explicit subprocess pass_fds transfers
+    that same open description. Borrower duplicates/closes, NEVER LOCK_UNs it.
+    Owner must wait for its child before exiting this context; this primitive
+    does not spawn/wait/recover processes or prove earlier lifecycle ownership.
+    """
+    from app.agent.release_artifacts import _check_file
+
+    lock_path = _lock_path(relative_directory)
+    with component_parent(root, lock_path) as (parent, name):
+        if inherited_fd is not None:
+            _verify_lock_descriptor(parent, name, inherited_fd)
+            descriptor = os.dup(inherited_fd)
+            try:
+                _verify_lock_descriptor(parent, name, descriptor)
+                yield descriptor
+            finally:
+                os.close(descriptor)
+            return
+        # Separate creation from opening the existing inode. On macOS two
+        # concurrent O_CREAT|O_NOFOLLOW opens can spuriously return ENOENT.
+        # O_EXCL also makes it explicit that an existing lock is never replaced.
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+                dir_fd=parent,
+            )
+        except FileExistsError:
+            descriptor = os.open(name, os.O_RDWR | os.O_NOFOLLOW, dir_fd=parent)
         try:
             _check_file(os.fstat(descriptor))
             try:
@@ -439,7 +595,8 @@ def lifecycle_lock(root: Path) -> Iterator[None]:
             except BlockingIOError as exc:
                 raise EvidenceError("LIFECYCLE_LOCK_BUSY") from exc
             try:
-                yield
+                _verify_lock_descriptor(parent, name, descriptor)
+                yield descriptor
             finally:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
         finally:

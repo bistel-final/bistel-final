@@ -50,6 +50,7 @@ BACKEND_ENV_KEYS = {
     "N8N_WEBHOOK_TIMEOUT_SEC",
     "DELIVERY_UNKNOWN_AFTER_SEC",
     "AGENT_EMAIL_RECIPIENTS",
+    "AGENT_ACTION_POLICY",
     "AGENT_AUTONOMY_LEVEL",
     "AGENT_LEVEL3_ENABLED",
     "AGENT_LEVEL3_DEMO_ACK",
@@ -551,6 +552,25 @@ def test_preflight_accepts_a_complete_nonlocal_contract(tmp_path: Path) -> None:
     preflight = _load_preflight()
 
     assert preflight.validate(_valid_env(tmp_path)) == []
+
+
+@pytest.mark.parametrize("policy", [None, "ACTION-POLICY-V1", "MOCK-NOTIFY-V1"])
+def test_optional_action_policy_preserves_old_env(tmp_path: Path, policy) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values.pop("AGENT_ACTION_POLICY", None)
+    if policy is not None:
+        values["AGENT_ACTION_POLICY"] = policy
+    assert preflight.validate(values) == []
+
+
+def test_unknown_action_policy_fails_closed(tmp_path: Path) -> None:
+    preflight = _load_preflight()
+    values = _valid_env(tmp_path)
+    values["AGENT_ACTION_POLICY"] = "AUTO_APPROVE"
+    assert preflight.Finding(
+        "AGENT_ACTION_POLICY", "ACTION_POLICY_INVALID"
+    ) in preflight.validate(values)
 
 
 @pytest.mark.parametrize(

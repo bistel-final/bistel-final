@@ -1,0 +1,7 @@
+# Stage2 PUBLISH only, after round1 freeze. Images remain pinned by level3.yml.
+services:
+  backend:
+    environment:
+      AGENT_FAULT_EVAL_ARTIFACT_PATH: ${CM52_PUBLISHED_FAULT:?required}
+      AGENT_GOLDEN_FLOW_SUMMARY_PATH: ${CM52_PUBLISHED_GOLDEN:?required}
+      DELIVERY_CALLBACK_TRAIL_RUN_ID: ${CM52_PUBLISHED_TRAIL_ID:?required}

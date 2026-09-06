@@ -18,6 +18,7 @@ import {
 } from '../../../shared/graph/ontology-graph.js'
 import { evidenceHref } from '../agent-run-view-state.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
+import { deliveryFlowEdges, isNotificationAction } from '../notification-state.js'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 import {
   alarmDisplayLabel,
@@ -65,7 +66,7 @@ const executionStepsOf = (detail) => [
   { id: 'approval', value: detail.approval },
   { id: 'delivery', value: detail.action?.deliveries ?? [] },
   { id: 'audit', value: { run_id: detail.agent_run_id } },
-]
+].filter((step) => step.id !== 'approval' || !isNotificationAction(detail.action))
 
 const isAvailable = (step) =>
   Array.isArray(step.value) ? step.value.length > 0 : step.value != null
@@ -80,7 +81,7 @@ const nodeLabel = (step, selected, incidentScopeLabel = null) => {
         <div className="mt-1 whitespace-nowrap font-mono text-[10.5px] font-bold text-g1">({incidentScopeLabel} 기준)</div>
       )}
       <div className="mt-1 text-[11.5px] font-semibold text-g2">
-        {step.experimental ? '비교 실험 확장' : isAvailable(step) ? (selected ? '선택됨' : '완료') : '미수행'}
+        {step.experimental ? '비교 실험 확장' : isAvailable(step) ? (selected ? '선택됨' : step.id === 'delivery' ? '전달 상태 조회' : '완료') : '미수행'}
       </div>
     </div>
   )
@@ -680,11 +681,11 @@ function StepPanel({ detail, step, alarm }) {
       <PreviewGrid items={[
         ['조치 ID', step.value.action_id],
         ['판정', step.value.action_code],
-        ['승인', approvalStatusSummary(step.value, detail.approval)],
+        [isNotificationAction(step.value) ? '전달 정책' : '이전 승인 정책', approvalStatusSummary(step.value, detail.approval)],
         ['전달', deliveryStatusSummary(step.value)],
       ]} />
       <div className="rounded-lg border border-tint-blue-line bg-tint-blue px-3 py-2.5 text-[12px] leading-6 text-g1">{step.value.reason}</div>
-      <div className="text-[11px] font-bold text-g2">ACTION-POLICY-V1 규칙 판정</div>
+      <div className="text-[11px] font-bold text-g2">{step.value.delivery_policy ?? 'ACTION-POLICY-V1'} 규칙 판정</div>
     </div>
   ) : <div className="text-[12px] text-g2">조치 미결정</div>
   if (step.id === 'approval') content = step.value ? (
@@ -710,6 +711,7 @@ function StepPanel({ detail, step, alarm }) {
 
 function AgentExecutionFlow({ detail, alarm }) {
   const steps = useMemo(() => executionStepsOf(detail), [detail])
+  const edges = useMemo(() => deliveryFlowEdges(FLOW_EDGES, detail.action), [detail.action])
   const incidentScopeLabel = useMemo(
     () => [detail.chamber_id ?? alarm?.chamber_id, detail.lot_id ?? alarm?.lot_id].filter(Boolean).join(' · ') || null,
     [alarm?.chamber_id, alarm?.lot_id, detail.chamber_id, detail.lot_id],
@@ -786,7 +788,7 @@ function AgentExecutionFlow({ detail, alarm }) {
                 ['입력', incidentScopeLabel ? `알람 Incident (${incidentScopeLabel} 기준)` : '알람 Incident'],
                 ['근거 수집', '측정값 · 매뉴얼 · 설비 관계'],
                 ['분석', '충분성 · 원인 · 영향'],
-                ['조치', '규칙 판정 · 승인 · 전달'],
+                ['조치', isNotificationAction(detail.action) ? '규칙 판정 · 자동 알림 · 모의 연동' : '규칙 판정 · 이전 승인 정책 · 전달'],
               ].map(([phase, label], index) => (
                 <div key={phase} className="relative rounded-lg border border-line bg-soft px-3 py-2.5">
                   <div className="text-[9px] font-extrabold tracking-[.08em] text-g2">{phase}</div>
@@ -815,7 +817,7 @@ function AgentExecutionFlow({ detail, alarm }) {
             <div className="relative min-h-0 flex-1">
               <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0">
                 <div className="min-h-0 flex-1 bg-soft/40">
-                  <ReactFlow nodeTypes={NODE_TYPES} nodes={nodes} edges={FLOW_EDGES} fitView fitViewOptions={{ padding: 0.035 }} minZoom={0.55} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => selectNode(node.id)} onPaneClick={() => setDetailOpen(false)} deleteKeyCode={null} proOptions={{ hideAttribution: true }} aria-label="Agent 실행 흐름">
+                  <ReactFlow nodeTypes={NODE_TYPES} nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.035 }} minZoom={0.55} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => selectNode(node.id)} onPaneClick={() => setDetailOpen(false)} deleteKeyCode={null} proOptions={{ hideAttribution: true }} aria-label="Agent 실행 흐름">
                     <Panel position="top-left" className="!m-2 flex items-center gap-3 rounded-lg border border-line bg-white/95 px-3.5 py-2.5 text-[11.5px] font-bold text-g2 shadow-sm">
                       <span className="flex items-center gap-1.5"><i className="h-px w-5 bg-slate-500" />현재 실행</span>
                       <span className="flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-[#9b8bab]" />C-7.1 실험 확장</span>

@@ -266,12 +266,12 @@ function AgentRunDetailPage({ runId }) {
   return (
     <div className="animate-[om-fadein_.3s_ease-out]">
       <div className="flex min-h-16 items-center justify-between pb-1.5 pt-3.5">
-        <div className="text-[22px] font-extrabold text-ink">Agent 분석 · 승인</div>
+        <div className="text-[22px] font-extrabold text-ink">Agent 분석 · 조치</div>
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => setSection(section === 'run' ? 'evaluation' : 'run')} className="text-[13px] font-bold text-blue">
             {section === 'run' ? '평가 결과 보기' : '실행 상세 보기'}
           </button>
-          <div className="text-[12.5px] text-g2">분석 실행 {state.runs.length}건 · EQP_HOLD는 사람 승인 후 전송</div>
+          <div className="text-[12.5px] text-g2">분석 실행 {state.runs.length}건 · 이메일 발송·MES Mock 응답 확인 · 이전 실행은 저장된 정책 유지</div>
         </div>
       </div>
 

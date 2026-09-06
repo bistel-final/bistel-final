@@ -50,10 +50,22 @@ def decide_action(route: ResolvedIncidentRoute) -> ActionDecision:
     )
 
 
-def production_port() -> Callable[[ResolvedIncidentRoute], ActionDecision]:
+def production_port(
+    policy_version: ActionPolicyVersion = "ACTION-POLICY-V1",
+) -> Callable[[ResolvedIncidentRoute], ActionDecision]:
     """AgentNodePorts에 주입할 production 결정 callable."""
 
-    return decide_action
+    if policy_version == "ACTION-POLICY-V1":
+        return decide_action
+    if policy_version != "MOCK-NOTIFY-V1":
+        raise ValueError("ACTION_POLICY_INVALID")
+
+    def decide_notification(route):
+        values = decide_action(route).model_dump()
+        values.update(policy_version=policy_version, requires_approval=False)
+        return ActionDecision.model_validate(values)
+
+    return decide_notification
 
 
 __all__ = ["ACTION_POLICY", "POLICY_VERSION", "decide_action", "production_port"]

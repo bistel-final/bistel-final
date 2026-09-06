@@ -1705,7 +1705,9 @@ def build_agent_graph(
         return {
             ActionCode.MONITORING: "finalize",
             ActionCode.WARNING: "notify_email",
-            ActionCode.EQP_HOLD: "approval_email",
+            ActionCode.EQP_HOLD: "approval_email"
+            if decision.requires_approval
+            else "notify_email",
         }[decision.action]
 
     graph.add_conditional_edges(
@@ -1718,10 +1720,26 @@ def build_agent_graph(
             "fail_run": "fail_run",
         },
     )
+
+    def after_notification(state: AgentGraphState) -> str:
+        if state.get("terminal_error") is not None:
+            return "fail_run"
+        decision = state.get("action_decision")
+        if decision is not None and decision.action is ActionCode.EQP_HOLD:
+            # Defensive only: after_persist routes valid legacy EQP_HOLD to
+            # approval_email, never here. Keep the check for corrupted state.
+            if (
+                decision.policy_version != "MOCK-NOTIFY-V1"
+                or decision.requires_approval
+            ):
+                return "fail_run"
+            return "publish_mes"
+        return "finalize"
+
     graph.add_conditional_edges(
         "notify_email",
-        _route_or_fail("finalize"),
-        {"finalize": "finalize", "fail_run": "fail_run"},
+        after_notification,
+        {"finalize": "finalize", "publish_mes": "publish_mes", "fail_run": "fail_run"},
     )
     graph.add_conditional_edges(
         "approval_email",

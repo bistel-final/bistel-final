@@ -116,6 +116,10 @@ jobs:
         working-directory: frontend
         run: npm run test:agent-investigation
 
+      - name: Verify automatic Mock notification UI without read tracking
+        working-directory: frontend
+        run: npm run test:mock-notify
+
       - name: Verify API schema-derived mock contract
         working-directory: frontend
         run: npm run test:api-schema
@@ -303,6 +307,45 @@ jobs:
           tests/unit/test_agent_react_public.py
           tests/unit/test_agent_runtime_readback.py
           tests/unit/test_agent_release.py
+          tests/unit/test_agent_release_evidence.py
+          tests/unit/test_agent_release_round.py
+          tests/unit/test_agent_release_aggregate.py
+          tests/unit/test_agent_release_n8n.py
+          tests/unit/test_agent_release_database.py
+          tests/unit/test_agent_release_approval_evidence.py
+          tests/unit/test_agent_release_runtime.py
+          tests/unit/test_agent_release_prepare.py
+          tests/unit/test_agent_release_context.py
+          tests/unit/test_agent_release_capture.py
+          tests/unit/test_agent_release_lock.py
+          tests/unit/test_agent_release_entry.py
+          tests/unit/test_agent_release_seal.py
+          tests/unit/test_agent_release_gate.py
+          tests/unit/test_agent_release_model.py
+          tests/unit/test_agent_release_fence.py
+          tests/unit/test_agent_release_transition.py
+          tests/unit/test_agent_release_production.py
+          tests/unit/test_agent_release_n8n_session.py
+          tests/unit/test_agent_release_n8n_probe.py
+          tests/unit/test_agent_release_phase.py
+          tests/unit/test_agent_release_stage2_recovery.py
+          tests/unit/test_agent_mock_notify.py
+          tests/unit/test_agent_release_resume.py
+          tests/unit/test_agent_release_run_capture.py
+          tests/unit/test_agent_release_bundle_v2.py
+          tests/unit/test_agent_release_collection.py
+          tests/unit/test_agent_release_golden_v2.py
+          tests/unit/test_agent_release_grant.py
+          tests/unit/test_agent_release_mock.py
+          tests/unit/test_agent_release_mock_capture.py
+          tests/unit/test_agent_release_policy_v2.py
+          tests/unit/test_agent_release_preparation_v2.py
+          tests/unit/test_agent_release_qualification.py
+          tests/unit/test_agent_release_retention.py
+          tests/unit/test_agent_release_stage2_prepare.py
+          tests/unit/test_agent_release_stage2_publish.py
+          tests/unit/test_agent_release_stage2_v2.py
+          tests/unit/test_agent_release_stage2_workload.py
           tests/unit/test_agent_screen_read_model.py
           tests/unit/test_alarm_event_contract.py
           tests/unit/test_analysis_plan_tool.py

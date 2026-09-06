@@ -147,7 +147,11 @@ def test_emission_to_preflight_cli_seam_is_private_and_idempotent(
             "HARD_GATE_FAIL:COMPLETION" if negative else None
         )
         assert report["agent_verdict"] == receipt["agent_justification_verdict"]
-        assert report["robustness"] == report["delivery_integrity"] == "NOT_RUN"
+        assert (
+            report["robustness"]
+            == report["delivery_integrity"]
+            == ("FAIL" if profile == "production_level3" else "NOT_RUN")
+        )
         assert report["allowed_actions"] == {
             "u9": True,
             "e2e": True,
@@ -155,7 +159,7 @@ def test_emission_to_preflight_cli_seam_is_private_and_idempotent(
         }
         assert report["image_ids"] == args["expected_image_ids"]
         assert report["reset_attempt_id"] is None
-        assert set(report) == {
+        expected_keys = {
             "profile",
             "phase",
             "checked_at",
@@ -172,6 +176,16 @@ def test_emission_to_preflight_cli_seam_is_private_and_idempotent(
             "image_ids",
             "reset_attempt_id",
         }
+        if profile == "production_level3":
+            expected_keys |= {
+                "robustness_artifact_sha256",
+                "robustness_failed_checks",
+                "delivery_failed_checks",
+            }
+            assert report["robustness_failed_checks"] == [
+                "ROBUSTNESS_ARTIFACT_REQUIRED"
+            ]
+        assert set(report) == expected_keys
         assert all(
             key not in json.dumps(report)
             for key in ("validator_command", "demo_ack", "budget_policy")

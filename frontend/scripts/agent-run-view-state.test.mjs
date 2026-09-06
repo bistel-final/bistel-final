@@ -451,7 +451,7 @@ assert.match(executionFlowSource, /relation\.target/)
 assert.match(executionFlowSource, /연결 \{index \+ 1\} 직접 보기/)
 assert.match(executionFlowSource, /data-result-summary=\{tool\.result_summary\}/, '영문 시스템 결과는 화면 문장 대신 비가시 진단값으로만 보존해야 합니다')
 assert.match(executionFlowSource, /step\.value\.decided_at/)
-assert.match(executionFlowSource, /ACTION-POLICY-V1 규칙 판정/)
+assert.ok(executionFlowSource.includes("{step.value.delivery_policy ?? 'ACTION-POLICY-V1'} 규칙 판정"))
 assert.match(executionFlowSource, /data-testid="agent-diagnosis-five-blocks"/)
 for (const label of ['종합 진단', '근거 충분성', '영향 범위', '유사 incident', '조치 후 관찰']) {
   assert.match(executionFlowSource, new RegExp(label))
@@ -563,7 +563,7 @@ assert.match(impactModalSource, /data-testid="agent-impact-node-panel"/)
 for (const label of ['Agent 판단 연결', '공개 속성', '선택 노드 운영 요약']) {
   assert.match(impactModalSource, new RegExp(label), `영향 범위 노드 패널에 ${label}이 필요합니다`)
 }
-for (const label of ['영향 범위', '권고 조치', '승인 · 전달 · 관찰']) {
+for (const label of ['영향 범위', '권고 조치', '전달 정책 · 결과 · 관찰']) {
   assert.match(runSummarySource, new RegExp(label), `Agent 분석 요약에 ${label} 정보를 함께 제공해야 합니다`)
 }
 assert.doesNotMatch(runSummarySource, /값이 \$\{bound\}을 벗어나는/, '알람 요약을 고정 템플릿 문장으로 조립하면 안 됩니다')

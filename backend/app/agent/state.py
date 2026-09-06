@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     from app.agent.rehydration import RehydrationSeed
 
 MatchedRule = Literal["R03_PRESENT", "TRACE_OOS", "SUMMARY_OOC_ONLY", "NO_ALARM"]
-ActionPolicyVersion = Literal["ACTION-POLICY-V1"]
+ActionPolicyVersion = Literal["ACTION-POLICY-V1", "MOCK-NOTIFY-V1"]
 
 RULE_TO_ACTION: Final[Mapping[MatchedRule, ActionCode | None]] = {
     "R03_PRESENT": ActionCode.EQP_HOLD,
@@ -195,7 +195,12 @@ class ActionDecision(StateModel):
             return self
         if self.severity is not resolve_severity(self.action):
             raise ValueError("severity가 Common 파생값과 다릅니다")
-        if self.requires_approval != requires_approval(self.action):
+        expected_approval = (
+            requires_approval(self.action)
+            if self.policy_version == "ACTION-POLICY-V1"
+            else False
+        )
+        if self.requires_approval != expected_approval:
             raise ValueError("requires_approval이 Common 파생값과 다릅니다")
         return self
 
@@ -272,7 +277,7 @@ class PersistResult(StateModel):
     def assert_matches(self, decision: ActionDecision) -> None:
         if decision.action is None:
             raise ValueError("action 없음이면 PersistResult가 존재할 수 없습니다")
-        if (self.approval_id is not None) != requires_approval(decision.action):
+        if (self.approval_id is not None) != decision.requires_approval:
             raise ValueError("approval_id 유무가 action 정책과 다릅니다")
         channels = tuple(plan.channel for plan in self.deliveries)
         if channels != resolve_delivery_channels(decision.action):
@@ -280,7 +285,12 @@ class PersistResult(StateModel):
         if len(channels) != len(set(channels)):
             raise ValueError("delivery channel을 중복할 수 없습니다")
         for plan in self.deliveries:
-            if plan.status is not INITIAL_STATUS[plan.channel]:
+            expected = (
+                DeliveryStatus.WAITING
+                if decision.policy_version == "MOCK-NOTIFY-V1"
+                else INITIAL_STATUS[plan.channel]
+            )
+            if plan.status is not expected:
                 raise ValueError("초기 delivery 상태가 계약과 다릅니다")
 
 
