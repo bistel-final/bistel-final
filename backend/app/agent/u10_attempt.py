@@ -136,6 +136,7 @@ def execute_react_attempt(
             "GUARD_LIMIT",
             "STEP_CAP",
         },
+        read_stop_reason=reads.stop_reason,
         observe_effects=observe_effects,
         started=started,
         clock_ns=clock_ns,
@@ -208,6 +209,7 @@ def execute_fixed_attempt(
         selector=[],
         hypothesis=hypothesis,
         read_complete=True,
+        read_stop_reason="FIXED_PATH",
         observe_effects=observe_effects,
         started=started,
         clock_ns=clock_ns,
@@ -228,6 +230,7 @@ def _finish(
     selector,
     hypothesis,
     read_complete,
+    read_stop_reason,
     observe_effects,
     started,
     clock_ns,
@@ -251,7 +254,39 @@ def _finish(
         or len(calls) == 8
         or (calls[-1].status == "SUCCESS" or calls[-1].retry == 1)
     )
-    completed = ok and retry_closed and read_complete
+    service_completed = ok and retry_closed and read_complete
+    origin = hypothesis.outcome.hypothesis.origin_assessment if ok else None
+    degraded = bool(origin and origin.degraded)
+    completed = service_completed and not degraded
+    diagnostics = {}
+    if llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko2":
+        from app.agent.origin_diagnostics import DEGRADED_REASON, rejection_code
+
+        private = hypothesis.outcome.origin_diagnostics if ok else None
+        if degraded != (private is not None) or (
+            private and private.dropped_basis_count != origin.dropped_basis_count
+        ):
+            raise EvidenceError("U10_DIAGNOSTIC_INCONSISTENT")
+        diagnostics = dict(
+            service_completion=service_completed,
+            origin_degraded=degraded,
+            dropped_basis_count=private.dropped_basis_count if private else 0,
+            dropped_basis_unique=len(private.dropped_evidence_ids) if private else 0,
+            dropped_basis_refs=list(private.dropped_basis_refs) if private else [],
+            hypothesis_final_reason=(
+                None
+                if completed
+                else DEGRADED_REASON
+                if degraded
+                else "READ_LOOP_INCOMPLETE"
+                if ok
+                else rejection_code(
+                    hypothesis.error_detail or hypothesis.error_code,
+                    "HYPOTHESIS_STRUCTURE_INVALID",
+                )
+            ),
+            read_stop_reason=read_stop_reason,
+        )
     action = decide_action(route).action if ok else None
     safety, effects = observe_effects()
     elapsed = clock_ns() - started
@@ -274,6 +309,7 @@ def _finish(
     )
     order = FIXTURE_IDS.index(fixture.fixture_id) * 4 + position
     attempt = Attempt(
+        **diagnostics,
         fixture_id=fixture.fixture_id,
         attempt_no=attempt_no,
         policy=policy,

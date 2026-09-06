@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.common.tool_contracts import (
     ChamberParameterHistoryToolResult,
@@ -44,6 +44,20 @@ class OriginAssessment(InvestigationModel):
     scope: OriginScope
     basis: tuple[OriginBasisRef, ...]
     compared: ComparisonMatrix
+    degraded: bool = False
+    degraded_reasons: tuple[Literal["ORIGIN_BASIS_OUTSIDE_EVIDENCE"], ...] = ()
+    dropped_basis_count: int = Field(default=0, ge=0, le=40)
+
+    @model_validator(mode="after")
+    def degradation_consistent(self):
+        if self.degraded:
+            if self.dropped_basis_count < 1 or self.degraded_reasons != (
+                "ORIGIN_BASIS_OUTSIDE_EVIDENCE",
+            ):
+                raise ValueError("ORIGIN_DIAGNOSTIC_INCONSISTENT")
+        elif self.dropped_basis_count or self.degraded_reasons:
+            raise ValueError("ORIGIN_DIAGNOSTIC_INCONSISTENT")
+        return self
 
 
 class ParameterFindingDraft(InvestigationModel):

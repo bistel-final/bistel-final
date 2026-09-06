@@ -32,7 +32,9 @@ from app.agent.u10_comparison import Identifier
 class RuntimeLlmConfiguration(EvidenceModel):
     hypothesis_model_revision: Identifier
     selector_model_revision: Identifier
-    hypothesis_prompt_version: Literal["agent-hypothesis-v3-ko1"]
+    hypothesis_prompt_version: Literal[
+        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
+    ]
     selector_prompt_version: Literal["agent-react-v2-ko1"]
     temperature: float | None = Field(ge=0, le=2, allow_inf_nan=False)
     seed: None

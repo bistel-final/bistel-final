@@ -27,7 +27,7 @@ temperature=0 실험이 아니다. 실제 제공자 호환성·성능은 승인 
 {
   "hypothesis_model_revision": "gpt-5.6-luna",
   "selector_model_revision": "gpt-5.6-luna",
-  "hypothesis_prompt_version": "agent-hypothesis-v3-ko1",
+  "hypothesis_prompt_version": "agent-hypothesis-v3-ko2",
   "selector_prompt_version": "agent-react-v2-ko1",
   "temperature": null,
   "seed": null,

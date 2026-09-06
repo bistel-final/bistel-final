@@ -14,6 +14,11 @@ from app.agent.investigation_models import (
     OriginAssessment,
     ParameterFinding,
 )
+from app.agent.origin_diagnostics import (
+    ORIGIN_REJECTION,
+    OriginDiagnostics,
+    capture_dropped,
+)
 from app.agent.routing import ResolvedIncidentRoute
 from app.agent.state import Hypothesis, HypothesisDraftV3
 from app.common.tool_contracts import (
@@ -124,6 +129,9 @@ def finalize_hypothesis(
     snapshot: IncidentDiagnosticSnapshot,
     documents: DocumentSearchToolResult | None,
     investigation: InvestigationEvidence,
+    *,
+    degrade_origin: bool = False,
+    diagnostics: list[OriginDiagnostics] | None = None,
 ) -> Hypothesis:
     """잘못된 draft는 안전한 reason code ValueError로 거부한다."""
 
@@ -184,10 +192,6 @@ def finalize_hypothesis(
         "LOT_HIST": set(snapshot.source_ids.lot_hist_ids),
         "PARAMETER": set(snapshot.source_ids.parameter_ids),
     }
-    if any(
-        ref.id not in allowed[ref.namespace] for ref in draft.origin_claim.basis_refs
-    ):
-        raise ValueError("ORIGIN_BASIS_OUTSIDE_EVIDENCE")
     compared = comparison_matrix(route, investigation)
     for dimension, pattern in (
         ("UPSTREAM", r"상류|upstream"),
@@ -200,12 +204,32 @@ def finalize_hypothesis(
                 relations.get(key) == dimension for key in draft.supporting_lot_hist_ids
             ):
                 raise ValueError("ORIGIN_CLAIM_UNSUPPORTED")
+    # Check ORIGINAL directional claims before any scope/basis mutation.
+    dropped = [
+        ref
+        for ref in draft.origin_claim.basis_refs
+        if ref.id not in allowed[ref.namespace]
+    ]
+    basis = tuple(
+        ref for ref in draft.origin_claim.basis_refs if ref.id in allowed[ref.namespace]
+    )
+    scope = draft.origin_claim.scope
+    if dropped:
+        if not degrade_origin or (scope in {"UPSTREAM", "DOWNSTREAM"} and not basis):
+            raise ValueError(ORIGIN_REJECTION)
+        if not basis and scope in {"CURRENT_CHAMBER", "EQUIPMENT_COMMON"}:
+            scope = "UNDETERMINED"
+        if diagnostics is not None:
+            diagnostics.append(capture_dropped(dropped))
     return Hypothesis(
         **draft.model_dump(exclude={"parameter_findings_draft", "origin_claim"}),
         parameter_findings=tuple(findings),
         origin_assessment=OriginAssessment(
-            scope=draft.origin_claim.scope,
-            basis=draft.origin_claim.basis_refs,
+            scope=scope,
+            basis=basis,
             compared=compared,
+            degraded=bool(dropped),
+            degraded_reasons=(ORIGIN_REJECTION,) if dropped else (),
+            dropped_basis_count=len(dropped),
         ),
     )

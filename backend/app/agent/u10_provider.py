@@ -20,6 +20,7 @@ from app.agent.u10_preparation import RuntimePorts
 
 def validate_runtime_configuration(config, binding, authorize):
     """Read-only preflight shared with every HTTP entry; no DNS or claim IO."""
+    from app.agent import prompts, react
     from app.common import llm
 
     config = LlmConfiguration.model_validate(config.model_dump())
@@ -29,6 +30,8 @@ def validate_runtime_configuration(config, binding, authorize):
         digest(canonical_json(config)) != binding.llm_config_sha256
         or llm.LLM_MODEL_MAIN != config.hypothesis_model_revision
         or llm.LLM_MODEL_MAIN != config.selector_model_revision
+        or config.hypothesis_prompt_version != prompts.PROMPT_VERSION
+        or config.selector_prompt_version != react.REACT_PROMPT_VERSION
     ):
         raise EvidenceError("LLM_CONFIG_MISMATCH")
     if config.request_policy == "U10-LUNA-REASONING-V1":

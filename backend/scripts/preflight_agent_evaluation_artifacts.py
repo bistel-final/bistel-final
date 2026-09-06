@@ -18,7 +18,9 @@ from app.agent.golden_summary import GoldenSummaryContractError, validate_golden
 from app.agent.prompts import PROMPT_VERSION
 from app.evaluation.fault_5class import FaultEvaluationContractError, validate_artifact
 
-SUPPORTED_PROMPT_VERSIONS = frozenset({"agent-hypothesis-v2-ko1", PROMPT_VERSION})
+SUPPORTED_PROMPT_VERSIONS = frozenset(
+    {"agent-hypothesis-v2-ko1", "agent-hypothesis-v3-ko1", PROMPT_VERSION}
+)
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 ATTEMPT_PATTERN = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")

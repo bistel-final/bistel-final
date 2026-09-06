@@ -155,7 +155,8 @@ def test_v2_requires_every_declared_output_key(monkeypatch) -> None:
     outcome = generate_hypothesis(None, None, _docs(), _route())
 
     assert outcome.hypothesis.verification_steps == ("인용된 근거를 다시 확인합니다.",)
-    assert "missing.verification_steps" in repr(messages[1])
+    assert "STRUCTURE_INVALID" in repr(messages[1])
+    assert "missing.verification_steps" not in repr(messages[1])
 
 
 def test_single_json_fence_is_accepted_without_a_correction_round(monkeypatch) -> None:

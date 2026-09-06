@@ -7,12 +7,19 @@ Historical comparison v1/v2 artifacts continue to use comparison.py unchanged.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from statistics import mean, median
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, ValidationError, model_serializer, model_validator
 
+from app.agent.origin_diagnostics import (
+    DEGRADED_REASON,
+    DROPPED_TOKEN_PATTERN,
+    REJECTION_CODES,
+    DroppedBasisRef,
+)
 from app.agent.release_artifacts import (
     EvidenceError,
     EvidenceModel,
@@ -20,6 +27,30 @@ from app.agent.release_artifacts import (
     canonical_json,
     digest,
 )
+
+DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "service_completion",
+        "origin_degraded",
+        "dropped_basis_count",
+        "dropped_basis_unique",
+        "hypothesis_final_reason",
+        "dropped_basis_refs",
+        "read_stop_reason",
+    }
+)
+ReadStopReason = Literal[
+    "LLM_STOP",
+    "BUDGET_EXHAUSTED",
+    "GUARD_LIMIT",
+    "STEP_CAP",
+    "FIXED_PATH",
+    "LLM_DEPENDENCY",
+    "LLM_TIMEOUT",
+    "LLM_NOT_READY",
+    "REACT_STRUCTURE_INVALID",
+]
+COMPLETE_READ_STOPS = {"LLM_STOP", "BUDGET_EXHAUSTED", "GUARD_LIMIT", "STEP_CAP"}
 
 Count = Annotated[int, Field(ge=0)]
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
@@ -321,6 +352,15 @@ class Attempt(EvidenceModel):
     tool_latency_ms: Count
     selector_latency_ms: Count
     end_to_end_latency_ms: Annotated[int, Field(gt=0)]
+    service_completion: bool | None = None
+    origin_degraded: bool | None = None
+    dropped_basis_count: Annotated[int, Field(ge=0, le=40)] | None = None
+    dropped_basis_unique: Annotated[int, Field(ge=0, le=40)] | None = None
+    hypothesis_final_reason: Annotated[str, Field(max_length=64)] | None = None
+    dropped_basis_refs: (
+        Annotated[list[DroppedBasisRef], Field(max_length=16)] | None
+    ) = None
+    read_stop_reason: ReadStopReason | None = None
 
 
 def _require(condition: bool, code: str) -> None:
@@ -424,6 +464,17 @@ def _check_attempt(a: Attempt, fixture: Fixture, order: int) -> dict[str, Any]:
     _require(a.compared.model_dump() == expected_compared, "COMPARED_MISMATCH")
     cited = set(a.cited_evidence_ids.values)
     required = set(fixture.required_evidence_ids.values)
+    if a.service_completion is not None:
+        _check_attempt_diagnostics(a)
+        _require(
+            not any(":DROPPED#" in v for v in available | required),
+            "U10_DIAGNOSTIC_INCONSISTENT",
+        )
+        if a.service_completion and a.policy == "FIXED_POLICY_V21":
+            _require(
+                len(a.calls) == 8 or selections == expected_slots,
+                "U10_DIAGNOSTIC_INCONSISTENT",
+            )
     return {
         "read_attempts": len(a.calls),
         "successful_reads": counts["SUCCESS"],
@@ -432,6 +483,68 @@ def _check_attempt(a: Attempt, fixture: Fixture, order: int) -> dict[str, Any]:
         "unsupported_count": len(cited - available),
         "tokens": a.selector_tokens.total() + a.hypothesis_tokens.total(),
     }
+
+
+def _check_attempt_diagnostics(a: Attempt) -> None:
+    """ko2 state matrix; never synthesize diagnostics for historical ko1 rows."""
+    _require(
+        all(
+            getattr(a, key) is not None
+            for key in DIAGNOSTIC_FIELDS
+            if key != "hypothesis_final_reason"
+        ),
+        "U10_SCHEMA_INVALID",
+    )
+    reason = a.hypothesis_final_reason
+    tokens = {v for v in a.cited_evidence_ids.values if ":DROPPED#" in v}
+    valid = (
+        all(re.fullmatch(DROPPED_TOKEN_PATTERN, v) for v in tokens)
+        and (reason is None or reason in REJECTION_CODES)
+        and a.dropped_basis_unique == len(tokens)
+        and (
+            not a.completion
+            or (
+                a.service_completion
+                and reason is None
+                and not a.origin_degraded
+                and a.dropped_basis_count == 0
+            )
+        )
+    )
+    if a.origin_degraded:
+        valid = valid and (
+            not a.completion
+            and a.dropped_basis_count >= a.dropped_basis_unique >= 1
+            and reason == DEGRADED_REASON
+            and len(a.dropped_basis_refs) == min(a.dropped_basis_count, 16)
+        )
+    else:
+        valid = valid and (
+            a.dropped_basis_count == a.dropped_basis_unique == 0
+            and not a.dropped_basis_refs
+            and reason != DEGRADED_REASON
+        )
+    if not a.completion and not a.service_completion:
+        valid = valid and reason is not None
+    retry_closed = (
+        not a.calls
+        or len(a.calls) == 8
+        or a.calls[-1].status == "SUCCESS"
+        or a.calls[-1].retry == 1
+    )
+    if a.policy == "FIXED_POLICY_V21":
+        valid = valid and a.read_stop_reason == "FIXED_PATH"
+    else:
+        valid = valid and a.read_stop_reason != "FIXED_PATH"
+    if a.service_completion or a.completion:
+        valid = valid and (
+            (a.completion or a.origin_degraded)
+            and retry_closed
+            and a.read_stop_reason in COMPLETE_READ_STOPS | {"FIXED_PATH"}
+            and bool(a.hypothesis)
+            and (a.policy == "FIXED_POLICY_V21" or bool(a.selector))
+        )
+    _require(bool(valid), "U10_DIAGNOSTIC_INCONSISTENT")
 
 
 def evaluate(benchmark: Benchmark, attempts: list[Attempt]) -> dict[str, Any]:
@@ -606,7 +719,9 @@ def evaluate(benchmark: Benchmark, attempts: list[Attempt]) -> dict[str, Any]:
 class LlmConfiguration(EvidenceModel):
     hypothesis_model_revision: Identifier
     selector_model_revision: Identifier
-    hypothesis_prompt_version: Literal["agent-hypothesis-v3-ko1"]
+    hypothesis_prompt_version: Literal[
+        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
+    ]
     selector_prompt_version: Literal["agent-react-v2-ko1"]
     temperature: Annotated[float, Field(ge=0, le=0)] | None
     seed: Count | None
@@ -657,6 +772,49 @@ class Artifact(EvidenceModel):
     attempts: list[Attempt]
     result: dict[str, Any]
 
+    @model_validator(mode="before")
+    @classmethod
+    def diagnostic_presence(cls, value):
+        if isinstance(value, dict):
+            llm = value.get("llm")
+            version = (
+                llm.get("hypothesis_prompt_version")
+                if isinstance(llm, dict)
+                else getattr(llm, "hypothesis_prompt_version", None)
+            )
+            rows = value.get("attempts", [])
+            if version == "agent-hypothesis-v3-ko2" and isinstance(rows, list):
+                for row in rows:
+                    keys = (
+                        row.keys()
+                        if isinstance(row, dict)
+                        else getattr(row, "model_fields_set", set())
+                    )
+                    if not DIAGNOSTIC_FIELDS <= keys:
+                        raise ValueError("U10_SCHEMA_INVALID")
+        return value
+
+    @model_validator(mode="after")
+    def diagnostic_version(self):
+        for row in self.attempts:
+            if self.llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko1":
+                _require(
+                    all(getattr(row, key) is None for key in DIAGNOSTIC_FIELDS),
+                    "U10_SCHEMA_INVALID",
+                )
+            else:
+                _check_attempt_diagnostics(row)
+        return self
+
+    @model_serializer(mode="wrap")
+    def serialize_diagnostics(self, handler):
+        value = handler(self)
+        if self.llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko1":
+            for row in value["attempts"]:
+                for key in DIAGNOSTIC_FIELDS:
+                    row.pop(key, None)
+        return value
+
 
 def validate_artifact(payload: Any, benchmark_payload: Any) -> dict[str, Any]:
     """Reject structural/derived drift, but return a negative research verdict."""
@@ -664,6 +822,11 @@ def validate_artifact(payload: Any, benchmark_payload: Any) -> dict[str, Any]:
         benchmark = Benchmark.model_validate(benchmark_payload)
         artifact = Artifact.model_validate(payload)
     except ValidationError as exc:
+        if any(
+            str(e.get("ctx", {}).get("error", "")) == "U10_DIAGNOSTIC_INCONSISTENT"
+            for e in exc.errors()
+        ):
+            raise EvidenceError("U10_DIAGNOSTIC_INCONSISTENT") from exc
         metric_fields = {
             "end_to_end_latency_ms",
             "tool_latency_ms",

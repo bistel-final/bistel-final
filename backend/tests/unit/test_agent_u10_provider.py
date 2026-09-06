@@ -27,7 +27,7 @@ def config():
     return LlmConfiguration(
         hypothesis_model_revision="actual-model",
         selector_model_revision="actual-model",
-        hypothesis_prompt_version="agent-hypothesis-v3-ko1",
+        hypothesis_prompt_version="agent-hypothesis-v3-ko2",
         selector_prompt_version="agent-react-v2-ko1",
         temperature=0.0,
         seed=13,
@@ -82,6 +82,38 @@ def provider(authorize=lambda _: True, cfg=None):
         "a" * 40, "b" * 64, digest(canonical_json(cfg)), "c" * 64, "d" * 64
     )
     return RealProvider(cfg, binding, authorize)
+
+
+def test_ko1_remains_readable_but_cannot_enter_new_live_execution(settings):
+    from app.agent import prompts, react
+    from app.agent.u10_provider import validate_runtime_configuration
+
+    cfg = config()
+    assert cfg.hypothesis_prompt_version == prompts.PROMPT_VERSION
+    assert cfg.selector_prompt_version == react.REACT_PROMPT_VERSION
+    binding = BatchBinding(
+        "a" * 40, "b" * 64, digest(canonical_json(cfg)), "c" * 64, "d" * 64
+    )
+    validate_runtime_configuration(cfg, binding, lambda _: True)
+    old = LlmConfiguration.model_validate(
+        {**cfg.model_dump(), "hypothesis_prompt_version": "agent-hypothesis-v3-ko1"}
+    )
+    old_binding = replace(binding, llm_config_sha256=digest(canonical_json(old)))
+    with pytest.raises(EvidenceError, match="LLM_CONFIG_MISMATCH"):
+        validate_runtime_configuration(old, old_binding, lambda _: True)
+
+
+def test_selector_module_drift_blocks_admission(settings, monkeypatch):
+    from app.agent import react
+    from app.agent.u10_provider import validate_runtime_configuration
+
+    cfg = config()
+    binding = BatchBinding(
+        "a" * 40, "b" * 64, digest(canonical_json(cfg)), "c" * 64, "d" * 64
+    )
+    monkeypatch.setattr(react, "REACT_PROMPT_VERSION", "agent-react-new-version")
+    with pytest.raises(EvidenceError, match="LLM_CONFIG_MISMATCH"):
+        validate_runtime_configuration(cfg, binding, lambda _: True)
 
 
 def completion(content, model="actual-model"):

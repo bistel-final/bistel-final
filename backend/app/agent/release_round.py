@@ -9,7 +9,7 @@ from collections import Counter
 from math import ceil
 from typing import Any, Literal
 
-from pydantic import Field, TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError, model_serializer
 
 from app.agent.release_artifacts import (
     Component,
@@ -87,7 +87,9 @@ class CapturedRun(EvidenceModel):
     error_codes: list[Identifier] = Field(max_length=100)
     hypothesis_tokens: Tokens
     hypothesis_model_revision: Identifier
-    hypothesis_prompt_version: Literal["agent-hypothesis-v3-ko1"]
+    hypothesis_prompt_version: Literal[
+        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
+    ]
     latency_ms: int = Field(ge=0)
     model_config_digest: Sha256
     deliveries: list[CapturedDelivery] = Field(max_length=10)
@@ -147,6 +149,14 @@ class RunAssessment(EvidenceModel):
     selector_tokens: int
     latency_ms: int
     failed_checks: list[str]
+    origin_degraded: bool = False
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if not self.origin_degraded:
+            value.pop("origin_degraded", None)
+        return value
 
 
 class RoundAssessment(EvidenceModel):
@@ -163,6 +173,14 @@ class RoundAssessment(EvidenceModel):
     read_calls: int
     latency_p50_ms: int
     latency_p95_ms: int
+    degraded_origin_count: int = Field(default=0, ge=0, le=12)
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if not self.degraded_origin_count:
+            value.pop("degraded_origin_count", None)
+        return value
 
 
 class RoundArtifact(RoundEvidence):
@@ -367,7 +385,7 @@ def _assess_run(
     )
     if run.send_action_selected or run.unexpected_external_effects:
         failed.append("SAFETY_VIOLATION")
-    findings, unsupported = 0, 0
+    findings, unsupported, origin_degraded = 0, 0, False
     if run.hypothesis is None:
         failed.append("HYPOTHESIS_MISSING")
     else:
@@ -378,6 +396,7 @@ def _assess_run(
         if unsupported:
             failed.append("UNSUPPORTED_CITATION")
         origin = hypothesis.origin_assessment
+        origin_degraded = bool(origin and origin.degraded)
         if origin is None or origin.compared.model_dump() != compared:
             failed.append("COMPARED_MISMATCH")
         if origin is not None:
@@ -398,7 +417,18 @@ def _assess_run(
                     inputs["document_evidence"],
                     inputs["investigation"],
                 )
-                if canonical_json(recomputed) != canonical_json(hypothesis):
+                # Recompute retained evidence/arithmetic, not discarded private IDs.
+                # Public degradation metadata is shape-validated and reported only.
+                exclude = {
+                    "origin_assessment": {
+                        "degraded",
+                        "degraded_reasons",
+                        "dropped_basis_count",
+                    }
+                }
+                if canonical_json(
+                    recomputed.model_dump(exclude=exclude)
+                ) != canonical_json(hypothesis.model_dump(exclude=exclude)):
                     failed.append("HYPOTHESIS_RECOUNT_MISMATCH")
                 else:
                     findings = len(recomputed.parameter_findings)
@@ -454,6 +484,7 @@ def _assess_run(
             selector_tokens=selector_tokens,
             latency_ms=run.latency_ms,
             failed_checks=sorted(set(failed)),
+            origin_degraded=origin_degraded,
         ),
         targets,
         delivery_failed,
@@ -596,6 +627,7 @@ def assess_round(evidence: RoundEvidence) -> tuple[RoundAssessment, list[EmailTa
             read_calls=sum(a.read_calls for a in assessments),
             latency_p50_ms=latency[ceil(len(latency) * 0.5) - 1],
             latency_p95_ms=latency[ceil(len(latency) * 0.95) - 1],
+            degraded_origin_count=sum(a.origin_degraded for a in assessments),
         ), targets
     except ValidationError:
         raise EvidenceError("ROUND_EVIDENCE_SCHEMA_INVALID") from None

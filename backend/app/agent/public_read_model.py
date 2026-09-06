@@ -86,6 +86,7 @@ _V2_PROMPTS: Final = frozenset(
         "agent-hypothesis-v2-ko",
         "agent-hypothesis-v2-ko1",
         "agent-hypothesis-v3-ko1",
+        "agent-hypothesis-v3-ko2",
     }
 )
 
