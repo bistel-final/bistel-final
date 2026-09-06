@@ -6,7 +6,7 @@ import { PRIMARY_MENUS } from '../src/app/navigation.js'
 const EXPECTED_MENUS = [
   { to: '/dashboard', label: '알람 대시보드' },
   { to: '/alarms', label: '알람 히스토리' },
-  { to: '/agent-runs', label: 'Agent 분석 · 승인' },
+  { to: '/agent-runs', label: 'Agent 분석 · 조치' },
   { to: '/documents', label: '문서 검색' },
   { to: '/ontology', label: '온톨로지' },
   { to: '/analytics', label: '자연어 분석' },

@@ -1,3 +1,4 @@
+import { isNotificationAction } from '../notification-state.js'
 // Agent 화면 상수·순수 함수 — 컴포넌트 파일(fast refresh 제약) 밖으로 분리한 모듈
 // Fault 뱃지 스타일 — 라이트 시안 고정 매핑 (RFM·CDX red / MFD amber / TMD sky / FOC violet / OTH gray)
 export const FAULT_BADGE_CLS = {
@@ -118,6 +119,7 @@ const APPROVAL_STATUS_LABEL = Object.freeze({
 
 export const approvalStatusSummary = (action, approval) => {
   if (!action) return '조치 미생성 · 승인 요청 없음'
+  if (isNotificationAction(action)) return '자동 조치 알림 · 사용자 승인 불필요'
   if (action.action_code !== 'EQP_HOLD') return '승인 불필요 · 자동 전달 정책'
   const status = approval?.status ?? action.approval_status
   return APPROVAL_STATUS_LABEL[status] ?? '승인 상태 확인 필요'
@@ -126,7 +128,7 @@ export const approvalStatusSummary = (action, approval) => {
 const DELIVERY_CHANNEL_LABEL = Object.freeze({
   EMAIL: '이메일',
   KAFKA: 'Kafka',
-  MES: 'MES',
+  MES: 'MES Mock',
 })
 
 const DELIVERY_STATUS_LABEL = Object.freeze({
@@ -138,12 +140,12 @@ const DELIVERY_STATUS_LABEL = Object.freeze({
 })
 
 export const deliveryChannelText = (channel) => DELIVERY_CHANNEL_LABEL[channel] ?? channel
-export const deliveryStatusText = (status) => DELIVERY_STATUS_LABEL[status] ?? status
+export const deliveryStatusText = (status, channel) => channel === 'MES' && status === 'SENT' ? '모의 응답 확인' : DELIVERY_STATUS_LABEL[status] ?? status
 
 export const deliveryStatusSummary = (action) => {
   if (!action) return '조치가 생성되지 않아 전달 없음'
   if (!action.deliveries?.length) return '전달 내역 없음'
   return action.deliveries
-    .map((delivery) => `${deliveryChannelText(delivery.channel)} ${deliveryStatusText(delivery.status)}`)
+    .map((delivery) => `${deliveryChannelText(delivery.channel)} ${deliveryStatusText(delivery.status, delivery.channel)}`)
     .join(' · ')
 }

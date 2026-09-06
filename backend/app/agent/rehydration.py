@@ -2,7 +2,7 @@
 
 ``rehydration_snapshot``은 ``persist_action`` 직전 State의 비파생 값을 보존한다.
 복구 시 snapshot만 믿지 않고 run·prediction·action bundle·Tool 호출 수와 다시 결속한 뒤
-canonical 20 channel과 내부 5 channel을 모두 검증한다. 외부 Tool·LLM·새 run/action
+canonical 출력과 internal channel을 모두 검증한다. 외부 Tool·LLM·새 run/action
 생성은 이 모듈의 입력에도 없다.
 """
 
@@ -13,10 +13,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final, Literal
 
-from pydantic import ValidationError, model_validator
+from pydantic import Field, ValidationError, model_validator
 from sqlalchemy.engine import Connection
 
 from app.agent.incident import ResolvedIncident
+from app.agent.react import ReactCandidates, trace_from_payload
 from app.agent.repository import (
     ACTION_PROVENANCE_KEY,
     ACTION_PROVENANCE_SCHEMA,
@@ -54,9 +55,11 @@ from app.common.ids import NonEmptyId
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     AnomalySignal,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
+    MetrologyResultToolResult,
 )
 
 REHYDRATION_SNAPSHOT_SCHEMA: Final = "rehydration-snapshot-v1"
@@ -91,6 +94,7 @@ class RouteStepSnapshotModel(StateModel):
     recipe_id: NonEmptyId | None
     track_in_at: datetime
     track_out_at: datetime | None
+    lot_first_track_in_at: datetime | None = None
 
 
 class WaferRouteSnapshotModel(StateModel):
@@ -108,6 +112,7 @@ class GraphRouteEvidenceSnapshotModel(StateModel):
     downstream_process_step_ids: tuple[NonEmptyId, ...]
     relation_ids: tuple[NonEmptyId, ...]
     graph_revision: NonEmptyId | None
+    sibling_chamber_ids: tuple[str, ...] = ()
 
 
 class RouteMismatchSnapshotModel(StateModel):
@@ -208,6 +213,17 @@ class RehydrationSeed(StateModel):
     errors: tuple[AgentError, ...]
     tool_budget: ToolBudget
     fdc_lot_hist_id: NonEmptyId
+    fdc_lot_hist_ids: tuple[NonEmptyId, ...] = ()
+    fdc_evidence_set: tuple[FdcSummaryToolResult | None, ...] = ()
+    document_evidence_set: tuple[DocumentSearchToolResult | None, ...] = ()
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...] = ()
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...] = ()
+    read_retry_used: int = 0
+    react_trace: tuple[dict[str, Any], ...] = ()
+    react_steps: int = 0
+    react_guard_rejections: int = 0
+    react_pending: None = None
+    react_candidates: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> RehydrationSeed:
@@ -225,6 +241,11 @@ class RehydrationSeed(StateModel):
             and self.fdc_evidence.wafer.lot_hist_id != self.fdc_lot_hist_id
         ):
             raise ValueError("FDC lot_hist_id가 seed와 다릅니다")
+        parsed_trace = trace_from_payload(list(self.react_trace))
+        if len(parsed_trace) != len(self.react_trace) or tuple(
+            item.seq for item in parsed_trace
+        ) != tuple(range(1, len(parsed_trace) + 1)):
+            raise ValueError("ReAct trace event seq가 올바르지 않습니다")
         return self
 
     @classmethod
@@ -238,6 +259,17 @@ class RehydrationSeed(StateModel):
             errors=tuple(state.get("errors", ())),
             tool_budget=state["tool_budget"],
             fdc_lot_hist_id=state["fdc_lot_hist_id"],
+            fdc_lot_hist_ids=tuple(state.get("fdc_lot_hist_ids", ())),
+            fdc_evidence_set=tuple(state.get("fdc_evidence_set", ())),
+            document_evidence_set=tuple(state.get("document_evidence_set", ())),
+            history_evidence_set=tuple(state.get("history_evidence_set", ())),
+            metrology_evidence_set=tuple(state.get("metrology_evidence_set", ())),
+            read_retry_used=state.get("read_retry_used", 0),
+            react_trace=tuple(state.get("react_trace", ())),
+            react_steps=state.get("react_steps", 0),
+            react_guard_rejections=state.get("react_guard_rejections", 0),
+            react_pending=None,
+            react_candidates=dict(state.get("react_candidates", {})),
         )
 
 
@@ -253,6 +285,17 @@ class RehydrationSnapshot(StateModel):
     errors: tuple[AgentError, ...]
     tool_budget: ToolBudget
     fdc_lot_hist_id: NonEmptyId
+    fdc_lot_hist_ids: tuple[NonEmptyId, ...] = ()
+    fdc_evidence_set: tuple[FdcSummaryToolResult | None, ...] = ()
+    document_evidence_set: tuple[DocumentSearchToolResult | None, ...] = ()
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...] = ()
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...] = ()
+    read_retry_used: int = 0
+    react_trace: tuple[dict[str, Any], ...] = ()
+    react_steps: int = 0
+    react_guard_rejections: int = 0
+    react_pending: None = None
+    react_candidates: dict[str, Any] = Field(default_factory=dict)
     action_id: NonEmptyId
     approval_id: NonEmptyId
     deliveries: tuple[DeliveryPlan, ...]
@@ -278,6 +321,17 @@ class RehydrationSnapshot(StateModel):
             errors=resolved.errors,
             tool_budget=resolved.tool_budget,
             fdc_lot_hist_id=resolved.fdc_lot_hist_id,
+            fdc_lot_hist_ids=resolved.fdc_lot_hist_ids,
+            fdc_evidence_set=resolved.fdc_evidence_set,
+            document_evidence_set=resolved.document_evidence_set,
+            history_evidence_set=resolved.history_evidence_set,
+            metrology_evidence_set=resolved.metrology_evidence_set,
+            read_retry_used=resolved.read_retry_used,
+            react_trace=resolved.react_trace,
+            react_steps=resolved.react_steps,
+            react_guard_rejections=resolved.react_guard_rejections,
+            react_pending=None,
+            react_candidates=resolved.react_candidates,
             action_id=action_id,
             approval_id=approval_id,
             deliveries=deliveries,
@@ -304,6 +358,7 @@ def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
     if evidence.get("schema_version") not in {
         "agent-evidence-v1",
         "agent-evidence-v2",
+        "agent-evidence-v3",
     }:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH")
     try:
@@ -328,6 +383,8 @@ def prediction_to_hypothesis(row: PredictionRow) -> Hypothesis:
             impact_summary=evidence.get("impact_summary", ""),
             verification_steps=tuple(evidence.get("verification_steps", ())),
             limitations=tuple(evidence.get("limitations", ())),
+            parameter_findings=tuple(evidence.get("parameter_findings", ())),
+            origin_assessment=evidence.get("origin_assessment"),
         )
     except (ValidationError, TypeError, ValueError) as exc:
         raise RehydrationError("REHYDRATE_PREDICTION_MISMATCH") from exc
@@ -428,6 +485,13 @@ def build_rehydrated_state(
         raise RehydrationError("REHYDRATE_RUN_NOT_WAITING")
     evidence: Mapping[str, Any] = run.evidence or {}
     snapshot = load_snapshot(evidence)
+    if snapshot.react_candidates:
+        try:
+            candidates = ReactCandidates.model_validate(snapshot.react_candidates)
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise RehydrationError("REHYDRATE_SNAPSHOT_MISSING") from exc
+        if candidates.run_id != run_id:
+            raise RehydrationError("REHYDRATE_BUNDLE_MISMATCH")
     route = snapshot_to_route(snapshot.route)
     incident = route.incident
     fdc_anomaly = (
@@ -522,20 +586,41 @@ def build_rehydrated_state(
         "fdc_lot_hist_id": snapshot.fdc_lot_hist_id,
         "approval_decision": None,
         "pending_llm_usage": None,
+        "fdc_lot_hist_ids": (snapshot.fdc_lot_hist_ids or (snapshot.fdc_lot_hist_id,)),
+        "fdc_evidence_set": (
+            snapshot.fdc_evidence_set
+            or ((snapshot.fdc_evidence,) if snapshot.fdc_evidence is not None else ())
+        ),
+        "document_evidence_set": (
+            snapshot.document_evidence_set
+            or (
+                (snapshot.document_evidence,)
+                if snapshot.document_evidence is not None
+                else ()
+            )
+        ),
+        "history_evidence_set": snapshot.history_evidence_set,
+        "metrology_evidence_set": snapshot.metrology_evidence_set,
+        "read_retry_used": snapshot.read_retry_used,
+        "react_trace": snapshot.react_trace,
+        "react_steps": snapshot.react_steps,
+        "react_guard_rejections": snapshot.react_guard_rejections,
+        "react_pending": None,
+        "react_candidates": snapshot.react_candidates,
     }
     validate_rehydrated_payload(payload)
     return payload
 
 
 def validate_rehydrated_payload(values: Mapping[str, Any]) -> None:
-    """canonical 20 + 내부 5를 재개 가능한 모양으로 검증한다."""
+    """canonical 출력 + internal channel을 재개 가능한 모양으로 검증한다."""
 
     canonical = {name: values.get(name) for name in CompletedAgentState.model_fields}
     try:
         CompletedAgentState.model_validate(canonical)
     except (ValidationError, TypeError, ValueError) as exc:
         raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH") from exc
-    if values.get("autonomy_level") not in (1, 2):
+    if values.get("autonomy_level") not in (1, 2, 3):
         raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
     if values.get("terminal_error") is not None:
         raise RehydrationError("REHYDRATE_CHECKPOINT_UNVERIFIED")
@@ -548,6 +633,20 @@ def validate_rehydrated_payload(values: Mapping[str, Any]) -> None:
         raise RehydrationError("REHYDRATE_CHECKPOINT_UNVERIFIED")
     if values.get("pending_llm_usage") is not None:
         raise RehydrationError("REHYDRATE_CHECKPOINT_UNVERIFIED")
+    if values.get("react_pending") is not None:
+        raise RehydrationError("REHYDRATE_CHECKPOINT_UNVERIFIED")
+    for key in ("react_steps", "react_guard_rejections", "read_retry_used"):
+        value = values.get(key, 0)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+    try:
+        parsed_trace = trace_from_payload(list(values.get("react_trace", ())))
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH") from exc
+    if tuple(item.seq for item in parsed_trace) != tuple(
+        range(1, len(parsed_trace) + 1)
+    ):
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
 
 
 def canonical_payload(values: Mapping[str, Any]) -> str:
@@ -602,6 +701,35 @@ def canonical_payload(values: Mapping[str, Any]) -> str:
         "fdc_lot_hist_id": values.get("fdc_lot_hist_id"),
         "approval_decision": None,
         "pending_llm_usage": None,
+        "fdc_lot_hist_ids": list(values.get("fdc_lot_hist_ids", ())),
+        "fdc_evidence_set": [
+            _dump(item, FdcSummaryToolResult)
+            for item in values.get("fdc_evidence_set", ())
+        ],
+        "document_evidence_set": [
+            _dump(item, DocumentSearchToolResult)
+            for item in values.get("document_evidence_set", ())
+        ],
+        "history_evidence_set": [
+            _dump(item, ChamberParameterHistoryToolResult)
+            for item in values.get("history_evidence_set", ())
+        ],
+        "metrology_evidence_set": [
+            _dump(item, MetrologyResultToolResult)
+            for item in values.get("metrology_evidence_set", ())
+        ],
+        "read_retry_used": values.get("read_retry_used", 0),
+        "react_trace": list(values.get("react_trace", ())),
+        "react_steps": values.get("react_steps", 0),
+        "react_guard_rejections": values.get("react_guard_rejections", 0),
+        "react_pending": None,
+        "react_candidates": (
+            {}
+            if not values.get("react_candidates")
+            else ReactCandidates.model_validate(
+                values.get("react_candidates")
+            ).model_dump(mode="json")
+        ),
     }
     return json.dumps(
         projection,

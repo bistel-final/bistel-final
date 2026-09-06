@@ -1,0 +1,7 @@
+# V5-C-7.1: immutable images for transition and rollback rehearsal only.
+# Same services/network/volumes as team Compose; never starts another stack.
+services:
+  backend:
+    image: ${CM52_PIN_BACKEND_IMAGE:?immutable backend image ID required}
+  frontend:
+    image: ${CM52_PIN_FRONTEND_IMAGE:?immutable frontend image ID required}

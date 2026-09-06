@@ -64,7 +64,11 @@ class _LogConnection:
         )
 
 
-def _fault_artifact(*, code_revision: str = REVISION) -> dict[str, Any]:
+def _fault_artifact(
+    *,
+    code_revision: str = REVISION,
+    prompt_version: str = artifact_preflight.PROMPT_VERSION,
+) -> dict[str, Any]:
     keys = tuple(
         fault.IncidentKey(f"LOT{index:03d}", f"EQP{index:02d}-PM1")
         for index in range(12)
@@ -79,7 +83,7 @@ def _fault_artifact(*, code_revision: str = REVISION) -> dict[str, Any]:
             available_alarm_tokens=(f"TRACE:TA-{index}",),
             actual_action="MONITORING",
             model_version="model-v1",
-            prompt_version=artifact_preflight.PROMPT_VERSION,
+            prompt_version=prompt_version,
             policy_version="policy-v1",
         )
         for index, key in enumerate(keys)
@@ -371,6 +375,15 @@ def test_diagnostic_target_structure_and_distribution_fail_separately() -> None:
 def test_artifact_preflight_accepts_the_bound_pair(tmp_path: Path) -> None:
     pair = _artifact_pair(tmp_path)
     _run_preflight(*pair)
+
+
+@pytest.mark.parametrize(
+    "prompt", ["agent-hypothesis-v2-ko1", "agent-hypothesis-v3-ko1"]
+)
+def test_artifact_preflight_accepts_legacy_and_current_evidence(tmp_path, prompt):
+    fault_path, golden_path, _sha, golden_sha, environment = _artifact_pair(tmp_path)
+    fault_sha = _write_json(fault_path, _fault_artifact(prompt_version=prompt))
+    _run_preflight(fault_path, golden_path, fault_sha, golden_sha, environment)
 
 
 def test_artifact_preflight_separates_old_artifact_from_current_container_revision(

@@ -15,6 +15,7 @@ from app.agent.evaluation_schemas import (
     AgentEvaluationResponse,
     AgentFaultEvaluation,
     AgentGoldenEvaluation,
+    AgentMockGoldenEvaluation,
 )
 from app.agent.golden_summary import (
     GoldenSummaryContractError,
@@ -109,6 +110,16 @@ def _fault_projection(payload: Mapping[str, Any]) -> AgentFaultEvaluation:
 
 def _golden_projection(payload: Mapping[str, Any]) -> AgentGoldenEvaluation:
     validate_golden_summary(payload)
+    if payload.get("protocol") == "MOCK-NOTIFY-V1":
+        return AgentMockGoldenEvaluation(
+            protocol=payload["protocol"],
+            dataset_epoch=payload["dataset_epoch"],
+            status=payload["status"],
+            phases=[
+                {k: v for k, v in row.items() if k != "evidence"}
+                for row in payload["phases"]
+            ],
+        )
     return AgentGoldenEvaluation(
         dataset_epoch=payload["dataset_epoch"],
         status=payload["status"],

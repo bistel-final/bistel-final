@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {"status": "RUNNING", "autonomy_level": 3, "trace_state": "PENDING", "react_trace": []},
+    {"status": "WAITING_APPROVAL", "autonomy_level": 3, "trace_state": "PENDING", "react_trace": []},
+    {"status": "COMPLETED", "autonomy_level": 3, "trace_state": "AVAILABLE", "react_trace": [
+      {"seq": 1, "phase": "OBSERVED", "rationale_summary": "시간에 따른 변화를 확인한다", "tool": "get_chamber_parameter_history", "argument_summary": "이력 1(현재)", "observation_summary": "scope=CURRENT trend=DRIFT_UP prior=3 sample=13", "guard_code": null, "react_prompt_version": "agent-react-v2-ko1", "selector_tokens": {"input": 100, "output": 20}, "stop_reason": null, "degraded": false},
+      {"seq": 2, "phase": "STOPPED", "rationale_summary": "판단에 필요한 근거를 확보했다", "tool": "stop", "argument_summary": null, "observation_summary": null, "guard_code": null, "react_prompt_version": "agent-react-v2-ko1", "selector_tokens": {"input": 120, "output": 15}, "stop_reason": "LLM_STOP", "degraded": false}
+    ]},
+    {"status": "FAILED", "autonomy_level": 3, "trace_state": "AVAILABLE", "react_trace": [
+      {"seq": 1, "phase": "REJECTED", "rationale_summary": "다른 대상을 확인한다", "tool": "get_fdc_summary", "argument_summary": null, "observation_summary": null, "guard_code": "REACT_GUARD_CANDIDATE_UNKNOWN", "react_prompt_version": "agent-react-v2-ko1", "selector_tokens": {"input": 100, "output": 20}, "stop_reason": null, "degraded": false},
+      {"seq": 2, "phase": "STOPPED", "rationale_summary": null, "tool": null, "argument_summary": null, "observation_summary": null, "guard_code": null, "react_prompt_version": null, "selector_tokens": {"input": 0, "output": 0}, "stop_reason": "LLM_TIMEOUT", "degraded": true}
+    ]},
+    {"status": "COMPLETED", "autonomy_level": 2, "trace_state": "NOT_APPLICABLE", "react_trace": []},
+    {"status": "FAILED", "autonomy_level": 3, "trace_state": "UNAVAILABLE", "react_trace": []}
+  ]
+}

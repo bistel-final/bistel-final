@@ -240,8 +240,8 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
             <div className="mt-2 text-[11px] leading-5 text-g1"><strong className="text-navy">다음 확인:</strong> {verificationSteps}</div>
           </section>
           <section className="rounded-[10px] border border-[#dbeafe] bg-tint-blue px-3.5 py-3">
-            <div className="text-[10.5px] font-extrabold text-blue-hover">승인 · 전달 · 관찰</div>
-            <div className="mt-2 text-[11.5px] leading-5 text-g1"><strong className="text-navy">승인:</strong> {approvalStatus}</div>
+            <div className="text-[10.5px] font-extrabold text-blue-hover">전달 정책 · 결과 · 관찰</div>
+            <div className="mt-2 text-[11.5px] leading-5 text-g1"><strong className="text-navy">정책:</strong> {approvalStatus}</div>
             <div className="mt-1 text-[11.5px] leading-5 text-g1"><strong className="text-navy">전달:</strong> {deliveryStatus}</div>
             <div className="mt-1 text-[11px] leading-5 text-g2"><strong className="text-navy">조치 후:</strong> {observation}</div>
           </section>

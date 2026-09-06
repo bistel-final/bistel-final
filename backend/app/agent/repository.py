@@ -1644,6 +1644,7 @@ def insert_action_history(
     action_code: ActionCode,
     reason: str,
     created_at: datetime,
+    policy_version: str = "ACTION-POLICY-V1",
 ) -> ActionHistoryRow:
     """규칙 결정 한 건을 base ``action_history`` projection으로 저장한다."""
 
@@ -1656,7 +1657,11 @@ def insert_action_history(
         action = ActionCode(action_code)
     except ValueError as exc:
         raise RepositoryContractError("INVALID_ACTION_CODE") from exc
-    approval_required = requires_approval(action)
+    if policy_version not in {"ACTION-POLICY-V1", "MOCK-NOTIFY-V1"}:
+        raise RepositoryContractError("ACTION_POLICY_INVALID")
+    approval_required = (
+        requires_approval(action) and policy_version == "ACTION-POLICY-V1"
+    )
     status = ApprovalStatus.PENDING if approval_required else ApprovalStatus.AUTO
     row = _insert_one(
         connection,
@@ -1855,6 +1860,7 @@ class ToolBudgetCounts:
     total: int
     by_tool: Mapping[str, int]
     pending_reservations: int
+    autonomy_level: int
 
 
 #: 예약 row가 쓰는 sentinel.
@@ -1881,7 +1887,9 @@ _TOOL_CALL_COLUMNS = """
 """
 
 #: **run row를 잠근다.** `max(call_seq)+1`은 lock 없이는 두 session이 같은 값을 본다.
-_LOCK_RUN = text("SELECT 1 FROM agent_run WHERE agent_run_id = :run_id FOR UPDATE")
+_LOCK_RUN = text(
+    "SELECT autonomy_level FROM agent_run " "WHERE agent_run_id = :run_id FOR UPDATE"
+)
 
 _NEXT_CALL_SEQ = text(
     """
@@ -2124,6 +2132,12 @@ def count_tool_calls_for_budget(
         ).one_or_none()
         if locked is None:
             raise RepositoryNotFound("RUN_NOT_FOUND")
+        try:
+            autonomy_level = locked.autonomy_level
+        except AttributeError:
+            raise RepositoryContractError("AUTONOMY_LEVEL_INVALID") from None
+        if type(autonomy_level) is not int or autonomy_level not in (1, 2, 3):
+            raise RepositoryContractError("AUTONOMY_LEVEL_INVALID")
         rows = connection.execute(_SELECT_TOOL_CALLS, {"run_id": agent_run_id}).all()
     except AgentRepositoryError:
         raise
@@ -2147,6 +2161,7 @@ def count_tool_calls_for_budget(
         total=sum(by_tool.values()),
         by_tool=by_tool,
         pending_reservations=pending,
+        autonomy_level=autonomy_level,
     )
 
 
@@ -2571,8 +2586,9 @@ class MesDeliveryClaim:
 
     delivery: ActionDeliveryRow
     action: ActionHistoryRow
-    approval: ApprovalRequestRow
+    approval: ApprovalRequestRow | None
     equipment_id: str
+    delivery_policy: str = "ACTION-POLICY-V1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -3172,12 +3188,13 @@ def _same_decision_instant(
 def begin_mes_delivery(
     connection: Connection, *, action_id: str
 ) -> MesDeliveryClaim | None:
-    """승인된 EQP_HOLD 한 건만 ``WAITING→SENDING``으로 claim한다.
+    """정책별 자격을 검증한 EQP_HOLD 한 건만 ``WAITING→SENDING``으로 claim한다.
 
     delivery row를 먼저 잠그므로 같은 action의 동시 호출 중 하나만 외부 I/O
     자격을 얻는다.
     이미 claim·terminal·canceled 상태면 안전한 ``None``이며, 아직 WAITING인 row는
-    approval→run→CREATED action과 ``lot_history`` equipment 유일성을 같은
+    기존 정책은 approval→run, 자동 Mock 정책은 provenance→run을 확인하고,
+    CREATED action과 ``lot_history`` equipment 유일성을 같은
     transaction에서 재검증한 뒤에만 전이한다.
     """
 
@@ -3198,6 +3215,8 @@ def begin_mes_delivery(
         return None
 
     action = get_action_history(connection, action_id)
+    if not action.approval_required:
+        return _begin_notification_mes(connection, action, locked)
     try:
         approval_row = connection.execute(
             _SELECT_APPROVAL_FOR_ACTION,
@@ -3269,6 +3288,77 @@ def begin_mes_delivery(
         approval=approval,
         equipment_id=equipment_ids[0],
     )
+
+
+def _begin_notification_mes(connection, action, locked):
+    """Automatic Mock dispatch eligibility; confirmation state is NOT consulted."""
+    bundle = get_action_bundle(connection, action.action_id)
+    if (
+        action.action_code is not ActionCode.EQP_HOLD
+        or action.approval_status is not ApprovalStatus.AUTO
+        or bundle.delivery_policy != "MOCK-NOTIFY-V1"
+        or any(
+            v is not None
+            for v in (
+                bundle.approval_id,
+                bundle.approval_status,
+                bundle.approval_agent_run_id,
+            )
+        )
+    ):
+        raise RepositoryConflict("MES_NOTIFICATION_POLICY_MISMATCH")
+    try:
+        row = connection.execute(
+            text(
+                "SELECT agent_run_id FROM agent_run_action "
+                "WHERE action_id = :action_id AND link_role = 'CREATED'"
+            ),
+            {"action_id": action.action_id},
+        ).one()
+        link = get_run_action(connection, row.agent_run_id)
+        run = get_agent_run(connection, row.agent_run_id)
+        provenance = (run.evidence or {}).get(ACTION_PROVENANCE_KEY)
+        if (
+            link.action_id != action.action_id
+            or link.link_role is not ActionLinkRole.CREATED
+            or not isinstance(provenance, dict)
+            or provenance.get("action_policy_version") != "MOCK-NOTIFY-V1"
+            or (link.lot_id, link.chamber_id) != (action.lot_id, action.chamber_id)
+            or (run.lot_id, run.chamber_id) != (action.lot_id, action.chamber_id)
+            or run.action is not ActionCode.EQP_HOLD
+            or run.status not in {RunStatus.RUNNING, RunStatus.COMPLETED}
+        ):
+            raise RepositoryConflict("MES_NOTIFICATION_IDENTITY_MISMATCH")
+        equipment = connection.execute(
+            _SELECT_INCIDENT_EQUIPMENT,
+            {
+                "lot_id": action.lot_id,
+                "chamber_id": action.chamber_id,
+            },
+        ).all()
+        if (
+            len(equipment) != 1
+            or not equipment[0].equipment_id
+            or not str(equipment[0].equipment_id).strip()
+        ):
+            raise RepositoryContractError("MES_EQUIPMENT_NOT_UNIQUE")
+        claimed = connection.execute(
+            _BEGIN_MES_DELIVERY, {"action_id": action.action_id}
+        ).one_or_none()
+        if claimed is None:
+            raise RepositoryConflict("DELIVERY_STATE_CHANGED")
+        result = _delivery_row(claimed)
+        if result.request_hash != locked.request_hash:
+            raise RepositoryConflict("DELIVERY_REQUEST_HASH_MISMATCH")
+        return MesDeliveryClaim(
+            result,
+            action,
+            None,
+            str(equipment[0].equipment_id).strip(),
+            "MOCK-NOTIFY-V1",
+        )
+    except SQLAlchemyError as exc:
+        raise _translate(exc) from exc
 
 
 _TERMINAL_MES_FAILURE_CODES = frozenset({"WEBHOOK_401", "WEBHOOK_422"})
@@ -3472,15 +3562,21 @@ class ActionBundle:
     approval_status: ApprovalStatus | None
     approval_agent_run_id: str | None
     delivery_channels: tuple[DeliveryChannel, ...]
+    delivery_policy: str = "ACTION-POLICY-V1"
 
 
 _SELECT_ACTION_BUNDLE = text(
     """
     SELECT h.action_id, h.action_code, p.approval_id,
            p.status AS approval_status,
-           p.agent_run_id AS approval_agent_run_id
+           p.agent_run_id AS approval_agent_run_id,
+           r.evidence -> 'action_provenance' ->> 'action_policy_version'
+               AS delivery_policy
     FROM action_history AS h
     LEFT JOIN approval_request AS p ON p.action_id = h.action_id
+    LEFT JOIN agent_run_action AS linked ON linked.action_id = h.action_id
+        AND linked.link_role = 'CREATED'
+    LEFT JOIN agent_run AS r ON r.agent_run_id = linked.agent_run_id
     WHERE h.action_id = :action_id
     """
 )
@@ -3511,6 +3607,7 @@ def get_action_bundle(connection: Connection, action_id: str) -> ActionBundle:
         approval_status=approval_status,
         approval_agent_run_id=row.approval_agent_run_id,
         delivery_channels=tuple(item.channel for item in deliveries),
+        delivery_policy=getattr(row, "delivery_policy", None) or "ACTION-POLICY-V1",
     )
 
 
@@ -3583,6 +3680,8 @@ class PublicAgentRunRecord:
     prediction_created_at: datetime | None = None
     lot_id: str | None = None
     retry_of_run_id: str | None = None
+    autonomy_level: int = 2
+    run_evidence: dict[str, Any] | None = None
 
 
 # API v3가 bare array를 유지하므로 DB가 무한히 자라도 한 요청이 모두 읽지 않는다.
@@ -3619,6 +3718,7 @@ class PublicActionRecord:
     approval_status: ApprovalStatus | None
     deliveries: tuple[PublicActionDeliveryRecord, ...]
     created_at: datetime
+    delivery_policy: str = "ACTION-POLICY-V1"
 
 
 _SELECT_PUBLIC_AGENT_RUNS = text(
@@ -3642,6 +3742,8 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
            COALESCE(delivery_rows.items, '[]'::jsonb) AS deliveries,
            r.latency_ms,
            r.evidence -> 'active_timing' AS active_timing,
+           r.autonomy_level,
+           r.evidence AS run_evidence,
            clock_timestamp() AS observed_at,
            r.llm_model,
            r.prompt_version,
@@ -3706,6 +3808,8 @@ _SELECT_PUBLIC_AGENT_RUNS = text(
 
 _PUBLIC_ACTION_SELECT = """
     SELECT action.action_id,
+           r.evidence -> 'action_provenance' ->> 'action_policy_version'
+               AS delivery_policy,
            linked.agent_run_id,
            action.action_code,
            action.lot_id,
@@ -3722,6 +3826,7 @@ _PUBLIC_ACTION_SELECT = """
     LEFT JOIN agent_run_action AS linked
       ON linked.action_id = action.action_id
      AND linked.link_role = 'CREATED'
+    LEFT JOIN agent_run AS r ON r.agent_run_id = linked.agent_run_id
     LEFT JOIN approval_request AS approval
       ON approval.action_id = action.action_id
     LEFT JOIN LATERAL (
@@ -3923,6 +4028,12 @@ def _public_agent_run_record(row: Row[Any]) -> PublicAgentRunRecord:
         prediction_created_at=getattr(row, "prediction_created_at", None),
         lot_id=getattr(row, "lot_id", None),
         retry_of_run_id=getattr(row, "retry_of_run_id", None),
+        autonomy_level=int(getattr(row, "autonomy_level", 2)),
+        run_evidence=(
+            None
+            if getattr(row, "run_evidence", None) is None
+            else dict(row.run_evidence)
+        ),
     )
 
 
@@ -4024,7 +4135,13 @@ def _public_action_record(row: Row[Any]) -> PublicActionRecord:
         )
     except ValueError as exc:
         raise RepositoryContractError("PUBLIC_ACTION_ENUM_INVALID") from exc
-    if action_code is ActionCode.EQP_HOLD:
+    policy = getattr(row, "delivery_policy", None) or "ACTION-POLICY-V1"
+    if policy not in {"ACTION-POLICY-V1", "MOCK-NOTIFY-V1"}:
+        raise RepositoryContractError("PUBLIC_ACTION_POLICY_INVALID")
+    if policy == "MOCK-NOTIFY-V1":
+        if approval_status is not None:
+            raise RepositoryContractError("PUBLIC_ACTION_APPROVAL_UNEXPECTED")
+    elif action_code is ActionCode.EQP_HOLD:
         if approval_status not in {
             ApprovalStatus.PENDING,
             ApprovalStatus.APPROVED,
@@ -4038,6 +4155,7 @@ def _public_action_record(row: Row[Any]) -> PublicActionRecord:
     if tuple(item.channel for item in deliveries) != tuple(sorted(expected_channels)):
         raise RepositoryContractError("PUBLIC_ACTION_DELIVERY_SET_INVALID")
     return PublicActionRecord(
+        delivery_policy=policy,
         action_id=_require_text(row.action_id, "action_id"),
         agent_run_id=_require_text(row.agent_run_id, "agent_run_id"),
         action_code=action_code,

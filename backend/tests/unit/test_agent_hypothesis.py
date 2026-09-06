@@ -88,6 +88,8 @@ def _content(**overrides: object) -> str:
         "impact_summary": "현재 incident의 직접 범위를 우선 확인해야 합니다.",
         "verification_steps": ["인용된 근거를 다시 확인합니다."],
         "limitations": ["이력 범위가 제한적입니다."],
+        "parameter_findings_draft": [],
+        "origin_claim": {"scope": "UNDETERMINED", "basis_refs": []},
     }
     payload.update(overrides)
     return json.dumps(payload)
@@ -219,7 +221,6 @@ def test_second_invalid_response_stops_without_third_call_and_keeps_usage(
         {"supporting_alarms": [{"source": "TRACE", "alarm_id": "OUTSIDE"}]},
         {"supporting_chunk_ids": []},
         {"supporting_chunk_ids": ["OUTSIDE"]},
-        {"supporting_relation_ids": []},
         {"supporting_relation_ids": ["OUTSIDE"]},
     ],
 )

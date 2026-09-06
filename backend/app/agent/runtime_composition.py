@@ -8,15 +8,17 @@ checkpointer pool과 설정을 확인하고, 그 뒤 같은 graph·pool·executo
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any, Protocol
 
-from app.agent import action_store, ask, decision, hypothesis
+from app.agent import action_store, ask, decision, hypothesis, react
 from app.agent.approval_store import (
     approval_email_port,
     cancel_mes_port,
@@ -30,6 +32,7 @@ from app.agent.graph import (
     AgentGraphInputError,
     build_agent_graph,
 )
+from app.agent.level3_gate import production_level3_allowed, receipt_matches
 from app.agent.mes_delivery import production_ports as mes_production_ports
 from app.agent.public_read_model import to_public_approval
 from app.agent.public_schemas import PublicApprovalItem
@@ -130,6 +133,7 @@ class _ProductionNodePorts:
     publish_mes: Any
     writeback_result: Any
     cancel_mes: Any
+    react_select: Any = None
 
 
 def _production_tool_executor(
@@ -199,7 +203,7 @@ def _production_resources(llm_model: str) -> RuntimeResources:
         mes = mes_production_ports(settings, transactions)
         ports: AgentNodePorts = _ProductionNodePorts(  # type: ignore[assignment]
             generate_hypothesis=hypothesis.production_port(),
-            decide_action=decision.production_port(),
+            decide_action=decision.production_port(settings.AGENT_ACTION_POLICY),
             persist_action=action_store.production_port(transactions),
             notify_email=email.notify_email,
             approval_email=approval_email_port(
@@ -210,6 +214,10 @@ def _production_resources(llm_model: str) -> RuntimeResources:
             publish_mes=mes.publish_mes,
             writeback_result=mes.writeback_result,
             cancel_mes=cancel_mes_port(transactions),
+            # V5-C-7.1: 기본 Level 1·2 production 조립에는 selector 자체가 없다.
+            react_select=(
+                react.production_port() if settings.AGENT_LEVEL3_ENABLED else None
+            ),
         )
         graph = build_agent_graph(
             AgentGraphDependencies(
@@ -271,6 +279,10 @@ class AgentRuntime:
         model_config: Callable[[], str] = llm.configured_model,
         embedding_preflight: Callable[[], None] | None = None,
         autonomy_level: int = AGENT_AUTONOMY_LEVEL,
+        level3_enabled: bool = settings.AGENT_LEVEL3_ENABLED,
+        database_name: str = settings.POSTGRES_DB,
+        demo_ack: str | None = settings.AGENT_LEVEL3_DEMO_ACK,
+        demo_receipt_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self._factory = factory
         self._ask_factory = ask_factory
@@ -278,6 +290,15 @@ class AgentRuntime:
         self._model_config = model_config
         self._embedding_preflight = embedding_preflight
         self._autonomy_level = autonomy_level
+        self._level3_enabled = level3_enabled
+        self._database_name = database_name
+        self._demo_ack = demo_ack
+        self._demo_receipt_validator = demo_receipt_validator or (
+            lambda attempt_id: receipt_matches(
+                attempt_id,
+                evaluation_artifact_path=settings.AGENT_FAULT_EVAL_ARTIFACT_PATH,
+            )
+        )
         self._resources: RuntimeResources | None = None
         self._ask_service: ask.AgentAskService | None = None
         self._closed = False
@@ -286,6 +307,34 @@ class AgentRuntime:
     def _require_open(self) -> None:
         if self._closed:
             raise AgentRuntimeError("AGENT_RUNTIME_CLOSED")
+
+    def _require_autonomy_ready(self) -> None:
+        validator = self._demo_receipt_validator
+        if (
+            self._autonomy_level == 3
+            and self._database_name == "kosa_agent"
+            and settings.AGENT_ACTION_POLICY == "MOCK-NOTIFY-V1"
+        ):
+            from app.agent.release_grant import release_grant_matches
+
+            # New policy never accepts a legacy receipt or an injected legacy
+            # receipt callback. The fixed read-only mount binds qualified bytes.
+            def validator(attempt):
+                return release_grant_matches(
+                    reports_root=Path("/reports"),
+                    expected_attempt_id=attempt,
+                    expected_revision=os.environ.get("BISTEL_SOURCE_REVISION", ""),
+                    expected_policy=settings.AGENT_ACTION_POLICY,
+                )
+
+        if self._autonomy_level not in (1, 2, 3) or not production_level3_allowed(
+            autonomy_level=self._autonomy_level,
+            enabled=self._level3_enabled,
+            database=self._database_name,
+            demo_ack=self._demo_ack,
+            receipt_validator=validator,
+        ):
+            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
 
     def _build_or_get(self, model: str) -> RuntimeResources:
         self._require_open()
@@ -309,8 +358,7 @@ class AgentRuntime:
         """재개/종료 경로용 조립. LLM 원격 가용성을 다시 요구하지 않는다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2):
-            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
+        self._require_autonomy_ready()
         try:
             model = self._model_config()
         except Exception as exc:
@@ -321,8 +369,7 @@ class AgentRuntime:
         """POST run DML 전에 configured model의 원격 준비까지 확인한다."""
 
         self._require_open()
-        if self._autonomy_level not in (1, 2):
-            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
+        self._require_autonomy_ready()
         try:
             model = self._llm_preflight()
         except Exception as exc:
@@ -398,6 +445,23 @@ class AgentRuntime:
             return None
 
     def start_run(self, alarm: AlarmRef) -> StartedPublicRun:
+        from app.agent.release_artifacts import EvidenceError
+        from app.agent.release_fence import admit_new_run
+
+        try:
+            required_binding = (
+                (os.environ.get("BISTEL_SOURCE_REVISION"), self._demo_ack)
+                if self._autonomy_level == 3 and self._database_name == "kosa_agent"
+                else None
+            )
+            with admit_new_run(required_binding=required_binding):
+                return self._start_admitted_run(alarm)
+        except EvidenceError:
+            raise DependencyNotReadyError(
+                "Agent 신규 실행이 전환 검증 중 차단되었습니다."
+            ) from None
+
+    def _start_admitted_run(self, alarm: AlarmRef) -> StartedPublicRun:
         resources = self.preflight()
         thread_id = new_thread_id()
         config = build_thread_config(thread_id)

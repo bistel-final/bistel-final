@@ -20,6 +20,9 @@ thread를 강제 종료하지 않으며, embedding·model은 process 격리되�
 
 ## 안전 경계
 
+- NFR-03 예산 검증은 timeout 판정과 별개 축이다. DB `agent_run.autonomy_level` 정본으로
+  Level 1·2 `total/read/send=8/6/2`, Level 3 `10/8/2`, same-tool 4를 예약 transaction
+  안에서 적용하고, Level 3 selector는 10 step에서 중단한다.
 - `TOOL_DB_TIMEOUT_SEC`는 `1 <= value < 8`만 허용하며 위반하면 import 시 fail-closed다.
 - PostgreSQL은 raw `QueryCanceled` 또는 SQLSTATE `57014`만, Neo4j는 exact transaction-timeout
   code만 TIMEOUT으로 분류한다. deadlock·권한·syntax·`LockClientStopped`는 오분류하지 않는다.

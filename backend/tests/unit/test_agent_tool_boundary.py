@@ -22,7 +22,12 @@ from app.agent.tools import (
     ToolRunnerSaturated,
 )
 from app.common.enums import ToolCallStatus
-from app.common.tool_contracts import DocumentSearchToolInput, SendActionToolInput
+from app.common.tool_contracts import (
+    ChamberParameterHistoryToolInput,
+    DocumentSearchToolInput,
+    MetrologyResultToolInput,
+    SendActionToolInput,
+)
 
 
 class _DirectRunner:
@@ -46,6 +51,8 @@ def _boundary(document: Any) -> ToolBoundary:
         fdc_summary=lambda _payload: None,
         equipment_context=lambda _payload: None,
         document_search=document,
+        chamber_parameter_history=document,
+        metrology_result=document,
         send_action=document,
     )
 
@@ -85,6 +92,7 @@ def _harness(
             total=0,
             by_tool={},
             pending_reservations=0,
+            autonomy_level=2,
         ),
     )
     return (
@@ -127,6 +135,76 @@ def test_success_is_reserved_before_invoke_and_finalized_afterward(
     assert finalized["output"] == {"ok": True, "reason": "", "hits": []}
     assert finalized["error_msg"] is None
     assert finalized["latency_ms"] == 125
+
+
+def test_history_context_is_not_written_to_the_canonical_audit_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoked: list[dict[str, Any]] = []
+
+    def history(payload: dict[str, Any]) -> dict[str, Any]:
+        invoked.append(payload)
+        return {
+            "ok": False,
+            "reason": "NOT_FOUND: current lot",
+            "scope": None,
+            "chamber_id": None,
+            "parameter_id": None,
+            "step_no": None,
+            "current": None,
+            "prior": [],
+            "baseline": None,
+            "trend": None,
+            "comparison": None,
+            "sample_count": None,
+        }
+
+    executor, events = _harness(monkeypatch, document=history)
+    request = ChamberParameterHistoryToolInput(
+        chamber_id="EQP01-PM1",
+        parameter_id="PH_FOCUS",
+        step_no=1,
+        before="2026-09-04T09:00:00Z",
+    )
+    result = executor.chamber_parameter_history(
+        "RUN-1",
+        request,
+        current_lot_id="LOT001",
+        incident_step_id="CT-PHOTO",
+        scope="CURRENT",
+    )
+    assert result is not None and not result.ok
+    reserved = next(value for name, value in events if name == "reserve")
+    assert "_context" not in reserved["input"]
+    assert invoked[0]["_context"] == {
+        "current_lot_id": "LOT001",
+        "incident_step_id": "CT-PHOTO",
+        "scope": "CURRENT",
+    }
+
+
+def test_metrology_tool_uses_the_common_audit_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, events = _harness(
+        monkeypatch,
+        document=lambda payload: {
+            "ok": False,
+            "reason": "NOT_FOUND: metrology",
+            "lot_id": None,
+            "step_id": None,
+            "results": [],
+            "fail_count": None,
+            "disclaimer": None,
+        },
+    )
+    result = executor.metrology_result(
+        "RUN-1",
+        MetrologyResultToolInput(lot_id="LOT001", step_id="CT-PHOTO"),
+    )
+    assert result is not None and not result.ok
+    reserved = next(value for name, value in events if name == "reserve")
+    assert reserved["tool_name"] == "get_metrology_result"
 
 
 def test_tool_failure_keeps_only_the_reason_prefix(
@@ -459,6 +537,7 @@ def test_budget_comes_from_committed_tool_rows(monkeypatch: pytest.MonkeyPatch) 
             total=3,
             by_tool={"get_fdc_summary": 1, "search_documents": 2},
             pending_reservations=1,
+            autonomy_level=2,
         ),
     )
     budget = executor.budget("RUN-1")

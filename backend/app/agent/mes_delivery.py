@@ -1,4 +1,4 @@
-"""승인된 EQP_HOLD를 n8n WF3로 발행하는 MES delivery adapter."""
+"""정책별 전제조건을 통과한 EQP_HOLD를 n8n WF3로 발행하는 Mock adapter."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from app.agent.repository import (
 )
 from app.agent.state import DeliveryPlan
 from app.agent.tools import TransactionFactory
-from app.common.enums import DeliveryStatus
+from app.common.enums import ApprovalStatus, DeliveryStatus
 from app.common.mes_identity import (
     EVENT_ID_PATTERN,
     MesIdentityError,
@@ -166,15 +166,33 @@ def raw_mes_payload(claim: MesDeliveryClaim) -> bytes:
     delivery = claim.delivery
     if delivery.started_at is None:
         raise MesDeliveryContractError("MES_STARTED_AT_MISSING")
-    if claim.approval.decided_by is None or claim.approval.decided_at is None:
-        raise MesDeliveryContractError("MES_DECISION_MISSING")
+    if claim.delivery_policy == "MOCK-NOTIFY-V1":
+        if (
+            claim.approval is not None
+            or claim.action.approval_required
+            or claim.action.approval_status is not ApprovalStatus.AUTO
+        ):
+            raise MesDeliveryContractError("MES_NOTIFICATION_POLICY_MISMATCH")
+        # WF3 v1 compatibility fields identify a RULE dispatch, never a person
+        # or an APPROVED record. The actual equipment remains a Mock target.
+        decided_by = "policy:MOCK-NOTIFY-V1"
+        decided_at = delivery.started_at
+    else:
+        if (
+            claim.delivery_policy != "ACTION-POLICY-V1"
+            or claim.approval is None
+            or claim.approval.decided_by is None
+            or claim.approval.decided_at is None
+        ):
+            raise MesDeliveryContractError("MES_DECISION_MISSING")
+        decided_by, decided_at = claim.approval.decided_by, claim.approval.decided_at
     payload = {
         "action_code": claim.action.action_code.value,
         "action_id": claim.action.action_id,
         "chamber_id": claim.action.chamber_id,
         "command": "HOLD",
-        "decided_at": _utc_iso(claim.approval.decided_at, "MES_DECIDED_AT_INVALID"),
-        "decided_by": claim.approval.decided_by,
+        "decided_at": _utc_iso(decided_at, "MES_DECIDED_AT_INVALID"),
+        "decided_by": decided_by,
         "equipment_id": claim.equipment_id,
         "event_id": event_id_for(claim.action.action_id, delivery.request_hash),
         "occurred_at": _utc_iso(delivery.started_at, "MES_STARTED_AT_INVALID"),

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -378,6 +379,98 @@ class DocumentSearchToolResult(ToolResult):
 
 
 # ---------------------------------------------------------------------
+# Tool 3a — get_chamber_parameter_history  (구현·사용 C, Level 3 전용)
+# ---------------------------------------------------------------------
+class ChamberParameterHistoryToolInput(ToolModel):
+    chamber_id: str = _tool_id()
+    parameter_id: str = _tool_id()
+    step_no: int = Field(ge=1)
+    before: datetime
+    n_lots: int = Field(default=3, ge=1, le=3)
+
+
+class LotAggregate(ToolModel):
+    lot_id: NonEmptyId
+    lot_mean: float | None = None
+    lot_std: float | None = None
+    lot_min: float | None = None
+    lot_max: float | None = None
+    wafer_count: int = Field(ge=0)
+    ooc_wafers: int = Field(ge=0)
+    oos_wafers: int = Field(ge=0)
+    evaluation_missing: int = Field(ge=0)
+    track_in_from: datetime
+    track_in_to: datetime
+
+
+class HistoryBaseline(ToolModel):
+    mean_hist: float | None = None
+    sd_hist: float | None = None
+    prior_lot_count: int = Field(ge=0)
+
+
+class ChamberParameterHistoryToolResult(ToolResult):
+    required_on_success: ClassVar[tuple[str, ...]] = (
+        "scope",
+        "chamber_id",
+        "parameter_id",
+        "step_no",
+        "current",
+        "baseline",
+        "trend",
+        "comparison",
+        "sample_count",
+    )
+
+    scope: Literal["CURRENT", "SIBLING"] | None = None
+    chamber_id: NonEmptyId | None = None
+    parameter_id: NonEmptyId | None = None
+    step_no: int | None = Field(default=None, ge=1)
+    current: LotAggregate | None = None
+    prior: list[LotAggregate] = Field(default_factory=list)
+    baseline: HistoryBaseline | None = None
+    trend: (
+        Literal["INSUFFICIENT", "STABLE", "SUDDEN", "DRIFT_UP", "DRIFT_DOWN"] | None
+    ) = None
+    comparison: Literal["CURRENT", "SIBLING"] | None = None
+    sample_count: int | None = Field(default=None, ge=0)
+
+
+# ---------------------------------------------------------------------
+# Tool 3b — get_metrology_result  (구현·사용 C, Level 3 전용)
+# ---------------------------------------------------------------------
+class MetrologyResultToolInput(ToolModel):
+    lot_id: str = _tool_id()
+    step_id: str = _tool_id()
+
+
+class MetrologyResultItem(ToolModel):
+    wafer_id: NonEmptyId
+    measure_type: NonEmptyId
+    measured_value: float | None = None
+    spec_lower: float | None = None
+    spec_upper: float | None = None
+    alarm_result: Literal["PASS", "FAIL"]
+    measured_at: datetime
+
+
+class MetrologyResultToolResult(ToolResult):
+    required_on_success: ClassVar[tuple[str, ...]] = (
+        "lot_id",
+        "step_id",
+        "results",
+        "fail_count",
+        "disclaimer",
+    )
+
+    lot_id: NonEmptyId | None = None
+    step_id: NonEmptyId | None = None
+    results: list[MetrologyResultItem] = Field(default_factory=list)
+    fail_count: int | None = Field(default=None, ge=0)
+    disclaimer: str | None = None
+
+
+# ---------------------------------------------------------------------
 # Tool 4 — send_action  (구현·사용 C)
 # ---------------------------------------------------------------------
 class SendActionToolInput(ToolModel):
@@ -461,6 +554,8 @@ TOOL_RESULT_MODELS: dict[str, type[ToolResult]] = {
     "get_fdc_summary": FdcSummaryToolResult,
     "get_equipment_context": EquipmentContextToolResult,
     "search_documents": DocumentSearchToolResult,
+    "get_chamber_parameter_history": ChamberParameterHistoryToolResult,
+    "get_metrology_result": MetrologyResultToolResult,
     "send_action": SendActionToolResult,
     "generate_analysis_plan": AnalysisPlanToolResult,
 }
@@ -471,6 +566,8 @@ AGENT_TOOL_NAMES: frozenset[str] = frozenset(
         "get_fdc_summary",
         "get_equipment_context",
         "search_documents",
+        "get_chamber_parameter_history",
+        "get_metrology_result",
         "send_action",
     }
 )

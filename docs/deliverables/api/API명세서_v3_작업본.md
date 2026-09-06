@@ -1,6 +1,14 @@
 # API 명세서
 
+> **2026-09-06 추가 호환 계약: 공개 action 객체에 `delivery_policy: ACTION-POLICY-V1 | MOCK-NOTIFY-V1`을 추가한다(누락 시 V1 호환). 새 정책은 EQP_HOLD도 `approval_status=null`, 상세 approval 없음이며 기존 승인/반려 API를 호출하지 않는다. 확인/메일 열람 API는 추가하지 않고 7화면 경로와 채널 enum을 유지한다. WF2는 WARNING/EQP_HOLD의 ACTION_NOTIFY·approval_id=null을 추가 허용한다. WF3 decided_by의 `policy:MOCK-NOTIFY-V1`은 시스템 정책 actor다. 본문의 승인 필수 조건은 기존 V1 전용이다. [상세 계약](../agent/mock-notify-contract.md).**
+
 **PhotoEtch FDC Agent Pilot — 최종 데이터 전환 작업본**
+
+> **2026-09-06 API 동기 보완(V5-C-7.1 / 구현리뷰 27차-2)**: `GET /agent/evaluations`의
+> `golden_flow`는 기존 V1 객체, `protocol=MOCK-NOTIFY-V1` 객체, 미설정 `null`을 모두 허용한다.
+> 새 정책은 `PREFLIGHT → BATCH_BASELINE → MOCK_RESULTS → NO_DECISIONS → SECOND_BATCH`의
+> live 5단과 `UNKNOWN`·`MANUAL_RETRY`의 `NOT_LIVE`를 구분하며 private evidence를 공개하지 않는다.
+> `delivery_policy`의 V1 기본값 및 신규 union을 `api_spec_v3.json`과 생성 MD·CSV·PDF에 함께 반영한다.
 
 ---
 
@@ -1045,6 +1053,23 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | D | GET | `/analytics/history` | 질의 이력 | `PageEnvelope<NlQueryLogItem>` | 422 |
 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
 | D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
+
+#### V5-C-7.1 실행 상세 additive 계약 (C · 2026-09-05)
+
+`GET /agent/runs/{run_id}`에 `autonomy_level`(1~3), `remaining_read_calls`,
+`react_trace: ReactStepPublic[]`, `trace_state`를 추가한다. Level 1·2는
+`NOT_APPLICABLE`과 빈 trace, Level 3 RUNNING·WAITING_APPROVAL은 `PENDING`과 빈 trace다.
+종료한 Level 3는 `agent_run.evidence.react_trace`만 읽어 `AVAILABLE`로 반환하며, finalize 전
+crash 등으로 저장본이 없으면 `UNAVAILABLE`이다. 원문 Tool 인자·query·lot_hist_id·digest와
+selector provider model은 trace 공개 필드에 포함하지 않는다. 선택의 짧은 이유와 서버 생성
+인자/관찰 요약, phase·guard·중단 사유·selector token만 제공한다.
+
+`diagnosis.parameter_findings`는 인용 FDC에서 코드가 계산한 파라미터·recipe step·방향
+(`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된
+namespace별 근거와 상류·하류·형제·이력·계측의 `CHECKED|NOT_CHECKED|NOT_AVAILABLE`를 담는다.
+LLM draft에 산술·compared 필드를 받지 않는다. 새 prediction은 `agent-evidence-v3`,
+가설 prompt는 `agent-hypothesis-v3-ko1`이며 v1·v2 저장본 읽기를 유지한다. 경로·status code와
+CM-5.1 operation 모집단(20/30/36)은 변하지 않는다.
 
 ### 5.3 팀 release 필수 확장 API
 
