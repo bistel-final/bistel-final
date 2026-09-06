@@ -11,7 +11,7 @@ from collections import Counter
 from statistics import mean, median
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, ValidationError, model_serializer, model_validator
 
 from app.agent.release_artifacts import (
     EvidenceError,
@@ -608,8 +608,41 @@ class LlmConfiguration(EvidenceModel):
     selector_model_revision: Identifier
     hypothesis_prompt_version: Literal["agent-hypothesis-v3-ko1"]
     selector_prompt_version: Literal["agent-react-v2-ko1"]
-    temperature: Annotated[float, Field(ge=0, le=0)]
-    seed: Count
+    temperature: Annotated[float, Field(ge=0, le=0)] | None
+    seed: Count | None
+    request_policy: Literal["U10-LUNA-REASONING-V1"] | None = None
+    reasoning_effort: Literal["low"] | None = None
+    max_completion_tokens: Annotated[int, Field(ge=1, le=128000)] | None = None
+
+    @model_validator(mode="after")
+    def request_contract(self):
+        if self.request_policy is None:
+            if (
+                self.temperature is None
+                or self.seed is None
+                or self.reasoning_effort is not None
+                or self.max_completion_tokens is not None
+            ):
+                raise ValueError("LLM_CONFIG_MISMATCH")
+        elif (
+            self.hypothesis_model_revision != "gpt-5.6-luna"
+            or self.selector_model_revision != "gpt-5.6-luna"
+            or self.temperature is not None
+            or self.seed is not None
+            or self.reasoning_effort != "low"
+            or self.max_completion_tokens is None
+        ):
+            raise ValueError("LLM_CONFIG_MISMATCH")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_bytes(self, handler):
+        value = handler(self)
+        if self.request_policy is None:
+            # Keep historical six-field canonical hashes and nested artifacts.
+            for name in ("request_policy", "reasoning_effort", "max_completion_tokens"):
+                value.pop(name, None)
+        return value
 
 
 class Artifact(EvidenceModel):

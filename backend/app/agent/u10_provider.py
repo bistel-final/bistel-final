@@ -6,6 +6,7 @@ request, including transport retries. No credential or prompt is retained.
 """
 
 import json
+import os
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -15,6 +16,38 @@ from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_comparison import LlmConfiguration
 from app.agent.u10_observer import EffectObserver
 from app.agent.u10_preparation import RuntimePorts
+
+
+def validate_runtime_configuration(config, binding, authorize):
+    """Read-only preflight shared with every HTTP entry; no DNS or claim IO."""
+    from app.common import llm
+
+    config = LlmConfiguration.model_validate(config.model_dump())
+    if authorize(binding) is not True:
+        raise EvidenceError("U10_DATA_EXPORT_NOT_AUTHORIZED")
+    if (
+        digest(canonical_json(config)) != binding.llm_config_sha256
+        or llm.LLM_MODEL_MAIN != config.hypothesis_model_revision
+        or llm.LLM_MODEL_MAIN != config.selector_model_revision
+    ):
+        raise EvidenceError("LLM_CONFIG_MISMATCH")
+    if config.request_policy == "U10-LUNA-REASONING-V1":
+        if (
+            not llm._is_reasoning_model(llm.LLM_MODEL_MAIN)
+            or (os.getenv("LLM_REASONING_EFFORT", "low").strip() or "low")
+            != config.reasoning_effort
+            or llm.LLM_MAX_TOKENS != config.max_completion_tokens
+        ):
+            raise EvidenceError("LLM_CONFIG_MISMATCH")
+        # Runtime temperature is irrelevant only when no temperature is sent.
+        # The approved config explicitly records temperature/seed as null.
+    elif (
+        config.seed > 2_147_483_647
+        or llm.LLM_TEMPERATURE != 0
+        or llm._is_reasoning_model(llm.LLM_MODEL_MAIN)
+    ):
+        raise EvidenceError("LLM_CONFIG_MISMATCH")
+    llm._resolve_endpoint()  # Check credential readiness without emitting values.
 
 
 class RealProvider:
@@ -53,19 +86,8 @@ class RealProvider:
 
     def _check_config(self):
         llm = self._llm
-        if self.authorize(self.binding) is not True:
-            raise EvidenceError("U10_DATA_EXPORT_NOT_AUTHORIZED")
-        if (
-            digest(canonical_json(self.config)) != self.binding.llm_config_sha256
-            or llm.LLM_MODEL_MAIN != self.config.hypothesis_model_revision
-            or llm.LLM_MODEL_MAIN != self.config.selector_model_revision
-            or self.config.seed > 2_147_483_647
-            or llm.LLM_TEMPERATURE != 0
-            or llm._is_reasoning_model(llm.LLM_MODEL_MAIN)
-            or llm._resolve_endpoint() != (self._endpoint, self._key)
-        ):
-            # Reasoning providers omit temperature=0: do not attest a config
-            # they did not actually receive. Existing production path unchanged.
+        validate_runtime_configuration(self.config, self.binding, self.authorize)
+        if llm._resolve_endpoint() != (self._endpoint, self._key):
             raise EvidenceError("LLM_CONFIG_MISMATCH")
 
     @contextmanager
@@ -84,9 +106,18 @@ class RealProvider:
                 url != self._endpoint + "/chat/completions"
                 or headers != {"Authorization": "Bearer " + self._key}
                 or json.get("model") != self.config.hypothesis_model_revision
-                or json.get("temperature") != 0
-                or json.get("seed") != self.config.seed
             ):
+                raise EvidenceError("LLM_CONFIG_MISMATCH")
+            if self.config.request_policy == "U10-LUNA-REASONING-V1":
+                if (
+                    any(k in json for k in ("temperature", "seed", "max_tokens"))
+                    or json.get("reasoning_effort") != self.config.reasoning_effort
+                    or type(json.get("max_completion_tokens")) is not int
+                    or json["max_completion_tokens"]
+                    != self.config.max_completion_tokens
+                ):
+                    raise EvidenceError("LLM_CONFIG_MISMATCH")
+            elif json.get("temperature") != 0 or json.get("seed") != self.config.seed:
                 raise EvidenceError("LLM_CONFIG_MISMATCH")
             with observer.provider_request():
                 # No proxy environment or redirects can silently change egress.
@@ -99,7 +130,9 @@ class RealProvider:
                     follow_redirects=False,
                 )
 
-        def complete(messages, *, json_schema, seed):
+        def complete(messages, *, json_schema, seed=None):
+            if seed != self.config.seed:
+                raise EvidenceError("LLM_CONFIG_MISMATCH")
             expected = (
                 hypothesis.HYPOTHESIS_RESPONSE_SCHEMA,
                 react.REACT_SELECT_SCHEMA,

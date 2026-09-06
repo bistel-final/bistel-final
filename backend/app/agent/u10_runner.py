@@ -25,7 +25,7 @@ from app.agent.u10_export import ExportAuthorization
 from app.agent.u10_fixture_bundle import build_benchmark, load_snapshot
 from app.agent.u10_fixture_database import isolated_database, restored_inventory
 from app.agent.u10_preparation import counterfactual_loader, verified_preparer
-from app.agent.u10_provider import RealProvider
+from app.agent.u10_provider import RealProvider, validate_runtime_configuration
 from app.agent.u10_receipt import _receipt_directory
 from app.agent.u10_revision import verify_execution_revision
 from app.agent.u10_source import BACKEND_ROOT, verify_source_binding
@@ -104,6 +104,7 @@ def run_comparison(
     )
     authorize = ExportAuthorization(export_grant, export_grant_sha256)
     authorize(binding)
+    validate_runtime_configuration(llm, binding, authorize)
     snapshots = {
         f.fixture_id: inputs / (f.fixture_id + ".json") for f in benchmark.fixtures
     }

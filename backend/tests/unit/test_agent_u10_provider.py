@@ -53,19 +53,42 @@ def settings(monkeypatch):
     monkeypatch.setenv("LLM_RETRY_MAX", "1")
 
 
-def provider(authorize=lambda _: True):
-    cfg = config()
+def luna_config():
+    return LlmConfiguration.model_validate(
+        {
+            **config().model_dump(),
+            "hypothesis_model_revision": "gpt-5.6-luna",
+            "selector_model_revision": "gpt-5.6-luna",
+            "temperature": None,
+            "seed": None,
+            "request_policy": "U10-LUNA-REASONING-V1",
+            "reasoning_effort": "low",
+            "max_completion_tokens": 1500,
+        }
+    )
+
+
+@pytest.fixture
+def luna_settings(settings, monkeypatch):
+    monkeypatch.setattr(llm, "LLM_MODEL_MAIN", "gpt-5.6-luna")
+    monkeypatch.setattr(llm, "LLM_TEMPERATURE", 0.1)
+    monkeypatch.setattr(llm, "LLM_MAX_TOKENS", 1500)
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+
+
+def provider(authorize=lambda _: True, cfg=None):
+    cfg = config() if cfg is None else cfg
     binding = BatchBinding(
         "a" * 40, "b" * 64, digest(canonical_json(cfg)), "c" * 64, "d" * 64
     )
     return RealProvider(cfg, binding, authorize)
 
 
-def completion(content):
+def completion(content, model="actual-model"):
     return httpx.Response(
         200,
         json={
-            "model": "actual-model",
+            "model": model,
             "usage": {"prompt_tokens": 10, "completion_tokens": 4},
             "choices": [{"message": {"content": content}}],
         },
@@ -129,6 +152,126 @@ def test_real_selector_transport_and_usage(settings, monkeypatch):
     assert len(posts) == 1
     assert posts[0]["trust_env"] is False and posts[0]["follow_redirects"] is False
     assert posts[0]["json"]["temperature"] == 0 and posts[0]["json"]["seed"] == 13
+
+
+@pytest.mark.parametrize("mode", ["selector", "hypothesis", "retry", "correction"])
+def test_luna_actual_request_shape_and_usage(luna_settings, monkeypatch, mode):
+    posts, state = [], observed()
+    alarm = (
+        state.hypothesis_inputs()["route"]
+        .incident.member_alarms[0]
+        .model_dump(mode="json")
+    )
+    valid = _content(
+        supporting_alarms=[alarm], supporting_chunk_ids=[], supporting_relation_ids=[]
+    )
+
+    def post(url, **kwargs):
+        body = kwargs["json"]
+        assert body["model"] == "gpt-5.6-luna"
+        assert not {"temperature", "seed", "max_tokens"} & body.keys()
+        assert body["reasoning_effort"] == "low"
+        assert body["max_completion_tokens"] == 1500
+        posts.append(body)
+        if mode == "retry" and len(posts) == 1:
+            return httpx.Response(503)
+        content = "{}" if mode == "correction" and len(posts) == 1 else valid
+        return completion(
+            stop_payload() if mode in {"selector", "retry"} else content, "gpt-5.6-luna"
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+    p = provider(cfg=luna_config())
+    with p.scope(KEY) as ports:
+        result = (
+            ports.select(state.build_context(), seed=None)
+            if mode in {"selector", "retry"}
+            else ports.generate(**state.hypothesis_inputs(), seed=None)
+        )
+    assert result.llm_usage.input_tokens == (20 if mode == "correction" else 10)
+    assert p.observations[0]["provider_requests"] == (
+        2 if mode in {"retry", "correction"} else 1
+    )
+    assert p.observations[0]["blocked_effect_attempts"] == 0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("temperature", 0),
+        ("seed", 0),
+        ("max_tokens", 1500),
+        ("reasoning_effort", "high"),
+        ("max_completion_tokens", 1501),
+    ],
+)
+def test_luna_tampered_wire_parameters_never_reach_http(
+    luna_settings, monkeypatch, field, value
+):
+    original = llm.chat_with_usage
+
+    def changed(messages, *, request_port, **kwargs):
+        def port(url, **request):
+            request["json"][field] = value
+            return request_port(url, **request)
+
+        return original(messages, request_port=port, **kwargs)
+
+    monkeypatch.setattr(llm, "chat_with_usage", changed)
+    monkeypatch.setattr(httpx, "post", lambda *a, **kw: pytest.fail("HTTP called"))
+    p = provider(cfg=luna_config())
+    with pytest.raises(EvidenceError, match="^LLM_CONFIG_MISMATCH$"):
+        with p.scope(KEY) as ports:
+            ports.select(observed().build_context(), seed=None)
+
+
+@pytest.mark.parametrize("change", ["effort", "tokens", "grant"])
+@pytest.mark.parametrize("mode", ["retry", "correction"])
+def test_luna_drift_revocation_blocks_retry_and_correction(
+    luna_settings, monkeypatch, change, mode
+):
+    approved, calls = [True], []
+    p = provider(lambda _: approved[0], cfg=luna_config())
+
+    def post(*args, **kwargs):
+        calls.append(1)
+        if change == "effort":
+            monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
+        elif change == "tokens":
+            monkeypatch.setattr(llm, "LLM_MAX_TOKENS", 1501)
+        else:
+            approved[0] = False
+        return (
+            httpx.Response(503) if mode == "retry" else completion("{}", "gpt-5.6-luna")
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+    with pytest.raises(
+        EvidenceError, match="U10_DATA_EXPORT_NOT_AUTHORIZED|LLM_CONFIG_MISMATCH"
+    ):
+        with p.scope(KEY) as ports:
+            if mode == "retry":
+                ports.select(observed().build_context(), seed=None)
+            else:
+                ports.generate(**observed().hypothesis_inputs(), seed=None)
+    assert calls == [1]
+
+
+def test_luna_old_temperature_zero_grant_still_rejected_before_dns(
+    luna_settings, monkeypatch
+):
+    monkeypatch.setattr(llm, "LLM_TEMPERATURE", 0)
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: pytest.fail("DNS called")
+    )
+    old = config().model_copy(
+        update={
+            "hypothesis_model_revision": "gpt-5.6-luna",
+            "selector_model_revision": "gpt-5.6-luna",
+        }
+    )
+    with pytest.raises(EvidenceError, match="^LLM_CONFIG_MISMATCH$"):
+        provider(cfg=old)
 
 
 @pytest.mark.parametrize("mode", ["retry", "correction"])

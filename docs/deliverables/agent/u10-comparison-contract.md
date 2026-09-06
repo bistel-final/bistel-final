@@ -1,5 +1,10 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
+> **2026-09-06 Luna 호환 보완(계획 v66)**: U10 LLM 설정은 legacy 6필드 또는
+> `U10-LUNA-REASONING-V1` 9필드다. 아래 temperature=0·정수 seed는 legacy에 한정한다.
+> Luna는 temperature/seed null(미전송)·effort low·출력 토큰 상한을 결속하며 재현성을 주장하지 않는다.
+> [Luna 요청 계약 및 새 R′ 재승인 절차](u10-luna-request-contract.md)를 따른다.
+
 > 2026-09-06 사용자 승인 변경: 아래 release 증적은 기존 `ACTION-POLICY-V1` 전용이다.
 > 새 `MOCK-NOTIFY-V1`은 확인 기록 없이 이메일 + 자동 MES Mock이며 9/3 대기·pre-HITL Kafka 0·승인
 > 증적을 재사용할 수 없다. 기존 Stage2/readback/production Level 3는 새 정책을 거부한다.
@@ -25,7 +30,7 @@ WF2 읽기 전용 API 수집·DB callback 조립부, 고정 이미지/지속 run
   (`oracle_required_dimensions`, 목록에 없는 축은 NOT_REQUIRED)을 분리한다.
   history 이전 lot이 0이어도 현재 chamber 이력 조회 자체를 불가능하다고 처리하지 않는다.
 - `u10-comparison-v1`: 40자리 revision, benchmark canonical SHA, 코드 소유 판정 규칙 SHA,
-  hypothesis v3 / selector v2 prompt와 model revision·temperature 0·seed,
+  hypothesis v3 / selector v2 prompt와 model revision·요청 프로필별 LLM 설정(legacy 또는 Luna),
   세 가지 synthetic/experiment-only 표시를 필수로 둔다.
 - 8 fixture × 2 attempt × 2 policy = 32건/16쌍, fixture별 첫 쌍은 fixed→ReAct,
   둘째 쌍은 ReAct→fixed다. 각 attempt의 snapshot·LLM 설정 SHA도 결속한다.
@@ -210,7 +215,8 @@ factory 선택 자체가 provider를 호출하지는 않는다. 양쪽 정책이
   usage 미관측은 `None`으로 보존하며 `measured_tokens()`는 이를 0으로 바꾸지 않고
   `METRIC_PRECONDITION_INVALID`로 거부한다. timeout 전 관측된 부분 usage는 보존한다.
 - 안전한 오류 코드와 generator 구간 monotonic latency만 반환한다. 예외 원문은 저장하지 않는다.
-  seed는 음수/boolean을 거부한다. 어댑터 자체에 별도 provider timeout/강제 종료 기능은 없다.
+  seed는 음수/boolean을 거부하며 Luna 미전송 정책의 None은 허용한다.
+  어댑터 자체에 별도 provider timeout/강제 종료 기능은 없다.
 - 성공 결과는 실제 `HypothesisOutcome`을 재검증하고 v3 `origin_assessment` 및 코드 계산
   `compared`와 대조한 뒤 namespace citation을 투영한다. generator 입력/결과 변조는 내부
   관찰 문맥으로 전파되지 않는다.
@@ -708,11 +714,14 @@ provider/effect 호출도 성공시키지 않고 즉시 거부한다. **데이�
 `u10_provider.RealProvider`는 실제 `generate_hypothesis`/`select_next_step`의 parsing,
 교정, usage 누적을 재사용한다. 두 함수에 선택적 `completion_port`, Common LLM에
 선택적 `request_port`만 추가했고 미주입 production 동작은 그대로다. 실제 HTTP 요청마다
-승인 파일·binding·시간, model/temperature/seed, endpoint/credential의 시작값 일치를 검사한다.
+승인 파일·binding·시간, model 및 요청 프로필별 파라미터, endpoint/credential의 시작값 일치를 검사한다.
 따라서 503 retry와 가설 correction도 각각 재검증한다. 성공/실패의 usage를 꾸며내지 않는다.
 
 현재 조립은 Common의 단일 model 설정을 사용하므로 selector/hypothesis model revision이
-같아야 한다. temperature=0을 실제 보내지 않는 reasoning model은 fail-closed 거부한다.
+같아야 한다. **legacy 프로필(`request_policy` 없음)에 한해** temperature=0을 실제 보내지 않는
+reasoning model은 fail-closed 거부한다. Luna 9필드 프로필은 temperature/seed null(미전송),
+reasoning_effort low·max_completion_tokens를 명시하며
+[Luna 요청 계약](u10-luna-request-contract.md)을 따른다. 두 프로필을 묵시적으로 변환하지 않는다.
 remote는 HTTPS, HTTP는 loopback만 허용하며 proxy env와 redirect는 비활성화한다.
 이는 기본 production LLM 설정을 변경하거나 승인 record를 자동 생성하는 경로가 아니다.
 
@@ -735,6 +744,7 @@ read port, 단일 provider만 조립하며 production DB/send/HITL/MES factory�
 
 1. 명시 repository의 clean local main HEAD=R, 실행 패키지 위치 일치, private 입력 SHA,
    실제 source/tool pin, 별도 반출 grant, CF8 snapshot/source를 확인한다.
+   `validate_runtime_configuration`으로 요청 프로필과 런타임 설정을 claim·DB·DNS 전에 대조한다.
 2. `<repo>/output/v5-c-7.1/<R>/u10-execution-claim.json`을 O_EXCL/0600으로 선점한다.
    경쟁/중복 실행은 Docker·DNS·provider 호출 전에 거부한다.
 3. 로컬-only 일회용 PG에서 전체 benchmark/독립 oracle을 다시 구성해 선언값과 exact 대조한다.
@@ -753,8 +763,12 @@ read port, 단일 provider만 조립하며 production DB/send/HITL/MES factory�
   --postgres-image-id sha256:<local-image-id-64hex>
 ```
 
-`llm.json`은 `LlmConfiguration`의 6필드(두 model revision, 두 prompt version, temperature,
-seed)만 가진다. grant는 위의 별도 승인 스키마를 따른다. 파일/부모는 0600/0700이다.
+`llm.json`은 `LlmConfiguration`의 **legacy 6필드 또는 Luna 9필드** 중 하나다.
+legacy는 두 model revision, 두 prompt version, temperature=0, 정수 seed이며 `request_policy`가 없다.
+Luna는 위 여섯 필드 중 temperature/seed를 null로 두고 `request_policy=U10-LUNA-REASONING-V1`,
+`reasoning_effort=low`, `max_completion_tokens`를 추가한다. 정확한 형식·SHA 결속과 새 R′에서의
+재승인 절차는 [Luna 요청 계약](u10-luna-request-contract.md)을 따른다.
+grant는 위의 별도 승인 스키마를 따른다. 파일/부모는 0600/0700이다.
 실패 시 claim과 이미 발급한 파일을 **삭제/덮어쓰기/자동 재시도하지 않는다**. receipt만 실패한 경우
 artifact는 보존되고 완료 파일은 없다. 승인·실행 기록 확인 후 기존 A receipt CLI로만 복구할 수 있다.
 failed batch를 새 32-run으로 자동 치환하지 않는다.
@@ -1244,7 +1258,7 @@ attempt/golden/fault raw SHA**를 비교한다. 같은 attempt 경로지만 다�
 
 `release_model.RuntimeLlmConfiguration`은 U10 실험 DTO와 별개다. 실제 graph는 seed를 보내지
 않으므로 null이며, 실제 `LLM_TEMPERATURE`를 기록하고 reasoning 모델에서는 null이다.
-U10의 temperature 0·명시 seed를 생산 실행에 허위 기재하거나 생산 모델 호출을 변경하지 않는다.
+U10 legacy의 temperature 0·명시 seed를 생산 실행에 허위 기재하거나 생산 모델 호출을 변경하지 않는다.
 현재까지 실제 qualification round가 발급되지 않은 상태에서 이 차이를 정정했다.
 
 `enable_production_level3.py`는 명시 operator 전환 CLI이며 **호출하면 실제 env/서비스를 변경**한다.
