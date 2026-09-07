@@ -33,6 +33,28 @@ const publicErrorMessage = (error, fallback) => {
   return fallback
 }
 
+// 시연 가독성: 기준 알람 실측은 알람 이력 화면에서 이미 본 내용이라 기본으로 접어 둔다.
+function CollapsibleSection({ title, note, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="rounded-xl border border-line bg-white" aria-label={title}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+      >
+        <span>
+          <span className="text-[15px] font-extrabold text-navy">{title}</span>
+          {note && <span className="ml-3 text-[12.5px] text-g1">{note}</span>}
+        </span>
+        <span className="text-[12.5px] font-bold text-blue">{open ? '접기' : '펼치기'}</span>
+      </button>
+      {open && <div className="border-t border-cell-line p-4">{children}</div>}
+    </section>
+  )
+}
+
 function AgentLanding() {
   const navigate = useNavigate()
   const requestRef = useRef(null)
@@ -285,17 +307,19 @@ function AgentRunDetailPage({ runId }) {
         />
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <RunHeaderCard run={run} action={detail.action} approval={detail.approval} />
-          <div className="agent-main-readable">
-            <AlarmTracePanel
-              alarm={alarm ?? (wafer ? { sensor_id: wafer.sensor_id, wafer_no: wafer.wafer_no, chamber_id: wafer.chamber_id } : null)}
-              wafer={wafer}
-              lim={lim}
-              response={state.traceResponse}
-              loading={false}
-              emptyMessage={state.trendMessage}
-              allowWaferSelection
-            />
-          </div>
+          <CollapsibleSection title="기준 알람 실측" note="알람 이력 화면에서 본 측정값 · 필요할 때 펼쳐 확인" defaultOpen={false}>
+            <div className="agent-main-readable">
+              <AlarmTracePanel
+                alarm={alarm ?? (wafer ? { sensor_id: wafer.sensor_id, wafer_no: wafer.wafer_no, chamber_id: wafer.chamber_id } : null)}
+                wafer={wafer}
+                lim={lim}
+                response={state.traceResponse}
+                loading={false}
+                emptyMessage={state.trendMessage}
+                allowWaferSelection
+              />
+            </div>
+          </CollapsibleSection>
           <AgentExecutionFlow detail={detail} alarm={alarm} />
           <RunInvestigationTimeline detail={detail} />
           {pollingEnded && (
@@ -314,7 +338,7 @@ function AgentRunDetailPage({ runId }) {
           />
           <RunInvestigationCard diagnosis={detail.diagnosis} />
           <div className="flex justify-end">
-            <Button onClick={() => setModalOpen(true)}>근거 · 조치 상세 보기</Button>
+            <Button onClick={() => setModalOpen(true)}>분석 상세</Button>
           </div>
         </div>
       </div>}
