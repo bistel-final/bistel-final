@@ -8,13 +8,14 @@ This is not the 32-attempt/receipt issuer or the production graph executor.
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from app.agent.investigation_models import ComparisonMatrix
+from app.agent.read_feedback import summarize_read_history
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_comparison import (
     Inventory,
@@ -154,6 +155,7 @@ def execute_react_policy(
         )
 
     for _ in range(react.REACT_MAX_STEPS):
+        history = session.tool_history
         if len(session.calls) >= 8:
             return finish("BUDGET_EXHAUSTED")
         if rejections >= react.REACT_MAX_GUARD_REJECTIONS:
@@ -192,6 +194,12 @@ def execute_react_policy(
                     for c in history
                     if c.status is ToolCallStatus.SUCCESS
                 ),
+                "tool_attempts": dict(
+                    Counter(
+                        c.tool_name for c in history if c.tool_name in react.REACT_TOOLS
+                    )
+                ),
+                "read_feedback": summarize_read_history(history),
                 "checked_dimensions": ComparisonMatrix.model_validate(
                     derive_compared(inventory, session.calls).model_dump()
                 ),
@@ -332,13 +340,6 @@ def execute_react_policy(
             calls = session.calls[before_read:]
             budget_stopped = True
         for call in calls:
-            history.append(
-                SimpleNamespace(
-                    tool_name=call.tool,
-                    input=resolved["request"].copy(),
-                    status=ToolCallStatus(call.status),
-                )
-            )
             trace.append(
                 react.trace_entry(
                     seq=len(trace) + 1,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from collections.abc import Callable, Sequence
 from typing import Final
 
@@ -259,6 +260,42 @@ _JSON_FENCE_PATTERN: Final = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _HANGUL_PATTERN: Final = re.compile(r"[가-힣]")
+# A bounded script check, not language identification. Latin terminology, Greek
+# metrics (µ/σ), Hanja, scientific symbols and punctuation remain valid.
+_FOREIGN_PROSE_SCRIPTS: Final = frozenset(
+    {
+        "ARABIC",
+        "ARMENIAN",
+        "BENGALI",
+        "CYRILLIC",
+        "DEVANAGARI",
+        "GEORGIAN",
+        "GUJARATI",
+        "GURMUKHI",
+        "HEBREW",
+        "HIRAGANA",
+        "KANNADA",
+        "KATAKANA",
+        "KHMER",
+        "LAO",
+        "MALAYALAM",
+        "MYANMAR",
+        "ORIYA",
+        "SINHALA",
+        "TAMIL",
+        "TELUGU",
+        "THAI",
+        "TIBETAN",
+    }
+)
+
+
+def _has_foreign_prose_letters(value: str) -> bool:
+    return any(
+        unicodedata.category(char)[0] in {"L", "M"}
+        and unicodedata.name(char, "").partition(" ")[0] in _FOREIGN_PROSE_SCRIPTS
+        for char in value
+    )
 
 
 def _json_content(content: str) -> str:
@@ -283,7 +320,9 @@ def _completion_usage(completion: llm.ChatCompletion) -> LlmUsage:
         raise HypothesisGenerationError("LLM_DEPENDENCY") from exc
 
 
-def _korean_output_reason(hypothesis: Hypothesis) -> str | None:
+def _korean_output_reason(
+    hypothesis: Hypothesis, *, source_identifiers: Sequence[str] = ()
+) -> str | None:
     """식별자·enum이 아닌 설명 문장이 한국어인지 저장 전에 확인한다."""
 
     narratives = (
@@ -300,10 +339,26 @@ def _korean_output_reason(hypothesis: Hypothesis) -> str | None:
         *hypothesis.verification_steps,
         *hypothesis.limitations,
     )
-    if any(
-        value.strip() and _HANGUL_PATTERN.search(value) is None for value in narratives
-    ):
-        return "KOREAN_OUTPUT_REQUIRED"
+    identifiers = sorted(
+        {
+            value
+            for value in source_identifiers
+            if value and _has_foreign_prose_letters(value)
+        },
+        key=len,
+        reverse=True,
+    )
+    for value in narratives:
+        if not value.strip():
+            continue
+        if _HANGUL_PATTERN.search(value) is None:
+            return "KOREAN_OUTPUT_REQUIRED"
+        # Only authoritative metadata IDs are exempt. Model-proposed citations,
+        # document prose and titles cannot whitelist foreign-language sentences.
+        for identifier in identifiers:
+            value = value.replace(identifier, "")
+        if _has_foreign_prose_letters(value):
+            return "KOREAN_OUTPUT_REQUIRED"
     return None
 
 
@@ -387,6 +442,44 @@ def generate_hypothesis(
         diagnostic_snapshot,
         route,
         graph_evidence,
+    )
+    source_identifiers = (
+        tuple(
+            value
+            for group in (
+                *diagnostic_snapshot.source_ids.model_dump().values(),
+                *diagnostic_snapshot.direct_scope.model_dump().values(),
+            )
+            for value in group
+        )
+        + tuple(alarm.alarm_id for alarm in route.incident.member_alarms)
+        + (
+            (graph_evidence.model_code,)
+            if graph_evidence is not None and graph_evidence.model_code is not None
+            else ()
+        )
+        + tuple(
+            value
+            for wafer in route.wafer_routes
+            for step in wafer.steps
+            for name in (
+                "lot_hist_id",
+                "lot_id",
+                "wafer_id",
+                "step_id",
+                "area_id",
+                "equipment_id",
+                "chamber_id",
+                "recipe_id",
+            )
+            if (value := getattr(step, name)) is not None
+        )
+        + tuple(
+            value
+            for hit in (() if document_evidence is None else document_evidence.hits)
+            for value in (hit.chunk_id, hit.document_id, hit.model_code)
+            if value is not None
+        )
     )
     accumulated: LlmUsage | None = None
     correction_reason: str | None = None
@@ -477,7 +570,9 @@ def generate_hypothesis(
             correction_reason = str(exc)
             continue
 
-        correction_reason = _korean_output_reason(hypothesis)
+        correction_reason = _korean_output_reason(
+            hypothesis, source_identifiers=source_identifiers
+        )
         if correction_reason is None:
             correction_reason = _citation_reason(
                 hypothesis,

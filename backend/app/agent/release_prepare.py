@@ -23,6 +23,7 @@ from app.agent.release_artifacts import (
     validate_report_root,
     write_private,
 )
+from app.agent.release_budget import profile_fields
 from app.agent.release_lifecycle import lifecycle_lock, verify_lifecycle_lock
 from app.agent.release_prepared import (
     Attempt,
@@ -285,6 +286,7 @@ def build_prepared(
                 AGENT_LEVEL3_ENABLED=value.level3_enabled,
                 AGENT_LEVEL3_DEMO_ACK=value.demo_ack or "",
                 **value.budget_policy,
+                **profile_fields(value.investigation_budget_profile),
             )
         )
     _require(envs[0] == envs[1], "PREPARATION_ENV_INVALID")

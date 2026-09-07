@@ -308,23 +308,41 @@ class AgentRuntime:
         if self._closed:
             raise AgentRuntimeError("AGENT_RUNTIME_CLOSED")
 
-    def _require_autonomy_ready(self) -> None:
+    def _require_autonomy_ready(self, *, for_new_run: bool = True) -> None:
         validator = self._demo_receipt_validator
+        production_level3 = (
+            self._autonomy_level == 3 and self._database_name == "kosa_agent"
+        )
         if (
-            self._autonomy_level == 3
-            and self._database_name == "kosa_agent"
-            and settings.AGENT_ACTION_POLICY == "MOCK-NOTIFY-V1"
+            production_level3
+            and for_new_run
+            and settings.AGENT_ACTION_POLICY != "MOCK-NOTIFY-V1"
         ):
+            # Legacy receipt-only approval never qualified the wider new-run
+            # budget. Existing runs may still resume under their saved policy.
+            raise AgentRuntimeError("AUTONOMY_LEVEL_NOT_READY")
+        if production_level3 and settings.AGENT_ACTION_POLICY == "MOCK-NOTIFY-V1":
+            from app.agent.investigation_budget import profile_for_new_run
             from app.agent.release_grant import release_grant_matches
 
             # New policy never accepts a legacy receipt or an injected legacy
             # receipt callback. The fixed read-only mount binds qualified bytes.
             def validator(attempt):
+                expected_budget = (
+                    {
+                        "expected_investigation_budget_profile": profile_for_new_run(
+                            self._autonomy_level
+                        )
+                    }
+                    if for_new_run
+                    else {}
+                )
                 return release_grant_matches(
                     reports_root=Path("/reports"),
                     expected_attempt_id=attempt,
                     expected_revision=os.environ.get("BISTEL_SOURCE_REVISION", ""),
                     expected_policy=settings.AGENT_ACTION_POLICY,
+                    **expected_budget,
                 )
 
         if self._autonomy_level not in (1, 2, 3) or not production_level3_allowed(
@@ -358,7 +376,7 @@ class AgentRuntime:
         """재개/종료 경로용 조립. LLM 원격 가용성을 다시 요구하지 않는다."""
 
         self._require_open()
-        self._require_autonomy_ready()
+        self._require_autonomy_ready(for_new_run=False)
         try:
             model = self._model_config()
         except Exception as exc:

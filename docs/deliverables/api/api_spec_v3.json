@@ -3355,6 +3355,81 @@
             "type": "object"
           }
         },
+        "investigation_budget": {
+          "nullable": true,
+          "required": false,
+          "schema": {
+            "additional_properties": false,
+            "fields": {
+              "guard_rejection_cap": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 2.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "profile_id": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "PRODUCTION_WIDE_V1",
+                    "STANDARD"
+                  ],
+                  "type": "string"
+                }
+              },
+              "read_cap": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 24.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "same_tool_cap": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 8.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "selector_cap": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 28.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "send_budget": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 2.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "total_call_cap": {
+                "nullable": false,
+                "required": true,
+                "schema": {
+                  "maximum": 26.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
         "latency_ms": {
           "nullable": false,
           "required": true,
@@ -3622,7 +3697,9 @@
                   "schema": {
                     "enum": [
                       "agent-react-v2-ko1",
-                      "agent-react-v2-ko2"
+                      "agent-react-v2-ko2",
+                      "agent-react-v2-ko3",
+                      "agent-react-v2-ko4"
                     ],
                     "type": "string"
                   }
@@ -3715,7 +3792,7 @@
           "required": false,
           "schema": {
             "default": 0,
-            "maximum": 8.0,
+            "maximum": 24.0,
             "minimum": 0.0,
             "type": "integer"
           }
@@ -9526,6 +9603,77 @@
       },
       "type": "object"
     },
+    "PublicInvestigationBudget": {
+      "additional_properties": false,
+      "fields": {
+        "guard_rejection_cap": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "profile_id": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "enum": [
+              "PRODUCTION_WIDE_V1",
+              "STANDARD"
+            ],
+            "type": "string"
+          }
+        },
+        "read_cap": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "same_tool_cap": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "selector_cap": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 28.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "send_budget": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "total_call_cap": {
+          "nullable": false,
+          "required": true,
+          "schema": {
+            "maximum": 26.0,
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        }
+      },
+      "type": "object"
+    },
     "PublicToolCallItem": {
       "additional_properties": false,
       "fields": {
@@ -9642,7 +9790,9 @@
           "schema": {
             "enum": [
               "agent-react-v2-ko1",
-              "agent-react-v2-ko2"
+              "agent-react-v2-ko2",
+              "agent-react-v2-ko3",
+              "agent-react-v2-ko4"
             ],
             "type": "string"
           }
@@ -17155,8 +17305,8 @@
                               "required": false,
                               "schema": {
                                 "default": 0,
-                                "maximum": 40,
-                                "minimum": 0,
+                                "maximum": 40.0,
+                                "minimum": 0.0,
                                 "type": "integer"
                               }
                             },
@@ -17798,6 +17948,81 @@
                     "type": "object"
                   }
                 },
+                "investigation_budget": {
+                  "nullable": true,
+                  "required": false,
+                  "schema": {
+                    "additional_properties": false,
+                    "fields": {
+                      "guard_rejection_cap": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 2.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "profile_id": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "enum": [
+                            "PRODUCTION_WIDE_V1",
+                            "STANDARD"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "read_cap": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 24.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "same_tool_cap": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 8.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "selector_cap": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 28.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "send_budget": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 2.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      },
+                      "total_call_cap": {
+                        "nullable": false,
+                        "required": true,
+                        "schema": {
+                          "maximum": 26.0,
+                          "minimum": 1.0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
                 "latency_ms": {
                   "nullable": false,
                   "required": true,
@@ -18065,7 +18290,9 @@
                           "schema": {
                             "enum": [
                               "agent-react-v2-ko1",
-                              "agent-react-v2-ko2"
+                              "agent-react-v2-ko2",
+                              "agent-react-v2-ko3",
+                              "agent-react-v2-ko4"
                             ],
                             "type": "string"
                           }
@@ -18158,7 +18385,7 @@
                   "required": false,
                   "schema": {
                     "default": 0,
-                    "maximum": 8.0,
+                    "maximum": 24.0,
                     "minimum": 0.0,
                     "type": "integer"
                   }

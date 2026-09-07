@@ -12,11 +12,12 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from app.agent.release_artifacts import EvidenceError, EvidenceModel, parse_json
+from app.agent.release_budget import BudgetBoundEvidence
 from app.agent.runtime_readback import PROFILES, validate_readback
 from app.agent.u10_images import Profile
 
 
-class RuntimeReadback(EvidenceModel):
+class RuntimeReadback(BudgetBoundEvidence):
     schema_version: Literal["agent-runtime-readback-v1"]
     status: Literal["PASS"]
     profile: Profile
@@ -140,6 +141,14 @@ def verify_runtime_readbacks(
         except (ValueError, OSError, subprocess.TimeoutExpired):
             raise EvidenceError("U10_RUNTIME_READBACK_INVALID") from None
         readbacks[role] = observed
-    if len({row.schema_version for row in readbacks.values()}) != 1:
+    if (
+        len(
+            {
+                (row.schema_version, row.investigation_budget_profile)
+                for row in readbacks.values()
+            }
+        )
+        != 1
+    ):
         raise EvidenceError("U10_RUNTIME_POLICY_MISMATCH")
     return RuntimeObservation(profile=profile, container_ids=ids, readbacks=readbacks)

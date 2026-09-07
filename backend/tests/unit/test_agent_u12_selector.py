@@ -27,11 +27,18 @@ def document(content, **values):
 
 
 def payload(context):
-    return json.loads(react.build_react_select_messages(context)[1]["content"])
+    value = json.loads(react.build_react_select_messages(context)[1]["content"])
+    # Decode the private ko3 columnar wire format for these semantic assertions.
+    # The raw transport shape and lossless roundtrip have their own contract tests.
+    for kind, table in value["candidates"].items():
+        value["candidates"][kind] = [
+            dict(zip(table["columns"], row, strict=True)) for row in table["rows"]
+        ]
+    return value
 
 
 def test_prompt_version_and_guard_rules_are_explicit():
-    assert react.REACT_PROMPT_VERSION == "agent-react-v2-ko2"
+    assert react.REACT_PROMPT_VERSION == "agent-react-v2-ko4"
     rules = react.REACT_GUARD_RULES
     assert set(rules) == react._FEEDBACK_GUARD_CODES
     system = react.build_react_select_messages(fixture._context())[0]["content"]
@@ -95,6 +102,10 @@ def test_documents_checked_includes_empty_success_not_failure():
     assert payload(empty)["observations"]["document_status"] == {
         "hits": 0,
         "excerpts": 0,
+        "unique_chunks": 0,
+        "latest_new_chunks": None,
+        "consecutive_no_new_successes": 0,
+        "latest_result": "NOT_CHECKED",
     }
     absent = context.model_copy(update={"documents_available": False})
     assert payload(absent)["checked_dimensions"]["documents"] == "NOT_AVAILABLE"
@@ -430,7 +441,14 @@ def test_cf6_upstream_and_document_evidence_reach_early_stop_without_llm(monkeyp
         if len(seen) == 3:
             return outcome("search_documents", query="이전 공정 대조")
         assert observed["checked_dimensions"]["upstream"] == "CHECKED"
-        assert observed["observations"]["document_status"] == {"hits": 1, "excerpts": 1}
+        assert observed["observations"]["document_status"] == {
+            "hits": 1,
+            "excerpts": 1,
+            "unique_chunks": 1,
+            "latest_new_chunks": 1,
+            "consecutive_no_new_successes": 0,
+            "latest_result": "SUCCESS",
+        }
         assert observed["budget"]["remaining_tool_calls"] == 5
         assert observed["budget"]["remaining_steps"] == 7
         return outcome("stop")

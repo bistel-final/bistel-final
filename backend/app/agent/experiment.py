@@ -13,6 +13,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent import decision
 from app.agent.graph import AgentGraphDependencies, build_agent_graph
+from app.agent.investigation_budget import InvestigationBudget
 from app.agent.routing import GraphBoundary
 from app.agent.state import AgentNodePorts
 from app.agent.tools import AuditedToolExecutor, TransactionFactory
@@ -66,6 +67,7 @@ def build_level_graph(
     routing_graph: GraphBoundary,
     configured_llm_model: str,
     checkpointer: Any | None = None,
+    experimental_investigation_budget: InvestigationBudget | None = None,
 ) -> LevelExperimentGraph:
     """동일 주입 경계로 L1·L2·L3을 만들고 조치 영속화 전에 중단한다."""
 
@@ -75,6 +77,8 @@ def build_level_graph(
         raise ValueError("EXPERIMENT_SELECTOR_REQUIRED")
     if level != 3 and selector_port is not None:
         raise ValueError("EXPERIMENT_SELECTOR_FORBIDDEN")
+    if experimental_investigation_budget is not None and level != 3:
+        raise ValueError("INVESTIGATION_BUDGET_LEVEL_INVALID")
     if not isinstance(configured_llm_model, str) or not configured_llm_model.strip():
         raise ValueError("EXPERIMENT_MODEL_INVALID")
     if not callable(clock):
@@ -92,6 +96,7 @@ def build_level_graph(
             ports=ports,
             configured_llm_model=configured_llm_model,
             now=clock,
+            experimental_investigation_budget=experimental_investigation_budget,
         ),
         checkpointer=checkpointer or MemorySaver(),
         interrupt_after=("decide_action",),

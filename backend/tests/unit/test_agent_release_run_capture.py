@@ -12,6 +12,7 @@ from pydantic import TypeAdapter
 
 from app.agent import release_run_capture as subject
 from app.agent.release_artifacts import EvidenceError, canonical_json
+from app.agent.release_budget import profile_fields
 from app.agent.release_model import ModelContext
 from app.agent.routing import ResolvedIncidentRoute
 from app.agent.state import Hypothesis
@@ -65,6 +66,7 @@ def capture_args(raw, model):
         input_tokens=raw["hypothesis_tokens"]["input"],
         output_tokens=raw["hypothesis_tokens"]["output"],
         latency_ms=raw["latency_ms"],
+        evidence=profile_fields(raw.get("investigation_budget_profile")),
     )
     state = dict(
         run_id=row.agent_run_id,
@@ -73,6 +75,7 @@ def capture_args(raw, model):
         chamber_id=row.chamber_id,
         action_id=raw["action_id"],
         autonomy_level=3,
+        tool_budget=profile_fields(raw.get("investigation_budget_profile")),
         fdc_lot_hist_ids=tuple(raw["current_lot_hist_ids"]),
         graph_evidence=SimpleNamespace(ok=True, model_code=raw["document_model_code"]),
         hypothesis=Hypothesis.model_validate(raw["hypothesis"]),

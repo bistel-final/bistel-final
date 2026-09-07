@@ -1,5 +1,18 @@
 # C — Agent · HITL · n8n · Kafka
 
+> **2026-09-07 후속 승인 · 방대혁(C/Common) · V5-C-7.1**: 사용자 `운영예산 8회로
+> 충분해? 늘려도돼`에 따라 새 운영 Level3 run의 PRODUCTION_WIDE_V1을 읽기24·
+> selector28·동일Tool8(전송2/guard2 불변)로 확장한다. run 생성 시 불변 결속하며 기존
+> run/U10·정식 증적을 덮어쓰지 않는다. API/화면과 prepared/round/grant까지 일치 검증한다.
+> 아래 개발 점검 시점의 운영8회 유지 설명은 당시 이력이며 공용 적용 완료를 뜻하지 않는다.
+
+> **2026-09-07 정확성 우선 개발 보완 · 방대혁(C/Common) · `V5-C-7.1`**:
+> 사용자 추가 승인으로 격리 개발 프로필(read24/selector28/동일 Tool8)에서 실제 모델을
+> 점검하고 실패 요청 피드백·문서 신규성·가설 근거 구분을 보완한다.
+> [개발 점검 계약](../../deliverables/agent/development-quality-probe.md).
+> 합성 base8+변형8은 원본12건·CF8·공용 Neo4j/RAG 점검이 아니다. production/U10의
+> 기존 예산·조치 규칙·정식 artifact는 유지하고 실제 전환은 새 clean revision/승인 결속을 따른다.
+
 > **2026-09-06 사용자 승인 변경 · 방대혁(C/Common) · `V5-C-7.1`: 신규 MOCK-NOTIFY-V1은 승인/반려·이메일 확인 없이 이메일 알림 + 자동 Kafka/MES Mock 연동이다. 아래 HITL 절차는 과거 V1 유지 범위다. 확인 API/테이블은 만들지 않으며 데이터/승인 이력과 기존 증적은 변경하지 않는다. 공용 배포와 새 Stage2 증적은 아직 미완료다. [상세 계약](../../deliverables/agent/mock-notify-contract.md).**
 
 > 묶음 C 실행기·v2 증적·Gate 연결분 구현 인계:

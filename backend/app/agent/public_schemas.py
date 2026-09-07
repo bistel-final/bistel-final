@@ -17,6 +17,7 @@ from app.agent.diagnostics import (
     PostActionObservationBlock,
     SimilarIncidentsBlock,
 )
+from app.agent.investigation_budget import resolve_run_budget
 from app.agent.react import (
     ReactNext,
     ReactPhase,
@@ -418,9 +419,15 @@ class ReactStepPublic(ApiModel):
     )
     observation_summary: str | None = Field(default=None, max_length=160)
     guard_code: str | None = Field(default=None, max_length=64)
-    react_prompt_version: Literal["agent-react-v2-ko1", "agent-react-v2-ko2"] | None = (
-        None
-    )
+    react_prompt_version: (
+        Literal[
+            "agent-react-v2-ko1",
+            "agent-react-v2-ko2",
+            "agent-react-v2-ko3",
+            "agent-react-v2-ko4",
+        ]
+        | None
+    ) = None
     selector_tokens: SelectorTokens
     stop_reason: ReactStopReason | None = None
     degraded: bool = False
@@ -435,6 +442,38 @@ class ReactStepPublic(ApiModel):
         )
         if self.phase in {"SELECTED", "OBSERVED"} and self.argument_summary is None:
             raise ValueError("선택·관찰에는 서버 생성 인자 요약이 필요합니다")
+        return self
+
+
+class PublicInvestigationBudget(ApiModel):
+    """Server-owned fixed limits, never a public run configuration input."""
+
+    profile_id: Literal["STANDARD", "PRODUCTION_WIDE_V1"]
+    read_cap: int = Field(ge=1, le=24, strict=True)
+    selector_cap: int = Field(ge=1, le=28, strict=True)
+    same_tool_cap: int = Field(ge=1, le=8, strict=True)
+    guard_rejection_cap: int = Field(ge=1, le=2, strict=True)
+    send_budget: int = Field(ge=1, le=2, strict=True)
+    total_call_cap: int = Field(ge=1, le=26, strict=True)
+
+    @model_validator(mode="after")
+    def validate_fixed_limits(self) -> "PublicInvestigationBudget":
+        profile = resolve_run_budget(
+            3, None if self.profile_id == "STANDARD" else self.profile_id
+        )
+        if profile is None or any(
+            getattr(self, key) != getattr(profile, key)
+            for key in (
+                "read_cap",
+                "selector_cap",
+                "same_tool_cap",
+                "guard_rejection_cap",
+                "send_budget",
+            )
+        ):
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
+        if self.total_call_cap != profile.read_cap + profile.send_budget:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
         return self
 
 
@@ -453,10 +492,20 @@ class AgentRunDetailResponse(PublicAgentRunItem):
     trace_state: Literal["NOT_APPLICABLE", "PENDING", "AVAILABLE", "UNAVAILABLE"] = (
         "NOT_APPLICABLE"
     )
-    remaining_read_calls: int = Field(default=0, ge=0, le=8)
+    remaining_read_calls: int = Field(default=0, ge=0, le=24)
+    investigation_budget: PublicInvestigationBudget | None = None
 
     @model_validator(mode="after")
     def validate_detail_identity(self) -> "AgentRunDetailResponse":
+        if self.autonomy_level != 3 and self.investigation_budget is not None:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
+        read_cap = (
+            self.investigation_budget.read_cap
+            if self.investigation_budget is not None
+            else (8 if self.autonomy_level == 3 else 6)
+        )
+        if self.remaining_read_calls > read_cap:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
         source_ids = [item.source_id for item in self.evidence_items]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("evidence source_id는 중복될 수 없습니다")

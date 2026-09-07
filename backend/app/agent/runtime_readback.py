@@ -7,6 +7,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from app.agent.investigation_budget import profile_for_new_run
+from app.agent.release_budget import PROFILE_KEY, budget_policy, profile_fields
+
 PROFILES = {
     "production_level2": ("kosa_agent", 2, False),
     "e2e_level3": ("kosa_agent_e2e", 3, True),
@@ -39,17 +42,17 @@ def validate_readback(payload: Mapping[str, Any], profile: str) -> None:
     ) or payload.get("database_user") != "kosa_app":
         raise ValueError("AUTONOMY_LEVEL_NOT_READY")
     budget = payload.get("budget_policy")
+    bound_profile = payload.get(PROFILE_KEY)
+    try:
+        expected_budget = budget_policy(bound_profile)
+    except ValueError:
+        raise ValueError("AUTONOMY_LEVEL_NOT_READY") from None
     if (
-        type(budget) is not dict
+        (PROFILE_KEY in payload and bound_profile is None)
+        or (bound_profile is not None and level != 3)
+        or type(budget) is not dict
         or any(type(value) is not int for value in budget.values())
-        or budget
-        != {
-            "level12_total": 8,
-            "level3_total": 10,
-            "send": 2,
-            "same_tool_attempts": 4,
-            "selector_steps": 10,
-        }
+        or budget != expected_budget
     ):
         raise ValueError("AUTONOMY_LEVEL_NOT_READY")
     if (
@@ -80,6 +83,18 @@ def collect_readback() -> dict[str, Any]:
     except Exception as exc:
         raise ValueError("RUNTIME_IDENTITY_UNAVAILABLE") from exc
     ack = config.AGENT_LEVEL3_DEMO_ACK
+    bound_profile = profile_for_new_run(config.AGENT_AUTONOMY_LEVEL)
+    observed_budget = budget_policy(bound_profile)
+    if bound_profile is None:
+        # Legacy/L2 still observes its effective numeric controls; do not hide
+        # environment drift by substituting the canonical expected constants.
+        observed_budget = {
+            "level12_total": config.AGENT_MAX_TOOL_CALLS,
+            "level3_total": config.AGENT_LEVEL3_MAX_TOOL_CALLS,
+            "send": SEND_ACTION_BUDGET,
+            "same_tool_attempts": config.AGENT_MAX_RETRY + 1,
+            "selector_steps": REACT_MAX_STEPS,
+        }
 
     def validator(attempt):
         return receipt_matches(
@@ -95,6 +110,7 @@ def collect_readback() -> dict[str, Any]:
                 expected_attempt_id=attempt,
                 expected_revision=os.environ.get("BISTEL_SOURCE_REVISION", ""),
                 expected_policy=policy,
+                expected_investigation_budget_profile=bound_profile,
             )
 
     return {
@@ -102,17 +118,16 @@ def collect_readback() -> dict[str, Any]:
         if policy == "MOCK-NOTIFY-V1"
         else "agent-runtime-readback-v1",
         **({"action_policy": policy} if policy == "MOCK-NOTIFY-V1" else {}),
+        **profile_fields(bound_profile),
         "database": database,
         "database_user": user,
         "autonomy_level": config.AGENT_AUTONOMY_LEVEL,
         "level3_enabled": config.AGENT_LEVEL3_ENABLED,
         "demo_ack": ack,
-        "ack_matches_receipt": bool(ack and validator(ack)),
-        "budget_policy": {
-            "level12_total": config.AGENT_MAX_TOOL_CALLS,
-            "level3_total": config.AGENT_LEVEL3_MAX_TOOL_CALLS,
-            "send": SEND_ACTION_BUDGET,
-            "same_tool_attempts": config.AGENT_MAX_RETRY + 1,
-            "selector_steps": REACT_MAX_STEPS,
-        },
+        "ack_matches_receipt": bool(
+            ack
+            and (bound_profile is None or policy == "MOCK-NOTIFY-V1")
+            and validator(ack)
+        ),
+        "budget_policy": observed_budget,
     }

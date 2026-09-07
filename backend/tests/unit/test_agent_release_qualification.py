@@ -63,6 +63,10 @@ def test_actual_recount_grant_retry_is_immutable_and_not_admission(issuance):
         grant = issue_release_grant(fence=fence, **args)
         assert grant.action_policy_version == "MOCK-NOTIFY-V1"
         before = read_private(args["published_root"], "release-grant.json")
+        assert b"investigation_budget_profile" not in before
+        assert b"investigation_budget_profile" not in read_private(
+            args["published_root"], "qualification-output.json"
+        )
         args["now"] = "2026-09-05T02:00:00Z"
         assert issue_release_grant(fence=fence, **args) == grant
         assert read_private(args["published_root"], "release-grant.json") == before
@@ -98,6 +102,27 @@ def test_grant_requires_live_closed_lock(issuance):
         issue_release_grant(fence=fence, **issuance)
 
 
+@pytest.mark.parametrize("mock_bundle", [None, "PRODUCTION_WIDE_V1"], indirect=True)
+def test_explicit_new_runtime_expectation_is_checked_before_grant_publication(issuance):
+    from app.agent.release_artifacts import parse_json
+
+    round1 = parse_json(read_private(issuance["root"], "round1.json"))
+    args = {**issuance, "expected_investigation_budget_profile": "PRODUCTION_WIDE_V1"}
+    with ProductionFence(issuance["reports_root"], REV, ATTEMPT) as fence:
+        if round1.get("investigation_budget_profile") == "PRODUCTION_WIDE_V1":
+            grant = issue_release_grant(fence=fence, **args)
+            assert grant.investigation_budget_profile == "PRODUCTION_WIDE_V1"
+        else:
+            with pytest.raises(
+                EvidenceError, match="RELEASE_QUALIFICATION_BINDING_MISMATCH"
+            ):
+                issue_release_grant(fence=fence, **args)
+            assert not (issuance["published_root"] / "release-grant.json").exists()
+            assert not (
+                issuance["published_root"] / "qualification-output.json"
+            ).exists()
+
+
 def test_open_fence_cannot_issue_grant_even_while_exclusively_locked(issuance):
     with ProductionFence(issuance["reports_root"], REV, ATTEMPT) as fence:
         fence.reopen(level=3)
@@ -107,6 +132,31 @@ def test_open_fence_cannot_issue_grant_even_while_exclusively_locked(issuance):
     assert not (issuance["published_root"] / "qualification-output.json").exists()
 
 
+def test_legacy_grant_can_validate_resume_but_cannot_admit_new_wide_run(
+    issuance, monkeypatch
+):
+    from app.agent import runtime_composition
+    from app.common import config
+
+    root = issuance["reports_root"]
+    monkeypatch.setattr(config, "AGENT_ACTION_POLICY", "MOCK-NOTIFY-V1")
+    monkeypatch.setenv("BISTEL_SOURCE_REVISION", REV)
+    monkeypatch.setattr(runtime_composition, "Path", lambda _: root)
+    runtime = runtime_composition.AgentRuntime(
+        autonomy_level=3,
+        level3_enabled=True,
+        database_name="kosa_agent",
+        demo_ack=ATTEMPT,
+        demo_receipt_validator=lambda _: True,
+    )
+    with ProductionFence(root, REV, ATTEMPT) as fence:
+        issue_release_grant(fence=fence, **issuance)
+        runtime._require_autonomy_ready(for_new_run=False)
+        with pytest.raises(runtime_composition.AgentRuntimeError):
+            runtime._require_autonomy_ready()
+
+
+@pytest.mark.parametrize("mock_bundle", ["PRODUCTION_WIDE_V1"], indirect=True)
 def test_runtime_and_readback_use_actual_grant_and_keep_fence_separate(
     issuance, monkeypatch
 ):
@@ -146,6 +196,8 @@ def test_runtime_and_readback_use_actual_grant_and_keep_fence_separate(
         issue_release_grant(fence=fence, **issuance)
         observed = runtime_readback.collect_readback()
         assert observed["schema_version"] == "agent-runtime-readback-v2"
+        assert observed["investigation_budget_profile"] == "PRODUCTION_WIDE_V1"
+        assert observed["budget_policy"]["level3_total"] == 26
         runtime_readback.validate_readback(observed, "production_level3")
         runtime._require_autonomy_ready()
         with pytest.raises(EvidenceError):

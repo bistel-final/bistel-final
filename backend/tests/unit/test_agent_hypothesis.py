@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -193,6 +194,199 @@ def test_english_narrative_is_rejected_and_corrected_in_korean(monkeypatch) -> N
 
     assert outcome.hypothesis.cause_summary == "압력 이상 패턴이 관측되었습니다."
     assert "KOREAN_OUTPUT_REQUIRED" in messages[1][1]["content"]
+
+
+def _hypothesis_content(**overrides):
+    value = json.loads(_content(**overrides))
+    value.pop("parameter_findings_draft")
+    value.pop("origin_claim")
+    return subject.Hypothesis.model_validate(value)
+
+
+@pytest.mark.parametrize(
+    "foreign",
+    ["নির্দেশ", "निर्देश", "คำแนะนำ", "инструкция", "تعليمات", "確認します"],
+)
+def test_hangul_does_not_hide_unrelated_foreign_script_prose(foreign):
+    result = _hypothesis_content(observations=[f"문서는 점검을 {foreign} 설명한다."])
+    assert subject._korean_output_reason(result) == "KOREAN_OUTPUT_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"cause_summary": "현재 P1을 নির্দেশ 점검한다."},
+        {"uncertainty": "현재 P1을 নির্দেশ 점검한다."},
+        {"observations": ["현재 P1을 নির্দেশ 점검한다."]},
+        {"evidence_synthesis": "현재 P1을 নির্দেশ 점검한다."},
+        {"impact_summary": "현재 P1을 নির্দেশ 점검한다."},
+        {"verification_steps": ["현재 P1을 নির্দেশ 점검한다."]},
+        {"limitations": ["현재 P1을 নির্দেশ 점검한다."]},
+        {
+            "alternative_hypotheses": [
+                {
+                    "summary": "현재 P1을 নির্দেশ 점검한다.",
+                    "lower_rank_reason": "근거가 부족하다.",
+                }
+            ]
+        },
+        {
+            "alternative_hypotheses": [
+                {
+                    "summary": "센서 가설이다.",
+                    "lower_rank_reason": "현재 P1을 নির্দেশ 점검한다.",
+                }
+            ]
+        },
+    ],
+)
+def test_mixed_script_check_covers_every_user_facing_narrative(overrides):
+    assert subject._korean_output_reason(_hypothesis_content(**overrides)) == (
+        "KOREAN_OUTPUT_REQUIRED"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "P1의 μ=5 µm, σ=0.2, Δ=−2, Ω=10, ±3σ, 25℃를 비교한다.",
+        "P1의 평균(mean) 5.0과 CD-P1 PASS·OOC/OOS 0/6을 비교한다.",
+        "P_α의 10⁻³ m³/s와 ℓ·Å·K 및 χ²≤1, 參照값을 확인한다.",
+    ],
+)
+def test_scientific_greek_units_symbols_latin_and_hanja_remain_accepted(text):
+    assert (
+        subject._korean_output_reason(_hypothesis_content(observations=[text])) is None
+    )
+
+
+def test_only_supplied_source_ids_are_exempt_not_model_citations_or_adjacent_prose():
+    identifier = "P-নির্দেশ"
+    copied = _hypothesis_content(
+        observations=[f"{identifier}의 현재값은 5이다."],
+        supporting_parameter_ids=[identifier],
+    )
+    assert subject._korean_output_reason(copied) == "KOREAN_OUTPUT_REQUIRED"
+    assert (
+        subject._korean_output_reason(copied, source_identifiers=(identifier,)) is None
+    )
+    mixed = copied.model_copy(
+        update={"observations": (f"{identifier}의 결과는 নির্দেশ 점검을 요구한다.",)}
+    )
+    assert subject._korean_output_reason(mixed, source_identifiers=(identifier,)) == (
+        "KOREAN_OUTPUT_REQUIRED"
+    )
+
+
+def test_mixed_bengali_observation_gets_one_whole_generation_correction_and_usage():
+    observations = ["확인된 P1 관측이다."] * 4 + ["문서는 점검을 নির্দেশ 설명한다."]
+    responses = iter(
+        [_completion(_content(observations=observations)), _completion(_content(), n=2)]
+    )
+    messages = []
+
+    def chat(value, **_kwargs):
+        messages.append(value)
+        return next(responses)
+
+    outcome = generate_hypothesis(None, None, _docs(), _route(), completion_port=chat)
+    assert len(messages) == 2
+    assert "KOREAN_OUTPUT_REQUIRED" in messages[1][1]["content"]
+    assert "নির্দেশ" not in repr(messages[1])
+    assert outcome.hypothesis.observations == (
+        "압력 이상 패턴 한 건이 관측되었습니다.",
+    )
+    assert (outcome.llm_usage.input_tokens, outcome.llm_usage.output_tokens) == (30, 12)
+
+
+def test_repeated_mixed_script_fails_closed_after_two_rounds_with_safe_reason():
+    calls = 0
+
+    def chat(_messages, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return _completion(
+            _content(limitations=["현재 निर्देश 근거는 부족하다."]), n=calls
+        )
+
+    with pytest.raises(HypothesisGenerationError) as error:
+        generate_hypothesis(None, None, _docs(), _route(), completion_port=chat)
+    assert calls == 2
+    assert error.value.last_rejection_reason == "KOREAN_OUTPUT_REQUIRED"
+    assert error.value.usage_or_none.input_tokens == 30
+    assert "निर्देश" not in str(error.value)
+
+
+def test_generation_preserves_verified_nonlatin_model_and_document_ids():
+    route = _route()
+    route = replace(
+        route,
+        graph_evidence=(replace(route.graph_evidence[0], model_code="MODEL-निर्देश"),),
+    )
+    docs = _docs()
+    docs = docs.model_copy(
+        update={"hits": [docs.hits[0].model_copy(update={"chunk_id": "CHUNK-নির্দেশ"})]}
+    )
+    text = "MODEL-निर्देश와 CHUNK-নির্দেশ의 관측을 비교한다."
+    outcome = generate_hypothesis(
+        None,
+        None,
+        docs,
+        route,
+        completion_port=lambda *_args, **_kwargs: _completion(
+            _content(observations=[text], supporting_chunk_ids=["CHUNK-নির্দেশ"])
+        ),
+    )
+    assert outcome.hypothesis.observations == (text,)
+    assert outcome.llm_usage.input_tokens == 10
+
+
+def test_source_document_prose_cannot_whitelist_mixed_language_output():
+    docs = _docs()
+    docs = docs.model_copy(
+        update={"hits": [docs.hits[0].model_copy(update={"content": "নির্দেশ"})]}
+    )
+    with pytest.raises(HypothesisGenerationError) as error:
+        generate_hypothesis(
+            None,
+            None,
+            docs,
+            _route(),
+            completion_port=lambda *_args, **_kwargs: _completion(
+                _content(observations=["문서는 নির্দেশ 점검을 설명한다."])
+            ),
+        )
+    assert error.value.last_rejection_reason == "KOREAN_OUTPUT_REQUIRED"
+
+
+def test_generation_preserves_verified_raw_nonlatin_alarm_id_without_source_prefix():
+    alarm = AlarmRef(source=AlarmSource.TRACE, alarm_id="TA-নির্দেশ")
+    route = _route()
+    route = replace(
+        route,
+        incident=replace(
+            route.incident,
+            requested_alarm=alarm,
+            representative_alarm=alarm,
+            member_alarms=(alarm,),
+        ),
+    )
+    text = "TA-নির্দেশ의 관측 범위를 비교한다."
+    outcome = generate_hypothesis(
+        None,
+        None,
+        _docs(),
+        route,
+        completion_port=lambda *_args, **_kwargs: _completion(
+            _content(
+                observations=[text],
+                supporting_alarms=[alarm.model_dump(mode="json")],
+            )
+        ),
+    )
+    assert outcome.hypothesis.observations == (text,)
+    assert outcome.hypothesis.supporting_alarms == (alarm,)
+    assert outcome.llm_usage.input_tokens == 10
 
 
 def test_second_invalid_response_stops_without_third_call_and_keeps_usage(

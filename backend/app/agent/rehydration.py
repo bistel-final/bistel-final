@@ -17,6 +17,7 @@ from pydantic import Field, ValidationError, model_validator
 from sqlalchemy.engine import Connection
 
 from app.agent.incident import ResolvedIncident
+from app.agent.investigation_budget import persisted_profile, resolve_run_budget
 from app.agent.react import ReactCandidates, trace_from_payload
 from app.agent.repository import (
     ACTION_PROVENANCE_KEY,
@@ -471,6 +472,7 @@ def _rehydrated_tool_budget(
         send_budget=snapshot.send_budget,
         send_used=by_tool.get("send_action", 0),
         pending_reservations=pending,
+        investigation_budget_profile=snapshot.investigation_budget_profile,
     )
 
 
@@ -485,6 +487,12 @@ def build_rehydrated_state(
         raise RehydrationError("REHYDRATE_RUN_NOT_WAITING")
     evidence: Mapping[str, Any] = run.evidence or {}
     snapshot = load_snapshot(evidence)
+    try:
+        profile = persisted_profile(run.autonomy_level, evidence)
+    except ValueError as exc:
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH") from exc
+    if snapshot.tool_budget.investigation_budget_profile != profile:
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
     if snapshot.react_candidates:
         try:
             candidates = ReactCandidates.model_validate(snapshot.react_candidates)
@@ -622,6 +630,15 @@ def validate_rehydrated_payload(values: Mapping[str, Any]) -> None:
         raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH") from exc
     if values.get("autonomy_level") not in (1, 2, 3):
         raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH")
+    try:
+        resolve_run_budget(
+            values["autonomy_level"],
+            ToolBudget.model_validate(
+                values.get("tool_budget")
+            ).investigation_budget_profile,
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RehydrationError("REHYDRATE_PROVENANCE_MISMATCH") from exc
     if values.get("terminal_error") is not None:
         raise RehydrationError("REHYDRATE_CHECKPOINT_UNVERIFIED")
     if (

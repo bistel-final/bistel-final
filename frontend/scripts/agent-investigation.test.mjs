@@ -29,6 +29,30 @@ try {
     if (detail.trace_state === 'AVAILABLE') assert.match(html, /조사 타임라인/)
     assert.doesNotMatch(html, /argument_digest|llm_model|lot_hist_id/)
   }
+  const legacyDetail = { ...fixture.cases[2], remaining_read_calls: 5 }
+  const legacyTimeline = renderToStaticMarkup(React.createElement(Timeline, { detail: legacyDetail }))
+  assert.match(legacyTimeline, /남은 조회 예산 5 \/ 8/)
+  const wideDetail = {
+    ...legacyDetail,
+    remaining_read_calls: 21,
+    investigation_budget: {
+      profile_id: 'PRODUCTION_WIDE_V1', read_cap: 24, selector_cap: 28,
+      same_tool_cap: 8, guard_rejection_cap: 2, send_budget: 2, total_call_cap: 26,
+    },
+    react_trace: Array.from({ length: 29 }, (_, index) => ({
+      ...fixture.cases[2].react_trace[index === 28 ? 1 : 0], seq: index + 1,
+    })),
+  }
+  const wideTimeline = renderToStaticMarkup(React.createElement(Timeline, { detail: wideDetail }))
+  assert.match(wideTimeline, /남은 조회 예산 21 \/ 24/)
+  assert.equal((wideTimeline.match(/<li /g) ?? []).length, 29)
+  assert.match(wideTimeline, />29<\/span>/)
+  assert.doesNotMatch(wideTimeline, /argument_digest|llm_model|lot_hist_id|investigation_budget_profile/)
+  const pendingWide = renderToStaticMarkup(React.createElement(Timeline, { detail: {
+    ...wideDetail, trace_state: 'PENDING', react_trace: [],
+  } }))
+  assert.match(pendingWide, /남은 조회 예산 21 \/ 24/)
+  assert.match(pendingWide, /실행 종료 후/)
   const diagnosis = { status: 'AVAILABLE', parameter_findings: [{
     parameter_id: 'PH_FOCUS', step_no: 1, direction: 'BOTH', excursion_ratio: 3, wafer_scope: 'SINGLE',
   }], origin_assessment: { scope: 'CURRENT_CHAMBER', basis: [], compared: {

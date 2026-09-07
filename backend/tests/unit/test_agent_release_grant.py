@@ -11,6 +11,8 @@ import pytest
 
 from app.agent import release_grant as subject
 from app.agent.release_artifacts import canonical_json, digest, write_private
+from app.agent.release_budget import budget_policy, profile_fields
+from app.agent.release_round import budget_policy_sha256
 
 REV = "a" * 40
 ATTEMPT = "20260906T000000Z-aaaaaaaaaaaa"
@@ -18,7 +20,8 @@ AT = "2026-09-06T00:00:00Z"
 
 
 @pytest.fixture
-def layout(tmp_path):
+def layout(tmp_path, request):
+    profile = getattr(request, "param", None)
     root = tmp_path.resolve() / "reports"
     root.mkdir(mode=0o700)
     (root / "cm-5.2").mkdir(mode=0o700)
@@ -30,7 +33,10 @@ def layout(tmp_path):
         "attempt.json": {"attempt": ATTEMPT},
         "golden-flow.json": {"status": "PASS"},
         "fault-5class.json": {"policy_version": "MOCK-NOTIFY-V1"},
-        subject.QUALIFICATION_NAME: {"test_only": "binding-not-recount"},
+        subject.QUALIFICATION_NAME: {
+            "test_only": "binding-not-recount",
+            **profile_fields(profile),
+        },
     }
     refs = {name: write_private(attempt, name, value) for name, value in public.items()}
     completion = dict(
@@ -42,6 +48,9 @@ def layout(tmp_path):
         fault_5class_sha256=refs["fault-5class.json"].sha256,
     )
     round1 = dict(
+        **profile_fields(profile),
+        runs=[profile_fields(profile) for _ in range(12)],
+        budget_policy_sha256=budget_policy_sha256(profile),
         schema_version="level3-round1-v2",
         reset_attempt_id=ATTEMPT,
         R=REV,
@@ -55,7 +64,11 @@ def layout(tmp_path):
         schema_version="level3-prepared-attempt-v2",
         attempt_id=ATTEMPT,
         R=REV,
-        effective_env={"AGENT_ACTION_POLICY": "MOCK-NOTIFY-V1"},
+        effective_env={
+            "AGENT_ACTION_POLICY": "MOCK-NOTIFY-V1",
+            **profile_fields(profile),
+            **budget_policy(profile),
+        },
     )
     pr = write_private(bundle, "prepared-attempt.json", prepared)
     round1["prepared_attempt"] = pr.model_dump()
@@ -75,6 +88,7 @@ def layout(tmp_path):
     # Contents aren't parsed as a seal here: issuer owns complete seal validation.
     mr = write_private(bundle, "MANIFEST.sha256", {"test_only": "bound bytes"})
     grant = dict(
+        **profile_fields(profile),
         schema_version="level3-release-grant-v1",
         attempt_id=ATTEMPT,
         R=REV,
@@ -121,6 +135,84 @@ def test_reader_accepts_bound_projection_without_claiming_full_recount(layout):
     result = subject.read_release_grant(**layout)
     assert result.R == REV
     assert subject.release_grant_matches(**layout)
+
+
+@pytest.mark.parametrize("layout", [None, "PRODUCTION_WIDE_V1"], indirect=True)
+def test_new_run_profile_expectation_cannot_reuse_other_profile_grant(layout):
+    grant = subject.read_release_grant(**layout)
+    own = grant.investigation_budget_profile
+    assert subject.release_grant_matches(
+        **layout, expected_investigation_budget_profile=own
+    )
+    other = "PRODUCTION_WIDE_V1" if own is None else None
+    assert not subject.release_grant_matches(
+        **layout, expected_investigation_budget_profile=other
+    )
+    assert not subject.release_grant_matches(
+        **layout, expected_investigation_budget_profile="DEVELOPMENT_WIDE"
+    )
+
+
+@pytest.mark.parametrize("layout", ["PRODUCTION_WIDE_V1"], indirect=True)
+@pytest.mark.parametrize(
+    "component", ["run", "round", "prepared", "prepared_limits", "qualification"]
+)
+def test_even_resealed_component_profile_mix_is_rejected(layout, component):
+    root = attempt_dir(layout)
+    bundle = root / "robustness"
+    if component in {"prepared", "prepared_limits"}:
+        path = bundle / "prepared-attempt.json"
+        rewrite(
+            path,
+            lambda v: v["effective_env"].pop("investigation_budget_profile")
+            if component == "prepared"
+            else v["effective_env"].update(level3_total=10),
+        )
+        sha = digest(path.read_bytes())
+        rewrite(
+            bundle / "round1.json", lambda v: v["prepared_attempt"].update(sha256=sha)
+        )
+        rewrite(
+            root / subject.GRANT_NAME,
+            lambda v: v["bundle"].update(prepared_attempt_sha256=sha),
+        )
+    elif component == "qualification":
+        path = root / subject.QUALIFICATION_NAME
+        rewrite(path, lambda v: v.pop("investigation_budget_profile"))
+        rewrite(
+            root / subject.GRANT_NAME,
+            lambda v: v.update(qualification_output_sha256=digest(path.read_bytes())),
+        )
+    else:
+        rewrite(
+            bundle / "round1.json",
+            lambda v: (v["runs"][0] if component == "run" else v).pop(
+                "investigation_budget_profile"
+            ),
+        )
+    # Update every downstream pointer, so this fails semantic profile checks,
+    # not merely the first stale SHA encountered.
+    rr = {
+        "relative_path": "round1.json",
+        "sha256": digest((bundle / "round1.json").read_bytes()),
+    }
+    rewrite(bundle / "round1-completion.json", lambda v: v.update(round1=rr))
+    cr = {
+        "relative_path": "round1-completion.json",
+        "sha256": digest((bundle / "round1-completion.json").read_bytes()),
+    }
+    rewrite(
+        bundle / "aggregate.json", lambda v: v.update(round1=rr, round1_completion=cr)
+    )
+    rewrite(
+        root / subject.GRANT_NAME,
+        lambda v: v["bundle"].update(
+            round1_sha256=rr["sha256"],
+            round1_completion_sha256=cr["sha256"],
+            aggregate_sha256=digest((bundle / "aggregate.json").read_bytes()),
+        ),
+    )
+    assert not subject.release_grant_matches(**layout)
 
 
 def test_host_owned_files_do_not_require_container_getuid(layout, monkeypatch):

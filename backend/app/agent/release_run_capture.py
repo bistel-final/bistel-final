@@ -13,8 +13,10 @@ from sqlalchemy import text
 
 from app.agent import repository as repo
 from app.agent.graph import _document_model_code
+from app.agent.investigation_budget import persisted_profile
 from app.agent.react import ReactStep, arguments_digest
 from app.agent.release_artifacts import EvidenceError, EvidenceModel
+from app.agent.release_budget import PROFILE_KEY, profile_fields
 from app.agent.release_database import IDENTITY_SQL
 from app.agent.release_model import ModelContext
 from app.agent.release_round import READ_TOOLS, CapturedRun, CapturedRunV2, _assess_run
@@ -38,8 +40,16 @@ def capture_run(
     """Project complete persisted observations; preserve negative verdict inputs."""
     try:
         state = deepcopy(state)
+        bound_profile = persisted_profile(run.autonomy_level, run.evidence or {})
+        state_budget = state.get("tool_budget")
+        state_profile = (
+            state_budget.get(PROFILE_KEY)
+            if isinstance(state_budget, dict)
+            else getattr(state_budget, PROFILE_KEY, None)
+        )
         if (
-            state["run_id"] != run.agent_run_id
+            state_profile != bound_profile
+            or state["run_id"] != run.agent_run_id
             or state["thread_id"] != run.thread_id
             or state["action_id"] != action.action_id
             or state["autonomy_level"] != run.autonomy_level
@@ -97,6 +107,7 @@ def capture_run(
         ):
             raise ValueError
         value = (CapturedRunV2 if is_mock else CapturedRun)(
+            **profile_fields(bound_profile),
             **(
                 dict(action_policy_version=action_policy, link_type="CREATED")
                 if is_mock

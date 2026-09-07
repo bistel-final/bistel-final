@@ -9,6 +9,7 @@ import time
 from datetime import UTC, datetime
 
 from app.agent.release_artifacts import EvidenceError, component_ref, write_private
+from app.agent.release_budget import profile_fields
 from app.agent.release_database import bind_email_targets, parse_mock_database_transport
 from app.agent.release_delivery import DeliveryReceiptsV2, EmailCallback
 from app.agent.release_mock import (
@@ -81,6 +82,12 @@ def collect_round(
         sleep(min(2, max(0, deadline - monotonic())))
     capture_mock_snapshot()
     captured = CapturedRunsV2.model_validate(read_runs())
+    if any(
+        run.investigation_budget_profile
+        != prepared.effective_env.investigation_budget_profile
+        for run in captured.runs
+    ):
+        raise EvidenceError("ROUND_BUDGET_POLICY_MISMATCH")
     run_actions = {r.run_id: r.action_id for r in captured.runs}
     targets = bind_email_targets(
         database, expected_run_actions=run_actions, resume_at=resume_at
@@ -213,6 +220,7 @@ def collect_round(
     delivery = write_private(root, "delivery-receipts.round1.json", receipts)
     model = captured.model
     evidence = RoundEvidenceV2(
+        **profile_fields(prepared.effective_env.investigation_budget_profile),
         schema_version="level3-round1-v2",
         capture_phase="POST_MOCK_CONVERGENCE",
         action_policy_version="MOCK-NOTIFY-V1",
@@ -222,7 +230,9 @@ def collect_round(
         images=prepared.images,
         dataset_epoch="fdc_final_20260818",
         fixture_sha256=fixture_sha256(),
-        budget_policy_sha256=budget_policy_sha256(),
+        budget_policy_sha256=budget_policy_sha256(
+            prepared.effective_env.investigation_budget_profile
+        ),
         llm=model.llm,
         model_endpoint_sha256=model.endpoint_sha256,
         model_config_digest=model.model_config_digest,

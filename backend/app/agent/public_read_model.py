@@ -32,6 +32,7 @@ from app.agent.evidence_projection import (
     project_document_evidence,
     project_fdc_evidence,
 )
+from app.agent.investigation_budget import persisted_profile, resolve_run_budget
 from app.agent.public_schemas import (
     ActionDeliveryDetailItem,
     ActionDeliveryItem,
@@ -45,6 +46,7 @@ from app.agent.public_schemas import (
     PublicAgentRunItem,
     PublicApprovalItem,
     PublicDeliveryItem,
+    PublicInvestigationBudget,
     PublicToolCallItem,
     ReactStepPublic,
     RunAlarmEvidence,
@@ -87,6 +89,7 @@ _V2_PROMPTS: Final = frozenset(
         "agent-hypothesis-v2-ko1",
         "agent-hypothesis-v3-ko1",
         "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
     }
 )
 
@@ -458,7 +461,31 @@ def _diagnostic_snapshot(
         raise RepositoryContractError("PUBLIC_DIAGNOSTIC_SNAPSHOT_INVALID") from exc
 
 
+def _public_investigation_budget(
+    record: PublicAgentRunRecord,
+) -> PublicInvestigationBudget | None:
+    try:
+        profile = resolve_run_budget(
+            record.autonomy_level,
+            persisted_profile(record.autonomy_level, record.run_evidence),
+        )
+        if profile is None:
+            return None
+        return PublicInvestigationBudget(
+            profile_id=profile.profile_id,
+            read_cap=profile.read_cap,
+            selector_cap=profile.selector_cap,
+            same_tool_cap=profile.same_tool_cap,
+            guard_rejection_cap=profile.guard_rejection_cap,
+            send_budget=profile.send_budget,
+            total_call_cap=profile.read_cap + profile.send_budget,
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise RepositoryContractError("PUBLIC_INVESTIGATION_BUDGET_INVALID") from exc
+
+
 def _public_trace(record: PublicAgentRunRecord) -> dict[str, object]:
+    budget = _public_investigation_budget(record)
     if record.autonomy_level != 3:
         return {"trace_state": "NOT_APPLICABLE", "react_trace": []}
     if record.status in {RunStatus.RUNNING, RunStatus.WAITING_APPROVAL}:
@@ -467,7 +494,11 @@ def _public_trace(record: PublicAgentRunRecord) -> dict[str, object]:
     if raw is None:
         return {"trace_state": "UNAVAILABLE", "react_trace": []}
     try:
-        if not isinstance(raw, list) or len(raw) > 11:
+        if (
+            not isinstance(raw, list)
+            or budget is None
+            or len(raw) > budget.selector_cap + 1
+        ):
             raise ValueError("trace bound")
         steps = [ReactStep.model_validate(item) for item in raw]
         if [step.seq for step in steps] != list(range(1, len(steps) + 1)):
@@ -673,6 +704,7 @@ def load_public_agent_run_detail(
     agent_run_id: str,
 ) -> AgentRunDetailResponse:
     record = get_agent_run_public(connection, agent_run_id)
+    investigation_budget = _public_investigation_budget(record)
     item = _public_run(record)
     snapshot = _diagnostic_snapshot(record.prediction_evidence)
     cited_alarms, relation_ids = _prediction_citations(record.prediction_evidence)
@@ -858,9 +890,14 @@ def load_public_agent_run_detail(
             similar_incidents=_similar_incidents(connection, record, snapshot),
             post_action_observation=PostActionObservationBlock(),
             autonomy_level=record.autonomy_level,
+            investigation_budget=investigation_budget,
             remaining_read_calls=max(
                 0,
-                (8 if record.autonomy_level == 3 else 6)
+                (
+                    investigation_budget.read_cap
+                    if investigation_budget is not None
+                    else 6
+                )
                 - sum(1 for tool in record.tools if tool.tool_name != "send_action"),
             ),
             **_public_trace(record),

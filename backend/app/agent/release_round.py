@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import Field, TypeAdapter, ValidationError, model_serializer
 
+from app.agent.investigation_budget import resolve_run_budget
 from app.agent.release_artifacts import (
     Component,
     EvidenceError,
@@ -20,6 +21,7 @@ from app.agent.release_artifacts import (
     digest,
     resolve_component,
 )
+from app.agent.release_budget import BudgetBoundEvidence, budget_policy
 from app.agent.release_delivery import EmailTarget, EmailTargetV2, Identifier
 from app.agent.release_model import RuntimeLlmConfiguration
 from app.agent.release_prepared import Attempt, Revision, RuntimeImages, UtcTime, utc
@@ -37,8 +39,17 @@ BUDGET = dict(
 )
 
 
-def budget_policy_sha256():
-    return digest(canonical_json(BUDGET))
+def budget_policy_sha256(profile_id=None):
+    # Legacy bytes remain frozen; the new digest also binds the named identity.
+    value = (
+        BUDGET
+        if profile_id is None
+        else {
+            "investigation_budget_profile": profile_id,
+            "budget_policy": budget_policy(profile_id),
+        }
+    )
+    return digest(canonical_json(value))
 
 
 def fixture_sha256():
@@ -72,7 +83,7 @@ class CapturedDelivery(EvidenceModel):
     request_hash: Sha256
 
 
-class CapturedRun(EvidenceModel):
+class CapturedRun(BudgetBoundEvidence):
     run_id: Identifier
     action_id: Identifier
     autonomy_level: Literal[3]
@@ -88,7 +99,7 @@ class CapturedRun(EvidenceModel):
     hypothesis_tokens: Tokens
     hypothesis_model_revision: Identifier
     hypothesis_prompt_version: Literal[
-        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
+        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2", "agent-hypothesis-v3-ko3"
     ]
     latency_ms: int = Field(ge=0)
     model_config_digest: Sha256
@@ -97,7 +108,7 @@ class CapturedRun(EvidenceModel):
     unexpected_external_effects: int = Field(ge=0)
 
 
-class RoundEvidence(EvidenceModel):
+class RoundEvidence(BudgetBoundEvidence):
     schema_version: Literal["level3-round1-v1"]
     capture_phase: Literal["BATCH_BASELINE_PRE_HITL"]
     R: Revision
@@ -237,7 +248,7 @@ def _assess_run(
 ) -> tuple[RunAssessment, list[EmailTarget], list[str]]:
     from app.agent.decision import decide_action
     from app.agent.diagnostics import build_diagnostic_snapshot
-    from app.agent.hypothesis_v3 import comparison_matrix, finalize_hypothesis
+    from app.agent.hypothesis_v3 import _recount_hypothesis, comparison_matrix
     from app.agent.react import ReactStep, arguments_digest
     from app.agent.routing import ResolvedIncidentRoute
     from app.agent.state import Hypothesis, HypothesisDraftV3
@@ -248,6 +259,8 @@ def _assess_run(
     )
     from app.agent.u10_observations import ObservationContext
     from app.common import tool_contracts as dto
+
+    budget = resolve_run_budget(3, run.investigation_budget_profile)
 
     route = _decode(run.route, TypeAdapter(ResolvedIncidentRoute))
     steps = [step for wafer in route.wafer_routes for step in wafer.steps]
@@ -320,8 +333,9 @@ def _assess_run(
     if run.status != expected_status:
         failed.append("RUN_INCOMPLETE")
     if (
-        len(run.reads) > 8
-        or max(Counter(r.tool for r in run.reads).values(), default=0) > 4
+        len(run.reads) > budget.read_cap
+        or max(Counter(r.tool for r in run.reads).values(), default=0)
+        > budget.same_tool_cap
     ):
         failed.append("READ_BUDGET_EXCEEDED")
     trace = [_decode(row, TypeAdapter(ReactStep)) for row in run.react_trace]
@@ -376,7 +390,10 @@ def _assess_run(
         or "REACT_DEGRADED_TO_HYPOTHESIS" in run.error_codes
     ):
         failed.append("REACT_DEGRADED")
-    if any(row.phase == "SELECTED" for row in trace) or len(trace) > 10:
+    if (
+        any(row.phase == "SELECTED" for row in trace)
+        or len(trace) > budget.selector_cap
+    ):
         failed.append("REACT_INCOMPLETE_OR_OVER_BUDGET")
     if "HYPOTHESIS_STRUCTURE_INVALID" in run.error_codes:
         failed.append("HYPOTHESIS_STRUCTURE_INVALID")
@@ -409,13 +426,14 @@ def _assess_run(
             ]
             draft["origin_claim"] = dict(scope=origin.scope, basis_refs=origin.basis)
             try:
-                recomputed = finalize_hypothesis(
+                recomputed = _recount_hypothesis(
                     HypothesisDraftV3.model_validate(draft),
                     inputs["fdc_evidence"],
                     route,
                     build_diagnostic_snapshot(inputs["fdc_evidence"], route),
                     inputs["document_evidence"],
                     inputs["investigation"],
+                    hypothesis_prompt_version=run.hypothesis_prompt_version,
                 )
                 # Recompute retained evidence/arithmetic, not discarded private IDs.
                 # Public degradation metadata is shape-validated and reported only.
@@ -527,7 +545,13 @@ def assess_round(evidence: RoundEvidence) -> tuple[RoundAssessment, list[EmailTa
         )
         _check(evidence.fixture_sha256 == fixture_sha256(), "ROUND_FIXTURE_MISMATCH")
         _check(
-            evidence.budget_policy_sha256 == budget_policy_sha256(),
+            evidence.budget_policy_sha256
+            == budget_policy_sha256(evidence.investigation_budget_profile)
+            and all(
+                run.investigation_budget_profile
+                == evidence.investigation_budget_profile
+                for run in evidence.runs
+            ),
             "ROUND_BUDGET_POLICY_MISMATCH",
         )
         expected_config = digest(

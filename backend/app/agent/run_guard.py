@@ -60,6 +60,7 @@ from typing import Final
 from sqlalchemy.engine import Connection
 
 from app.agent.incident import ResolvedIncident, resolve_incident
+from app.agent.investigation_budget import profile_for_new_run
 from app.agent.repository import (
     AgentRunRow,
     CreateAgentRunCommand,
@@ -207,6 +208,7 @@ def start_incident_run(
         retry_of_run_id=retry_of_run_id,
         llm_model=llm_model,
         prompt_version=prompt_version,
+        investigation_budget_profile=profile_for_new_run(autonomy_level),
     )
 
     try:

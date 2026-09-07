@@ -11,6 +11,7 @@ import stat
 from pathlib import Path
 from typing import Literal
 
+from app.agent.investigation_budget import persisted_profile, resolve_run_budget
 from app.agent.release_artifacts import (
     EvidenceError,
     EvidenceModel,
@@ -18,11 +19,13 @@ from app.agent.release_artifacts import (
     digest,
     parse_json,
 )
+from app.agent.release_budget import BudgetBoundEvidence, budget_policy
 from app.agent.release_prepared import Attempt, ImageId, Revision, UtcTime, utc
 
 GRANT_NAME = "release-grant.json"
 QUALIFICATION_NAME = "qualification-output.json"
 MAX_BYTES = 16 * 1024 * 1024
+_UNSPECIFIED_PROFILE = object()
 
 
 class GrantBundle(EvidenceModel):
@@ -51,7 +54,7 @@ class GrantVerdicts(EvidenceModel):
     delivery_integrity: Literal["PASS"]
 
 
-class ReleaseGrant(EvidenceModel):
+class ReleaseGrant(BudgetBoundEvidence):
     schema_version: Literal["level3-release-grant-v1"]
     attempt_id: Attempt
     R: Revision
@@ -95,6 +98,7 @@ def read_release_grant(
     expected_attempt_id: str,
     expected_revision: str,
     expected_policy: str,
+    expected_investigation_budget_profile: str | None | object = _UNSPECIFIED_PROFILE,
 ) -> ReleaseGrant:
     """Fail closed, preserving host issuer ownership and rejecting path indirection.
 
@@ -130,6 +134,12 @@ def read_release_grant(
         _directory(bundle_fd, owner)
         grant_bytes = _read(attempt_fd, GRANT_NAME, owner, 64 * 1024)
         grant = ReleaseGrant.model_validate(parse_json(grant_bytes))
+        if expected_investigation_budget_profile is not _UNSPECIFIED_PROFILE:
+            resolve_run_budget(3, expected_investigation_budget_profile)
+            _require(
+                grant.investigation_budget_profile
+                == expected_investigation_budget_profile
+            )
         utc(grant.issued_at)
         _require(
             (grant.attempt_id, grant.R, grant.action_policy_version)
@@ -162,6 +172,32 @@ def read_release_grant(
         completion = parse_json(files["round1-completion.json"])
         round1 = parse_json(files["round1.json"])
         prepared = parse_json(files["prepared-attempt.json"])
+        qualification = parse_json(files[QUALIFICATION_NAME])
+        bound_profile = grant.investigation_budget_profile
+        _require(
+            all(
+                persisted_profile(3, value) == bound_profile
+                for value in (round1, prepared["effective_env"], qualification)
+            )
+        )
+        # Recount remains the issuer's job; runtime still rejects profile mixing
+        # even when every tampered component SHA has been consistently re-pinned.
+        runs = round1.get("runs", [])
+        if bound_profile is not None:
+            from app.agent.release_round import budget_policy_sha256
+
+            _require(len(runs) == 12)
+            _require(
+                round1["budget_policy_sha256"] == budget_policy_sha256(bound_profile)
+            )
+            _require(
+                all(
+                    type(prepared["effective_env"].get(key)) is int
+                    and prepared["effective_env"][key] == value
+                    for key, value in budget_policy(bound_profile).items()
+                )
+            )
+        _require(all(persisted_profile(3, run) == bound_profile for run in runs))
         _require(aggregate["schema_version"] == "level3-aggregate-v2")
         _require(round1["schema_version"] == "level3-round1-v2")
         _require(prepared["schema_version"] == "level3-prepared-attempt-v2")
