@@ -160,6 +160,10 @@
           "reason": "`name`는 Agent run·fault 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"
         },
         {
+          "reference": "frontend/src/features/agent/components/N8nWorkflowModal.jsx",
+          "reason": "`name`는 n8n 워크플로 정의(deploy/n8n) 노드 이름 property이며 ParameterItem compatibility 소비가 아님"
+        },
+        {
           "reference": "frontend/src/features/detection/components/AlarmMiniTrace.jsx",
           "reason": "`name`는 recipe step 표시 객체의 property이며 ParameterItem compatibility 소비가 아님"
         },
@@ -764,6 +768,14 @@
         {
           "reference": "frontend/src/features/agent/components/ActionDetailPanel.jsx",
           "reason": "`name`는 Agent run·fault 표시 객체의 property이며 AskToolItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/DeliveryFlow.jsx",
+          "reason": "`result`는 조치 전달 경로 단계(시스템·역할·채널) 표시 객체의 property이며 backend.app.agent.public_schemas.AskToolItem compatibility 소비가 아님"
+        },
+        {
+          "reference": "frontend/src/features/agent/components/N8nWorkflowModal.jsx",
+          "reason": "`name`·`result`는 n8n 워크플로 정의(deploy/n8n) 노드·아이콘 표시 객체의 property이며 backend.app.agent.public_schemas.AskToolItem compatibility 소비가 아님"
         },
         {
           "reference": "frontend/src/features/agent/pages/AgentRunPage.jsx",
