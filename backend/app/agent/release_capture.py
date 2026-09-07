@@ -16,6 +16,7 @@ from app.agent.release_artifacts import EvidenceError, digest, parse_json, read_
 from app.agent.release_context import PreparationContext, docker_context
 from app.agent.release_n8n import N8nEvidenceApi, probe_evidence
 from app.agent.release_prepare import (
+    OriginalRetention,
     PreparationCapture,
     PreparationCaptureV2,
     RestoreContext,
@@ -58,6 +59,7 @@ def collect_preparation(
     mock_workflows: dict | None = None,
     mock_samples: dict | None = None,
     read_trail_probe=None,
+    n8n_original_retention: dict | None = None,
 ) -> PreparationCapture:
     """Return private in-memory transport; Stage2 must own lock/cleanup.
 
@@ -178,8 +180,18 @@ def collect_preparation(
         from app.agent.golden_flow import snapshot_from_mapping
         from app.agent.release_mock_capture import probe_mock_evidence
 
-        if preflight_snapshot is None or not callable(read_trail_probe):
+        if (
+            preflight_snapshot is None
+            or not callable(read_trail_probe)
+            or n8n_original_retention is None
+        ):
             raise EvidenceError("PREPARATION_MOCK_PROBE_REQUIRED")
+        try:
+            n8n_original_retention = OriginalRetention.model_validate(
+                n8n_original_retention
+            ).model_copy(deep=True)
+        except Exception:
+            raise EvidenceError("PREPARATION_MOCK_PROBE_REQUIRED") from None
         snapshot_bytes = read_private(
             preflight_snapshot.parent, preflight_snapshot.name
         )
@@ -228,6 +240,11 @@ def collect_preparation(
         if mock
         else "level3-preparation-capture-v1",
         **({"preflight_snapshot_sha256": digest(snapshot_bytes)} if mock else {}),
+        **(
+            {"n8n_original_retention": n8n_original_retention}
+            if mock
+            else {}
+        ),
         preflight=preflight,
         runtime=running,
         db_identities={r: c.identity for r, c in before_context.items()},

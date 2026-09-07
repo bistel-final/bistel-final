@@ -36,6 +36,7 @@ class Docker:
         self.id_lists = {r: [] for r in m.SERVICES}
         self.labels = {r: REV for r in m.SERVICES}
         self.secret_mount_roles = set()
+        self.health = ["healthy"]
         self.hook = lambda argv: None
 
     def image(self, kind, image):
@@ -104,6 +105,11 @@ class Docker:
             self.fill()
             return b""
         if argv[1] == "container":
+            if argv[-2] == m._HEALTH_FORMAT:
+                value = self.health[0]
+                if len(self.health) > 1:
+                    self.health.pop(0)
+                return json.dumps(value).encode()
             return json.dumps(self.payloads[argv[-1]]).encode()
         if argv[1] == "start":
             for cid in argv[2:]:
@@ -135,6 +141,7 @@ def rig(tmp_path):
         gid=20,
         run=fake.run,
         inspect_image=fake.image,
+        fetch=lambda path: m.ProbeResponse(200),
     )
     return m.ComposeRuntime(**args), fake, args
 
@@ -431,7 +438,7 @@ def test_runner_reports_mount_contract(rig, change):
 
 
 @pytest.mark.parametrize("role", ["backend", "runner"])
-def test_file_backed_secrets_need_no_docker_mount(rig, role):
+def test_environment_sourced_secrets_need_no_docker_mount(rig, role):
     runtime, fake, _ = rig
     created = runtime.create()
     assert [mount["destination"] for mount in fake.payloads[IDS[role]]["mounts"]] == [
@@ -445,6 +452,88 @@ def test_optional_readonly_secret_mounts_are_harmless(rig, role):
     runtime, fake, _ = rig
     fake.secret_mount_roles.add(role)
     assert runtime.start(runtime.create()).phase == "running"
+
+
+@pytest.mark.parametrize("role", ["backend", "runner"])
+def test_optional_secret_mount_can_never_be_writable(rig, role):
+    runtime, fake, _ = rig
+    fake.secret_mount_roles.add(role)
+    created = runtime.create()
+    secret = next(
+        mount
+        for mount in fake.payloads[IDS[role]]["mounts"]
+        if mount["destination"] in m.OPTIONAL_SECRET_MOUNTS
+    )
+    secret["rw"] = True
+    with pytest.raises(EvidenceError, match="DRIFT"):
+        runtime.start(created)
+    assert not fake.actions("start")
+
+
+def test_start_waits_for_backend_health_and_gateway_before_stable_observation(rig):
+    _, fake, args = rig
+    fake.health = ["starting", "healthy", "healthy"]
+    statuses = [503, 200, 200, 502, 200, 200]
+    calls = []
+
+    def fetch(path):
+        calls.append(path)
+        return m.ProbeResponse(statuses.pop(0))
+
+    runtime = m.ComposeRuntime(
+        **{
+            **args,
+            "fetch": fetch,
+            "sleep": lambda _: None,
+            "monotonic": lambda: 0.0,
+        }
+    )
+    assert runtime.start(runtime.create()).phase == "running"
+    assert calls == ["/", "/api/health/ready"] * 3
+    start_index = next(
+        index
+        for index, call in enumerate(fake.calls)
+        if isinstance(call[0], list) and call[0][1] == "start"
+    )
+    first_observe = next(
+        index
+        for index, call in enumerate(fake.calls)
+        if index > start_index
+        if isinstance(call[0], list)
+        and call[0][1] == "container"
+        and call[0][-2] != m._HEALTH_FORMAT
+    )
+    last_health = max(
+        index
+        for index, call in enumerate(fake.calls)
+        if isinstance(call[0], list)
+        and call[0][1] == "container"
+        and call[0][-2] == m._HEALTH_FORMAT
+    )
+    assert last_health < first_observe
+
+
+def test_start_health_timeout_has_bounded_reason_code(rig):
+    _, fake, args = rig
+    fake.health = ["starting"]
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    runtime = m.ComposeRuntime(
+        **{
+            **args,
+            "fetch": lambda path: m.ProbeResponse(200),
+            "sleep": sleep,
+            "monotonic": lambda: now[0],
+            "start_timeout": 3,
+            "start_poll": 2,
+        }
+    )
+    with pytest.raises(EvidenceError, match="^LEVEL3_RUNTIME_START_TIMEOUT$"):
+        runtime.start(runtime.create())
+    assert now[0] == 3
 
 
 @pytest.mark.parametrize("role", ["backend", "runner"])

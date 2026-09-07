@@ -21,6 +21,63 @@ from app.agent.release_prepare import (
 from tests.unit.test_agent_release_prepare import NOW, bundle  # noqa: F401
 
 
+def test_observation_client_preserves_declared_retention_source(monkeypatch):
+    class Session:
+        def workflow(self, identifier):
+            value = {"versionId": "version-" + identifier}
+            if identifier in {"wf3", "wf4"}:
+                value["_evidence_retention_source"] = {
+                    "declared": {
+                        "saveDataSuccessExecution": "DEFAULT",
+                        "saveDataErrorExecution": None,
+                    }
+                }
+            return value
+
+    class Observer:
+        session = Session()
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(m, "CallbackObserver", Observer)
+    monkeypatch.setattr(
+        m,
+        "n8n_settings",
+        lambda: (
+            {
+                "N8N_BASE_URL": "https://example.invalid",
+                "N8N_USERNAME": "user",
+                "N8N_PASSWORD": "synthetic",
+            },
+            {"WF2": "wf2", "WF3": "wf3", "WF4": "wf4"},
+            {"WF2": "2", "WF3": "3", "WF4": "4"},
+        ),
+    )
+    with m.observation_client(["team@example.invalid"]) as (
+        _,
+        pins,
+        samples,
+        _,
+        original,
+    ):
+        assert pins["WF3"] == {"workflow_id": "wf3", "version": "version-wf3"}
+        assert samples == {"WF2": "2", "WF3": "3", "WF4": "4"}
+        assert original == {
+            workflow: {
+                "saveDataSuccessExecution": "DEFAULT",
+                "saveDataErrorExecution": None,
+            }
+            for workflow in ("WF3", "WF4")
+        }
+
+
 @pytest.fixture
 def prepared_ports(bundle, monkeypatch):  # noqa: F811
     args, a, root, value = bundle
@@ -52,6 +109,13 @@ def prepared_ports(bundle, monkeypatch):  # noqa: F811
     )
     value["schema_version"] = "level3-preparation-capture-v2"
     value["preflight_snapshot_sha256"] = pref.sha256
+    value["n8n_original_retention"] = {
+        workflow: {
+            "saveDataSuccessExecution": "DEFAULT",
+            "saveDataErrorExecution": "DEFAULT",
+        }
+        for workflow in ("WF3", "WF4")
+    }
     value["n8n_evidence_probe"].update(
         wf3_execution_detail_retained=True,
         wf4_execution_detail_retained=True,
@@ -108,6 +172,7 @@ def prepared_ports(bundle, monkeypatch):  # noqa: F811
             {w: dict(workflow_id=w, version="v") for w in ("WF2", "WF3", "WF4")},
             dict(WF2="2", WF3="3", WF4="4"),
             lambda: {},
+            value["n8n_original_retention"],
         )
 
     def collect(**kwargs):
@@ -214,3 +279,31 @@ def test_missing_n8n_settings_rejected_before_any_service_change(
     assert events == []
     assert not (a / "prepare-intent.json").exists()
     assert not (root / "prepared-attempt.json").exists()
+
+
+def test_failed_prepare_cleanup_reports_retention_without_becoming_cleanup_failure(
+    tmp_path, monkeypatch
+):
+    from app.agent import release_retention
+
+    context = SimpleNamespace(containers=SimpleNamespace())
+    monkeypatch.setattr(m, "failed_preparation_context", lambda _: context)
+    monkeypatch.setattr(m, "e2e_inventory", lambda: [])
+    monkeypatch.setattr(
+        m,
+        "cleanup_e2e",
+        lambda _: {"result": "OK", "basis": "synthetic-scoped-cleanup"},
+    )
+
+    def fail(_):
+        raise EvidenceError("N8N_RETENTION_RESTORE_REQUIRED")
+
+    monkeypatch.setattr(release_retention, "verify_restored", fail)
+    result = m.cleanup_prepare(tmp_path)
+    assert result["result"] == "OK"
+    assert result["retention_restore"] == {
+        "status": "NOT_VERIFIED",
+        "reason_code": "N8N_RETENTION_RESTORE_REQUIRED",
+        "observation": None,
+    }
+    assert read_private(tmp_path, "prepare-cleanup.json")

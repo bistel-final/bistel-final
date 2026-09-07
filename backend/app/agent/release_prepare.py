@@ -82,10 +82,23 @@ class PreparationCapture(EvidenceModel):
     captured_at: UtcTime
 
 
+class DeclaredRetention(EvidenceModel):
+    saveDataSuccessExecution: Literal["all", "none", "DEFAULT"] | None
+    saveDataErrorExecution: Literal["all", "none", "DEFAULT"] | None
+
+
+class OriginalRetention(EvidenceModel):
+    WF3: DeclaredRetention
+    WF4: DeclaredRetention
+
+
 class PreparationCaptureV2(PreparationCapture):
     schema_version: Literal["level3-preparation-capture-v2"]
     n8n_evidence_probe: N8nEvidenceProbeV2
     preflight_snapshot_sha256: Sha256
+    # Optional only so already-issued private v2 captures remain readable.
+    # Every newly collected MOCK-NOTIFY-V1 capture requires and records it.
+    n8n_original_retention: OriginalRetention | None = None
 
 
 def parse_capture(value):
@@ -203,6 +216,10 @@ def build_prepared(
     capture = parse_capture(capture.model_dump()).model_copy(deep=True)
     images = ImagePins.model_validate(image_ids).model_dump()
     is_mock = isinstance(capture, PreparationCaptureV2)
+    _require(
+        not is_mock or capture.n8n_original_retention is not None,
+        "PREPARATION_RETENTION_SOURCE_REQUIRED",
+    )
     pf, runtime = capture.preflight, capture.runtime
     _require(
         runtime.phase == "running"

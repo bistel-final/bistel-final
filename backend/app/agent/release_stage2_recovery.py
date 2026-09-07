@@ -6,6 +6,7 @@ may be removed. No volumes/images/network pruning, reset, grants or Agent runs.
 
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -30,11 +31,13 @@ def docker_command(argv, *, timeout=30):
     return command(argv, env=dict(os.environ), timeout=timeout)
 
 
-def verify_evaluation_api(previous_state, *, transport=None):
-    """Fixed local GET, bounded body, no redirects/proxy/credentials/retries."""
+def _verify_evaluation_api_once(previous_state, *, transport, timeout):
     try:
         with httpx.Client(
-            trust_env=False, follow_redirects=False, timeout=15.0, transport=transport
+            trust_env=False,
+            follow_redirects=False,
+            timeout=timeout,
+            transport=transport,
         ) as client:
             with client.stream(
                 "GET", "http://127.0.0.1:8080/api/agent/evaluations"
@@ -60,6 +63,44 @@ def verify_evaluation_api(previous_state, *, transport=None):
                 raise ValueError
     except Exception:
         raise EvidenceError("STAGE2_RESTORE_EVALUATION_API_FAILED") from None
+
+
+def verify_evaluation_api(
+    previous_state,
+    *,
+    transport=None,
+    timeout_seconds=90,
+    retry_interval=2,
+    monotonic=time.monotonic,
+    sleep=time.sleep,
+):
+    """Retry the fixed local GET within one wall-clock deadline after restore."""
+    if (
+        previous_state not in {"empty", "bound"}
+        or type(timeout_seconds) not in {int, float}
+        or isinstance(timeout_seconds, bool)
+        or not 0 <= timeout_seconds <= 90
+        or type(retry_interval) not in {int, float}
+        or isinstance(retry_interval, bool)
+        or not 0 < retry_interval <= 10
+        or not all(callable(value) for value in (monotonic, sleep))
+    ):
+        raise EvidenceError("STAGE2_RESTORE_EVALUATION_API_FAILED")
+    deadline = monotonic() + timeout_seconds
+    while True:
+        remaining = deadline - monotonic()
+        try:
+            _verify_evaluation_api_once(
+                previous_state,
+                transport=transport,
+                timeout=max(0.1, min(15.0, remaining)),
+            )
+            return
+        except EvidenceError:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise EvidenceError("STAGE2_RESTORE_EVALUATION_API_FAILED") from None
+            sleep(min(retry_interval, remaining))
 
 
 def e2e_inventory(*, run=docker_command):
