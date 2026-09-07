@@ -38,7 +38,10 @@ SERVICES = {"backend": "backend", "frontend": "frontend", "runner": "e2e-runner"
 PROJECT = "bistel-team-e2e"
 IDLE_COMMAND = ["python", "scripts/e2e_runner_idle.py"]
 WORKDIR = "/workspace/backend"
-SECRETS = {"/run/secrets/kafka_client_user", "/run/secrets/kafka_client_password"}
+OPTIONAL_SECRET_MOUNTS = {
+    "/run/secrets/kafka_client_user",
+    "/run/secrets/kafka_client_password",
+}
 _ZERO_START = "0001-01-01T00:00:00Z"
 
 # Do not expose Config.Env, other labels, secret source paths or raw inspect.
@@ -326,8 +329,17 @@ class ComposeRuntime:
                 ):
                     raise ValueError
                 mounts = {m.destination: m for m in c.mounts}
-                expected = SECRETS | {"/reports"} if role != "frontend" else set()
-                if set(mounts) != expected or len(mounts) != len(c.mounts):
+                # Compose file-backed secrets can be copied into the container
+                # rather than represented as Docker bind mounts. /reports is the
+                # only required mount; tolerate the two read-only secret mounts
+                # when a Docker/Compose version happens to expose them.
+                expected = {"/reports"} if role != "frontend" else set()
+                optional = OPTIONAL_SECRET_MOUNTS if role != "frontend" else set()
+                if (
+                    not expected.issubset(mounts)
+                    or not set(mounts).issubset(expected | optional)
+                    or len(mounts) != len(c.mounts)
+                ):
                     raise ValueError
                 for dest, mount in mounts.items():
                     if dest == "/reports":

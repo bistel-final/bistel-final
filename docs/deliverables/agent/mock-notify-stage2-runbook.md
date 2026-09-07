@@ -31,6 +31,36 @@
 PREFLIGHT를 배치 실행 후 역으로 만들지 않는다. BATCH_BASELINE은 배치 직후 자동 수집하며
 그때 prediction hash도 고정한다. 라벨을 읽기 전에 이후 평가의 prediction hash와 대조한다.
 
+### 재시도 전 운영 함정 점검(2026-09-07 F-RT1)
+
+아래 네 항목은 `--prepare-only`보다 먼저 확인한다. 실패 attempt의 디렉터리·컨테이너를
+새 attempt에 재사용하지 않는다.
+
+1. **robustness 디렉터리** — lifecycle lock은 부모 디렉터리를 생성하지 않는다. 새 attempt의
+   사전 파일을 모두 만든 뒤 `install -d -m 0700 "$A/robustness"`로 정확한 디렉터리를 만든다.
+   누락하면 Docker I/O 전에 `COMPONENT_IO_INVALID`로 중단된다.
+2. **호스트 `.env`** — `CM52_ENV_FILE`은 Compose 입력이고 저장소 루트 `.env`를 대신하지 않는다.
+   호스트 Python의 `stage2_level3_phase → release_run_capture → graph → config` import도 같은
+   runtime 설정을 읽을 수 있어야 한다. `$REPO_ROOT/.env`가 없을 때만 검증된 비공개
+   `CM52_ENV_FILE`에서 `install -m 0600 "$CM52_ENV_FILE" "$REPO_ROOT/.env"`로 준비하고,
+   이미 있으면 덮어쓰지 말고 권한0600·동일 대상 설정인지 확인한다. 내용은 로그에 출력하지 않는다.
+3. **E2E orphan 컨테이너** — `bistel-team-e2e` project의 전체 service/container를
+   `docker ps --all --no-trunc --filter label=com.docker.compose.project=bistel-team-e2e`로 먼저
+   확인한다. 이전 backend/frontend/runner나 `mes-mock` orphan이 남았으면 실행 중 workload가
+   없고 모두 해당 project 소유임을 확인한 뒤, 같은 compose 파일·env·project로 `down
+   --remove-orphans`한다. 이름만 보고 개별 강제 삭제하거나 volume을 삭제하지 않는다.
+   이후 같은 조회가 0건이어야 prepare를 시작한다.
+4. **승인 대기 run** — production DB에 `RUNNING` 또는 `WAITING_APPROVAL`이 있으면
+   `PREPARATION_LEVEL2_REQUIRED`가 정상이다. 임의 UPDATE/DELETE하지 않는다. 기존
+   `ACTION-POLICY-V1`의 실제 PENDING approval만 `POST /approvals/{approval_id}/decision`에
+   `REJECTED`·운영자·정리 사유를 기록해 정상 상태 전이시키고, 새 `MOCK-NOTIFY-V1`에는 승인
+   API를 호출하지 않는다. active run0과 production level2/disabled readback을 다시 확인한다.
+
+F-RT1에서 확인한 Docker 계약상 backend와 runner의 **필수 inspect mount는 `/reports` 하나**다.
+backend는 read-only, runner는 read-write이며 둘 다 source가 `CM52_REPORT_ROOT`와 같아야 한다.
+Kafka secret은 Compose가 시작 시 파일로 제공할 수 있어 `/run/secrets/*` bind mount 존재를
+요구하지 않는다. 실제 secret 파일의 존재·읽기는 이후 readiness/preflight가 확인한다.
+
 ## 운영자 입력
 
 - `CM52_U10_ARTIFACT`, `CM52_U10_EVALUATION_RECEIPT`, `CM52_U10_BENCHMARK`: R에 결속된
