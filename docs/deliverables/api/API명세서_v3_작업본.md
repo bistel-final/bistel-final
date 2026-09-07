@@ -1063,6 +1063,9 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 crash 등으로 저장본이 없으면 `UNAVAILABLE`이다. 원문 Tool 인자·query·lot_hist_id·digest와
 selector provider model은 trace 공개 필드에 포함하지 않는다. 선택의 짧은 이유와 서버 생성
 인자/관찰 요약, phase·guard·중단 사유·selector token만 제공한다.
+신규 selector는 `agent-react-v2-ko3`이며 공개 `react_prompt_version`은 기존
+`agent-react-v2-ko1`·`agent-react-v2-ko2` 저장본도 계속 허용한다. 기존 trace 공개 필드와
+가드·중단·토큰 계약은 변경하지 않는다.
 
 `diagnosis.parameter_findings`는 인용 FDC에서 코드가 계산한 파라미터·recipe step·방향
 (`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된

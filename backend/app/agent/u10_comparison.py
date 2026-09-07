@@ -726,7 +726,9 @@ class LlmConfiguration(EvidenceModel):
     hypothesis_prompt_version: Literal[
         "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"
     ]
-    selector_prompt_version: Literal["agent-react-v2-ko1", "agent-react-v2-ko2"]
+    selector_prompt_version: Literal[
+        "agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3"
+    ]
     temperature: Annotated[float, Field(ge=0, le=0)] | None
     seed: Count | None
     request_policy: Literal["U10-LUNA-REASONING-V1"] | None = None
@@ -792,7 +794,10 @@ class Artifact(EvidenceModel):
                 if isinstance(llm, dict)
                 else getattr(llm, "selector_prompt_version", None)
             )
-            if selector_version == "agent-react-v2-ko2" and isinstance(rows, list):
+            if selector_version in (
+                "agent-react-v2-ko2",
+                "agent-react-v2-ko3",
+            ) and isinstance(rows, list):
                 for row in rows:
                     keys = (
                         row.keys()
@@ -815,7 +820,10 @@ class Artifact(EvidenceModel):
     @model_validator(mode="after")
     def diagnostic_version(self):
         for row in self.attempts:
-            if self.llm.selector_prompt_version == "agent-react-v2-ko2":
+            if self.llm.selector_prompt_version in (
+                "agent-react-v2-ko2",
+                "agent-react-v2-ko3",
+            ):
                 check_selector_trace(row)
             else:
                 _require(row.selector_trace is None, "U10_SCHEMA_INVALID")

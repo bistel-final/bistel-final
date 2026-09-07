@@ -504,6 +504,56 @@ def test_level3_without_react_port_stays_not_implemented(
         harness._invoke(graph, level=3)
 
 
+def test_level3_context_counts_all_read_history_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class HistoryTools(harness._FakeTools):
+        def history(self, run_id):
+            rows = list(super().history(run_id))
+            for status, output in (
+                (ToolCallStatus.SUCCESS, {"ok": True}),
+                (ToolCallStatus.ERROR, {"ok": False}),
+                (ToolCallStatus.TIMEOUT, {"ok": False}),
+                (ToolCallStatus.ERROR, None),  # Unfinished reservation sentinel.
+            ):
+                rows.append(
+                    SimpleNamespace(
+                        tool_name="search_documents",
+                        input={"query": "stored query"},
+                        status=status,
+                        output=output,
+                    )
+                )
+            for tool in (
+                "get_equipment_context",
+                "get_chamber_parameter_history",
+                "get_metrology_result",
+                "send_action",
+                "generate_analysis_plan",
+            ):
+                rows.append(
+                    SimpleNamespace(
+                        tool_name=tool,
+                        input={},
+                        status=ToolCallStatus.ERROR,
+                    )
+                )
+            return tuple(rows)
+
+    port = ScriptedReactPort(_selection("stop"))
+    (graph, *_), _ = _level3(monkeypatch, port, tools=HistoryTools())
+
+    harness._invoke(graph, level=3)
+
+    assert getattr(port.contexts[0], "tool_attempts", {}) == {
+        "get_fdc_summary": 1,
+        "search_documents": 4,
+        "get_equipment_context": 1,
+        "get_chamber_parameter_history": 1,
+        "get_metrology_result": 1,
+    }
+
+
 def test_level3_react_selects_tools_then_stops_and_records_trace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

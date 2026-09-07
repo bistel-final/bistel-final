@@ -8,6 +8,7 @@ This is not the 32-attempt/receipt issuer or the production graph executor.
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -191,6 +192,11 @@ def execute_react_policy(
                     {"tool": c.tool_name, "request": c.input.copy()}
                     for c in history
                     if c.status is ToolCallStatus.SUCCESS
+                ),
+                "tool_attempts": dict(
+                    Counter(
+                        c.tool_name for c in history if c.tool_name in react.REACT_TOOLS
+                    )
                 ),
                 "checked_dimensions": ComparisonMatrix.model_validate(
                     derive_compared(inventory, session.calls).model_dump()

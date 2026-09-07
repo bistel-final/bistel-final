@@ -11,6 +11,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
+from app.agent.react import REACT_PROMPT_VERSION
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_batch import AttemptKey, BatchBinding
 from app.agent.u10_comparison import LlmConfiguration
@@ -28,7 +29,7 @@ def config():
         hypothesis_model_revision="actual-model",
         selector_model_revision="actual-model",
         hypothesis_prompt_version="agent-hypothesis-v3-ko2",
-        selector_prompt_version="agent-react-v2-ko2",
+        selector_prompt_version=REACT_PROMPT_VERSION,
         temperature=0.0,
         seed=13,
     )
@@ -84,7 +85,12 @@ def provider(authorize=lambda _: True, cfg=None):
     return RealProvider(cfg, binding, authorize)
 
 
-def test_ko1_remains_readable_but_cannot_enter_new_live_execution(settings):
+@pytest.mark.parametrize(
+    "old_selector_version", ["agent-react-v2-ko1", "agent-react-v2-ko2"]
+)
+def test_old_prompts_remain_readable_but_cannot_enter_new_live_execution(
+    settings, old_selector_version
+):
     from app.agent import prompts, react
     from app.agent.u10_provider import validate_runtime_configuration
 
@@ -95,8 +101,8 @@ def test_ko1_remains_readable_but_cannot_enter_new_live_execution(settings):
         "a" * 40, "b" * 64, digest(canonical_json(cfg)), "c" * 64, "d" * 64
     )
     validate_runtime_configuration(cfg, binding, lambda _: True)
-    old_selector = cfg.model_copy(
-        update={"selector_prompt_version": "agent-react-v2-ko1"}
+    old_selector = LlmConfiguration.model_validate(
+        {**cfg.model_dump(), "selector_prompt_version": old_selector_version}
     )
     old_selector_binding = replace(
         binding, llm_config_sha256=digest(canonical_json(old_selector))

@@ -7059,7 +7059,8 @@
                     "schema": {
                       "enum": [
                         "agent-react-v2-ko1",
-                        "agent-react-v2-ko2"
+                        "agent-react-v2-ko2",
+                        "agent-react-v2-ko3"
                       ],
                       "type": "string"
                     }
@@ -15157,7 +15158,8 @@
               "schema": {
                 "enum": [
                   "agent-react-v2-ko1",
-                  "agent-react-v2-ko2"
+                  "agent-react-v2-ko2",
+                  "agent-react-v2-ko3"
                 ],
                 "type": "string"
               }
@@ -21527,7 +21529,8 @@
       "schema": {
         "enum": [
           "agent-react-v2-ko1",
-          "agent-react-v2-ko2"
+          "agent-react-v2-ko2",
+          "agent-react-v2-ko3"
         ],
         "type": "string"
       }

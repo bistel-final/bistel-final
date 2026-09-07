@@ -418,9 +418,9 @@ class ReactStepPublic(ApiModel):
     )
     observation_summary: str | None = Field(default=None, max_length=160)
     guard_code: str | None = Field(default=None, max_length=64)
-    react_prompt_version: Literal["agent-react-v2-ko1", "agent-react-v2-ko2"] | None = (
-        None
-    )
+    react_prompt_version: (
+        Literal["agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3"] | None
+    ) = None
     selector_tokens: SelectorTokens
     stop_reason: ReactStopReason | None = None
     degraded: bool = False

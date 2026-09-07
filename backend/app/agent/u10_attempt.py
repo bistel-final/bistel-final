@@ -291,7 +291,7 @@ def _finish(
             read_stop_reason=read_stop_reason,
         )
     action = decide_action(route).action if ok else None
-    if llm.selector_prompt_version == "agent-react-v2-ko2":
+    if llm.selector_prompt_version in ("agent-react-v2-ko2", "agent-react-v2-ko3"):
         from app.agent.u10_selector_trace import project_selector_trace
 
         diagnostics["selector_trace"] = (

@@ -75,6 +75,45 @@ def test_guard_rejections_are_charged_and_budget_fields_are_code_owned():
     ] == [(8, 10, 0), (8, 9, 1)]
 
 
+@pytest.mark.parametrize("failure_status", ["ERROR", "TIMEOUT"])
+def test_context_tool_attempts_count_failed_retry_and_success(failure_status):
+    contexts = []
+    choices = iter(
+        [
+            outcome("search_documents", query="first query"),
+            outcome("search_documents", query="second query"),
+            outcome("stop"),
+        ]
+    )
+    invoked = []
+
+    def select(context):
+        contexts.append(context)
+        return next(choices)
+
+    def invoke(*args):
+        invoked.append(args)
+        if len(invoked) == 1:
+            return success().model_copy(update={"status": failure_status})
+        return success()
+
+    result = run(
+        select,
+        invoke,
+        build_context=lambda: _context().model_copy(
+            update={"tool_attempts": {"search_documents": 99, "send_action": 42}}
+        ),
+    )
+
+    assert [getattr(c, "tool_attempts", {}) for c in contexts] == [
+        {},
+        {"search_documents": 2},
+        {"search_documents": 3},
+    ]
+    assert [c.status for c in result.calls] == [failure_status, "SUCCESS", "SUCCESS"]
+    assert result.stop_reason == "LLM_STOP"
+
+
 def test_context_is_refreshed_from_adapter_observations_not_selector_mutation():
     observations = []
     count = 0

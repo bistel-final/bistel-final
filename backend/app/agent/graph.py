@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -897,9 +898,10 @@ def build_agent_graph(
 
         budget = state["tool_budget"]
         remaining = max(0, budget.max_calls - budget.used - budget.send_budget)
+        tool_history = dependencies.tools.history(state["run_id"])
         successful = tuple(
             {"tool_name": call.tool_name, "input": call.input}
-            for call in dependencies.tools.history(state["run_id"])
+            for call in tool_history
             if call.status.value == "SUCCESS"
         )
         return react_module.build_context(
@@ -921,6 +923,13 @@ def build_agent_graph(
             react_trace=state.get("react_trace", ()),
             successful_inputs=tuple(
                 {"tool": c["tool_name"], "request": c["input"]} for c in successful
+            ),
+            tool_attempts=dict(
+                Counter(
+                    call.tool_name
+                    for call in tool_history
+                    if call.tool_name in react_module.REACT_TOOLS
+                )
             ),
             checked_dimensions=comparison_matrix(
                 state["route"], InvestigationEvidence(successful_calls=successful)

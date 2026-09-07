@@ -1,6 +1,6 @@
 # U10 비교 결과 오프라인 계약 — V5-C-7.1
 
-> **2026-09-07 U12 구현**: selector `agent-react-v2-ko2`에 가드 규칙·도구의 조사 목적·
+> **2026-09-07 U12 초기 구현 이력(현재 ko3 보완은 아래 절)**: `agent-react-v2-ko2`에 가드 규칙·도구의 조사 목적·
 > 자율 종료 기준과 성공 request 기반 history/metrology observed, 기존 5차원 조사 상태 및
 > documents 조회 상태를 전달한다. 문서의 `chunk_id/title/section/excerpt`는 selector 전용이며
 > 최대 3 hit·발췌 120자·객체 배열 480자다. 공개 trace는 기존 title/section 요약을 유지한다.
@@ -9,7 +9,28 @@
 
 ## U12 private selector trace
 
-ko2 artifact의 모든 attempt는 `selector_trace` 키가 필수다. REACT는 실제 trace와 ReadCall의
+후속 selector 메시지·선택 계약 보완은 `agent-react-v2-ko3`로 구별한다. 새 실행 admission은
+현재 prompt 상수와 exact 대조하며 ko1·ko2 실행 설정을 재사용하지 않는다. 기존 ko1·ko2
+artifact는 계속 읽고 원래 bytes/SHA·판정 결과를 보존한다. 이 변경 자체가 재실험 승인은 아니다.
+
+ko3의 private selector 입력 계약은 production과 U10에서 같은 message builder를 사용한다.
+`budget.remaining_by_tool`은 실제 실행 이력의 성공·실패·재시도 전체를 차감한 도구별 잔여
+횟수이며 전체 읽기 잔여보다 클 수 없다. `available_tools`는 예산과 호출 선행조건을 만족하는
+후보가 있는 도구 및 `stop`이다. 후보는 `columns`·`rows` 표로 보내되 기존 token·scope·관찰
+상태를 삭제하지 않고, 현재 guard를 통과할 수 있는지를 `available` 열로 표시한다. 이는 도구
+우선순위·순서·호출을 강제하지 않으며 실제 호출 직전 authoritative history로 guard를 재검사한다.
+성공한 문서 검색어는 `observations.document_queries`에 중복 없이 전달해 새 검색 필요성을
+판단하게 한다. raw query·private 관측은 공개 trace에 추가하지 않으며 기존 12,000자/GT
+차단을 유지한다. 후보가 커도 조용히 잘라내지 않고 상한 초과 시 provider 호출 전에 차단한다.
+
+조사 목적은 모든 후보 소진이나 확정 진단이 아니라, 관측으로 뒷받침되는 가설·점검 제안이다.
+모델은 추가 조회의 정보 가치와 남은 예산을 보고 다음 도구 또는 stop을 선택한다. 다른 wafer는
+별도 표본으로 유지하며 일괄 중복 처리하거나 문서·특정 방향 FDC를 의무 호출하지 않는다.
+실제 서비스의 최초 FDC 수집과 U10의 selector 시작점 차이, 각 실행기의 기존 retry 정책은
+유지한다. mock completion 회귀는 관측→선택→도구 결과→재선택/종료→가설·인용·trace 배선의
+증명이지 실 모델의 품질·비용 개선 또는 새 연구 PASS의 증거가 아니다.
+
+ko2·ko3 artifact의 모든 attempt는 `selector_trace` 키가 필수다. REACT는 실제 trace와 ReadCall의
 선택 순서/slot/retry를 결속한 non-empty 배열, FIXED는 selector 미실행을 나타내는 `[]`다.
 ko1 artifact는 해당 키 없이 재직렬화해 기존 bytes/SHA를 보존한다.
 event는 seq·phase·tool·slot·retry·guard_code·stop_reason·llm_call만 포함한다.

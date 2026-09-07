@@ -27,11 +27,18 @@ def document(content, **values):
 
 
 def payload(context):
-    return json.loads(react.build_react_select_messages(context)[1]["content"])
+    value = json.loads(react.build_react_select_messages(context)[1]["content"])
+    # Decode the private ko3 columnar wire format for these semantic assertions.
+    # The raw transport shape and lossless roundtrip have their own contract tests.
+    for kind, table in value["candidates"].items():
+        value["candidates"][kind] = [
+            dict(zip(table["columns"], row, strict=True)) for row in table["rows"]
+        ]
+    return value
 
 
 def test_prompt_version_and_guard_rules_are_explicit():
-    assert react.REACT_PROMPT_VERSION == "agent-react-v2-ko2"
+    assert react.REACT_PROMPT_VERSION == "agent-react-v2-ko3"
     rules = react.REACT_GUARD_RULES
     assert set(rules) == react._FEEDBACK_GUARD_CODES
     system = react.build_react_select_messages(fixture._context())[0]["content"]

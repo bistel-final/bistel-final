@@ -282,6 +282,9 @@ jobs:
           tests/unit/test_agent_u12_observation_info.py
           tests/unit/test_agent_u12_hypothesis.py
           tests/unit/test_agent_u12_prompt_info.py
+          tests/unit/test_agent_selector_efficiency.py
+          tests/unit/test_agent_selector_adaptive.py
+          tests/unit/test_agent_selector_version_compatibility.py
           tests/unit/test_agent_u10_read_execution.py
           tests/unit/test_agent_u10_react_execution.py
           tests/unit/test_agent_u10_observations.py
