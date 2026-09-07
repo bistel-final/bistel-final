@@ -26,15 +26,15 @@ import {
 const COLORS = ['#c7d9e8', '#b4cbde', '#a0bdd3', '#8cadc7', '#789db9', '#678dab', '#587d9c', '#496d8c']
 const SINGLE_COLOR = '#47769d' // 회사 청색을 낮은 채도로 쓰되 한계선보다 분명한 단일 wafer 실측선
 const GRID_COLOR = '#eef2f7' // --color-cell-line
-const POINT_COLOR = '#e03131' // 측정 시각별 실측 점 — 눈에 바로 걸리는 빨강
+const POINT_COLOR = '#e03131' // mentor feedback #4: measured points on the selected-wafer chart are red, not white
 // 한계선은 이탈 구간을 면으로 칠하지 않고 색이 있는 가로 점선으로만 나타낸다.
 // USL·LSL = spec(적색), UCL·LCL = control(황색), TGT = 목표(청색).
 // 상·하한은 같은 색에서 dash 길이(긴=상한 · 짧은=하한)로 구분한다.
 const LIMIT_STYLE = {
-  USL: { color: '#c2384a', dash: '9 5', opacity: 1, width: 1.6 },
-  LSL: { color: '#c2384a', dash: '3 5', opacity: 1, width: 1.6 },
-  UCL: { color: '#c07a12', dash: '9 5', opacity: 1, width: 1.5 },
-  LCL: { color: '#c07a12', dash: '3 5', opacity: 1, width: 1.5 },
+  USL: { color: 'var(--color-oos)', dash: '9 5', opacity: 1, width: 1.8 },
+  LSL: { color: 'var(--color-oos)', dash: '3 5', opacity: 1, width: 1.8 },
+  UCL: { color: 'var(--color-ooc-text)', dash: '9 5', opacity: 1, width: 1.7 },
+  LCL: { color: 'var(--color-ooc-text)', dash: '3 5', opacity: 1, width: 1.7 },
   TARGET: { color: '#2f5fa8', dash: '2 6', opacity: 1, width: 1.4 },
 }
 const limitColor = (styleLabel) => (LIMIT_STYLE[styleLabel] ?? LIMIT_STYLE.TARGET).color
@@ -96,7 +96,7 @@ function YAxisTick({ x, y, payload, lines }) {
       x={x - 7}
       y={y + 4}
       textAnchor="end"
-      fontSize={line ? 11 : 10}
+      fontSize={line ? 12 : 11}
       fontWeight={line ? 700 : 400}
       fill={line ? limitColor(line.styleLabel) : '#64748b'}
     >
@@ -131,15 +131,15 @@ function TraceTooltip({ active, payload, limit }) {
         const measuredTime = formatMeasuredAt(point?.measured_at)
         return (
           <div key={entry.dataKey} className="mb-2 last:mb-0">
-            <div className="font-mono text-[12.5px] font-extrabold" style={{ color: entry.color }}>
+            <div className="font-mono text-[13.5px] font-extrabold" style={{ color: entry.color }}>
               {entry.payload?.wafer_label} · {entry.name ?? entry.dataKey}
             </div>
-            <div className="mt-1 text-[12px] leading-5 text-g1">
+            <div className="mt-1 text-[13px] leading-5 text-g1">
               {limit?.sensor_name ?? point?.sensor_name ?? '센서명 미제공'} · seq {point?.seq_no ?? '—'}
               {' · '}{point?.recipe_step_name ?? `Step ${point?.recipe_step_no ?? '—'}`}
             </div>
-            {difference && <div className="text-[11.5px] font-semibold leading-5 text-g1">{difference}</div>}
-            {measuredTime && <div className="text-[11.5px] leading-5 text-g2">{measuredTime}</div>}
+            {difference && <div className="text-[12.5px] font-semibold leading-5 text-g1">{difference}</div>}
+            {measuredTime && <div className="text-[12.5px] leading-5 text-g2">{measuredTime}</div>}
           </div>
         )
       })}
@@ -173,13 +173,13 @@ export default function TraceChart({ wafers = [], limit = null, height = 300, sy
           <XAxis
             dataKey={selectedView ? 'point_label' : 'wafer_label'}
             interval={0}
-            tick={{ fontSize: 10 }}
-            label={{ value: selectedView ? '측정 시각' : 'WAFER', position: 'insideBottomRight', offset: -4, fontSize: 10 }}
+            tick={{ fontSize: 12 }}
+            label={{ value: selectedView ? '측정 시각' : 'WAFER', position: 'insideBottomRight', offset: -4, fontSize: 12 }}
           />
           <YAxis domain={yDomain} allowDataOverflow ticks={ticks} interval={0} tick={<YAxisTick lines={axisLimits} />} width={78} />
           <Tooltip content={<TraceTooltip limit={limit} />} />
           <Legend
-            wrapperStyle={{ fontSize: 10 }}
+            wrapperStyle={{ fontSize: 12 }}
             onMouseEnter={(entry) => setHighlighted(entry.dataKey ?? entry.value)}
             onMouseLeave={() => setHighlighted(null)}
           />

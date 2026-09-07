@@ -14,7 +14,9 @@ import {
   ChartCard,
   LegendRow,
   OOC_HEX,
+  OOC_TEXT_HEX,
   OOS_HEX,
+  OOS_TEXT_HEX,
   SKY_HEX,
   StackBars,
   TrendLine,
@@ -56,8 +58,8 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
   // 4칸 같은 문법: 전체 | OOS | OOC | 조치 완료 — 누르면 그 목록으로 (호버에 힌트가 파랑으로)
   const tiles = [
     { label: '전체 알람', value: agg.total, color: null, hint: '알람 히스토리 보기 →', onClick: onTotal },
-    { label: 'OOS', value: agg.oos, color: OOS_HEX, hint: 'TRACE 알람 보기 →', onClick: onOos },
-    { label: 'OOC', value: agg.ooc, color: OOC_HEX, hint: 'SUMMARY 알람 보기 →', onClick: onOoc },
+    { label: 'OOS', value: agg.oos, color: OOS_HEX, valueColor: OOS_TEXT_HEX, hint: 'TRACE 알람 보기 →', onClick: onOos },
+    { label: 'OOC', value: agg.ooc, color: OOC_HEX, valueColor: OOC_TEXT_HEX, hint: 'SUMMARY 알람 보기 →', onClick: onOoc },
     { label: 'MES Mock 응답 확인', value: agg.mesSent, color: SKY_HEX, hint: '실제 설비 정지 상태와 무관 · 상세 보기 →', onClick: onAction },
   ]
   return (
@@ -73,7 +75,7 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
             {t.color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />}
             {t.label}
           </div>
-          <div className="mt-1 font-mono text-[44px] font-extrabold leading-none tracking-[-.02em] text-navy">
+          <div className="mt-1 font-mono text-[44px] font-extrabold leading-none tracking-[-.02em] text-navy" style={t.valueColor ? { color: t.valueColor } : undefined}>
             {t.value}
           </div>
           <div className="mt-2.5 text-[12px] text-faint transition-colors group-hover:text-blue">{t.hint}</div>
@@ -86,12 +88,12 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
 // ── 분포 카드 — 챔버 | 설비 | 파라미터 탭 (같은 그림 3장을 1장으로) ──
 // 추이 차트와 같은 전폭·같은 높이로 둔다(멘토 피드백 #2).
 const DIST_TABS = [
-  { key: 'chamber', label: '챔버' },
   { key: 'equipment', label: '설비' },
+  { key: 'chamber', label: '챔버' },
   { key: 'sensor', label: '파라미터' },
 ]
 function DistributionCard({ agg }) {
-  const [tab, setTab] = useState('chamber')
+  const [tab, setTab] = useState('equipment')
   const data = tab === 'chamber' ? agg.byChamber : tab === 'equipment' ? agg.byEquipment : agg.bySensor
   return (
     <ChartCard

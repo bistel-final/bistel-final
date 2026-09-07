@@ -1,12 +1,23 @@
-// 최근 질의 — 고유 질문 최대 20개, 4개씩 페이지. 성공은 조용히, 거부·오류만 색을 갖는다.
-// 항목 필드는 {question, ok, reason, logged}. 거부 건은 사유만 표기하고 재실행 진입점을 두지 않는다.
-// 성공 건은 카드 클릭으로 다시 질의한다. 지금 보고 있는 질의는 부모가 재실행을 막는다.
+// 최근 질문 — 고유 질문 최대 20개, 4개씩 페이지. 성공은 조용히, 거부·오류만 색을 갖는다.
+// 항목 필드는 {question, ok, reason, logged}. 거부 건은 사람 말 한 줄로 이유를 보이고 재실행 진입점을 두지 않는다.
+// 성공 건은 카드 클릭으로 다시 질문한다. 지금 보고 있는 질문은 부모가 재실행을 막는다.
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
 
-// "POLICY_REJECTED: 사유" → 사유만 (접두어는 색이 이미 말해 준다)
-const reasonText = (reason) => {
+// 서버 사유("POLICY_REJECTED: 조회 질문으로 판정되지 않아 SQL 을 …")는 시스템 문장이다.
+// 관리자에게는 코드별 한 줄로 바꿔 보이고, 원문은 hover 로만 남긴다.
+const REASON_BY_CODE = {
+  POLICY_REJECTED: '조회할 수 없는 요청이에요',
+  VALIDATION_FAILED: '없는 항목을 물었거나 조회 범위를 벗어났어요',
+  DB_ERROR: '잠시 후 다시 시도해 주세요',
+}
+const reasonCode = (reason) => String(reason ?? '').split(':')[0].trim()
+const reasonLine = (reason) => {
+  const code = reasonCode(reason)
+  if (REASON_BY_CODE[code]) return REASON_BY_CODE[code]
   const s = String(reason ?? '')
-  return s.split(':').slice(1).join(':').trim() || s
+  // 존재하지 않는 컬럼 등 검증 실패 원문은 코드 접두어 없이 오기도 한다
+  if (/존재하지 않는|allowlist|허용/.test(s)) return REASON_BY_CODE.VALIDATION_FAILED
+  return '처리할 수 없는 질문이에요'
 }
 
 const PAGER_BTN =
@@ -15,16 +26,16 @@ const PAGER_BTN =
 function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready', page = 1, pageCount = 1, onPage }) {
   return (
     <Card className="w-[360px] flex-none">
-      <CardHeader title="최근 질의" />
+      <CardHeader title="최근 질문" />
       <div className="flex flex-col gap-2 px-4 pb-4">
-        {state === 'loading' && items.length === 0 && <div className="px-1 py-3 text-xs text-g2">질의 이력을 불러오는 중…</div>}
+        {state === 'loading' && items.length === 0 && <div className="px-1 py-3 text-xs text-g2">최근 질문을 불러오는 중…</div>}
         {state === 'error' && items.length === 0 && (
           <div className="rounded-lg border border-line bg-soft px-3 py-2.5 text-xs text-g1">
-            이력을 불러오지 못했습니다. 질의 기능은 정상 동작합니다.
+            최근 질문을 불러오지 못했어요. 질문은 정상적으로 할 수 있어요.
           </div>
         )}
         {state === 'ready' && items.length === 0 && (
-          <div className="px-1 py-3 text-xs text-g2">아직 질의 기록이 없습니다. 첫 질문을 던져 보세요.</div>
+          <div className="px-1 py-3 text-xs text-g2">아직 질문한 기록이 없어요. 첫 질문을 해보세요.</div>
         )}
         {items.map((h) => {
           const on = h.question === activeQ
@@ -32,7 +43,7 @@ function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready', page = 1, p
             <div
               key={h.question}
               onClick={h.ok && !on ? () => onRerun(h.question) : undefined}
-              title={h.ok && !on ? '클릭하면 다시 질의합니다' : undefined}
+              title={h.ok && !on ? '클릭하면 다시 질문해요' : h.ok ? undefined : String(h.reason ?? '')}
               aria-current={on ? 'true' : undefined}
               className={`rounded-lg border p-3 transition-colors ${
                 on
@@ -50,14 +61,7 @@ function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready', page = 1, p
                 />
                 <span className="min-w-0 flex-1 break-keep">{h.question}</span>
               </div>
-              {!h.ok && h.reason && (
-                <div className="mt-1.5 line-clamp-2 pl-[18px] text-[11.5px] leading-[1.45] text-fail" title={reasonText(h.reason)}>{reasonText(h.reason)}</div>
-              )}
-              {h.logged === false && (
-                <div className="mt-1.5 pl-[18px] text-[11px] text-g2" title="이 질의는 이력 DB에 기록되지 않았습니다 — 기록 계정·DSN 설정을 확인하세요">
-                  이력에 기록되지 않음
-                </div>
-              )}
+              {!h.ok && <div className="mt-1.5 pl-[18px] text-[11.5px] leading-[1.45] text-fail">{reasonLine(h.reason)}</div>}
             </div>
           )
         })}
@@ -66,7 +70,7 @@ function NlqHistoryPanel({ items, activeQ, onRerun, state = 'ready', page = 1, p
             <button type="button" onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1} className={PAGER_BTN} aria-label="이전 페이지">
               ‹
             </button>
-            <span className="font-mono text-[12.5px] text-g1">
+            <span className="text-[12.5px] text-g1">
               <span className="font-bold text-navy">{page}</span>
               <span className="mx-1 text-g2">/</span>
               {pageCount}

@@ -164,12 +164,13 @@ for (const banned of ['#dc2626', '#d97706', '#f59e0b', '#16a34a', '#15803d', '#7
 // 상·하한은 같은 색에서 dash 길이로 구분한다.
 const limitBlock = traceChartSource.match(/const LIMIT_STYLE = \{([\s\S]*?)\}\n/)?.[1] ?? ''
 for (const label of ['USL', 'LSL', 'UCL', 'LCL', 'TARGET']) {
-  assert.match(limitBlock, new RegExp(`${label}: \\{ color: '#`), `${label} 한계선에 색을 지정해야 합니다`)
+  assert.match(limitBlock, new RegExp(`${label}: \\{ color: '(#|var\\(--color-)`), `${label} 한계선에 색을 지정해야 합니다`)
 }
-assert.match(traceChartSource, /USL: \{ color: '#c2384a', dash: '9 5'/)
-assert.match(traceChartSource, /LSL: \{ color: '#c2384a', dash: '3 5'/)
-assert.match(traceChartSource, /UCL: \{ color: '#c07a12', dash: '9 5'/)
-assert.match(traceChartSource, /LCL: \{ color: '#c07a12', dash: '3 5'/)
+// judgement colors are shared tokens (#309): spec limits = OOS, control limits = OOC (thin dashed line -> darker text tone), target keeps the blue hex.
+assert.match(traceChartSource, /USL: \{ color: 'var\(--color-oos\)', dash: '9 5'/)
+assert.match(traceChartSource, /LSL: \{ color: 'var\(--color-oos\)', dash: '3 5'/)
+assert.match(traceChartSource, /UCL: \{ color: 'var\(--color-ooc-text\)', dash: '9 5'/)
+assert.match(traceChartSource, /LCL: \{ color: 'var\(--color-ooc-text\)', dash: '3 5'/)
 assert.match(traceChartSource, /TARGET: \{ color: '#2f5fa8'/)
 assert.match(traceChartSource, /fill=\{line \? limitColor\(line\.styleLabel\) : '#64748b'\}/, 'Y축 한계 라벨은 해당 점선과 같은 색이어야 합니다')
 // 축 밖으로 밀린 ReferenceLine은 recharts가 버린다 — 다섯 선이 모두 보이려면 도메인에 포함해야 한다.
@@ -193,7 +194,7 @@ const traceTooltipSource = traceChartSource.slice(
 assert.match(traceChartSource, /const SINGLE_COLOR = '#47769d'/)
 assert.match(traceChartSource, /strokeWidth=\{selectedView \? 2\.8 : 2\}/, '단일 실측선은 한계선보다 굵어야 합니다')
 assert.match(traceChartSource, /function YAxisTick/, '한계 라벨은 일반 데이터 눈금과 같은 Y축에 통합해야 합니다')
-assert.match(traceChartSource, /fontSize=\{line \? 11 : 10\}/, '한계 라벨은 일반 눈금보다 크게 표시해야 합니다')
+assert.match(traceChartSource, /fontSize=\{line \? 12 : 11\}/, '한계 라벨은 일반 눈금보다 크게 표시해야 합니다')
 assert.match(traceChartSource, /fontWeight=\{line \? 700 : 400\}/, '한계 라벨은 일반 눈금보다 굵게 표시해야 합니다')
 assert.match(traceChartSource, /Number\(payload\.value\.toFixed\(1\)\)\.toString\(\)/, '일반 Y축 눈금은 불필요한 세 자리 소수를 표시하지 않아야 합니다')
 assert.match(traceChartSource, /Math\.abs\(tick - line\.value\) < span \* 0\.055/, '한계와 가까운 일반 눈금은 중복 표시하지 않아야 합니다')
@@ -219,8 +220,8 @@ assert.doesNotMatch(traceChartSource, /ReferenceArea/, 'OOS·OOC 영역을 면�
 assert.doesNotMatch(traceChartSource, /function limitAreas/, '한계 영역 계산은 점선 표시로 대체돼야 합니다')
 assert.doesNotMatch(traceChartSource, /OOS 영역|OOC 영역/, '그래프에 이탈 영역 면·라벨을 남기면 안 됩니다')
 assert.doesNotMatch(historyTrendSource, /text-\[#|bg-\[#/, '상태 칩은 임의 hex 대신 토큰 클래스를 써야 합니다')
-assert.match(historyTrendSource, /OOS: \{ label: 'OOS', text: 'text-trace-oos', dot: 'bg-trace-oos' \}/, '오른쪽 패널 OOS는 그래프 OOS 한계 영역과 같은 의미색 토큰을 써야 합니다')
-assert.match(historyTrendSource, /OOC: \{ label: 'OOC', text: 'text-trace-ooc', dot: 'bg-trace-ooc' \}/, '오른쪽 패널 OOC는 그래프 OOC 한계 영역과 같은 의미색 토큰을 써야 합니다')
+assert.match(historyTrendSource, /OOS: \{ label: 'OOS', text: 'text-oos-text', dot: 'bg-oos' \}/, '오른쪽 패널 OOS는 그래프 OOS 한계선과 같은 의미색 토큰을 써야 합니다')
+assert.match(historyTrendSource, /OOC: \{ label: 'OOC', text: 'text-ooc-text', dot: 'bg-ooc' \}/, '오른쪽 패널 OOC는 그래프 OOC 한계선과 같은 의미색 토큰을 써야 합니다')
 // Tailwind 기본 팔레트(slate-*) 대신 프로젝트 토큰만 쓴다.
 assert.doesNotMatch(historyTrendSource, /(?:bg|text|border)-slate-\d/, '패널은 프로젝트 색 토큰만 써야 합니다')
 // 웨이퍼 격자에서도 채도는 이상 신호에만 — 정상은 점이 없어야 한다.

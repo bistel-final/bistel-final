@@ -7,8 +7,8 @@ import TraceChart from './TraceChart.jsx'
 // 정상까지 점을 찍으면 수십 개 버튼이 전부 색을 갖게 돼 OOS·OOC가 묻힌다.
 // 정상은 점 없음(자리만 유지), 미확인은 빈 링으로 "측정 없음"과 구분한다.
 const WAFER_STATUS = {
-  OOS: { label: 'OOS', text: 'text-trace-oos', dot: 'bg-trace-oos' },
-  OOC: { label: 'OOC', text: 'text-trace-ooc', dot: 'bg-trace-ooc' },
+  OOS: { label: 'OOS', text: 'text-oos-text', dot: 'bg-oos' },
+  OOC: { label: 'OOC', text: 'text-ooc-text', dot: 'bg-ooc' },
   OK: { label: '정상', text: 'text-navy', dot: '' },
   UNKNOWN: { label: '미확인', text: 'text-g2', dot: 'border border-dash-line' },
 }
@@ -60,34 +60,34 @@ function LotWaferPanel({ alarm, wafers, limit, selectedWafer, onSelect }) {
     <aside className="h-full min-h-0 overflow-y-auto rounded-xl border border-line bg-soft p-3.5">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="font-mono text-[12px] font-extrabold text-navy">{alarm.lot_id} · {alarm.sensor_id ?? alarm.parameter_id}</div>
-          <div className="mt-0.5 text-[10.5px] text-g2">LOT 웨이퍼 현황 · 선택은 그래프만 변경</div>
+          <div className="font-mono text-[13px] font-extrabold text-navy">{alarm.lot_id} · {alarm.sensor_id ?? alarm.parameter_id}</div>
+          <div className="mt-0.5 text-[11.5px] text-g2">LOT 웨이퍼 현황 · 선택은 그래프만 변경</div>
         </div>
-        <span className="rounded-md border border-tint-blue-line bg-tint-blue px-2 py-1 font-mono text-[10px] font-bold text-blue">전체 {wafers.length}</span>
+        <span className="rounded-md border border-tint-blue-line bg-tint-blue px-2 py-1 font-mono text-[11px] font-bold text-blue">전체 {wafers.length}</span>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-1.5">
         {['OOS', 'OOC', 'OK'].map((status) => (
           <div key={status} className="rounded-md border border-line bg-white px-2 py-2 text-center">
-            <div className={`font-mono text-[16px] font-extrabold ${WAFER_STATUS[status].text}`}>{counts[status]}</div>
-            <div className="text-[9.5px] font-bold text-g2">{WAFER_STATUS[status].label}</div>
+            <div className={`font-mono text-[18px] font-extrabold ${WAFER_STATUS[status].text}`}>{counts[status]}</div>
+            <div className="text-[10.5px] font-bold text-g2">{WAFER_STATUS[status].label}</div>
           </div>
         ))}
       </div>
       <div className="mt-2.5 rounded-lg border border-tint-blue-line bg-tint-blue px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[9.5px] font-bold text-g2">현재 그래프</div>
-            <div className="mt-0.5 font-mono text-[14px] font-extrabold text-blue">W{selectedWafer?.wafer_no}</div>
+            <div className="text-[10.5px] font-bold text-g2">현재 그래프</div>
+            <div className="mt-0.5 font-mono text-[15px] font-extrabold text-blue">W{selectedWafer?.wafer_no}</div>
           </div>
-          <span className={`text-[10px] font-extrabold ${WAFER_STATUS[selectedSummary.status].text}`}>
+          <span className={`text-[11px] font-extrabold ${WAFER_STATUS[selectedSummary.status].text}`}>
             {WAFER_STATUS[selectedSummary.status].label}
           </span>
         </div>
-        <div className="mt-2 text-[10px] text-g2">
+        <div className="mt-2 text-[11px] text-g2">
           <span className="font-mono text-g1">{selectedWafer?.chamber_id}</span>
           <span> · {selectedWafer?.points?.length ?? 0} point · {selectedSummary.range}</span>
         </div>
-        <div className="mt-1.5 flex gap-3 font-mono text-[9.5px] text-g2">
+        <div className="mt-1.5 flex gap-3 font-mono text-[10.5px] text-g2">
           <span>OOS <strong className={selectedSummary.counts.OOS ? WAFER_STATUS.OOS.text : 'text-g1'}>{selectedSummary.counts.OOS}</strong></span>
           <span>OOC <strong className={selectedSummary.counts.OOC ? WAFER_STATUS.OOC.text : 'text-g1'}>{selectedSummary.counts.OOC}</strong></span>
           <span>정상 <strong className="text-g1">{selectedSummary.counts.OK}</strong></span>
@@ -95,15 +95,15 @@ function LotWaferPanel({ alarm, wafers, limit, selectedWafer, onSelect }) {
       </div>
       <div className="my-3 h-px bg-line" />
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10.5px] font-bold text-g1">웨이퍼 선택</span>
-        <span className="font-mono text-[10px] text-g2">기준 알람 W{alarm.wafer_no}</span>
+        <span className="text-[11.5px] font-bold text-g1">웨이퍼 선택</span>
+        <span className="font-mono text-[11px] text-g2">기준 알람 W{alarm.wafer_no}</span>
       </div>
       <div className="space-y-2.5">
         {[...chamberGroups].map(([chamber, items]) => (
           <div key={chamber} className="rounded-lg border border-line bg-white p-2.5">
             <div className="mb-2 flex items-center justify-between">
-              <span className="font-mono text-[10px] font-bold text-navy">{chamber}</span>
-              <span className="text-[9.5px] text-g2">{items.length}장</span>
+              <span className="font-mono text-[12px] font-bold text-navy">{chamber}</span>
+              <span className="text-[10.5px] text-g2">{items.length}장</span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {items.map((item) => {
@@ -115,7 +115,7 @@ function LotWaferPanel({ alarm, wafers, limit, selectedWafer, onSelect }) {
                     type="button"
                     aria-pressed={selected}
                     title={`W${item.wafer_no} · ${item.chamber_id} · ${WAFER_STATUS[status].label}`}
-                    className={`flex h-8 items-center justify-center rounded-lg border font-mono text-[10.5px] font-bold transition ${selected ? 'border-blue bg-tint-blue text-blue' : 'border-line bg-white text-g1 hover:border-blue hover:text-blue'}`}
+                    className={`flex h-8 items-center justify-center rounded-lg border font-mono text-[11.5px] font-bold transition ${selected ? 'border-blue bg-tint-blue text-blue' : 'border-line bg-white text-g1 hover:border-blue hover:text-blue'}`}
                     onClick={() => onSelect(item.lot_hist_id)}
                   >
                     <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${WAFER_STATUS[status].dot}`} aria-hidden="true" />
@@ -172,15 +172,15 @@ export function HistoryTrendChart({ wafer, lim, response = null, emptyMessage = 
               </span>
               <span className="flex items-center gap-2">
                 {alert && (
-                  <span className={`rounded-md border px-2 py-1 text-[10px] font-bold ${
+                  <span className={`rounded-md border px-2 py-1 text-[11px] font-bold ${
                     alert.status === 'OOS'
-                      ? 'border-tint-red-line bg-trace-oos-zone text-trace-oos'
-                      : 'border-tint-amber-line bg-trace-ooc-zone text-trace-ooc'
+                      ? 'border-oos/30 bg-oos-tint text-oos-text'
+                      : 'border-ooc/40 bg-ooc-tint text-ooc-text'
                   }`}>
                     {alert.text}
                   </span>
                 )}
-                <span className="text-[10.5px] text-g2">
+                <span className="text-[11.5px] text-g2">
                   {viewMode === 'selected' ? 'X축: 실제 측정 시각 · 툴팁: 공정/seq' : 'X축: 웨이퍼 · 색상선: 공정 단계별 측정 순번'}
                 </span>
               </span>
@@ -217,7 +217,7 @@ export function HistoryTrendCard({ alarm, wafer, lim, response = null, loading, 
   return (
     <Card className="px-5 pb-3 pt-4">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[14px] font-extrabold text-ink">
+        <span className="font-mono text-[15px] font-extrabold text-ink">
           {alarm ? `${allowWaferSelection ? '기준 알람 · ' : ''}${parameter ?? 'PARAMETER 미제공'} · ${waferLabel ?? 'WAFER 미제공'} · ${alarm.chamber_id}` : '선택 알람 트렌드'}
         </span>
         <span className="flex items-center gap-2.5">
