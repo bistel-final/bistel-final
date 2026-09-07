@@ -64,11 +64,20 @@ def project_mes_execution(
     raw, *, workflow, workflow_id, version, execution_id, observed_at
 ):
     try:
+        stored_versions = [
+            stored_version
+            for stored_version in (
+                raw.get("workflowData", {}).get("versionId"),
+                raw.get("workflowVersionId"),
+            )
+            if stored_version is not None
+        ]
         _require(
             raw["id"] == execution_id
             and raw["workflowId"] == workflow_id
             and raw["workflowData"]["id"] == workflow_id
-            and raw["workflowData"]["versionId"] == version
+            and bool(stored_versions)
+            and all(stored_version == version for stored_version in stored_versions)
             and raw.get("retryOf") is None
             and raw.get("retrySuccessId") is None,
             "N8N_EVIDENCE_EXECUTION_MISMATCH",

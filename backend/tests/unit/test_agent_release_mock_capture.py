@@ -67,6 +67,76 @@ def test_projects_actual_distinct_workflow_node_contracts(workflow):
 
 
 @pytest.mark.parametrize("workflow", ["WF3", "WF4"])
+def test_execution_projection_accepts_top_level_workflow_version(workflow):
+    field = "schema_ok" if workflow == "WF3" else "valid"
+    name = "Validate MES Payload" if workflow == "WF3" else "Validate MES Result"
+    raw = dict(
+        id="1",
+        workflowId="wf",
+        workflowVersionId="v",
+        workflowData={"id": "wf"},
+        startedAt=AT,
+        stoppedAt=AT,
+        status="success",
+        data={
+            "resultData": {
+                "runData": {
+                    name: node({field: True, "payload": {"action_id": "action"}})
+                }
+            }
+        },
+    )
+
+    result = project_mes_execution(
+        raw,
+        workflow=workflow,
+        workflow_id="wf",
+        version="v",
+        execution_id="1",
+        observed_at=AT,
+    )
+
+    assert result.action_id == "action"
+
+
+@pytest.mark.parametrize("workflow", ["WF3", "WF4"])
+@pytest.mark.parametrize("version_state", ["missing", "conflicting"])
+def test_execution_projection_rejects_missing_or_conflicting_versions(
+    workflow, version_state
+):
+    field = "schema_ok" if workflow == "WF3" else "valid"
+    name = "Validate MES Payload" if workflow == "WF3" else "Validate MES Result"
+    raw = dict(
+        id="1",
+        workflowId="wf",
+        workflowData={"id": "wf"},
+        startedAt=AT,
+        stoppedAt=AT,
+        status="success",
+        data={
+            "resultData": {
+                "runData": {
+                    name: node({field: True, "payload": {"action_id": "action"}})
+                }
+            }
+        },
+    )
+    if version_state == "conflicting":
+        raw["workflowData"]["versionId"] = "v"
+        raw["workflowVersionId"] = "different"
+
+    with pytest.raises(EvidenceError, match="N8N_EVIDENCE_EXECUTION_MISMATCH"):
+        project_mes_execution(
+            raw,
+            workflow=workflow,
+            workflow_id="wf",
+            version="v",
+            execution_id="1",
+            observed_at=AT,
+        )
+
+
+@pytest.mark.parametrize("workflow", ["WF3", "WF4"])
 @pytest.mark.parametrize(
     "setting", ["saveDataSuccessExecution", "saveDataErrorExecution"]
 )
