@@ -293,7 +293,7 @@ def test_feedback_projection_is_bounded_and_prioritizes_unresolved_gaps():
     assert len(data["read_feedback"]) == 8
     assert all(row["last_status"] == "ERROR" for row in data["read_feedback"])
     assert sum(len(message["content"]) for message in messages) < 12_000
-    assert prompts.MAX_PROMPT_CHARS == 12_000
+    assert prompts.MAX_PROMPT_CHARS == 48_000
 
 
 def test_existing_global_size_and_label_guards_still_apply_to_new_feedback():

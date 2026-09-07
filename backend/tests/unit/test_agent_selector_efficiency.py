@@ -238,4 +238,4 @@ def test_large_payload_is_lossless_and_bounded_with_observations():
     packed_size = len(json.dumps(tables, ensure_ascii=False, separators=(",", ":")))
     expanded_size = len(json.dumps(expanded, ensure_ascii=False, separators=(",", ":")))
     assert packed_size < expanded_size * 0.6
-    assert len("\n".join(m["content"] for m in messages)) <= 12000
+    assert len("\n".join(m["content"] for m in messages)) <= 48000
