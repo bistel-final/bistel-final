@@ -262,7 +262,10 @@ def _finish(
     degraded = bool(origin and origin.degraded)
     completed = service_completed and not degraded
     diagnostics = {}
-    if llm.hypothesis_prompt_version == "agent-hypothesis-v3-ko2":
+    if llm.hypothesis_prompt_version in (
+        "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
+    ):
         from app.agent.origin_diagnostics import DEGRADED_REASON, rejection_code
 
         private = hypothesis.outcome.origin_diagnostics if ok else None
@@ -291,7 +294,11 @@ def _finish(
             read_stop_reason=read_stop_reason,
         )
     action = decide_action(route).action if ok else None
-    if llm.selector_prompt_version in ("agent-react-v2-ko2", "agent-react-v2-ko3"):
+    if llm.selector_prompt_version in (
+        "agent-react-v2-ko2",
+        "agent-react-v2-ko3",
+        "agent-react-v2-ko4",
+    ):
         from app.agent.u10_selector_trace import project_selector_trace
 
         diagnostics["selector_trace"] = (

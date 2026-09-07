@@ -25,9 +25,11 @@ from app.agent.approval_store import (
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
 from app.agent.diagnostics import ANALYSIS_VERSION
 from app.agent.hypothesis import HypothesisGenerationError
+from app.agent.investigation_budget import InvestigationBudget, resolve_run_budget
 from app.agent.investigation_models import InvestigationEvidence
 from app.agent.mes_delivery import MesDeliveryError
 from app.agent.prompts import PROMPT_VERSION
+from app.agent.read_feedback import summarize_read_history
 from app.agent.rehydration import RehydrationSeed
 from app.agent.repository import (
     AgentRepositoryError,
@@ -171,6 +173,8 @@ class AgentGraphDependencies:
     configured_llm_model: str | None = None
     require_bound_thread: bool = False
     now: Callable[[], datetime] = field(default_factory=lambda: _utc_now)
+    # Explicit isolated development only; not an environment/API/run-state input.
+    experimental_investigation_budget: InvestigationBudget | None = None
 
 
 class CompiledAgentGraph:
@@ -196,10 +200,31 @@ class CompiledAgentGraph:
         return {name: result[name] for name in CompletedAgentState.model_fields}
 
     def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        args, kwargs = self._execution_config(args, kwargs)
         return self._project(self._compiled.invoke(*args, **kwargs))
 
     async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        args, kwargs = self._execution_config(args, kwargs)
         return self._project(await self._compiled.ainvoke(*args, **kwargs))
+
+    @staticmethod
+    def _execution_config(
+        args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
+        # A 28-selection loop needs more than LangGraph's default 25 supersteps.
+        # This is an engine ceiling, not permission to bypass the DB read/step
+        # limits. Preserve an explicitly supplied caller ceiling and all thread
+        # configuration without mutating the caller's dictionary.
+        kwargs = dict(kwargs)
+        if len(args) > 1:
+            config = dict(args[1] or {})
+            config.setdefault("recursion_limit", 100)
+            args = (args[0], config, *args[2:])
+        else:
+            config = dict(kwargs.get("config") or {})
+            config.setdefault("recursion_limit", 100)
+            kwargs["config"] = config
+        return args, kwargs
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._compiled, name)
@@ -566,6 +591,54 @@ def build_agent_graph(
     ports: AgentNodePorts = (  # type: ignore[assignment]
         dependencies.ports if dependencies.ports is not None else _UnwiredPorts()
     )
+    experimental_budget = dependencies.experimental_investigation_budget
+    if experimental_budget is not None:
+        if not isinstance(experimental_budget, InvestigationBudget):
+            raise ValueError("INVESTIGATION_BUDGET_PROFILE_INVALID")
+        experimental_budget.__post_init__()
+
+    def experimental_ledger(run_id: str) -> ToolBudget:
+        """Reject a mismatched actual ledger before another model/tool call."""
+
+        assert experimental_budget is not None
+        snapshot = ToolBudget.model_validate(dependencies.tools.budget(run_id))
+        if (
+            snapshot.max_calls - snapshot.send_budget != experimental_budget.read_cap
+            or snapshot.send_budget != experimental_budget.send_budget
+        ):
+            raise ToolBoundaryError("INVESTIGATION_BUDGET_MISMATCH")
+        return snapshot
+
+    def investigation_ledger(
+        state: AgentGraphState,
+    ) -> tuple[ToolBudget, InvestigationBudget]:
+        """Caps come from the current DB ledger's immutable run profile.
+
+        In particular, resuming a legacy checkpoint after a deployment must not
+        pick the new-run default, and a forged checkpoint cannot expand a run.
+        """
+        if experimental_budget is not None:
+            return experimental_ledger(state["run_id"]), experimental_budget
+        snapshot = ToolBudget.model_validate(dependencies.tools.budget(state["run_id"]))
+        limits = resolve_run_budget(3, snapshot.investigation_budget_profile)
+        assert limits is not None
+        total_cap = limits.read_cap + limits.send_budget
+        if (
+            snapshot.send_budget != limits.send_budget
+            or snapshot.max_calls > total_cap
+            or (
+                snapshot.investigation_budget_profile is not None
+                and snapshot.max_calls != total_cap
+            )
+        ):
+            raise ToolBoundaryError("INVESTIGATION_BUDGET_MISMATCH")
+        return snapshot, limits
+
+    def selector_cap(state: AgentGraphState) -> int:
+        return investigation_ledger(state)[1].selector_cap
+
+    def guard_rejection_cap(state: AgentGraphState) -> int:
+        return investigation_ledger(state)[1].guard_rejection_cap
 
     def run_latency_ms(connection: Any, run_id: str) -> int:
         """저장 subtotal과 현재 활성 구간에서 사람 대기를 제외해 계산한다."""
@@ -623,6 +696,8 @@ def build_agent_graph(
             raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
         if level not in (1, 2, 3):
             raise AgentGraphInputError("AUTONOMY_LEVEL_INVALID")
+        if experimental_budget is not None and level != 3:
+            raise AgentGraphInputError("INVESTIGATION_BUDGET_LEVEL_INVALID")
         if level == 3 and (
             ports is None or getattr(ports, "react_select", None) is None
         ):
@@ -729,6 +804,14 @@ def build_agent_graph(
                 run_id=started.run.agent_run_id
             ).model_dump(mode="json"),
         }
+        if level == 3:
+            try:
+                base["tool_budget"] = investigation_ledger(base)[0]
+            except Exception as exc:
+                error = _terminal(exc, "load_incident")
+                base["terminal_error"] = error
+                base["errors"] = (error,)
+                return base
         if not ordered_targets:
             error = _terminal(
                 RepositoryContractError("ROUTE_INCIDENT_MISMATCH"),
@@ -774,6 +857,8 @@ def build_agent_graph(
             def invoke_fdc(
                 target_lot_hist_id: str = lot_hist_id,
             ) -> FdcSummaryToolResult | None:
+                if state.get("autonomy_level") == 3:
+                    investigation_ledger(state)
                 return dependencies.tools.fdc_summary(
                     state["run_id"],
                     FdcSummaryToolInput(lot_hist_id=target_lot_hist_id),
@@ -896,8 +981,14 @@ def build_agent_graph(
     def _react_context(state: AgentGraphState) -> react_module.ReactContext:
         from app.agent.hypothesis_v3 import comparison_matrix
 
-        budget = state["tool_budget"]
-        remaining = max(0, budget.max_calls - budget.used - budget.send_budget)
+        budget, limits = investigation_ledger(state)
+        remaining = max(
+            0,
+            budget.max_calls
+            - budget.send_budget
+            - budget.used
+            + (budget.send_used or 0),
+        )
         tool_history = dependencies.tools.history(state["run_id"])
         successful = tuple(
             {"tool_name": call.tool_name, "input": call.input}
@@ -918,7 +1009,7 @@ def build_agent_graph(
             history_results=state.get("history_evidence_set", ()),
             metrology_results=state.get("metrology_evidence_set", ()),
             remaining_tool_calls=remaining,
-            remaining_steps=react_module.REACT_MAX_STEPS - state.get("react_steps", 0),
+            remaining_steps=max(0, limits.selector_cap - state.get("react_steps", 0)),
             guard_rejections=state.get("react_guard_rejections", 0),
             react_trace=state.get("react_trace", ()),
             successful_inputs=tuple(
@@ -931,6 +1022,7 @@ def build_agent_graph(
                     if call.tool_name in react_module.REACT_TOOLS
                 )
             ),
+            read_feedback=summarize_read_history(tool_history, run_id=state["run_id"]),
             checked_dimensions=comparison_matrix(
                 state["route"], InvestigationEvidence(successful_calls=successful)
             ),
@@ -941,6 +1033,7 @@ def build_agent_graph(
                     None,
                 )
             ),
+            max_tool_attempts=limits.same_tool_cap,
         )
 
     def react_select(state: AgentGraphState) -> dict[str, Any]:
@@ -989,17 +1082,28 @@ def build_agent_graph(
                 "errors": (*existing, *additions),
             }
 
-        if steps >= react_module.REACT_MAX_STEPS:
+        if steps >= selector_cap(state):
             return degraded_stop("STEP_CAP")
         if context.remaining_tool_calls <= 0:
             return degraded_stop("BUDGET_EXHAUSTED")
-        if rejections >= react_module.REACT_MAX_GUARD_REJECTIONS:
+        if rejections >= guard_rejection_cap(state):
             return degraded_stop("GUARD_LIMIT")
         assert ports is not None and ports.react_select is not None
         structure_retry = False
         while True:
-            if steps >= react_module.REACT_MAX_STEPS:
+            if steps >= selector_cap(state):
                 return degraded_stop("STEP_CAP", current_trace=trace)
+            latest, limits = investigation_ledger(state)
+            available = max(
+                0,
+                latest.max_calls
+                - latest.send_budget
+                - latest.used
+                + (latest.send_used or 0),
+            )
+            if available == 0:
+                return degraded_stop("BUDGET_EXHAUSTED", current_trace=trace)
+            context = context.model_copy(update={"remaining_tool_calls": available})
             try:
                 outcome = react_module.ReactSelectionOutcome.model_validate(
                     ports.react_select(context)
@@ -1016,9 +1120,7 @@ def build_agent_graph(
                     context = context.model_copy(
                         update={
                             "structure_retry": True,
-                            "remaining_steps": max(
-                                0, react_module.REACT_MAX_STEPS - steps
-                            ),
+                            "remaining_steps": max(0, limits.selector_cap - steps),
                         }
                     )
                     continue
@@ -1046,6 +1148,7 @@ def build_agent_graph(
                 ),
                 tool_history=dependencies.tools.history(state["run_id"]),
                 document_model_code=_document_model_code(state),
+                max_tool_attempts=limits.same_tool_cap,
             )
             resolved_call = (
                 None
@@ -1081,12 +1184,12 @@ def build_agent_graph(
             if guard is None:
                 break
             rejections += 1
-            if rejections >= react_module.REACT_MAX_GUARD_REJECTIONS:
+            if rejections >= guard_rejection_cap(state):
                 return degraded_stop("GUARD_LIMIT", current_trace=trace)
             context = context.model_copy(
                 update={
                     "guard_rejections": rejections,
-                    "remaining_steps": max(0, react_module.REACT_MAX_STEPS - steps),
+                    "remaining_steps": max(0, limits.selector_cap - steps),
                     "recent_tool_events": react_module.selector_tool_events(trace),
                 }
             )
@@ -1118,9 +1221,23 @@ def build_agent_graph(
         resolved_call = pending.get("resolved_call")
         if not isinstance(resolved_call, dict):
             raise ValueError("REACT_PENDING_INVALID")
+        context = _react_context(state)
+        guard = react_module.guard_selection(
+            selection,
+            context,
+            equipment_fetched=(
+                state.get("graph_evidence") is not None
+                and bool(state["graph_evidence"].ok)
+            ),
+            tool_history=dependencies.tools.history(state["run_id"]),
+            document_model_code=_document_model_code(state),
+            max_tool_attempts=investigation_ledger(state)[1].same_tool_cap,
+        )
+        if guard is not None:
+            raise ToolBoundaryError(guard)
         if resolved_call != react_module.resolve_call(
             selection,
-            _react_context(state),
+            context,
             document_model_code=_document_model_code(state),
         ):
             raise ValueError("REACT_PENDING_INVALID")
@@ -1299,6 +1416,7 @@ def build_agent_graph(
 
         outcome: HypothesisOutcome | None = None
         try:
+            hypothesis_tool_history = dependencies.tools.history(run_id)
             outcome = HypothesisOutcome.model_validate(
                 ports.generate_hypothesis(
                     state.get("fdc_evidence_set", (state.get("fdc_evidence"),)),
@@ -1311,9 +1429,12 @@ def build_agent_graph(
                         if error.code == "FDC_TARGET_BUDGET_EXCEEDED"
                     ),
                     InvestigationEvidence(
+                        read_feedback=summarize_read_history(
+                            hypothesis_tool_history, run_id=run_id
+                        ),
                         successful_calls=tuple(
                             {"tool_name": call.tool_name, "input": call.input}
-                            for call in dependencies.tools.history(run_id)
+                            for call in hypothesis_tool_history
                             if call.status.value == "SUCCESS"
                         ),
                         history=tuple(

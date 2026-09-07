@@ -6149,8 +6149,8 @@
                         "required": false,
                         "schema": {
                           "default": 0,
-                          "maximum": 40,
-                          "minimum": 0,
+                          "maximum": 40.0,
+                          "minimum": 0.0,
                           "type": "integer"
                         }
                       },
@@ -6792,6 +6792,81 @@
               "type": "object"
             }
           },
+          "investigation_budget": {
+            "nullable": true,
+            "required": false,
+            "schema": {
+              "additional_properties": false,
+              "fields": {
+                "guard_rejection_cap": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 2.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "profile_id": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "enum": [
+                      "PRODUCTION_WIDE_V1",
+                      "STANDARD"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "read_cap": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 24.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "same_tool_cap": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 8.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "selector_cap": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 28.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "send_budget": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 2.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                },
+                "total_call_cap": {
+                  "nullable": false,
+                  "required": true,
+                  "schema": {
+                    "maximum": 26.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  }
+                }
+              },
+              "type": "object"
+            }
+          },
           "latency_ms": {
             "nullable": false,
             "required": true,
@@ -7060,7 +7135,8 @@
                       "enum": [
                         "agent-react-v2-ko1",
                         "agent-react-v2-ko2",
-                        "agent-react-v2-ko3"
+                        "agent-react-v2-ko3",
+                        "agent-react-v2-ko4"
                       ],
                       "type": "string"
                     }
@@ -7153,7 +7229,7 @@
             "required": false,
             "schema": {
               "default": 0,
-              "maximum": 8.0,
+              "maximum": 24.0,
               "minimum": 0.0,
               "type": "integer"
             }
@@ -14891,6 +14967,81 @@
         "type": "object"
       }
     },
+    "investigation_budget": {
+      "nullable": true,
+      "required": false,
+      "schema": {
+        "additional_properties": false,
+        "fields": {
+          "guard_rejection_cap": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 2.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "profile_id": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "enum": [
+                "PRODUCTION_WIDE_V1",
+                "STANDARD"
+              ],
+              "type": "string"
+            }
+          },
+          "read_cap": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 24.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "same_tool_cap": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 8.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "selector_cap": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 28.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "send_budget": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 2.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "total_call_cap": {
+            "nullable": false,
+            "required": true,
+            "schema": {
+              "maximum": 26.0,
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
     "latency_ms": {
       "nullable": false,
       "required": true,
@@ -15159,7 +15310,8 @@
                 "enum": [
                   "agent-react-v2-ko1",
                   "agent-react-v2-ko2",
-                  "agent-react-v2-ko3"
+                  "agent-react-v2-ko3",
+                  "agent-react-v2-ko4"
                 ],
                 "type": "string"
               }
@@ -15252,7 +15404,7 @@
       "required": false,
       "schema": {
         "default": 0,
-        "maximum": 8.0,
+        "maximum": 24.0,
         "minimum": 0.0,
         "type": "integer"
       }
@@ -21405,7 +21557,83 @@
 }
 ```
 
-### 5.86 `PublicToolCallItem`
+### 5.86 `PublicInvestigationBudget`
+
+```json
+{
+  "additional_properties": false,
+  "fields": {
+    "guard_rejection_cap": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 2.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "profile_id": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "enum": [
+          "PRODUCTION_WIDE_V1",
+          "STANDARD"
+        ],
+        "type": "string"
+      }
+    },
+    "read_cap": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 24.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "same_tool_cap": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 8.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "selector_cap": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 28.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "send_budget": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 2.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    },
+    "total_call_cap": {
+      "nullable": false,
+      "required": true,
+      "schema": {
+        "maximum": 26.0,
+        "minimum": 1.0,
+        "type": "integer"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
+### 5.87 `PublicToolCallItem`
 
 ```json
 {
@@ -21464,7 +21692,7 @@
 }
 ```
 
-### 5.87 `ReactStepPublic`
+### 5.88 `ReactStepPublic`
 
 ```json
 {
@@ -21530,7 +21758,8 @@
         "enum": [
           "agent-react-v2-ko1",
           "agent-react-v2-ko2",
-          "agent-react-v2-ko3"
+          "agent-react-v2-ko3",
+          "agent-react-v2-ko4"
         ],
         "type": "string"
       }
@@ -21605,7 +21834,7 @@
 }
 ```
 
-### 5.88 `ReadinessCheck`
+### 5.89 `ReadinessCheck`
 
 ```json
 {
@@ -21650,7 +21879,7 @@
 }
 ```
 
-### 5.89 `ReadinessChecks`
+### 5.90 `ReadinessChecks`
 
 ```json
 {
@@ -21925,7 +22154,7 @@
 }
 ```
 
-### 5.90 `ReadinessResponse`
+### 5.91 `ReadinessResponse`
 
 ```json
 {
@@ -22235,7 +22464,7 @@
 }
 ```
 
-### 5.91 `RunAlarmEvidence`
+### 5.92 `RunAlarmEvidence`
 
 ```json
 {
@@ -22307,7 +22536,7 @@
 }
 ```
 
-### 5.92 `RunStatus`
+### 5.93 `RunStatus`
 
 ```json
 {
@@ -22321,7 +22550,7 @@
 }
 ```
 
-### 5.93 `SelectorTokens`
+### 5.94 `SelectorTokens`
 
 ```json
 {
@@ -22348,7 +22577,7 @@
 }
 ```
 
-### 5.94 `SimilarIncidentItem`
+### 5.95 `SimilarIncidentItem`
 
 ```json
 {
@@ -22427,7 +22656,7 @@
 }
 ```
 
-### 5.95 `SimilarIncidentsBlock`
+### 5.96 `SimilarIncidentsBlock`
 
 ```json
 {
@@ -22546,7 +22775,7 @@
 }
 ```
 
-### 5.96 `SqlValidateRequest`
+### 5.97 `SqlValidateRequest`
 
 ```json
 {
@@ -22566,7 +22795,7 @@
 }
 ```
 
-### 5.97 `SqlValidateResponse`
+### 5.98 `SqlValidateResponse`
 
 ```json
 {
@@ -22634,7 +22863,7 @@
 }
 ```
 
-### 5.98 `ToolCallStatus`
+### 5.99 `ToolCallStatus`
 
 ```json
 {
@@ -22647,7 +22876,7 @@
 }
 ```
 
-### 5.99 `TraceAskEvidence`
+### 5.100 `TraceAskEvidence`
 
 ```json
 {
@@ -22689,7 +22918,7 @@
 }
 ```
 
-### 5.100 `TraceEvidence`
+### 5.101 `TraceEvidence`
 
 ```json
 {
@@ -22733,7 +22962,7 @@
 }
 ```
 
-### 5.101 `TracePoint`
+### 5.102 `TracePoint`
 
 ```json
 {
@@ -22775,7 +23004,7 @@
 }
 ```
 
-### 5.102 `ValidationCheck`
+### 5.103 `ValidationCheck`
 
 ```json
 {
@@ -22809,7 +23038,7 @@
 }
 ```
 
-### 5.103 `ValidationError`
+### 5.104 `ValidationError`
 
 ```json
 {
@@ -22852,7 +23081,7 @@
 }
 ```
 
-### 5.104 `VisualizationPlan`
+### 5.105 `VisualizationPlan`
 
 ```json
 {

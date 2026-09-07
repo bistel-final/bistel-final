@@ -19,7 +19,7 @@ from typing import (
     TypedDict,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
 from app.agent.diagnostics import (
@@ -28,6 +28,7 @@ from app.agent.diagnostics import (
     ImpactScopeBlock,
     IncidentDiagnosticSnapshot,
 )
+from app.agent.investigation_budget import ProductionProfileId, resolve_run_budget
 from app.agent.investigation_models import (
     InvestigationEvidence,
     OriginAssessment,
@@ -231,6 +232,14 @@ class ToolBudget(StateModel):
     send_used: int | None = Field(default=None, ge=0)
     pending_reservations: int | None = Field(default=None, ge=0)
     source: Literal["DB"] = "DB"
+    investigation_budget_profile: ProductionProfileId | None = None
+
+    @model_serializer(mode="wrap")
+    def _legacy_profile_serialization(self, handler: Any) -> dict[str, Any]:
+        value = handler(self)
+        if self.investigation_budget_profile is None:
+            value.pop("investigation_budget_profile", None)
+        return value
 
     @model_validator(mode="after")
     def _consistent_snapshot(self) -> ToolBudget:
@@ -238,6 +247,13 @@ class ToolBudget(StateModel):
 
         if self.send_budget > self.max_calls:
             raise ValueError("전송 예약량이 전체 Tool 예산보다 클 수 없습니다")
+        if self.investigation_budget_profile is not None:
+            profile = resolve_run_budget(3, self.investigation_budget_profile)
+            if (
+                self.max_calls != profile.read_cap + profile.send_budget
+                or self.send_budget != profile.send_budget
+            ):
+                raise ValueError("INVESTIGATION_BUDGET_MISMATCH")
         if self.by_tool is None:
             if self.send_used is not None or self.pending_reservations is not None:
                 raise ValueError(

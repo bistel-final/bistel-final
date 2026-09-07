@@ -1,5 +1,11 @@
 # Task 분해 · WBS v5 (작업본)
 
+> **2026-09-07 운영 예산 확대 승인 · 방대혁(C/Common) · V5-C-7.1**:
+> 신규 Level3 run은 PRODUCTION_WIDE_V1(총26/읽기24/전송2·동일8·selector28)을 생성 시
+> 고정하고 DB·checkpoint·API/화면·prepared/round/grant에 같은 정책을 결속한다.
+> 아래 C-2.2의 10/8/2·4·10은 기존 run 및 U10의 보존 계약이다. 상한까지 조회를
+> 강제하지 않고, 실제 공용 배포/새12건 증적 발급은 코드 완료와 분리한다.
+
 > **2026-09-06 사용자 승인 변경 · 방대혁(C/Common) · `V5-C-7.1`: 새 MOCK-NOTIFY-V1은 승인/반려·이메일 확인 기록 없이 이메일 및 Kafka/MES Mock을 자동 연동한다. 기존 C-3.3/4.3/4.5/5.2 완료 이력은 보존한다. 아래 HITL 완료 기준은 기존 V1 전용이다. 새 정책의 12 COMPLETED·5/4/3·메일 7·Mock 3·승인 0 증적은 별도 발급해야 하며 코드 회귀와 공용/Stage2/Gate 완료를 구분한다. [변경 계약·미완료 경계](../deliverables/agent/mock-notify-contract.md).**
 
 > 기준 원천: 멘토님 제공 최종 `project.zip`(2026-08-18) · epoch `fdc_final_20260818`

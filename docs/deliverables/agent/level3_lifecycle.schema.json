@@ -359,23 +359,45 @@
             "title": "Agent Level3 Enabled",
             "type": "boolean"
           },
+          "investigation_budget_profile": {
+            "anyOf": [
+              {
+                "const": "PRODUCTION_WIDE_V1",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Investigation Budget Profile"
+          },
           "level12_total": {
             "const": 8,
             "title": "Level12 Total",
             "type": "integer"
           },
           "level3_total": {
-            "const": 10,
+            "enum": [
+              10,
+              26
+            ],
             "title": "Level3 Total",
             "type": "integer"
           },
           "same_tool_attempts": {
-            "const": 4,
+            "enum": [
+              4,
+              8
+            ],
             "title": "Same Tool Attempts",
             "type": "integer"
           },
           "selector_steps": {
-            "const": 10,
+            "enum": [
+              10,
+              28
+            ],
             "title": "Selector Steps",
             "type": "integer"
           },

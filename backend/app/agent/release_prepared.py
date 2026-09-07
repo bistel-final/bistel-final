@@ -19,6 +19,7 @@ from app.agent.release_artifacts import (
     relative_parts,
     resolve_component,
 )
+from app.agent.release_budget import BudgetBoundEvidence, budget_policy
 
 Revision = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
 Attempt = Annotated[str, Field(pattern=r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")]
@@ -143,16 +144,23 @@ class RuntimeContainers(EvidenceModel):
     runner: RuntimeContainer
 
 
-class EffectiveEnv(EvidenceModel):
+class EffectiveEnv(BudgetBoundEvidence):
     # Only these public controls are persisted; DSN/credentials are not accepted.
     AGENT_AUTONOMY_LEVEL: Literal[3]
     AGENT_LEVEL3_ENABLED: Literal[True]
     AGENT_LEVEL3_DEMO_ACK: str = Field(max_length=64)
     level12_total: Literal[8]
-    level3_total: Literal[10]
+    level3_total: Literal[10, 26]
     send: Literal[2]
-    same_tool_attempts: Literal[4]
-    selector_steps: Literal[10]
+    same_tool_attempts: Literal[4, 8]
+    selector_steps: Literal[10, 28]
+
+    @model_validator(mode="after")
+    def bound_budget_limits(self):
+        expected = budget_policy(self.investigation_budget_profile)
+        if any(getattr(self, key) != value for key, value in expected.items()):
+            raise ValueError("INVESTIGATION_BUDGET_POLICY_MISMATCH")
+        return self
 
 
 class DbIdentity(EvidenceModel):

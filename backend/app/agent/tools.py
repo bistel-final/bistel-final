@@ -20,6 +20,7 @@ from typing import Any, Final, Protocol, TypeVar
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
+from app.agent.investigation_budget import ProductionProfileId, resolve_run_budget
 from app.agent.repository import (
     RESERVED_TOOL_OUTPUT_KEYS,
     ToolBudgetCounts,
@@ -63,13 +64,28 @@ SEND_ACTION_DEADLINE_GRACE_SECONDS: Final = 5.0
 
 @dataclass(frozen=True, slots=True)
 class ToolBudgetPolicy:
-    """DB에 고정된 autonomy level별 immutable Tool 예산."""
+    """DB run의 level과 생성 시 결속된 profile로 고르는 Tool 예산."""
 
     max_calls: int
     send_budget: int = SEND_ACTION_BUDGET
+    same_tool_cap: int = AGENT_MAX_RETRY + 1
+    investigation_budget_profile: ProductionProfileId | None = None
 
 
-def _budget_policy(autonomy_level: int) -> ToolBudgetPolicy:
+def _budget_policy(
+    autonomy_level: int, profile_id: str | None = None
+) -> ToolBudgetPolicy:
+    try:
+        profile = resolve_run_budget(autonomy_level, profile_id)
+    except ValueError as exc:
+        raise ToolBoundaryError(str(exc)) from None
+    if profile_id is not None:
+        return ToolBudgetPolicy(
+            max_calls=profile.read_cap + profile.send_budget,
+            send_budget=profile.send_budget,
+            same_tool_cap=profile.same_tool_cap,
+            investigation_budget_profile=profile_id,
+        )
     if autonomy_level in (1, 2):
         return ToolBudgetPolicy(max_calls=AGENT_MAX_TOOL_CALLS)
     if autonomy_level == 3:
@@ -98,7 +114,11 @@ class ToolBudgetBlocked(RuntimeError):
         self.code = code
         self.counts = counts
         self.budget = _budget_snapshot(
-            counts, policy or _budget_policy(counts.autonomy_level)
+            counts,
+            policy
+            or _budget_policy(
+                counts.autonomy_level, counts.investigation_budget_profile
+            ),
         )
 
 
@@ -378,7 +398,7 @@ class AuditedToolExecutor:
         """caller가 연 transaction 안에서 종료 시점 DB snapshot을 읽는다."""
 
         counts = count_tool_calls_for_budget(connection, agent_run_id)
-        return _budget_snapshot(counts, _budget_policy(counts.autonomy_level))
+        return _budget_snapshot(counts)
 
     def _reserve_within_budget(
         self,
@@ -393,7 +413,9 @@ class AuditedToolExecutor:
             raise ToolBoundaryError("TOOL_NAME_INVALID")
         with self.transactions() as connection:
             counts = count_tool_calls_for_budget(connection, agent_run_id)
-            policy = _budget_policy(counts.autonomy_level)
+            policy = _budget_policy(
+                counts.autonomy_level, counts.investigation_budget_profile
+            )
             if code := _budget_block_code(counts, tool_name, policy):
                 raise ToolBudgetBlocked(code, counts, policy)
             return reserve_tool_call(
@@ -539,7 +561,9 @@ def _budget_snapshot(
 ) -> ToolBudget:
     """Repository 집계를 checkpoint-safe 상세 State로 바꾼다."""
 
-    resolved = policy or _budget_policy(counts.autonomy_level)
+    resolved = policy or _budget_policy(
+        counts.autonomy_level, counts.investigation_budget_profile
+    )
     return ToolBudget(
         max_calls=resolved.max_calls,
         used=counts.total,
@@ -547,6 +571,7 @@ def _budget_snapshot(
         send_budget=resolved.send_budget,
         send_used=counts.by_tool.get("send_action", 0),
         pending_reservations=counts.pending_reservations,
+        investigation_budget_profile=resolved.investigation_budget_profile,
     )
 
 
@@ -557,7 +582,9 @@ def _budget_block_code(
 ) -> str | None:
     """고정 우선순위로 다음 예약의 차단 code를 결정한다."""
 
-    resolved = policy or _budget_policy(counts.autonomy_level)
+    resolved = policy or _budget_policy(
+        counts.autonomy_level, counts.investigation_budget_profile
+    )
     send_used = counts.by_tool.get("send_action", 0)
     non_send_used = counts.total - send_used
     if counts.total >= resolved.max_calls:
@@ -568,7 +595,7 @@ def _budget_block_code(
         resolved.max_calls - resolved.send_budget
     ):
         return "TOOL_BUDGET_RESERVED"
-    if counts.by_tool.get(tool_name, 0) >= AGENT_MAX_RETRY + 1:
+    if counts.by_tool.get(tool_name, 0) >= resolved.same_tool_cap:
         return "TOOL_RETRY_EXHAUSTED"
     return None
 

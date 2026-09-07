@@ -33,6 +33,7 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
   autonomy_level: 2,
   react_trace: [],
   trace_state: 'NOT_APPLICABLE',
+  investigation_budget: null,
   remaining_read_calls: Math.max(0, 6 - CORE_AGENT_RUN.tools.filter((tool) => tool.tool_name !== 'send_action').length),
   evidence_items: [
     {

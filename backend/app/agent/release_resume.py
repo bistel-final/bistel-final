@@ -6,6 +6,7 @@ The observer's temporary n8n metadata mutation needs separate operator consent.
 """
 
 from app.agent.release_artifacts import EvidenceError
+from app.agent.release_budget import profile_fields
 from app.agent.release_context import PreparationContext, docker_context
 from app.agent.release_prepared import (
     EffectiveEnv,
@@ -92,6 +93,7 @@ def observe_resume(
                 AGENT_LEVEL3_ENABLED=env.level3_enabled,
                 AGENT_LEVEL3_DEMO_ACK=env.demo_ack or "",
                 **env.budget_policy,
+                **profile_fields(env.investigation_budget_profile),
             ).model_dump(),
             "db_identity": context.identity.model_dump(),
             "recipient": Recipient(

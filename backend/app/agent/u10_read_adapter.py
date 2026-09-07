@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Protocol
 
+from app.agent.read_feedback import normalize_read_reason
 from app.agent.release_artifacts import EvidenceError, canonical_json, digest
 from app.agent.u10_comparison import EvidenceIds
 from app.agent.u10_evidence import project_read_evidence
@@ -83,9 +84,10 @@ class ReadAdapter:
             self._lock.release()
 
     @staticmethod
-    def _failure(status: str) -> ReadObservation:
+    def _failure(status: str, *, reason_code=None) -> ReadObservation:
         return ReadObservation(
             status=status,
+            reason_code=reason_code,
             evidence_ids=EvidenceIds(values=[], sha256=digest(canonical_json([]))),
         )
 
@@ -109,15 +111,21 @@ class ReadAdapter:
                 self._ports[tool], payload, seconds=READ_TOOL_CALLER_DEADLINE_SECONDS
             )
         except ToolRunnerSaturated:
-            return self._failure("ERROR")
+            self._context.record_failure(tool, request, "ERROR", internal)
+            return self._failure("ERROR", reason_code="TOOL_RUNNER_SATURATED")
         except TimeoutError:
-            return self._failure("TIMEOUT")
+            self._context.record_failure(tool, request, "TIMEOUT", internal)
+            return self._failure("TIMEOUT", reason_code="TIMEOUT")
         except Exception:
+            self._context.record_failure(tool, request, "ERROR", internal)
             return self._failure("ERROR")
         result = self._context.validate_result(tool, request, raw, internal)
         if not result.ok:
+            self._context.record(tool, request, result, internal)
+            status = "TIMEOUT" if result.reason.startswith("TIMEOUT:") else "ERROR"
             return self._failure(
-                "TIMEOUT" if result.reason.startswith("TIMEOUT:") else "ERROR"
+                status,
+                reason_code=normalize_read_reason(status, output=result.model_dump()),
             )
         projected = self._project(tool, result.model_copy(deep=True))
         if not isinstance(projected, EvidenceIds):

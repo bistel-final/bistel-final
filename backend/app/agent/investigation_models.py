@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.agent.read_feedback import ReadFeedback
 from app.common.tool_contracts import (
     ChamberParameterHistoryToolResult,
     MetrologyResultToolResult,
@@ -80,8 +81,9 @@ class SuccessfulInvestigationCall(InvestigationModel):
 
 
 class InvestigationEvidence(InvestigationModel):
-    """予約 테이블 SUCCESS 행과 관측 DTO. LLM 출력에서 받지 않는다."""
+    """관측 DTO와 실행 이력 요약. LLM 출력이나 평가 정답에서 받지 않는다."""
 
     successful_calls: tuple[SuccessfulInvestigationCall, ...] = ()
     history: tuple[ChamberParameterHistoryToolResult, ...] = ()
     metrology: tuple[MetrologyResultToolResult, ...] = ()
+    read_feedback: tuple[ReadFeedback, ...] = ()

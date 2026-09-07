@@ -12,7 +12,12 @@ from app.agent.u10_comparison import Artifact, LlmConfiguration, validate_artifa
 from tests.unit.test_agent_react_public import CASES
 from tests.unit.test_agent_u10_batch import inputs
 
-VERSIONS = ("agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3")
+VERSIONS = (
+    "agent-react-v2-ko1",
+    "agent-react-v2-ko2",
+    "agent-react-v2-ko3",
+    "agent-react-v2-ko4",
+)
 
 
 @pytest.mark.parametrize("version", VERSIONS)
@@ -64,3 +69,23 @@ def test_batch_keeps_legacy_bytes_and_trace_contract_by_declared_version(version
     row["selector_trace"][0]["llm_call"] = False
     with pytest.raises(ValueError, match="U10_DIAGNOSTIC_INCONSISTENT"):
         Artifact.model_validate(changed)
+
+
+@pytest.mark.parametrize(
+    "version", ("agent-hypothesis-v3-ko2", "agent-hypothesis-v3-ko3")
+)
+def test_hypothesis_diagnostic_versions_keep_identical_schema_and_validate(version):
+    params, *_ = inputs()
+    params["llm"] = LlmConfiguration.model_validate(
+        {**params["llm"].model_dump(), "hypothesis_prompt_version": version}
+    )
+    artifact = execute_batch(**params)
+    payload = artifact.model_dump(mode="json")
+    assert canonical_json(Artifact.model_validate(payload)) == canonical_json(payload)
+    assert (
+        validate_artifact(payload, params["benchmark"].model_dump()) == artifact.result
+    )
+    missing = deepcopy(payload)
+    del missing["attempts"][0]["origin_degraded"]
+    with pytest.raises(ValueError, match="U10_SCHEMA_INVALID"):
+        Artifact.model_validate(missing)

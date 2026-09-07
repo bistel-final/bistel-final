@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+from app.agent.read_feedback import summarize_read_history
 from app.agent.release_artifacts import EvidenceError, canonical_json
 from app.agent.u10_comparison import EvidenceIds, Inventory
 
@@ -63,6 +64,7 @@ class ObservationContext:
             "get_metrology_result": [],
         }
         self._successful_calls: list[dict[str, Any]] = []
+        self._read_history: list[dict[str, Any]] = []
 
     def initial_evidence_ids(self) -> EvidenceIds:
         from app.agent.u10_evidence import project_initial_evidence
@@ -169,6 +171,7 @@ class ObservationContext:
                 {"tool": c["tool_name"], "request": c["input"]}
                 for c in self._successful_calls
             ),
+            read_feedback=summarize_read_history(self._read_history),
         ).model_copy(deep=True)
 
     def authorize(
@@ -322,6 +325,26 @@ class ObservationContext:
             raise EvidenceError("U10_OBSERVATION_SCOPE_INVALID")
         return result
 
+    def record_failure(
+        self,
+        tool: str,
+        request: dict[str, Any],
+        status: str,
+        internal: dict[str, Any] | None = None,
+    ) -> None:
+        """Transport failures have no result and never imply missing data."""
+        self.authorize(tool, request, internal)
+        if status not in {"ERROR", "TIMEOUT"}:
+            raise EvidenceError("U10_READ_STATUS_INVALID")
+        self._read_history.append(
+            {
+                "tool_name": tool,
+                "input": deepcopy(request),
+                "status": status,
+                "output": None,
+            }
+        )
+
     def record(
         self,
         tool: str,
@@ -329,8 +352,20 @@ class ObservationContext:
         result: Any,
         internal: dict[str, Any] | None = None,
     ) -> None:
-        """Only validated, identity-bound SUCCESS results enter selector context."""
+        """Bind every result to its request; only SUCCESS becomes evidence."""
         result = self.validate_result(tool, request, result, internal)
+        self._read_history.append(
+            {
+                "tool_name": tool,
+                "input": deepcopy(request),
+                "status": "SUCCESS"
+                if result.ok
+                else "TIMEOUT"
+                if result.reason.startswith("TIMEOUT:")
+                else "ERROR",
+                "output": result.model_dump(mode="json"),
+            }
+        )
         if not result.ok:
             return
         call = {"tool_name": tool, "input": deepcopy(request)}
@@ -364,6 +399,7 @@ class ObservationContext:
                 successful_calls=deepcopy(self._successful_calls),
                 history=tuple(self.results("get_chamber_parameter_history")),
                 metrology=tuple(self.results("get_metrology_result")),
+                read_feedback=summarize_read_history(self._read_history),
             ),
         }
 

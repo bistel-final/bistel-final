@@ -6,6 +6,7 @@ import pytest
 
 from app.agent import release_resume as subject
 from app.agent.release_artifacts import EvidenceError
+from app.agent.release_budget import budget_policy, profile_fields
 from app.agent.release_prepared import RUNTIME_BINDING_FIELDS, config_digest
 from tests.unit.test_agent_release_capture import rig  # noqa: F401
 
@@ -33,6 +34,26 @@ def test_observation_is_live_and_does_not_run_a_second_preflight(rig):  # noqa: 
     assert len(rig[5]) == 4 and len(rig[6]) == 2
     assert not any("readiness" in str(e) for e in rig[7])
     assert all("start" not in call and "create" not in call for call in rig[1].calls)
+
+
+def test_observed_resume_preserves_actual_profile_binding(rig):  # noqa: F811
+    args = arguments(rig)
+    original = args["read"]
+
+    def read(*values):
+        return {
+            **original(*values),
+            **profile_fields("PRODUCTION_WIDE_V1"),
+            "budget_policy": budget_policy("PRODUCTION_WIDE_V1"),
+        }
+
+    args["read"] = read
+    observed, _ = subject.observe_resume(**args)
+    assert (
+        observed["effective_env"]["investigation_budget_profile"]
+        == "PRODUCTION_WIDE_V1"
+    )
+    assert observed["effective_env"]["level3_total"] == 26
 
 
 @pytest.mark.parametrize(

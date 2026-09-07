@@ -18,6 +18,7 @@ from app.agent.release_artifacts import (
     read_private,
     write_private,
 )
+from app.agent.release_budget import budget_policy, profile_fields
 from app.agent.release_lifecycle import classify_state, lifecycle_lock, read_lifecycle
 from app.agent.release_prepared import PreparedAttempt, validate_log_prefix
 from app.agent.u10_integrity import verify_preflight_integrity
@@ -154,6 +155,26 @@ def reseal_capture(bundle, mutate):
     mutate(capture)
     replace(attempt / m.CAPTURE, capture)
     args["capture_sha256"] = component_ref(attempt, m.CAPTURE).sha256
+
+
+def test_wide_readback_is_preserved_by_prepared_writer(bundle):
+    def bind(capture):
+        for value in capture["preflight"]["deployment"]["runtime"][
+            "readbacks"
+        ].values():
+            value.update(
+                **profile_fields("PRODUCTION_WIDE_V1"),
+                budget_policy=budget_policy("PRODUCTION_WIDE_V1"),
+            )
+
+    reseal_capture(bundle, bind)
+    args, _, root, _ = bundle
+    m.issue_prepared(**args)
+    prepared = PreparedAttempt.model_validate(
+        parse_json(read_private(root, m.PREPARED))
+    )
+    assert prepared.effective_env.investigation_budget_profile == "PRODUCTION_WIDE_V1"
+    assert prepared.effective_env.level3_total == 26
 
 
 def test_issue_derives_hashes_ttl_context_and_can_feed_manual_grant(bundle):

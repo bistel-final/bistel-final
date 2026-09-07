@@ -12,8 +12,9 @@ from app.agent.release_artifacts import (
     read_private,
     write_private,
 )
+from app.agent.release_budget import budget_policy, profile_fields
 from app.agent.release_mock import MockTarget, emit_mock_results
-from app.agent.release_round import RoundEvidenceV2, build_round
+from app.agent.release_round import RoundEvidenceV2, budget_policy_sha256, build_round
 from app.agent.release_seal import seal_bundle, verify_seal
 from tests.unit.test_agent_release import AT, ATTEMPT, REV
 from tests.unit.test_agent_release_aggregate import bundle  # noqa: F401
@@ -24,7 +25,7 @@ from tests.unit.test_agent_release_round import template  # noqa: F401
 
 
 @pytest.fixture
-def mock_bundle(bundle, mock_evidence):  # noqa: F811
+def mock_bundle(bundle, mock_evidence, request):  # noqa: F811
     args = dict(bundle)
     published = args["published_root"]
     root = published / "robustness"
@@ -51,6 +52,10 @@ def mock_bundle(bundle, mock_evidence):  # noqa: F811
         published, "evidence/artifacts/PREFLIGHT/db-snapshot.json", preflight
     )
     prepared_value = prepared_v2()
+    profile = getattr(request, "param", None)
+    prepared_value["effective_env"].update(
+        **profile_fields(profile), **budget_policy(profile)
+    )
     prepared_value["preflight_snapshot_sha256"] = preflight_ref.sha256
     prepared = replace(root, "prepared-attempt.json", prepared_value)
     grant = read("smtp-approval-grant.json")
@@ -72,6 +77,8 @@ def mock_bundle(bundle, mock_evidence):  # noqa: F811
     evidence = read("round1.json")
     evidence.pop("batch_summary")
     evidence.update(
+        **profile_fields(profile),
+        budget_policy_sha256=budget_policy_sha256(profile),
         schema_version="level3-round1-v2",
         capture_phase="POST_MOCK_CONVERGENCE",
         action_policy_version="MOCK-NOTIFY-V1",
@@ -83,6 +90,7 @@ def mock_bundle(bundle, mock_evidence):  # noqa: F811
     holds = []
     for run in evidence["runs"]:
         run.update(
+            **profile_fields(profile),
             status="COMPLETED",
             action_policy_version="MOCK-NOTIFY-V1",
             link_type="CREATED",

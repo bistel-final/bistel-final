@@ -269,7 +269,9 @@ def test_selector_prompt_exposes_tokens_but_not_lot_history_ids() -> None:
     )
     payload = react.build_react_select_messages(context)[1]["content"]
     parsed = json.loads(payload)
-    assert parsed["candidates"]["fdc"][0]["id"] == "F1"
+    table = parsed["candidates"]["fdc"]
+    rows = [dict(zip(table["columns"], row, strict=True)) for row in table["rows"]]
+    assert [row["id"] for row in rows] == ["F1", "F2"]
     assert "LH-PHOTO" not in payload
     assert "LH-ETCH" not in payload
 

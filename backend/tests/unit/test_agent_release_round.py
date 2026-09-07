@@ -213,6 +213,38 @@ def synthetic_run(index, lot, chamber):
     )
 
 
+@pytest.mark.parametrize("prompt_suffix", ["ko1", "ko2", "ko3"])
+def test_current_origin_recount_uses_captured_prompt_epoch_without_mutating_answer(
+    prompt_suffix,
+):
+    lot, chamber = sorted(CANONICAL_INCIDENT_KEYS)[0]
+    raw = synthetic_run(0, lot, chamber)
+    raw["hypothesis_prompt_version"] = f"agent-hypothesis-v3-{prompt_suffix}"
+    raw["hypothesis"]["predicted_fault_code"] = "OTH"
+    raw["hypothesis"]["parameter_findings"] = []
+    for read in raw["reads"]:
+        if read["tool"] == "get_fdc_summary":
+            for parameter in read["result"]["parameters"]:
+                parameter.update(
+                    value_min=9.0,
+                    value_mean=10.0,
+                    value_max=11.0,
+                    ctrl_lower=8.0,
+                    ctrl_upper=12.0,
+                    spec_lower=None,
+                    spec_upper=None,
+                    ooc_point_cnt=0,
+                    oos_point_cnt=0,
+                )
+    run = subject.CapturedRun.model_validate(raw)
+    before = canonical_json(run)
+    result, _, _ = subject._assess_run(run)
+    assert result.failed_checks == (
+        ["HYPOTHESIS_RECOUNT_INVALID"] if prompt_suffix == "ko3" else []
+    )
+    assert canonical_json(run) == before
+
+
 @pytest.fixture(scope="module")
 def template():
     return dict(

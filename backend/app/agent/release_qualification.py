@@ -7,6 +7,7 @@ an L2 runtime passed L3 checks. No mail, Kafka, reset, container or network call
 import os
 from pathlib import Path
 
+from app.agent.investigation_budget import persisted_profile, resolve_run_budget
 from app.agent.release_artifacts import (
     EvidenceError,
     canonical_json,
@@ -16,6 +17,7 @@ from app.agent.release_artifacts import (
     validate_report_root,
     write_private,
 )
+from app.agent.release_budget import profile_fields
 from app.agent.release_fence import _read as read_fence
 from app.agent.release_grant import (
     GRANT_NAME,
@@ -25,6 +27,8 @@ from app.agent.release_grant import (
 )
 from app.agent.release_seal import verify_seal
 from app.agent.u10_evaluation import verify_evaluation
+
+_UNSPECIFIED_PROFILE = object()
 
 
 def qualify_release(
@@ -39,6 +43,7 @@ def qualify_release(
     evaluation_receipt: Path,
     benchmark: Path,
     pinned_benchmark_sha256: str,
+    expected_investigation_budget_profile: str | None | object = _UNSPECIFIED_PROFILE,
 ) -> dict:
     """Recount current input bytes; caller-supplied verdicts are never accepted."""
     validate_report_root(root, root, repository)
@@ -58,9 +63,15 @@ def qualify_release(
         raise EvidenceError("RELEASE_THREE_GATE_DENIED")
     round1 = parse_json(files["round1.json"])
     prepared = parse_json(files["prepared-attempt.json"])
+    bound_profile = persisted_profile(3, round1)
+    if expected_investigation_budget_profile is not _UNSPECIFIED_PROFILE:
+        resolve_run_budget(3, expected_investigation_budget_profile)
+        if bound_profile != expected_investigation_budget_profile:
+            raise EvidenceError("RELEASE_QUALIFICATION_BINDING_MISMATCH")
     if (
         round1["action_policy_version"] != "MOCK-NOTIFY-V1"
         or prepared["effective_env"]["AGENT_ACTION_POLICY"] != "MOCK-NOTIFY-V1"
+        or persisted_profile(3, prepared["effective_env"]) != bound_profile
         or set(image_ids) != {"backend", "frontend"}
         or any(
             round1["images"][role]["image_id"] != value
@@ -84,6 +95,7 @@ def qualify_release(
         for name in ("attempt.json", "golden-flow.json", "fault-5class.json")
     }
     output = dict(
+        **profile_fields(bound_profile),
         schema_version="level3-qualification-output-v1",
         attempt_id=expected_attempt_id,
         R=expected_revision,
@@ -169,6 +181,7 @@ def issue_release_grant(
         expected_attempt_id=output["attempt_id"],
         expected_revision=output["R"],
         expected_policy=output["action_policy_version"],
+        expected_investigation_budget_profile=persisted_profile(3, output),
     )
     if os.path.lexists(published / GRANT_NAME):
         existing = read_release_grant(**args)

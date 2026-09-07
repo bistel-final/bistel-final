@@ -153,6 +153,7 @@ def capture(mock_bundle, monkeypatch):  # noqa: F811
     return args, db, calls
 
 
+@pytest.mark.parametrize("mock_bundle", [None, "PRODUCTION_WIDE_V1"], indirect=True)
 def test_all_sources_produce_verified_round_without_new_action(capture):
     args, _, calls = capture
     ref = subject.collect_round(**args)
@@ -160,7 +161,22 @@ def test_all_sources_produce_verified_round_without_new_action(capture):
     assert summary.status_counts == {"COMPLETED": 12}
     assert summary.robustness_verdict == "PASS"
     assert round1.action_policy_version == "MOCK-NOTIFY-V1"
+    assert (
+        round1.investigation_budget_profile
+        == args["prepared"].effective_env.investigation_budget_profile
+    )
     assert calls == ["MOCK_RESULTS"]
+
+
+@pytest.mark.parametrize("mock_bundle", ["PRODUCTION_WIDE_V1"], indirect=True)
+def test_wide_collection_rejects_one_legacy_run_before_publication(capture):
+    args, _, _ = capture
+    value = args["read_runs"]()
+    value["runs"][0].pop("investigation_budget_profile")
+    args["read_runs"] = lambda: value
+    with pytest.raises(EvidenceError, match="ROUND_BUDGET_POLICY_MISMATCH"):
+        subject.collect_round(**args)
+    assert not (args["root"] / "round1.json").exists()
 
 
 def test_unknown_never_becomes_wait_or_pass(capture):

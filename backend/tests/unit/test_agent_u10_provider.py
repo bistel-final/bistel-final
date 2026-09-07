@@ -28,7 +28,7 @@ def config():
     return LlmConfiguration(
         hypothesis_model_revision="actual-model",
         selector_model_revision="actual-model",
-        hypothesis_prompt_version="agent-hypothesis-v3-ko2",
+        hypothesis_prompt_version="agent-hypothesis-v3-ko3",
         selector_prompt_version=REACT_PROMPT_VERSION,
         temperature=0.0,
         seed=13,
@@ -86,7 +86,8 @@ def provider(authorize=lambda _: True, cfg=None):
 
 
 @pytest.mark.parametrize(
-    "old_selector_version", ["agent-react-v2-ko1", "agent-react-v2-ko2"]
+    "old_selector_version",
+    ["agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3"],
 )
 def test_old_prompts_remain_readable_but_cannot_enter_new_live_execution(
     settings, old_selector_version
@@ -111,12 +112,13 @@ def test_old_prompts_remain_readable_but_cannot_enter_new_live_execution(
         validate_runtime_configuration(
             old_selector, old_selector_binding, lambda _: True
         )
-    old = LlmConfiguration.model_validate(
-        {**cfg.model_dump(), "hypothesis_prompt_version": "agent-hypothesis-v3-ko1"}
-    )
-    old_binding = replace(binding, llm_config_sha256=digest(canonical_json(old)))
-    with pytest.raises(EvidenceError, match="LLM_CONFIG_MISMATCH"):
-        validate_runtime_configuration(old, old_binding, lambda _: True)
+    for old_version in ("agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"):
+        old = LlmConfiguration.model_validate(
+            {**cfg.model_dump(), "hypothesis_prompt_version": old_version}
+        )
+        old_binding = replace(binding, llm_config_sha256=digest(canonical_json(old)))
+        with pytest.raises(EvidenceError, match="LLM_CONFIG_MISMATCH"):
+            validate_runtime_configuration(old, old_binding, lambda _: True)
 
 
 def test_selector_module_drift_blocks_admission(settings, monkeypatch):

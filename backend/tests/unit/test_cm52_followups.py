@@ -379,7 +379,12 @@ def test_artifact_preflight_accepts_the_bound_pair(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "prompt",
-    ["agent-hypothesis-v2-ko1", "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2"],
+    [
+        "agent-hypothesis-v2-ko1",
+        "agent-hypothesis-v3-ko1",
+        "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
+    ],
 )
 def test_artifact_preflight_accepts_legacy_and_current_evidence(tmp_path, prompt):
     fault_path, golden_path, _sha, golden_sha, environment = _artifact_pair(tmp_path)

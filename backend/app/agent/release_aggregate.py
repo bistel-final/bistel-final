@@ -207,6 +207,8 @@ def assess_aggregate(
             prepared.R == artifact.R
             and prepared.attempt_id == artifact.reset_attempt_id
             and prepared.images == artifact.images
+            and prepared.effective_env.investigation_budget_profile
+            == artifact.investigation_budget_profile
             and prepared.e2e_level3_preflight_output_sha256
             == artifact.preflight_output_sha256,
             "AGGREGATE_PREPARED_BINDING_MISMATCH",

@@ -19,7 +19,12 @@ from app.agent.prompts import PROMPT_VERSION
 from app.evaluation.fault_5class import FaultEvaluationContractError, validate_artifact
 
 SUPPORTED_PROMPT_VERSIONS = frozenset(
-    {"agent-hypothesis-v2-ko1", "agent-hypothesis-v3-ko1", PROMPT_VERSION}
+    {
+        "agent-hypothesis-v2-ko1",
+        "agent-hypothesis-v3-ko1",
+        "agent-hypothesis-v3-ko2",
+        PROMPT_VERSION,
+    }
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")

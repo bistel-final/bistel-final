@@ -11,11 +11,14 @@ import json
 import time
 from collections import Counter
 from collections.abc import Callable
+from copy import deepcopy
 from threading import Lock
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
+from app.agent.read_feedback import ReasonCode
 from app.agent.release_artifacts import (
     EvidenceError,
     EvidenceModel,
@@ -92,11 +95,15 @@ class ReadRequest(EvidenceModel):
 class ReadObservation(EvidenceModel):
     status: Literal["SUCCESS", "ERROR", "TIMEOUT"]
     evidence_ids: EvidenceIds
+    # Private in-process feedback only; never added to historical ReadCall bytes.
+    reason_code: ReasonCode | None = None
 
     @model_validator(mode="after")
     def failed_has_no_evidence(self) -> ReadObservation:
         if self.status != "SUCCESS" and self.evidence_ids.values:
             raise ValueError("FAILED_READ_EVIDENCE_INVALID")
+        if self.status == "SUCCESS" and self.reason_code is not None:
+            raise ValueError("SUCCESSFUL_READ_FAILURE_CODE_INVALID")
         return self
 
 
@@ -124,6 +131,7 @@ class ReadSession:
         self._invoke = invoke
         self._clock = clock_ns
         self._calls: list[ReadCall] = []
+        self._tool_history: list[dict[str, Any]] = []
         self._selections = 0
         self._tool_counts: Counter[str] = Counter()
         self._reservations = 0
@@ -133,6 +141,18 @@ class ReadSession:
     @property
     def calls(self) -> list[ReadCall]:
         return [call.model_copy(deep=True) for call in self._calls]
+
+    @property
+    def tool_history(self) -> tuple[SimpleNamespace, ...]:
+        """Actual request/outcome ledger, separate from immutable artifact rows."""
+        from app.common.enums import ToolCallStatus
+
+        return tuple(
+            SimpleNamespace(
+                **{**deepcopy(row), "status": ToolCallStatus(row["status"])}
+            )
+            for row in self._tool_history
+        )
 
     def execute(self, request: ReadRequest) -> list[ReadCall]:
         if not self._lock.acquire(blocking=False):
@@ -196,6 +216,20 @@ class ReadSession:
                 evidence_ids=observation.evidence_ids,
             )
             self._calls.append(call)
+            self._tool_history.append(
+                {
+                    "tool_name": tool,
+                    "input": json.loads(body),
+                    "status": call.status,
+                    "error_msg": observation.reason_code,
+                    "output": {
+                        "ok": call.status == "SUCCESS",
+                        "reason": f"{observation.reason_code}: result"
+                        if observation.reason_code
+                        else "",
+                    },
+                }
+            )
             if call.status == "SUCCESS":
                 break
         return self.calls[start_index:]

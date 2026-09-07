@@ -10,7 +10,7 @@ export default function RunInvestigationTimeline({ detail }) {
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-[15px] font-extrabold text-navy">에이전트 조사 타임라인</h2>
         {typeof detail.remaining_read_calls === 'number' && <span className="text-xs text-g1">
-          남은 조회 예산 {detail.remaining_read_calls} / 8
+          남은 조회 예산 {detail.remaining_read_calls} / {detail.investigation_budget?.read_cap ?? 8}
         </span>}
       </div>
       {view.phase !== 'success' ? <p className="mt-3 text-sm text-g1" role="status">{view.message}</p> : (

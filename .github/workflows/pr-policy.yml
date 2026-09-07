@@ -285,6 +285,20 @@ jobs:
           tests/unit/test_agent_selector_efficiency.py
           tests/unit/test_agent_selector_adaptive.py
           tests/unit/test_agent_selector_version_compatibility.py
+          tests/unit/test_agent_document_novelty.py
+          tests/unit/test_agent_investigation_budget.py
+          tests/unit/test_agent_production_budget.py
+          tests/unit/test_agent_production_budget_graph.py
+          tests/unit/test_agent_production_budget_admission.py
+          tests/unit/test_agent_public_investigation_budget.py
+          tests/unit/test_agent_quality_development_cases.py
+          tests/unit/test_agent_quality_probe.py
+          tests/unit/test_agent_read_feedback.py
+          tests/unit/test_agent_candidate_feedback.py
+          tests/unit/test_agent_quality_grounding.py
+          tests/unit/test_agent_u10_failure_feedback.py
+          tests/unit/test_agent_quality_holdout_cases.py
+          tests/unit/test_agent_origin_grounding.py
           tests/unit/test_agent_u10_read_execution.py
           tests/unit/test_agent_u10_react_execution.py
           tests/unit/test_agent_u10_observations.py
@@ -318,6 +332,7 @@ jobs:
           tests/unit/test_agent_release.py
           tests/unit/test_agent_release_evidence.py
           tests/unit/test_agent_release_round.py
+          tests/unit/test_agent_release_budget.py
           tests/unit/test_agent_release_aggregate.py
           tests/unit/test_agent_release_n8n.py
           tests/unit/test_agent_release_database.py

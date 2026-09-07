@@ -325,6 +325,7 @@ class ProductionPorts:
     def qualify(self, *, fence):
         from datetime import UTC, datetime
 
+        from app.agent.investigation_budget import profile_for_new_run
         from app.agent.release_qualification import issue_release_grant
 
         args = dict(
@@ -342,6 +343,7 @@ class ProductionPorts:
             published_root=self.published_root,
             expected_revision=self.revision,
             expected_attempt_id=self.attempt,
+            expected_investigation_budget_profile=profile_for_new_run(3),
             image_ids=self.images,
             artifact=Path(args["--artifact"]),
             evaluation_receipt=Path(args["--evaluation-receipt"]),

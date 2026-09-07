@@ -52,6 +52,12 @@ from sqlalchemy.exc import (
 )
 from sqlalchemy.sql.elements import TextClause
 
+from app.agent.investigation_budget import (
+    RUN_PROFILE_KEY,
+    ProductionProfileId,
+    persisted_profile,
+    resolve_run_budget,
+)
 from app.common.audit import (
     AuditContractError,
     AuditEvent,
@@ -477,6 +483,7 @@ class CreateAgentRunCommand:
     llm_model: str
     retry_of_run_id: str | None = None
     prompt_version: str | None = None
+    investigation_budget_profile: ProductionProfileId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -595,12 +602,13 @@ _INSERT_RUN = text(
         agent_run_id, thread_id, retry_of_run_id, lot_id, chamber_id,
         requested_alarm_source, requested_alarm_id,
         representative_alarm_source, representative_alarm_id,
-        status, autonomy_level, llm_model, prompt_version, latency_ms
+        status, autonomy_level, llm_model, prompt_version, latency_ms, evidence
     ) VALUES (
         :agent_run_id, :thread_id, :retry_of_run_id, :lot_id, :chamber_id,
         :requested_alarm_source, :requested_alarm_id,
         :representative_alarm_source, :representative_alarm_id,
-        :status, :autonomy_level, :llm_model, :prompt_version, 0
+        :status, :autonomy_level, :llm_model, :prompt_version, 0,
+        CAST(:evidence AS jsonb)
     )
     RETURNING {_RUN_COLUMNS}
     """
@@ -648,6 +656,7 @@ def _validate_create_command(
         # 더 만들 수 없도록 DB write 경계에서도 필수값으로 고정한다.
         llm_model=_require_text(command.llm_model, "llm_model"),
         prompt_version=_optional_text(command.prompt_version, "prompt_version"),
+        investigation_budget_profile=command.investigation_budget_profile,
     )
     for alarm in (
         command.requested_alarm,
@@ -668,6 +677,10 @@ def _validate_create_command(
             raise RepositoryContractError(label)
     if command.autonomy_level not in (1, 2, 3):
         raise RepositoryContractError("INVALID_AUTONOMY_LEVEL")
+    try:
+        resolve_run_budget(command.autonomy_level, command.investigation_budget_profile)
+    except ValueError as exc:
+        raise RepositoryContractError(str(exc)) from None
     return normalized
 
 
@@ -725,6 +738,12 @@ def create_agent_run(
                 "autonomy_level": command.autonomy_level,
                 "llm_model": command.llm_model,
                 "prompt_version": command.prompt_version,
+                "evidence": _json_payload(
+                    {RUN_PROFILE_KEY: command.investigation_budget_profile}
+                    if command.investigation_budget_profile is not None
+                    else None,
+                    "evidence",
+                ),
             },
         )
         for alarm in command.member_alarms:
@@ -994,7 +1013,7 @@ def merge_run_action_provenance(
     if (action_policy_version is None) != (member_alarms is None):
         raise RepositoryContractError("ACTION_PROVENANCE_INCOMPLETE")
     if terminal_evidence is not None:
-        reserved = {ACTION_PROVENANCE_KEY, REHYDRATION_SNAPSHOT_KEY}
+        reserved = {ACTION_PROVENANCE_KEY, REHYDRATION_SNAPSHOT_KEY, RUN_PROFILE_KEY}
         if reserved.intersection(terminal_evidence):
             raise RepositoryContractError("ACTION_PROVENANCE_RESERVED")
 
@@ -1187,6 +1206,22 @@ def finish_agent_run(
         after={"status": status.value},
     )
     evidence_json = _json_payload(evidence, "evidence")
+
+    if evidence is not None:
+        current = lock_agent_run(connection, agent_run_id)
+        try:
+            profile = persisted_profile(current.autonomy_level, current.evidence)
+        except ValueError as exc:
+            raise RepositoryContractError(str(exc)) from None
+        if RUN_PROFILE_KEY in evidence and (
+            profile is None or evidence[RUN_PROFILE_KEY] != profile
+        ):
+            raise RepositoryConflict("INVESTIGATION_BUDGET_PROFILE_IMMUTABLE")
+        if profile is not None:
+            # Terminal payload replacement cannot silently erase a run's policy.
+            evidence_json = _json_payload(
+                {**evidence, RUN_PROFILE_KEY: profile}, "evidence"
+            )
 
     def _run() -> Any:
         row = connection.execute(
@@ -1861,6 +1896,7 @@ class ToolBudgetCounts:
     by_tool: Mapping[str, int]
     pending_reservations: int
     autonomy_level: int
+    investigation_budget_profile: ProductionProfileId | None = None
 
 
 #: 예약 row가 쓰는 sentinel.
@@ -1888,7 +1924,8 @@ _TOOL_CALL_COLUMNS = """
 
 #: **run row를 잠근다.** `max(call_seq)+1`은 lock 없이는 두 session이 같은 값을 본다.
 _LOCK_RUN = text(
-    "SELECT autonomy_level FROM agent_run " "WHERE agent_run_id = :run_id FOR UPDATE"
+    "SELECT autonomy_level, evidence FROM agent_run "
+    "WHERE agent_run_id = :run_id FOR UPDATE"
 )
 
 _NEXT_CALL_SEQ = text(
@@ -2138,6 +2175,12 @@ def count_tool_calls_for_budget(
             raise RepositoryContractError("AUTONOMY_LEVEL_INVALID") from None
         if type(autonomy_level) is not int or autonomy_level not in (1, 2, 3):
             raise RepositoryContractError("AUTONOMY_LEVEL_INVALID")
+        try:
+            profile = persisted_profile(
+                autonomy_level, getattr(locked, "evidence", None)
+            )
+        except ValueError as exc:
+            raise RepositoryContractError(str(exc)) from None
         rows = connection.execute(_SELECT_TOOL_CALLS, {"run_id": agent_run_id}).all()
     except AgentRepositoryError:
         raise
@@ -2162,6 +2205,7 @@ def count_tool_calls_for_budget(
         by_tool=by_tool,
         pending_reservations=pending,
         autonomy_level=autonomy_level,
+        investigation_budget_profile=profile,
     )
 
 
