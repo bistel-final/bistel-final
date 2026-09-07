@@ -5,6 +5,7 @@ observed immutable IDs remain private after failure; no speculative ID cleanup.
 """
 
 import os
+import re
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -22,6 +23,7 @@ from app.agent.release_n8n_probe import CallbackObserver, read_smtp_snapshot
 from app.agent.release_prepare import (
     CAPTURE,
     PREFLIGHT,
+    OriginalRetention,
     RestoreContext,
     issue_prepared,
 )
@@ -49,13 +51,30 @@ def observation_client(recipients):
         allow_insecure_http=os.environ.get("CM52_ALLOW_INSECURE_N8N_HTTP") == "true",
     ) as observer:
         session = observer.session
-        pins = {
-            w: dict(
+        pins = {}
+        retention = {}
+        for workflow, identifier in ids.items():
+            value = session.workflow(identifier)
+            pins[workflow] = dict(
                 workflow_id=identifier,
-                version=session.workflow(identifier)["versionId"],
+                version=value["versionId"],
             )
-            for w, identifier in ids.items()
-        }
+            if workflow in {"WF3", "WF4"}:
+                try:
+                    declared = value["_evidence_retention_source"]["declared"]
+                    retention[workflow] = {
+                        key: declared.get(key)
+                        for key in (
+                            "saveDataSuccessExecution",
+                            "saveDataErrorExecution",
+                        )
+                    }
+                except (KeyError, AttributeError, TypeError):
+                    raise EvidenceError("N8N_RETENTION_SOURCE_INVALID") from None
+        try:
+            retention = OriginalRetention.model_validate(retention).model_dump()
+        except Exception:
+            raise EvidenceError("N8N_RETENTION_SOURCE_INVALID") from None
 
         def smtp():
             return read_smtp_snapshot(
@@ -65,7 +84,7 @@ def observation_client(recipients):
                 recipients=recipients,
             ).model_dump()
 
-        yield session, pins, samples, smtp
+        yield session, pins, samples, smtp, retention
 
 
 def adapter(*, repository, report_root, env_file, revision, images, attempt_id):
@@ -203,7 +222,13 @@ def prepare(*, repository, report_root, env_file, attempt_id, lock_fd):
         )
         return parse_json(raw) == {"callback_trail_writable": True}
 
-    with observation_client(recipients) as (api, workflows, samples, smtp):
+    with observation_client(recipients) as (
+        api,
+        workflows,
+        samples,
+        smtp,
+        retention,
+    ):
         capture = collect_preparation(
             runtime_adapter=running_adapter,
             running=running,
@@ -218,6 +243,7 @@ def prepare(*, repository, report_root, env_file, attempt_id, lock_fd):
             mock_workflows={w: workflows[w] for w in ("WF3", "WF4")},
             mock_samples={w: samples[w] for w in ("WF3", "WF4")},
             read_trail_probe=trail_probe,
+            n8n_original_retention=retention,
         )
     capture_ref = write_private(a, CAPTURE, capture)
     pf = capture.preflight
@@ -281,8 +307,32 @@ def cleanup_prepare(a):
     result = cleanup_e2e(context)
     from app.agent.release_retention import verify_restored
 
-    verify_restored(a)
-    return result
+    try:
+        retention = {
+            "status": "RESTORED",
+            "reason_code": None,
+            "observation": verify_restored(a),
+        }
+    except EvidenceError as error:
+        code = str(error)
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code) is None:
+            code = "N8N_RETENTION_RESTORE_FAILED"
+        # This leaf is used only after prepare already failed. Retention is a
+        # separately reported Common-owned restoration observation; it must not
+        # replace the primary failure with CLEANUP_FAILED after E2E removal.
+        retention = {
+            "status": "NOT_VERIFIED",
+            "reason_code": code,
+            "observation": None,
+        }
+    report = {**result, "retention_restore": retention}
+    name = "prepare-cleanup.json"
+    if (a / name).exists():
+        if parse_json(read_private(a, name)) != report:
+            raise EvidenceError("PREPARATION_CLEANUP_REPORT_DRIFT")
+    else:
+        write_private(a, name, report)
+    return report
 
 
 def restore_prepare(*, a, repository, report_root, env_file):

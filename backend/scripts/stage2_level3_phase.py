@@ -110,6 +110,16 @@ def perform(args, report):
             cleanup_result=args.cleanup_result,
             restore_result=args.restore_result,
         )
+        cleanup_report = a / "prepare-cleanup.json"
+        if cleanup_report.exists():
+            value = parse_json(read_private(a, cleanup_report.name))
+            if (
+                type(value) is not dict
+                or value.get("result") != args.cleanup_result
+                or type(value.get("retention_restore")) is not dict
+            ):
+                raise EvidenceError("PREPARATION_CLEANUP_REPORT_INVALID")
+            result["retention_restore"] = value["retention_restore"]
         write_private(a, "prepare-failure.json", result)
         return result
     raw = read_private(root, "prepared-attempt.json")

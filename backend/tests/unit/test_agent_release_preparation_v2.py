@@ -124,6 +124,13 @@ def test_new_policy_capture_requires_independent_mes_probes(rig, tmp_path, reten
         },
         mock_samples=dict(WF3="30", WF4="40"),
         read_trail_probe=lambda: True,
+        n8n_original_retention={
+            workflow: {
+                "saveDataSuccessExecution": "DEFAULT",
+                "saveDataErrorExecution": "DEFAULT",
+            }
+            for workflow in ("WF3", "WF4")
+        },
     )
     if retention == "none":
         with pytest.raises(EvidenceError, match="N8N_EXECUTION_RETENTION_REQUIRED"):

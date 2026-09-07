@@ -54,7 +54,13 @@ def current_runtime(*, repository, report_root, env_file, attempt_id):
 
 def live_binding(**args):
     a, prepared, running, runtime = current_runtime(**args)
-    with observation_client(prepared.recipient.canonical_addresses) as (_, _, _, smtp):
+    with observation_client(prepared.recipient.canonical_addresses) as (
+        _,
+        _,
+        _,
+        smtp,
+        _,
+    ):
         return observe_resume(
             runtime_adapter=runtime,
             running=running,
@@ -215,6 +221,7 @@ def collect_workload(*, resume_at, **args):
         workflows,
         _,
         smtp,
+        _,
     ):
         ref = collect_round(
             root=a / "robustness",

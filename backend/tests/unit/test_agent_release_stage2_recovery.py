@@ -583,7 +583,7 @@ def test_restore_bound_previous_pair_checks_sha_before_mutation_and_after_recrea
 @pytest.mark.parametrize(
     "fault", [None, "redirect", "status", "oversized", "malformed", "reason"]
 )
-def test_restore_api_is_real_schema_fixed_get_without_redirect_or_retry(fault):
+def test_restore_api_is_real_schema_fixed_get_without_redirect(fault):
     calls = []
     body = {
         "fault_5class": None,
@@ -609,12 +609,67 @@ def test_restore_api_is_real_schema_fixed_get_without_redirect_or_retry(fault):
         return httpx.Response(200, json=body)
 
     if fault is None:
-        subject.verify_evaluation_api("empty", transport=httpx.MockTransport(handler))
+        subject.verify_evaluation_api(
+            "empty", transport=httpx.MockTransport(handler), timeout_seconds=0
+        )
     else:
         with pytest.raises(
             EvidenceError, match="^STAGE2_RESTORE_EVALUATION_API_FAILED$"
         ):
             subject.verify_evaluation_api(
-                "empty", transport=httpx.MockTransport(handler)
+                "empty", transport=httpx.MockTransport(handler), timeout_seconds=0
             )
     assert len(calls) == 1
+
+
+def test_restore_api_retries_transient_startup_failures_within_bound():
+    calls = []
+    now = [0.0]
+    body = {
+        "fault_5class": None,
+        "golden_flow": None,
+        "fault_5class_empty_reason": "NOT_CONFIGURED",
+        "golden_flow_empty_reason": "NOT_CONFIGURED",
+    }
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503 if len(calls) < 3 else 200, json=body)
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    subject.verify_evaluation_api(
+        "empty",
+        transport=httpx.MockTransport(handler),
+        timeout_seconds=5,
+        retry_interval=1,
+        monotonic=lambda: now[0],
+        sleep=sleep,
+    )
+    assert len(calls) == 3 and now[0] == 2
+
+
+def test_restore_api_retry_stops_at_deadline():
+    calls = []
+    now = [0.0]
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503)
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    with pytest.raises(
+        EvidenceError, match="^STAGE2_RESTORE_EVALUATION_API_FAILED$"
+    ):
+        subject.verify_evaluation_api(
+            "empty",
+            transport=httpx.MockTransport(handler),
+            timeout_seconds=2,
+            retry_interval=1,
+            monotonic=lambda: now[0],
+            sleep=sleep,
+        )
+    assert len(calls) == 3 and now[0] == 2

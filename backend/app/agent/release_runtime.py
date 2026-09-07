@@ -13,6 +13,7 @@ import io
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,7 @@ from app.agent.release_prepared import (
 )
 from app.agent.release_production import read_env
 from app.agent.u10_images import docker_inspect
+from app.agent.u10_readiness import ProbeResponse, fetch_gateway
 
 SERVICES = {"backend": "backend", "frontend": "frontend", "runner": "e2e-runner"}
 PROJECT = "bistel-team-e2e"
@@ -43,6 +45,9 @@ OPTIONAL_SECRET_MOUNTS = {
     "/run/secrets/kafka_client_password",
 }
 _ZERO_START = "0001-01-01T00:00:00Z"
+_HEALTH_FORMAT = "{{json .State.Health.Status}}"
+START_TIMEOUT_SECONDS = 120
+START_POLL_SECONDS = 2
 
 # Do not expose Config.Env, other labels, secret source paths or raw inspect.
 # Only the runner's command is projected (to check that it is inert).
@@ -162,6 +167,11 @@ class ComposeRuntime:
         inspect_image=docker_inspect,
         action_policy="ACTION-POLICY-V1",
         trail_run_id=None,
+        fetch=fetch_gateway,
+        sleep=time.sleep,
+        monotonic=time.monotonic,
+        start_timeout=START_TIMEOUT_SECONDS,
+        start_poll=START_POLL_SECONDS,
     ):
         # Validate every argument before any Docker I/O. Stage2 must perform
         # its own pre-team-down gate too; we also check actual mount sources.
@@ -181,6 +191,16 @@ class ComposeRuntime:
                 }
             )
             if any(type(v) is not int or v < 0 for v in (uid, gid)):
+                raise ValueError
+            if (
+                not callable(fetch)
+                or not callable(sleep)
+                or not callable(monotonic)
+                or type(start_timeout) is not int
+                or not 1 <= start_timeout <= START_TIMEOUT_SECONDS
+                or type(start_poll) is not int
+                or not 1 <= start_poll <= start_timeout
+            ):
                 raise ValueError
             if any(
                 not isinstance(p, Path) or not p.is_absolute()
@@ -209,6 +229,11 @@ class ComposeRuntime:
         self.user = f"{uid}:{gid}"
         self.run = run
         self.inspect_image = inspect_image
+        self.fetch = fetch
+        self.sleep = sleep
+        self.monotonic = monotonic
+        self.start_timeout = start_timeout
+        self.start_poll = start_poll
         # Compose gives exported host values precedence over --env-file. Pin the
         # private file's bytes and remove its keys from the child environment;
         # never allow the host's DB/recipient/credential values to shadow it.
@@ -329,10 +354,10 @@ class ComposeRuntime:
                 ):
                     raise ValueError
                 mounts = {m.destination: m for m in c.mounts}
-                # Compose file-backed secrets can be copied into the container
-                # rather than represented as Docker bind mounts. /reports is the
-                # only required mount; tolerate the two read-only secret mounts
-                # when a Docker/Compose version happens to expose them.
+                # Compose environment-sourced secrets may be materialized as
+                # container files without appearing in Docker's bind-mount
+                # projection. /reports is the only required inspect mount;
+                # tolerate explicitly projected read-only secret mounts too.
                 expected = {"/reports"} if role != "frontend" else set()
                 optional = OPTIONAL_SECRET_MOUNTS if role != "frontend" else set()
                 if (
@@ -422,8 +447,50 @@ class ComposeRuntime:
     def start(self, created: RuntimeSnapshot) -> RuntimeSnapshot:
         ids = self._recheck(created, "created")
         # Start immutable IDs, never resolve a mutable tag/service to a new
-        # container here. Frontend readiness is subsequently checked by U10.
+        # container here. Kafka/MES must already be healthy (prepare orders it).
         self._command(["docker", "start", *[ids[r] for r in SERVICES]], timeout=120)
+        deadline = self.monotonic() + self.start_timeout
+        while True:
+            ready = False
+            try:
+                health = parse_json(
+                    self._command(
+                        [
+                            "docker",
+                            "container",
+                            "inspect",
+                            "--format",
+                            _HEALTH_FORMAT,
+                            ids["backend"],
+                        ]
+                    )
+                )
+                if health not in {"starting", "healthy", "unhealthy"}:
+                    raise EvidenceError("LEVEL3_RUNTIME_CONTAINER_INVALID")
+                if health == "healthy":
+                    responses = [
+                        self.fetch(path) for path in ("/", "/api/health/ready")
+                    ]
+                    ready = all(
+                        type(response) is ProbeResponse
+                        and response.status_code == 200
+                        and type(response.body) is bytes
+                        for response in responses
+                    )
+            except EvidenceError as error:
+                # A single local HTTP miss/status is the expected startup race.
+                # Docker command/contract failures are not readiness retries.
+                if str(error) not in {
+                    "U10_READINESS_HTTP_FAILED",
+                    "U10_READINESS_HTTP_STATUS_INVALID",
+                }:
+                    raise
+            if ready:
+                break
+            remaining = deadline - self.monotonic()
+            if remaining <= 0:
+                raise EvidenceError("LEVEL3_RUNTIME_START_TIMEOUT")
+            self.sleep(min(self.start_poll, remaining))
         return self._stable(ids, "running")
 
     def verify_running(self, runtime: RuntimeSnapshot) -> None:
