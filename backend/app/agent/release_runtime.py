@@ -44,6 +44,7 @@ OPTIONAL_SECRET_MOUNTS = {
     "/run/secrets/kafka_client_user",
     "/run/secrets/kafka_client_password",
 }
+SECRET_SERVICES = ("backend", "runner")
 _ZERO_START = "0001-01-01T00:00:00Z"
 _HEALTH_FORMAT = "{{json .State.Health.Status}}"
 START_TIMEOUT_SECONDS = 120
@@ -446,9 +447,23 @@ class ComposeRuntime:
 
     def start(self, created: RuntimeSnapshot) -> RuntimeSnapshot:
         ids = self._recheck(created, "created")
-        # Start immutable IDs, never resolve a mutable tag/service to a new
-        # container here. Kafka/MES must already be healthy (prepare orders it).
-        self._command(["docker", "start", *[ids[r] for r in SERVICES]], timeout=120)
+        # Compose owns the start path so environment-backed secrets are
+        # materialized exactly as they were during create. `start` must not
+        # recreate containers; prove that by comparing all IDs immediately
+        # before and after it, then check the two required secret files without
+        # reading their contents. Kafka/MES must already be healthy (prepare
+        # orders it).
+        self._command(
+            self.compose + ["start", *SERVICES.values()],
+            timeout=120,
+        )
+        if self._ids() != ids:
+            raise EvidenceError("LEVEL3_RUNTIME_DRIFT")
+        for role in SECRET_SERVICES:
+            for secret in sorted(OPTIONAL_SECRET_MOUNTS):
+                self._command(
+                    self.compose + ["exec", "-T", SERVICES[role], "test", "-f", secret]
+                )
         deadline = self.monotonic() + self.start_timeout
         while True:
             ready = False

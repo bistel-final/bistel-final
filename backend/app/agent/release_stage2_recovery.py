@@ -49,9 +49,10 @@ def _verify_evaluation_api_once(previous_state, *, transport, timeout):
                     raw.extend(chunk)
                     if len(raw) > 1024 * 1024:
                         raise ValueError
-        value = AgentEvaluationResponse.model_validate(
-            parse_json(bytes(raw)), strict=True
-        )
+        # This is a JSON API boundary. Its enum values are JSON strings, not
+        # pre-built Python Enum instances; normal model validation still keeps
+        # the DTO's exact literals, bounds and extra-field policy fail-closed.
+        value = AgentEvaluationResponse.model_validate(parse_json(bytes(raw)))
         for artifact, reason in (
             (value.fault_5class, value.fault_5class_empty_reason),
             (value.golden_flow, value.golden_flow_empty_reason),
