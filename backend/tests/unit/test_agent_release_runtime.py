@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import importlib.util
 import json
 import os
@@ -36,6 +35,7 @@ class Docker:
         self.payloads = {}
         self.id_lists = {r: [] for r in m.SERVICES}
         self.labels = {r: REV for r in m.SERVICES}
+        self.secret_mount_roles = set()
         self.hook = lambda argv: None
 
     def image(self, kind, image):
@@ -76,10 +76,19 @@ class Docker:
                         "rw": r == "runner",
                         "source": str(self.root),
                     },
-                    *[
-                        {"destination": s, "type": "bind", "rw": False, "source": None}
-                        for s in sorted(m.SECRETS)
-                    ],
+                    *(
+                        [
+                            {
+                                "destination": destination,
+                                "type": "bind",
+                                "rw": False,
+                                "source": None,
+                            }
+                            for destination in sorted(m.OPTIONAL_SECRET_MOUNTS)
+                        ]
+                        if r in self.secret_mount_roles
+                        else []
+                    ),
                 ],
             }
 
@@ -308,7 +317,7 @@ def test_created_image_mismatch_prevents_start(rig, role):
         "frontend_image",
         "runner_image",
         "command",
-        "missing_secret",
+        "missing_reports",
         "reports_source",
         "runner_user",
         "init",
@@ -327,8 +336,8 @@ def test_bad_initial_creation_rejected_not_just_later_drift(rig, case):
             fake.payloads[IDS[role]]["image_id"] = "sha256:" + "e" * 64
         elif case == "command":
             runner["runner"]["command"] = ["uvicorn", "app.main:app"]
-        elif case == "missing_secret":
-            runner["mounts"] = runner["mounts"][:1]
+        elif case == "missing_reports":
+            runner["mounts"] = []
         elif case == "reports_source":
             runner["mounts"][0]["source"] = "/other/reports"
         elif case == "runner_user":
@@ -396,32 +405,58 @@ def test_runner_must_be_inert_with_same_user_and_workdir(rig, key, value):
     "change",
     [
         "missing_reports",
-        "missing_secret",
         "duplicate",
         "wrong_source",
         "reports_readonly",
-        "secret_rw",
         "volume",
     ],
 )
-def test_runner_mount_secret_contract(rig, change):
+def test_runner_reports_mount_contract(rig, change):
     runtime, fake, _ = rig
     created = runtime.create()
     mounts = fake.payloads[IDS["runner"]]["mounts"]
     if change == "missing_reports":
         mounts.pop(0)
-    elif change == "missing_secret":
-        mounts.pop()
     elif change == "duplicate":
-        mounts[-1] = copy.deepcopy(mounts[0])
+        mounts.append(dict(mounts[0]))
     elif change == "wrong_source":
         mounts[0]["source"] = "/wrong/reports"
     elif change == "reports_readonly":
         mounts[0]["rw"] = False
-    elif change == "secret_rw":
-        mounts[-1]["rw"] = True
     else:
         mounts[0]["type"] = "volume"
+    with pytest.raises(EvidenceError, match="DRIFT"):
+        runtime.start(created)
+    assert not fake.actions("start")
+
+
+@pytest.mark.parametrize("role", ["backend", "runner"])
+def test_file_backed_secrets_need_no_docker_mount(rig, role):
+    runtime, fake, _ = rig
+    created = runtime.create()
+    assert [mount["destination"] for mount in fake.payloads[IDS[role]]["mounts"]] == [
+        "/reports"
+    ]
+    assert runtime.start(created).phase == "running"
+
+
+@pytest.mark.parametrize("role", ["backend", "runner"])
+def test_optional_readonly_secret_mounts_are_harmless(rig, role):
+    runtime, fake, _ = rig
+    fake.secret_mount_roles.add(role)
+    assert runtime.start(runtime.create()).phase == "running"
+
+
+@pytest.mark.parametrize("role", ["backend", "runner"])
+@pytest.mark.parametrize("change", ["wrong_source", "wrong_access"])
+def test_reports_mount_source_and_access_mode_are_pinned(rig, role, change):
+    runtime, fake, _ = rig
+    created = runtime.create()
+    reports = fake.payloads[IDS[role]]["mounts"][0]
+    if change == "wrong_source":
+        reports["source"] = "/wrong/reports"
+    else:
+        reports["rw"] = not reports["rw"]
     with pytest.raises(EvidenceError, match="DRIFT"):
         runtime.start(created)
     assert not fake.actions("start")
