@@ -1117,9 +1117,13 @@ team down/복원·reset·승인·lock·preflight·workload 선택·artifact 발�
   Level 3 전용 override로 Compose가 3개 service를 `--no-build --pull never --no-recreate`로
   **생성만** 하고, 실제 `.Image`/project/service/상태를 두 번 확인한다. `create`의 생성 전용·
   빌드/당겨오기 옵션은 [Docker 공식 계약](https://docs.docker.com/reference/cli/docker/compose/create/)을 따른다.
-- `start(created)`: 관측한 ID/image/설정/created 상태를 다시 대조한 뒤 **그 container ID 3개만**
-  `docker start`한다. 이미 started/recreated된 대상은 재사용하지 않는다. running 상태와
-  StartedAt를 다시 관측하며, frontend readiness 및 DB/effective env는 이후 A preflight가 맡는다.
+- `start(created)`: 관측한 ID/image/설정/created 상태를 다시 대조한 뒤 같은 Compose 모델로
+  `compose start backend frontend e2e-runner`한다. 직전·직후 세 container ID가 하나라도 바뀌면
+  즉시 거부하고, backend와 runner에서 `/run/secrets/kafka_client_user`·
+  `/run/secrets/kafka_client_password`가 실제 파일로 materialize됐는지 내용 조회 없이 확인한다.
+  이미 started/recreated된 대상은 재사용하지 않는다. backend health와 frontend `/` 및
+  `/api/health/ready` 200을 상한 내 대기한 뒤 running 상태와 StartedAt를 다시 관측하며,
+  DB/effective env의 상세 계약은 이후 A preflight가 맡는다.
 - `exec_runner(running, argv)`: 세 service의 ID·StartedAt/설정 drift를 재확인하고 동일 runner에
   `docker exec --user … --workdir /workspace/backend`한다. `compose run --rm`이나 재생성은 없다.
   **이 함수 자체가 grant를 검증하지 않는다.** Stage2 owner가 같은 lifecycle lock 안에서
@@ -1404,7 +1408,10 @@ E2E 부재는 `CLEANUP_E2E_ABSENT`를 포함한 NOT_ATTEMPTED다. 정본 §0′�
 
 복원은 E2E 잔존 0→production fence CLOSED→고정 이미지의 read-only quiescence 프로세스→
 env 3키/이전 artifact 2경로의 expected bytes 재확인·원자 교체→인프라/고정 application pair
-복원→A Level2 preflight/이전 artifact/실 env/평가 API 확인→OPEN 순서다. env 교체를 비협조
+복원→A Level2 preflight/이전 artifact/실 env/평가 API 확인→OPEN 순서다. 평가 API는 최대 90초
+상한 안에서 재시도하고, JSON으로 직렬화된 bound 응답의 enum 문자열을 정상 DTO 입력으로
+검증한다(`model_validate(..., strict=True)`로 Python Enum 인스턴스를 요구하지 않는다). empty/bound
+상태의 값/사유 XOR, literal·범위·추가 필드 금지는 공개 DTO가 계속 검사한다. env 교체를 비협조
 외부 writer와의 전역 원자 transaction이라고 주장하지 않는다. U10 기존 CLI 입력은 host 변수
 `CM52_U10_ARTIFACT`·`CM52_U10_EVALUATION_RECEIPT`·`CM52_U10_BENCHMARK`·
 `CM52_U10_BENCHMARK_SHA256`로 전달하며 누락/실패를 저장된 PASS로 대신하지 않는다.

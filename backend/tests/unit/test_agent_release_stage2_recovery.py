@@ -622,6 +622,30 @@ def test_restore_api_is_real_schema_fixed_get_without_redirect(fault):
     assert len(calls) == 1
 
 
+def test_restore_api_accepts_bound_response_serialized_by_public_dto(tmp_path):
+    from app.agent.evaluation_read_model import load_agent_evaluations
+    from tests.unit.test_agent_evaluation_read_model import (
+        _fault_artifact,
+        _golden_artifact,
+    )
+
+    fault_path = tmp_path / "fault.json"
+    golden_path = tmp_path / "golden.json"
+    fault_path.write_text(json.dumps(_fault_artifact()), encoding="utf-8")
+    golden_path.write_text(json.dumps(_golden_artifact()), encoding="utf-8")
+    body = load_agent_evaluations(
+        fault_path=str(fault_path), golden_path=str(golden_path)
+    ).model_dump(mode="json")
+    assert body["fault_5class"] is not None and body["golden_flow"] is not None
+
+    def handler(_request):
+        return httpx.Response(200, json=body)
+
+    subject.verify_evaluation_api(
+        "bound", transport=httpx.MockTransport(handler), timeout_seconds=0
+    )
+
+
 def test_restore_api_retries_transient_startup_failures_within_bound():
     calls = []
     now = [0.0]
@@ -661,9 +685,7 @@ def test_restore_api_retry_stops_at_deadline():
     def sleep(seconds):
         now[0] += seconds
 
-    with pytest.raises(
-        EvidenceError, match="^STAGE2_RESTORE_EVALUATION_API_FAILED$"
-    ):
+    with pytest.raises(EvidenceError, match="^STAGE2_RESTORE_EVALUATION_API_FAILED$"):
         subject.verify_evaluation_api(
             "empty",
             transport=httpx.MockTransport(handler),

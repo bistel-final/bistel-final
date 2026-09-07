@@ -36,6 +36,7 @@ class Docker:
         self.id_lists = {r: [] for r in m.SERVICES}
         self.labels = {r: REV for r in m.SERVICES}
         self.secret_mount_roles = set()
+        self.missing_secret = None
         self.health = ["healthy"]
         self.hook = lambda argv: None
 
@@ -101,9 +102,24 @@ class Docker:
             role = next(r for r, s in m.SERVICES.items() if s == service)
             return "\n".join(self.id_lists[role]).encode()
         if argv[1] == "compose":
-            assert "create" in argv
-            self.fill()
-            return b""
+            if "create" in argv:
+                self.fill()
+                return b""
+            if "start" in argv:
+                assert argv[-4:] == ["start", *m.SERVICES.values()]
+                for cid in IDS.values():
+                    self.payloads[cid].update(
+                        running=True, status="running", started_at=AT
+                    )
+                return b""
+            if "exec" in argv:
+                service = argv[argv.index("-T") + 1]
+                role = next(r for r, s in m.SERVICES.items() if s == service)
+                assert argv[-3:-1] == ["test", "-f"]
+                if self.missing_secret == (role, argv[-1]):
+                    raise RuntimeError("missing secret")
+                return b""
+            raise AssertionError(argv)
         if argv[1] == "container":
             if argv[-2] == m._HEALTH_FORMAT:
                 value = self.health[0]
@@ -111,16 +127,15 @@ class Docker:
                     self.health.pop(0)
                 return json.dumps(value).encode()
             return json.dumps(self.payloads[argv[-1]]).encode()
-        if argv[1] == "start":
-            for cid in argv[2:]:
-                self.payloads[cid].update(running=True, status="running", started_at=AT)
-            return b""
         if argv[1] == "exec":
             return b"synthetic-output\n"
         raise AssertionError(argv)
 
     def actions(self, verb):
         return [c for c in self.calls if isinstance(c[0], list) and c[0][1] == verb]
+
+    def compose_actions(self, verb):
+        return [c for c in self.actions("compose") if verb in c[0]]
 
 
 @pytest.fixture
@@ -153,13 +168,19 @@ def test_create_inspect_start_same_persistent_runner(rig):
     assert not fake.actions("start") and not fake.actions("exec")
     running = runtime.start(created)
     assert running.prepared_containers().runner.container_id == IDS["runner"]
-    assert fake.actions("start")[0][0] == ["docker", "start", *IDS.values()]
+    assert not fake.actions("start")
+    assert fake.compose_actions("start")[0][0][-4:] == [
+        "start",
+        *m.SERVICES.values(),
+    ]
     for _ in range(2):
         assert (
             runtime.exec_runner(running, ["python", "scripts/synthetic.py"])
             == b"synthetic-output\n"
         )
-    assert len(fake.actions("compose")) == len(fake.actions("start")) == 1
+    assert len(fake.compose_actions("create")) == 1
+    assert len(fake.compose_actions("start")) == 1
+    assert len(fake.compose_actions("exec")) == 4
     assert len(fake.actions("exec")) == 2
     for call in fake.actions("exec"):
         assert call[0] == [
@@ -447,6 +468,39 @@ def test_environment_sourced_secrets_need_no_docker_mount(rig, role):
     assert runtime.start(created).phase == "running"
 
 
+@pytest.mark.parametrize("role", m.SECRET_SERVICES)
+@pytest.mark.parametrize("secret", sorted(m.OPTIONAL_SECRET_MOUNTS))
+def test_start_requires_materialized_kafka_secret_files(rig, role, secret):
+    runtime, fake, _ = rig
+    created = runtime.create()
+    fake.missing_secret = (role, secret)
+    with pytest.raises(EvidenceError, match="COMMAND_FAILED"):
+        runtime.start(created)
+    assert len(fake.compose_actions("start")) == 1
+    assert not fake.actions("start")
+
+
+def test_compose_start_must_preserve_all_created_container_ids(rig):
+    runtime, fake, _ = rig
+    created = runtime.create()
+    started = False
+
+    def replace_after_start(argv):
+        nonlocal started
+        if argv[1] == "compose" and "start" in argv:
+            started = True
+        elif started and argv[1] == "ps":
+            role = next(r for r, s in m.SERVICES.items() if s in argv[-1])
+            if role == "frontend":
+                fake.id_lists[role] = ["f" * 64]
+
+    fake.hook = replace_after_start
+    with pytest.raises(EvidenceError, match="DRIFT"):
+        runtime.start(created)
+    assert len(fake.compose_actions("start")) == 1
+    assert not fake.compose_actions("exec")
+
+
 @pytest.mark.parametrize("role", ["backend", "runner"])
 def test_optional_readonly_secret_mounts_are_harmless(rig, role):
     runtime, fake, _ = rig
@@ -493,7 +547,7 @@ def test_start_waits_for_backend_health_and_gateway_before_stable_observation(ri
     start_index = next(
         index
         for index, call in enumerate(fake.calls)
-        if isinstance(call[0], list) and call[0][1] == "start"
+        if isinstance(call[0], list) and call[0][1] == "compose" and "start" in call[0]
     )
     first_observe = next(
         index
@@ -569,7 +623,8 @@ def test_start_twice_is_rejected_without_second_start(rig):
     runtime.start(created)
     with pytest.raises(EvidenceError, match="DRIFT"):
         runtime.start(created)
-    assert len(fake.actions("start")) == 1
+    assert len(fake.compose_actions("start")) == 1
+    assert not fake.actions("start")
 
 
 @pytest.mark.parametrize("role", m.SERVICES)
@@ -827,7 +882,9 @@ def test_failure_does_not_retry_or_implicitly_restore_or_issue_receipt(rig, verb
         snapshot = runtime.start(snapshot)
 
     def fail(argv):
-        if argv[1] == verb:
+        if (verb == "start" and argv[1] == "compose" and "start" in argv) or (
+            verb != "start" and argv[1] == verb
+        ):
             raise RuntimeError(SECRET)
 
     fake.hook = fail
@@ -840,7 +897,8 @@ def test_failure_does_not_retry_or_implicitly_restore_or_issue_receipt(rig, verb
         else:
             runtime.exec_runner(snapshot, ["python", "scripts/synthetic.py"])
     assert SECRET not in str(exc.value)
-    assert len(fake.actions(verb)) == 1
+    actions = fake.compose_actions("start") if verb == "start" else fake.actions(verb)
+    assert len(actions) == 1
     assert set(args["report_root"].iterdir()) == before
     assert all(
         c[0][1] in {"ps", "container", "compose", "start", "exec"}
