@@ -263,6 +263,9 @@ if (
 LLM_PROVIDER = get_env("LLM_PROVIDER", "ollama")
 LLM_MODEL_MAIN = get_env("LLM_MODEL_MAIN", "qwen2.5:7b-instruct")
 LLM_TEMPERATURE = float(get_env("LLM_TEMPERATURE", "0.1"))
-LLM_MAX_TOKENS = get_int_env("LLM_MAX_TOKENS", "1500", minimum=1)
+# 1500은 STANDARD 예산 기준이다. 넓은 예산(PRODUCTION_WIDE_V1)에서는 가설 JSON이
+# 1500 토큰에서 잘려 HYPOTHESIS_STRUCTURE_INVALID가 났다(2026-09-07 팀장 PC 12-run ·
+# U10 출력 토큰 1477~1500 관측).
+LLM_MAX_TOKENS = get_int_env("LLM_MAX_TOKENS", "3000", minimum=1)
 LLM_TIMEOUT_SEC = get_int_env("LLM_TIMEOUT_SEC", "60", minimum=1)
 OLLAMA_BASE_URL = get_env("OLLAMA_BASE_URL", "http://localhost:11434")
