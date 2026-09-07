@@ -87,20 +87,24 @@ const nodeLabel = (step, selected, incidentScopeLabel = null) => {
   )
 }
 
+// 시연 가독성: 단계 간 세로 간격을 넓히고 좌우 가지를 벌려 노드·라벨이 겹치지 않게 한다.
+// 왼쪽 열 = 입력·근거 수집·근거 충분성 판단, 오른쪽 열 = 진단·조치·전달·기록. 두 열로 나눠 화면을 구분한다.
 const FLOW_LAYOUT = Object.freeze({
-  alarm: { x: 292, y: 0 },
-  tools: { x: 292, y: 108 },
-  fdc: { x: 34, y: 226 },
-  rag: { x: 292, y: 226 },
-  graph: { x: 550, y: 226 },
-  assessment: { x: 314, y: 356, decision: true },
-  react: { x: 28, y: 384, experimental: true },
-  diagnosis: { x: 292, y: 500 },
-  prediction: { x: 292, y: 610 },
-  action: { x: 314, y: 720, decision: true },
-  approval: { x: 80, y: 852 },
-  delivery: { x: 510, y: 852 },
-  audit: { x: 292, y: 966 },
+  alarm: { x: 330, y: 0 },
+  tools: { x: 330, y: 150 },
+  fdc: { x: 20, y: 310 },
+  rag: { x: 330, y: 310 },
+  graph: { x: 640, y: 310 },
+  // 마름모(122px)와 일반 노드(220px)의 중심을 맞추기 위해 결정 노드 x는 +49.
+  assessment: { x: 379, y: 480, decision: true },
+  react: { x: 10, y: 512, experimental: true },
+  // 오른쭉 열은 근거 충분성 판단과 같은 높이에서 시작해 화살표가 수평으로 건너간다.
+  diagnosis: { x: 1180, y: 495, leftEntry: true },
+  prediction: { x: 1180, y: 645 },
+  action: { x: 1229, y: 795, decision: true },
+  approval: { x: 940, y: 965 },
+  delivery: { x: 1440, y: 965 },
+  audit: { x: 1180, y: 1125 },
 })
 
 const edgeStyle = Object.freeze({ stroke: '#8095a9', strokeWidth: 1.65 })
@@ -114,7 +118,7 @@ const flowEdge = (id, source, target, options = {}) => ({
   markerEnd: { type: MarkerType.ArrowClosed, color: options.experimental ? '#9b8bab' : '#8095a9' },
   style: options.experimental ? experimentEdgeStyle : edgeStyle,
   label: options.label,
-  labelStyle: { fill: options.experimental ? '#776783' : '#64788b', fontSize: 11.5, fontWeight: 700 },
+  labelStyle: { fill: options.experimental ? '#776783' : '#64788b', fontSize: 12.5, fontWeight: 700 },
   labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.94 },
   sourceHandle: options.sourceHandle,
   targetHandle: options.targetHandle,
@@ -128,7 +132,7 @@ const FLOW_EDGES = Object.freeze([
   flowEdge('fdc-assessment', 'fdc', 'assessment'),
   flowEdge('rag-assessment', 'rag', 'assessment'),
   flowEdge('graph-assessment', 'graph', 'assessment'),
-  flowEdge('assessment-diagnosis', 'assessment', 'diagnosis', { label: '근거 충분 · 현재 진행', sourceHandle: 'bottom' }),
+  flowEdge('assessment-diagnosis', 'assessment', 'diagnosis', { label: '근거 충분 · 현재 진행', sourceHandle: 'right', targetHandle: 'left' }),
   flowEdge('assessment-react', 'assessment', 'react', { label: '근거 일부 부족 · 추가 수집', sourceHandle: 'left', experimental: true }),
   flowEdge('react-tools', 'react', 'tools', { label: '필요 Tool 선택', targetHandle: 'left', experimental: true }),
   flowEdge('diagnosis-prediction', 'diagnosis', 'prediction'),
@@ -158,7 +162,7 @@ function DecisionNode({ data, selected }) {
 function ToolPlanNode({ data, selected }) {
   return (
     <div
-      className="relative flex min-h-[84px] w-[180px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5"
+      className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5"
       style={{ border: `${selected ? 2.5 : 1.25}px solid ${selected ? data.color : '#cad5df'}`, boxShadow: selected ? `0 0 0 4px ${data.color}12` : '0 2px 7px rgba(15,23,42,.05)' }}
     >
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
@@ -176,7 +180,7 @@ const routedStepStyle = (selected, color) => ({
 
 function ApprovalStepNode({ data, selected }) {
   return (
-    <div className="relative flex min-h-[84px] w-[180px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
+    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="right" type="source" position={Position.Right} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       {data.label}
@@ -186,7 +190,7 @@ function ApprovalStepNode({ data, selected }) {
 
 function DeliveryStepNode({ data, selected }) {
   return (
-    <div className="relative flex min-h-[84px] w-[180px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
+    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="left" type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="bottom" type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
@@ -736,7 +740,8 @@ function AgentExecutionFlow({ detail, alarm }) {
     const [, color] = STEP_META[step.id]
     const layout = FLOW_LAYOUT[step.id]
     const decision = layout.decision
-    const toolPlan = step.id === 'tools'
+    // 진단 노드는 왼쪽 열(근거 충분성 판단)에서 들어오는 화살표를 받도록 왼쪽 입구가 있는 노드 형태를 쓴다.
+    const toolPlan = step.id === 'tools' || layout.leftEntry === true
     const routedStep = step.id === 'approval' ? 'approvalStep' : step.id === 'delivery' ? 'deliveryStep' : null
     return {
       id: step.id,
@@ -746,7 +751,7 @@ function AgentExecutionFlow({ detail, alarm }) {
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       draggable: false,
-      style: decision || toolPlan || routedStep ? undefined : { width: 180, minHeight: 84, borderRadius: 10, border: `${selected ? 2.5 : 1.25}px ${layout.experimental ? 'dashed' : 'solid'} ${selected ? color : '#cad5df'}`, background: selected ? `${color}12` : layout.experimental ? '#faf8fc' : '#fff', boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
+      style: decision || toolPlan || routedStep ? undefined : { width: 220, minHeight: 92, borderRadius: 10, border: `${selected ? 2.5 : 1.25}px ${layout.experimental ? 'dashed' : 'solid'} ${selected ? color : '#cad5df'}`, background: selected ? `${color}12` : layout.experimental ? '#faf8fc' : '#fff', boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
     }
   }), [incidentScopeLabel, selectedId, steps])
   const selected = steps.find((step) => step.id === selectedId) ?? steps[0]
@@ -817,7 +822,7 @@ function AgentExecutionFlow({ detail, alarm }) {
             <div className="relative min-h-0 flex-1">
               <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0">
                 <div className="min-h-0 flex-1 bg-soft/40">
-                  <ReactFlow nodeTypes={NODE_TYPES} nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.035 }} minZoom={0.55} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => selectNode(node.id)} onPaneClick={() => setDetailOpen(false)} deleteKeyCode={null} proOptions={{ hideAttribution: true }} aria-label="Agent 실행 흐름">
+                  <ReactFlow nodeTypes={NODE_TYPES} nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.08 }} minZoom={0.55} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => selectNode(node.id)} onPaneClick={() => setDetailOpen(false)} deleteKeyCode={null} proOptions={{ hideAttribution: true }} aria-label="Agent 실행 흐름">
                     <Panel position="top-left" className="!m-2 flex items-center gap-3 rounded-lg border border-line bg-white/95 px-3.5 py-2.5 text-[11.5px] font-bold text-g2 shadow-sm">
                       <span className="flex items-center gap-1.5"><i className="h-px w-5 bg-slate-500" />현재 실행</span>
                       <span className="flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-[#9b8bab]" />C-7.1 실험 확장</span>

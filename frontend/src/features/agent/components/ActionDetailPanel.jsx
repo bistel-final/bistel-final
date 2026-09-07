@@ -8,6 +8,8 @@ import EmptyState from '../../../shared/components/EmptyState.jsx'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { approvalClass, approvalLabel } from '../../../shared/components/ui/statusStyles.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
+import N8nWorkflowModal from './N8nWorkflowModal.jsx'
+import { workflowsForAction } from '../n8n/workflow-select.js'
 
 // 값이 없으면 창작하지 않고 "—" 로 표기한다 (규칙: 데이터 창작 금지)
 const DASH = '—'
@@ -27,6 +29,7 @@ function Field({ label, children }) {
 // 디자인 v2 간소화: soft 박스 안에 kv 그리드 + 원인 분류 + 연관 알람만 남긴다
 function ActionDetailPanel({ actionId }) {
   const [detail, setDetail] = useState(null)
+  const [workflowOpen, setWorkflowOpen] = useState(false)
   const [error, setError] = useState(null)
 
   // actionId가 바뀌면 load가 새로 만들어져 useEffect가 다시 돈다.
@@ -105,8 +108,14 @@ function ActionDetailPanel({ actionId }) {
       </div>
 
       <div className="rounded-lg border border-line bg-white px-3.5 py-3">
-        <div className="mb-2 text-[11px] font-bold text-g2">조치 전달 흐름</div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[11px] font-bold text-g2">조치 전달 흐름</div>
+          {workflowsForAction(action).length > 0 && (
+            <button type="button" onClick={() => setWorkflowOpen(true)} className="text-[11.5px] font-bold text-blue hover:underline">n8n 워크플로 보기</button>
+          )}
+        </div>
         <DeliveryFlow action={action} compact />
+        {workflowOpen && <N8nWorkflowModal workflows={workflowsForAction(action)} action={action} onClose={() => setWorkflowOpen(false)} />}
       </div>
 
       {fault ? (

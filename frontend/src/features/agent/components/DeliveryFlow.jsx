@@ -3,31 +3,50 @@ import Badge from '../../../shared/components/ui/Badge.jsx'
 import { deliveryStatusMeta } from '../delivery-flow-state.js'
 import { isNotificationAction, MES_MOCK_NOTICE } from '../notification-state.js'
 
-const routeOf = (actionCode, approvalStatus, notification) => {
-  if (actionCode === 'MONITORING') return ['내부 기록']
-  if (actionCode === 'WARNING') return ['EMAIL', 'n8n', 'SMTP']
-  if (notification) return ['n8n · 조치 알림', 'Kafka · 요청', 'MES Mock', 'Kafka · 모의 응답', 'n8n · 결과 반영']
-  if (approvalStatus === 'REJECTED') return ['승인 요청', '승인 반려', 'Kafka 미발행']
-  return ['승인 요청 EMAIL', '사람 승인', 'Kafka', 'MES Mock', 'write-back']
+// n8n 워크플로 경로 — 각 단계는 시스템 이름과 workflow 역할을 함께 보여 준다.
+// channel은 그 단계의 상태를 어느 전달 기록에서 읽을지 정한다(EMAIL 또는 MES).
+const STAGE = (system, role, channel = null) => ({ system, role, channel })
+const laneOf = (actionCode, approvalStatus, notification) => {
+  if (actionCode === 'MONITORING') return [[STAGE('Agent', '내부 기록')]]
+  if (actionCode === 'WARNING') return [[STAGE('Agent', '경고 알림 요청'), STAGE('n8n WF2', '이메일 알림', 'EMAIL'), STAGE('SMTP', '수신자 발송', 'EMAIL')]]
+  if (notification) return [
+    [STAGE('Agent', '조치 알림 요청'), STAGE('n8n WF2', '이메일 알림', 'EMAIL'), STAGE('SMTP', '수신자 발송', 'EMAIL')],
+    [STAGE('Agent', 'HOLD 요청'), STAGE('n8n WF3', 'MES 요청 검증 · 발행', 'MES'), STAGE('Kafka', 'fdc.actions 요청', 'MES'), STAGE('MES Mock', '모의 처리', 'MES'), STAGE('Kafka', 'fdc.actions.result 모의 응답', 'MES'), STAGE('n8n WF4', '결과 반영 · 시스템 콜백', 'MES')],
+  ]
+  if (approvalStatus === 'REJECTED') return [[STAGE('Agent', '승인 요청'), STAGE('운영자', '승인 반려'), STAGE('Kafka', '미발행')]]
+  return [[STAGE('Agent', '승인 요청 EMAIL', 'EMAIL'), STAGE('운영자', '사람 승인'), STAGE('n8n WF3', 'MES 요청 발행', 'MES'), STAGE('Kafka', 'fdc.actions', 'MES'), STAGE('MES Mock', '모의 처리', 'MES'), STAGE('n8n WF4', 'write-back', 'MES')]]
+}
+
+const stageTone = (status) => {
+  if (status === 'SENT') return 'border-tint-green-line bg-state-green-bg text-green-dark'
+  if (status === 'FAILED') return 'border-tint-red-line bg-row-red text-red'
+  if (status === 'WAITING' || status === 'SENDING') return 'border-tint-amber-line bg-tint-amber text-tint-amber-text'
+  return 'border-line bg-soft text-g1'
 }
 
 function DeliveryFlow({ action, compact = false }) {
   if (!action) return <div className="text-[12px] text-g2">조치가 아직 생성되지 않았습니다.</div>
   const deliveries = action.deliveries ?? []
   const notification = isNotificationAction(action)
-  const route = routeOf(action.action_code, action.approval_status, notification)
+  const lanes = laneOf(action.action_code, action.approval_status, notification)
+  const statusOf = (channel) => deliveries.find((delivery) => delivery.channel === channel)?.status ?? null
 
   return (
     <div className="flex flex-col gap-3" data-testid="delivery-flow">
-      <div className="text-[11px] text-g2">연동 경로 안내 · 실제 진행 상태는 아래 전달 기록 기준입니다.</div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {route.map((step, index) => (
-          <span key={step} className="inline-flex items-center gap-1.5">
-            <span className="rounded-md border border-line bg-soft px-2.5 py-1 font-mono text-[10.5px] font-bold text-g1">
-              {step}
-            </span>
-            {index < route.length - 1 && <span className="text-[12px] font-bold text-blue">→</span>}
-          </span>
+      <div className="text-[11px] text-g2">n8n 워크플로 연동 경로 · 단계 색은 전달 기록 상태(초록 완료 · 노랑 진행 · 빨강 실패)를 따릅니다.</div>
+      <div className="flex flex-col gap-2">
+        {lanes.map((lane, laneIndex) => (
+          <div key={laneIndex} className="flex flex-wrap items-stretch gap-1.5">
+            {lane.map((stage, index) => (
+              <span key={`${stage.system}-${stage.role}`} className="inline-flex items-center gap-1.5">
+                <span className={`flex min-w-[96px] flex-col rounded-lg border px-2.5 py-1.5 ${stageTone(stage.channel ? statusOf(stage.channel) : null)}`}>
+                  <span className="font-mono text-[10.5px] font-extrabold">{stage.system}</span>
+                  <span className="text-[10.5px] font-semibold">{stage.role}</span>
+                </span>
+                {index < lane.length - 1 && <span className="text-[13px] font-bold text-blue">→</span>}
+              </span>
+            ))}
+          </div>
         ))}
       </div>
       {action.action_code === 'MONITORING' && deliveries.length === 0 ? (

@@ -6,11 +6,13 @@ import Button from '../../../shared/components/ui/Button.jsx'
 import { actionCodeVariant } from '../../../shared/components/ui/statusStyles.js'
 import { approvalText } from './agentModel.js'
 import DeliveryFlow from './DeliveryFlow.jsx'
+import N8nWorkflowModal from './N8nWorkflowModal.jsx'
+import { workflowsForAction } from '../n8n/workflow-select.js'
 import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
 import { isNotificationAction } from '../notification-state.js'
 
-// 근거 · 조치 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
+// 분석 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
 // 이전 시안의 상세 모달 안에서 C-5.2의 공개 근거·승인·감사 계약을 함께 제공한다.
 const TABS = [
   { key: 'rag', label: 'RAG 문서 근거' },
@@ -44,6 +46,7 @@ function RunDetailModal({
 }) {
   const [tab, setTab] = useState('rag')
   const [decidedBy, setDecidedBy] = useState('')
+  const [workflowOpen, setWorkflowOpen] = useState(false)
   const [comment, setComment] = useState('')
   if (!open) return null
 
@@ -79,7 +82,7 @@ function RunDetailModal({
       >
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div>
-            <div className="text-[15px] font-extrabold text-ink">근거 · 조치 상세</div>
+            <div className="text-[15px] font-extrabold text-ink">분석 상세</div>
             <div className="mt-0.5 font-mono text-[11px] text-g2">
               {run.agent_run_id} · {run.fault_code} · {actionCode}
             </div>
@@ -138,8 +141,16 @@ function RunDetailModal({
               </div>
 
               <div>
-                <div className="mb-1.5 text-[11px] font-bold text-g2">조치 전달 흐름</div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <div className="text-[11px] font-bold text-g2">조치 전달 흐름</div>
+                  {workflowsForAction(action).length > 0 && (
+                    <Button sm variant="outline" onClick={() => setWorkflowOpen(true)}>n8n 워크플로 보기</Button>
+                  )}
+                </div>
                 <DeliveryFlow action={action} />
+                {workflowOpen && (
+                  <N8nWorkflowModal workflows={workflowsForAction(action)} action={action} onClose={() => setWorkflowOpen(false)} />
+                )}
               </div>
 
               {notification ? (

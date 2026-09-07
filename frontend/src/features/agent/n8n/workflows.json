@@ -1,0 +1,612 @@
+{
+ "WF2": {
+  "name": "WF2-notify-email",
+  "nodes": [
+   {
+    "name": "Email Webhook",
+    "type": "webhook",
+    "position": [
+     0,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Verify Email Auth",
+    "type": "code",
+    "position": [
+     220,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Email Authenticated",
+    "type": "if",
+    "position": [
+     440,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Validate Email Payload",
+    "type": "code",
+    "position": [
+     660,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "Email Payload Valid",
+    "type": "if",
+    "position": [
+     880,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "Send Email",
+    "type": "emailSend",
+    "position": [
+     1100,
+     -180
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "name": "Build Email Callback",
+    "type": "code",
+    "position": [
+     1320,
+     -180
+    ],
+    "onError": null
+   },
+   {
+    "name": "Email Callback Configured",
+    "type": "if",
+    "position": [
+     1540,
+     -180
+    ],
+    "onError": null
+   },
+   {
+    "name": "Post Email Callback",
+    "type": "httpRequest",
+    "position": [
+     1760,
+     -260
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "name": "Classify Email Callback",
+    "type": "code",
+    "position": [
+     1980,
+     -260
+    ],
+    "onError": null
+   },
+   {
+    "name": "Email Callback Succeeded",
+    "type": "if",
+    "position": [
+     2200,
+     -260
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond Email Accepted",
+    "type": "respondToWebhook",
+    "position": [
+     2420,
+     -340
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond Email Callback Failed",
+    "type": "respondToWebhook",
+    "position": [
+     2420,
+     -180
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond Email Unauthorized",
+    "type": "respondToWebhook",
+    "position": [
+     660,
+     140
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond Email Invalid",
+    "type": "respondToWebhook",
+    "position": [
+     1100,
+     40
+    ],
+    "onError": null
+   }
+  ],
+  "edges": [
+   {
+    "source": "Email Webhook",
+    "target": "Verify Email Auth",
+    "output": 0
+   },
+   {
+    "source": "Verify Email Auth",
+    "target": "Email Authenticated",
+    "output": 0
+   },
+   {
+    "source": "Email Authenticated",
+    "target": "Validate Email Payload",
+    "output": 0
+   },
+   {
+    "source": "Email Authenticated",
+    "target": "Respond Email Unauthorized",
+    "output": 1
+   },
+   {
+    "source": "Validate Email Payload",
+    "target": "Email Payload Valid",
+    "output": 0
+   },
+   {
+    "source": "Email Payload Valid",
+    "target": "Send Email",
+    "output": 0
+   },
+   {
+    "source": "Email Payload Valid",
+    "target": "Respond Email Invalid",
+    "output": 1
+   },
+   {
+    "source": "Send Email",
+    "target": "Build Email Callback",
+    "output": 0
+   },
+   {
+    "source": "Send Email",
+    "target": "Build Email Callback",
+    "output": 1
+   },
+   {
+    "source": "Build Email Callback",
+    "target": "Email Callback Configured",
+    "output": 0
+   },
+   {
+    "source": "Email Callback Configured",
+    "target": "Post Email Callback",
+    "output": 0
+   },
+   {
+    "source": "Email Callback Configured",
+    "target": "Respond Email Callback Failed",
+    "output": 1
+   },
+   {
+    "source": "Post Email Callback",
+    "target": "Classify Email Callback",
+    "output": 0
+   },
+   {
+    "source": "Post Email Callback",
+    "target": "Classify Email Callback",
+    "output": 1
+   },
+   {
+    "source": "Classify Email Callback",
+    "target": "Email Callback Succeeded",
+    "output": 0
+   },
+   {
+    "source": "Email Callback Succeeded",
+    "target": "Respond Email Accepted",
+    "output": 0
+   },
+   {
+    "source": "Email Callback Succeeded",
+    "target": "Respond Email Callback Failed",
+    "output": 1
+   }
+  ]
+ },
+ "WF3": {
+  "name": "WF3-mes-hold",
+  "nodes": [
+   {
+    "name": "MES Webhook",
+    "type": "webhook",
+    "position": [
+     0,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Verify MES Auth",
+    "type": "code",
+    "position": [
+     220,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "MES Authenticated",
+    "type": "if",
+    "position": [
+     440,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Validate MES Payload",
+    "type": "code",
+    "position": [
+     660,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "MES Payload Valid",
+    "type": "if",
+    "position": [
+     880,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "Prepare Kafka Event",
+    "type": "code",
+    "position": [
+     1100,
+     -180
+    ],
+    "onError": null
+   },
+   {
+    "name": "Publish MES Hold",
+    "type": "kafka",
+    "position": [
+     1320,
+     -180
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "name": "Build Kafka Failure Callback",
+    "type": "code",
+    "position": [
+     1540,
+     -80
+    ],
+    "onError": null
+   },
+   {
+    "name": "Kafka Failure Callback Configured",
+    "type": "if",
+    "position": [
+     1760,
+     -80
+    ],
+    "onError": null
+   },
+   {
+    "name": "Post Kafka Failure Callback",
+    "type": "httpRequest",
+    "position": [
+     1980,
+     -160
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "name": "Classify Kafka Failure Callback",
+    "type": "code",
+    "position": [
+     2200,
+     -160
+    ],
+    "onError": null
+   },
+   {
+    "name": "Kafka Failure Callback Succeeded",
+    "type": "if",
+    "position": [
+     2420,
+     -160
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond MES Accepted",
+    "type": "respondToWebhook",
+    "position": [
+     1540,
+     -280
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond MES Failure Recorded",
+    "type": "respondToWebhook",
+    "position": [
+     2640,
+     -240
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond MES Callback Failed",
+    "type": "respondToWebhook",
+    "position": [
+     2640,
+     -80
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond MES Unauthorized",
+    "type": "respondToWebhook",
+    "position": [
+     660,
+     140
+    ],
+    "onError": null
+   },
+   {
+    "name": "Respond MES Invalid",
+    "type": "respondToWebhook",
+    "position": [
+     1100,
+     40
+    ],
+    "onError": null
+   }
+  ],
+  "edges": [
+   {
+    "source": "MES Webhook",
+    "target": "Verify MES Auth",
+    "output": 0
+   },
+   {
+    "source": "Verify MES Auth",
+    "target": "MES Authenticated",
+    "output": 0
+   },
+   {
+    "source": "MES Authenticated",
+    "target": "Validate MES Payload",
+    "output": 0
+   },
+   {
+    "source": "MES Authenticated",
+    "target": "Respond MES Unauthorized",
+    "output": 1
+   },
+   {
+    "source": "Validate MES Payload",
+    "target": "MES Payload Valid",
+    "output": 0
+   },
+   {
+    "source": "MES Payload Valid",
+    "target": "Prepare Kafka Event",
+    "output": 0
+   },
+   {
+    "source": "MES Payload Valid",
+    "target": "Respond MES Invalid",
+    "output": 1
+   },
+   {
+    "source": "Prepare Kafka Event",
+    "target": "Publish MES Hold",
+    "output": 0
+   },
+   {
+    "source": "Publish MES Hold",
+    "target": "Respond MES Accepted",
+    "output": 0
+   },
+   {
+    "source": "Publish MES Hold",
+    "target": "Build Kafka Failure Callback",
+    "output": 1
+   },
+   {
+    "source": "Build Kafka Failure Callback",
+    "target": "Kafka Failure Callback Configured",
+    "output": 0
+   },
+   {
+    "source": "Kafka Failure Callback Configured",
+    "target": "Post Kafka Failure Callback",
+    "output": 0
+   },
+   {
+    "source": "Kafka Failure Callback Configured",
+    "target": "Respond MES Callback Failed",
+    "output": 1
+   },
+   {
+    "source": "Post Kafka Failure Callback",
+    "target": "Classify Kafka Failure Callback",
+    "output": 0
+   },
+   {
+    "source": "Post Kafka Failure Callback",
+    "target": "Classify Kafka Failure Callback",
+    "output": 1
+   },
+   {
+    "source": "Classify Kafka Failure Callback",
+    "target": "Kafka Failure Callback Succeeded",
+    "output": 0
+   },
+   {
+    "source": "Kafka Failure Callback Succeeded",
+    "target": "Respond MES Failure Recorded",
+    "output": 0
+   },
+   {
+    "source": "Kafka Failure Callback Succeeded",
+    "target": "Respond MES Callback Failed",
+    "output": 1
+   }
+  ]
+ },
+ "WF4": {
+  "name": "WF4-result-writeback",
+  "nodes": [
+   {
+    "name": "MES Result Trigger",
+    "type": "kafkaTrigger",
+    "position": [
+     0,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Validate MES Result",
+    "type": "code",
+    "position": [
+     240,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "MES Result Valid",
+    "type": "if",
+    "position": [
+     480,
+     0
+    ],
+    "onError": null
+   },
+   {
+    "name": "Discard Invalid Result",
+    "type": "code",
+    "position": [
+     720,
+     120
+    ],
+    "onError": null
+   },
+   {
+    "name": "Build Result Callback",
+    "type": "code",
+    "position": [
+     720,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "Result Callback Configured",
+    "type": "if",
+    "position": [
+     960,
+     -100
+    ],
+    "onError": null
+   },
+   {
+    "name": "Fail Result Callback Configuration",
+    "type": "code",
+    "position": [
+     1200,
+     20
+    ],
+    "onError": null
+   },
+   {
+    "name": "Post Result Callback",
+    "type": "httpRequest",
+    "position": [
+     1200,
+     -180
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "name": "Classify Result Callback",
+    "type": "code",
+    "position": [
+     1440,
+     -180
+    ],
+    "onError": null
+   }
+  ],
+  "edges": [
+   {
+    "source": "MES Result Trigger",
+    "target": "Validate MES Result",
+    "output": 0
+   },
+   {
+    "source": "Validate MES Result",
+    "target": "MES Result Valid",
+    "output": 0
+   },
+   {
+    "source": "MES Result Valid",
+    "target": "Build Result Callback",
+    "output": 0
+   },
+   {
+    "source": "MES Result Valid",
+    "target": "Discard Invalid Result",
+    "output": 1
+   },
+   {
+    "source": "Build Result Callback",
+    "target": "Result Callback Configured",
+    "output": 0
+   },
+   {
+    "source": "Result Callback Configured",
+    "target": "Post Result Callback",
+    "output": 0
+   },
+   {
+    "source": "Result Callback Configured",
+    "target": "Fail Result Callback Configuration",
+    "output": 1
+   },
+   {
+    "source": "Post Result Callback",
+    "target": "Classify Result Callback",
+    "output": 0
+   },
+   {
+    "source": "Post Result Callback",
+    "target": "Classify Result Callback",
+    "output": 1
+   }
+  ]
+ }
+}
