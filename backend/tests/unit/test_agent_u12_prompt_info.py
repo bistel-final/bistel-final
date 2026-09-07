@@ -256,5 +256,5 @@ def test_normal_contrast_and_four_history_results_share_existing_message_cap():
 
 def test_payload_enrichment_keeps_existing_prompt_and_size_contract():
     assert prompts.PROMPT_VERSION == "agent-hypothesis-v3-ko3"
-    assert prompts.MAX_PROMPT_CHARS == 12_000
+    assert prompts.MAX_PROMPT_CHARS == 48_000
     assert prompts.MAX_PROMPT_WAFER_OBSERVATIONS == 6

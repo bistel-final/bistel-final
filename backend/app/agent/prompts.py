@@ -29,7 +29,11 @@ from app.common.tool_contracts import (
 )
 
 PROMPT_VERSION: Final = "agent-hypothesis-v3-ko3"
-MAX_PROMPT_CHARS: Final = 12_000
+# 12_000은 STANDARD(읽기 8회) 예산 기준이었다. PRODUCTION_WIDE_V1(읽기 24회·문서
+# 8회)에서는 근거 JSON이 3배 가까이 늘어 2026-09-07 팀장 PC 12-run에서 12건 중 11건이
+# HYPOTHESIS_PROMPT_TOO_LARGE로 실패했다. 실측 STANDARD 프롬프트 입력은 약 4.3k 토큰
+# (≈12k자)이므로 4배 여유를 둔다.
+MAX_PROMPT_CHARS: Final = 48_000
 MAX_DOCUMENT_EXCERPT_CHARS: Final = 500
 MAX_PROMPT_MEMBER_ALARMS: Final = 12
 MAX_PROMPT_WAFER_OBSERVATIONS: Final = 6

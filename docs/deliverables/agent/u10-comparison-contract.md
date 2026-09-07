@@ -24,7 +24,7 @@ ko3부터의 private selector 입력 계약은 production과 U10에서 같은 me
 상태를 삭제하지 않고, 현재 guard를 통과할 수 있는지를 `available` 열로 표시한다. 이는 도구
 우선순위·순서·호출을 강제하지 않으며 실제 호출 직전 authoritative history로 guard를 재검사한다.
 성공한 문서 검색어는 `observations.document_queries`에 중복 없이 전달해 새 검색 필요성을
-판단하게 한다. raw query·private 관측은 공개 trace에 추가하지 않으며 기존 12,000자/GT
+판단하게 한다. raw query·private 관측은 공개 trace에 추가하지 않으며 기존 가설 프롬프트 상한(48,000자 · 2026-09-07 PRODUCTION_WIDE_V1 실측 반영, 이전 12,000자)/GT
 차단을 유지한다. 후보가 커도 조용히 잘라내지 않고 상한 초과 시 provider 호출 전에 차단한다.
 
 조사 목적은 모든 후보 소진이나 확정 진단이 아니라, 관측으로 뒷받침되는 가설·점검 제안이다.
