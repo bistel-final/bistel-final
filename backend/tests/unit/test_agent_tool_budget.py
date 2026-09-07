@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from app.agent import repository as repo
 from app.agent import tools as subject
 from app.agent.repository import (
     ToolBudgetCounts,
@@ -23,11 +24,13 @@ def _counts(
     by_tool: dict[str, int],
     *,
     pending: int = 0,
+    autonomy_level: int = 2,
 ) -> ToolBudgetCounts:
     return ToolBudgetCounts(
         total=sum(by_tool.values()),
         by_tool=by_tool,
         pending_reservations=pending,
+        autonomy_level=autonomy_level,
     )
 
 
@@ -152,6 +155,88 @@ def test_send_usage_never_releases_a_non_send_slot() -> None:
         subject._budget_block_code(counts, "search_documents") == "TOOL_BUDGET_RESERVED"
     )
     assert subject._budget_block_code(counts, "send_action") is None
+
+
+def test_level_three_uses_eight_read_and_two_send_slots() -> None:
+    reads = _counts(
+        {
+            "get_fdc_summary": 2,
+            "get_equipment_context": 2,
+            "search_documents": 4,
+        },
+        autonomy_level=3,
+    )
+    assert subject._budget_block_code(reads, "search_documents") == (
+        "TOOL_BUDGET_RESERVED"
+    )
+    assert subject._budget_block_code(reads, "send_action") is None
+    snapshot = subject._budget_snapshot(reads)
+    assert snapshot.max_calls == 10
+    assert snapshot.send_budget == 2
+
+
+@pytest.mark.parametrize("autonomy_level", [1, 2])
+def test_level_one_and_two_keep_six_read_and_two_send_slots(
+    autonomy_level: int,
+) -> None:
+    reads = _counts(
+        {
+            "get_fdc_summary": 2,
+            "get_equipment_context": 2,
+            "search_documents": 2,
+        },
+        autonomy_level=autonomy_level,
+    )
+    assert subject._budget_block_code(reads, "search_documents") == (
+        "TOOL_BUDGET_RESERVED"
+    )
+    assert subject._budget_snapshot(reads).max_calls == 8
+
+
+def test_unknown_run_autonomy_level_fails_closed() -> None:
+    counts = _counts({}, autonomy_level=4)
+    with pytest.raises(subject.ToolBoundaryError, match="AUTONOMY_LEVEL_INVALID"):
+        subject._budget_snapshot(counts)
+
+
+@pytest.mark.parametrize("level", [None, True, 2.0, "2", 0, 4, "MISSING"])
+def test_budget_repository_rejects_schema_drift_before_reading_calls(level):
+    row = (
+        SimpleNamespace()
+        if level == "MISSING"
+        else SimpleNamespace(autonomy_level=level)
+    )
+    calls = []
+
+    def execute(statement, parameters):
+        calls.append(statement)
+        return SimpleNamespace(one_or_none=lambda: row)
+
+    connection = SimpleNamespace(in_transaction=lambda: True, execute=execute)
+    with pytest.raises(repo.RepositoryContractError, match="AUTONOMY_LEVEL_INVALID"):
+        repo.count_tool_calls_for_budget(connection, "RUN-1")
+    assert calls == [repo._LOCK_RUN]
+
+
+@pytest.mark.parametrize("level", [1, 2, 3])
+def test_budget_repository_uses_the_locked_run_level(level):
+    calls = []
+
+    def execute(statement, parameters):
+        calls.append(statement)
+        return SimpleNamespace(
+            one_or_none=lambda: SimpleNamespace(autonomy_level=level), all=lambda: []
+        )
+
+    connection = SimpleNamespace(in_transaction=lambda: True, execute=execute)
+    counts = repo.count_tool_calls_for_budget(connection, "RUN-1")
+    assert counts.autonomy_level == level
+    assert calls == [repo._LOCK_RUN, repo._SELECT_TOOL_CALLS]
+
+
+def test_budget_snapshot_has_no_implicit_level_two_default():
+    with pytest.raises(TypeError, match="autonomy_level"):
+        ToolBudgetCounts(total=0, by_tool={}, pending_reservations=0)
 
 
 def test_sentinel_is_preserved_in_the_snapshot_and_total_policy() -> None:

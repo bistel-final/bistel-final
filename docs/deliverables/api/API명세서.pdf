@@ -4,7 +4,7 @@
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R 21 0 R 23 0 R 25 0 R 27 0 R 29 0 R 31 0 R 33 0 R 35 0 R 37 0 R 39 0 R 41 0 R 43 0 R 45 0 R 47 0 R 49 0 R 51 0 R 53 0 R 55 0 R 57 0 R 59 0 R 61 0 R 63 0 R 65 0 R 67 0 R 69 0 R 71 0 R] /Count 34 >>
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R 21 0 R 23 0 R 25 0 R 27 0 R 29 0 R 31 0 R 33 0 R 35 0 R 37 0 R 39 0 R 41 0 R 43 0 R 45 0 R 47 0 R 49 0 R 51 0 R 53 0 R 55 0 R 57 0 R 59 0 R 61 0 R 63 0 R 65 0 R 67 0 R 69 0 R 71 0 R 73 0 R 75 0 R 77 0 R 79 0 R] /Count 38 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
@@ -682,7 +682,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 18 0 R >>
 endobj
 20 0 obj
-<< /Length 7999 >>
+<< /Length 8130 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
 (": "string"}}, "chunk_seq": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "int) Tj T*
@@ -719,7 +719,9 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("schema": {"type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}) Tj T*
 (}}, "type": "object"}, "type": "array"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (20 GET /agent/runs/{run_id}) Tj T*
-(RULES []) Tj T*
+(RULES ["delivery_policy \\ub204\\ub77d\\uc740 ACTION-POLICY-V1 \\ud638\\ud658\\uc774\\uba70 MOCK-NOTIFY-V1\\uc740) Tj T*
+( \\uc2b9\\uc778/\\ubc18\\ub824\\u00b7\\ud655\\uc778 \\uae30\\ub85d \\uc5c6\\uc774 \\uc774\\uba54\\uc77c \\ubc0f \\uc790\\u) Tj T*
+(b3d9 Kafka/MES Mock\\uc744 \\uc5f0\\ub3d9\\ud55c\\ub2e4; \\uc2b9\\uc778 \\uc0c1\\ud0dc\\ub294 null\\uc774\\ub2e4"]) Tj T*
 ({"request": {"body": null, "header": {}, "path": {"run_id": {"nullable": false, "required": true, "schema) Tj T*
 (": {"min_length": 1, "type": "string"}}}, "query": {}}, "responses": {"200": {"schema": {"additional_prop) Tj T*
 (erties": false, "fields": {"action": {"nullable": true, "required": true, "schema": {"additional_properti) Tj T*
@@ -733,32 +735,30 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "started_at": {"nullable) Tj T*
 (": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "status": {"nullable": f) Tj T*
 (alse, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNOWN") Tj T*
-(, "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "reason": {"nullable": false, "r) Tj T*
-(equired": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}}, "action_id": {"nulla) Tj T*
-(ble": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable") Tj T*
-(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "alarm_id": {"nullable": false) Tj T*
-(, "required": true, "schema": {"min_length": 1, "type": "string"}}, "alarm_source": {"nullable": false, ") Tj T*
-(required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}, "approval": {"nullab) Tj T*
-(le": true, "required": true, "schema": {"additional_properties": false, "fields": {"action_id": {"nullabl) Tj T*
-(e": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable":) Tj T*
-( false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "approval_id": {"nullable": fal) Tj T*
-(se, "required": true, "schema": {"min_length": 1, "type": "string"}}, "decided_at": {"nullable": true, "r) Tj T*
-(equired": true, "schema": {"format": "date-time", "type": "string"}}, "decided_by": {"nullable": true, "r) Tj T*
-(equired": true, "schema": {"type": "string"}}, "decision_comment": {"nullable": true, "required": true, ") Tj T*
-(schema": {"type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["APPROV) Tj T*
-(ED", "PENDING", "REJECTED"], "type": "string"}}}, "type": "object"}}, "approval_id": {"nullable": true, ") Tj T*
-(required": true, "schema": {"min_length": 1, "type": "string"}}, "chamber": {"nullable": false, "required) Tj T*
-(": true, "schema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": tr) Tj T*
-(ue, "schema": {"min_length": 1, "type": "string"}}, "confidence": {"nullable": true, "required": true, "s) Tj T*
-(chema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "created_at": {"nullable": false, "required") Tj T*
-(: true, "schema": {"format": "date-time", "type": "string"}}, "deliveries": {"nullable": false, "required) Tj T*
-(": true, "schema": {"items": {"additional_properties": false, "fields": {"channel": {"nullable": false, ") Tj T*
-(required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "status": {"nullable": false, ") Tj T*
-(required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNOWN", "WAIT) Tj T*
-(ING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "diagnosis": {"nullable": false, "requi) Tj T*
-(red": true, "schema": {"additional_properties": false, "fields": {"alternative_hypotheses": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"lower_rank_reas) Tj T*
-(on": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": 1, "type": "strin) Tj T*
+(, "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_policy": {"nullable": ) Tj T*
+(false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION-POLICY-V1", "MOCK-NO) Tj T*
+(TIFY-V1"], "type": "string"}}, "reason": {"nullable": false, "required": true, "schema": {"min_length": 1) Tj T*
+(, "type": "string"}}}, "type": "object"}}, "action_id": {"nullable": true, "required": true, "schema": {") Tj T*
+(min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true, "schema": {"min) Tj T*
+(_length": 1, "type": "string"}}, "alarm_id": {"nullable": false, "required": true, "schema": {"min_length) Tj T*
+(": 1, "type": "string"}}, "alarm_source": {"nullable": false, "required": true, "schema": {"enum": ["R03") Tj T*
+(, "SUMMARY", "TRACE"], "type": "string"}}, "approval": {"nullable": true, "required": true, "schema": {"a) Tj T*
+(dditional_properties": false, "fields": {"action_id": {"nullable": false, "required": true, "schema": {"m) Tj T*
+(in_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true, "schema": {"min_) Tj T*
+(length": 1, "type": "string"}}, "approval_id": {"nullable": false, "required": true, "schema": {"min_leng) Tj T*
+(th": 1, "type": "string"}}, "decided_at": {"nullable": true, "required": true, "schema": {"format": "date) Tj T*
+(-time", "type": "string"}}, "decided_by": {"nullable": true, "required": true, "schema": {"type": "string) Tj T*
+("}}, "decision_comment": {"nullable": true, "required": true, "schema": {"type": "string"}}, "status": {") Tj T*
+(nullable": false, "required": true, "schema": {"enum": ["APPROVED", "PENDING", "REJECTED"], "type": "stri) Tj T*
+(ng"}}}, "type": "object"}}, "approval_id": {"nullable": true, "required": true, "schema": {"min_length": ) Tj T*
+(1, "type": "string"}}, "autonomy_level": {"nullable": false, "required": false, "schema": {"default": 2, ) Tj T*
+("maximum": 3.0, "minimum": 1.0, "type": "integer"}}, "chamber": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": true, "schema") Tj T*
+(: {"min_length": 1, "type": "string"}}, "confidence": {"nullable": true, "required": true, "schema": {"ma) Tj T*
+(ximum": 1.0, "minimum": 0.0, "type": "number"}}, "created_at": {"nullable": false, "required": true, "sch) Tj T*
+(ema": {"format": "date-time", "type": "string"}}, "deliveries": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"items": {"additional_properties": false, "fields": {"channel": {"nullable": false, "required": t) Tj T*
+(rue, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "status": {"nullable": false, "required": t) Tj T*
 ET
 endstream
 endobj
@@ -766,83 +766,83 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 20 0 R >>
 endobj
 22 0 obj
-<< /Length 8495 >>
+<< /Length 8465 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
-(g"}}, "summary": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": 1, "t) Tj T*
-(ype": "string"}}}, "type": "object"}, "type": "array"}}, "cause_summary": {"nullable": true, "required": ) Tj T*
-(false, "schema": {"max_length": 2000, "type": "string"}}, "confidence": {"nullable": true, "required": fa) Tj T*
-(lse, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "diagnostic_coverage": {"nullable": t) Tj T*
-(rue, "required": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "required) Tj T*
-(": false, "schema": {"max_length": 2000, "type": "string"}}, "limitations": {"nullable": false, "required) Tj T*
-(": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "observations": {"nullable": false, ") Tj T*
-(required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "predicted_fault_code": {"nul) Tj T*
-(lable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}) Tj T*
-(}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+$", "type": "st) Tj T*
-(ring"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE", "EMPTY"], "type) Tj T*
-(": "string"}}, "verification_steps": {"nullable": false, "required": true, "schema": {"items": {"type": ") Tj T*
-(string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {"nullable": false, "required": ) Tj T*
-(true, "schema": {"additional_properties": false, "fields": {"available_sources": {"nullable": false, "req) Tj T*
-(uired": true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, ) Tj T*
-("type": "array"}}, "conflicting_source_ids": {"nullable": false, "required": true, "schema": {"items": {") Tj T*
-(type": "string"}, "type": "array"}}, "missing_sources": {"nullable": false, "required": true, "schema": {) Tj T*
-("items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, "type": "array"}}, "reaso) Tj T*
-(n_codes": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}) Tj T*
-(, "status": {"nullable": false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY", "PARTIAL", "SU) Tj T*
-(FFICIENT"], "type": "string"}}}, "type": "object"}}, "evidence_items": {"nullable": false, "required": tr) Tj T*
-(ue, "schema": {"items": {"discriminator": "type", "type": "discriminated_union", "variants": {"ALARM": {") Tj T*
-(additional_properties": false, "fields": {"alarm": {"nullable": false, "required": true, "schema": {"addi) Tj T*
-(tional_properties": false, "fields": {"alarm_id": {"nullable": false, "required": true, "schema": {"min_l) Tj T*
-(ength": 1, "type": "string"}}, "source": {"nullable": false, "required": true, "schema": {"enum": ["R03",) Tj T*
-( "SUMMARY", "TRACE"], "type": "string"}}}, "type": "object"}}, "excerpt": {"nullable": false, "required":) Tj T*
-( true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": false, "required": true,) Tj T*
-( "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schema":) Tj T*
-( {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": ") Tj T*
-(string"}}}, "type": "object"}, "DOCUMENT": {"additional_properties": false, "fields": {"chunk_id": {"null) Tj T*
-(able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "document_id": {"nullable) Tj T*
-(": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "excerpt": {"nullable": false) Tj T*
-(, "required": true, "schema": {"min_length": 1, "type": "string"}}, "section": {"nullable": true, "requir) Tj T*
-(ed": true, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {") Tj T*
-(min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length) Tj T*
-(": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, ") Tj T*
-(type": "object"}, "GRAPH": {"additional_properties": false, "fields": {"excerpt": {"nullable": false, "re) Tj T*
-(quired": true, "schema": {"min_length": 1, "type": "string"}}, "graph_revision": {"nullable": false, "req) Tj T*
-(uired": true, "schema": {"min_length": 1, "type": "string"}}, "relation_id": {"nullable": false, "require) Tj T*
-(d": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": false, "required": tr) Tj T*
-(ue, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schem) Tj T*
-(a": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type") Tj T*
-(: "string"}}}, "type": "object"}, "METROLOGY": {"additional_properties": false, "fields": {"excerpt": {"n) Tj T*
-(ullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullabl) Tj T*
-(e": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false,) Tj T*
-( "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required") Tj T*
-(: true, "schema": {"type": "string"}}}, "type": "object"}, "TRACE": {"additional_properties": false, "fie) Tj T*
-(lds": {"excerpt": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ") Tj T*
-(source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title") Tj T*
-(: {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullabl) Tj T*
-(e": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}}}, "type": "array"}}, "fau) Tj T*
-(lt_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "t) Tj T*
-(ype": "string"}}, "fault_color": {"nullable": false, "required": true, "schema": {"type": "null"}}, "faul) Tj T*
-(t_name": {"nullable": false, "required": true, "schema": {"type": "null"}}, "impact_scope": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"additional_properties": false, "fields": {"check_required": {"nullab) Tj T*
-(le": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"kind": {"n) Tj T*
-(ullable": false, "required": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SI) Tj T*
-(BLING_CHAMBER", "WAFER"], "type": "string"}}, "relation": {"nullable": true, "required": false, "schema":) Tj T*
-( {"type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "typ) Tj T*
-(e": "string"}}}, "type": "object"}, "type": "array"}}, "direct": {"nullable": false, "required": true, "s) Tj T*
-(chema": {"items": {"additional_properties": false, "fields": {"kind": {"nullable": false, "required": tru) Tj T*
-(e, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SIBLING_CHAMBER", "WAFER"], "type") Tj T*
-(: "string"}}, "relation": {"nullable": true, "required": false, "schema": {"type": "string"}}, "source_id) Tj T*
-(": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object) Tj T*
-("}, "type": "array"}}, "graph_conflict": {"nullable": false, "required": false, "schema": {"default": fal) Tj T*
-(se, "type": "boolean"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-) Tj T*
-(Z0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAIL) Tj T*
-(ABLE", "EMPTY"], "type": "string"}}, "summary": {"nullable": true, "required": false, "schema": {"max_len) Tj T*
-(gth": 2000, "type": "string"}}}, "type": "object"}}, "latency_ms": {"nullable": false, "required": true, ) Tj T*
-("schema": {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "required": true, "schem) Tj T*
-(a": {"min_length": 1, "type": "string"}}, "post_action_observation": {"nullable": false, "required": true) Tj T*
-(, "schema": {"additional_properties": false, "fields": {"message": {"nullable": false, "required": false,) Tj T*
-( "schema": {"default": "\\ucd5c\\uc885 \\uc815\\uc801 \\ub370\\uc774\\ud130\\uc14b\\uc5d0\\ub294 \\uc870\\uce58 \\uc77) Tj T*
-(4\\ud6c4 \\uacf5\\uc815 \\uad00\\uce21\\uac12\\uc774 \\uc5c6\\uc5b4 \\ud6a8\\uacfc\\ub97c \\ud3c9\\uac00\\ud560 \\uc218 \\) Tj T*
+(rue, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNOWN", "WAITING"], "type) Tj T*
+(": "string"}}}, "type": "object"}, "type": "array"}}, "diagnosis": {"nullable": false, "required": true, ) Tj T*
+("schema": {"additional_properties": false, "fields": {"alternative_hypotheses": {"nullable": false, "requ) Tj T*
+(ired": true, "schema": {"items": {"additional_properties": false, "fields": {"lower_rank_reason": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}, "summa) Tj T*
+(ry": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": 1, "type": "strin) Tj T*
+(g"}}}, "type": "object"}, "type": "array"}}, "cause_summary": {"nullable": true, "required": false, "sche) Tj T*
+(ma": {"max_length": 2000, "type": "string"}}, "confidence": {"nullable": true, "required": false, "schema) Tj T*
+(": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "diagnostic_coverage": {"nullable": true, "requir) Tj T*
+(ed": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "required": false, "s) Tj T*
+(chema": {"max_length": 2000, "type": "string"}}, "limitations": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"items": {"type": "string"}, "type": "array"}}, "observations": {"nullable": false, "required": t) Tj T*
+(rue, "schema": {"items": {"type": "string"}, "type": "array"}}, "origin_assessment": {"nullable": true, ") Tj T*
+(required": false, "schema": {"additional_properties": false, "fields": {"basis": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"items": {"additional_properties": false, "fields": {"id": {"nullable": false, ") Tj T*
+(required": true, "schema": {"max_length": 160, "min_length": 1, "type": "string"}}, "namespace": {"nullab) Tj T*
+(le": false, "required": true, "schema": {"enum": ["ALARM", "CHUNK", "LOT_HIST", "PARAMETER", "RELATION"],) Tj T*
+( "type": "string"}}}, "type": "object"}, "type": "array"}}, "compared": {"nullable": false, "required": t) Tj T*
+(rue, "schema": {"additional_properties": false, "fields": {"downstream": {"nullable": false, "required": ) Tj T*
+(false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type") Tj T*
+(: "string"}}, "history": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "e) Tj T*
+(num": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "metrology": {"nullable": false, ") Tj T*
+(required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKE) Tj T*
+(D"], "type": "string"}}, "sibling": {"nullable": false, "required": false, "schema": {"default": "NOT_AVA) Tj T*
+(ILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "upstream": {"nullable") Tj T*
+(: false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", ") Tj T*
+(NOT_CHECKED"], "type": "string"}}}, "type": "object"}}, "degraded": {"nullable": false, "required": false) Tj T*
+(, "schema": {"default": false, "type": "boolean"}}, "degraded_reasons": {"nullable": false, "required": f) Tj T*
+(alse, "schema": {"default": [], "items": {"type": "string"}, "type": "array"}}, "dropped_basis_count": {") Tj T*
+(nullable": false, "required": false, "schema": {"default": 0, "maximum": 40.0, "minimum": 0.0, "type": "i) Tj T*
+(nteger"}}, "scope": {"nullable": false, "required": true, "schema": {"enum": ["CURRENT_CHAMBER", "DOWNSTR) Tj T*
+(EAM", "EQUIPMENT_COMMON", "UNDETERMINED", "UPSTREAM"], "type": "string"}}}, "type": "object"}}, "paramete) Tj T*
+(r_findings": {"nullable": false, "required": false, "schema": {"default": [], "items": {"additional_prope) Tj T*
+(rties": false, "fields": {"direction": {"nullable": false, "required": true, "schema": {"enum": ["ABOVE",) Tj T*
+( "BELOW", "BOTH"], "type": "string"}}, "excursion_ratio": {"nullable": false, "required": true, "schema":) Tj T*
+( {"type": "number"}}, "lot_hist_ids": {"nullable": false, "required": true, "schema": {"items": {"type": ) Tj T*
+("string"}, "type": "array"}}, "parameter_id": {"nullable": false, "required": true, "schema": {"max_lengt) Tj T*
+(h": 20, "min_length": 1, "type": "string"}}, "step_no": {"nullable": false, "required": true, "schema": {) Tj T*
+("minimum": 1.0, "type": "integer"}}, "wafer_scope": {"nullable": false, "required": true, "schema": {"enu) Tj T*
+(m": ["ALL", "PARTIAL", "SINGLE"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "predicted_f) Tj T*
+(ault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], ) Tj T*
+("type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_) Tj T*
+(]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE") Tj T*
+(, "EMPTY"], "type": "string"}}, "verification_steps": {"nullable": false, "required": true, "schema": {"i) Tj T*
+(tems": {"type": "string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {"nullable": fa) Tj T*
+(lse, "required": true, "schema": {"additional_properties": false, "fields": {"available_sources": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "t) Tj T*
+(ype": "string"}, "type": "array"}}, "conflicting_source_ids": {"nullable": false, "required": true, "sche) Tj T*
+(ma": {"items": {"type": "string"}, "type": "array"}}, "missing_sources": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, "type": ) Tj T*
+("array"}}, "reason_codes": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, ) Tj T*
+("type": "array"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY) Tj T*
+(", "PARTIAL", "SUFFICIENT"], "type": "string"}}}, "type": "object"}}, "evidence_items": {"nullable": fals) Tj T*
+(e, "required": true, "schema": {"items": {"discriminator": "type", "type": "discriminated_union", "varian) Tj T*
+(ts": {"ALARM": {"additional_properties": false, "fields": {"alarm": {"nullable": false, "required": true,) Tj T*
+( "schema": {"additional_properties": false, "fields": {"alarm_id": {"nullable": false, "required": true, ) Tj T*
+("schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": false, "required": true, "schema":) Tj T*
+( {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "object"}}, "excerpt": {"nullable": f) Tj T*
+(alse, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": false, ) Tj T*
+("required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required") Tj T*
+(: true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"type": "string"}}}, "type": "object"}, "DOCUMENT": {"additional_properties": false, "fields": {") Tj T*
+(chunk_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "documen) Tj T*
+(t_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "excerpt": {) Tj T*
+("nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "section": {"nullabl) Tj T*
+(e": true, "required": true, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": t) Tj T*
+(rue, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "sche) Tj T*
+(ma": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type) Tj T*
+(": "string"}}}, "type": "object"}, "GRAPH": {"additional_properties": false, "fields": {"excerpt": {"null) Tj T*
+(able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "graph_revision": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "relation_id": {"nullable") Tj T*
+(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": fals) Tj T*
+(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "requir) Tj T*
+(ed": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, ) Tj T*
 ET
 endstream
 endobj
@@ -850,83 +850,83 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 22 0 R >>
 endobj
 24 0 obj
-<< /Length 8262 >>
+<< /Length 8554 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
-(uc5c6\\uc74c", "type": "string"}}, "status": {"nullable": false, "required": false, "schema": {"default": ) Tj T*
-("NOT_AVAILABLE_STATIC_DATASET", "type": "string"}}}, "type": "object"}}, "predicted_fault_code": {"nullab) Tj T*
-(le": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, ) Tj T*
-("prediction": {"nullable": true, "required": true, "schema": {"additional_properties": false, "fields": {) Tj T*
-("cause_summary": {"nullable": false, "required": true, "schema": {"max_length": 2000, "min_length": 1, "t) Tj T*
-(ype": "string"}}, "confidence": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum) Tj T*
-(": 0.0, "type": "number"}}, "generated_at": {"nullable": false, "required": true, "schema": {"format": "d) Tj T*
-(ate-time", "type": "string"}}, "input_tokens": {"nullable": false, "required": true, "schema": {"minimum") Tj T*
-(: 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "required": true, "schema": {"min_length": 1) Tj T*
-(, "type": "string"}}, "output_tokens": {"nullable": false, "required": true, "schema": {"minimum": 0.0, ") Tj T*
-(type": "integer"}}, "predicted_fault_code": {"nullable": false, "required": true, "schema": {"enum": ["FO) Tj T*
-(C", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prompt_version": {"nullable": false, "required": tr) Tj T*
-(ue, "schema": {"min_length": 1, "type": "string"}}, "supporting_alarms": {"nullable": false, "required": ) Tj T*
-(true, "schema": {"items": {"additional_properties": false, "fields": {"alarm_id": {"nullable": false, "re) Tj T*
-(quired": true, "schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": false, "required": ) Tj T*
-(true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "object"}, "type": "ar) Tj T*
-(ray"}}, "supporting_chunk_ids": {"nullable": false, "required": true, "schema": {"items": {"min_length": ) Tj T*
-(1, "type": "string"}, "type": "array"}}, "supporting_relation_ids": {"nullable": false, "required": true,) Tj T*
-( "schema": {"items": {"min_length": 1, "type": "string"}, "type": "array"}}, "uncertainty": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"max_length": 1000, "type": "string"}}}, "type": "object"}}, "recomme) Tj T*
-(nded_action": {"nullable": true, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING) Tj T*
-("], "type": "string"}}, "similar_incidents": {"nullable": false, "required": true, "schema": {"additional) Tj T*
-(_properties": false, "fields": {"items": {"nullable": false, "required": true, "schema": {"items": {"addi) Tj T*
-(tional_properties": false, "fields": {"agent_run_id": {"nullable": false, "required": true, "schema": {"m) Tj T*
-(in_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": true, "schema": {"min_le) Tj T*
-(ngth": 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schema": {"min_length": 1,) Tj T*
-( "type": "string"}}, "parameter_jaccard": {"nullable": false, "required": true, "schema": {"maximum": 1.0) Tj T*
-(, "minimum": 0.0, "type": "number"}}, "predicted_fault_code": {"nullable": false, "required": true, "sche) Tj T*
-(ma": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "recommended_action": {"nullable":) Tj T*
-( false, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, ") Tj T*
-(score": {"nullable": false, "required": true, "schema": {"maximum": 100.0, "minimum": 0.0, "type": "integ) Tj T*
-(er"}}}, "type": "object"}, "type": "array"}}, "label": {"nullable": false, "required": false, "schema": {) Tj T*
-("default": "\\uace0\\uc815 \\uc2dc\\uc5f0 \\ub370\\uc774\\ud130 \\ub0b4 \\ube44\\uad50 \\uacb0\\uacfc", "type": "stri) Tj T*
-(ng"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+$", "type":) Tj T*
-( "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE", "EMPTY"], ") Tj T*
-(type": "string"}}}, "type": "object"}}, "status": {"nullable": false, "required": true, "schema": {"enum") Tj T*
-(: ["COMPLETED", "FAILED", "RUNNING", "WAITING_APPROVAL"], "type": "string"}}, "tools": {"nullable": false) Tj T*
-(, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"n": {"nullable": fal) Tj T*
-(se, "required": true, "schema": {"min_length": 1, "type": "string"}}, "result_summary": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "s": {"nullable": false, "required":) Tj T*
-( true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "status": {"nullable": fal) Tj T*
-(se, "required": true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "tool_name") Tj T*
-(: {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object") Tj T*
-(}, "type": "array"}}}, "type": "object"}, "shape": "object"}, "404": {"schema": {"additional_properties":) Tj T*
-( false, "fields": {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DE) Tj T*
-(CIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_R) Tj T*
-(UNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJE) Tj T*
-(CTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullab) Tj T*
-(le": false, "required": false, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}) Tj T*
-(, "message": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "sh) Tj T*
-(ape": "object"}, "422": {"schema": {"additional_properties": false, "fields": {"code": {"nullable": false) Tj T*
-(, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_) Tj T*
-(CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_N) Tj T*
-(OT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", ) Tj T*
-("VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "required": false, "schema": {"ad) Tj T*
-(ditional_properties": true, "fields": {}, "type": "object"}}, "message": {"nullable": false, "required": ) Tj T*
-(true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}, "503": {"schema": {"addition) Tj T*
-(al_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPR) Tj T*
-(OVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INC) Tj T*
-(IDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY) Tj T*
-(", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "det) Tj T*
-(ails": {"nullable": false, "required": false, "schema": {"additional_properties": true, "fields": {}, "ty) Tj T*
-(pe": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type":) Tj T*
-( "object"}, "shape": "object"}}}) Tj T*
-(21 GET /agent/evaluations) Tj T*
-(RULES ["fault_5class\\uc640 golden_flow\\ub294 \\uc11c\\ub85c \\ub3c5\\ub9bd\\uc801\\uc778 Empty \\uc0c1\\ud0dc\\ub2) Tj T*
-(e4", "\\uc6d0\\ubcf8 artifact \\uacbd\\ub85c\\u00b7hash\\u00b7incident label\\uc740 \\uacf5\\uac1c\\ud558\\uc9c0 \\uc) Tj T*
-(54a\\ub294\\ub2e4"]) Tj T*
-({"request": {"body": null, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"addi) Tj T*
-(tional_properties": false, "fields": {"fault_5class": {"nullable": true, "required": true, "schema": {"ad) Tj T*
-(ditional_properties": false, "fields": {"classification": {"nullable": false, "required": true, "schema":) Tj T*
-( {"additional_properties": false, "fields": {"accuracy": {"nullable": false, "required": true, "schema": ) Tj T*
-({"additional_properties": false, "fields": {"denominator": {"nullable": false, "required": true, "schema") Tj T*
-(: {"minimum": 0.0, "type": "integer"}}, "numerator": {"nullable": false, "required": true, "schema": {"mi) Tj T*
+("schema": {"type": "string"}}}, "type": "object"}, "METROLOGY": {"additional_properties": false, "fields") Tj T*
+(: {"excerpt": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "sour) Tj T*
+(ce_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {") Tj T*
+(nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": ) Tj T*
+(false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "TRACE": {"additional_propert) Tj T*
+(ies": false, "fields": {"excerpt": {"nullable": false, "required": true, "schema": {"min_length": 1, "typ) Tj T*
+(e": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "s) Tj T*
+(tring"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ) Tj T*
+("type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}}}, "type") Tj T*
+(: "array"}}, "fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", ) Tj T*
+("RFM", "TMD"], "type": "string"}}, "fault_color": {"nullable": false, "required": true, "schema": {"type") Tj T*
+(: "null"}}, "fault_name": {"nullable": false, "required": true, "schema": {"type": "null"}}, "impact_scop) Tj T*
+(e": {"nullable": false, "required": true, "schema": {"additional_properties": false, "fields": {"check_re) Tj T*
+(quired": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fiel) Tj T*
+(ds": {"kind": {"nullable": false, "required": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "P) Tj T*
+(ROCESS_STEP", "SIBLING_CHAMBER", "WAFER"], "type": "string"}}, "relation": {"nullable": true, "required":) Tj T*
+( false, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min) Tj T*
+(_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "direct": {"nullable": false, "re) Tj T*
+(quired": true, "schema": {"items": {"additional_properties": false, "fields": {"kind": {"nullable": false) Tj T*
+(, "required": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SIBLING_CHAMBER",) Tj T*
+( "WAFER"], "type": "string"}}, "relation": {"nullable": true, "required": false, "schema": {"type": "stri) Tj T*
+(ng"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}) Tj T*
+(, "type": "object"}, "type": "array"}}, "graph_conflict": {"nullable": false, "required": false, "schema") Tj T*
+(: {"default": false, "type": "boolean"}}, "reason_code": {"nullable": true, "required": false, "schema": ) Tj T*
+({"pattern": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema":) Tj T*
+( {"enum": ["AVAILABLE", "EMPTY"], "type": "string"}}, "summary": {"nullable": true, "required": false, "s) Tj T*
+(chema": {"max_length": 2000, "type": "string"}}}, "type": "object"}}, "investigation_budget": {"nullable") Tj T*
+(: true, "required": false, "schema": {"additional_properties": false, "fields": {"guard_rejection_cap": {) Tj T*
+("nullable": false, "required": true, "schema": {"maximum": 2.0, "minimum": 1.0, "type": "integer"}}, "pro) Tj T*
+(file_id": {"nullable": false, "required": true, "schema": {"enum": ["PRODUCTION_WIDE_V1", "STANDARD"], "t) Tj T*
+(ype": "string"}}, "read_cap": {"nullable": false, "required": true, "schema": {"maximum": 24.0, "minimum") Tj T*
+(: 1.0, "type": "integer"}}, "same_tool_cap": {"nullable": false, "required": true, "schema": {"maximum": ) Tj T*
+(8.0, "minimum": 1.0, "type": "integer"}}, "selector_cap": {"nullable": false, "required": true, "schema":) Tj T*
+( {"maximum": 28.0, "minimum": 1.0, "type": "integer"}}, "send_budget": {"nullable": false, "required": tr) Tj T*
+(ue, "schema": {"maximum": 2.0, "minimum": 1.0, "type": "integer"}}, "total_call_cap": {"nullable": false,) Tj T*
+( "required": true, "schema": {"maximum": 26.0, "minimum": 1.0, "type": "integer"}}}, "type": "object"}}, ) Tj T*
+("latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "llm_) Tj T*
+(model": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "post_actio) Tj T*
+(n_observation": {"nullable": false, "required": true, "schema": {"additional_properties": false, "fields") Tj T*
+(: {"message": {"nullable": false, "required": false, "schema": {"default": "\\ucd5c\\uc885 \\uc815\\uc801 \\ub) Tj T*
+(370\\uc774\\ud130\\uc14b\\uc5d0\\ub294 \\uc870\\uce58 \\uc774\\ud6c4 \\uacf5\\uc815 \\uad00\\uce21\\uac12\\uc774 \\uc5c6\\) Tj T*
+(uc5b4 \\ud6a8\\uacfc\\ub97c \\ud3c9\\uac00\\ud560 \\uc218 \\uc5c6\\uc74c", "type": "string"}}, "status": {"nullabl) Tj T*
+(e": false, "required": false, "schema": {"default": "NOT_AVAILABLE_STATIC_DATASET", "type": "string"}}}, ) Tj T*
+("type": "object"}}, "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC) Tj T*
+(", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prediction": {"nullable": true, "required": true, "s) Tj T*
+(chema": {"additional_properties": false, "fields": {"cause_summary": {"nullable": false, "required": true) Tj T*
+(, "schema": {"max_length": 2000, "min_length": 1, "type": "string"}}, "confidence": {"nullable": false, ") Tj T*
+(required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "generated_at": {"nullabl) Tj T*
+(e": false, "required": true, "schema": {"format": "date-time", "type": "string"}}, "input_tokens": {"null) Tj T*
+(able": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable":) Tj T*
+( false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "output_tokens": {"nullable": f) Tj T*
+(alse, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "predicted_fault_code": {"nullabl) Tj T*
+(e": false, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, ) Tj T*
+("prompt_version": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ") Tj T*
+(supporting_alarms": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": f) Tj T*
+(alse, "fields": {"alarm_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "s) Tj T*
+(tring"}}, "source": {"nullable": false, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"],) Tj T*
+( "type": "string"}}}, "type": "object"}, "type": "array"}}, "supporting_chunk_ids": {"nullable": false, ") Tj T*
+(required": true, "schema": {"items": {"min_length": 1, "type": "string"}, "type": "array"}}, "supporting_) Tj T*
+(relation_ids": {"nullable": false, "required": true, "schema": {"items": {"min_length": 1, "type": "strin) Tj T*
+(g"}, "type": "array"}}, "uncertainty": {"nullable": false, "required": true, "schema": {"max_length": 100) Tj T*
+(0, "type": "string"}}}, "type": "object"}}, "react_trace": {"nullable": false, "required": false, "schema) Tj T*
+(": {"items": {"additional_properties": false, "fields": {"argument_summary": {"nullable": true, "required) Tj T*
+(": false, "schema": {"pattern": "^\(\\ud6c4\\ubcf4 wafer [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\uc0c1\\ub958|\\ud558\\ub9) Tj T*
+(58\)\\\\\)|\\uc774\\ub825 [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\ud615\\uc81c\)\\\\\)|\\uacc4\\uce21 [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac) Tj T*
+(|\\uc0c1\\ub958|\\ud558\\ub958\)\\\\\)|\\ubb38\\uc11c \\uac80\\uc0c9|\\uc124\\ube44 \\ucee8\\ud14d\\uc2a4\\ud2b8\)$", "type") Tj T*
+(: "string"}}, "degraded": {"nullable": false, "required": false, "schema": {"default": false, "type": "bo) Tj T*
+(olean"}}, "guard_code": {"nullable": true, "required": false, "schema": {"max_length": 64, "type": "strin) Tj T*
+(g"}}, "observation_summary": {"nullable": true, "required": false, "schema": {"max_length": 160, "type": ) Tj T*
+("string"}}, "phase": {"nullable": false, "required": true, "schema": {"enum": ["OBSERVED", "REJECTED", "S) Tj T*
+(ELECTED", "STOPPED"], "type": "string"}}, "rationale_summary": {"nullable": true, "required": false, "sch) Tj T*
+(ema": {"max_length": 120, "type": "string"}}, "react_prompt_version": {"nullable": true, "required": fals) Tj T*
+(e, "schema": {"enum": ["agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3", "agent-react-v2-) Tj T*
+(ko4"], "type": "string"}}, "selector_tokens": {"nullable": false, "required": true, "schema": {"additiona) Tj T*
 ET
 endstream
 endobj
@@ -934,9 +934,76 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 24 0 R >>
 endobj
 26 0 obj
-<< /Length 7453 >>
+<< /Length 8290 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(l_properties": false, "fields": {"input": {"nullable": false, "required": true, "schema": {"minimum": 0.0) Tj T*
+(, "type": "integer"}}, "output": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type":) Tj T*
+( "integer"}}}, "type": "object"}}, "seq": {"nullable": false, "required": true, "schema": {"minimum": 1.0) Tj T*
+(, "type": "integer"}}, "stop_reason": {"nullable": true, "required": false, "schema": {"enum": ["BUDGET_E) Tj T*
+(XHAUSTED", "GUARD_LIMIT", "LLM_DEPENDENCY", "LLM_STOP", "LLM_TIMEOUT", "REACT_STRUCTURE_INVALID", "STEP_C) Tj T*
+(AP"], "type": "string"}}, "tool": {"nullable": true, "required": false, "schema": {"enum": ["get_chamber_) Tj T*
+(parameter_history", "get_equipment_context", "get_fdc_summary", "get_metrology_result", "search_documents) Tj T*
+(", "stop"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "recommended_action": {"nullable":) Tj T*
+( true, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "r) Tj T*
+(emaining_read_calls": {"nullable": false, "required": false, "schema": {"default": 0, "maximum": 24.0, "m) Tj T*
+(inimum": 0.0, "type": "integer"}}, "similar_incidents": {"nullable": false, "required": true, "schema": {) Tj T*
+("additional_properties": false, "fields": {"items": {"nullable": false, "required": true, "schema": {"ite) Tj T*
+(ms": {"additional_properties": false, "fields": {"agent_run_id": {"nullable": false, "required": true, "s) Tj T*
+(chema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": true, "schema) Tj T*
+(": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schema": {"min_) Tj T*
+(length": 1, "type": "string"}}, "parameter_jaccard": {"nullable": false, "required": true, "schema": {"ma) Tj T*
+(ximum": 1.0, "minimum": 0.0, "type": "number"}}, "predicted_fault_code": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "recommended_action": {) Tj T*
+("nullable": false, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "s) Tj T*
+(tring"}}, "score": {"nullable": false, "required": true, "schema": {"maximum": 100.0, "minimum": 0.0, "ty) Tj T*
+(pe": "integer"}}}, "type": "object"}, "type": "array"}}, "label": {"nullable": false, "required": false, ) Tj T*
+("schema": {"default": "\\uace0\\uc815 \\uc2dc\\uc5f0 \\ub370\\uc774\\ud130 \\ub0b4 \\ube44\\uad50 \\uacb0\\uacfc", "t) Tj T*
+(ype": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+) Tj T*
+($", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE", ) Tj T*
+("EMPTY"], "type": "string"}}}, "type": "object"}}, "status": {"nullable": false, "required": true, "schem) Tj T*
+(a": {"enum": ["COMPLETED", "FAILED", "RUNNING", "WAITING_APPROVAL"], "type": "string"}}, "tools": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"n": {"nul) Tj T*
+(lable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "result_summary": {"null) Tj T*
+(able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "s": {"nullable": false, ) Tj T*
+("required": true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "status": {"nul) Tj T*
+(lable": false, "required": true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, ) Tj T*
+("tool_name": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type) Tj T*
+(": "object"}, "type": "array"}}, "trace_state": {"nullable": false, "required": false, "schema": {"defaul) Tj T*
+(t": "NOT_APPLICABLE", "enum": ["AVAILABLE", "NOT_APPLICABLE", "PENDING", "UNAVAILABLE"], "type": "string") Tj T*
+(}}}, "type": "object"}, "shape": "object"}, "404": {"schema": {"additional_properties": false, "fields": ) Tj T*
+({"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENC) Tj T*
+(Y_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL) Tj T*
+(_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_N) Tj T*
+(OT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "requi) Tj T*
+(red": false, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {"nul) Tj T*
+(lable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}, ") Tj T*
+(422": {"schema": {"additional_properties": false, "fields": {"code": {"nullable": false, "required": true) Tj T*
+(, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDE) Tj T*
+(NT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_N) Tj T*
+(OT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR") Tj T*
+(], "type": "string"}}, "details": {"nullable": false, "required": false, "schema": {"additional_propertie) Tj T*
+(s": true, "fields": {}, "type": "object"}}, "message": {"nullable": false, "required": true, "schema": {") Tj T*
+(type": "string"}}}, "type": "object"}, "shape": "object"}, "503": {"schema": {"additional_properties": fa) Tj T*
+(lse, "fields": {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECID) Tj T*
+(ED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNN) Tj T*
+(ING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTE) Tj T*
+(D", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable") Tj T*
+(: false, "required": false, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, ") Tj T*
+(message": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape) Tj T*
+(": "object"}}}) Tj T*
+(21 GET /agent/evaluations) Tj T*
+(RULES ["MOCK-NOTIFY-V1 golden_flow\\ub294 protocol\\uc744 \\uba85\\uc2dc\\ud558\\uace0 live 5 phase\\uc640 UNKNO) Tj T*
+(WN/MANUAL_RETRY NOT_LIVE\\ub97c \\ubd84\\ub9ac\\ud55c\\ub2e4; \\uae30\\uc874 V1 \\ubc0f null Empty \\uc751\\ub2f5\\u) Tj T*
+(c740 \\ubcf4\\uc874\\ud55c\\ub2e4", "fault_5class\\uc640 golden_flow\\ub294 \\uc11c\\ub85c \\ub3c5\\ub9bd\\uc801\\uc7) Tj T*
+(78 Empty \\uc0c1\\ud0dc\\ub2e4", "\\uc6d0\\ubcf8 artifact \\uacbd\\ub85c\\u00b7hash\\u00b7incident label\\uc740 \\ua) Tj T*
+(cf5\\uac1c\\ud558\\uc9c0 \\uc54a\\ub294\\ub2e4"]) Tj T*
+({"request": {"body": null, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"addi) Tj T*
+(tional_properties": false, "fields": {"fault_5class": {"nullable": true, "required": true, "schema": {"ad) Tj T*
+(ditional_properties": false, "fields": {"classification": {"nullable": false, "required": true, "schema":) Tj T*
+( {"additional_properties": false, "fields": {"accuracy": {"nullable": false, "required": true, "schema": ) Tj T*
+({"additional_properties": false, "fields": {"denominator": {"nullable": false, "required": true, "schema") Tj T*
+(: {"minimum": 0.0, "type": "integer"}}, "numerator": {"nullable": false, "required": true, "schema": {"mi) Tj T*
 (nimum": 0.0, "type": "integer"}}, "rate": {"nullable": false, "required": true, "schema": {"maximum": 1.0) Tj T*
 (, "minimum": 0.0, "type": "number"}}}, "type": "object"}}, "by_class": {"nullable": false, "required": tr) Tj T*
 (ue, "schema": {"additional_properties": {"additional_properties": false, "fields": {"f1": {"nullable": fa) Tj T*
@@ -944,6 +1011,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "false_positive": {") Tj T*
 (nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "precision": {"nullab) Tj T*
 (le": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "recall": {") Tj T*
+ET
+endstream
+endobj
+27 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 26 0 R >>
+endobj
+28 0 obj
+<< /Length 7541 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "suppo) Tj T*
 (rt": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "true_positive) Tj T*
 (": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object) Tj T*
@@ -984,19 +1061,30 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ng"}}, "policy_version": {"nullable": true, "required": true, "schema": {"type": "string"}}, "prompt_vers) Tj T*
 (ion": {"nullable": true, "required": true, "schema": {"type": "string"}}}, "type": "object"}}}, "type": ") Tj T*
 (object"}}, "fault_5class_empty_reason": {"nullable": true, "required": true, "schema": {"enum": ["CONTRAC) Tj T*
-(T_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND"], "type": "string"}}, "golden_flow": {"nullable": true, "requ) Tj T*
-(ired": true, "schema": {"additional_properties": false, "fields": {"dataset_epoch": {"nullable": false, ") Tj T*
-(required": true, "schema": {"min_length": 1, "type": "string"}}, "phases": {"nullable": false, "required") Tj T*
-(: true, "schema": {"items": {"additional_properties": false, "fields": {"metrics": {"nullable": false, "r) Tj T*
-(equired": true, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "phase": {"nu) Tj T*
-(llable": false, "required": true, "schema": {"enum": ["BATCH_BASELINE", "DECISIONS", "MANUAL_RETRY", "PRE) Tj T*
-(FLIGHT", "PRE_APPROVAL", "SECOND_BATCH", "UNKNOWN"], "type": "string"}}, "reasons": {"nullable": false, ") Tj T*
-(required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nullable": false,) Tj T*
-( "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}}, "type) Tj T*
-(": "object"}, "type": "array"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["EVI) Tj T*
-(DENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}}, "type": "object"}}, "golden_flow_empty_reason": ) Tj T*
-({"nullable": true, "required": true, "schema": {"enum": ["CONTRACT_VIOLATION", "NOT_CONFIGURED", "NOT_FOU) Tj T*
-(ND"], "type": "string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
+(T_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND"], "type": "string"}}, "golden_flow": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"type": "union", "variants": [{"additional_properties": false, "fields": {"datas) Tj T*
+(et_epoch": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "phases") Tj T*
+(: {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {") Tj T*
+(metrics": {"nullable": false, "required": true, "schema": {"additional_properties": true, "fields": {}, ") Tj T*
+(type": "object"}}, "phase": {"nullable": false, "required": true, "schema": {"enum": ["BATCH_BASELINE", ") Tj T*
+(DECISIONS", "MANUAL_RETRY", "PREFLIGHT", "PRE_APPROVAL", "SECOND_BATCH", "UNKNOWN"], "type": "string"}}, ) Tj T*
+("reasons": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}) Tj T*
+(}, "status": {"nullable": false, "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "PA) Tj T*
+(SS"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "status": {"nullable": false, "required") Tj T*
+(: true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}}, "type": "object") Tj T*
+(}, {"additional_properties": false, "fields": {"dataset_epoch": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"min_length": 1, "type": "string"}}, "phases": {"nullable": false, "required": true, "schema": {") Tj T*
+(items": {"additional_properties": false, "fields": {"metrics": {"nullable": false, "required": true, "sch) Tj T*
+(ema": {"additional_properties": true, "fields": {}, "type": "object"}}, "phase": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"enum": ["BATCH_BASELINE", "MANUAL_RETRY", "MOCK_RESULTS", "NO_DECISIONS", "PREF) Tj T*
+(LIGHT", "SECOND_BATCH", "UNKNOWN"], "type": "string"}}, "reasons": {"nullable": false, "required": true, ) Tj T*
+("schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nullable": false, "required": true) Tj T*
+(, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "NOT_LIVE", "PASS"], "type": "string"}}}, "type": "o) Tj T*
+(bject"}, "type": "array"}}, "protocol": {"nullable": false, "required": true, "schema": {"type": "string") Tj T*
+(}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "P) Tj T*
+(ASS"], "type": "string"}}}, "type": "object"}, {"type": "null"}]}}, "golden_flow_empty_reason": {"nullabl) Tj T*
+(e": true, "required": true, "schema": {"enum": ["CONTRACT_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND"], "ty) Tj T*
+(pe": "string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (22 POST /agent/runs/{run_id}/retry) Tj T*
 (RULES []) Tj T*
 (deferred inventory) Tj T*
@@ -1007,20 +1095,22 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (RULES []) Tj T*
 (deferred inventory) Tj T*
 (25 GET /actions) Tj T*
-(RULES []) Tj T*
-({"request": {"body": null, "header": {}, "path": {}, "query": {"action_code": {"nullable": true, "require) Tj T*
-(d": false, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}}}, "responses": {) Tj T*
-("200": {"schema": {"items": {"additional_properties": false, "fields": {"action_code": {"nullable": false) Tj T*
 ET
 endstream
 endobj
-27 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 26 0 R >>
+29 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 28 0 R >>
 endobj
-28 0 obj
-<< /Length 8227 >>
+30 0 obj
+<< /Length 8455 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
+(RULES ["delivery_policy \\ub204\\ub77d\\uc740 ACTION-POLICY-V1 \\ud638\\ud658\\uc774\\uba70 MOCK-NOTIFY-V1\\uc740) Tj T*
+( \\uc2b9\\uc778/\\ubc18\\ub824\\u00b7\\ud655\\uc778 \\uae30\\ub85d \\uc5c6\\uc774 \\uc774\\uba54\\uc77c \\ubc0f \\uc790\\u) Tj T*
+(b3d9 Kafka/MES Mock\\uc744 \\uc5f0\\ub3d9\\ud55c\\ub2e4; \\uc2b9\\uc778 \\uc0c1\\ud0dc\\ub294 null\\uc774\\ub2e4"]) Tj T*
+({"request": {"body": null, "header": {}, "path": {}, "query": {"action_code": {"nullable": true, "require) Tj T*
+(d": false, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}}}, "responses": {) Tj T*
+("200": {"schema": {"items": {"additional_properties": false, "fields": {"action_code": {"nullable": false) Tj T*
 (, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "action) Tj T*
 (_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id) Tj T*
 (": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "approval_status) Tj T*
@@ -1033,27 +1123,30 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (false, "fields": {"channel": {"nullable": false, "required": true, "schema": {"enum": ["EMAIL", "MES"], ") Tj T*
 (type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCEL) Tj T*
 (ED", "FAILED", "SENDING", "SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": ) Tj T*
-("array"}}, "equipment": {"nullable": true, "required": true, "schema": {"min_length": 1, "type": "string") Tj T*
-(}}, "equipment_id": {"nullable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, ) Tj T*
-("lot": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {") Tj T*
-(nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "reason": {"nullable") Tj T*
-(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}, "type": "a) Tj T*
-(rray"}, "shape": "array"}, "422": {"schema": {"additional_properties": false, "fields": {"code": {"nullab) Tj T*
-(le": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "ID) Tj T*
-(EMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_) Tj T*
-(APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUT) Tj T*
-(HORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "required": false, "sch) Tj T*
-(ema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {"nullable": false, "r) Tj T*
-(equired": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}, "503": {"schema": ) Tj T*
-({"additional_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema": {"enu) Tj T*
-(m": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCES) Tj T*
-(SED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL) Tj T*
-(_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "strin) Tj T*
-(g"}}, "details": {"nullable": false, "required": false, "schema": {"additional_properties": true, "fields) Tj T*
-(": {}, "type": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "string"}}) Tj T*
-(}, "type": "object"}, "shape": "object"}}}) Tj T*
+("array"}}, "delivery_policy": {"nullable": false, "required": false, "schema": {"default": "ACTION-POLICY) Tj T*
+(-V1", "enum": ["ACTION-POLICY-V1", "MOCK-NOTIFY-V1"], "type": "string"}}, "equipment": {"nullable": true,) Tj T*
+( "required": true, "schema": {"min_length": 1, "type": "string"}}, "equipment_id": {"nullable": true, "re) Tj T*
+(quired": true, "schema": {"min_length": 1, "type": "string"}}, "lot": {"nullable": false, "required": tru) Tj T*
+(e, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schem) Tj T*
+(a": {"min_length": 1, "type": "string"}}, "reason": {"nullable": false, "required": true, "schema": {"min) Tj T*
+(_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}, "shape": "array"}, "422": {"schema) Tj T*
+(": {"additional_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema": {") Tj T*
+(enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PRO) Tj T*
+(CESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MO) Tj T*
+(DEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "st) Tj T*
+(ring"}}, "details": {"nullable": false, "required": false, "schema": {"additional_properties": true, "fie) Tj T*
+(lds": {}, "type": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "string) Tj T*
+("}}}, "type": "object"}, "shape": "object"}, "503": {"schema": {"additional_properties": false, "fields":) Tj T*
+( {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDEN) Tj T*
+(CY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNA) Tj T*
+(L_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_) Tj T*
+(NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "requ) Tj T*
+(ired": false, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {"nu) Tj T*
+(llable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
 (26 GET /actions/{action_id}) Tj T*
-(RULES []) Tj T*
+(RULES ["delivery_policy \\ub204\\ub77d\\uc740 ACTION-POLICY-V1 \\ud638\\ud658\\uc774\\uba70 MOCK-NOTIFY-V1\\uc740) Tj T*
+( \\uc2b9\\uc778/\\ubc18\\ub824\\u00b7\\ud655\\uc778 \\uae30\\ub85d \\uc5c6\\uc774 \\uc774\\uba54\\uc77c \\ubc0f \\uc790\\u) Tj T*
+(b3d9 Kafka/MES Mock\\uc744 \\uc5f0\\ub3d9\\ud55c\\ub2e4; \\uc2b9\\uc778 \\uc0c1\\ud0dc\\ub294 null\\uc774\\ub2e4"]) Tj T*
 ({"request": {"body": null, "header": {}, "path": {"action_id": {"nullable": false, "required": true, "sch) Tj T*
 (ema": {"min_length": 1, "type": "string"}}}, "query": {}}, "responses": {"200": {"schema": {"additional_p) Tj T*
 (roperties": false, "fields": {"action_code": {"nullable": false, "required": true, "schema": {"enum": ["E) Tj T*
@@ -1070,42 +1163,44 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ble": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "started_at": {"nulla) Tj T*
 (ble": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "status": {"nullable") Tj T*
 (: false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNO) Tj T*
-(WN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "equipment": {"nullable": tru) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "equipment_id": {"nullable": true, ") Tj T*
-(required": true, "schema": {"min_length": 1, "type": "string"}}, "lot": {"nullable": false, "required": t) Tj T*
-(rue, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "sch) Tj T*
-(ema": {"min_length": 1, "type": "string"}}, "reason": {"nullable": false, "required": true, "schema": {"m) Tj T*
-(in_length": 1, "type": "string"}}}, "type": "object"}, "shape": "object"}, "404": {"schema": {"additional) Tj T*
-(_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROV) Tj T*
-(AL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCID) Tj T*
-(ENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY",) Tj T*
-( "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "detai) Tj T*
-(ls": {"nullable": false, "required": false, "schema": {"additional_properties": true, "fields": {}, "type) Tj T*
-(": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": ") Tj T*
-(object"}, "shape": "object"}, "422": {"schema": {"additional_properties": false, "fields": {"code": {"nul) Tj T*
-(lable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", ) Tj T*
-("IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGA) Tj T*
-(CY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UN) Tj T*
-(AUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "required": false, ") Tj T*
-(schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {"nullable": false,) Tj T*
-( "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}, "503": {"schema) Tj T*
-(": {"additional_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema": {") Tj T*
-(enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PRO) Tj T*
-(CESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MO) Tj T*
-(DEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "st) Tj T*
-(ring"}}, "details": {"nullable": false, "required": false, "schema": {"additional_properties": true, "fie) Tj T*
-(lds": {}, "type": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "string) Tj T*
+(WN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_policy": {"nullable) Tj T*
+(": false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION-POLICY-V1", "MOCK) Tj T*
+(-NOTIFY-V1"], "type": "string"}}, "equipment": {"nullable": true, "required": true, "schema": {"min_lengt) Tj T*
+(h": 1, "type": "string"}}, "equipment_id": {"nullable": true, "required": true, "schema": {"min_length": ) Tj T*
+(1, "type": "string"}}, "lot": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": ") Tj T*
+(string"}}, "lot_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}) Tj T*
+(, "reason": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type") Tj T*
+(: "object"}, "shape": "object"}, "404": {"schema": {"additional_properties": false, "fields": {"code": {") Tj T*
+(nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY) Tj T*
+(", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "L) Tj T*
+(EGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", ) Tj T*
+("UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "required": false) Tj T*
+(, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object"}, "422": {"sch) Tj T*
+(ema": {"additional_properties": false, "fields": {"code": {"nullable": false, "required": true, "schema":) Tj T*
+( {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPENDENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_) Tj T*
 ET
 endstream
 endobj
-29 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 28 0 R >>
+31 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 30 0 R >>
 endobj
-30 0 obj
-<< /Length 7690 >>
+32 0 obj
+<< /Length 7727 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
-("}}}, "type": "object"}, "shape": "object"}}}) Tj T*
+(PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTERNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", ) Tj T*
+("MODEL_NOT_READY", "POLICY_REJECTED", "RESOURCE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": ) Tj T*
+("string"}}, "details": {"nullable": false, "required": false, "schema": {"additional_properties": true, ") Tj T*
+(fields": {}, "type": "object"}}, "message": {"nullable": false, "required": true, "schema": {"type": "str) Tj T*
+(ing"}}}, "type": "object"}, "shape": "object"}, "503": {"schema": {"additional_properties": false, "field) Tj T*
+(s": {"code": {"nullable": false, "required": true, "schema": {"enum": ["APPROVAL_ALREADY_DECIDED", "DEPEN) Tj T*
+(DENCY_NOT_READY", "IDEMPOTENCY_CONFLICT", "INCIDENT_ALREADY_PROCESSED", "INCIDENT_ALREADY_RUNNING", "INTE) Tj T*
+(RNAL_ERROR", "LEGACY_APPROVAL_NOT_LINKED", "LLM_NOT_READY", "MODEL_NOT_READY", "POLICY_REJECTED", "RESOUR) Tj T*
+(CE_NOT_FOUND", "UNAUTHORIZED", "VALIDATION_ERROR"], "type": "string"}}, "details": {"nullable": false, "r) Tj T*
+(equired": false, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "message": {) Tj T*
+("nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "shape": "object") Tj T*
+(}}}) Tj T*
 (27 POST /actions/{action_id}/deliveries/{channel}/retry) Tj T*
 (RULES []) Tj T*
 (deferred inventory) Tj T*
@@ -1168,6 +1263,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (uired": true, "schema": {"type": "string"}}, "reject_reason": {"nullable": true, "required": false, "sche) Tj T*
 (ma": {"type": "string"}}, "row_count": {"nullable": false, "required": true, "schema": {"minimum": 0.0, ") Tj T*
 (type": "integer"}}, "rows": {"nullable": false, "required": true, "schema": {"items": {"additional_proper) Tj T*
+ET
+endstream
+endobj
+33 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 32 0 R >>
+endobj
+34 0 obj
+<< /Length 7754 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (ties": true, "fields": {}, "type": "object"}, "type": "array"}}, "visualization": {"nullable": true, "req) Tj T*
 (uired": false, "schema": {"additional_properties": false, "fields": {"chart_type": {"nullable": false, "r) Tj T*
 (equired": true, "schema": {"enum": ["bar", "histogram", "line", "table"], "type": "string"}}, "x": {"null) Tj T*
@@ -1179,16 +1284,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (}}, "msg": {"nullable": false, "required": true, "schema": {"type": "string"}}, "type": {"nullable": fals) Tj T*
 (e, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "type": "array"}}}, "type": "obje) Tj T*
 (ct"}, "shape": "object"}}}) Tj T*
-ET
-endstream
-endobj
-31 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 30 0 R >>
-endobj
-32 0 obj
-<< /Length 7572 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (30 POST /analytics/graph-query) Tj T*
 (RULES []) Tj T*
 ({"request": {"body": {"additional_properties": false, "fields": {"question": {"nullable": false, "require) Tj T*
@@ -1252,6 +1347,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (maximum": 100.0, "minimum": 1.0, "type": "integer"}}, "total": {"nullable": false, "required": true, "sch) Tj T*
 (ema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}, "shape": "object"}, "422": {"schema": {"a) Tj T*
 (dditional_properties": true, "fields": {"detail": {"nullable": false, "required": false, "schema": {"item) Tj T*
+ET
+endstream
+endobj
+35 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 34 0 R >>
+endobj
+36 0 obj
+<< /Length 8018 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (s": {"additional_properties": true, "fields": {"loc": {"nullable": false, "required": true, "schema": {"i) Tj T*
 (tems": {"type": "union", "variants": [{"type": "string"}, {"type": "integer"}]}, "type": "array"}}, "msg") Tj T*
 (: {"nullable": false, "required": true, "schema": {"type": "string"}}, "type": {"nullable": false, "requi) Tj T*
@@ -1263,16 +1368,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (false, "schema": {"default": true, "type": "boolean"}}, "page": {"nullable": false, "required": false, "s) Tj T*
 (chema": {"default": 1, "minimum": 1, "type": "integer"}}, "size": {"nullable": false, "required": false, ) Tj T*
 ("schema": {"default": 20, "maximum": 100, "minimum": 1, "type": "integer"}}}}, "responses": {"200": {"sch) Tj T*
-ET
-endstream
-endobj
-33 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 32 0 R >>
-endobj
-34 0 obj
-<< /Length 8221 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (ema": {"additional_properties": false, "fields": {"items": {"nullable": false, "required": true, "schema") Tj T*
 (: {"items": {"additional_properties": false, "fields": {"accuracy": {"nullable": false, "required": true,) Tj T*
 ( "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "correct": {"nullable": false, "required") Tj T*
@@ -1336,6 +1431,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( {"type": "string"}}, "entity": {"nullable": false, "required": true, "schema": {"type": "string"}}, "ent) Tj T*
 (ity_id": {"nullable": false, "required": true, "schema": {"type": "string"}}, "entity_type": {"nullable":) Tj T*
 ( false, "required": true, "schema": {"type": "string"}}, "event": {"nullable": false, "required": true, ") Tj T*
+ET
+endstream
+endobj
+37 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 36 0 R >>
+endobj
+38 0 obj
+<< /Length 7984 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (schema": {"type": "string"}}, "event_type": {"nullable": false, "required": true, "schema": {"type": "str) Tj T*
 (ing"}}, "occurred_at": {"nullable": false, "required": true, "schema": {"format": "date-time", "type": "s) Tj T*
 (tring"}}}, "type": "object"}, "type": "array"}}, "page": {"nullable": false, "required": true, "schema": ) Tj T*
@@ -1347,16 +1452,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("}]}, "type": "array"}}, "msg": {"nullable": false, "required": true, "schema": {"type": "string"}}, "typ) Tj T*
 (e": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "type": "arr) Tj T*
 (ay"}}}, "type": "object"}, "shape": "object"}}}) Tj T*
-ET
-endstream
-endobj
-35 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 34 0 R >>
-endobj
-36 0 obj
-<< /Length 8042 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (35 GET /health) Tj T*
 (RULES []) Tj T*
 ({"request": {"body": null, "header": {}, "path": {}, "query": {}}, "responses": {"200": {"schema": {"addi) Tj T*
@@ -1420,6 +1515,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (: {"enum": ["FAIL", "PASS"], "type": "string"}}}, "type": "object"}}, "postgresql_runtime": {"nullable": ) Tj T*
 (false, "required": true, "schema": {"additional_properties": false, "fields": {"latency_ms": {"nullable":) Tj T*
 ( false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "reason_code": {"nullable": tru) Tj T*
+ET
+endstream
+endobj
+39 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 38 0 R >>
+endobj
+40 0 obj
+<< /Length 7607 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (e, "required": true, "schema": {"enum": ["CONTRACT_MISMATCH", "DEPENDENCY_UNAVAILABLE", "KAFKA_LAG_STALE") Tj T*
 (, "NOT_CONFIGURED", "RAG_MODEL_NOT_READY", "TIMEOUT"], "type": "string"}}, "status": {"nullable": false, ) Tj T*
 ("required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "string"}}}, "type": "object"}}, "rag": {") Tj T*
@@ -1431,16 +1536,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (, "reference_migration": {"nullable": false, "required": true, "schema": {"additional_properties": false,) Tj T*
 ( "fields": {"latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integ) Tj T*
 (er"}}, "reason_code": {"nullable": true, "required": true, "schema": {"enum": ["CONTRACT_MISMATCH", "DEPE) Tj T*
-ET
-endstream
-endobj
-37 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 36 0 R >>
-endobj
-38 0 obj
-<< /Length 7232 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (NDENCY_UNAVAILABLE", "KAFKA_LAG_STALE", "NOT_CONFIGURED", "RAG_MODEL_NOT_READY", "TIMEOUT"], "type": "str) Tj T*
 (ing"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "str) Tj T*
 (ing"}}}, "type": "object"}}}, "type": "object"}}, "dataset_epoch": {"nullable": false, "required": true, ) Tj T*
@@ -1476,12 +1571,14 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (d_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "starte) Tj T*
 (d_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "status) Tj T*
 (": {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", ) Tj T*
-("SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "equipment": {") Tj T*
-(nullable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "equipment_id": {"null) Tj T*
-(able": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "lot": {"nullable": false,) Tj T*
-( "required": true, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "require) Tj T*
-(d": true, "schema": {"min_length": 1, "type": "string"}}, "reason": {"nullable": false, "required": true,) Tj T*
-( "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
+("SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_polic) Tj T*
+(y": {"nullable": false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION-POL) Tj T*
+(ICY-V1", "MOCK-NOTIFY-V1"], "type": "string"}}, "equipment": {"nullable": true, "required": true, "schema) Tj T*
+(": {"min_length": 1, "type": "string"}}, "equipment_id": {"nullable": true, "required": true, "schema": {) Tj T*
+("min_length": 1, "type": "string"}}, "lot": {"nullable": false, "required": true, "schema": {"min_length") Tj T*
+(: 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "typ) Tj T*
+(e": "string"}}, "reason": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "stri) Tj T*
+(ng"}}}, "type": "object"}) Tj T*
 (ActionItem) Tj T*
 ({"additional_properties": false, "fields": {"action_code": {"nullable": false, "required": true, "schema") Tj T*
 (: {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "action_id": {"nullable": false, "r) Tj T*
@@ -1495,12 +1592,24 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ble": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"channel":) Tj T*
 ( {"nullable": false, "required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "status":) Tj T*
 ( {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "S) Tj T*
-(ENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "equipment": {"nu) Tj T*
-(llable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "equipment_id": {"nullab) Tj T*
-(le": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "lot": {"nullable": false, ") Tj T*
-(required": true, "schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "required") Tj T*
-(: true, "schema": {"min_length": 1, "type": "string"}}, "reason": {"nullable": false, "required": true, ") Tj T*
-(schema": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
+(ENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_policy") Tj T*
+(: {"nullable": false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION-POLIC) Tj T*
+(Y-V1", "MOCK-NOTIFY-V1"], "type": "string"}}, "equipment": {"nullable": true, "required": true, "schema":) Tj T*
+( {"min_length": 1, "type": "string"}}, "equipment_id": {"nullable": true, "required": true, "schema": {"m) Tj T*
+(in_length": 1, "type": "string"}}, "lot": {"nullable": false, "required": true, "schema": {"min_length": ) Tj T*
+(1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type") Tj T*
+(: "string"}}, "reason": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string) Tj T*
+ET
+endstream
+endobj
+41 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 40 0 R >>
+endobj
+42 0 obj
+<< /Length 7879 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
+("}}}, "type": "object"}) Tj T*
 (AgentAskCompatibilityEvidence) Tj T*
 ({"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {) Tj T*
 ("min_length": 1, "type": "string"}}, "doc_id": {"nullable": false, "required": true, "schema": {"min_leng) Tj T*
@@ -1515,16 +1624,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ({"additional_properties": false, "fields": {"answer": {"nullable": false, "required": true, "schema": {"t) Tj T*
 (ype": "string"}}, "confidence": {"nullable": true, "required": true, "schema": {"maximum": 1, "minimum": ) Tj T*
 (0, "type": "number"}}, "evidence": {"nullable": true, "required": true, "schema": {"additional_properties) Tj T*
-ET
-endstream
-endobj
-39 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 38 0 R >>
-endobj
-40 0 obj
-<< /Length 8338 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type") Tj T*
 (: "string"}}, "doc_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string) Tj T*
 ("}}, "document_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}},) Tj T*
@@ -1584,6 +1683,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (e": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "precision": {") Tj T*
 (nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "recal) Tj T*
 (l": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, ) Tj T*
+ET
+endstream
+endobj
+43 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 42 0 R >>
+endobj
+44 0 obj
+<< /Length 8321 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 ("support": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "true_po) Tj T*
 (sitive": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": ") Tj T*
 (object"}, "fields": {}, "type": "object"}}, "macro_f1_5class": {"nullable": false, "required": true, "sch) Tj T*
@@ -1599,16 +1708,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ional_properties": false, "fields": {"count": {"nullable": false, "required": true, "schema": {"minimum":) Tj T*
 ( 0.0, "type": "integer"}}, "meaning": {"nullable": false, "required": true, "schema": {"min_length": 1, ") Tj T*
 (type": "string"}}, "reason": {"nullable": false, "required": true, "schema": {"enum": ["AMBIGUOUS_LABEL",) Tj T*
-ET
-endstream
-endobj
-41 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 40 0 R >>
-endobj
-42 0 obj
-<< /Length 7920 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 ( "NO_INJECTED_FAULT"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "hard_gate_passed": {"n) Tj T*
 (ullable": false, "required": true, "schema": {"type": "boolean"}}, "hard_gate_reasons": {"nullable": fals) Tj T*
 (e, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "label_source": {"nullabl) Tj T*
@@ -1633,19 +1732,30 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "string"}}, "policy_version": {"nullable": true, "required": true, "schema": {"type": "string"}}, "promp) Tj T*
 (t_version": {"nullable": true, "required": true, "schema": {"type": "string"}}}, "type": "object"}}}, "ty) Tj T*
 (pe": "object"}}, "fault_5class_empty_reason": {"nullable": true, "required": true, "schema": {"enum": ["C) Tj T*
-(ONTRACT_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND"], "type": "string"}}, "golden_flow": {"nullable": true,) Tj T*
-( "required": true, "schema": {"additional_properties": false, "fields": {"dataset_epoch": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"min_length": 1, "type": "string"}}, "phases": {"nullable": false, "req) Tj T*
-(uired": true, "schema": {"items": {"additional_properties": false, "fields": {"metrics": {"nullable": fal) Tj T*
-(se, "required": true, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "phase") Tj T*
-(: {"nullable": false, "required": true, "schema": {"enum": ["BATCH_BASELINE", "DECISIONS", "MANUAL_RETRY") Tj T*
-(, "PREFLIGHT", "PRE_APPROVAL", "SECOND_BATCH", "UNKNOWN"], "type": "string"}}, "reasons": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}},) Tj T*
-( "type": "object"}, "type": "array"}}, "status": {"nullable": false, "required": true, "schema": {"enum":) Tj T*
-( ["EVIDENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}}, "type": "object"}}, "golden_flow_empty_rea) Tj T*
-(son": {"nullable": true, "required": true, "schema": {"enum": ["CONTRACT_VIOLATION", "NOT_CONFIGURED", "N) Tj T*
-(OT_FOUND"], "type": "string"}}}, "type": "object"}) Tj T*
+(ONTRACT_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND"], "type": "string"}}, "golden_flow": {"nullable": false) Tj T*
+(, "required": true, "schema": {"type": "union", "variants": [{"additional_properties": false, "fields": {) Tj T*
+("dataset_epoch": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "p) Tj T*
+(hases": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "field) Tj T*
+(s": {"metrics": {"nullable": false, "required": true, "schema": {"additional_properties": true, "fields":) Tj T*
+( {}, "type": "object"}}, "phase": {"nullable": false, "required": true, "schema": {"enum": ["BATCH_BASELI) Tj T*
+(NE", "DECISIONS", "MANUAL_RETRY", "PREFLIGHT", "PRE_APPROVAL", "SECOND_BATCH", "UNKNOWN"], "type": "strin) Tj T*
+(g"}}, "reasons": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "a) Tj T*
+(rray"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL) Tj T*
+(", "PASS"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "status": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "PASS"], "type": "string"}}}, "type": "o) Tj T*
+(bject"}, {"additional_properties": false, "fields": {"dataset_epoch": {"nullable": false, "required": tru) Tj T*
+(e, "schema": {"min_length": 1, "type": "string"}}, "phases": {"nullable": false, "required": true, "schem) Tj T*
+(a": {"items": {"additional_properties": false, "fields": {"metrics": {"nullable": false, "required": true) Tj T*
+(, "schema": {"additional_properties": true, "fields": {}, "type": "object"}}, "phase": {"nullable": false) Tj T*
+(, "required": true, "schema": {"enum": ["BATCH_BASELINE", "MANUAL_RETRY", "MOCK_RESULTS", "NO_DECISIONS",) Tj T*
+( "PREFLIGHT", "SECOND_BATCH", "UNKNOWN"], "type": "string"}}, "reasons": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nullable": false, "required") Tj T*
+(: true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAIL", "NOT_LIVE", "PASS"], "type": "string"}}}, "typ) Tj T*
+(e": "object"}, "type": "array"}}, "protocol": {"nullable": false, "required": true, "schema": {"type": "s) Tj T*
+(tring"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["EVIDENCE_INCOMPLETE", "FAI) Tj T*
+(L", "PASS"], "type": "string"}}}, "type": "object"}, {"type": "null"}]}}, "golden_flow_empty_reason": {"n) Tj T*
+(ullable": true, "required": true, "schema": {"enum": ["CONTRACT_VIOLATION", "NOT_CONFIGURED", "NOT_FOUND") Tj T*
+(], "type": "string"}}}, "type": "object"}) Tj T*
 (AgentPredictionDetailItem) Tj T*
 ({"additional_properties": false, "fields": {"cause_summary": {"nullable": false, "required": true, "schem) Tj T*
 (a": {"max_length": 2000, "min_length": 1, "type": "string"}}, "confidence": {"nullable": false, "required) Tj T*
@@ -1657,6 +1767,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (e, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prompt_) Tj T*
 (version": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "supporti) Tj T*
 (ng_alarms": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "f) Tj T*
+ET
+endstream
+endobj
+45 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 44 0 R >>
+endobj
+46 0 obj
+<< /Length 7499 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (ields": {"alarm_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}) Tj T*
 (, "source": {"nullable": false, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type":) Tj T*
 ( "string"}}}, "type": "object"}, "type": "array"}}, "supporting_chunk_ids": {"nullable": false, "required) Tj T*
@@ -1683,24 +1803,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (: {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "action_id": {"nullable": false, "r) Tj T*
 (equired": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "requ) Tj T*
 (ired": true, "schema": {"min_length": 1, "type": "string"}}, "approval_status": {"nullable": true, "requi) Tj T*
-ET
-endstream
-endobj
-43 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 42 0 R >>
-endobj
-44 0 obj
-<< /Length 7951 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (red": true, "schema": {"enum": ["APPROVED", "PENDING", "REJECTED"], "type": "string"}}, "deliveries": {"n) Tj T*
 (ullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"chann) Tj T*
 (el": {"nullable": false, "required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "comp) Tj T*
 (leted_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "st) Tj T*
 (arted_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "st) Tj T*
 (atus": {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDIN) Tj T*
-(G", "SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "reason": {) Tj T*
-("nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
+(G", "SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_p) Tj T*
+(olicy": {"nullable": false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION) Tj T*
+(-POLICY-V1", "MOCK-NOTIFY-V1"], "type": "string"}}, "reason": {"nullable": false, "required": true, "sche) Tj T*
+(ma": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
 (AgentRunApprovalItem) Tj T*
 ({"additional_properties": false, "fields": {"action_id": {"nullable": false, "required": true, "schema": ) Tj T*
 ({"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true, "schema": {"m) Tj T*
@@ -1733,124 +1845,12 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (d_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "starte) Tj T*
 (d_at": {"nullable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "status) Tj T*
 (": {"nullable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", ) Tj T*
-("SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "reason": {"nul) Tj T*
-(lable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}}, "ac) Tj T*
-(tion_id": {"nullable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run) Tj T*
-(_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "alarm_id": {) Tj T*
-("nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "alarm_source": {"nu) Tj T*
-(llable": false, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}, "ap) Tj T*
-(proval": {"nullable": true, "required": true, "schema": {"additional_properties": false, "fields": {"acti) Tj T*
-(on_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "agent_run_) Tj T*
-(id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "approval_id":) Tj T*
-( {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "decided_at": {"nu) Tj T*
-(llable": true, "required": true, "schema": {"format": "date-time", "type": "string"}}, "decided_by": {"nu) Tj T*
-(llable": true, "required": true, "schema": {"type": "string"}}, "decision_comment": {"nullable": true, "r) Tj T*
-(equired": true, "schema": {"type": "string"}}, "status": {"nullable": false, "required": true, "schema": ) Tj T*
-({"enum": ["APPROVED", "PENDING", "REJECTED"], "type": "string"}}}, "type": "object"}}, "approval_id": {"n) Tj T*
-(ullable": true, "required": true, "schema": {"min_length": 1, "type": "string"}}, "chamber": {"nullable":) Tj T*
-( false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "confidence": {"nullable": true, "re) Tj T*
-(quired": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "created_at": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"format": "date-time", "type": "string"}}, "deliveries": {"nullable":) Tj T*
-( false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"channel": {"nu) Tj T*
-(llable": false, "required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "status": {"nu) Tj T*
-(llable": false, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT",) Tj T*
-( "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "diagnosis": {"nullabl) Tj T*
-(e": false, "required": true, "schema": {"additional_properties": false, "fields": {"alternative_hypothese) Tj T*
-(s": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": ) Tj T*
-({"lower_rank_reason": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": ) Tj T*
-(1, "type": "string"}}, "summary": {"nullable": false, "required": true, "schema": {"max_length": 1000, "m) Tj T*
-(in_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "cause_summary": {"nullable": t) Tj T*
-(rue, "required": false, "schema": {"max_length": 2000, "type": "string"}}, "confidence": {"nullable": tru) Tj T*
-(e, "required": false, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "diagnostic_coverage) Tj T*
-(": {"nullable": true, "required": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable") Tj T*
-(: true, "required": false, "schema": {"max_length": 2000, "type": "string"}}, "limitations": {"nullable":) Tj T*
-( false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "observations": {"nu) Tj T*
-(llable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "predicted_f) Tj T*
-ET
-endstream
-endobj
-45 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 44 0 R >>
-endobj
-46 0 obj
-<< /Length 8496 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
-(ault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], ) Tj T*
-("type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_) Tj T*
-(]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE") Tj T*
-(, "EMPTY"], "type": "string"}}, "verification_steps": {"nullable": false, "required": true, "schema": {"i) Tj T*
-(tems": {"type": "string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"additional_properties": false, "fields": {"available_sources": {"nulla) Tj T*
-(ble": false, "required": true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "t) Tj T*
-(ype": "string"}, "type": "array"}}, "conflicting_source_ids": {"nullable": false, "required": true, "sche) Tj T*
-(ma": {"items": {"type": "string"}, "type": "array"}}, "missing_sources": {"nullable": false, "required": ) Tj T*
-(true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, "type": ) Tj T*
-("array"}}, "reason_codes": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, ) Tj T*
-("type": "array"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY) Tj T*
-(", "PARTIAL", "SUFFICIENT"], "type": "string"}}}, "type": "object"}}, "evidence_items": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"items": {"discriminator": "type", "type": "discriminated_union", "varian) Tj T*
-(ts": {"ALARM": {"additional_properties": false, "fields": {"alarm": {"nullable": false, "required": true,) Tj T*
-( "schema": {"additional_properties": false, "fields": {"alarm_id": {"nullable": false, "required": true, ) Tj T*
-("schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": false, "required": true, "schema":) Tj T*
-( {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "object"}}, "excerpt": {"nullable": f) Tj T*
-(alse, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": false, ) Tj T*
-("required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required") Tj T*
-(: true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "sc) Tj T*
-(hema": {"type": "string"}}}, "type": "object"}, "DOCUMENT": {"additional_properties": false, "fields": {") Tj T*
-(chunk_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "documen) Tj T*
-(t_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "excerpt": {) Tj T*
-("nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "section": {"nullabl) Tj T*
-(e": true, "required": true, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": t) Tj T*
-(rue, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "sche) Tj T*
-(ma": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type) Tj T*
-(": "string"}}}, "type": "object"}, "GRAPH": {"additional_properties": false, "fields": {"excerpt": {"null) Tj T*
-(able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "graph_revision": {"nulla) Tj T*
-(ble": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "relation_id": {"nullable") Tj T*
-(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "requir) Tj T*
-(ed": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, ) Tj T*
-("schema": {"type": "string"}}}, "type": "object"}, "METROLOGY": {"additional_properties": false, "fields") Tj T*
-(: {"excerpt": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "sour) Tj T*
-(ce_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {") Tj T*
-(nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": ) Tj T*
-(false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "TRACE": {"additional_propert) Tj T*
-(ies": false, "fields": {"excerpt": {"nullable": false, "required": true, "schema": {"min_length": 1, "typ) Tj T*
-(e": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "s) Tj T*
-(tring"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, ) Tj T*
-("type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}}}, "type") Tj T*
-(: "array"}}, "fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", ) Tj T*
-("RFM", "TMD"], "type": "string"}}, "fault_color": {"nullable": false, "required": true, "schema": {"type") Tj T*
-(: "null"}}, "fault_name": {"nullable": false, "required": true, "schema": {"type": "null"}}, "impact_scop) Tj T*
-(e": {"nullable": false, "required": true, "schema": {"additional_properties": false, "fields": {"check_re) Tj T*
-(quired": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fiel) Tj T*
-(ds": {"kind": {"nullable": false, "required": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "P) Tj T*
-(ROCESS_STEP", "SIBLING_CHAMBER", "WAFER"], "type": "string"}}, "relation": {"nullable": true, "required":) Tj T*
-( false, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min) Tj T*
-(_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "direct": {"nullable": false, "re) Tj T*
-(quired": true, "schema": {"items": {"additional_properties": false, "fields": {"kind": {"nullable": false) Tj T*
-(, "required": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SIBLING_CHAMBER",) Tj T*
-( "WAFER"], "type": "string"}}, "relation": {"nullable": true, "required": false, "schema": {"type": "stri) Tj T*
-(ng"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}) Tj T*
-(, "type": "object"}, "type": "array"}}, "graph_conflict": {"nullable": false, "required": false, "schema") Tj T*
-(: {"default": false, "type": "boolean"}}, "reason_code": {"nullable": true, "required": false, "schema": ) Tj T*
-({"pattern": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema":) Tj T*
-( {"enum": ["AVAILABLE", "EMPTY"], "type": "string"}}, "summary": {"nullable": true, "required": false, "s) Tj T*
-(chema": {"max_length": 2000, "type": "string"}}}, "type": "object"}}, "latency_ms": {"nullable": false, ") Tj T*
-(required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "requir) Tj T*
-(ed": true, "schema": {"min_length": 1, "type": "string"}}, "post_action_observation": {"nullable": false,) Tj T*
-( "required": true, "schema": {"additional_properties": false, "fields": {"message": {"nullable": false, ") Tj T*
-(required": false, "schema": {"default": "\\ucd5c\\uc885 \\uc815\\uc801 \\ub370\\uc774\\ud130\\uc14b\\uc5d0\\ub294 \\) Tj T*
-(uc870\\uce58 \\uc774\\ud6c4 \\uacf5\\uc815 \\uad00\\uce21\\uac12\\uc774 \\uc5c6\\uc5b4 \\ud6a8\\uacfc\\ub97c \\ud3c9\\uac) Tj T*
-(00\\ud560 \\uc218 \\uc5c6\\uc74c", "type": "string"}}, "status": {"nullable": false, "required": false, "sche) Tj T*
-(ma": {"default": "NOT_AVAILABLE_STATIC_DATASET", "type": "string"}}}, "type": "object"}}, "predicted_faul) Tj T*
-(t_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "ty) Tj T*
-(pe": "string"}}, "prediction": {"nullable": true, "required": true, "schema": {"additional_properties": f) Tj T*
-(alse, "fields": {"cause_summary": {"nullable": false, "required": true, "schema": {"max_length": 2000, "m) Tj T*
-(in_length": 1, "type": "string"}}, "confidence": {"nullable": false, "required": true, "schema": {"maximu) Tj T*
-(m": 1.0, "minimum": 0.0, "type": "number"}}, "generated_at": {"nullable": false, "required": true, "schem) Tj T*
-(a": {"format": "date-time", "type": "string"}}, "input_tokens": {"nullable": false, "required": true, "sc) Tj T*
+("SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "delivery_polic) Tj T*
+(y": {"nullable": false, "required": false, "schema": {"default": "ACTION-POLICY-V1", "enum": ["ACTION-POL) Tj T*
+(ICY-V1", "MOCK-NOTIFY-V1"], "type": "string"}}, "reason": {"nullable": false, "required": true, "schema":) Tj T*
+( {"min_length": 1, "type": "string"}}}, "type": "object"}}, "action_id": {"nullable": true, "required": t) Tj T*
+(rue, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true) Tj T*
+(, "schema": {"min_length": 1, "type": "string"}}, "alarm_id": {"nullable": false, "required": true, "sche) Tj T*
 ET
 endstream
 endobj
@@ -1858,45 +1858,233 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 46 0 R >>
 endobj
 48 0 obj
-<< /Length 8017 >>
+<< /Length 8465 >>
 stream
 BT /F1 7 Tf 28 814 Td 9 TL
-(hema": {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "required": true, "schema":) Tj T*
-( {"min_length": 1, "type": "string"}}, "output_tokens": {"nullable": false, "required": true, "schema": {) Tj T*
-("minimum": 0.0, "type": "integer"}}, "predicted_fault_code": {"nullable": false, "required": true, "schem) Tj T*
-(a": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prompt_version": {"nullable": fals) Tj T*
-(e, "required": true, "schema": {"min_length": 1, "type": "string"}}, "supporting_alarms": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"alarm_id": {"null) Tj T*
-(able": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": fa) Tj T*
-(lse, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "obje) Tj T*
-(ct"}, "type": "array"}}, "supporting_chunk_ids": {"nullable": false, "required": true, "schema": {"items") Tj T*
-(: {"min_length": 1, "type": "string"}, "type": "array"}}, "supporting_relation_ids": {"nullable": false, ) Tj T*
-("required": true, "schema": {"items": {"min_length": 1, "type": "string"}, "type": "array"}}, "uncertaint) Tj T*
-(y": {"nullable": false, "required": true, "schema": {"max_length": 1000, "type": "string"}}}, "type": "ob) Tj T*
-(ject"}}, "recommended_action": {"nullable": true, "required": true, "schema": {"enum": ["EQP_HOLD", "MONI) Tj T*
-(TORING", "WARNING"], "type": "string"}}, "similar_incidents": {"nullable": false, "required": true, "sche) Tj T*
-(ma": {"additional_properties": false, "fields": {"items": {"nullable": false, "required": true, "schema":) Tj T*
-( {"items": {"additional_properties": false, "fields": {"agent_run_id": {"nullable": false, "required": tr) Tj T*
-(ue, "schema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": true, ") Tj T*
-(schema": {"min_length": 1, "type": "string"}}, "lot_id": {"nullable": false, "required": true, "schema": ) Tj T*
-({"min_length": 1, "type": "string"}}, "parameter_jaccard": {"nullable": false, "required": true, "schema") Tj T*
-(: {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "predicted_fault_code": {"nullable": false, "requi) Tj T*
-(red": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "recommended_acti) Tj T*
-(on": {"nullable": false, "required": true, "schema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "typ) Tj T*
-(e": "string"}}, "score": {"nullable": false, "required": true, "schema": {"maximum": 100.0, "minimum": 0.) Tj T*
-(0, "type": "integer"}}}, "type": "object"}, "type": "array"}}, "label": {"nullable": false, "required": f) Tj T*
-(alse, "schema": {"default": "\\uace0\\uc815 \\uc2dc\\uc5f0 \\ub370\\uc774\\ud130 \\ub0b4 \\ube44\\uad50 \\uacb0\\uacf) Tj T*
-(c", "type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z) Tj T*
-(0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILA) Tj T*
-(BLE", "EMPTY"], "type": "string"}}}, "type": "object"}}, "status": {"nullable": false, "required": true, ) Tj T*
-("schema": {"enum": ["COMPLETED", "FAILED", "RUNNING", "WAITING_APPROVAL"], "type": "string"}}, "tools": {) Tj T*
-("nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"n":) Tj T*
-( {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "result_summary": ) Tj T*
-({"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "s": {"nullable": f) Tj T*
-(alse, "required": true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "status":) Tj T*
-( {"nullable": false, "required": true, "schema": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "strin) Tj T*
-(g"}}, "tool_name": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}},) Tj T*
-( "type": "object"}, "type": "array"}}}, "type": "object"}) Tj T*
+(ma": {"min_length": 1, "type": "string"}}, "alarm_source": {"nullable": false, "required": true, "schema") Tj T*
+(: {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}, "approval": {"nullable": true, "required": tr) Tj T*
+(ue, "schema": {"additional_properties": false, "fields": {"action_id": {"nullable": false, "required": tr) Tj T*
+(ue, "schema": {"min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true,) Tj T*
+( "schema": {"min_length": 1, "type": "string"}}, "approval_id": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"min_length": 1, "type": "string"}}, "decided_at": {"nullable": true, "required": true, "schema":) Tj T*
+( {"format": "date-time", "type": "string"}}, "decided_by": {"nullable": true, "required": true, "schema":) Tj T*
+( {"type": "string"}}, "decision_comment": {"nullable": true, "required": true, "schema": {"type": "string) Tj T*
+("}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["APPROVED", "PENDING", "REJECTED) Tj T*
+("], "type": "string"}}}, "type": "object"}}, "approval_id": {"nullable": true, "required": true, "schema") Tj T*
+(: {"min_length": 1, "type": "string"}}, "autonomy_level": {"nullable": false, "required": false, "schema") Tj T*
+(: {"default": 2, "maximum": 3.0, "minimum": 1.0, "type": "integer"}}, "chamber": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required) Tj T*
+(": true, "schema": {"min_length": 1, "type": "string"}}, "confidence": {"nullable": true, "required": tru) Tj T*
+(e, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "created_at": {"nullable": false, "requ) Tj T*
+(ired": true, "schema": {"format": "date-time", "type": "string"}}, "deliveries": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"items": {"additional_properties": false, "fields": {"channel": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"enum": ["EMAIL", "MES"], "type": "string"}}, "status": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNOWN", ) Tj T*
+("WAITING"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "diagnosis": {"nullable": false, ") Tj T*
+(required": true, "schema": {"additional_properties": false, "fields": {"alternative_hypotheses": {"nullab) Tj T*
+(le": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"lower_rank) Tj T*
+(_reason": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": 1, "type": ") Tj T*
+(string"}}, "summary": {"nullable": false, "required": true, "schema": {"max_length": 1000, "min_length": ) Tj T*
+(1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "cause_summary": {"nullable": true, "requir) Tj T*
+(ed": false, "schema": {"max_length": 2000, "type": "string"}}, "confidence": {"nullable": true, "required) Tj T*
+(": false, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "number"}}, "diagnostic_coverage": {"nullabl) Tj T*
+(e": true, "required": false, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "req) Tj T*
+(uired": false, "schema": {"max_length": 2000, "type": "string"}}, "limitations": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "observations": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "origin_assessment": {"n) Tj T*
+(ullable": true, "required": false, "schema": {"additional_properties": false, "fields": {"basis": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"id": {"nu) Tj T*
+(llable": false, "required": true, "schema": {"max_length": 160, "min_length": 1, "type": "string"}}, "nam) Tj T*
+(espace": {"nullable": false, "required": true, "schema": {"enum": ["ALARM", "CHUNK", "LOT_HIST", "PARAMET) Tj T*
+(ER", "RELATION"], "type": "string"}}}, "type": "object"}, "type": "array"}}, "compared": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"additional_properties": false, "fields": {"downstream": {"nullable": fa) Tj T*
+(lse, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_) Tj T*
+(CHECKED"], "type": "string"}}, "history": {"nullable": false, "required": false, "schema": {"default": "N) Tj T*
+(OT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "metrology": {"nu) Tj T*
+(llable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILA) Tj T*
+(BLE", "NOT_CHECKED"], "type": "string"}}, "sibling": {"nullable": false, "required": false, "schema": {"d) Tj T*
+(efault": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "upstr) Tj T*
+(eam": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", ") Tj T*
+(NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}}, "type": "object"}}, "degraded": {"nullable": false, ) Tj T*
+("required": false, "schema": {"default": false, "type": "boolean"}}, "degraded_reasons": {"nullable": fal) Tj T*
+(se, "required": false, "schema": {"default": [], "items": {"type": "string"}, "type": "array"}}, "dropped) Tj T*
+(_basis_count": {"nullable": false, "required": false, "schema": {"default": 0, "maximum": 40, "minimum": ) Tj T*
+(0, "type": "integer"}}, "scope": {"nullable": false, "required": true, "schema": {"enum": ["CURRENT_CHAMB) Tj T*
+(ER", "DOWNSTREAM", "EQUIPMENT_COMMON", "UNDETERMINED", "UPSTREAM"], "type": "string"}}}, "type": "object") Tj T*
+(}}, "parameter_findings": {"nullable": false, "required": false, "schema": {"default": [], "items": {"add) Tj T*
+(itional_properties": false, "fields": {"direction": {"nullable": false, "required": true, "schema": {"enu) Tj T*
+(m": ["ABOVE", "BELOW", "BOTH"], "type": "string"}}, "excursion_ratio": {"nullable": false, "required": tr) Tj T*
+(ue, "schema": {"type": "number"}}, "lot_hist_ids": {"nullable": false, "required": true, "schema": {"item) Tj T*
+(s": {"type": "string"}, "type": "array"}}, "parameter_id": {"nullable": false, "required": true, "schema") Tj T*
+(: {"max_length": 20, "min_length": 1, "type": "string"}}, "step_no": {"nullable": false, "required": true) Tj T*
+(, "schema": {"minimum": 1.0, "type": "integer"}}, "wafer_scope": {"nullable": false, "required": true, "s) Tj T*
+(chema": {"enum": ["ALL", "PARTIAL", "SINGLE"], "type": "string"}}}, "type": "object"}, "type": "array"}},) Tj T*
+( "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "R) Tj T*
+(FM", "TMD"], "type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern) Tj T*
+(": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum":) Tj T*
+( ["AVAILABLE", "EMPTY"], "type": "string"}}, "verification_steps": {"nullable": false, "required": true, ) Tj T*
+("schema": {"items": {"type": "string"}, "type": "array"}}}, "type": "object"}}, "evidence_assessment": {") Tj T*
+(nullable": false, "required": true, "schema": {"additional_properties": false, "fields": {"available_sour) Tj T*
+(ces": {"nullable": false, "required": true, "schema": {"items": {"enum": ["FDC", "GRAPH", "POSTGRES_ROUTE) Tj T*
+(", "RAG"], "type": "string"}, "type": "array"}}, "conflicting_source_ids": {"nullable": false, "required") Tj T*
+(: true, "schema": {"items": {"type": "string"}, "type": "array"}}, "degraded": {"nullable": false, "requi) Tj T*
+(red": false, "schema": {"type": "boolean"}}, "degraded_reasons": {"nullable": false, "required": false, ") Tj T*
+(schema": {"items": {"enum": ["ORIGIN_BASIS_OUTSIDE_EVIDENCE"], "type": "string"}, "type": "array"}}, "dro) Tj T*
+(pped_basis_count": {"nullable": false, "required": false, "schema": {"maximum": 40, "minimum": 0, "type":) Tj T*
+( "integer"}}, "missing_sources": {"nullable": false, "required": true, "schema": {"items": {"enum": ["FDC) Tj T*
+(", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, "type": "array"}}, "reason_codes": {"nullable": ) Tj T*
+(false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nullable") Tj T*
+(: false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY", "PARTIAL", "SUFFICIENT"], "type": "st) Tj T*
+ET
+endstream
+endobj
+49 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 48 0 R >>
+endobj
+50 0 obj
+<< /Length 8496 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
+(ring"}}}, "type": "object"}}, "evidence_items": {"nullable": false, "required": true, "schema": {"items":) Tj T*
+( {"discriminator": "type", "type": "discriminated_union", "variants": {"ALARM": {"additional_properties":) Tj T*
+( false, "fields": {"alarm": {"nullable": false, "required": true, "schema": {"additional_properties": fal) Tj T*
+(se, "fields": {"alarm_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "str) Tj T*
+(ing"}}, "source": {"nullable": false, "required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], ") Tj T*
+(type": "string"}}}, "type": "object"}}, "excerpt": {"nullable": false, "required": true, "schema": {"min_) Tj T*
+(length": 1, "type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length) Tj T*
+(": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "typ) Tj T*
+(e": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "ob) Tj T*
+(ject"}, "DOCUMENT": {"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required) Tj T*
+(": true, "schema": {"min_length": 1, "type": "string"}}, "document_id": {"nullable": false, "required": t) Tj T*
+(rue, "schema": {"min_length": 1, "type": "string"}}, "excerpt": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"min_length": 1, "type": "string"}}, "section": {"nullable": true, "required": true, "schema": {") Tj T*
+(type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type":) Tj T*
+( "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
+(}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": "object"}, "GRAP) Tj T*
+(H": {"additional_properties": false, "fields": {"excerpt": {"nullable": false, "required": true, "schema") Tj T*
+(: {"min_length": 1, "type": "string"}}, "graph_revision": {"nullable": false, "required": true, "schema":) Tj T*
+( {"min_length": 1, "type": "string"}}, "relation_id": {"nullable": false, "required": true, "schema": {"m) Tj T*
+(in_length": 1, "type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_len) Tj T*
+(gth": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, ") Tj T*
+(type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"type": "string"}}}, "type": ) Tj T*
+("object"}, "METROLOGY": {"additional_properties": false, "fields": {"excerpt": {"nullable": false, "requi) Tj T*
+(red": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, "required": true, "sch) Tj T*
+(ema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": true, "schema": {"typ) Tj T*
+(e": "string"}}}, "type": "object"}, "TRACE": {"additional_properties": false, "fields": {"excerpt": {"nul) Tj T*
+(lable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source_id": {"nullable") Tj T*
+(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": false, ") Tj T*
+(required": true, "schema": {"min_length": 1, "type": "string"}}, "type": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"type": "string"}}}, "type": "object"}}}, "type": "array"}}, "fault_code": {"nullable": ) Tj T*
+(true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "faul) Tj T*
+(t_color": {"nullable": false, "required": true, "schema": {"type": "null"}}, "fault_name": {"nullable": f) Tj T*
+(alse, "required": true, "schema": {"type": "null"}}, "impact_scope": {"nullable": false, "required": true) Tj T*
+(, "schema": {"additional_properties": false, "fields": {"check_required": {"nullable": false, "required":) Tj T*
+( true, "schema": {"items": {"additional_properties": false, "fields": {"kind": {"nullable": false, "requi) Tj T*
+(red": true, "schema": {"enum": ["CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SIBLING_CHAMBER", "WAFER") Tj T*
+(], "type": "string"}}, "relation": {"nullable": true, "required": false, "schema": {"type": "string"}}, ") Tj T*
+(source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}}, "type") Tj T*
+(: "object"}, "type": "array"}}, "direct": {"nullable": false, "required": true, "schema": {"items": {"add) Tj T*
+(itional_properties": false, "fields": {"kind": {"nullable": false, "required": true, "schema": {"enum": [) Tj T*
+("CHAMBER", "LOT", "PARAMETER", "PROCESS_STEP", "SIBLING_CHAMBER", "WAFER"], "type": "string"}}, "relation) Tj T*
+(": {"nullable": true, "required": false, "schema": {"type": "string"}}, "source_id": {"nullable": false, ) Tj T*
+("required": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, ) Tj T*
+("graph_conflict": {"nullable": false, "required": false, "schema": {"default": false, "type": "boolean"}}) Tj T*
+(, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+$", "type": "str) Tj T*
+(ing"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE", "EMPTY"], "type") Tj T*
+(: "string"}}, "summary": {"nullable": true, "required": false, "schema": {"max_length": 2000, "type": "st) Tj T*
+(ring"}}}, "type": "object"}}, "investigation_budget": {"nullable": true, "required": false, "schema": {"a) Tj T*
+(dditional_properties": false, "fields": {"guard_rejection_cap": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"maximum": 2.0, "minimum": 1.0, "type": "integer"}}, "profile_id": {"nullable": false, "required") Tj T*
+(: true, "schema": {"enum": ["PRODUCTION_WIDE_V1", "STANDARD"], "type": "string"}}, "read_cap": {"nullable) Tj T*
+(": false, "required": true, "schema": {"maximum": 24.0, "minimum": 1.0, "type": "integer"}}, "same_tool_c) Tj T*
+(ap": {"nullable": false, "required": true, "schema": {"maximum": 8.0, "minimum": 1.0, "type": "integer"}}) Tj T*
+(, "selector_cap": {"nullable": false, "required": true, "schema": {"maximum": 28.0, "minimum": 1.0, "type) Tj T*
+(": "integer"}}, "send_budget": {"nullable": false, "required": true, "schema": {"maximum": 2.0, "minimum") Tj T*
+(: 1.0, "type": "integer"}}, "total_call_cap": {"nullable": false, "required": true, "schema": {"maximum":) Tj T*
+( 26.0, "minimum": 1.0, "type": "integer"}}}, "type": "object"}}, "latency_ms": {"nullable": false, "requi) Tj T*
+(red": true, "schema": {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"min_length": 1, "type": "string"}}, "post_action_observation": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"additional_properties": false, "fields": {"message": {"nullable": false, "requi) Tj T*
+(red": false, "schema": {"default": "\\ucd5c\\uc885 \\uc815\\uc801 \\ub370\\uc774\\ud130\\uc14b\\uc5d0\\ub294 \\uc870) Tj T*
+(\\uce58 \\uc774\\ud6c4 \\uacf5\\uc815 \\uad00\\uce21\\uac12\\uc774 \\uc5c6\\uc5b4 \\ud6a8\\uacfc\\ub97c \\ud3c9\\uac00\\ud) Tj T*
+(560 \\uc218 \\uc5c6\\uc74c", "type": "string"}}, "status": {"nullable": false, "required": false, "schema": ) Tj T*
+({"default": "NOT_AVAILABLE_STATIC_DATASET", "type": "string"}}}, "type": "object"}}, "predicted_fault_cod) Tj T*
+(e": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": ) Tj T*
+("string"}}, "prediction": {"nullable": true, "required": true, "schema": {"additional_properties": false,) Tj T*
+( "fields": {"cause_summary": {"nullable": false, "required": true, "schema": {"max_length": 2000, "min_le) Tj T*
+(ngth": 1, "type": "string"}}, "confidence": {"nullable": false, "required": true, "schema": {"maximum": 1) Tj T*
+(.0, "minimum": 0.0, "type": "number"}}, "generated_at": {"nullable": false, "required": true, "schema": {) Tj T*
+("format": "date-time", "type": "string"}}, "input_tokens": {"nullable": false, "required": true, "schema") Tj T*
+(: {"minimum": 0.0, "type": "integer"}}, "llm_model": {"nullable": false, "required": true, "schema": {"mi) Tj T*
+(n_length": 1, "type": "string"}}, "output_tokens": {"nullable": false, "required": true, "schema": {"mini) Tj T*
+(mum": 0.0, "type": "integer"}}, "predicted_fault_code": {"nullable": false, "required": true, "schema": {) Tj T*
+ET
+endstream
+endobj
+51 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 50 0 R >>
+endobj
+52 0 obj
+<< /Length 8424 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
+("enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "prompt_version": {"nullable": false, "r) Tj T*
+(equired": true, "schema": {"min_length": 1, "type": "string"}}, "supporting_alarms": {"nullable": false, ) Tj T*
+("required": true, "schema": {"items": {"additional_properties": false, "fields": {"alarm_id": {"nullable") Tj T*
+(: false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": false, ) Tj T*
+("required": true, "schema": {"enum": ["R03", "SUMMARY", "TRACE"], "type": "string"}}}, "type": "object"},) Tj T*
+( "type": "array"}}, "supporting_chunk_ids": {"nullable": false, "required": true, "schema": {"items": {"m) Tj T*
+(in_length": 1, "type": "string"}, "type": "array"}}, "supporting_relation_ids": {"nullable": false, "requ) Tj T*
+(ired": true, "schema": {"items": {"min_length": 1, "type": "string"}, "type": "array"}}, "uncertainty": {) Tj T*
+("nullable": false, "required": true, "schema": {"max_length": 1000, "type": "string"}}}, "type": "object") Tj T*
+(}}, "react_trace": {"nullable": false, "required": false, "schema": {"items": {"additional_properties": f) Tj T*
+(alse, "fields": {"argument_summary": {"nullable": true, "required": false, "schema": {"pattern": "^\(\\ud6c) Tj T*
+(4\\ubcf4 wafer [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\uc0c1\\ub958|\\ud558\\ub958\)\\\\\)|\\uc774\\ub825 [1-9][0-9]*\\\\\(\(\\ud60) Tj T*
+(4\\uc7ac|\\ud615\\uc81c\)\\\\\)|\\uacc4\\uce21 [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\uc0c1\\ub958|\\ud558\\ub958\)\\\\\)|\\ubb38\\uc) Tj T*
+(11c \\uac80\\uc0c9|\\uc124\\ube44 \\ucee8\\ud14d\\uc2a4\\ud2b8\)$", "type": "string"}}, "degraded": {"nullable": f) Tj T*
+(alse, "required": false, "schema": {"default": false, "type": "boolean"}}, "guard_code": {"nullable": tru) Tj T*
+(e, "required": false, "schema": {"max_length": 64, "type": "string"}}, "observation_summary": {"nullable") Tj T*
+(: true, "required": false, "schema": {"max_length": 160, "type": "string"}}, "phase": {"nullable": false,) Tj T*
+( "required": true, "schema": {"enum": ["OBSERVED", "REJECTED", "SELECTED", "STOPPED"], "type": "string"}}) Tj T*
+(, "rationale_summary": {"nullable": true, "required": false, "schema": {"max_length": 120, "type": "strin) Tj T*
+(g"}}, "react_prompt_version": {"nullable": true, "required": false, "schema": {"enum": ["agent-react-v2-k) Tj T*
+(o1", "agent-react-v2-ko2", "agent-react-v2-ko3", "agent-react-v2-ko4"], "type": "string"}}, "selector_tok) Tj T*
+(ens": {"nullable": false, "required": true, "schema": {"additional_properties": false, "fields": {"input") Tj T*
+(: {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}, "output": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}}, "seq") Tj T*
+(: {"nullable": false, "required": true, "schema": {"minimum": 1.0, "type": "integer"}}, "stop_reason": {") Tj T*
+(nullable": true, "required": false, "schema": {"enum": ["BUDGET_EXHAUSTED", "GUARD_LIMIT", "LLM_DEPENDENC) Tj T*
+(Y", "LLM_STOP", "LLM_TIMEOUT", "REACT_STRUCTURE_INVALID", "STEP_CAP"], "type": "string"}}, "tool": {"null) Tj T*
+(able": true, "required": false, "schema": {"enum": ["get_chamber_parameter_history", "get_equipment_conte) Tj T*
+(xt", "get_fdc_summary", "get_metrology_result", "search_documents", "stop"], "type": "string"}}}, "type":) Tj T*
+( "object"}, "type": "array"}}, "recommended_action": {"nullable": true, "required": true, "schema": {"enu) Tj T*
+(m": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "remaining_read_calls": {"nullable": false) Tj T*
+(, "required": false, "schema": {"default": 0, "maximum": 24.0, "minimum": 0.0, "type": "integer"}}, "simi) Tj T*
+(lar_incidents": {"nullable": false, "required": true, "schema": {"additional_properties": false, "fields") Tj T*
+(: {"items": {"nullable": false, "required": true, "schema": {"items": {"additional_properties": false, "f) Tj T*
+(ields": {"agent_run_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "strin) Tj T*
+(g"}}, "chamber_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}},) Tj T*
+( "lot_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "paramet) Tj T*
+(er_jaccard": {"nullable": false, "required": true, "schema": {"maximum": 1.0, "minimum": 0.0, "type": "nu) Tj T*
+(mber"}}, "predicted_fault_code": {"nullable": false, "required": true, "schema": {"enum": ["FOC", "MFD", ) Tj T*
+("OTH", "RFM", "TMD"], "type": "string"}}, "recommended_action": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "score": {"nullable": false, ") Tj T*
+(required": true, "schema": {"maximum": 100.0, "minimum": 0.0, "type": "integer"}}}, "type": "object"}, "t) Tj T*
+(ype": "array"}}, "label": {"nullable": false, "required": false, "schema": {"default": "\\uace0\\uc815 \\uc2) Tj T*
+(dc\\uc5f0 \\ub370\\uc774\\ud130 \\ub0b4 \\ube44\\uad50 \\uacb0\\uacfc", "type": "string"}}, "reason_code": {"nulla) Tj T*
+(ble": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"null) Tj T*
+(able": false, "required": true, "schema": {"enum": ["AVAILABLE", "EMPTY"], "type": "string"}}}, "type": ") Tj T*
+(object"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["COMPLETED", "FAILED", "RU) Tj T*
+(NNING", "WAITING_APPROVAL"], "type": "string"}}, "tools": {"nullable": false, "required": true, "schema":) Tj T*
+( {"items": {"additional_properties": false, "fields": {"n": {"nullable": false, "required": true, "schema) Tj T*
+(": {"min_length": 1, "type": "string"}}, "result_summary": {"nullable": false, "required": true, "schema") Tj T*
+(: {"min_length": 1, "type": "string"}}, "s": {"nullable": false, "required": true, "schema": {"enum": ["E) Tj T*
+(RROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "status": {"nullable": false, "required": true, "schema) Tj T*
+(": {"enum": ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "tool_name": {"nullable": false, "requir) Tj T*
+(ed": true, "schema": {"min_length": 1, "type": "string"}}}, "type": "object"}, "type": "array"}}, "trace_) Tj T*
+(state": {"nullable": false, "required": false, "schema": {"default": "NOT_APPLICABLE", "enum": ["AVAILABL) Tj T*
+(E", "NOT_APPLICABLE", "PENDING", "UNAVAILABLE"], "type": "string"}}}, "type": "object"}) Tj T*
 (AgentRunItem) Tj T*
 ({"additional_properties": false, "fields": {"action_id": {"nullable": true, "required": true, "schema": {) Tj T*
 ("min_length": 1, "type": "string"}}, "agent_run_id": {"nullable": false, "required": true, "schema": {"mi) Tj T*
@@ -1915,6 +2103,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "fault_color": {"nullable": false, "required": ) Tj T*
 (true, "schema": {"type": "null"}}, "fault_name": {"nullable": false, "required": true, "schema": {"type":) Tj T*
 ( "null"}}, "latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0, "type": "integer") Tj T*
+ET
+endstream
+endobj
+53 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 52 0 R >>
+endobj
+54 0 obj
+<< /Length 7376 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (}}, "llm_model": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "p) Tj T*
 (redicted_fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM") Tj T*
 (, "TMD"], "type": "string"}}, "recommended_action": {"nullable": true, "required": true, "schema": {"enum) Tj T*
@@ -1935,16 +2133,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "object"}) Tj T*
 (AlarmEvidence) Tj T*
 ({"additional_properties": false, "fields": {"excerpt": {"nullable": false, "required": true, "schema": {") Tj T*
-ET
-endstream
-endobj
-49 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 48 0 R >>
-endobj
-50 0 obj
-<< /Length 7695 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type":) Tj T*
 ( "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
 (}, "type": {"nullable": false, "required": true, "schema": {"enum": ["ALARM"], "type": "string"}}}, "type) Tj T*
@@ -1999,6 +2187,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ({"additional_properties": false, "fields": {"columns": {"nullable": false, "required": true, "schema": {") Tj T*
 (items": {"type": "string"}, "type": "array"}}, "cross_check": {"nullable": true, "required": false, "sche) Tj T*
 (ma": {"additional_properties": false, "fields": {"cypher": {"nullable": true, "required": false, "schema") Tj T*
+ET
+endstream
+endobj
+55 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 54 0 R >>
+endobj
+56 0 obj
+<< /Length 7711 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (: {"type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["MATCH", "MISM) Tj T*
 (ATCH", "SKIPPED"], "type": "string"}}, "summary": {"nullable": true, "required": false, "schema": {"type") Tj T*
 (: "string"}}}, "type": "object"}}, "error_msg": {"nullable": true, "required": false, "schema": {"type": ) Tj T*
@@ -2019,16 +2217,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (}}, "nl_query_log_id": {"nullable": true, "required": false, "schema": {"minimum": 1.0, "type": "integer") Tj T*
 (}}, "question": {"nullable": false, "required": true, "schema": {"type": "string"}}, "reject_reason": {"n) Tj T*
 (ullable": true, "required": false, "schema": {"type": "string"}}, "row_count": {"nullable": false, "requi) Tj T*
-ET
-endstream
-endobj
-51 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 50 0 R >>
-endobj
-52 0 obj
-<< /Length 7608 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (red": true, "schema": {"minimum": 0.0, "type": "integer"}}, "rows": {"nullable": false, "required": true,) Tj T*
 ( "schema": {"items": {"additional_properties": true, "fields": {}, "type": "object"}, "type": "array"}}, ) Tj T*
 ("visualization": {"nullable": true, "required": false, "schema": {"additional_properties": false, "fields) Tj T*
@@ -2083,6 +2271,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (n_length": 1, "type": "string"}}, "actor_id": {"nullable": true, "required": true, "schema": {"type": "st) Tj T*
 (ring"}}, "actor_type": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string") Tj T*
 (}}, "after": {"nullable": true, "required": true, "schema": {"additional_properties": true, "fields": {},) Tj T*
+ET
+endstream
+endobj
+57 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 56 0 R >>
+endobj
+58 0 obj
+<< /Length 7973 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 ( "type": "object"}}, "at": {"nullable": false, "required": true, "schema": {"format": "date-time", "type") Tj T*
 (: "string"}}, "audit_id": {"nullable": false, "required": true, "schema": {"minimum": 1, "type": "integer) Tj T*
 ("}}, "before": {"nullable": true, "required": true, "schema": {"additional_properties": true, "fields": {) Tj T*
@@ -2103,16 +2301,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ma": {"type": "string"}}, "after": {"nullable": true, "required": true, "schema": {"additional_properties) Tj T*
 (": true, "fields": {}, "type": "object"}}, "at": {"nullable": false, "required": true, "schema": {"format) Tj T*
 (": "date-time", "type": "string"}}, "audit_id": {"nullable": false, "required": true, "schema": {"type": ) Tj T*
-ET
-endstream
-endobj
-53 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 52 0 R >>
-endobj
-54 0 obj
-<< /Length 7598 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 ("integer"}}, "before": {"nullable": true, "required": true, "schema": {"additional_properties": true, "fi) Tj T*
 (elds": {}, "type": "object"}}, "detail": {"nullable": true, "required": true, "schema": {"type": "string") Tj T*
 (}}, "entity": {"nullable": false, "required": true, "schema": {"type": "string"}}, "entity_id": {"nullabl) Tj T*
@@ -2167,6 +2355,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (gth": 1, "type": "string"}}, "label": {"nullable": false, "required": true, "schema": {"min_length": 1, ") Tj T*
 (type": "string"}}, "properties": {"nullable": false, "required": true, "schema": {"additional_properties") Tj T*
 (: true, "fields": {}, "type": "object"}}}, "type": "object"}, "type": "array"}}, "relationships": {"nulla) Tj T*
+ET
+endstream
+endobj
+59 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 58 0 R >>
+endobj
+60 0 obj
+<< /Length 7120 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (ble": false, "required": true, "schema": {"items": {"additional_properties": false, "fields": {"id": {"nu) Tj T*
 (llable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "source": {"nullable": ) Tj T*
 (false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "target": {"nullable": false, "r) Tj T*
@@ -2183,20 +2381,20 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (1, "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["ERROR", "SUCC) Tj T*
 (ESS", "TIMEOUT"], "type": "string"}}, "tool_name": {"nullable": false, "required": true, "schema": {"min_) Tj T*
 (length": 1, "type": "string"}}}, "type": "object"}) Tj T*
+(ComparisonMatrix) Tj T*
+({"additional_properties": false, "fields": {"downstream": {"nullable": false, "required": false, "schema") Tj T*
+(: {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, ") Tj T*
+(history": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED) Tj T*
+(", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "metrology": {"nullable": false, "required": fals) Tj T*
+(e, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "s) Tj T*
+(tring"}}, "sibling": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum") Tj T*
+(: ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "upstream": {"nullable": false, "requi) Tj T*
+(red": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], ) Tj T*
+("type": "string"}}}, "type": "object"}) Tj T*
 (CrossCheck) Tj T*
 ({"additional_properties": false, "fields": {"cypher": {"nullable": true, "required": false, "schema": {"t) Tj T*
 (ype": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["MATCH", "MISMATCH") Tj T*
 (, "SKIPPED"], "type": "string"}}, "summary": {"nullable": true, "required": false, "schema": {"type": "st) Tj T*
-ET
-endstream
-endobj
-55 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 54 0 R >>
-endobj
-56 0 obj
-<< /Length 7190 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (ring"}}}, "type": "object"}) Tj T*
 (DeliveryCallbackRequest) Tj T*
 ({"additional_properties": false, "fields": {"channel": {"nullable": false, "required": true, "schema": {") Tj T*
@@ -2236,12 +2434,45 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (, "schema": {"type": "string"}}, "evidence_synthesis": {"nullable": true, "required": false, "schema": {") Tj T*
 (max_length": 2000, "type": "string"}}, "limitations": {"nullable": false, "required": true, "schema": {"i) Tj T*
 (tems": {"type": "string"}, "type": "array"}}, "observations": {"nullable": false, "required": true, "sche) Tj T*
-(ma": {"items": {"type": "string"}, "type": "array"}}, "predicted_fault_code": {"nullable": true, "require) Tj T*
-(d": true, "schema": {"enum": ["FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "reason_code": {"nu) Tj T*
-(llable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"n) Tj T*
-(ullable": false, "required": true, "schema": {"enum": ["AVAILABLE", "EMPTY"], "type": "string"}}, "verifi) Tj T*
-(cation_steps": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}, "type": "arr) Tj T*
-(ay"}}}, "type": "object"}) Tj T*
+(ma": {"items": {"type": "string"}, "type": "array"}}, "origin_assessment": {"nullable": true, "required":) Tj T*
+( false, "schema": {"additional_properties": false, "fields": {"basis": {"nullable": false, "required": tr) Tj T*
+(ue, "schema": {"items": {"additional_properties": false, "fields": {"id": {"nullable": false, "required":) Tj T*
+( true, "schema": {"max_length": 160, "min_length": 1, "type": "string"}}, "namespace": {"nullable": false) Tj T*
+(, "required": true, "schema": {"enum": ["ALARM", "CHUNK", "LOT_HIST", "PARAMETER", "RELATION"], "type": ") Tj T*
+ET
+endstream
+endobj
+61 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 60 0 R >>
+endobj
+62 0 obj
+<< /Length 7679 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
+(string"}}}, "type": "object"}, "type": "array"}}, "compared": {"nullable": false, "required": true, "sche) Tj T*
+(ma": {"additional_properties": false, "fields": {"downstream": {"nullable": false, "required": false, "sc) Tj T*
+(hema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string") Tj T*
+(}}, "history": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CH) Tj T*
+(ECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "metrology": {"nullable": false, "required":) Tj T*
+( false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type) Tj T*
+(": "string"}}, "sibling": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", ") Tj T*
+(enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "upstream": {"nullable": false, ") Tj T*
+(required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKE) Tj T*
+(D"], "type": "string"}}}, "type": "object"}}, "scope": {"nullable": false, "required": true, "schema": {") Tj T*
+(enum": ["CURRENT_CHAMBER", "DOWNSTREAM", "EQUIPMENT_COMMON", "UNDETERMINED", "UPSTREAM"], "type": "string) Tj T*
+("}}}, "type": "object"}}, "parameter_findings": {"nullable": false, "required": false, "schema": {"defaul) Tj T*
+(t": [], "items": {"additional_properties": false, "fields": {"direction": {"nullable": false, "required":) Tj T*
+( true, "schema": {"enum": ["ABOVE", "BELOW", "BOTH"], "type": "string"}}, "excursion_ratio": {"nullable":) Tj T*
+( false, "required": true, "schema": {"type": "number"}}, "lot_hist_ids": {"nullable": false, "required": ) Tj T*
+(true, "schema": {"items": {"type": "string"}, "type": "array"}}, "parameter_id": {"nullable": false, "req) Tj T*
+(uired": true, "schema": {"max_length": 20, "min_length": 1, "type": "string"}}, "step_no": {"nullable": f) Tj T*
+(alse, "required": true, "schema": {"minimum": 1.0, "type": "integer"}}, "wafer_scope": {"nullable": false) Tj T*
+(, "required": true, "schema": {"enum": ["ALL", "PARTIAL", "SINGLE"], "type": "string"}}}, "type": "object) Tj T*
+("}, "type": "array"}}, "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum": [") Tj T*
+(FOC", "MFD", "OTH", "RFM", "TMD"], "type": "string"}}, "reason_code": {"nullable": true, "required": fals) Tj T*
+(e, "schema": {"pattern": "^[A-Z0-9_]+$", "type": "string"}}, "status": {"nullable": false, "required": tr) Tj T*
+(ue, "schema": {"enum": ["AVAILABLE", "EMPTY"], "type": "string"}}, "verification_steps": {"nullable": fal) Tj T*
+(se, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}}, "type": "object"}) Tj T*
 (DocumentAskEvidence) Tj T*
 ({"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {) Tj T*
 ("min_length": 1, "type": "string"}}, "document_id": {"nullable": false, "required": true, "schema": {"min) Tj T*
@@ -2271,16 +2502,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (DocumentEvidence) Tj T*
 ({"additional_properties": false, "fields": {"chunk_id": {"nullable": false, "required": true, "schema": {) Tj T*
 ("min_length": 1, "type": "string"}}, "document_id": {"nullable": false, "required": true, "schema": {"min) Tj T*
-ET
-endstream
-endobj
-57 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 56 0 R >>
-endobj
-58 0 obj
-<< /Length 7447 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (_length": 1, "type": "string"}}, "excerpt": {"nullable": false, "required": true, "schema": {"type": "str) Tj T*
 (ing"}}, "section": {"nullable": true, "required": true, "schema": {"type": "string"}}, "source_id": {"nul) Tj T*
 (lable": false, "required": true, "schema": {"min_length": 1, "type": "string"}}, "title": {"nullable": fa) Tj T*
@@ -2302,6 +2523,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (d": false, "schema": {"min_length": 1, "type": "string"}}, "query": {"nullable": false, "required": true,) Tj T*
 ( "schema": {"max_length": 1000, "min_length": 1, "type": "string"}}, "top_k": {"nullable": false, "requir) Tj T*
 (ed": false, "schema": {"default": 4, "maximum": 10, "minimum": 1, "type": "integer"}}}, "type": "object"}) Tj T*
+ET
+endstream
+endobj
+63 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 62 0 R >>
+endobj
+64 0 obj
+<< /Length 7579 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (DocumentType) Tj T*
 ({"enum": ["MANUAL", "SPEC", "TROUBLESHOOT"], "type": "string"}) Tj T*
 (ErrorCode) Tj T*
@@ -2355,16 +2586,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (}, "conflicting_source_ids": {"nullable": false, "required": true, "schema": {"items": {"type": "string"}) Tj T*
 (, "type": "array"}}, "missing_sources": {"nullable": false, "required": true, "schema": {"items": {"enum") Tj T*
 (: ["FDC", "GRAPH", "POSTGRES_ROUTE", "RAG"], "type": "string"}, "type": "array"}}, "reason_codes": {"null) Tj T*
-ET
-endstream
-endobj
-59 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 58 0 R >>
-endobj
-60 0 obj
-<< /Length 7238 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (able": false, "required": true, "schema": {"items": {"type": "string"}, "type": "array"}}, "status": {"nu) Tj T*
 (llable": false, "required": true, "schema": {"enum": ["CONFLICT", "EMPTY", "PARTIAL", "SUFFICIENT"], "typ) Tj T*
 (e": "string"}}}, "type": "object"}) Tj T*
@@ -2386,6 +2607,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (type": "string"}}, "relation_id": {"nullable": false, "required": true, "schema": {"pattern": "^REL-[0-9a) Tj T*
 (-f]{20}$", "type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length") Tj T*
 (: 1, "type": "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type) Tj T*
+ET
+endstream
+endobj
+65 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 64 0 R >>
+endobj
+66 0 obj
+<< /Length 6982 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (": "string"}}, "type": {"nullable": false, "required": true, "schema": {"enum": ["GRAPH"], "type": "strin) Tj T*
 (g"}}}, "type": "object"}, "METROLOGY": {"additional_properties": false, "fields": {"excerpt": {"nullable") Tj T*
 (: false, "required": true, "schema": {"type": "string"}}, "source_id": {"nullable": false, "required": tr) Tj T*
@@ -2439,16 +2670,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (GraphQueryResponse) Tj T*
 ({"additional_properties": false, "fields": {"columns": {"nullable": false, "required": true, "schema": {") Tj T*
 (items": {"type": "string"}, "type": "array"}}, "error_msg": {"nullable": true, "required": false, "schema) Tj T*
-ET
-endstream
-endobj
-61 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 60 0 R >>
-endobj
-62 0 obj
-<< /Length 7123 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (": {"type": "string"}}, "generated_cypher": {"nullable": true, "required": false, "schema": {"type": "str) Tj T*
 (ing"}}, "is_rejected": {"nullable": false, "required": true, "schema": {"type": "boolean"}}, "is_valid": ) Tj T*
 ({"nullable": false, "required": true, "schema": {"type": "boolean"}}, "latency_ms": {"nullable": false, ") Tj T*
@@ -2470,6 +2691,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (}}, "type": "object"}) Tj T*
 (HTTPValidationError) Tj T*
 ({"additional_properties": true, "fields": {"detail": {"nullable": false, "required": false, "schema": {"i) Tj T*
+ET
+endstream
+endobj
+67 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 66 0 R >>
+endobj
+68 0 obj
+<< /Length 7328 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (tems": {"additional_properties": true, "fields": {"loc": {"nullable": false, "required": true, "schema": ) Tj T*
 ({"items": {"type": "union", "variants": [{"type": "string"}, {"type": "integer"}]}, "type": "array"}}, "m) Tj T*
 (sg": {"nullable": false, "required": true, "schema": {"type": "string"}}, "type": {"nullable": false, "re) Tj T*
@@ -2523,16 +2754,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (ng"}}, "is_rejected": {"nullable": false, "required": true, "schema": {"type": "boolean"}}, "is_valid": {) Tj T*
 ("nullable": false, "required": true, "schema": {"type": "boolean"}}, "latency_ms": {"nullable": true, "re) Tj T*
 (quired": false, "schema": {"minimum": 0.0, "type": "integer"}}, "nl_query_log_id": {"nullable": false, "r) Tj T*
-ET
-endstream
-endobj
-63 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 62 0 R >>
-endobj
-64 0 obj
-<< /Length 7794 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (equired": true, "schema": {"minimum": 1.0, "type": "integer"}}, "outcome": {"nullable": false, "required") Tj T*
 (: true, "schema": {"enum": ["DB_ERROR", "POLICY_REJECTED", "SUCCESS", "VALIDATION_FAILED"], "type": "stri) Tj T*
 (ng"}}, "question": {"nullable": false, "required": true, "schema": {"type": "string"}}, "reject_reason": ) Tj T*
@@ -2554,7 +2775,50 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (able": true, "required": false, "schema": {"type": "string"}}, "row_cnt": {"nullable": true, "required": ) Tj T*
 (false, "schema": {"minimum": 0.0, "type": "integer"}}}, "type": "object"}) Tj T*
 (NlQueryOutcome) Tj T*
+ET
+endstream
+endobj
+69 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 68 0 R >>
+endobj
+70 0 obj
+<< /Length 7701 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 ({"enum": ["DB_ERROR", "POLICY_REJECTED", "SUCCESS", "VALIDATION_FAILED"], "type": "string"}) Tj T*
+(OriginAssessment) Tj T*
+({"additional_properties": false, "fields": {"basis": {"nullable": false, "required": true, "schema": {"it) Tj T*
+(ems": {"additional_properties": false, "fields": {"id": {"nullable": false, "required": true, "schema": {) Tj T*
+("max_length": 160, "min_length": 1, "type": "string"}}, "namespace": {"nullable": false, "required": true) Tj T*
+(, "schema": {"enum": ["ALARM", "CHUNK", "LOT_HIST", "PARAMETER", "RELATION"], "type": "string"}}}, "type") Tj T*
+(: "object"}, "type": "array"}}, "compared": {"nullable": false, "required": true, "schema": {"additional_) Tj T*
+(properties": false, "fields": {"downstream": {"nullable": false, "required": false, "schema": {"default":) Tj T*
+( "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "history": {"n) Tj T*
+(ullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAIL) Tj T*
+(ABLE", "NOT_CHECKED"], "type": "string"}}, "metrology": {"nullable": false, "required": false, "schema": ) Tj T*
+({"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "si) Tj T*
+(bling": {"nullable": false, "required": false, "schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED",) Tj T*
+( "NOT_AVAILABLE", "NOT_CHECKED"], "type": "string"}}, "upstream": {"nullable": false, "required": false, ) Tj T*
+("schema": {"default": "NOT_AVAILABLE", "enum": ["CHECKED", "NOT_AVAILABLE", "NOT_CHECKED"], "type": "stri) Tj T*
+(ng"}}}, "type": "object"}}, "degraded": {"nullable": false, "required": false, "schema": {"default": fals) Tj T*
+(e, "type": "boolean"}}, "degraded_reasons": {"nullable": false, "required": false, "schema": {"default": ) Tj T*
+([], "items": {"type": "string"}, "type": "array"}}, "dropped_basis_count": {"nullable": false, "required") Tj T*
+(: false, "schema": {"default": 0, "maximum": 40, "minimum": 0, "type": "integer"}}, "scope": {"nullable":) Tj T*
+( false, "required": true, "schema": {"enum": ["CURRENT_CHAMBER", "DOWNSTREAM", "EQUIPMENT_COMMON", "UNDET) Tj T*
+(ERMINED", "UPSTREAM"], "type": "string"}}}, "type": "object"}) Tj T*
+(OriginBasisRef) Tj T*
+({"additional_properties": false, "fields": {"id": {"nullable": false, "required": true, "schema": {"max_l) Tj T*
+(ength": 160, "min_length": 1, "type": "string"}}, "namespace": {"nullable": false, "required": true, "sch) Tj T*
+(ema": {"enum": ["ALARM", "CHUNK", "LOT_HIST", "PARAMETER", "RELATION"], "type": "string"}}}, "type": "obj) Tj T*
+(ect"}) Tj T*
+(ParameterFinding) Tj T*
+({"additional_properties": false, "fields": {"direction": {"nullable": false, "required": true, "schema": ) Tj T*
+({"enum": ["ABOVE", "BELOW", "BOTH"], "type": "string"}}, "excursion_ratio": {"nullable": false, "required) Tj T*
+(": true, "schema": {"type": "number"}}, "lot_hist_ids": {"nullable": false, "required": true, "schema": {) Tj T*
+("items": {"type": "string"}, "type": "array"}}, "parameter_id": {"nullable": false, "required": true, "sc) Tj T*
+(hema": {"max_length": 20, "min_length": 1, "type": "string"}}, "step_no": {"nullable": false, "required":) Tj T*
+( true, "schema": {"minimum": 1.0, "type": "integer"}}, "wafer_scope": {"nullable": false, "required": tru) Tj T*
+(e, "schema": {"enum": ["ALL", "PARTIAL", "SINGLE"], "type": "string"}}}, "type": "object"}) Tj T*
 (ParameterItem) Tj T*
 ({"additional_properties": false, "fields": {"LCL": {"nullable": true, "required": true, "schema": {"type") Tj T*
 (: "number"}}, "LSL": {"nullable": true, "required": true, "schema": {"type": "number"}}, "TARGET": {"null) Tj T*
@@ -2595,6 +2859,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (d": true, "schema": {"type": "null"}}, "fault_name": {"nullable": false, "required": true, "schema": {"ty) Tj T*
 (pe": "null"}}, "latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "in) Tj T*
 (teger"}}, "llm_model": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string") Tj T*
+ET
+endstream
+endobj
+71 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 70 0 R >>
+endobj
+72 0 obj
+<< /Length 7412 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (}}, "predicted_fault_code": {"nullable": true, "required": true, "schema": {"enum": ["FOC", "MFD", "OTH",) Tj T*
 ( "RFM", "TMD"], "type": "string"}}, "recommended_action": {"nullable": true, "required": true, "schema": ) Tj T*
 ({"enum": ["EQP_HOLD", "MONITORING", "WARNING"], "type": "string"}}, "status": {"nullable": false, "requir) Tj T*
@@ -2607,16 +2881,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (pe": "string"}}, "tool_name": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": ") Tj T*
 (string"}}}, "type": "object"}, "type": "array"}}}, "type": "object"}) Tj T*
 (PublicApprovalDecision) Tj T*
-ET
-endstream
-endobj
-65 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 64 0 R >>
-endobj
-66 0 obj
-<< /Length 7454 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 ({"enum": ["APPROVED", "REJECTED"], "type": "string"}) Tj T*
 (PublicApprovalItem) Tj T*
 ({"additional_properties": false, "fields": {"action_code": {"nullable": false, "required": true, "schema") Tj T*
@@ -2649,6 +2913,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (enum": ["EMAIL", "MES"], "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {") Tj T*
 (enum": ["BLOCKED", "CANCELED", "FAILED", "SENDING", "SENT", "UNKNOWN", "WAITING"], "type": "string"}}}, ") Tj T*
 (type": "object"}) Tj T*
+(PublicInvestigationBudget) Tj T*
+({"additional_properties": false, "fields": {"guard_rejection_cap": {"nullable": false, "required": true, ) Tj T*
+("schema": {"maximum": 2.0, "minimum": 1.0, "type": "integer"}}, "profile_id": {"nullable": false, "requir) Tj T*
+(ed": true, "schema": {"enum": ["PRODUCTION_WIDE_V1", "STANDARD"], "type": "string"}}, "read_cap": {"nulla) Tj T*
+(ble": false, "required": true, "schema": {"maximum": 24.0, "minimum": 1.0, "type": "integer"}}, "same_too) Tj T*
+(l_cap": {"nullable": false, "required": true, "schema": {"maximum": 8.0, "minimum": 1.0, "type": "integer) Tj T*
+("}}, "selector_cap": {"nullable": false, "required": true, "schema": {"maximum": 28.0, "minimum": 1.0, "t) Tj T*
+(ype": "integer"}}, "send_budget": {"nullable": false, "required": true, "schema": {"maximum": 2.0, "minim) Tj T*
+(um": 1.0, "type": "integer"}}, "total_call_cap": {"nullable": false, "required": true, "schema": {"maximu) Tj T*
+(m": 26.0, "minimum": 1.0, "type": "integer"}}}, "type": "object"}) Tj T*
 (PublicToolCallItem) Tj T*
 ({"additional_properties": false, "fields": {"n": {"nullable": false, "required": true, "schema": {"min_le) Tj T*
 (ngth": 1, "type": "string"}}, "result_summary": {"nullable": false, "required": true, "schema": {"min_len) Tj T*
@@ -2656,6 +2930,37 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (CESS", "TIMEOUT"], "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum":) Tj T*
 ( ["ERROR", "SUCCESS", "TIMEOUT"], "type": "string"}}, "tool_name": {"nullable": false, "required": true, ) Tj T*
 ("schema": {"min_length": 1, "type": "string"}}}, "type": "object"}) Tj T*
+(ReactStepPublic) Tj T*
+({"additional_properties": false, "fields": {"argument_summary": {"nullable": true, "required": false, "sc) Tj T*
+(hema": {"pattern": "^\(\\ud6c4\\ubcf4 wafer [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\uc0c1\\ub958|\\ud558\\ub958\)\\\\\)|\\uc774) Tj T*
+(\\ub825 [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\ud615\\uc81c\)\\\\\)|\\uacc4\\uce21 [1-9][0-9]*\\\\\(\(\\ud604\\uc7ac|\\uc0c1\\ub958) Tj T*
+(|\\ud558\\ub958\)\\\\\)|\\ubb38\\uc11c \\uac80\\uc0c9|\\uc124\\ube44 \\ucee8\\ud14d\\uc2a4\\ud2b8\)$", "type": "string"}},) Tj T*
+( "degraded": {"nullable": false, "required": false, "schema": {"default": false, "type": "boolean"}}, "gu) Tj T*
+(ard_code": {"nullable": true, "required": false, "schema": {"max_length": 64, "type": "string"}}, "observ) Tj T*
+(ation_summary": {"nullable": true, "required": false, "schema": {"max_length": 160, "type": "string"}}, ") Tj T*
+(phase": {"nullable": false, "required": true, "schema": {"enum": ["OBSERVED", "REJECTED", "SELECTED", "ST) Tj T*
+(OPPED"], "type": "string"}}, "rationale_summary": {"nullable": true, "required": false, "schema": {"max_l) Tj T*
+(ength": 120, "type": "string"}}, "react_prompt_version": {"nullable": true, "required": false, "schema": ) Tj T*
+({"enum": ["agent-react-v2-ko1", "agent-react-v2-ko2", "agent-react-v2-ko3", "agent-react-v2-ko4"], "type") Tj T*
+(: "string"}}, "selector_tokens": {"nullable": false, "required": true, "schema": {"additional_properties") Tj T*
+ET
+endstream
+endobj
+73 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 72 0 R >>
+endobj
+74 0 obj
+<< /Length 8020 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
+(: false, "fields": {"input": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "in) Tj T*
+(teger"}}, "output": {"nullable": false, "required": true, "schema": {"minimum": 0.0, "type": "integer"}}}) Tj T*
+(, "type": "object"}}, "seq": {"nullable": false, "required": true, "schema": {"minimum": 1.0, "type": "in) Tj T*
+(teger"}}, "stop_reason": {"nullable": true, "required": false, "schema": {"enum": ["BUDGET_EXHAUSTED", "G) Tj T*
+(UARD_LIMIT", "LLM_DEPENDENCY", "LLM_STOP", "LLM_TIMEOUT", "REACT_STRUCTURE_INVALID", "STEP_CAP"], "type":) Tj T*
+( "string"}}, "tool": {"nullable": true, "required": false, "schema": {"enum": ["get_chamber_parameter_his) Tj T*
+(tory", "get_equipment_context", "get_fdc_summary", "get_metrology_result", "search_documents", "stop"], ") Tj T*
+(type": "string"}}}, "type": "object"}) Tj T*
 (ReadinessCheck) Tj T*
 ({"additional_properties": false, "fields": {"latency_ms": {"nullable": false, "required": true, "schema":) Tj T*
 ( {"minimum": 0, "type": "integer"}}, "reason_code": {"nullable": true, "required": true, "schema": {"enum) Tj T*
@@ -2691,16 +2996,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (le": false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "string"}}}, "type": "object"}) Tj T*
 (}, "reference_migration": {"nullable": false, "required": true, "schema": {"additional_properties": false) Tj T*
 (, "fields": {"latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0, "type": "intege) Tj T*
-ET
-endstream
-endobj
-67 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 66 0 R >>
-endobj
-68 0 obj
-<< /Length 7795 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (r"}}, "reason_code": {"nullable": true, "required": true, "schema": {"enum": ["CONTRACT_MISMATCH", "DEPEN) Tj T*
 (DENCY_UNAVAILABLE", "KAFKA_LAG_STALE", "NOT_CONFIGURED", "RAG_MODEL_NOT_READY", "TIMEOUT"], "type": "stri) Tj T*
 (ng"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "stri) Tj T*
@@ -2732,6 +3027,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ("nullable": false, "required": true, "schema": {"minimum": 0, "type": "integer"}}, "reason_code": {"nulla) Tj T*
 (ble": true, "required": true, "schema": {"enum": ["CONTRACT_MISMATCH", "DEPENDENCY_UNAVAILABLE", "KAFKA_L) Tj T*
 (AG_STALE", "NOT_CONFIGURED", "RAG_MODEL_NOT_READY", "TIMEOUT"], "type": "string"}}, "status": {"nullable") Tj T*
+ET
+endstream
+endobj
+75 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 74 0 R >>
+endobj
+76 0 obj
+<< /Length 7100 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (: false, "required": true, "schema": {"enum": ["FAIL", "PASS"], "type": "string"}}}, "type": "object"}}, ) Tj T*
 ("reference_migration": {"nullable": false, "required": true, "schema": {"additional_properties": false, ") Tj T*
 (fields": {"latency_ms": {"nullable": false, "required": true, "schema": {"minimum": 0, "type": "integer"}) Tj T*
@@ -2753,6 +3058,10 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ( "string"}}}, "type": "object"}) Tj T*
 (RunStatus) Tj T*
 ({"enum": ["COMPLETED", "FAILED", "RUNNING", "WAITING_APPROVAL"], "type": "string"}) Tj T*
+(SelectorTokens) Tj T*
+({"additional_properties": false, "fields": {"input": {"nullable": false, "required": true, "schema": {"mi) Tj T*
+(nimum": 0.0, "type": "integer"}}, "output": {"nullable": false, "required": true, "schema": {"minimum": 0) Tj T*
+(.0, "type": "integer"}}}, "type": "object"}) Tj T*
 (SimilarIncidentItem) Tj T*
 ({"additional_properties": false, "fields": {"agent_run_id": {"nullable": false, "required": true, "schema) Tj T*
 (": {"min_length": 1, "type": "string"}}, "chamber_id": {"nullable": false, "required": true, "schema": {") Tj T*
@@ -2775,16 +3084,6 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (string"}}, "score": {"nullable": false, "required": true, "schema": {"maximum": 100.0, "minimum": 0.0, "t) Tj T*
 (ype": "integer"}}}, "type": "object"}, "type": "array"}}, "label": {"nullable": false, "required": false,) Tj T*
 ( "schema": {"default": "\\uace0\\uc815 \\uc2dc\\uc5f0 \\ub370\\uc774\\ud130 \\ub0b4 \\ube44\\uad50 \\uacb0\\uacfc", ") Tj T*
-ET
-endstream
-endobj
-69 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 68 0 R >>
-endobj
-70 0 obj
-<< /Length 4591 >>
-stream
-BT /F1 7 Tf 28 814 Td 9 TL
 (type": "string"}}, "reason_code": {"nullable": true, "required": false, "schema": {"pattern": "^[A-Z0-9_]) Tj T*
 (+$", "type": "string"}}, "status": {"nullable": false, "required": true, "schema": {"enum": ["AVAILABLE",) Tj T*
 ( "EMPTY"], "type": "string"}}}, "type": "object"}) Tj T*
@@ -2812,6 +3111,16 @@ BT /F1 7 Tf 28 814 Td 9 TL
 (type": "string"}}, "source_id": {"nullable": false, "required": true, "schema": {"min_length": 1, "type":) Tj T*
 ( "string"}}, "title": {"nullable": false, "required": true, "schema": {"min_length": 1, "type": "string"}) Tj T*
 (}, "type": {"nullable": false, "required": true, "schema": {"enum": ["TRACE"], "type": "string"}}}, "type) Tj T*
+ET
+endstream
+endobj
+77 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 76 0 R >>
+endobj
+78 0 obj
+<< /Length 2202 >>
+stream
+BT /F1 7 Tf 28 814 Td 9 TL
 (": "object"}) Tj T*
 (TracePoint) Tj T*
 ({"additional_properties": false, "fields": {"measured_at": {"nullable": false, "required": true, "schema") Tj T*
@@ -2847,85 +3156,93 @@ BT /F1 7 Tf 28 814 Td 9 TL
 ET
 endstream
 endobj
-71 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 70 0 R >>
+79 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 78 0 R >>
 endobj
 xref
-0 72
+0 80
 0000000000 65535 f 
 0000000015 00000 n 
 0000000064 00000 n 
-0000000351 00000 n 
-0000000421 00000 n 
-0000008114 00000 n 
-0000008240 00000 n 
-0000016237 00000 n 
-0000016363 00000 n 
-0000024785 00000 n 
-0000024911 00000 n 
-0000033046 00000 n 
-0000033174 00000 n 
-0000040940 00000 n 
-0000041068 00000 n 
-0000049332 00000 n 
-0000049460 00000 n 
-0000057529 00000 n 
-0000057657 00000 n 
-0000065448 00000 n 
-0000065576 00000 n 
-0000073628 00000 n 
-0000073756 00000 n 
-0000082304 00000 n 
-0000082432 00000 n 
-0000090747 00000 n 
-0000090875 00000 n 
-0000098381 00000 n 
-0000098509 00000 n 
-0000106789 00000 n 
-0000106917 00000 n 
-0000114660 00000 n 
-0000114788 00000 n 
-0000122413 00000 n 
-0000122541 00000 n 
-0000130815 00000 n 
-0000130943 00000 n 
-0000139038 00000 n 
-0000139166 00000 n 
-0000146451 00000 n 
-0000146579 00000 n 
-0000154970 00000 n 
-0000155098 00000 n 
-0000163071 00000 n 
-0000163199 00000 n 
-0000171203 00000 n 
-0000171331 00000 n 
-0000179880 00000 n 
-0000180008 00000 n 
-0000188078 00000 n 
-0000188206 00000 n 
-0000195954 00000 n 
-0000196082 00000 n 
-0000203743 00000 n 
-0000203871 00000 n 
-0000211522 00000 n 
-0000211650 00000 n 
-0000218893 00000 n 
-0000219021 00000 n 
-0000226521 00000 n 
-0000226649 00000 n 
-0000233940 00000 n 
-0000234068 00000 n 
-0000241244 00000 n 
-0000241372 00000 n 
-0000249219 00000 n 
-0000249347 00000 n 
-0000256854 00000 n 
-0000256982 00000 n 
-0000264830 00000 n 
-0000264958 00000 n 
-0000269602 00000 n 
+0000000379 00000 n 
+0000000449 00000 n 
+0000008142 00000 n 
+0000008268 00000 n 
+0000016265 00000 n 
+0000016391 00000 n 
+0000024813 00000 n 
+0000024939 00000 n 
+0000033074 00000 n 
+0000033202 00000 n 
+0000040968 00000 n 
+0000041096 00000 n 
+0000049360 00000 n 
+0000049488 00000 n 
+0000057557 00000 n 
+0000057685 00000 n 
+0000065476 00000 n 
+0000065604 00000 n 
+0000073787 00000 n 
+0000073915 00000 n 
+0000082433 00000 n 
+0000082561 00000 n 
+0000091168 00000 n 
+0000091296 00000 n 
+0000099639 00000 n 
+0000099767 00000 n 
+0000107361 00000 n 
+0000107489 00000 n 
+0000115997 00000 n 
+0000116125 00000 n 
+0000123905 00000 n 
+0000124033 00000 n 
+0000131840 00000 n 
+0000131968 00000 n 
+0000140039 00000 n 
+0000140167 00000 n 
+0000148204 00000 n 
+0000148332 00000 n 
+0000155992 00000 n 
+0000156120 00000 n 
+0000164052 00000 n 
+0000164180 00000 n 
+0000172554 00000 n 
+0000172682 00000 n 
+0000180234 00000 n 
+0000180362 00000 n 
+0000188880 00000 n 
+0000189008 00000 n 
+0000197557 00000 n 
+0000197685 00000 n 
+0000206162 00000 n 
+0000206290 00000 n 
+0000213719 00000 n 
+0000213847 00000 n 
+0000221611 00000 n 
+0000221739 00000 n 
+0000229765 00000 n 
+0000229893 00000 n 
+0000237066 00000 n 
+0000237194 00000 n 
+0000244926 00000 n 
+0000245054 00000 n 
+0000252686 00000 n 
+0000252814 00000 n 
+0000259849 00000 n 
+0000259977 00000 n 
+0000267358 00000 n 
+0000267486 00000 n 
+0000275240 00000 n 
+0000275368 00000 n 
+0000282833 00000 n 
+0000282961 00000 n 
+0000291034 00000 n 
+0000291162 00000 n 
+0000298315 00000 n 
+0000298443 00000 n 
+0000300698 00000 n 
 trailer
-<< /Size 72 /Root 1 0 R >>
+<< /Size 80 /Root 1 0 R >>
 startxref
-269730
+300826
 %%EOF

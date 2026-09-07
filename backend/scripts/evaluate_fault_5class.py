@@ -148,6 +148,11 @@ def main(
         )
         # 이 hash가 만들어지기 전에는 evaluation_loader를 import조차 하지 않는다.
         frozen = freeze_predictions(runtime.records)
+        if (
+            getattr(population, "prediction_hash", None) is not None
+            and frozen.prediction_hash != population.prediction_hash
+        ):
+            raise FaultEvaluationContractError("BASELINE_PREDICTION_DRIFT")
 
         if label_loader is None:
             from app.detection.evaluation_loader import fetch_incident_fault_labels

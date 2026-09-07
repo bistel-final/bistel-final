@@ -50,8 +50,8 @@ from app.common.enums import (
     ActionLinkRole,
     ApprovalStatus,
     DeliveryChannel,
+    DeliveryStatus,
     RunStatus,
-    requires_approval,
     resolve_delivery_channels,
 )
 from app.common.ids import NonEmptyId, new_action_id
@@ -101,12 +101,18 @@ def _result(
     action_id: str,
     approval_id: str | None,
     channels: tuple[DeliveryChannel, ...],
+    policy_version: str = "ACTION-POLICY-V1",
 ) -> PersistResult:
     return PersistResult(
         action_id=action_id,
         approval_id=approval_id,
         deliveries=tuple(
-            DeliveryPlan(channel=channel, status=INITIAL_STATUS[channel])
+            DeliveryPlan(
+                channel=channel,
+                status=DeliveryStatus.WAITING
+                if policy_version == "MOCK-NOTIFY-V1"
+                else INITIAL_STATUS[channel],
+            )
             for channel in channels
         ),
     )
@@ -123,9 +129,10 @@ def _validate_bundle(
     if action is None:
         raise RepositoryContractError("ACTION_REQUIRED")
     expected_channels = resolve_delivery_channels(action)
-    approval_required = requires_approval(action)
+    approval_required = decision.requires_approval
     if (
         bundle.action_code is not action
+        or bundle.delivery_policy != decision.policy_version
         or (bundle.approval_id is not None) != approval_required
         or (bundle.approval_status is not None) != approval_required
         or (bundle.approval_agent_run_id is not None) != approval_required
@@ -148,6 +155,7 @@ def _validate_bundle(
         action_id=bundle.action_id,
         approval_id=bundle.approval_id,
         channels=expected_channels,
+        policy_version=decision.policy_version,
     )
     result.assert_matches(decision)
     return result
@@ -186,7 +194,7 @@ def production_port(
         if action is None:
             # public callable 경계다. DB transaction과 ID 발급 전에 거부한다.
             raise RepositoryContractError("ACTION_REQUIRED")
-        if action is ActionCode.EQP_HOLD and rehydration_seed is None:
+        if resolved.requires_approval and rehydration_seed is None:
             raise RepositoryContractError("REHYDRATION_SEED_REQUIRED")
         seed = (
             None
@@ -243,7 +251,7 @@ def production_port(
                     # 재사용한다. 아래 타 run REUSED 경로는 계속 PENDING만 허용한다.
                     allow_terminal_approval=True,
                 )
-                if action is ActionCode.EQP_HOLD:
+                if resolved.requires_approval:
                     if seed is None:  # pragma: no cover - public guard가 먼저 막는다
                         raise RepositoryContractError("REHYDRATION_SEED_REQUIRED")
                     expected = _rehydration_snapshot(
@@ -287,7 +295,9 @@ def production_port(
                         result=result,
                         locked=locked,
                         member_alarms=member_alarms,
-                    ),
+                    )
+                    if resolved.requires_approval
+                    else None,
                 )
                 return result
 
@@ -302,6 +312,11 @@ def production_port(
                 action_code=action,
                 reason=reason,
                 created_at=created_at,
+                **(
+                    {"policy_version": resolved.policy_version}
+                    if resolved.policy_version != "ACTION-POLICY-V1"
+                    else {}
+                ),
             )
             link_run_action(
                 connection,
@@ -327,7 +342,9 @@ def production_port(
                     connection,
                     action_id=action_id,
                     channel=channel,
-                    status=INITIAL_STATUS[channel],
+                    status=DeliveryStatus.WAITING
+                    if resolved.policy_version == "MOCK-NOTIFY-V1"
+                    else INITIAL_STATUS[channel],
                     request_hash=_request_hash(
                         action_id=action_id,
                         channel=channel,
@@ -342,14 +359,19 @@ def production_port(
                 action_id=action_id,
                 approval_id=approval_id,
                 channels=channels,
+                policy_version=resolved.policy_version,
             )
             result.assert_matches(resolved)
-            rehydration_snapshot = _snapshot_payload(
-                action=action,
-                seed=seed,
-                result=result,
-                locked=locked,
-                member_alarms=member_alarms,
+            rehydration_snapshot = (
+                _snapshot_payload(
+                    action=action,
+                    seed=seed,
+                    result=result,
+                    locked=locked,
+                    member_alarms=member_alarms,
+                )
+                if resolved.requires_approval
+                else None
             )
             set_run_action(connection, agent_run_id, action)
             merge_run_action_provenance(

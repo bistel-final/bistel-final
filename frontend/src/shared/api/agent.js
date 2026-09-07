@@ -30,6 +30,11 @@ const GRAPH_EVIDENCE = Object.freeze({
 
 const CORE_AGENT_RUN_DETAIL = Object.freeze({
   ...CORE_AGENT_RUN,
+  autonomy_level: 2,
+  react_trace: [],
+  trace_state: 'NOT_APPLICABLE',
+  investigation_budget: null,
+  remaining_read_calls: Math.max(0, 6 - CORE_AGENT_RUN.tools.filter((tool) => tool.tool_name !== 'send_action').length),
   evidence_items: [
     {
       type: 'ALARM',
@@ -68,6 +73,7 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     action_id: CORE_AGENT_RUN.action_id,
     agent_run_id: CORE_AGENT_RUN.agent_run_id,
     action_code: CORE_AGENT_RUN.recommended_action,
+    delivery_policy: 'ACTION-POLICY-V1',
     reason: CORE_APPROVAL.reason,
     approval_status: CORE_APPROVAL.status,
     deliveries: CORE_AGENT_RUN.deliveries.map((delivery) => ({
@@ -91,6 +97,8 @@ const CORE_AGENT_RUN_DETAIL = Object.freeze({
     generated_at: CORE_AGENT_RUN.created_at,
   },
   diagnosis: {
+    parameter_findings: [],
+    origin_assessment: null,
     status: 'AVAILABLE',
     reason_code: null,
     predicted_fault_code: CORE_AGENT_RUN.predicted_fault_code,

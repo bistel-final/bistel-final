@@ -36,7 +36,7 @@ FORBIDDEN_PATTERNS = (
 )
 
 
-def scan(root: Path, env_file: Path) -> bool:
+def scan(root: Path, env_file: Path, *, publications_only: bool = False) -> bool:
     try:
         root_metadata = root.lstat()
         if not stat.S_ISDIR(root_metadata.st_mode) or root.is_symlink():
@@ -49,11 +49,21 @@ def scan(root: Path, env_file: Path) -> bool:
             for key in SECRET_KEYS | EXTRA_SECRET_KEYS
             if values.get(key)
         ] + [question.encode("utf-8") for question in QUESTIONS]
-        for path in root.rglob("*"):
+        paths = (
+            [
+                root / name
+                for name in ("attempt.json", "golden-flow.json", "fault-5class.json")
+            ]
+            if publications_only
+            else root.rglob("*")
+        )
+        for path in paths:
             metadata = path.lstat()
             if stat.S_ISLNK(metadata.st_mode):
                 return False
             if not stat.S_ISREG(metadata.st_mode):
+                if publications_only:
+                    return False
                 continue
             if path.name.startswith(".env") or path.suffix.lower() == ".env":
                 return False
@@ -71,11 +81,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--env-file", required=True, type=Path)
+    parser.add_argument(
+        "--publications-only",
+        action="store_true",
+        help="Scan exactly three public files; never certifies private evidence for upload",
+    )
     args = parser.parse_args(argv)
-    if not args.root.is_absolute() or not scan(args.root, args.env_file):
+    if not args.root.is_absolute() or not scan(
+        args.root, args.env_file, publications_only=args.publications_only
+    ):
         print("EVIDENCE_SECRET_SCAN_FAILED", file=sys.stderr)
         return 1
-    print("PASS")
+    print("PUBLICATIONS_ONLY_PASS" if args.publications_only else "PASS")
     return 0
 
 

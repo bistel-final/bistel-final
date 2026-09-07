@@ -17,6 +17,14 @@ from app.agent.diagnostics import (
     PostActionObservationBlock,
     SimilarIncidentsBlock,
 )
+from app.agent.investigation_budget import resolve_run_budget
+from app.agent.react import (
+    ReactNext,
+    ReactPhase,
+    ReactStep,
+    ReactStopReason,
+    SelectorTokens,
+)
 from app.common.enums import (
     ActionCode,
     AlarmSource,
@@ -163,6 +171,7 @@ def _validate_action_matrix(
     action_code: ActionCode,
     approval_status: PublicApprovalStatus | None,
     deliveries: list[ActionDeliveryItem],
+    delivery_policy: str = "ACTION-POLICY-V1",
 ) -> None:
     expected_channels = {
         ActionCode.MONITORING: [],
@@ -174,7 +183,10 @@ def _validate_action_matrix(
     }[action_code]
     if [item.channel for item in deliveries] != expected_channels:
         raise ValueError("action_code별 공개 delivery channel 행렬과 다릅니다")
-    if action_code is ActionCode.EQP_HOLD:
+    if delivery_policy == "MOCK-NOTIFY-V1":
+        if approval_status is not None:
+            raise ValueError("알림 정책에는 승인 상태가 없어야 합니다")
+    elif action_code is ActionCode.EQP_HOLD:
         if approval_status is None:
             raise ValueError("EQP_HOLD에는 공개 승인 상태가 필요합니다")
     elif approval_status is not None:
@@ -182,6 +194,7 @@ def _validate_action_matrix(
 
 
 class ActionItem(ApiModel):
+    delivery_policy: Literal["ACTION-POLICY-V1", "MOCK-NOTIFY-V1"] = "ACTION-POLICY-V1"
     action_id: NonEmptyId
     agent_run_id: NonEmptyId
     created_by_agent_run_id: NonEmptyId
@@ -211,6 +224,7 @@ class ActionItem(ApiModel):
             self.action_code,
             self.approval_status,
             self.deliveries,
+            self.delivery_policy,
         )
         return self
 
@@ -230,6 +244,7 @@ class AgentRunApprovalItem(ApiModel):
 
 
 class AgentRunActionItem(ApiModel):
+    delivery_policy: Literal["ACTION-POLICY-V1", "MOCK-NOTIFY-V1"] = "ACTION-POLICY-V1"
     action_id: NonEmptyId
     agent_run_id: NonEmptyId
     action_code: ActionCode
@@ -243,6 +258,7 @@ class AgentRunActionItem(ApiModel):
             self.action_code,
             self.approval_status,
             self.deliveries,
+            self.delivery_policy,
         )
         return self
 
@@ -386,6 +402,81 @@ RunEvidenceItem = Annotated[
 RUN_EVIDENCE_ADAPTER = TypeAdapter(RunEvidenceItem)
 
 
+class ReactStepPublic(ApiModel):
+    """U2-lite 공개 allowlist. 원문 인자·digest·provider model은 제외한다."""
+
+    seq: int = Field(ge=1)
+    phase: ReactPhase
+    rationale_summary: str | None = Field(default=None, max_length=120)
+    tool: ReactNext | None = None
+    argument_summary: str | None = Field(
+        default=None,
+        pattern=(
+            r"^(후보 wafer [1-9][0-9]*\((현재|상류|하류)\)|"
+            r"이력 [1-9][0-9]*\((현재|형제)\)|"
+            r"계측 [1-9][0-9]*\((현재|상류|하류)\)|문서 검색|설비 컨텍스트)$"
+        ),
+    )
+    observation_summary: str | None = Field(default=None, max_length=160)
+    guard_code: str | None = Field(default=None, max_length=64)
+    react_prompt_version: (
+        Literal[
+            "agent-react-v2-ko1",
+            "agent-react-v2-ko2",
+            "agent-react-v2-ko3",
+            "agent-react-v2-ko4",
+        ]
+        | None
+    ) = None
+    selector_tokens: SelectorTokens
+    stop_reason: ReactStopReason | None = None
+    degraded: bool = False
+
+    @model_validator(mode="after")
+    def validate_phase(self) -> "ReactStepPublic":
+        ReactStep.model_validate(
+            {
+                **self.model_dump(),
+                "llm_model": "public" if self.react_prompt_version else None,
+            }
+        )
+        if self.phase in {"SELECTED", "OBSERVED"} and self.argument_summary is None:
+            raise ValueError("선택·관찰에는 서버 생성 인자 요약이 필요합니다")
+        return self
+
+
+class PublicInvestigationBudget(ApiModel):
+    """Server-owned fixed limits, never a public run configuration input."""
+
+    profile_id: Literal["STANDARD", "PRODUCTION_WIDE_V1"]
+    read_cap: int = Field(ge=1, le=24, strict=True)
+    selector_cap: int = Field(ge=1, le=28, strict=True)
+    same_tool_cap: int = Field(ge=1, le=8, strict=True)
+    guard_rejection_cap: int = Field(ge=1, le=2, strict=True)
+    send_budget: int = Field(ge=1, le=2, strict=True)
+    total_call_cap: int = Field(ge=1, le=26, strict=True)
+
+    @model_validator(mode="after")
+    def validate_fixed_limits(self) -> "PublicInvestigationBudget":
+        profile = resolve_run_budget(
+            3, None if self.profile_id == "STANDARD" else self.profile_id
+        )
+        if profile is None or any(
+            getattr(self, key) != getattr(profile, key)
+            for key in (
+                "read_cap",
+                "selector_cap",
+                "same_tool_cap",
+                "guard_rejection_cap",
+                "send_budget",
+            )
+        ):
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
+        if self.total_call_cap != profile.read_cap + profile.send_budget:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
+        return self
+
+
 class AgentRunDetailResponse(PublicAgentRunItem):
     evidence_items: list[RunEvidenceItem]
     prediction: AgentPredictionDetailItem | None
@@ -396,9 +487,25 @@ class AgentRunDetailResponse(PublicAgentRunItem):
     impact_scope: ImpactScopeBlock
     similar_incidents: SimilarIncidentsBlock
     post_action_observation: PostActionObservationBlock
+    autonomy_level: int = Field(default=2, ge=1, le=3, strict=True)
+    react_trace: list[ReactStepPublic] = Field(default_factory=list)
+    trace_state: Literal["NOT_APPLICABLE", "PENDING", "AVAILABLE", "UNAVAILABLE"] = (
+        "NOT_APPLICABLE"
+    )
+    remaining_read_calls: int = Field(default=0, ge=0, le=24)
+    investigation_budget: PublicInvestigationBudget | None = None
 
     @model_validator(mode="after")
     def validate_detail_identity(self) -> "AgentRunDetailResponse":
+        if self.autonomy_level != 3 and self.investigation_budget is not None:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
+        read_cap = (
+            self.investigation_budget.read_cap
+            if self.investigation_budget is not None
+            else (8 if self.autonomy_level == 3 else 6)
+        )
+        if self.remaining_read_calls > read_cap:
+            raise ValueError("PUBLIC_INVESTIGATION_BUDGET_INVALID")
         source_ids = [item.source_id for item in self.evidence_items]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("evidence source_id는 중복될 수 없습니다")

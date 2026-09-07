@@ -106,9 +106,40 @@ EvaluationEmptyReason = Literal[
 ]
 
 
+class AgentMockGoldenPhase(ApiModel):
+    phase: Literal[
+        "PREFLIGHT",
+        "BATCH_BASELINE",
+        "MOCK_RESULTS",
+        "NO_DECISIONS",
+        "SECOND_BATCH",
+        "UNKNOWN",
+        "MANUAL_RETRY",
+    ]
+    status: Literal["PASS", "FAIL", "EVIDENCE_INCOMPLETE", "NOT_LIVE"]
+    reasons: list[str]
+    metrics: dict[str, Any]
+
+
+class AgentMockGoldenEvaluation(ApiModel):
+    protocol: Literal["MOCK-NOTIFY-V1"]
+    dataset_epoch: str = Field(min_length=1)
+    status: PhaseStatus
+    phases: list[AgentMockGoldenPhase]
+
+    @model_validator(mode="after")
+    def check_phases(self):
+        from app.agent.golden_summary import validate_mock_phases
+
+        validate_mock_phases(
+            [p.model_dump() for p in self.phases], self.status.value, private=False
+        )
+        return self
+
+
 class AgentEvaluationResponse(ApiModel):
     fault_5class: AgentFaultEvaluation | None
-    golden_flow: AgentGoldenEvaluation | None
+    golden_flow: AgentGoldenEvaluation | AgentMockGoldenEvaluation | None
     fault_5class_empty_reason: EvaluationEmptyReason | None
     golden_flow_empty_reason: EvaluationEmptyReason | None
 

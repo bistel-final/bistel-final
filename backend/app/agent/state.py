@@ -1,16 +1,25 @@
 """LangGraph 실행 State와 내부 node port 계약 (`V5-C-2.1`).
 
-공개 API DTO가 아니다. 그래프가 끝나기 직전에 :class:`CompletedAgentState`로 20개
-canonical channel을 명시적으로 검증하고, 실행 중에만 필요한 다섯 channel은 출력에서
-제거한다. ID·Enum·Tool payload는 ``app.common``의 정본을 그대로 재사용한다.
+공개 API DTO가 아니다. 그래프가 끝나기 직전에 :class:`CompletedAgentState`로
+canonical 출력 channel을 명시적으로 검증하고, 실행 중에만 필요한 internal
+channel은 출력에서 제거한다. ID·Enum·Tool payload는 ``app.common``의 정본을 그대로
+재사용한다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Final, Literal, NotRequired, Protocol, TypedDict
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypedDict,
+)
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from app.agent.checkpoint import AgentCheckpointError, normalize_thread_id
 from app.agent.diagnostics import (
@@ -19,6 +28,15 @@ from app.agent.diagnostics import (
     ImpactScopeBlock,
     IncidentDiagnosticSnapshot,
 )
+from app.agent.investigation_budget import ProductionProfileId, resolve_run_budget
+from app.agent.investigation_models import (
+    InvestigationEvidence,
+    OriginAssessment,
+    OriginClaim,
+    ParameterFinding,
+    ParameterFindingDraft,
+)
+from app.agent.origin_diagnostics import OriginDiagnostics
 from app.agent.routing import ResolvedIncidentRoute
 from app.common.config import AGENT_MAX_TOOL_CALLS
 from app.common.enums import (
@@ -37,16 +55,18 @@ from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     AGENT_TOOL_NAMES,
     AnomalySignal,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
+    MetrologyResultToolResult,
 )
 
 if TYPE_CHECKING:
     from app.agent.rehydration import RehydrationSeed
 
 MatchedRule = Literal["R03_PRESENT", "TRACE_OOS", "SUMMARY_OOC_ONLY", "NO_ALARM"]
-ActionPolicyVersion = Literal["ACTION-POLICY-V1"]
+ActionPolicyVersion = Literal["ACTION-POLICY-V1", "MOCK-NOTIFY-V1"]
 
 RULE_TO_ACTION: Final[Mapping[MatchedRule, ActionCode | None]] = {
     "R03_PRESENT": ActionCode.EQP_HOLD,
@@ -96,7 +116,7 @@ class LlmUsage(StateModel):
         )
 
 
-class Hypothesis(StateModel):
+class HypothesisContent(StateModel):
     """LLM이 만든 가설과 그 가설이 실제로 인용한 근거 ID."""
 
     predicted_fault_code: FaultHypothesis
@@ -118,7 +138,7 @@ class Hypothesis(StateModel):
     limitations: tuple[str, ...] = Field(default=(), max_length=10)
 
     @model_validator(mode="after")
-    def _unique_citations(self) -> Hypothesis:
+    def _unique_citations(self) -> HypothesisContent:
         collections = (
             tuple(item.to_token() for item in self.supporting_alarms),
             self.supporting_chunk_ids,
@@ -131,6 +151,20 @@ class Hypothesis(StateModel):
         return self
 
 
+class HypothesisDraftV3(HypothesisContent):
+    """LLM strict 출력. 산술·compared 필드는 이 DTO에 들어올 수 없다."""
+
+    parameter_findings_draft: tuple[ParameterFindingDraft, ...]
+    origin_claim: OriginClaim
+
+
+class Hypothesis(HypothesisContent):
+    """검증된 draft에 코드 계산값을 더한 저장용 DTO. v1/v2 읽기도 허용한다."""
+
+    parameter_findings: tuple[ParameterFinding, ...] = ()
+    origin_assessment: OriginAssessment | None = None
+
+
 class HypothesisOutcome(StateModel):
     """가설과 그 가설을 만드는 데 소비한 실제 LLM usage."""
 
@@ -139,6 +173,8 @@ class HypothesisOutcome(StateModel):
     diagnostic_snapshot: IncidentDiagnosticSnapshot | None = None
     evidence_assessment: EvidenceAssessmentBlock | None = None
     impact_scope: ImpactScopeBlock | None = None
+    # Never forwarded to graph State/prediction/DTO; U10 consumes it in memory.
+    origin_diagnostics: OriginDiagnostics | None = None
 
 
 class ActionDecision(StateModel):
@@ -163,7 +199,12 @@ class ActionDecision(StateModel):
             return self
         if self.severity is not resolve_severity(self.action):
             raise ValueError("severity가 Common 파생값과 다릅니다")
-        if self.requires_approval != requires_approval(self.action):
+        expected_approval = (
+            requires_approval(self.action)
+            if self.policy_version == "ACTION-POLICY-V1"
+            else False
+        )
+        if self.requires_approval != expected_approval:
             raise ValueError("requires_approval이 Common 파생값과 다릅니다")
         return self
 
@@ -191,6 +232,14 @@ class ToolBudget(StateModel):
     send_used: int | None = Field(default=None, ge=0)
     pending_reservations: int | None = Field(default=None, ge=0)
     source: Literal["DB"] = "DB"
+    investigation_budget_profile: ProductionProfileId | None = None
+
+    @model_serializer(mode="wrap")
+    def _legacy_profile_serialization(self, handler: Any) -> dict[str, Any]:
+        value = handler(self)
+        if self.investigation_budget_profile is None:
+            value.pop("investigation_budget_profile", None)
+        return value
 
     @model_validator(mode="after")
     def _consistent_snapshot(self) -> ToolBudget:
@@ -198,6 +247,13 @@ class ToolBudget(StateModel):
 
         if self.send_budget > self.max_calls:
             raise ValueError("전송 예약량이 전체 Tool 예산보다 클 수 없습니다")
+        if self.investigation_budget_profile is not None:
+            profile = resolve_run_budget(3, self.investigation_budget_profile)
+            if (
+                self.max_calls != profile.read_cap + profile.send_budget
+                or self.send_budget != profile.send_budget
+            ):
+                raise ValueError("INVESTIGATION_BUDGET_MISMATCH")
         if self.by_tool is None:
             if self.send_used is not None or self.pending_reservations is not None:
                 raise ValueError(
@@ -240,7 +296,7 @@ class PersistResult(StateModel):
     def assert_matches(self, decision: ActionDecision) -> None:
         if decision.action is None:
             raise ValueError("action 없음이면 PersistResult가 존재할 수 없습니다")
-        if (self.approval_id is not None) != requires_approval(decision.action):
+        if (self.approval_id is not None) != decision.requires_approval:
             raise ValueError("approval_id 유무가 action 정책과 다릅니다")
         channels = tuple(plan.channel for plan in self.deliveries)
         if channels != resolve_delivery_channels(decision.action):
@@ -248,7 +304,12 @@ class PersistResult(StateModel):
         if len(channels) != len(set(channels)):
             raise ValueError("delivery channel을 중복할 수 없습니다")
         for plan in self.deliveries:
-            if plan.status is not INITIAL_STATUS[plan.channel]:
+            expected = (
+                DeliveryStatus.WAITING
+                if decision.policy_version == "MOCK-NOTIFY-V1"
+                else INITIAL_STATUS[plan.channel]
+            )
+            if plan.status is not expected:
                 raise ValueError("초기 delivery 상태가 계약과 다릅니다")
 
 
@@ -290,10 +351,19 @@ class AgentGraphState(TypedDict, total=False):
     read_retry_used: int
     approval_decision: Decision | None
     pending_llm_usage: LlmUsage | None
+    # Level 3 ReAct (V5-C-7.1): 선택 흔적·카운터·다중 문서 검색 결과. Level 1·2는 빈 값.
+    react_trace: tuple[dict[str, Any], ...]
+    react_steps: int
+    react_guard_rejections: int
+    react_pending: dict[str, Any] | None
+    react_candidates: dict[str, Any]
+    document_evidence_set: tuple[DocumentSearchToolResult | None, ...]
+    history_evidence_set: tuple[ChamberParameterHistoryToolResult | None, ...]
+    metrology_evidence_set: tuple[MetrologyResultToolResult | None, ...]
 
 
 class CompletedAgentState(StateModel):
-    """성공 종료 직전에 명시적으로 호출하는 canonical 20-channel 검증기."""
+    """성공 종료 직전에 명시적으로 호출하는 canonical State 검증기."""
 
     run_id: NonEmptyId
     thread_id: NonEmptyId
@@ -315,6 +385,8 @@ class CompletedAgentState(StateModel):
     deliveries: tuple[DeliveryPlan, ...]
     tool_budget: ToolBudget
     errors: tuple[AgentError, ...]
+    # Level 3 ReAct 흔적(Level 1·2는 빈 tuple). finalize가 run evidence로 남긴다.
+    react_trace: tuple[dict[str, Any], ...] = ()
 
     @model_validator(mode="after")
     def _validate_complete(self) -> CompletedAgentState:
@@ -406,6 +478,7 @@ class AgentNodePorts(Protocol):
             DocumentSearchToolResult | None,
             ResolvedIncidentRoute,
             tuple[str, ...],
+            InvestigationEvidence,
         ],
         HypothesisOutcome,
     ]
@@ -421,6 +494,9 @@ class AgentNodePorts(Protocol):
     publish_mes: Callable[[NonEmptyId], None]
     writeback_result: Callable[[NonEmptyId], tuple[DeliveryPlan, ...]]
     cancel_mes: Callable[[NonEmptyId], tuple[DeliveryPlan, ...]]
+    # V5-C-7.1 Level 3: ReactContext → ReactSelectionOutcome (app.agent.react). 순환
+    # import를 피하기 위해 여기서는 Any로 둔다. Level 1·2 조립은 None을 넣어도 된다.
+    react_select: Callable[[Any], Any] | None
 
 
 __all__ = [

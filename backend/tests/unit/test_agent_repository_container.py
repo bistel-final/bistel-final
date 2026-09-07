@@ -1437,6 +1437,145 @@ def test_concurrent_reservations_get_distinct_sequences(runtime_engine: Any) -> 
     assert len({c.tool_call_id for c in calls}) == 2
 
 
+@pytest.mark.parametrize(
+    ("profile", "seed_counts", "tool_name", "blocked_code", "expected_total"),
+    [
+        (
+            "PRODUCTION_WIDE_V1",
+            {"get_fdc_summary": 8, "get_equipment_context": 8, "search_documents": 7},
+            "search_documents",
+            "TOOL_BUDGET_RESERVED",
+            24,
+        ),
+        (
+            "PRODUCTION_WIDE_V1",
+            {
+                "get_fdc_summary": 8,
+                "get_equipment_context": 8,
+                "search_documents": 8,
+                "send_action": 1,
+            },
+            "send_action",
+            "TOOL_BUDGET_EXHAUSTED",
+            26,
+        ),
+        (
+            "PRODUCTION_WIDE_V1",
+            {"get_fdc_summary": 1, "send_action": 1},
+            "send_action",
+            "TOOL_SEND_ACTION_LIMIT",
+            3,
+        ),
+        (
+            "PRODUCTION_WIDE_V1",
+            {"get_fdc_summary": 7},
+            "get_fdc_summary",
+            "TOOL_RETRY_EXHAUSTED",
+            8,
+        ),
+        (
+            None,
+            {"get_fdc_summary": 3, "get_equipment_context": 4},
+            "search_documents",
+            "TOOL_BUDGET_RESERVED",
+            8,
+        ),
+        (
+            None,
+            {"get_fdc_summary": 3},
+            "get_fdc_summary",
+            "TOOL_RETRY_EXHAUSTED",
+            4,
+        ),
+    ],
+    ids=[
+        "wide-read24",
+        "wide-total26",
+        "wide-send2",
+        "wide-same-tool8",
+        "legacy-level3-read8",
+        "legacy-level3-same-tool4",
+    ],
+)
+def test_bound_profile_last_slot_is_atomic_on_postgres(
+    engine: Any,
+    profile: str | None,
+    seed_counts: dict[str, int],
+    tool_name: str,
+    blocked_code: str,
+    expected_total: int,
+) -> None:
+    """V5-C-7.1: persisted profile·count·reservation share the actual row lock.
+
+    Only the isolated fixture database is used. All Tool implementations fail if
+    invoked, so reserving a send slot cannot send SMTP or publish Kafka.
+    """
+
+    from app.agent.investigation_budget import RUN_PROFILE_KEY
+    from app.agent.tools import AuditedToolExecutor, ToolBoundary, ToolBudgetBlocked
+
+    def forbidden_tool(_request: dict[str, Any]) -> Any:
+        raise AssertionError("reservation test must not invoke any external Tool")
+
+    executor = AuditedToolExecutor(
+        transactions=engine.begin,
+        boundary=ToolBoundary(
+            fdc_summary=forbidden_tool,
+            equipment_context=forbidden_tool,
+            document_search=forbidden_tool,
+            chamber_parameter_history=forbidden_tool,
+            metrology_result=forbidden_tool,
+            send_action=forbidden_tool,
+        ),
+        deadline_runner=None,
+    )
+    run = _run_id(
+        engine,
+        autonomy_level=3,
+        investigation_budget_profile=profile,
+    )
+    for name, count in seed_counts.items():
+        for index in range(count):
+            executor._reserve_within_budget(
+                agent_run_id=run,
+                tool_name=name,
+                request={"fixture": index},
+            )
+
+    barrier = Barrier(2)
+
+    def reserve_last(index: int) -> str:
+        barrier.wait(timeout=20)
+        try:
+            executor._reserve_within_budget(
+                agent_run_id=run,
+                tool_name=tool_name,
+                request={"candidate": index},
+            )
+        except ToolBudgetBlocked as exc:
+            return exc.code
+        return "RESERVED"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(reserve_last, (1, 2)))
+
+    assert outcomes == sorted(["RESERVED", blocked_code])
+    with engine.begin() as connection:
+        calls = repo.list_tool_calls(connection, run)
+        counts = repo.count_tool_calls_for_budget(connection, run)
+        evidence = connection.execute(
+            text("SELECT evidence FROM agent_run WHERE agent_run_id = :run"),
+            {"run": run},
+        ).scalar_one()
+    assert counts.total == expected_total
+    assert counts.pending_reservations == expected_total
+    assert counts.investigation_budget_profile == profile
+    assert counts.by_tool[tool_name] == seed_counts.get(tool_name, 0) + 1
+    assert [row.call_seq for row in calls] == list(range(1, expected_total + 1))
+    assert len({row.tool_call_id for row in calls}) == expected_total
+    assert evidence == (None if profile is None else {RUN_PROFILE_KEY: profile})
+
+
 def test_a_different_run_is_not_blocked(engine: Any) -> None:
     """다른 run은 서로 막지 않는다 — lock 대상이 run row이기 때문이다."""
 

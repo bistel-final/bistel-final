@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -184,10 +185,18 @@ def _request(
     *,
     json_object: bool = False,
     json_schema: dict[str, Any] | None = None,
+    seed: int | None = None,
+    request_port: Callable[..., httpx.Response] | None = None,
 ) -> dict[str, Any]:
     """OpenAI 호환 응답 JSON을 받는 공통 HTTP 경계."""
     if json_object and json_schema is not None:
         raise ValueError("JSON object mode와 JSON schema를 동시에 요청할 수 없습니다.")
+    if seed is not None and (
+        not isinstance(seed, int)
+        or isinstance(seed, bool)
+        or not 0 <= seed <= _INT32_MAX
+    ):
+        raise ValueError("LLM seed는 0 이상 integer 범위여야 합니다.")
     base_url, api_key = _resolve_endpoint()
     provider = LLM_PROVIDER.strip().lower()
 
@@ -199,6 +208,8 @@ def _request(
                 "model": LLM_MODEL_MAIN,
                 "messages": messages,
             }
+            if seed is not None:
+                request_body["seed"] = seed
             if _is_reasoning_model(LLM_MODEL_MAIN):
                 # GPT-5 계열(gpt-5*, o-series)은 max_tokens 대신 max_completion_tokens,
                 # temperature 는 기본값 외 거부(보내면 400). 추론 강도는 SQL/Cypher
@@ -224,7 +235,7 @@ def _request(
                 )
             elif json_object:
                 request_body["response_format"] = {"type": "json_object"}
-            response = httpx.post(
+            response = (request_port or httpx.post)(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=request_body,
@@ -292,6 +303,8 @@ def chat_with_usage(
     *,
     json_object: bool = False,
     json_schema: dict[str, Any] | None = None,
+    seed: int | None = None,
+    request_port: Callable[..., httpx.Response] | None = None,
 ) -> ChatCompletion:
     """응답 본문과 provider 실제 model·usage를 엄격하게 반환한다."""
 
@@ -299,6 +312,8 @@ def chat_with_usage(
         messages,
         json_object=json_object,
         json_schema=json_schema,
+        seed=seed,
+        **({} if request_port is None else {"request_port": request_port}),
     )
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip() or len(model.strip()) > 64:

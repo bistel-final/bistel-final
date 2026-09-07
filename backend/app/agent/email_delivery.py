@@ -26,6 +26,7 @@ from app.agent.delivery_signing import signed_delivery_headers
 from app.agent.repository import (
     ActionDeliveryRow,
     begin_email_delivery,
+    get_action_bundle,
     get_action_delivery,
     get_action_history,
     get_approval_request,
@@ -68,6 +69,7 @@ class EmailDeliveryContractError(RuntimeError):
 class EmailKind(StrEnum):
     WARNING_NOTIFY = "WARNING_NOTIFY"
     APPROVAL_REQUEST = "APPROVAL_REQUEST"
+    ACTION_NOTIFY = "ACTION_NOTIFY"
 
 
 class EmailDeliveryOutcome(StrEnum):
@@ -194,7 +196,21 @@ def _summary(
     chamber_id: str,
     reason: str,
     approval_id: str | None,
+    action_code: ActionCode | None = None,
 ) -> str:
+    if kind is EmailKind.ACTION_NOTIFY:
+        if action_code not in {ActionCode.WARNING, ActionCode.EQP_HOLD}:
+            raise EmailDeliveryContractError("EMAIL_KIND_ACTION_MISMATCH")
+        scope = (
+            "Kafka·MES Mock 모의 연동이 자동 진행됩니다."
+            if action_code is ActionCode.EQP_HOLD
+            else "이 조치는 이메일 알림만 발송합니다."
+        )
+        return _validate_summary(
+            f"{action_code.value} 조치 알림\naction_id={action_id}\n"
+            f"lot_id={lot_id}\nchamber_id={chamber_id}\nreason={reason}\n{scope}\n"
+            "이 알림은 실제 설비 정지나 사용자의 메일 열람을 증명하지 않습니다."
+        )
     if kind is EmailKind.WARNING_NOTIFY:
         return _validate_summary(
             f"WARNING 알림\naction_id={action_id}\nlot_id={lot_id}\n"
@@ -232,6 +248,7 @@ def _raw_payload(
             chamber_id=action.chamber_id,
             reason=action.reason,
             approval_id=approval_id,
+            action_code=action.action_code,
         ),
     }
     return json.dumps(
@@ -263,6 +280,11 @@ class EmailDeliveryService:
             approval_id=None,
         )
 
+    def send_notification(self, action_id: str) -> EmailDeliveryResult:
+        return self._send(
+            action_id=action_id, kind=EmailKind.ACTION_NOTIFY, approval_id=None
+        )
+
     def send_approval(self, action_id: str, approval_id: str) -> EmailDeliveryResult:
         return self._send(
             action_id=action_id,
@@ -285,9 +307,21 @@ class EmailDeliveryService:
                 if kind is EmailKind.WARNING_NOTIFY
                 else ActionCode.EQP_HOLD
             )
-            if action.action_code is not expected:
+            if kind is EmailKind.ACTION_NOTIFY:
+                bundle = get_action_bundle(connection, action_id)
+                if (
+                    bundle.delivery_policy != "MOCK-NOTIFY-V1"
+                    or bundle.action_code is not action.action_code
+                    or bundle.approval_id is not None
+                    or action.approval_required
+                    or action.approval_status is not ApprovalStatus.AUTO
+                    or action.action_code
+                    not in {ActionCode.WARNING, ActionCode.EQP_HOLD}
+                ):
+                    raise EmailDeliveryContractError("NOTIFICATION_POLICY_MISMATCH")
+            elif action.action_code is not expected:
                 raise EmailDeliveryContractError("EMAIL_KIND_ACTION_MISMATCH")
-            if kind is EmailKind.WARNING_NOTIFY:
+            if kind in {EmailKind.WARNING_NOTIFY, EmailKind.ACTION_NOTIFY}:
                 if approval_id is not None:
                     raise EmailDeliveryContractError("WARNING_APPROVAL_FORBIDDEN")
             else:

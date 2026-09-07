@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createServer } from 'vite'
+import {
+  COMPARISON_STATES, excursionPercent, investigationTimelineState,
+} from '../src/features/agent/investigation-view.js'
+
+const fixture = JSON.parse(readFileSync(new URL('../../backend/tests/fixtures/v5_c_7_1/react_trace_public.json', import.meta.url)))
+assert.deepEqual(fixture.cases.map((detail) => investigationTimelineState(detail).phase), [
+  'pending', 'pending', 'success', 'success', 'hidden', 'unavailable',
+])
+assert.equal(investigationTimelineState({ autonomy_level: 3, trace_state: 'AVAILABLE', react_trace: [] }).phase, 'empty')
+assert.equal(investigationTimelineState(null).phase, 'hidden')
+assert.equal(excursionPercent(3), '300%')
+assert.equal(excursionPercent(null), '계산 불가')
+assert.equal(excursionPercent(Infinity), '계산 불가')
+assert.notEqual(COMPARISON_STATES.NOT_CHECKED, COMPARISON_STATES.NOT_AVAILABLE)
+assert.notEqual(COMPARISON_STATES.CHECKED, COMPARISON_STATES.NOT_CHECKED)
+const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' })
+try {
+  const { default: Timeline } = await server.ssrLoadModule('/src/features/agent/components/RunInvestigationTimeline.jsx')
+  const { default: Card } = await server.ssrLoadModule('/src/features/agent/components/RunInvestigationCard.jsx')
+  for (const detail of fixture.cases) {
+    const html = renderToStaticMarkup(React.createElement(Timeline, { detail }))
+    if (detail.trace_state === 'PENDING') assert.match(html, /실행 종료 후/)
+    if (detail.trace_state === 'UNAVAILABLE') assert.match(html, /저장된 조사 이력이 없습니다/)
+    if (detail.trace_state === 'AVAILABLE') assert.match(html, /조사 타임라인/)
+    assert.doesNotMatch(html, /argument_digest|llm_model|lot_hist_id/)
+  }
+  const legacyDetail = { ...fixture.cases[2], remaining_read_calls: 5 }
+  const legacyTimeline = renderToStaticMarkup(React.createElement(Timeline, { detail: legacyDetail }))
+  assert.match(legacyTimeline, /남은 조회 예산 5 \/ 8/)
+  const wideDetail = {
+    ...legacyDetail,
+    remaining_read_calls: 21,
+    investigation_budget: {
+      profile_id: 'PRODUCTION_WIDE_V1', read_cap: 24, selector_cap: 28,
+      same_tool_cap: 8, guard_rejection_cap: 2, send_budget: 2, total_call_cap: 26,
+    },
+    react_trace: Array.from({ length: 29 }, (_, index) => ({
+      ...fixture.cases[2].react_trace[index === 28 ? 1 : 0], seq: index + 1,
+    })),
+  }
+  const wideTimeline = renderToStaticMarkup(React.createElement(Timeline, { detail: wideDetail }))
+  assert.match(wideTimeline, /남은 조회 예산 21 \/ 24/)
+  assert.equal((wideTimeline.match(/<li /g) ?? []).length, 29)
+  assert.match(wideTimeline, />29<\/span>/)
+  assert.doesNotMatch(wideTimeline, /argument_digest|llm_model|lot_hist_id|investigation_budget_profile/)
+  const pendingWide = renderToStaticMarkup(React.createElement(Timeline, { detail: {
+    ...wideDetail, trace_state: 'PENDING', react_trace: [],
+  } }))
+  assert.match(pendingWide, /남은 조회 예산 21 \/ 24/)
+  assert.match(pendingWide, /실행 종료 후/)
+  const diagnosis = { status: 'AVAILABLE', parameter_findings: [{
+    parameter_id: 'PH_FOCUS', step_no: 1, direction: 'BOTH', excursion_ratio: 3, wafer_scope: 'SINGLE',
+  }], origin_assessment: { scope: 'CURRENT_CHAMBER', basis: [], compared: {
+    upstream: 'NOT_AVAILABLE', downstream: 'NOT_CHECKED', sibling: 'CHECKED', history: 'CHECKED', metrology: 'NOT_CHECKED',
+  } } }
+  const html = renderToStaticMarkup(React.createElement(Card, { diagnosis }))
+  for (const text of ['양방향 이탈', '300%', '확인', '미확인', '대상 없음']) assert.ok(html.includes(text))
+  assert.doesNotMatch(html, /출처 근거 일부 검증 불가/)
+  const degraded = { ...diagnosis, origin_assessment: { ...diagnosis.origin_assessment,
+    degraded: true, degraded_reasons: ['ORIGIN_BASIS_OUTSIDE_EVIDENCE'], dropped_basis_count: 2,
+  } }
+  const badge = renderToStaticMarkup(React.createElement(Card, { diagnosis: degraded }))
+  assert.match(badge, /출처 근거 일부 검증 불가\(강등 2건\)/)
+  assert.doesNotMatch(badge, /DROPPED#|INVALID_FORMAT|ORIGIN_BASIS_OUTSIDE_EVIDENCE/)
+} finally {
+  await server.close()
+}
+console.log('OK agent-investigation: shared trace fixture, pending/terminal, comparison and ratio contracts')

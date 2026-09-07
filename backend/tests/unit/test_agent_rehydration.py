@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from app.agent import approval_store
+from app.agent import approval_store, react
 from app.agent import rehydration as subject
 from app.agent.incident import ResolvedIncident
 from app.agent.repository import ActionBundle
@@ -181,8 +181,10 @@ def _wire(
     monkeypatch: pytest.MonkeyPatch,
     *,
     evidence: dict[str, Any] | None = None,
+    snapshot: subject.RehydrationSnapshot | None = None,
+    autonomy_level: int = 2,
 ) -> SimpleNamespace:
-    snapshot = _snapshot()
+    snapshot = snapshot or _snapshot()
     run_evidence = {
         subject.REHYDRATION_SNAPSHOT_KEY: snapshot.as_evidence(),
         "action_provenance": {
@@ -200,7 +202,7 @@ def _wire(
         lot_id="LOT-1",
         chamber_id="EQP01-PM1",
         status=RunStatus.WAITING_APPROVAL,
-        autonomy_level=2,
+        autonomy_level=autonomy_level,
         requested_alarm=ALARM,
         representative_alarm=ALARM,
         action=ActionCode.EQP_HOLD,
@@ -272,18 +274,80 @@ def test_snapshot_json_has_no_runtime_secret_or_label_fields() -> None:
     assert "approval_email" not in flattened
 
 
-def test_build_rehydrates_all_25_channels_without_tool_or_llm(
+def test_build_rehydrates_all_channels_without_tool_or_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch)
     payload = subject.build_rehydrated_state(object(), "RUN-1")
-    assert len(payload) == 25
+    assert len(payload) == 36
     assert payload["graph_evidence"] is None  # Level 2 skip 보존
     assert payload["errors"][0].code == "TOOL_BUDGET_EXCEEDED"
     assert payload["terminal_error"] is None
     assert payload["approval_decision"] is None
     assert payload["pending_llm_usage"] is None
+
+
+def test_level_three_rehydrates_trace_and_internal_loop_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    step = react.ReactStep(
+        seq=1,
+        phase="STOPPED",
+        rationale_summary="근거가 충분해 조사를 끝낸다",
+        tool="stop",
+        react_prompt_version=react.REACT_PROMPT_VERSION,
+        llm_model="fixture-model",
+        selector_tokens=react.SelectorTokens(input=7, output=3),
+        stop_reason="LLM_STOP",
+    )
+    seed = _seed().model_copy(
+        update={
+            "fdc_lot_hist_ids": ("LH-1", "LH-2"),
+            "fdc_evidence_set": (None,),
+            "document_evidence_set": (),
+            "react_trace": (step.model_dump(mode="json"),),
+            "react_steps": 1,
+            "react_guard_rejections": 0,
+            "react_candidates": react.ReactCandidates(run_id="RUN-1").model_dump(
+                mode="json"
+            ),
+        }
+    )
+    snapshot = subject.RehydrationSnapshot.from_seed(
+        seed,
+        action_id="ACT-1",
+        approval_id="APR-1",
+        deliveries=_snapshot().deliveries,
+    )
+    _wire(monkeypatch, snapshot=snapshot, autonomy_level=3)
+
+    payload = subject.build_rehydrated_state(object(), "RUN-1")
+
+    assert payload["autonomy_level"] == 3
+    assert payload["fdc_lot_hist_ids"] == ("LH-1", "LH-2")
+    assert payload["react_trace"] == (step.model_dump(mode="json"),)
+    assert payload["react_steps"] == 1
+    assert payload["react_pending"] is None
     assert payload["hypothesis"] == Hypothesis.model_validate(payload["hypothesis"])
+
+
+@pytest.mark.parametrize(
+    "candidates,code",
+    [
+        ({"run_id": "OTHER-RUN"}, "REHYDRATE_BUNDLE_MISMATCH"),
+        ({"fdc": []}, "REHYDRATE_SNAPSHOT_MISSING"),
+    ],
+)
+def test_rehydration_rejects_foreign_or_invalid_candidate_map(
+    monkeypatch, candidates, code
+):
+    state = _wire(monkeypatch, autonomy_level=3)
+    state.run.evidence[subject.REHYDRATION_SNAPSHOT_KEY]["react_candidates"] = (
+        candidates
+    )
+    with pytest.raises(subject.RehydrationError) as caught:
+        subject.build_rehydrated_state(object(), "RUN-1")
+    assert caught.value.code == code
 
 
 def test_canonical_projection_ignores_tuple_list_round_trip(

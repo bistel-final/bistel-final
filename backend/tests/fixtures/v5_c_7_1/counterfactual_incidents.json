@@ -1,0 +1,10 @@
+{
+  "schema_version": "agent-counterfactual-fixtures-v1",
+  "fixtures": [
+    {"fixture_id": "CF-1", "lot_id": "LOT006", "chamber_id": "EQP06-PM1", "condition": "observed-direction"},
+    {"fixture_id": "CF-2", "lot_id": "LOT006", "chamber_id": "EQP06-PM2", "condition": "extra-fdc"},
+    {"fixture_id": "CF-3", "lot_id": "LOT007", "chamber_id": "EQP01-PM1", "condition": "doc-timeout-recovery"},
+    {"fixture_id": "CF-4", "lot_id": "LOT004", "chamber_id": "EQP04-PM2", "condition": "early-stop"},
+    {"fixture_id": "CF-5", "lot_id": "LOT009", "chamber_id": "EQP03-PM1", "condition": "held-out"}
+  ]
+}

@@ -1,6 +1,14 @@
 # API 명세서
 
+> **2026-09-06 추가 호환 계약: 공개 action 객체에 `delivery_policy: ACTION-POLICY-V1 | MOCK-NOTIFY-V1`을 추가한다(누락 시 V1 호환). 새 정책은 EQP_HOLD도 `approval_status=null`, 상세 approval 없음이며 기존 승인/반려 API를 호출하지 않는다. 확인/메일 열람 API는 추가하지 않고 7화면 경로와 채널 enum을 유지한다. WF2는 WARNING/EQP_HOLD의 ACTION_NOTIFY·approval_id=null을 추가 허용한다. WF3 decided_by의 `policy:MOCK-NOTIFY-V1`은 시스템 정책 actor다. 본문의 승인 필수 조건은 기존 V1 전용이다. [상세 계약](../agent/mock-notify-contract.md).**
+
 **PhotoEtch FDC Agent Pilot — 최종 데이터 전환 작업본**
+
+> **2026-09-06 API 동기 보완(V5-C-7.1 / 구현리뷰 27차-2)**: `GET /agent/evaluations`의
+> `golden_flow`는 기존 V1 객체, `protocol=MOCK-NOTIFY-V1` 객체, 미설정 `null`을 모두 허용한다.
+> 새 정책은 `PREFLIGHT → BATCH_BASELINE → MOCK_RESULTS → NO_DECISIONS → SECOND_BATCH`의
+> live 5단과 `UNKNOWN`·`MANUAL_RETRY`의 `NOT_LIVE`를 구분하며 private evidence를 공개하지 않는다.
+> `delivery_policy`의 V1 기본값 및 신규 union을 `api_spec_v3.json`과 생성 MD·CSV·PDF에 함께 반영한다.
 
 ---
 
@@ -1045,6 +1053,40 @@ Backend→n8n webhook도 같은 timestamp/raw-body HMAC과 replay window를 사�
 | D | GET | `/analytics/history` | 질의 이력 | `PageEnvelope<NlQueryLogItem>` | 422 |
 | D | GET | `/analytics/evaluations` | Text2SQL 평가 이력 | `PageEnvelope<EvaluationResponse>` | 422 |
 | D | GET | `/audit-logs/paged` | 페이지 감사 조회·집계 | `AuditLogPageResponse` | 422, 503 |
+
+#### V5-C-7.1 실행 상세 additive 계약 (C · 2026-09-05)
+
+`GET /agent/runs/{run_id}`에 `autonomy_level`(1~3), `remaining_read_calls`,
+`react_trace: ReactStepPublic[]`, `trace_state`를 추가한다. Level 1·2는
+`NOT_APPLICABLE`과 빈 trace, Level 3 RUNNING·WAITING_APPROVAL은 `PENDING`과 빈 trace다.
+종료한 Level 3는 `agent_run.evidence.react_trace`만 읽어 `AVAILABLE`로 반환하며, finalize 전
+crash 등으로 저장본이 없으면 `UNAVAILABLE`이다. 원문 Tool 인자·query·lot_hist_id·digest와
+selector provider model은 trace 공개 필드에 포함하지 않는다. 선택의 짧은 이유와 서버 생성
+인자/관찰 요약, phase·guard·중단 사유·selector token만 제공한다.
+신규 selector는 `agent-react-v2-ko4`이며 공개 `react_prompt_version`은 기존
+`agent-react-v2-ko1`·`agent-react-v2-ko2`·`agent-react-v2-ko3` 저장본도 계속 허용한다. 기존 trace 공개 필드와
+가드·중단·토큰 계약은 변경하지 않는다.
+
+2026-09-07 사용자 운영 예산 확대 승인에 따라 `investigation_budget`을 additive로 제공한다.
+Level 1·2는 null, Level 3는 `profile_id`, `read_cap`, `selector_cap`, `same_tool_cap`,
+`guard_rejection_cap`, `send_budget`, `total_call_cap`을 반환한다. 새 실행의 DB 저장 profile
+`PRODUCTION_WIDE_V1`은 각각 `24/28/8/2/2/26`, 저장 key가 없는 기존 실행의 `STANDARD`는
+`8/10/4/2/2/10`이다. 현재 환경설정이 아닌 실행 당시 저장값으로 판정하며 null·미지원
+profile은 기존 실행으로 추정하지 않고 거부한다. `remaining_read_calls`는 해당 읽기 상한에서
+실제 SUCCESS·ERROR·TIMEOUT 시도를 차감한다. trace는 기존 최대 11행/selector 10회,
+새 profile 최대 29행/selector 28회로 검증한다. 화면의 읽기 분모도 응답 profile을 따른다.
+확대는 상한이며 근거가 충분한 LLM의 조기 stop을 막지 않는다.
+
+`diagnosis.parameter_findings`는 인용 FDC에서 코드가 계산한 파라미터·recipe step·방향
+(`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된
+namespace별 근거와 상류·하류·형제·이력·계측의 `CHECKED|NOT_CHECKED|NOT_AVAILABLE`를 담는다.
+LLM draft에 산술·compared 필드를 받지 않는다. 새 prediction은 `agent-evidence-v3`,
+신규 가설 prompt는 `agent-hypothesis-v3-ko3`이며 `agent-hypothesis-v3-ko1`·`agent-hypothesis-v3-ko2`와
+v1·v2 저장본 읽기를 유지한다. `origin_assessment`에는 `degraded`(기본 false),
+`degraded_reasons`(기본 [], 강등 시 `ORIGIN_BASIS_OUTSIDE_EVIDENCE`),
+`dropped_basis_count`(기본 0, 최대 40)를 추가한다. 제거된 ID·private 진단은 공개하지 않는다.
+화면은 "출처 근거 일부 검증 불가(강등 n건)"으로 표시하며 조치 규칙은 변경하지 않는다. 경로·status code와
+CM-5.1 operation 모집단(20/30/36)은 변하지 않는다.
 
 ### 5.3 팀 release 필수 확장 API
 

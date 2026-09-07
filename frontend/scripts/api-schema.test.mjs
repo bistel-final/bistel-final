@@ -39,8 +39,24 @@ assertComponent('GET /actions item', action, 'ActionItem')
 assertComponent('GET /actions/{action_id}', actionDetail, 'ActionDetailResponse')
 assertComponent('GET /approvals item', approval, 'PublicApprovalItem')
 assertComponent('run detail prediction', runDetail.prediction, 'AgentPredictionDetailItem')
+assertComponent('run detail action', runDetail.action, 'AgentRunActionItem')
 assertComponent('run detail action delivery', runDetail.action.deliveries[0], 'ActionDeliveryDetailItem')
 assertComponent('action detail delivery', deliveredActionDetail.deliveries[0], 'ActionDeliveryDetailItem')
+
+// These fixtures represent legacy approval history, not the new automatic policy.
+// Check every action kind and both response shapes, including the nested run action.
+assert.deepEqual(actions.map((item) => item.action_code).sort(), ['EQP_HOLD', 'MONITORING', 'WARNING'])
+for (const item of actions) {
+  const detail = await getAction(item.action_id)
+  assertComponent(`action ${item.action_code}`, item, 'ActionItem')
+  assertComponent(`action detail ${item.action_code}`, detail, 'ActionDetailResponse')
+  assert.equal(item.delivery_policy, 'ACTION-POLICY-V1')
+  assert.equal(detail.delivery_policy, item.delivery_policy)
+  assert.equal(detail.approval_status, item.approval_status)
+}
+assert.equal(runDetail.action.delivery_policy, 'ACTION-POLICY-V1')
+assert.equal(runDetail.action.approval_status, runDetail.approval.status)
+assert.equal(actions.find((item) => item.action_code === 'EQP_HOLD').approval_status, 'PENDING')
 
 const serialized = JSON.stringify({ run, runDetail, action, actionDetail })
 for (const forbidden of ['request_hash', 'provider_message_id', 'last_error', 'raw_prompt', 'raw_response', 'HIDDEN_GOLD']) {

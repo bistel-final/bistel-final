@@ -20,16 +20,19 @@ from typing import Any, Final, Protocol, TypeVar
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
 
+from app.agent.investigation_budget import ProductionProfileId, resolve_run_budget
 from app.agent.repository import (
     RESERVED_TOOL_OUTPUT_KEYS,
     ToolBudgetCounts,
     ToolCallRow,
     count_tool_calls_for_budget,
     finalize_tool_call,
+    list_tool_calls,
     reserve_tool_call,
 )
 from app.agent.state import ToolBudget
 from app.common.config import (
+    AGENT_LEVEL3_MAX_TOOL_CALLS,
     AGENT_MAX_RETRY,
     AGENT_MAX_TOOL_CALLS,
     N8N_WEBHOOK_TIMEOUT_SEC,
@@ -38,12 +41,16 @@ from app.common.enums import ToolCallStatus
 from app.common.tool_contracts import (
     AGENT_TOOL_NAMES,
     REASON_PREFIXES,
+    ChamberParameterHistoryToolInput,
+    ChamberParameterHistoryToolResult,
     DocumentSearchToolInput,
     DocumentSearchToolResult,
     EquipmentContextToolInput,
     EquipmentContextToolResult,
     FdcSummaryToolInput,
     FdcSummaryToolResult,
+    MetrologyResultToolInput,
+    MetrologyResultToolResult,
     SendActionToolInput,
     SendActionToolResult,
     ToolResult,
@@ -53,6 +60,37 @@ ResultT = TypeVar("ResultT", bound=ToolResult)
 logger = logging.getLogger(__name__)
 SEND_ACTION_BUDGET: Final = 2
 SEND_ACTION_DEADLINE_GRACE_SECONDS: Final = 5.0
+
+
+@dataclass(frozen=True, slots=True)
+class ToolBudgetPolicy:
+    """DB run의 level과 생성 시 결속된 profile로 고르는 Tool 예산."""
+
+    max_calls: int
+    send_budget: int = SEND_ACTION_BUDGET
+    same_tool_cap: int = AGENT_MAX_RETRY + 1
+    investigation_budget_profile: ProductionProfileId | None = None
+
+
+def _budget_policy(
+    autonomy_level: int, profile_id: str | None = None
+) -> ToolBudgetPolicy:
+    try:
+        profile = resolve_run_budget(autonomy_level, profile_id)
+    except ValueError as exc:
+        raise ToolBoundaryError(str(exc)) from None
+    if profile_id is not None:
+        return ToolBudgetPolicy(
+            max_calls=profile.read_cap + profile.send_budget,
+            send_budget=profile.send_budget,
+            same_tool_cap=profile.same_tool_cap,
+            investigation_budget_profile=profile_id,
+        )
+    if autonomy_level in (1, 2):
+        return ToolBudgetPolicy(max_calls=AGENT_MAX_TOOL_CALLS)
+    if autonomy_level == 3:
+        return ToolBudgetPolicy(max_calls=AGENT_LEVEL3_MAX_TOOL_CALLS)
+    raise ToolBoundaryError("AUTONOMY_LEVEL_INVALID")
 
 
 class ToolDeadlineExceeded(TimeoutError):
@@ -66,11 +104,22 @@ class ToolRunnerSaturated(TimeoutError):
 class ToolBudgetBlocked(RuntimeError):
     """예약 전 예산 정책 차단. 원문 입력·DB 상세를 예외 문자열에 넣지 않는다."""
 
-    def __init__(self, code: str, counts: ToolBudgetCounts) -> None:
+    def __init__(
+        self,
+        code: str,
+        counts: ToolBudgetCounts,
+        policy: ToolBudgetPolicy | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.counts = counts
-        self.budget = _budget_snapshot(counts)
+        self.budget = _budget_snapshot(
+            counts,
+            policy
+            or _budget_policy(
+                counts.autonomy_level, counts.investigation_budget_profile
+            ),
+        )
 
 
 class ToolBoundaryError(RuntimeError):
@@ -147,6 +196,10 @@ def _send_action_not_wired(_payload: dict[str, Any]) -> Any:
     raise ToolBoundaryError("SEND_ACTION_NOT_WIRED")
 
 
+def _investigation_not_wired(_payload: dict[str, Any]) -> Any:
+    raise ToolBoundaryError("INVESTIGATION_TOOL_NOT_WIRED")
+
+
 @dataclass(frozen=True, slots=True)
 class ToolBoundary:
     """StructuredTool의 ``.invoke(dict)``만 노출하는 내부 경계."""
@@ -154,6 +207,10 @@ class ToolBoundary:
     fdc_summary: Callable[[dict[str, Any]], Any]
     equipment_context: Callable[[dict[str, Any]], Any]
     document_search: Callable[[dict[str, Any]], Any]
+    chamber_parameter_history: Callable[[dict[str, Any]], Any] = (
+        _investigation_not_wired
+    )
+    metrology_result: Callable[[dict[str, Any]], Any] = _investigation_not_wired
     send_action: Callable[[dict[str, Any]], Any] = _send_action_not_wired
     send_action_deadline_seconds: float = SEND_ACTION_DEADLINE_SECONDS
 
@@ -172,6 +229,10 @@ class ToolBoundary:
         graph 모듈을 import할 수 있게 한다.
         """
 
+        from app.agent.investigation import (
+            get_chamber_parameter_history,
+            get_metrology_result,
+        )
         from app.detection.tools import get_fdc_summary
         from app.knowledge.tools import get_equipment_context, search_documents
 
@@ -201,6 +262,8 @@ class ToolBoundary:
             fdc_summary=get_fdc_summary.invoke,
             equipment_context=get_equipment_context.invoke,
             document_search=search_documents.invoke,
+            chamber_parameter_history=get_chamber_parameter_history,
+            metrology_result=get_metrology_result,
             send_action=send_action,
             send_action_deadline_seconds=send_action_deadline_seconds,
         )
@@ -276,11 +339,56 @@ class AuditedToolExecutor:
             timeout_result=_send_action_timeout_result,
         )
 
+    def chamber_parameter_history(
+        self,
+        agent_run_id: str,
+        request: ChamberParameterHistoryToolInput,
+        *,
+        current_lot_id: str,
+        incident_step_id: str,
+        scope: str,
+    ) -> ChamberParameterHistoryToolResult | None:
+        canonical = request.model_dump(mode="json")
+        return self._invoke(
+            agent_run_id=agent_run_id,
+            tool_name="get_chamber_parameter_history",
+            request=canonical,
+            invoke=self.boundary.chamber_parameter_history,
+            result_type=ChamberParameterHistoryToolResult,
+            invoke_payload={
+                **canonical,
+                "_context": {
+                    "current_lot_id": current_lot_id,
+                    "incident_step_id": incident_step_id,
+                    "scope": scope,
+                },
+            },
+        )
+
+    def metrology_result(
+        self,
+        agent_run_id: str,
+        request: MetrologyResultToolInput,
+    ) -> MetrologyResultToolResult | None:
+        return self._invoke(
+            agent_run_id=agent_run_id,
+            tool_name="get_metrology_result",
+            request=request.model_dump(mode="json"),
+            invoke=self.boundary.metrology_result,
+            result_type=MetrologyResultToolResult,
+        )
+
     def budget(self, agent_run_id: str) -> ToolBudget:
         """실제 예약 행의 상세 snapshot을 단일 기준으로 읽는다."""
 
         with self.transactions() as connection:
             return self.budget_from_connection(connection, agent_run_id)
+
+    def history(self, agent_run_id: str) -> tuple[ToolCallRow, ...]:
+        """ReAct 중복·재시도 판정용 persisted call_seq 정본."""
+
+        with self.transactions() as connection:
+            return tuple(list_tool_calls(connection, agent_run_id))
 
     def budget_from_connection(
         self,
@@ -289,7 +397,8 @@ class AuditedToolExecutor:
     ) -> ToolBudget:
         """caller가 연 transaction 안에서 종료 시점 DB snapshot을 읽는다."""
 
-        return _budget_snapshot(count_tool_calls_for_budget(connection, agent_run_id))
+        counts = count_tool_calls_for_budget(connection, agent_run_id)
+        return _budget_snapshot(counts)
 
     def _reserve_within_budget(
         self,
@@ -304,8 +413,11 @@ class AuditedToolExecutor:
             raise ToolBoundaryError("TOOL_NAME_INVALID")
         with self.transactions() as connection:
             counts = count_tool_calls_for_budget(connection, agent_run_id)
-            if code := _budget_block_code(counts, tool_name):
-                raise ToolBudgetBlocked(code, counts)
+            policy = _budget_policy(
+                counts.autonomy_level, counts.investigation_budget_profile
+            )
+            if code := _budget_block_code(counts, tool_name, policy):
+                raise ToolBudgetBlocked(code, counts, policy)
             return reserve_tool_call(
                 connection,
                 agent_run_id=agent_run_id,
@@ -323,6 +435,7 @@ class AuditedToolExecutor:
         result_type: type[ResultT],
         deadline_seconds: float | None = None,
         timeout_result: Callable[[str], ResultT] | None = None,
+        invoke_payload: dict[str, Any] | None = None,
     ) -> ResultT | None:
         if self.deadline_runner is None:
             raise ToolBoundaryError("RUNNER_NOT_WIRED")
@@ -342,7 +455,7 @@ class AuditedToolExecutor:
         try:
             raw = self.deadline_runner.call(
                 invoke,
-                request,
+                request if invoke_payload is None else invoke_payload,
                 seconds=(
                     self.deadline_seconds
                     if deadline_seconds is None
@@ -442,32 +555,47 @@ def _classify_result(
     return status, safe_payload, prefix.removesuffix(":")
 
 
-def _budget_snapshot(counts: ToolBudgetCounts) -> ToolBudget:
+def _budget_snapshot(
+    counts: ToolBudgetCounts,
+    policy: ToolBudgetPolicy | None = None,
+) -> ToolBudget:
     """Repository 집계를 checkpoint-safe 상세 State로 바꾼다."""
 
+    resolved = policy or _budget_policy(
+        counts.autonomy_level, counts.investigation_budget_profile
+    )
     return ToolBudget(
+        max_calls=resolved.max_calls,
         used=counts.total,
         by_tool=dict(counts.by_tool),
-        send_budget=SEND_ACTION_BUDGET,
+        send_budget=resolved.send_budget,
         send_used=counts.by_tool.get("send_action", 0),
         pending_reservations=counts.pending_reservations,
+        investigation_budget_profile=resolved.investigation_budget_profile,
     )
 
 
-def _budget_block_code(counts: ToolBudgetCounts, tool_name: str) -> str | None:
+def _budget_block_code(
+    counts: ToolBudgetCounts,
+    tool_name: str,
+    policy: ToolBudgetPolicy | None = None,
+) -> str | None:
     """고정 우선순위로 다음 예약의 차단 code를 결정한다."""
 
+    resolved = policy or _budget_policy(
+        counts.autonomy_level, counts.investigation_budget_profile
+    )
     send_used = counts.by_tool.get("send_action", 0)
     non_send_used = counts.total - send_used
-    if counts.total >= AGENT_MAX_TOOL_CALLS:
+    if counts.total >= resolved.max_calls:
         return "TOOL_BUDGET_EXHAUSTED"
-    if tool_name == "send_action" and send_used >= SEND_ACTION_BUDGET:
+    if tool_name == "send_action" and send_used >= resolved.send_budget:
         return "TOOL_SEND_ACTION_LIMIT"
     if tool_name != "send_action" and non_send_used >= (
-        AGENT_MAX_TOOL_CALLS - SEND_ACTION_BUDGET
+        resolved.max_calls - resolved.send_budget
     ):
         return "TOOL_BUDGET_RESERVED"
-    if counts.by_tool.get(tool_name, 0) >= AGENT_MAX_RETRY + 1:
+    if counts.by_tool.get(tool_name, 0) >= resolved.same_tool_cap:
         return "TOOL_RETRY_EXHAUSTED"
     return None
 
@@ -478,6 +606,7 @@ __all__ = [
     "ThreadDeadlineRunner",
     "ToolBoundary",
     "ToolBoundaryError",
+    "ToolBudgetPolicy",
     "ToolBudgetBlocked",
     "ToolDeadlineExceeded",
     "ToolRunnerSaturated",

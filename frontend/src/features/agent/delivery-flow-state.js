@@ -8,5 +8,7 @@ export const DELIVERY_STATUS = Object.freeze({
   UNKNOWN: { label: '상태 미확인', variant: 'bg-gray' },
 })
 
-export const deliveryStatusMeta = (status) =>
-  DELIVERY_STATUS[status] ?? DELIVERY_STATUS.UNKNOWN
+export const deliveryStatusMeta = (status, channel) =>
+  channel === 'MES' && status === 'SENT'
+    ? { label: '모의 응답 확인', variant: 't-green' }
+    : DELIVERY_STATUS[status] ?? DELIVERY_STATUS.UNKNOWN

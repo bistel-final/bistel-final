@@ -53,10 +53,11 @@ export default function AgentEvaluationPanel({ evaluation }) {
         </div>
       </Card>
       <Card>
-        <CardHeader title="Golden flow 7단 검증" note="immutable summary" />
+        <CardHeader title="Golden flow 검증" note={golden?.protocol === 'MOCK-NOTIFY-V1' ? '공용 5단계 · 격리 회귀 2단계' : 'immutable summary'} />
         <div className="px-5 pb-5">
           {!golden ? <EmptyState title="Golden-flow artifact 없음" description={evaluation.golden_flow_empty_reason} /> : <>
             <Badge variant={golden.status === 'PASS' ? 't-green' : 't-red'}>{golden.status}</Badge>
+            {golden.protocol === 'MOCK-NOTIFY-V1' && <p className="mt-2 text-xs text-g2">NOT_LIVE는 공용에서 실행하지 않은 격리 회귀 항목이며, 공용 실행 PASS에 합산하지 않습니다.</p>}
             <div className="mt-3 flex flex-col gap-1.5">{golden.phases.map((phase, index) => <div key={phase.phase} className="rounded-lg border border-line bg-soft px-3 py-2"><div className="flex items-center justify-between"><span className="font-mono text-[11px] font-bold">{index + 1}. {phase.phase}</span><Badge variant={phase.status === 'PASS' ? 't-green' : phase.status === 'FAIL' ? 't-red' : 't-amber'}>{phase.status}</Badge></div>{Object.keys(phase.metrics).length > 0 && <div className="mt-1 font-mono text-[9.5px] text-g2">{Object.entries(phase.metrics).map(([key, value]) => `${key}=${metricText(value)}`).join(' · ')}</div>}{phase.reasons.map((reason) => <div key={reason} className="mt-1 text-[10.5px] text-red">{reason}</div>)}</div>)}</div>
           </>}
         </div>

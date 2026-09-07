@@ -9,11 +9,39 @@ source "$SCRIPT_DIR/cm52_common.sh"
 
 usage() {
   printf '%s\n' \
-    'usage: cm52_stage2.sh [--plan] [--hold-after 5d | --resume-from 6] --attempt-id <id>' >&2
+    'usage: cm52_stage2.sh [--plan] --attempt-id <id>' \
+    '  [--hold-after 5d [--prepare-only | --resume-workload --prepared-attempt <path> --approval-record <path>]' \
+    '   | --resume-from 6 | --abort-prepared <path> | --recover-prepared <path>]' >&2
   exit 2
 }
 
 print_plan() {
+  printf 'mode=%s\n' "$MODE"
+  case "$MODE" in
+    prepare)
+      printf '%s\n' \
+        'planned: normal initialization → lock → team down → pinned create/inspect/start → preflight/probe → PREPARED' \
+        'workload=0; hold record=0; production is DOWN after successful prepare' \
+        'next: separate SMTP_SEND_GRANT → --resume-workload or --abort-prepared' \
+        'MOCK-NOTIFY-V1: no batch; immutable PREPARED, separate SMTP grant required'
+      return ;;
+    abort|recover)
+      printf '%s\n' \
+        'prepared state first → same-PID inherited EX lock → source-state/owner validation → claim or existing claim' \
+        'cleanup exact E2E IDs (volumes retained) → pinned Level 2 restore/preflight → O_EXCL terminal' \
+        'no production initialization, log creation, reset, Agent workload, new SMTP or recovery claim' \
+        'requires private report root and CM52_U10_{ARTIFACT,EVALUATION_RECEIPT,BENCHMARK,BENCHMARK_SHA256} for restore'
+      return ;;
+    resume_workload)
+      printf '%s\n' \
+        'planned: prepared state first → lock → source-state/owner validation → claim or existing claim' \
+        'skip production_verify / running revision read / log creation / team down / create / start / reset' \
+        'resume_workload: validate grant/TTL/live runtime → steps 4–5d → HELD; invalid grant/TTL/drift → automatic abort' \
+        'v65 step 5d: DB/callback/Kafka/n8n four-source recount → EMAIL 7 / MES 3 → round1 → HELD; no resend' \
+        'abort: cleanup → Level 2 restore → ABORTED; recover: cleanup-only, no new claim/workload, prior effects may be INDETERMINATE' \
+        'MOCK-NOTIFY-V1: invalid admission sends nothing; failures cleanup and restore Level 2'
+      return ;;
+  esac
   printf '%s\n' \
     '3 team down → artifact env blank E2E up → identity/readiness fail-fast' \
     '4 UI Text2SQL 3건 ID digest → 7화면·36 operation 확인' \
@@ -30,36 +58,179 @@ print_plan() {
 PLAN=0
 MODE=full
 ATTEMPT=""
+HOLD_OPTION=0
+RESUME_OPTION=0
+PREPARE_OPTION=0
+WORKLOAD_OPTION=0
+ABORT_OPTION=0
+RECOVER_OPTION=0
+PREPARED_PATH=""
+APPROVAL_PATH=""
 while (($#)); do
   case "$1" in
     --plan) PLAN=1; shift ;;
     --attempt-id) (($# >= 2)) || usage; ATTEMPT=$2; shift 2 ;;
     --hold-after)
       (($# >= 2)) || usage
-      [[ "$2" == 5d && "$MODE" == full ]] || usage
-      MODE=hold; shift 2 ;;
+      [[ "$2" == 5d && "$HOLD_OPTION" == 0 ]] || usage
+      HOLD_OPTION=1; shift 2 ;;
     --resume-from)
       (($# >= 2)) || usage
-      [[ "$2" == 6 && "$MODE" == full ]] || usage
-      MODE=resume; shift 2 ;;
+      [[ "$2" == 6 && "$RESUME_OPTION" == 0 ]] || usage
+      RESUME_OPTION=1; shift 2 ;;
+    --prepare-only)
+      ((PREPARE_OPTION == 0)) || usage
+      PREPARE_OPTION=1; shift ;;
+    --resume-workload)
+      ((WORKLOAD_OPTION == 0)) || usage
+      WORKLOAD_OPTION=1; shift ;;
+    --prepared-attempt|--abort-prepared|--recover-prepared)
+      (($# >= 2)) || usage
+      [[ -n "$2" && "$2" != --* && -z "$PREPARED_PATH" ]] || usage
+      PREPARED_PATH=$2
+      [[ "$1" != --abort-prepared ]] || ABORT_OPTION=1
+      [[ "$1" != --recover-prepared ]] || RECOVER_OPTION=1
+      shift 2 ;;
+    --approval-record)
+      (($# >= 2)) || usage
+      [[ -n "$2" && "$2" != --* && -z "$APPROVAL_PATH" ]] || usage
+      APPROVAL_PATH=$2; shift 2 ;;
     *) usage ;;
   esac
 done
+# Resolve after parsing so option order cannot change a lifecycle mode.
+((RESUME_OPTION + PREPARE_OPTION + WORKLOAD_OPTION + ABORT_OPTION + RECOVER_OPTION <= 1)) || usage
+if ((PREPARE_OPTION || WORKLOAD_OPTION)); then
+  ((HOLD_OPTION)) || usage
+  if ((PREPARE_OPTION)); then
+    [[ -z "$PREPARED_PATH" && -z "$APPROVAL_PATH" ]] || usage
+    MODE=prepare
+  else
+    [[ -n "$PREPARED_PATH" && -n "$APPROVAL_PATH" ]] || usage
+    MODE=resume_workload
+  fi
+elif ((ABORT_OPTION || RECOVER_OPTION)); then
+  ((HOLD_OPTION == 0)) || usage
+  [[ -z "$APPROVAL_PATH" ]] || usage
+  if ((ABORT_OPTION)); then MODE=abort; else MODE=recover; fi
+else
+  [[ -z "$PREPARED_PATH" && -z "$APPROVAL_PATH" ]] || usage
+  ((HOLD_OPTION + RESUME_OPTION <= 1)) || usage
+  if ((HOLD_OPTION)); then MODE=hold; fi
+  if ((RESUME_OPTION)); then MODE=resume; fi
+fi
 [[ "$ATTEMPT" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$ ]] || usage
 if ((PLAN)); then
   print_plan
   exit 0
 fi
 
+# New policy has a separate owner path; legacy V1 behavior remains below.
+if [[ "$MODE" == resume ]] && jq -e '.schema_version == "level3-prepared-attempt-v2"' \
+  "${CM52_REPORT_ROOT:-$CM52_REPO_ROOT/infra/bootstrap/reports}/cm-5.2/$ATTEMPT/robustness/prepared-attempt.json" >/dev/null 2>&1; then
+  # Keep the public seven-mode parser; the leaf phase is named PUBLISH.
+  # Checked independently; this branch intentionally exits in the sourced owner.
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/cm52_level3.sh"
+  exit 1
+fi
+case "$MODE" in
+  prepare|resume_workload)
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/cm52_level3.sh"
+    exit 1 ;;
+esac
+
+# The Bash owner retains one inherited lock through begin, cleanup, restore and
+# terminal. Re-exec keeps its PID (not a second controller or lifecycle mode).
+if [[ "$MODE" == abort || "$MODE" == recover ]]; then
+  HOST_PYTHON="${CM52_HOST_PYTHON:-$CM52_REPO_ROOT/.venv/bin/python}"
+  [[ -x "$HOST_PYTHON" ]] || { printf '%s\n' LEVEL3_HOST_PYTHON_UNAVAILABLE >&2; exit 1; }
+  ENTRY_REPORT_ROOT="${CM52_REPORT_ROOT:-$CM52_REPO_ROOT/infra/bootstrap/reports}"
+  if [[ -z "${CM52_STAGE2_LOCK_FD+x}" ]]; then
+    exec "$HOST_PYTHON" "$CM52_REPO_ROOT/backend/scripts/lock_stage2.py" \
+      --report-root "$ENTRY_REPORT_ROOT" --repository "$CM52_REPO_ROOT" \
+      --attempt-id "$ATTEMPT" --mode "$MODE" --prepared-attempt "$PREPARED_PATH"
+  fi
+  [[ "$CM52_STAGE2_LOCK_FD" =~ ^[0-9]+$ \
+    && "${CM52_STAGE2_PREPARED_SHA:-}" =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s\n' LIFECYCLE_LOCK_INVALID >&2; exit 1;
+  }
+  recovery_phase() {
+    # Only called in $(...). Replace that subshell so the leaf's direct parent
+    # is the lock-owning Stage2 PID, not an untracked intermediate Bash process.
+    exec "$HOST_PYTHON" "$CM52_REPO_ROOT/backend/scripts/stage2_recovery_phase.py" "$@" \
+      --report-root "$ENTRY_REPORT_ROOT" --repository "$CM52_REPO_ROOT" \
+      --attempt-id "$ATTEMPT" --mode "$MODE" --prepared-attempt "$PREPARED_PATH" \
+      --lifecycle-lock-fd "$CM52_STAGE2_LOCK_FD" --owner-pid "$$" \
+      --prepared-sha256 "$CM52_STAGE2_PREPARED_SHA"
+  }
+  RECOVERY_CLAIMED=0
+  RECOVERY_CLEANUP_STARTED=0
+  PHASE_RECORD=""
+  # Called through the EXIT trap below, not through ordinary control flow.
+  # shellcheck disable=SC2317,SC2329
+  recovery_cleanup() {
+    local original_rc=$1 cleanup_result=FAILED restore_result=FAILED result terminal code
+    ((RECOVERY_CLEANUP_STARTED == 0)) || return
+    RECOVERY_CLEANUP_STARTED=1
+    trap - EXIT
+    trap '' INT TERM
+    set +e
+    # Denied transitions never authorize cleanup, even when a stale terminal or
+    # someone else's active claim already exists on disk.
+    ((RECOVERY_CLAIMED)) || exit "$original_rc"
+    if result=$(recovery_phase cleanup --phase-record "$PHASE_RECORD"); then
+      cleanup_result=$(jq -er '.result | select(. == "OK" or . == "NOT_ATTEMPTED")' <<<"$result") || cleanup_result=FAILED
+    else
+      printf '%s\n' "$result" >&2
+    fi
+    # Always attempt restore once; the leaf first checks E2E absence and refuses
+    # overlapping production startup if cleanup left any E2E services behind.
+    if result=$(recovery_phase restore --phase-record "$PHASE_RECORD"); then
+      [[ "$(jq -r '.result' <<<"$result")" != OK ]] || restore_result=OK
+    else
+      printf '%s\n' "$result" >&2
+    fi
+    if ! terminal=$(recovery_phase finish --phase-record "$PHASE_RECORD" \
+      --cleanup-result "$cleanup_result" --restore-result "$restore_result"); then
+      printf '%s\n' "$terminal" LIFECYCLE_TERMINAL_WRITE_FAILED >&2
+      exit 2
+    fi
+    printf '%s\n' "$terminal"
+    code=$(jq -er '.failure_code // "NONE"' <<<"$terminal") || exit 2
+    case "$code" in
+      NONE) exit "$original_rc" ;;
+      RESTORE_FAILED) exit 2 ;;
+      *) exit 1 ;;
+    esac
+  }
+  trap 'recovery_cleanup "$?"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if PHASE_RECORD=$(recovery_phase begin); then
+    RECOVERY_CLAIMED=1
+  else
+    printf '%s\n' "$PHASE_RECORD" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
 # team env 파일의 키가 셸에 export돼 있으면 compose 보간에서 --env-file 값을 덮어쓴다(공용 PC 실측:
 # 빈 AGENT_*_PATH export → production ENV_MISMATCH · 옛 TEAM_IMAGE_TAG export → 옛 태그 빌드).
 for shell_override in SOURCE_REVISION TEAM_IMAGE_TAG AGENT_FAULT_EVAL_ARTIFACT_PATH \
-  AGENT_GOLDEN_FLOW_SUMMARY_PATH; do
+  AGENT_GOLDEN_FLOW_SUMMARY_PATH AGENT_ACTION_POLICY; do
   if [[ -n "${!shell_override+x}" ]]; then
     printf '%s\n' "SHELL_ENV_OVERRIDE $shell_override" >&2
     exit 1
   fi
 done
+
+# Legacy postconditions/evidence assume human approval. Refuse the new policy
+# before logs, service changes, reset or SMTP/Kafka. Recovery modes exited above.
+python3 "$CM52_COMPOSE_DIR/preflight_team_env.py" \
+  --env-file "$CM52_ENV_FILE" --legacy-action-policy-only
 
 REV="${CM52_REVISION:-$(git -C "$CM52_REPO_ROOT" rev-parse HEAD)}"
 [[ "$REV" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' REVISION_MISMATCH >&2; exit 1; }
@@ -389,7 +560,23 @@ cleanup() {
 }
 trap 'cleanup "$?"' EXIT
 
+legacy_workload_guard() {
+  # Prepared lineage orchestration is a separate implementation unit. Until it
+  # is connected, legacy full/hold/resume must never send mail from Level 3.
+  if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+    if [[ "${CM52_TEST_AUTONOMY_LEVEL:-2}" == 3 \
+      || "${CM52_TEST_LEVEL3_ENABLED:-false}" == true ]]; then
+      printf '%s\n' SMTP_SEND_GRANT_REQUIRED >&2
+      return 1
+    fi
+    return 0
+  fi
+  e2e exec -T backend python -c \
+    'from app.common import config; import sys; blocked = config.AGENT_AUTONOMY_LEVEL == 3 or config.AGENT_LEVEL3_ENABLED; sys.exit("SMTP_SEND_GRANT_REQUIRED" if blocked else 0)'
+}
+
 if [[ "${CM52_STAGE2_TEST_MODE:-0}" == 1 ]]; then
+  legacy_workload_guard
   if [[ "$MODE" == hold ]]; then
     LAST_OK_STEP=5d
     HOLD_REACHED=1
@@ -432,6 +619,7 @@ e2e_identity_readiness() {
 if [[ "$MODE" == resume ]]; then
   # hold 동안 E2E가 살아 있고 같은 revision인지, 전반 산출물이 그대로인지 재확인한다.
   e2e_identity_readiness
+  legacy_workload_guard
   assert_owned_0600 \
     "$A/analytics-digests.json" "$A/pending-run.jsonl" "$A/diagnostic-targets.json" >/dev/null
   append_log 5d-resume PASS e2e-still-live
@@ -439,6 +627,7 @@ else
 step3_boot_e2e
 LAST_OK_STEP=3b
 append_log 3b PASS identity-readiness
+legacy_workload_guard
 
 IDS=${CM52_ANALYTICS_QUERY_IDS:-}
 [[ "$IDS" =~ ^[0-9]+,[0-9]+,[0-9]+$ ]] || {
@@ -470,7 +659,7 @@ tail -n 1 "$A/pending-run.jsonl" \
 
 # kosa_readonly(analytics QUERY pool)는 C-0.2 allowlist상 agent_run·approval_request를 읽지 못한다
 # (공용 PC 실측 InsufficientPrivilege). postcondition은 read-only count라 kosa_app engine으로 읽는다.
-POSTCONDITION_SQL="from app.common.db import get_app_engine; from sqlalchemy import text; e=get_app_engine(); c=e.connect(); q=text(\"SELECT (SELECT count(*) FROM agent_run), (SELECT count(*) FROM agent_run WHERE prompt_version='agent-hypothesis-v2-ko1'), (SELECT count(*) FROM agent_run_action), (SELECT count(*) FROM agent_run WHERE retry_of_run_id IS NOT NULL), (SELECT count(*) FROM agent_run WHERE status IN ('RUNNING','FAILED')), (SELECT count(*) FROM action_history WHERE action_code='MONITORING'), (SELECT count(*) FROM action_history WHERE action_code='WARNING'), (SELECT count(*) FROM action_history WHERE action_code='EQP_HOLD'), (SELECT count(*) FROM (SELECT agent_run_id, count(*) c FROM agent_run_action GROUP BY agent_run_id HAVING count(*)<>1) x)\"); print(tuple(c.execute(q).one())); c.close()"
+POSTCONDITION_SQL="from app.common.db import get_app_engine; from app.agent.prompts import PROMPT_VERSION; from sqlalchemy import text; e=get_app_engine(); c=e.connect(); q=text(\"SELECT (SELECT count(*) FROM agent_run), (SELECT count(*) FROM agent_run WHERE prompt_version=:prompt), (SELECT count(*) FROM agent_run_action), (SELECT count(*) FROM agent_run WHERE retry_of_run_id IS NOT NULL), (SELECT count(*) FROM agent_run WHERE status IN ('RUNNING','FAILED')), (SELECT count(*) FROM action_history WHERE action_code='MONITORING'), (SELECT count(*) FROM action_history WHERE action_code='WARNING'), (SELECT count(*) FROM action_history WHERE action_code='EQP_HOLD'), (SELECT count(*) FROM (SELECT agent_run_id, count(*) c FROM agent_run_action GROUP BY agent_run_id HAVING count(*)<>1) x)\"); print(tuple(c.execute(q, {'prompt': PROMPT_VERSION}).one())); c.close()"
 runner python -c "$POSTCONDITION_SQL" | grep -q '(12, 12, 12, 0, 0, 5, 4, 3, 0)'
 runner python scripts/emit_diagnostic_targets.py \
   --agent-database kosa_agent_e2e \
@@ -506,7 +695,8 @@ runner python scripts/evaluate_fault_5class.py \
   --output "$CA/fault-5class.json"
 jq -e \
   --arg revision "$REV" \
-  '.hard_gate_passed and .prompt_version == "agent-hypothesis-v2-ko1" and .code_revision == $revision' \
+  --arg prompt "$(runner python -c 'from app.agent.prompts import PROMPT_VERSION; print(PROMPT_VERSION)')" \
+  '.hard_gate_passed and .prompt_version == $prompt and .code_revision == $revision' \
   "$A/fault-5class.json" >/dev/null
 assert_owned_0600 "$A/fault-5class.json" >/dev/null
 FAULT_SHA=$(cm52_sha256 "$A/fault-5class.json")

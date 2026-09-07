@@ -149,6 +149,7 @@ class GraphRouteEvidence:
     downstream_process_step_ids: tuple[str, ...]
     relation_ids: tuple[str, ...]
     graph_revision: str | None
+    sibling_chamber_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,6 +425,7 @@ def combine_route(
             ),
             relation_ids=tuple(dict.fromkeys(relation_ids[chamber])),
             graph_revision=compact[chamber].graph_revision,
+            sibling_chamber_ids=tuple(compact[chamber].sibling_chamber_ids),
         )
         for chamber in chambers
     )
