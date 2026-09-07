@@ -967,6 +967,21 @@ class TestDeliveryInitialContract:
         # 모든 channel이 정확히 하나의 초기 상태를 갖는다.
         assert set(repo.INITIAL_DELIVERY_PAIRS) == set(DeliveryChannel)
 
+    def test_mock_notify_initial_pairs_wait_on_both_channels(self) -> None:
+        """MOCK-NOTIFY-V1은 승인 없이 MES Mock도 전송 대기로 시작한다(F-RT9)."""
+
+        assert dict(repo.MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS) == {
+            DeliveryChannel.EMAIL: DeliveryStatus.WAITING,
+            DeliveryChannel.MES_MOCK: DeliveryStatus.WAITING,
+        }
+        assert repo.INITIAL_DELIVERY_PAIRS_BY_POLICY["ACTION-POLICY-V1"] is (
+            repo.INITIAL_DELIVERY_PAIRS
+        )
+        assert repo.INITIAL_DELIVERY_PAIRS_BY_POLICY["MOCK-NOTIFY-V1"] is (
+            repo.MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS
+        )
+        assert set(repo.MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS) == set(DeliveryChannel)
+
     def test_no_post_send_status_is_creatable(self) -> None:
         """전이 결과 상태는 어느 channel의 초기값도 아니다."""
 

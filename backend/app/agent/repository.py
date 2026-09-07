@@ -177,6 +177,8 @@ __all__ = [
     "mark_delivery_unknown",
     "retry_failed_delivery",
     "INITIAL_DELIVERY_PAIRS",
+    "INITIAL_DELIVERY_PAIRS_BY_POLICY",
+    "MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS",
 ]
 
 
@@ -2887,6 +2889,18 @@ INITIAL_DELIVERY_PAIRS: Final[Mapping[DeliveryChannel, DeliveryStatus]] = {
     DeliveryChannel.EMAIL: DeliveryStatus.WAITING,
     DeliveryChannel.MES_MOCK: DeliveryStatus.BLOCKED,
 }
+# MOCK-NOTIFY-V1은 사람 승인이 없어 MES Mock 연동도 전송 대기(WAITING)로 시작한다.
+# ACTION-POLICY-V1의 (MES_MOCK, BLOCKED)는 그대로 유지한다(정책별 계약).
+MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS: Final[Mapping[DeliveryChannel, DeliveryStatus]] = {
+    DeliveryChannel.EMAIL: DeliveryStatus.WAITING,
+    DeliveryChannel.MES_MOCK: DeliveryStatus.WAITING,
+}
+INITIAL_DELIVERY_PAIRS_BY_POLICY: Final[
+    Mapping[str, Mapping[DeliveryChannel, DeliveryStatus]]
+] = {
+    "ACTION-POLICY-V1": INITIAL_DELIVERY_PAIRS,
+    "MOCK-NOTIFY-V1": MOCK_NOTIFY_INITIAL_DELIVERY_PAIRS,
+}
 
 
 def _delivery_row(row: Row[Any]) -> ActionDeliveryRow:
@@ -2911,10 +2925,12 @@ def insert_action_delivery(
     channel: DeliveryChannel,
     status: DeliveryStatus,
     request_hash: str,
+    policy_version: str = "ACTION-POLICY-V1",
 ) -> ActionDeliveryRow:
     """전송 전 초기 row를 만든다. **상태 전이는 하지 않는다.**
 
     설계 §7.1이 고정한 `(EMAIL, WAITING)`·`(MES_MOCK, BLOCKED)` 두 조합만 만든다.
+    MOCK-NOTIFY-V1은 승인 단계가 없으므로 `(MES_MOCK, WAITING)`을 초기 조합으로 쓴다.
     """
 
     _require_transaction(connection)
@@ -2924,8 +2940,11 @@ def insert_action_delivery(
         raise RepositoryContractError("INVALID_REQUEST_HASH")
     resolved_channel = DeliveryChannel(channel)
     resolved = DeliveryStatus(status)
-    if INITIAL_DELIVERY_PAIRS[resolved_channel] is not resolved:
-        # channel과 status를 따로 보지 않는다 — 조합이 계약이다.
+    pairs = INITIAL_DELIVERY_PAIRS_BY_POLICY.get(policy_version)
+    if pairs is None:
+        raise RepositoryContractError("UNKNOWN_DELIVERY_POLICY")
+    if pairs[resolved_channel] is not resolved:
+        # channel과 status를 따로 보지 않는다 — 정책별 조합이 계약이다.
         raise RepositoryContractError("NOT_INITIAL_DELIVERY_PAIR")
     row = _insert_one(
         connection,

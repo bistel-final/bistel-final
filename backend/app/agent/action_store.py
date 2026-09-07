@@ -345,6 +345,7 @@ def production_port(
                     status=DeliveryStatus.WAITING
                     if resolved.policy_version == "MOCK-NOTIFY-V1"
                     else INITIAL_STATUS[channel],
+                    policy_version=resolved.policy_version,
                     request_hash=_request_hash(
                         action_id=action_id,
                         channel=channel,
