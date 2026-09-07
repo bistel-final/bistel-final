@@ -9,8 +9,15 @@ function Layout() {
     <div className="flex min-h-screen min-w-[1620px] items-stretch bg-bg text-[13px] text-ink">
       <nav className="sticky top-0 flex h-screen w-[232px] flex-none flex-col self-start border-r border-line bg-white text-ink shadow-[2px_0_16px_rgba(44,92,134,0.06)]">
         <div className="flex items-center px-[18px] pb-6 pt-[22px]">
-          {/* #260 로고 단순화는 유지하고 #269 라이트 셸의 네이비 텍스트를 적용한다. */}
-          <div className="text-[17px] font-extrabold leading-tight tracking-[-.01em] text-navy">Photo Etch</div>
+          {/* team wordmark: same rules as the BISTel logo (one word in two tones, heavy sans, three gradient bars bottom-right). Structure only, not the logo itself. */}
+          <div className="inline-flex flex-col">
+            <div className="wordmark inline-block text-[20px] font-extrabold leading-none tracking-[-.02em]">PhotoEtch</div>
+            <div className="mt-1.5 flex justify-end gap-[3px]" aria-hidden="true">
+              <span className="h-[3px] w-[18px] rounded-[1px] bg-navy" />
+              <span className="h-[3px] w-[12px] rounded-[1px] bg-brand-teal" />
+              <span className="h-[3px] w-[7px] rounded-[1px] bg-brand-teal-light" />
+            </div>
+          </div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
           {PRIMARY_MENUS.map((m, i) => (

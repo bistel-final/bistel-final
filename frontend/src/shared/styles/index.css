@@ -60,6 +60,11 @@
   --color-ooc-text: #9c7700;
   --color-ooc-tint: #fcf0d6;
 
+  /* brand teal (BISTel wordmark second tone) - team wordmark only */
+  --color-brand-teal: #3cb4c8;
+  --color-brand-teal-light: #a7dbe4;
+  --font-wordmark: "Nunito", "Pretendard Variable", Pretendard, sans-serif;
+
   /* Trace 판정은 그래프 영역·경고·우측 요약에서 동일한 색을 쓴다. */
   --color-trace-oos: #8f5360;
   --color-trace-ooc: #a96500;
@@ -97,6 +102,15 @@
 
   #root {
     height: 100%;
+  }
+
+  /* team wordmark: two tones on a diagonal (navy top-left -> teal bottom-right, split at the middle) */
+  .wordmark {
+    font-family: var(--font-wordmark);
+    background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-navy) 51%, var(--color-brand-teal) 62%, var(--color-brand-teal) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   a {
