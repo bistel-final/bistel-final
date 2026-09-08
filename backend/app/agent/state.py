@@ -175,6 +175,10 @@ class HypothesisOutcome(StateModel):
     impact_scope: ImpactScopeBlock | None = None
     # Never forwarded to graph State/prediction/DTO; U10 consumes it in memory.
     origin_diagnostics: OriginDiagnostics | None = None
+    # 코드가 제거한 인용 건수와 마지막 라운드 강등 사유.
+    # 진단 전용이며 공개 DTO에는 넣지 않는다.
+    citation_repairs: dict[str, int] = Field(default_factory=dict)
+    fallback_reason: str | None = None
 
 
 class ActionDecision(StateModel):

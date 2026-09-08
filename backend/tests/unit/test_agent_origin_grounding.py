@@ -142,10 +142,11 @@ def test_live_generation_never_uses_legacy_recount_or_accepts_legacy_selection(
         )
 
     arguments = (_fdc(), None, None, fixture.fixture._route())
-    with pytest.raises(hypothesis.HypothesisGenerationError) as rejected:
-        hypothesis.generate_hypothesis(*arguments, completion_port=complete)
-    assert rejected.value.last_rejection_reason == "ORIGIN_CLAIM_UNSUPPORTED"
-    # 교정 라운드를 모두 소진한 뒤에만 거부한다(MAX_GENERATION_ROUNDS).
+    outcome = hypothesis.generate_hypothesis(*arguments, completion_port=complete)
+    # 근거 없는 소재 주장은 채택되지 않는다. 라운드를 모두 소진한 뒤 강등 완료한다.
+    assert outcome.fallback_reason == "ORIGIN_CLAIM_UNSUPPORTED"
+    assert outcome.hypothesis.origin_assessment.scope == "UNDETERMINED"
+    assert outcome.hypothesis.predicted_fault_code.value == "OTH"
     assert len(calls) == hypothesis.MAX_GENERATION_ROUNDS
     assert "ORIGIN_CLAIM_UNSUPPORTED" in repr(calls[1])
     for override in (

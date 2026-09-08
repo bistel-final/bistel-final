@@ -359,9 +359,9 @@ def test_real_generation_graph_finalize_and_public_diagnosis_hide_private_refs(
 @pytest.mark.parametrize(
     "bad",
     [
+        # 허용 밖 chunk는 코드가 제거하고, 남은 필수 인용이 없으면 여전히 실패한다.
         {"supporting_chunk_ids": ["missing"]},
         {"cause_summary": "English only"},
-        {"predicted_fault_code": "FOC"},
     ],
 )
 def test_last_round_degradation_does_not_relax_other_validators(bad):
@@ -379,7 +379,25 @@ def test_last_round_degradation_does_not_relax_other_validators(bad):
             completion_port=lambda *a, **kw: generation._completion(raw),
         )
     assert caught.value.last_rejection_reason in {
-        "DOCUMENT_CITATION_OUTSIDE_EVIDENCE",
+        "DOCUMENT_CITATION_REQUIRED",
         "KOREAN_OUTPUT_REQUIRED",
-        "PARAMETER_FINDING_REQUIRED",
     }
+
+
+def test_non_oth_without_findings_degrades_to_oth_on_last_round():
+    """비-OTH 분류만 남은 거부는 강등 완료로 끝내고 사유를 기록한다."""
+
+    raw = generation._content(
+        origin_claim={"scope": "CURRENT_CHAMBER", "basis_refs": [BAD]},
+        predicted_fault_code="FOC",
+    )
+    outcome = generate_hypothesis(
+        None,
+        None,
+        generation._docs(),
+        generation._route(),
+        completion_port=lambda *a, **kw: generation._completion(raw),
+    )
+    assert outcome.fallback_reason == "PARAMETER_FINDING_REQUIRED"
+    assert outcome.hypothesis.predicted_fault_code.value == "OTH"
+    assert outcome.hypothesis.origin_assessment.scope == "UNDETERMINED"
