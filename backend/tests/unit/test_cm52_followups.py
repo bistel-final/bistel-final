@@ -342,6 +342,31 @@ def test_diagnostic_targets_order_by_wafer_number_not_identifier_suffix() -> Non
     assert [item["wafer_no"] for item in actual["targets"]] == [1, 2]
 
 
+def test_diagnostic_targets_group_react_multi_step_reads_by_wafer() -> None:
+    """Level 3 ReAct는 같은 wafer의 현재·인접 step을 함께 읽는다.
+
+    진단 대상은 wafer이므로 lot_hist_id가 wafer당 여러 개여도 12런·22대상·
+    5/4/3 분포는 그대로여야 한다. step 단위로 세면 실측이 정확히 2배가 되어
+    Stage2 수집 마지막 단계가 결정론적으로 실패한다.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for row in _target_rows():
+        rows.append(row)
+        rows.append({**row, "lot_hist_id": row["lot_hist_id"] + "-ADJ"})
+
+    payload = targets.build_receipt(
+        rows, database=targets.TARGET_DATABASE, attempt_id=ATTEMPT
+    )
+
+    assert payload["run_count"] == 12
+    assert payload["target_count"] == 22
+    assert payload["targets_per_run_distribution"] == {"1": 5, "2": 4, "3": 3}
+    every = [item for run in payload["runs"] for item in run["targets"]]
+    assert all(len(item["lot_hist_ids"]) == 2 for item in every)
+    assert all(item["lot_hist_id"] == min(item["lot_hist_ids"]) for item in every)
+
+
 def test_diagnostic_target_structure_and_distribution_fail_separately() -> None:
     duplicate = _target_rows()
     duplicate.append(dict(duplicate[0]))

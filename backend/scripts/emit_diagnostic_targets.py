@@ -77,7 +77,9 @@ def build_receipt(
 ) -> dict[str, Any]:
     if database != TARGET_DATABASE or not ATTEMPT_PATTERN.fullmatch(attempt_id):
         raise DiagnosticTargetError("TARGET_STRUCTURE_INVALID", 1)
-    by_run: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # 진단 대상은 wafer다. Level 3 ReAct는 같은 wafer의 현재·인접 공정 step을 함께
+    # 읽으므로 lot_hist_id는 여러 개일 수 있고, 그 전부를 한 wafer 대상에 묶는다.
+    by_run: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     seen_pairs: set[tuple[str, str]] = set()
     for raw in rows:
         try:
@@ -96,23 +98,20 @@ def build_receipt(
         ):
             raise DiagnosticTargetError("TARGET_STRUCTURE_INVALID", 1)
         seen_pairs.add((run_id, lot_hist_id))
-        by_run[run_id].append(
-            {
-                "lot_hist_id": lot_hist_id,
-                "wafer_id": wafer_id,
-                "wafer_no": wafer_no,
-            }
+        target = by_run[run_id].setdefault(
+            wafer_id,
+            {"wafer_id": wafer_id, "wafer_no": wafer_no, "lot_hist_ids": []},
         )
+        # 같은 wafer가 서로 다른 wafer_no로 관측되면 대상 자체가 모호하다.
+        if target["wafer_no"] != wafer_no:
+            raise DiagnosticTargetError("TARGET_STRUCTURE_INVALID", 1)
+        target["lot_hist_ids"].append(lot_hist_id)
 
     target_count = sum(len(items) for items in by_run.values())
     if (
         len(by_run) != 12
         or target_count != 22
         or any(not 1 <= len(items) <= 3 for items in by_run.values())
-        or any(
-            len({item["wafer_id"] for item in items}) != len(items)
-            for items in by_run.values()
-        )
     ):
         raise DiagnosticTargetError("TARGET_STRUCTURE_INVALID", 1)
     distribution = Counter(len(items) for items in by_run.values())
@@ -122,7 +121,14 @@ def build_receipt(
     runs: list[dict[str, Any]] = []
     for run_id in sorted(by_run):
         ordered = sorted(
-            by_run[run_id],
+            (
+                {
+                    **item,
+                    "lot_hist_ids": sorted(item["lot_hist_ids"]),
+                    "lot_hist_id": min(item["lot_hist_ids"]),
+                }
+                for item in by_run[run_id].values()
+            ),
             key=lambda item: (item["wafer_no"], item["wafer_id"]),
         )
         runs.append(
