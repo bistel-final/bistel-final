@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING, Any
 from app.agent.read_feedback import summarize_read_history
 from app.agent.release_artifacts import EvidenceError, canonical_json
 from app.agent.u10_comparison import EvidenceIds, Inventory
+from app.common.tool_contracts import (
+    DOCUMENT_COMMON_MODEL_CODE,
+    DOCUMENT_SEARCH_DEFAULT_TOP_K,
+)
 
 if TYPE_CHECKING:
     from app.agent.react import ReactContext
@@ -215,21 +219,26 @@ class ObservationContext:
                     arguments = {"history_candidate_id": candidate.candidate_id}
                     break
         elif tool == "get_metrology_result":
+            # 후보 범위만 확인한다. 운영 가드는 상·하류 계측도 허용하고, U10 고정
+            # 정책의 CURRENT 제한은 비교 실행기가 따로 강제한다.
             candidate = next(
                 (
                     c
                     for c in candidates.metrology
-                    if c.relation == "CURRENT"
-                    and request == {"lot_id": c.lot_id, "step_id": c.step_id}
+                    if request == {"lot_id": c.lot_id, "step_id": c.step_id}
                 ),
                 None,
             )
             if candidate:
                 arguments = {"metrology_candidate_id": candidate.candidate_id}
         elif tool == "search_documents":
+            # 고정 정책은 top_k를 생략하고 ReAct resolve_call은 canonical 기본값을
+            # 채운다. 두 표기 모두 같은 read이므로 기본값과 같을 때만 허용한다.
             if (
-                set(request) <= {"query", "model_code"}
+                set(request) <= {"query", "model_code", "top_k"}
                 and request.get("model_code", self._model) == self._model
+                and request.get("top_k", DOCUMENT_SEARCH_DEFAULT_TOP_K)
+                == DOCUMENT_SEARCH_DEFAULT_TOP_K
             ):
                 arguments = {"query": request.get("query")}
         if arguments is None or (
@@ -307,7 +316,11 @@ class ObservationContext:
                 == set(self._graph.sibling_chamber_ids)
             )
         elif tool == "search_documents":
-            valid = all(hit.model_code in (None, self._model) for hit in result.hits)
+            # 운영 검색은 모델 전용 문서와 공통 문서를 함께 돌려준다.
+            valid = all(
+                hit.model_code in (None, DOCUMENT_COMMON_MODEL_CODE, self._model)
+                for hit in result.hits
+            )
         elif tool == "get_chamber_parameter_history":
             valid = (
                 result.chamber_id == request["chamber_id"]

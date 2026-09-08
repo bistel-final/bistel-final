@@ -33,6 +33,7 @@ from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
     ChamberParameterHistoryToolInput,
     ChamberParameterHistoryToolResult,
+    DocumentSearchToolInput,
     DocumentSearchToolResult,
     EquipmentContextToolResult,
     FdcSummaryToolResult,
@@ -1116,12 +1117,18 @@ def resolve_call(
             ),
         }
     if selection.next == "search_documents":
+        try:
+            # Executor가 audit 행에 남기는 것과 같은 canonical 입력이어야 한다.
+            # 기본값(top_k)을 빼면 trace digest가 실제 호출 인자와 어긋난다.
+            request = DocumentSearchToolInput(
+                query=selection.arguments.query,
+                model_code=document_model_code,
+            ).model_dump(mode="json")
+        except ValidationError:
+            return None
         return {
             "tool": selection.next,
-            "request": {
-                "query": selection.arguments.query,
-                "model_code": document_model_code,
-            },
+            "request": request,
             "argument_summary": "문서 검색",
         }
     return {

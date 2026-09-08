@@ -17,8 +17,10 @@ from app.agent.state import LlmUsage
 from app.common.enums import AlarmSource, RunStatus, ToolCallStatus
 from app.common.schemas import AlarmRef
 from app.common.tool_contracts import (
+    DOCUMENT_SEARCH_DEFAULT_TOP_K,
     ChamberParameterHistoryToolResult,
     DocumentHit,
+    DocumentSearchToolInput,
     DocumentSearchToolResult,
     HistoryBaseline,
     LotAggregate,
@@ -594,6 +596,59 @@ def test_level3_react_selects_tools_then_stops_and_records_trace(
     assert tools.llm_usage == [
         (10, 5)
     ], "selector usage를 hypothesis run 합계에 섞지 않는다"
+
+
+def test_react_trace_digest_matches_audited_tool_input_for_every_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """증적 수집은 trace digest와 audit 행 input이 같은 표기라야 통과한다.
+
+    문서 검색은 실행기가 ``top_k`` 기본값까지 audit 행에 남기므로, 선택 시점의
+    canonical 인자에서 그 기본값이 빠지면 Stage2 수집이 결정론적으로 실패한다.
+    """
+
+    port = ScriptedReactPort(
+        _selection("search_documents", query="PH_FOCUS 관리 범위"),
+        _selection("get_equipment_context"),
+        _selection("stop"),
+    )
+    (graph, tools, _ports, finishes, _), _ = _level3(monkeypatch, port)
+
+    harness._invoke(graph, level=3)
+
+    audited = {
+        canonical: request.model_dump(mode="json")
+        for name, request in tools.calls
+        if (
+            canonical := {
+                "documents": "search_documents",
+                "equipment": "get_equipment_context",
+            }.get(name)
+        )
+    }
+    assert set(audited) == {"search_documents", "get_equipment_context"}
+    assert audited["search_documents"]["top_k"] == DOCUMENT_SEARCH_DEFAULT_TOP_K
+    observed = [
+        step
+        for step in finishes[0][1]["evidence"]["react_trace"]
+        if step["phase"] == "OBSERVED"
+    ]
+    assert [step["tool"] for step in observed] == list(audited)
+    for step in observed:
+        assert step["argument_digest"] == react.arguments_digest(
+            {"tool": step["tool"], **audited[step["tool"]]}
+        )
+
+
+def test_resolved_document_request_is_the_executor_canonical_input() -> None:
+    resolved = react.resolve_call(
+        _selection("search_documents", query="ET_REFL 점검"),
+        _context(),
+        document_model_code="ET-7500",
+    )
+    assert resolved["request"] == DocumentSearchToolInput(
+        query="ET_REFL 점검", model_code="ET-7500"
+    ).model_dump(mode="json")
 
 
 def test_level3_executes_history_and_metrology_only_through_candidate_tokens(

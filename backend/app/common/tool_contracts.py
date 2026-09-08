@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -367,10 +367,15 @@ class EquipmentContextToolResult(ToolResult):
 # ---------------------------------------------------------------------
 # Tool 3 — search_documents  (구현 B, 사용 C)
 # ---------------------------------------------------------------------
+DOCUMENT_SEARCH_DEFAULT_TOP_K: Final = 4
+# 모델 전용 문서와 함께 항상 검색되는 공통 문서의 model_code.
+DOCUMENT_COMMON_MODEL_CODE: Final = "COMMON"
+
+
 class DocumentSearchToolInput(ToolModel):
     query: str = Field(min_length=1, max_length=1000)
     model_code: NonEmptyId | None = None
-    top_k: int = Field(default=4, ge=1, le=10)
+    top_k: int = Field(default=DOCUMENT_SEARCH_DEFAULT_TOP_K, ge=1, le=10)
 
 
 class DocumentSearchToolResult(ToolResult):

@@ -9,6 +9,7 @@ import pytest
 from app.agent import react
 from app.agent.release_artifacts import EvidenceError
 from app.agent.u10_react_execution import execute_react_policy, inventory_scoped_context
+from app.common.tool_contracts import DOCUMENT_SEARCH_DEFAULT_TOP_K
 from tests.unit.test_agent_react import _context, _selection, _usage
 from tests.unit.test_agent_u10_read_execution import Clock, inventory, success
 
@@ -131,7 +132,11 @@ def test_context_is_refreshed_from_adapter_observations_not_selector_mutation():
 
     def invoke(tool, arguments, internal):
         assert tool == "search_documents" and internal is None
-        assert arguments == {"query": "PH_FOCUS upper", "model_code": "PH-9000"}
+        assert arguments == {
+            "query": "PH_FOCUS upper",
+            "model_code": "PH-9000",
+            "top_k": DOCUMENT_SEARCH_DEFAULT_TOP_K,
+        }
         observations.append("document observed")
         return success("DOC-1")
 
