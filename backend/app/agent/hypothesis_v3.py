@@ -361,6 +361,94 @@ def _recount_hypothesis(
     )
 
 
+CODE_BINDING_MARKER = " [코드 결속]"
+
+
+def allowed_evidence_ids(
+    route: ResolvedIncidentRoute,
+    snapshot: IncidentDiagnosticSnapshot,
+    documents: DocumentSearchToolResult | None,
+) -> dict[str, set[str]]:
+    """코드가 소유한 근거 allowlist. 인용 정리와 origin 검증이 같은 값을 쓴다."""
+
+    return {
+        "ALARM": {alarm.to_token() for alarm in route.incident.member_alarms},
+        "CHUNK": (
+            {hit.chunk_id for hit in documents.hits}
+            if documents is not None and documents.ok
+            else set()
+        ),
+        "RELATION": {
+            relation_id
+            for item in route.graph_evidence
+            for relation_id in item.relation_ids
+        },
+        "LOT_HIST": set(snapshot.source_ids.lot_hist_ids),
+        "PARAMETER": set(snapshot.source_ids.parameter_ids),
+    }
+
+
+def repair_draft_citations(
+    draft: HypothesisDraftV3,
+    allowed: dict[str, set[str]],
+) -> tuple[HypothesisDraftV3, dict[str, int]]:
+    """허용 evidence ID만 남긴다. 값을 새로 만들거나 치환하지 않는다.
+
+    LLM 서술과 조치 규칙은 건드리지 않는다. 제거 건수만 진단으로 돌려준다.
+    origin_claim.basis_refs는 기존 강등 경로(degraded 배지·dropped 진단)를 보존하려고
+    여기서 손대지 않는다.
+    """
+
+    removed: dict[str, int] = {}
+
+    def keep(values, permitted, label):
+        kept = tuple(value for value in values if value in permitted)
+        if len(kept) != len(values):
+            removed[label] = removed.get(label, 0) + (len(values) - len(kept))
+        return kept
+
+    alarms = tuple(
+        alarm
+        for alarm in draft.supporting_alarms
+        if alarm.to_token() in allowed["ALARM"]
+    )
+    if len(alarms) != len(draft.supporting_alarms):
+        removed["supporting_alarms"] = len(draft.supporting_alarms) - len(alarms)
+    chunks = keep(draft.supporting_chunk_ids, allowed["CHUNK"], "supporting_chunk_ids")
+    relations = keep(
+        draft.supporting_relation_ids, allowed["RELATION"], "supporting_relation_ids"
+    )
+    lot_hist = keep(
+        draft.supporting_lot_hist_ids, allowed["LOT_HIST"], "supporting_lot_hist_ids"
+    )
+    parameters = keep(
+        draft.supporting_parameter_ids, allowed["PARAMETER"], "supporting_parameter_ids"
+    )
+    kept_findings = tuple(
+        finding
+        for finding in draft.parameter_findings_draft
+        if finding.parameter_id in parameters
+        and set(finding.lot_hist_ids) <= set(lot_hist)
+    )
+    if len(kept_findings) != len(draft.parameter_findings_draft):
+        removed["parameter_findings_draft"] = len(draft.parameter_findings_draft) - len(
+            kept_findings
+        )
+    if not removed:
+        return draft, {}
+    repaired = draft.model_copy(
+        update={
+            "supporting_alarms": alarms,
+            "supporting_chunk_ids": chunks,
+            "supporting_relation_ids": relations,
+            "supporting_lot_hist_ids": lot_hist,
+            "supporting_parameter_ids": parameters,
+            "parameter_findings_draft": kept_findings,
+        }
+    )
+    return repaired, removed
+
+
 def _finalize_hypothesis(
     draft: HypothesisDraftV3,
     fdc_results: Sequence[FdcSummaryToolResult | None],
@@ -421,8 +509,21 @@ def _finalize_hypothesis(
         )
     if draft.predicted_fault_code.value != "OTH" and not findings:
         raise ValueError("PARAMETER_FINDING_REQUIRED")
-    if any(item.parameter_id not in draft.cause_summary for item in findings):
-        raise ValueError("CAUSE_SUMMARY_PARAMETER_MISSING")
+    # 요약에 빠진 인용 파라미터는 같은 수정을 반복해서 요청하는 대신 코드가 결속한다.
+    # 모델 서술은 그대로 두고, 코드가 계산한 finding 파라미터만 표시해 덧붙인다.
+    missing = tuple(
+        dict.fromkeys(
+            item.parameter_id
+            for item in findings
+            if item.parameter_id not in draft.cause_summary
+        )
+    )
+    cause_summary = draft.cause_summary
+    if missing:
+        suffix = (
+            CODE_BINDING_MARKER + " 검증된 이탈 파라미터: " + ", ".join(missing) + "."
+        )
+        cause_summary = (cause_summary + suffix)[:2000]
     allowed = {
         "ALARM": set(snapshot.source_ids.alarm_refs),
         "CHUNK": {hit.chunk_id for hit in documents.hits}
@@ -473,7 +574,10 @@ def _finalize_hypothesis(
     ):
         raise ValueError("ORIGIN_CLAIM_UNSUPPORTED")
     return Hypothesis(
-        **draft.model_dump(exclude={"parameter_findings_draft", "origin_claim"}),
+        **{
+            **draft.model_dump(exclude={"parameter_findings_draft", "origin_claim"}),
+            "cause_summary": cause_summary,
+        },
         parameter_findings=tuple(findings),
         origin_assessment=OriginAssessment(
             scope=scope,

@@ -337,3 +337,20 @@ assert 'app.config' not in sys.modules
         [sys.executable, "-c", code], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_degraded_fallback_is_not_counted_as_u10_completion():
+    """운영은 코드 강등으로 완료하지만 U10 비교는 엄격 완료 기준을 유지한다."""
+
+    def degraded(**inputs):
+        return generated(**inputs).model_copy(
+            update={"fallback_reason": "ORIGIN_CLAIM_UNSUPPORTED"}
+        )
+
+    result = run(observed(), degraded)
+
+    assert result.outcome is None
+    assert result.cited_evidence_ids is None
+    assert result.error_code == "HYPOTHESIS_STRUCTURE_INVALID"
+    assert result.error_detail == "ORIGIN_CLAIM_UNSUPPORTED"
+    assert result.usage is not None

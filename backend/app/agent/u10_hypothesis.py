@@ -111,6 +111,17 @@ def execute_hypothesis(
     outcome = HypothesisOutcome.model_validate(raw_outcome.model_dump()).model_copy(
         deep=True
     )
+    if outcome.fallback_reason is not None:
+        # 운영은 코드 강등으로 완료하지만 U10 비교는 이전 실행과 같은 엄격 완료
+        # 기준을 유지한다. 강등 완료를 연구 지표의 완료로 세지 않는다.
+        return HypothesisResult(
+            None,
+            usage_value(outcome.llm_usage),
+            None,
+            latency,
+            "HYPOTHESIS_STRUCTURE_INVALID",
+            outcome.fallback_reason,
+        )
     origin = outcome.hypothesis.origin_assessment
     if origin is None or origin.compared != compared:
         raise EvidenceError("U10_HYPOTHESIS_RESULT_INVALID")

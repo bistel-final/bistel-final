@@ -104,7 +104,6 @@ def test_invalid_or_absent_excursion_cannot_support_non_oth(values):
 @pytest.mark.parametrize(
     ("change", "code"),
     [
-        ({"cause_summary": "초점 이상"}, "CAUSE_SUMMARY_PARAMETER_MISSING"),
         (
             {
                 "origin_claim": {
@@ -125,6 +124,17 @@ def test_invalid_or_absent_excursion_cannot_support_non_oth(values):
 def test_draft_claims_fail_closed(change, code):
     with pytest.raises(ValueError, match=code):
         _finalize(_draft(**change))
+
+
+def test_missing_cause_summary_parameter_is_bound_by_code():
+    """요약에 빠진 인용 파라미터는 재요청 대신 코드가 결속한다."""
+
+    hypothesis = _finalize(_draft(cause_summary="초점 이상"))
+    ids = [item.parameter_id for item in hypothesis.parameter_findings]
+    assert ids
+    assert "[코드 결속]" in hypothesis.cause_summary
+    for parameter_id in ids:
+        assert parameter_id in hypothesis.cause_summary
 
 
 def test_draft_cannot_supply_calculated_fields():

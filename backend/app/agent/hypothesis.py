@@ -17,7 +17,13 @@ from app.agent.diagnostics import (
     build_diagnostic_snapshot,
     build_impact_scope,
 )
-from app.agent.hypothesis_v3 import comparison_matrix, finalize_hypothesis
+from app.agent.hypothesis_v3 import (
+    CODE_BINDING_MARKER,
+    allowed_evidence_ids,
+    comparison_matrix,
+    finalize_hypothesis,
+    repair_draft_citations,
+)
 from app.agent.investigation_models import InvestigationEvidence
 from app.agent.origin_diagnostics import OriginDiagnostics, rejection_code
 from app.agent.prompts import (
@@ -328,8 +334,9 @@ def _korean_output_reason(
 ) -> str | None:
     """식별자·enum이 아닌 설명 문장이 한국어인지 저장 전에 확인한다."""
 
+    # 코드가 덧붙인 결속 표시는 모델 서술이 아니므로 한국어 검사 대상에서 제외한다.
     narratives = (
-        hypothesis.cause_summary,
+        hypothesis.cause_summary.split(CODE_BINDING_MARKER)[0],
         hypothesis.uncertainty,
         *hypothesis.observations,
         hypothesis.evidence_synthesis,
@@ -409,6 +416,32 @@ def _citation_reason(
     return None
 
 
+def _degraded_draft(draft, reason: str):
+    """마지막 라운드 거부를 관측된 근거만으로 안전하게 강등한 draft로 바꾼다.
+
+    새 근거·측정값·조치를 만들지 않는다. 분류를 OTH로, 소재 주장을 UNDETERMINED로
+    낮추고 한계에 원래 거부 사유 코드를 남긴다. 인용은 이미 코드가 정리한 값만 쓴다.
+    """
+
+    code = rejection_code(reason)
+    if code in {"JSON_INVALID", "STRUCTURE_INVALID"}:
+        return None
+    note = (
+        "[코드 강등] 모델 출력이 근거 계약을 만족하지 못해("
+        + code
+        + ") 분류와 소재 판정을 낮추고 관측된 근거만 남겼습니다."
+    )
+    limitations = tuple(dict.fromkeys((*draft.limitations, note)))[:10]
+    return type(draft).model_validate(
+        {
+            **draft.model_dump(),
+            "predicted_fault_code": "OTH",
+            "limitations": list(limitations),
+            "origin_claim": {"scope": "UNDETERMINED", "basis_refs": []},
+        }
+    )
+
+
 def generate_hypothesis(
     fdc_evidence: FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
     graph_evidence: EquipmentContextToolResult | None,
@@ -486,6 +519,8 @@ def generate_hypothesis(
     )
     accumulated: LlmUsage | None = None
     correction_reason: str | None = None
+    repairs: dict[str, int] = {}
+    fallback_reason: str | None = None
     for _round in range(MAX_GENERATION_ROUNDS):
         try:
             messages = build_hypothesis_messages(
@@ -557,7 +592,18 @@ def generate_hypothesis(
             correction_reason = "JSON_INVALID"
             continue
 
+        # 허용 evidence ID 밖 인용은 같은 수정을 반복 요청하지 않고 코드가 제거한다.
+        # 값을 새로 만들거나 다른 ID로 치환하지 않으며 제거 건수만 기록한다.
+        allowed = allowed_evidence_ids(route, diagnostic_snapshot, document_evidence)
+        draft, removed = repair_draft_citations(draft, allowed)
+        if removed:
+            repairs = {
+                **repairs,
+                **{k: repairs.get(k, 0) + v for k, v in removed.items()},
+            }
+
         diagnostics: list[OriginDiagnostics] = []
+        last_round = _round == MAX_GENERATION_ROUNDS - 1
         try:
             hypothesis = finalize_hypothesis(
                 draft,
@@ -566,16 +612,39 @@ def generate_hypothesis(
                 diagnostic_snapshot,
                 document_evidence,
                 investigation,
-                degrade_origin=_round == MAX_GENERATION_ROUNDS - 1,
+                degrade_origin=last_round,
                 diagnostics=diagnostics,
             )
         except ValueError as exc:
             correction_reason = str(exc)
-            continue
+            if not last_round:
+                continue
+            # 마지막 라운드까지 남은 구조 오류는 관측된 근거만으로 안전하게 강등한다.
+            fallback = _degraded_draft(draft, str(exc))
+            if fallback is None:
+                continue
+            diagnostics = []
+            try:
+                hypothesis = finalize_hypothesis(
+                    fallback,
+                    fdc_items,
+                    route,
+                    diagnostic_snapshot,
+                    document_evidence,
+                    investigation,
+                    degrade_origin=True,
+                    diagnostics=diagnostics,
+                )
+            except ValueError:
+                continue
+            fallback_reason = rejection_code(str(exc))
 
-        correction_reason = _korean_output_reason(
-            hypothesis, source_identifiers=source_identifiers
-        )
+        if fallback_reason is not None:
+            correction_reason = None
+        else:
+            correction_reason = _korean_output_reason(
+                hypothesis, source_identifiers=source_identifiers
+            )
         if correction_reason is None:
             correction_reason = _citation_reason(
                 hypothesis,
@@ -594,6 +663,8 @@ def generate_hypothesis(
                 evidence_assessment=evidence_assessment,
                 impact_scope=impact_scope,
                 origin_diagnostics=diagnostics[0] if diagnostics else None,
+                citation_repairs=dict(repairs),
+                fallback_reason=fallback_reason,
             )
 
     logger.warning(

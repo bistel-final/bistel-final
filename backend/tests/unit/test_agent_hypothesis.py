@@ -422,10 +422,11 @@ def test_invalid_responses_stop_after_last_round_and_keep_usage(
         {"supporting_alarms": [{"source": "TRACE", "alarm_id": "OUTSIDE"}]},
         {"supporting_chunk_ids": []},
         {"supporting_chunk_ids": ["OUTSIDE"]},
-        {"supporting_relation_ids": ["OUTSIDE"]},
     ],
 )
-def test_required_and_allowlisted_citations_fail_closed(monkeypatch, overrides) -> None:
+def test_required_citations_fail_closed(monkeypatch, overrides) -> None:
+    """필수 인용이 하나도 남지 않으면 강등이 아니라 실패로 끝난다."""
+
     monkeypatch.setattr(
         subject.llm,
         "chat_with_usage",
@@ -436,10 +437,46 @@ def test_required_and_allowlisted_citations_fail_closed(monkeypatch, overrides) 
     assert exc.value.code == "HYPOTHESIS_STRUCTURE_INVALID"
 
 
+@pytest.mark.parametrize(
+    ("overrides", "field", "label"),
+    [
+        ({"supporting_relation_ids": ["OUTSIDE"]}, "supporting_relation_ids", None),
+        (
+            {"supporting_chunk_ids": ["CHUNK-1", "OUTSIDE"]},
+            "supporting_chunk_ids",
+            ("CHUNK-1",),
+        ),
+    ],
+)
+def test_outside_citations_are_removed_by_code_without_new_round(
+    monkeypatch, overrides, field, label
+) -> None:
+    """허용 밖 인용은 재요청 없이 코드가 제거하고 제거 건수를 진단에 남긴다."""
+
+    calls = 0
+
+    def chat(messages, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return _completion(_content(**overrides))
+
+    monkeypatch.setattr(subject.llm, "chat_with_usage", chat)
+    outcome = generate_hypothesis(None, None, _docs(), _route())
+    assert calls == 1
+    assert outcome.citation_repairs.get(field) == 1
+    assert outcome.fallback_reason is None
+    if label is not None:
+        assert getattr(outcome.hypothesis, field) == label
+    else:
+        assert getattr(outcome.hypothesis, field) == ()
+
+
 def test_citation_correction_names_the_failed_identifier_class(monkeypatch) -> None:
+    """교정 안내는 코드가 제거할 수 없는 사유(요약 한국어 위반 등)에만 필요하다."""
+
     responses = iter(
         [
-            _completion(_content(supporting_chunk_ids=["DOC-1"])),
+            _completion(_content(cause_summary="focus drift only")),
             _completion(_content(), n=2),
         ]
     )
@@ -454,8 +491,8 @@ def test_citation_correction_names_the_failed_identifier_class(monkeypatch) -> N
     outcome = generate_hypothesis(None, None, _docs(), _route())
 
     assert outcome.hypothesis.supporting_chunk_ids == ("CHUNK-1",)
-    assert "DOCUMENT_CITATION_OUTSIDE_EVIDENCE" in messages[1][1]["content"]
-    assert "document_id" in messages[1][1]["content"]
+    assert "KOREAN_OUTPUT_REQUIRED" in messages[1][1]["content"]
+    assert "한국어" in messages[1][1]["content"]
 
 
 def test_correction_transport_failure_preserves_first_success_usage(
@@ -630,3 +667,48 @@ def test_hypothesis_response_schema_is_exact_and_strict() -> None:
     alarm = body["properties"]["supporting_alarms"]["items"]
     assert alarm["additionalProperties"] is False
     assert set(alarm["required"]) == {"source", "alarm_id"}
+
+
+def test_last_round_failure_degrades_to_observed_evidence_instead_of_failing(
+    monkeypatch,
+) -> None:
+    """마지막 라운드까지 남은 구조 오류는 강등 완료로 끝내고 사유를 기록한다."""
+
+    calls = 0
+
+    def chat(_messages, **_kwargs):
+        nonlocal calls
+        calls += 1
+        # 상류를 조사하지 않은 채 상류를 주장한다: 코드가 제거할 수 없는 서술 위반.
+        return _completion(
+            _content(
+                predicted_fault_code="FOC",
+                origin_claim={"scope": "UPSTREAM", "basis_refs": []},
+            ),
+            n=calls,
+        )
+
+    monkeypatch.setattr(subject.llm, "chat_with_usage", chat)
+    outcome = generate_hypothesis(None, None, _docs(), _route())
+
+    assert calls == subject.MAX_GENERATION_ROUNDS
+    # 이 fixture는 유효 이탈 finding이 없어 비-OTH 분류부터 거부된다.
+    assert outcome.fallback_reason == "PARAMETER_FINDING_REQUIRED"
+    assert outcome.hypothesis.predicted_fault_code.value == "OTH"
+    assert outcome.hypothesis.origin_assessment.scope == "UNDETERMINED"
+    assert any("[코드 강등]" in item for item in outcome.hypothesis.limitations)
+    # 새 근거를 만들지 않는다: 인용은 모델이 준 값 중 허용된 것만 남는다.
+    assert set(outcome.hypothesis.supporting_chunk_ids) <= {"CHUNK-1"}
+
+
+def test_json_invalid_after_all_rounds_still_fails_closed(monkeypatch) -> None:
+    """파싱 자체가 안 되는 응답은 강등 대상이 아니라 실패다."""
+
+    monkeypatch.setattr(
+        subject.llm,
+        "chat_with_usage",
+        lambda _messages, **_kwargs: _completion("not json"),
+    )
+    with pytest.raises(HypothesisGenerationError) as exc:
+        generate_hypothesis(None, None, _docs(), _route())
+    assert exc.value.code == "HYPOTHESIS_STRUCTURE_INVALID"
