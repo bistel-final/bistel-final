@@ -145,7 +145,8 @@ def test_live_generation_never_uses_legacy_recount_or_accepts_legacy_selection(
     with pytest.raises(hypothesis.HypothesisGenerationError) as rejected:
         hypothesis.generate_hypothesis(*arguments, completion_port=complete)
     assert rejected.value.last_rejection_reason == "ORIGIN_CLAIM_UNSUPPORTED"
-    assert len(calls) == 2
+    # 교정 라운드를 모두 소진한 뒤에만 거부한다(MAX_GENERATION_ROUNDS).
+    assert len(calls) == hypothesis.MAX_GENERATION_ROUNDS
     assert "ORIGIN_CLAIM_UNSUPPORTED" in repr(calls[1])
     for override in (
         {"hypothesis_prompt_version": "agent-hypothesis-v3-ko1"},
@@ -155,7 +156,8 @@ def test_live_generation_never_uses_legacy_recount_or_accepts_legacy_selection(
             hypothesis.generate_hypothesis(
                 *arguments, completion_port=complete, **override
             )
-    assert len(calls) == 2
+    # TypeError 경로는 추가 호출을 만들지 않는다.
+    assert len(calls) == hypothesis.MAX_GENERATION_ROUNDS
 
 
 @pytest.mark.parametrize(

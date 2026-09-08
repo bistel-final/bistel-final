@@ -36,7 +36,7 @@ def usage(**changes):
     return LlmUsage.model_validate(
         {
             "model": "actual-model",
-            "prompt_version": "agent-hypothesis-v3-ko3",
+            "prompt_version": "agent-hypothesis-v3-ko4",
             "input_tokens": 10,
             "output_tokens": 4,
             **changes,

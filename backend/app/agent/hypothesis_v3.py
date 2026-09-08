@@ -341,6 +341,7 @@ def _recount_hypothesis(
         "agent-hypothesis-v3-ko1",
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
     }:
         raise ValueError("HYPOTHESIS_PROMPT_VERSION_INVALID")
     return _finalize_hypothesis(
@@ -350,7 +351,8 @@ def _recount_hypothesis(
         snapshot,
         documents,
         investigation,
-        enforce_current_origin=hypothesis_prompt_version == "agent-hypothesis-v3-ko3",
+        enforce_current_origin=hypothesis_prompt_version
+        in ("agent-hypothesis-v3-ko3", "agent-hypothesis-v3-ko4"),
     )
 
 

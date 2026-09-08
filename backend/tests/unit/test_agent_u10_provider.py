@@ -28,7 +28,7 @@ def config():
     return LlmConfiguration(
         hypothesis_model_revision="actual-model",
         selector_model_revision="actual-model",
-        hypothesis_prompt_version="agent-hypothesis-v3-ko3",
+        hypothesis_prompt_version="agent-hypothesis-v3-ko4",
         selector_prompt_version=REACT_PROMPT_VERSION,
         temperature=0.0,
         seed=13,

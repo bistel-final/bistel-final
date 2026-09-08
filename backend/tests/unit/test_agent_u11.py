@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
+from app.agent import hypothesis as hypothesis_module
 from app.agent.diagnostics import build_diagnostic_snapshot
 from app.agent.hypothesis import generate_hypothesis
 from app.agent.hypothesis_v3 import finalize_hypothesis
@@ -129,13 +130,16 @@ def test_actual_generation_corrects_then_degrades_and_keeps_usage():
     outcome = generate_hypothesis(
         None, None, generation._docs(), generation._route(), completion_port=complete
     )
-    assert len(messages) == 2
+    # 강등은 마지막 라운드에서만 적용된다(MAX_GENERATION_ROUNDS).
+    rounds = hypothesis_module.MAX_GENERATION_ROUNDS
+    assert len(messages) == rounds
     assert outcome.hypothesis.origin_assessment.scope == "UNDETERMINED"
     assert outcome.origin_diagnostics.dropped_basis_count == 1
     assert "허용 ID 요약" in messages[1][1]["content"]
     assert "diagnostic_snapshot.source_ids.alarm_refs" in messages[0][0]["content"]
     assert (
-        outcome.llm_usage.input_tokens == generation._completion(raw).prompt_tokens * 2
+        outcome.llm_usage.input_tokens
+        == generation._completion(raw).prompt_tokens * rounds
     )
 
 

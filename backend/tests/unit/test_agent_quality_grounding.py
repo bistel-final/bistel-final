@@ -56,7 +56,7 @@ def _payload(messages):
 
 def test_hypothesis_guide_separates_observation_cause_quality_and_sample_domains():
     system = _messages()[0]["content"]
-    assert prompts.PROMPT_VERSION == "agent-hypothesis-v3-ko3"
+    assert prompts.PROMPT_VERSION == "agent-hypothesis-v3-ko4"
     assert "관측 사실, 물리적 원인 가설, 제품 품질 영향은 구분" in system
     assert "계측 PASS는 이미 확인한 FDC OOS를 취소하지 않고" in system
     assert "직접 대응 근거 없이 숫자나 정상/이상을 모순으로 취급하지" in system
