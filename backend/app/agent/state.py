@@ -351,6 +351,7 @@ class AgentGraphState(TypedDict, total=False):
     read_retry_used: int
     approval_decision: Decision | None
     pending_llm_usage: LlmUsage | None
+    hypothesis_rejection_reason: str | None
     # Level 3 ReAct (V5-C-7.1): 선택 흔적·카운터·다중 문서 검색 결과. Level 1·2는 빈 값.
     react_trace: tuple[dict[str, Any], ...]
     react_steps: int

@@ -299,7 +299,7 @@ def test_mixed_bengali_observation_gets_one_whole_generation_correction_and_usag
     assert (outcome.llm_usage.input_tokens, outcome.llm_usage.output_tokens) == (30, 12)
 
 
-def test_repeated_mixed_script_fails_closed_after_two_rounds_with_safe_reason():
+def test_repeated_mixed_script_fails_closed_after_all_rounds_with_safe_reason():
     calls = 0
 
     def chat(_messages, **_kwargs):
@@ -311,9 +311,10 @@ def test_repeated_mixed_script_fails_closed_after_two_rounds_with_safe_reason():
 
     with pytest.raises(HypothesisGenerationError) as error:
         generate_hypothesis(None, None, _docs(), _route(), completion_port=chat)
-    assert calls == 2
+    # 초도 + 교정 라운드를 모두 소진한 뒤에만 실패한다(MAX_GENERATION_ROUNDS).
+    assert calls == subject.MAX_GENERATION_ROUNDS == 3
     assert error.value.last_rejection_reason == "KOREAN_OUTPUT_REQUIRED"
-    assert error.value.usage_or_none.input_tokens == 30
+    assert error.value.usage_or_none.input_tokens == 10 + 20 + 30
     assert "निर्देश" not in str(error.value)
 
 
@@ -389,7 +390,7 @@ def test_generation_preserves_verified_raw_nonlatin_alarm_id_without_source_pref
     assert outcome.llm_usage.input_tokens == 10
 
 
-def test_second_invalid_response_stops_without_third_call_and_keeps_usage(
+def test_invalid_responses_stop_after_last_round_and_keep_usage(
     monkeypatch,
 ) -> None:
     calls = 0
@@ -403,10 +404,11 @@ def test_second_invalid_response_stops_without_third_call_and_keeps_usage(
     monkeypatch.setattr(subject.llm, "chat_with_usage", chat)
     with pytest.raises(HypothesisGenerationError) as exc:
         generate_hypothesis(None, None, _docs(), _route())
-    assert calls == 2
+    # 라운드를 모두 소진한 뒤 멈추고 추가 호출은 없다.
+    assert calls == subject.MAX_GENERATION_ROUNDS == 3
     assert exc.value.code == "HYPOTHESIS_STRUCTURE_INVALID"
     assert exc.value.usage_or_none is not None
-    assert exc.value.usage_or_none.input_tokens == 30
+    assert exc.value.usage_or_none.input_tokens == 10 + 20 + 30
 
 
 @pytest.mark.parametrize(
