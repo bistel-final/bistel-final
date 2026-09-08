@@ -99,7 +99,10 @@ class CapturedRun(BudgetBoundEvidence):
     hypothesis_tokens: Tokens
     hypothesis_model_revision: Identifier
     hypothesis_prompt_version: Literal[
-        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2", "agent-hypothesis-v3-ko3"
+        "agent-hypothesis-v3-ko1",
+        "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
     ]
     latency_ms: int = Field(ge=0)
     model_config_digest: Sha256

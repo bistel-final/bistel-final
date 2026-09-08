@@ -33,7 +33,10 @@ class RuntimeLlmConfiguration(EvidenceModel):
     hypothesis_model_revision: Identifier
     selector_model_revision: Identifier
     hypothesis_prompt_version: Literal[
-        "agent-hypothesis-v3-ko1", "agent-hypothesis-v3-ko2", "agent-hypothesis-v3-ko3"
+        "agent-hypothesis-v3-ko1",
+        "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
     ]
     selector_prompt_version: Literal[
         "agent-react-v2-ko1",

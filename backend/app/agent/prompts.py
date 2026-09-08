@@ -28,7 +28,7 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-PROMPT_VERSION: Final = "agent-hypothesis-v3-ko3"
+PROMPT_VERSION: Final = "agent-hypothesis-v3-ko4"
 # 12_000은 STANDARD(읽기 8회) 예산 기준이었다. PRODUCTION_WIDE_V1(읽기 24회·문서
 # 8회)에서는 근거 JSON이 3배 가까이 늘어 2026-09-07 팀장 PC 12-run에서 12건 중 11건이
 # HYPOTHESIS_PROMPT_TOO_LARGE로 실패했다. 실측 STANDARD 프롬프트 입력은 약 4.3k 토큰
@@ -419,6 +419,36 @@ def _read_feedback_payload(
     }
 
 
+# 거부 사유별 재작성 지시. 모델 출력이나 식별자를 담지 않는 code-owned 문장만 둔다.
+CORRECTION_REMEDIES: Final[dict[str, str]] = {
+    "CAUSE_SUMMARY_PARAMETER_MISSING": (
+        "parameter_findings_draft에 넣은 모든 parameter_id 문자열을 cause_summary "
+        "본문에 그대로 포함하세요. 원인 요약에 쓰지 않을 parameter는 "
+        "parameter_findings_draft에서도 빼세요."
+    ),
+    "PARAMETER_FINDING_REQUIRED": (
+        "non-OTH를 선택하려면 실제 인용한 parameter_id와 lot_hist_ids로 "
+        "parameter_findings_draft를 최소 하나 채우세요. 근거가 없으면 "
+        "predicted_fault_code를 OTH로 바꾸세요."
+    ),
+    "STRUCTURE_INVALID": (
+        "시스템 지시에 나열된 17개 키만, 그 형태 그대로 사용하세요. "
+        "키를 빠뜨리거나 추가하지 마세요."
+    ),
+    "JSON_INVALID": (
+        "코드 블록·설명 없이 JSON 객체 하나만 반환하고 끝까지 완성하세요."
+    ),
+    "KOREAN_OUTPUT_REQUIRED": (
+        "모든 설명형 문자열을 한국어로 다시 쓰세요. 영어는 근거에서 복사한 식별자, "
+        "enum 코드, 모델명, parameter 이름과 단위에만 허용됩니다."
+    ),
+    "ORIGIN_CLAIM_UNSUPPORTED": (
+        "origin_claim.scope는 실제로 확인한 차원과 인용한 lot_hist만으로 주장하세요. "
+        "근거가 부족하면 scope를 UNDETERMINED로, basis_refs를 []로 두세요."
+    ),
+}
+
+
 def build_hypothesis_messages(
     fdc_evidence: FdcSummaryToolResult | None | Sequence[FdcSummaryToolResult | None],
     graph_evidence: EquipmentContextToolResult | None,
@@ -585,13 +615,19 @@ def build_hypothesis_messages(
     )
     user = f"Evidence JSON:\n{evidence_json}"
     if correction_reason is not None:
+        code = rejection_code(correction_reason)
         user += (
             "\n이전 출력은 다음 안전 사유 코드로 거부되었습니다: "
-            f"{rejection_code(correction_reason)}. 같은 근거로 JSON을 다시 작성하세요. "
+            f"{code}. 같은 근거로 JSON을 다시 작성하세요. "
             "인용 "
             "식별자는 시스템 지시에 명시된 배열에서 정확히 복사하고 document_id, "
             "title, chamber_id 또는 추론한 식별자로 대체하지 마세요."
         )
+        # 코드만으로는 무엇을 고칠지 모호해 같은 사유로 라운드를 소진한 사례가 있었다
+        # (2026-09-08 12-run). code-owned 문장만 덧붙이고 모델 출력은 인용하지 않는다.
+        remedy = CORRECTION_REMEDIES.get(code)
+        if remedy is not None:
+            user += " " + remedy
         sources = diagnostic_snapshot.source_ids if diagnostic_snapshot else None
         allowed = {
             "ALARM": sources.alarm_refs if sources else [],

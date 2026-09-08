@@ -265,6 +265,7 @@ def _finish(
     if llm.hypothesis_prompt_version in (
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
     ):
         from app.agent.origin_diagnostics import DEGRADED_REASON, rejection_code
 
