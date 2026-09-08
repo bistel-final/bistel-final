@@ -151,6 +151,36 @@ def test_unauthorized_input_is_rejected_before_read(tool, arguments, internal):
         context().authorize(tool, arguments, internal)
 
 
+def test_react_canonical_document_request_and_common_documents_are_authorized():
+    """운영 ReAct는 top_k 기본값을 채우고, RAG는 COMMON 문서를 함께 돌려준다."""
+
+    state = context()
+    state.authorize(
+        "search_documents",
+        {
+            "query": "valid",
+            "model_code": "MODEL-1",
+            "top_k": dto.DOCUMENT_SEARCH_DEFAULT_TOP_K,
+        },
+    )
+    common = dto.DocumentSearchToolResult(
+        ok=True,
+        hits=[
+            dto.DocumentHit(
+                chunk_id="CHUNK-COMMON",
+                document_id="DOC-COMMON",
+                title="공통 지침",
+                section="test",
+                score=0.9,
+                content="Read evidence",
+                model_code=dto.DOCUMENT_COMMON_MODEL_CODE,
+            )
+        ],
+    )
+    state.record("search_documents", {"query": "valid"}, common)
+    assert len(state.results("search_documents")) == 1
+
+
 def test_history_requires_observation_and_exact_internal_context():
     state = context()
     state.record("get_fdc_summary", {"lot_hist_id": "LH-REP"}, _fdc())
