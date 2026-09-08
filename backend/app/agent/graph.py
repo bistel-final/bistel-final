@@ -654,6 +654,7 @@ def build_agent_graph(
         *,
         error_code: str,
         trace: tuple[dict[str, Any], ...] | None = None,
+        rejection_reason: str | None = None,
     ) -> None:
         """FAILED 두 경로가 action provenance를 같은 방식으로 보존하게 한다."""
 
@@ -662,6 +663,11 @@ def build_agent_graph(
             run_id,
             terminal_evidence={
                 "code": error_code,
+                **(
+                    {"hypothesis_rejection_reason": rejection_reason}
+                    if rejection_reason is not None
+                    else {}
+                ),
                 **(
                     {
                         "react_trace": [
@@ -1456,6 +1462,8 @@ def build_agent_graph(
                 "terminal_error": error,
                 "errors": (*state.get("errors", ()), error),
                 "pending_llm_usage": exc.usage_or_none,
+                # 이미 sanitized된 사유 코드만 남긴다(원문·식별자 없음).
+                "hypothesis_rejection_reason": exc.last_rejection_reason,
             }
 
         try:
@@ -1686,6 +1694,7 @@ def build_agent_graph(
                         if state.get("autonomy_level") == 3
                         else None
                     ),
+                    rejection_reason=state.get("hypothesis_rejection_reason"),
                 )
         except Exception as exc:
             if usage_persistence_exc is not None:
@@ -1708,6 +1717,7 @@ def build_agent_graph(
                                 if state.get("autonomy_level") == 3
                                 else None
                             ),
+                            rejection_reason=state.get("hypothesis_rejection_reason"),
                         )
                 except Exception as finish_exc:
                     persistence_error = _terminal(finish_exc, "fail_run")

@@ -34,7 +34,9 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-MAX_GENERATION_ROUNDS: Final = 2
+# 초도 + 교정 2회. 팀장 PC 12-run에서 교정 1회로는 12/12를 못 채웠다(2026-09-08 · 10/12,
+# 실패 2건 모두 HYPOTHESIS_STRUCTURE_INVALID). 마지막 라운드에서만 origin을 강등한다.
+MAX_GENERATION_ROUNDS: Final = 3
 logger = logging.getLogger(__name__)
 HYPOTHESIS_RESPONSE_SCHEMA: Final[dict[str, object]] = {
     "name": "agent_hypothesis",
