@@ -10,6 +10,7 @@ import N8nWorkflowModal from './N8nWorkflowModal.jsx'
 import { workflowsForAction } from '../n8n/workflow-select.js'
 import RunGraphEvidenceTab from './RunGraphEvidenceTab.jsx'
 import RunRagEvidenceTab from './RunRagEvidenceTab.jsx'
+import RunInvestigationCard from './RunInvestigationCard.jsx'
 import { isNotificationAction } from '../notification-state.js'
 
 // 분석 상세 모달 — 라이트 시안 3-1 (920px, max-h 90vh, 백드롭 클릭 닫힘)
@@ -17,6 +18,7 @@ import { isNotificationAction } from '../notification-state.js'
 const TABS = [
   { key: 'rag', label: 'RAG 문서 근거' },
   { key: 'graph', label: '그래프 근거' },
+  { key: 'param', label: '파라미터 판정' },
   { key: 'act', label: '권고 조치 · 알림' },
   { key: 'audit', label: '감사 이력' },
 ]
@@ -111,6 +113,9 @@ function RunDetailModal({
             />
           )}
 
+          {tab === 'param' && (detail?.diagnosis?.origin_assessment
+            ? <RunInvestigationCard diagnosis={detail.diagnosis} />
+            : <EmptyState title="파라미터 판정 근거가 없습니다" />)}
           {tab === 'act' && !action && <EmptyState title="아직 결정된 조치가 없습니다" />}
 
           {tab === 'act' && action && (

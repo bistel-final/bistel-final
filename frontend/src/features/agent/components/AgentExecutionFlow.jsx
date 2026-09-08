@@ -9,6 +9,7 @@ import { auditTargetsOf, mergeAuditItems } from '../../../shared/components/audi
 import { auditActorLabel, auditEntityLabel, auditEventLabel, auditValueLabel } from '../../../shared/components/audit/auditLabels.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import { STOP_LABELS, investigationTimelineState } from '../investigation-view.js'
 import {
   layoutOntologyNodes,
   normalizeOntologyGraph,
@@ -33,6 +34,8 @@ import {
   toolStatusText,
 } from './agentModel.js'
 
+const REACT_PHASE_LABELS = { SELECTED: '선택', OBSERVED: '관찰', REJECTED: '선택 거부', STOPPED: '종료' }
+
 const STEP_META = Object.freeze({
   alarm: ['알람 Incident', '#6b849d', '입력'],
   fdc: ['측정 데이터 근거', '#6b849d', '근거 수집'],
@@ -40,7 +43,7 @@ const STEP_META = Object.freeze({
   graph: ['설비 관계 근거', '#6b849d', '근거 수집'],
   tools: ['분석 근거 조회', '#6b849d', '근거 수집'],
   assessment: ['근거 충분성 판단', '#846f9d', '조건 분기'],
-  react: ['부족 근거 Tool 재선택', '#846f9d', 'C-7.1 실험'],
+  react: ['부족 근거 Tool 재선택', '#846f9d', '조사 루프'],
   diagnosis: ['Incident 종합 진단', '#47769d', '분석'],
   prediction: ['AI 원인 가설', '#47769d', '분석'],
   action: ['규칙 조치 판정', '#4f8172', '조치'],
@@ -59,7 +62,7 @@ const executionStepsOf = (detail) => [
   { id: 'graph', value: evidenceBy(detail, ['GRAPH']) },
   { id: 'tools', value: detail.tools ?? [] },
   { id: 'assessment', value: detail.evidence_assessment },
-  { id: 'react', value: null, experimental: true },
+  { id: 'react', value: detail.react_trace ?? null },
   { id: 'diagnosis', value: detail.diagnosis },
   { id: 'prediction', value: detail.prediction },
   { id: 'action', value: detail.action },
@@ -81,7 +84,7 @@ const nodeLabel = (step, selected, incidentScopeLabel = null) => {
         <div className="mt-1 whitespace-nowrap font-mono text-[10.5px] font-bold text-g1">({incidentScopeLabel} 기준)</div>
       )}
       <div className="mt-1 text-[11.5px] font-semibold text-g2">
-        {step.experimental ? '비교 실험 확장' : isAvailable(step) ? (selected ? '선택됨' : step.id === 'delivery' ? '전달 상태 조회' : '완료') : '미수행'}
+        {isAvailable(step) ? (selected ? '선택됨' : step.id === 'delivery' ? '전달 상태 조회' : '완료') : '미수행'}
       </div>
     </div>
   )
@@ -97,7 +100,7 @@ const FLOW_LAYOUT = Object.freeze({
   graph: { x: 640, y: 310 },
   // 마름모(122px)와 일반 노드(220px)의 중심을 맞추기 위해 결정 노드 x는 +49.
   assessment: { x: 379, y: 480, decision: true },
-  react: { x: 10, y: 512, experimental: true },
+  react: { x: 10, y: 512 },
   // 오른쭉 열은 근거 충분성 판단과 같은 높이에서 시작해 화살표가 수평으로 건너간다.
   diagnosis: { x: 1180, y: 495, leftEntry: true },
   prediction: { x: 1180, y: 645 },
@@ -133,8 +136,8 @@ const FLOW_EDGES = Object.freeze([
   flowEdge('rag-assessment', 'rag', 'assessment'),
   flowEdge('graph-assessment', 'graph', 'assessment'),
   flowEdge('assessment-diagnosis', 'assessment', 'diagnosis', { label: '근거 충분 · 현재 진행', sourceHandle: 'right', targetHandle: 'left' }),
-  flowEdge('assessment-react', 'assessment', 'react', { label: '근거 일부 부족 · 추가 수집', sourceHandle: 'left', experimental: true }),
-  flowEdge('react-tools', 'react', 'tools', { label: '필요 Tool 선택', targetHandle: 'left', experimental: true }),
+  flowEdge('assessment-react', 'assessment', 'react', { label: '근거 일부 부족 · 추가 수집', sourceHandle: 'left' }),
+  flowEdge('react-tools', 'react', 'tools', { label: '필요 Tool 선택', targetHandle: 'left' }),
   flowEdge('diagnosis-prediction', 'diagnosis', 'prediction'),
   flowEdge('prediction-action', 'prediction', 'action'),
   flowEdge('action-approval', 'action', 'approval', { label: 'EQP_HOLD', sourceHandle: 'left', targetHandle: 'top' }),
@@ -552,6 +555,48 @@ function AuditPreview({ detail }) {
   )
 }
 
+function ReactLoopPanel({ detail }) {
+  const view = investigationTimelineState(detail)
+  const budget = typeof detail.remaining_read_calls === 'number'
+    ? `남은 조회 예산 ${detail.remaining_read_calls} / ${detail.investigation_budget?.read_cap ?? 8}`
+    : null
+  if (view.phase !== 'success') {
+    return (
+      <div className="space-y-3 text-[12px] text-g1">
+        <div className="rounded-lg border border-line bg-soft px-3 py-2.5">
+          확보된 근거와 누락 source를 보고 FDC·RAG·Graph 중 다음 조회 Tool을 스스로 고릅니다. 선택은 코드 가드가 검증합니다.
+        </div>
+        <EmptyBlock text={view.message ?? '조사 루프 기록 없음'} />
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3 text-[12px] text-g1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Badge variant="t-blue">조사 {detail.react_trace.length}단계</Badge>
+        {budget && <span className="text-[11px] text-g2">{budget}</span>}
+      </div>
+      <ol className="space-y-2">
+        {detail.react_trace.map((step) => (
+          <li key={step.seq} className="rounded-lg border border-line bg-white px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2 text-[12px] font-bold text-navy">
+              <span className="font-mono text-g2">{step.seq}</span>
+              <span>{REACT_PHASE_LABELS[step.phase] ?? step.phase}</span>
+              <span>{TOOL_LABELS[step.tool] ?? '시스템'}</span>
+              {step.degraded && <span className="text-tint-amber-text">수집된 근거로 가설 생성</span>}
+            </div>
+            {step.rationale_summary && <p className="mt-1.5 leading-6 text-ink">{step.rationale_summary}</p>}
+            {step.argument_summary && <p className="mt-1 text-[11px] text-g2">대상: {step.argument_summary}</p>}
+            {step.observation_summary && <p className="mt-1.5 leading-6 text-ink">관찰: {step.observation_summary}</p>}
+            {step.guard_code && <p className="mt-1.5 text-[11px] text-tint-amber-text">선택 검증: {step.guard_code}</p>}
+            {step.stop_reason && <p className="mt-1.5 text-[11px] text-g2">{STOP_LABELS[step.stop_reason] ?? '조사 종료'}</p>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 function DiagnosisPanel({ detail }) {
   const diagnosis = detail.diagnosis
   const assessment = detail.evidence_assessment
@@ -669,15 +714,7 @@ function StepPanel({ detail, step, alarm }) {
       </div>
     ) : <EmptyBlock text="근거 충분성 판정 없음" />
   }
-  if (step.id === 'react') content = (
-    <div className="space-y-3 text-[12px] text-g1">
-      <Badge variant="t-gray">C-7.1 · EXPERIMENT</Badge>
-      <div className="rounded-lg border border-dashed border-field-line bg-soft px-3 py-2.5">
-        Level 3 ReAct 비교에서는 확보된 근거와 누락 source를 보고 FDC·RAG·Graph 중 다음 Tool을 자율 선택합니다.
-      </div>
-      <div className="text-[11px] text-g2">점선은 현재 운영 실행 결과가 아니라 C-7.1 비교 실험에서 추가할 보강 루프입니다.</div>
-    </div>
-  )
+  if (step.id === 'react') content = <ReactLoopPanel detail={detail} />
   if (step.id === 'diagnosis') content = <DiagnosisPanel detail={detail} />
   if (step.id === 'prediction') content = <PredictionPanel detail={detail} />
   if (step.id === 'action') content = step.value ? (
@@ -815,7 +852,7 @@ function AgentExecutionFlow({ detail, alarm }) {
             <div className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-white px-6">
               <div>
                 <div className="text-[16px] font-extrabold text-navy">Agent 실행 흐름</div>
-                <div className="mt-0.5 text-[13px] text-g2">현재 Level 2 · 점선은 C-7.1 ReAct 비교 확장 · 노드를 누르면 큰 근거 패널이 열립니다</div>
+                <div className="mt-0.5 text-[13px] text-g2">Level 3 상시 운영 · 노드를 누르면 그 단계의 근거 패널이 열립니다</div>
               </div>
               <button type="button" onClick={closeFlow} className="rounded-lg border border-line bg-white px-3 py-2 text-[12px] font-bold text-g1 hover:bg-soft">닫기 ✕</button>
             </div>
@@ -825,7 +862,6 @@ function AgentExecutionFlow({ detail, alarm }) {
                   <ReactFlow nodeTypes={NODE_TYPES} nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.08 }} minZoom={0.55} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} onNodeClick={(_event, node) => selectNode(node.id)} onPaneClick={() => setDetailOpen(false)} deleteKeyCode={null} proOptions={{ hideAttribution: true }} aria-label="Agent 실행 흐름">
                     <Panel position="top-left" className="!m-2 flex items-center gap-3 rounded-lg border border-line bg-white/95 px-3.5 py-2.5 text-[11.5px] font-bold text-g2 shadow-sm">
                       <span className="flex items-center gap-1.5"><i className="h-px w-5 bg-slate-500" />현재 실행</span>
-                      <span className="flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-[#9b8bab]" />C-7.1 실험 확장</span>
                     </Panel>
                     <Controls position="top-right" showInteractive={false} />
                   </ReactFlow>
