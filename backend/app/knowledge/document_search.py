@@ -10,7 +10,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.common.config import TOOL_DB_TIMEOUT_SEC
-from app.common.tool_contracts import DOCUMENT_COMMON_MODEL_CODE
 from app.common.tool_timeouts import (
     apply_postgres_statement_timeout,
     postgres_timeout_error,
@@ -61,12 +60,12 @@ class DocumentSearchRepository:
         }
 
         if model_code is not None:
+            # 공통 문서 코드는 app.common.tool_contracts.DOCUMENT_COMMON_MODEL_CODE와
+            # 같은 값이어야 한다(관측 검증기가 그 상수로 hit를 허용한다).
             sql += """
-               AND (d.model_code = :model_code
-                    OR d.model_code = :common_model_code)
+               AND (d.model_code = :model_code OR d.model_code = 'COMMON')
             """
             params["model_code"] = model_code
-            params["common_model_code"] = DOCUMENT_COMMON_MODEL_CODE
 
         if doc_type is not None:
             sql += """
