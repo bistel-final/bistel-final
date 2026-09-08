@@ -312,9 +312,11 @@ def test_repeated_mixed_script_fails_closed_after_all_rounds_with_safe_reason():
     with pytest.raises(HypothesisGenerationError) as error:
         generate_hypothesis(None, None, _docs(), _route(), completion_port=chat)
     # 초도 + 교정 라운드를 모두 소진한 뒤에만 실패한다(MAX_GENERATION_ROUNDS).
-    assert calls == subject.MAX_GENERATION_ROUNDS == 3
+    assert calls == subject.MAX_GENERATION_ROUNDS
     assert error.value.last_rejection_reason == "KOREAN_OUTPUT_REQUIRED"
-    assert error.value.usage_or_none.input_tokens == 10 + 20 + 30
+    assert error.value.usage_or_none.input_tokens == sum(
+        10 * (index + 1) for index in range(calls)
+    )
     assert "निर्देश" not in str(error.value)
 
 
@@ -405,10 +407,12 @@ def test_invalid_responses_stop_after_last_round_and_keep_usage(
     with pytest.raises(HypothesisGenerationError) as exc:
         generate_hypothesis(None, None, _docs(), _route())
     # 라운드를 모두 소진한 뒤 멈추고 추가 호출은 없다.
-    assert calls == subject.MAX_GENERATION_ROUNDS == 3
+    assert calls == subject.MAX_GENERATION_ROUNDS
     assert exc.value.code == "HYPOTHESIS_STRUCTURE_INVALID"
     assert exc.value.usage_or_none is not None
-    assert exc.value.usage_or_none.input_tokens == 10 + 20 + 30
+    assert exc.value.usage_or_none.input_tokens == sum(
+        10 * (index + 1) for index in range(calls)
+    )
 
 
 @pytest.mark.parametrize(

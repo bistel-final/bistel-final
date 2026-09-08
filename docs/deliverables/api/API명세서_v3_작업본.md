@@ -1081,8 +1081,8 @@ profile은 기존 실행으로 추정하지 않고 거부한다. `remaining_read
 (`ABOVE|BELOW|BOTH`)·관리폭 대비 초과율·wafer 범위다. `diagnosis.origin_assessment`는 검증된
 namespace별 근거와 상류·하류·형제·이력·계측의 `CHECKED|NOT_CHECKED|NOT_AVAILABLE`를 담는다.
 LLM draft에 산술·compared 필드를 받지 않는다. 새 prediction은 `agent-evidence-v3`,
-신규 가설 prompt는 `agent-hypothesis-v3-ko4`(ko3 + 거부 사유별 재작성 지시)이며
-`agent-hypothesis-v3-ko1`·`agent-hypothesis-v3-ko2`·`agent-hypothesis-v3-ko3`와
+신규 가설 prompt는 `agent-hypothesis-v3-ko5`(ko3 + 거부 사유별 재작성 지시·인용 후보 확대)이며
+`agent-hypothesis-v3-ko1`~`agent-hypothesis-v3-ko4`와
 v1·v2 저장본 읽기를 유지한다. `origin_assessment`에는 `degraded`(기본 false),
 `degraded_reasons`(기본 [], 강등 시 `ORIGIN_BASIS_OUTSIDE_EVIDENCE`),
 `dropped_basis_count`(기본 0, 최대 40)를 추가한다. 제거된 ID·private 진단은 공개하지 않는다.

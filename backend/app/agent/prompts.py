@@ -28,7 +28,7 @@ from app.common.tool_contracts import (
     FdcSummaryToolResult,
 )
 
-PROMPT_VERSION: Final = "agent-hypothesis-v3-ko4"
+PROMPT_VERSION: Final = "agent-hypothesis-v3-ko5"
 # 12_000은 STANDARD(읽기 8회) 예산 기준이었다. PRODUCTION_WIDE_V1(읽기 24회·문서
 # 8회)에서는 근거 JSON이 3배 가까이 늘어 2026-09-07 팀장 PC 12-run에서 12건 중 11건이
 # HYPOTHESIS_PROMPT_TOO_LARGE로 실패했다. 실측 STANDARD 프롬프트 입력은 약 4.3k 토큰
@@ -446,6 +446,39 @@ CORRECTION_REMEDIES: Final[dict[str, str]] = {
         "origin_claim.scope는 실제로 확인한 차원과 인용한 lot_hist만으로 주장하세요. "
         "근거가 부족하면 scope를 UNDETERMINED로, basis_refs를 []로 두세요."
     ),
+    "ORIGIN_BASIS_OUTSIDE_EVIDENCE": (
+        "origin_claim.basis_refs의 id는 아래 허용 ID 요약에 있는 값만 그대로 쓰세요. "
+        "확신이 없으면 basis_refs를 []로 두세요."
+    ),
+    "LOT_HISTORY_CITATION_OUTSIDE_EVIDENCE": (
+        "supporting_lot_hist_ids에는 diagnostic_snapshot.source_ids.lot_hist_ids의 "
+        "값만 그대로 복사하세요. wafer_observations나 관측 문장에서 만든 식별자를 "
+        "쓰지 말고, 확신이 없으면 빈 배열로 두세요."
+    ),
+    "PARAMETER_CITATION_OUTSIDE_EVIDENCE": (
+        "supporting_parameter_ids에는 diagnostic_snapshot.source_ids.parameter_ids의 "
+        "값만 그대로 복사하세요. 확신이 없으면 빈 배열로 두세요."
+    ),
+    "ALARM_CITATION_REQUIRED": (
+        "supporting_alarms에 route.incident.member_alarms의 후보를 최소 하나 "
+        '{"source":"...","alarm_id":"..."} 형식으로 인용하세요.'
+    ),
+    "ALARM_CITATION_OUTSIDE_EVIDENCE": (
+        "supporting_alarms의 source·alarm_id 쌍은 route.incident.member_alarms에 "
+        "있는 값만 그대로 복사하세요."
+    ),
+    "DOCUMENT_CITATION_REQUIRED": (
+        "document.hits가 있으면 supporting_chunk_ids에 그 chunk_id를 최소 하나 "
+        "인용하세요."
+    ),
+    "DOCUMENT_CITATION_OUTSIDE_EVIDENCE": (
+        "supporting_chunk_ids에는 document.hits[].chunk_id 값만 그대로 복사하세요. "
+        "document_id나 title로 대체하지 마세요."
+    ),
+    "RELATION_CITATION_OUTSIDE_EVIDENCE": (
+        "supporting_relation_ids에는 route.graph_evidence[].relation_ids 값만 "
+        "그대로 복사하세요."
+    ),
 }
 
 
@@ -644,7 +677,8 @@ def build_hypothesis_messages(
             ids = sorted(
                 {v for v in values if re.fullmatch(r"[A-Za-z0-9:_\-]{1,64}", v)}
             )
-            summaries[namespace] = {"ids": ids[:12], "omitted_count": len(ids[12:])}
+            # 교정 라운드에서 인용 후보를 더 넓게 보여 준다(12 → 40).
+            summaries[namespace] = {"ids": ids[:40], "omitted_count": len(ids[40:])}
         user += "\n허용 ID 요약(생략분은 원 Evidence JSON 참조): " + json.dumps(
             summaries, ensure_ascii=False, separators=(",", ":")
         )

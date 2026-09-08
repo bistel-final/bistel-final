@@ -25,6 +25,7 @@ SUPPORTED_PROMPT_VERSIONS = frozenset(
         "agent-hypothesis-v3-ko2",
         # 게시된 이전 artifact는 그대로 검증 가능해야 한다(ko3 게시본 존재).
         "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
         PROMPT_VERSION,
     }
 )

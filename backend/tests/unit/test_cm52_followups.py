@@ -384,6 +384,7 @@ def test_artifact_preflight_accepts_the_bound_pair(tmp_path: Path) -> None:
         "agent-hypothesis-v3-ko1",
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
     ],
 )
 def test_artifact_preflight_accepts_legacy_and_current_evidence(tmp_path, prompt):

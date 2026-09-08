@@ -73,7 +73,12 @@ def test_batch_keeps_legacy_bytes_and_trace_contract_by_declared_version(version
 
 @pytest.mark.parametrize(
     "version",
-    ("agent-hypothesis-v3-ko2", "agent-hypothesis-v3-ko3", "agent-hypothesis-v3-ko4"),
+    (
+        "agent-hypothesis-v3-ko2",
+        "agent-hypothesis-v3-ko3",
+        "agent-hypothesis-v3-ko4",
+        "agent-hypothesis-v3-ko5",
+    ),
 )
 def test_hypothesis_diagnostic_versions_keep_identical_schema_and_validate(version):
     params, *_ = inputs()

@@ -37,6 +37,7 @@ class RuntimeLlmConfiguration(EvidenceModel):
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
         "agent-hypothesis-v3-ko4",
+        "agent-hypothesis-v3-ko5",
     ]
     selector_prompt_version: Literal[
         "agent-react-v2-ko1",
