@@ -728,6 +728,7 @@ class LlmConfiguration(EvidenceModel):
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
         "agent-hypothesis-v3-ko4",
+        "agent-hypothesis-v3-ko5",
     ]
     selector_prompt_version: Literal[
         "agent-react-v2-ko1",
@@ -817,6 +818,7 @@ class Artifact(EvidenceModel):
                 "agent-hypothesis-v3-ko2",
                 "agent-hypothesis-v3-ko3",
                 "agent-hypothesis-v3-ko4",
+                "agent-hypothesis-v3-ko5",
             ) and isinstance(rows, list):
                 for row in rows:
                     keys = (

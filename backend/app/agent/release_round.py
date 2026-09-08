@@ -103,6 +103,7 @@ class CapturedRun(BudgetBoundEvidence):
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
         "agent-hypothesis-v3-ko4",
+        "agent-hypothesis-v3-ko5",
     ]
     latency_ms: int = Field(ge=0)
     model_config_digest: Sha256

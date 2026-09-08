@@ -266,6 +266,7 @@ def _finish(
         "agent-hypothesis-v3-ko2",
         "agent-hypothesis-v3-ko3",
         "agent-hypothesis-v3-ko4",
+        "agent-hypothesis-v3-ko5",
     ):
         from app.agent.origin_diagnostics import DEGRADED_REASON, rejection_code
 
