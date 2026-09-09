@@ -39,6 +39,8 @@ const REACT_PHASE_LABELS = { SELECTED: '선택', OBSERVED: '관찰', REJECTED: '
 const STEP_META = Object.freeze({
   alarm: ['알람 Incident', '#6b849d', '입력'],
   fdc: ['측정 데이터 근거', '#6b849d', '근거 수집'],
+  history: ['이력 · 대조 근거', '#6b849d', '근거 수집'],
+  metrology: ['계측 결과 근거', '#6b849d', '근거 수집'],
   rag: ['매뉴얼 문서 근거', '#6b849d', '근거 수집'],
   graph: ['설비 관계 근거', '#6b849d', '근거 수집'],
   tools: ['분석 근거 조회', '#6b849d', '근거 수집'],
@@ -57,7 +59,9 @@ const evidenceBy = (detail, types) =>
 
 const executionStepsOf = (detail) => [
   { id: 'alarm', value: evidenceBy(detail, ['ALARM']) },
-  { id: 'fdc', value: evidenceBy(detail, ['TRACE', 'METROLOGY']) },
+  { id: 'fdc', value: evidenceBy(detail, ['TRACE']) },
+  { id: 'history', value: (detail.tools ?? []).filter((tool) => tool.tool_name === 'get_chamber_parameter_history') },
+  { id: 'metrology', value: evidenceBy(detail, ['METROLOGY']) },
   { id: 'rag', value: evidenceBy(detail, ['DOCUMENT']) },
   { id: 'graph', value: evidenceBy(detail, ['GRAPH']) },
   { id: 'tools', value: detail.tools ?? [] },
@@ -95,9 +99,11 @@ const nodeLabel = (step, selected, incidentScopeLabel = null, current = false) =
 const FLOW_LAYOUT = Object.freeze({
   alarm: { x: 330, y: 0 },
   tools: { x: 330, y: 150 },
-  fdc: { x: 20, y: 310 },
-  rag: { x: 330, y: 310 },
-  graph: { x: 640, y: 310 },
+  fdc: { x: -290, y: 310 },
+  history: { x: 20, y: 310 },
+  metrology: { x: 330, y: 310 },
+  rag: { x: 640, y: 310 },
+  graph: { x: 950, y: 310 },
   // 마름모(122px)와 일반 노드(220px)의 중심을 맞추기 위해 결정 노드 x는 +49.
   assessment: { x: 379, y: 480, decision: true },
   react: { x: 10, y: 512 },
@@ -130,9 +136,13 @@ const flowEdge = (id, source, target, options = {}) => ({
 const FLOW_EDGES = Object.freeze([
   flowEdge('alarm-tools', 'alarm', 'tools', { targetHandle: 'top' }),
   flowEdge('tools-fdc', 'tools', 'fdc'),
+  flowEdge('tools-history', 'tools', 'history'),
+  flowEdge('tools-metrology', 'tools', 'metrology'),
   flowEdge('tools-rag', 'tools', 'rag'),
   flowEdge('tools-graph', 'tools', 'graph'),
   flowEdge('fdc-assessment', 'fdc', 'assessment'),
+  flowEdge('history-assessment', 'history', 'assessment'),
+  flowEdge('metrology-assessment', 'metrology', 'assessment'),
   flowEdge('rag-assessment', 'rag', 'assessment'),
   flowEdge('graph-assessment', 'graph', 'assessment'),
   flowEdge('assessment-diagnosis', 'assessment', 'diagnosis', { label: '근거 충분 · 현재 진행', sourceHandle: 'right', targetHandle: 'left' }),
@@ -690,7 +700,22 @@ function StepPanel({ detail, step, alarm }) {
   const title = STEP_META[step.id][0]
   let content = null
   if (step.id === 'alarm') content = <AlarmPreview detail={detail} alarm={alarm} items={step.value} />
-  if (['fdc', 'rag', 'graph'].includes(step.id)) content = <EvidenceList detail={detail} items={step.value} />
+  if (['fdc', 'metrology', 'rag', 'graph'].includes(step.id)) content = <EvidenceList detail={detail} items={step.value} />
+  if (step.id === 'history') content = step.value.length ? (
+    <div className="space-y-2">
+      {step.value.map((tool, index) => (
+        <div key={`history:${index}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <strong className="text-[12px] text-navy">{TOOL_LABELS.get_chamber_parameter_history}</strong>
+            <Badge variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>{toolStatusText(tool.status)}</Badge>
+          </div>
+          <div className="mt-2 text-[11.5px] leading-5 text-g1">
+            {TOOL_GUIDES.get_chamber_parameter_history[tool.status === 'SUCCESS' ? 'success' : 'failure']}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : <EmptyBlock text="이전 LOT·형제 챔버 대조를 수행하지 않았습니다" />
   if (step.id === 'tools') content = step.value.length ? (
     <div className="space-y-2">
       {step.value.map((tool, index) => {
