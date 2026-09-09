@@ -701,21 +701,37 @@ function StepPanel({ detail, step, alarm }) {
   let content = null
   if (step.id === 'alarm') content = <AlarmPreview detail={detail} alarm={alarm} items={step.value} />
   if (['fdc', 'metrology', 'rag', 'graph'].includes(step.id)) content = <EvidenceList detail={detail} items={step.value} />
-  if (step.id === 'history') content = step.value.length ? (
-    <div className="space-y-2">
-      {step.value.map((tool, index) => (
-        <div key={`history:${index}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <strong className="text-[12px] text-navy">{TOOL_LABELS.get_chamber_parameter_history}</strong>
-            <Badge variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>{toolStatusText(tool.status)}</Badge>
+  if (step.id === 'history') {
+    // 도구 호출 목록의 요약문은 도구별 고정 문구다. 실제로 무엇을 대조했고 무엇을 봤는지는
+    // 조사 기록에만 있으므로 그쪽을 우선 쓰고, 기록이 없을 때만 호출 상태로 물러선다.
+    const observed = (detail.react_trace ?? []).filter(
+      (entry) => entry.tool === 'get_chamber_parameter_history' && entry.phase === 'OBSERVED',
+    )
+    content = observed.length ? (
+      <div className="space-y-2">
+        {observed.map((entry) => (
+          <div key={`history:${entry.seq}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong className="text-[12px] text-navy">{entry.argument_summary ?? '이력 · 대조 조회'}</strong>
+              <Badge variant="t-green">수집 완료</Badge>
+            </div>
+            {entry.rationale_summary && (
+              <div className="mt-2 text-[11.5px] leading-5 text-g1"><strong className="text-navy">선택 이유:</strong> {entry.rationale_summary}</div>
+            )}
+            {entry.observation_summary && (
+              <div className="mt-1 text-[11.5px] leading-5 text-g1"><strong className="text-navy">관찰:</strong> {entry.observation_summary}</div>
+            )}
           </div>
-          <div className="mt-2 text-[11.5px] leading-5 text-g1">
-            {TOOL_GUIDES.get_chamber_parameter_history[tool.status === 'SUCCESS' ? 'success' : 'failure']}
-          </div>
+        ))}
+      </div>
+    ) : step.value.length ? (
+      <div className="space-y-2 text-[12px] text-g1">
+        <div className="rounded-lg border border-line bg-soft px-3 py-2.5">
+          이력·대조 조회를 {step.value.length}회 수행했습니다. 대조 대상과 관찰 내용은 조사 루프 기록에서 확인할 수 있습니다.
         </div>
-      ))}
-    </div>
-  ) : <EmptyBlock text="이전 LOT·형제 챔버 대조를 수행하지 않았습니다" />
+      </div>
+    ) : <EmptyBlock text="이전 LOT·형제 챔버 대조를 수행하지 않았습니다" />
+  }
   if (step.id === 'tools') content = step.value.length ? (
     <div className="space-y-2">
       {step.value.map((tool, index) => {
