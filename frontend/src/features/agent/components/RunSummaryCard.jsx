@@ -6,7 +6,6 @@ import { alarmJudgement, impactOntologySelection, measuredText } from '../agent-
 import AgentImpactGraphModal from './AgentImpactGraphModal.jsx'
 import {
   deliveryStatusSummary,
-  impactLabelOf,
   impactSourceOf,
 } from './agentModel.js'
 
@@ -32,33 +31,6 @@ const incidentWafersOf = (detail, repAlarm) => {
   if (directWafers.length > 0) return [...new Set(directWafers)]
   const representative = repAlarm?.wafer_id ?? (repAlarm?.wafer_no != null ? `W${repAlarm.wafer_no}` : null)
   return representative ? [representative] : []
-}
-
-function ImpactItems({ title, items, emptyText, checkRequired = false }) {
-  return (
-    <div className="mt-2.5">
-      <div className="text-[10.5px] font-bold text-navy">{title}</div>
-      {items?.length ? (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {items.map((item) => (
-            <span
-              key={`${item.kind}:${item.source_id}:${item.relation ?? ''}`}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10.5px] ${
-                checkRequired
-                  ? 'border-[#ead9b3] bg-[#fffaf0] text-[#6f5422]'
-                  : 'border-tint-blue-line bg-white/75 text-g1'
-              }`}
-            >
-              <span className="font-semibold">{impactLabelOf(item)}</span>
-              <strong className="font-mono text-navy">{impactSourceOf(item)}</strong>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-1 text-[10.5px] text-g2">{emptyText}</div>
-      )}
-    </div>
-  )
 }
 
 const SummaryFact = ({ label, value }) => (
@@ -142,30 +114,6 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
               </div>
             )}
           </section>
-          <section className="flex h-full flex-col rounded-[10px] border border-[#dbeafe] bg-tint-blue px-3.5 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="text-[10.5px] font-extrabold text-blue-hover">영향 범위</div>
-              {impactSelection && (
-                <button type="button" onClick={() => setImpactOpen(true)} className="shrink-0 text-[11.5px] font-bold text-blue hover:text-blue-hover">
-                  영향 범위 보기 →
-                </button>
-              )}
-            </div>
-            <div className="mt-2 text-[12px] font-semibold leading-5 text-ink">
-              {impact?.summary ?? '저장된 영향 범위 요약이 없습니다.'}
-            </div>
-            <ImpactItems
-              title="직접 영향 대상"
-              items={impact?.direct}
-              emptyText="확정된 직접 영향 대상이 없습니다."
-            />
-            <ImpactItems
-              title="추가 확인 대상"
-              items={impact?.check_required}
-              emptyText="추가로 연쇄 영향을 확인할 대상이 없습니다."
-              checkRequired
-            />
-          </section>
           <section className="rounded-[10px] border border-[#dbeafe] bg-tint-blue px-3.5 py-3">
             <div className="flex items-center justify-between gap-2">
               <div className="text-[10.5px] font-extrabold text-blue-hover">권고 조치</div>
@@ -173,6 +121,16 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
             </div>
             <div className="mt-2 text-[12px] font-semibold leading-5 text-ink">{actionReason}</div>
             <div className="mt-2 text-[11px] leading-5 text-g1"><strong className="text-navy">다음 확인:</strong> {verificationSteps}</div>
+            <div className="mt-2 flex items-start justify-between gap-3 border-t border-tint-blue-line pt-2.5">
+              <div className="min-w-0 text-[11px] leading-5 text-g1">
+                <strong className="text-navy">영향 범위:</strong> {impact?.summary ?? '저장된 영향 범위 요약이 없습니다.'}
+              </div>
+              {impactSelection && (
+                <button type="button" onClick={() => setImpactOpen(true)} className="shrink-0 text-[11px] font-bold text-blue hover:text-blue-hover">
+                  자세히 →
+                </button>
+              )}
+            </div>
           </section>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-x-5 gap-y-3.5">
