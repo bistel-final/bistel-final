@@ -119,8 +119,8 @@ const APPROVAL_STATUS_LABEL = Object.freeze({
 
 export const approvalStatusSummary = (action, approval) => {
   if (!action) return '조치 미생성 · 승인 요청 없음'
-  if (isNotificationAction(action)) return '자동 조치 알림 · 사용자 승인 불필요'
-  if (action.action_code !== 'EQP_HOLD') return '승인 불필요 · 자동 전달 정책'
+  if (isNotificationAction(action)) return '자동 알림 · 모의 연동'
+  if (action.action_code !== 'EQP_HOLD') return '자동 전달'
   const status = approval?.status ?? action.approval_status
   return APPROVAL_STATUS_LABEL[status] ?? '승인 상태 확인 필요'
 }
