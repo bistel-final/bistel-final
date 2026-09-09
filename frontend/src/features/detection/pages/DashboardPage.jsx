@@ -60,7 +60,7 @@ function HeroBand({ agg, onTotal, onOos, onOoc, onAction }) {
     { label: '전체 알람', value: agg.total, color: null, hint: '알람 히스토리 보기 →', onClick: onTotal },
     { label: 'OOS', value: agg.oos, color: OOS_HEX, valueColor: OOS_TEXT_HEX, hint: 'TRACE 알람 보기 →', onClick: onOos },
     { label: 'OOC', value: agg.ooc, color: OOC_HEX, valueColor: OOC_TEXT_HEX, hint: 'SUMMARY 알람 보기 →', onClick: onOoc },
-    { label: 'MES Mock 응답 확인', value: agg.mesSent, color: SKY_HEX, hint: '실제 설비 정지 상태와 무관 · 상세 보기 →', onClick: onAction },
+    { label: '조치 완료', value: agg.mesSent, color: SKY_HEX, hint: 'MES 시뮬레이터 응답까지 확인된 건 · 상세 보기 →', onClick: onAction },
   ]
   return (
     <Card className="grid grid-cols-[1.15fr_1fr_1fr_1fr] divide-x divide-line">

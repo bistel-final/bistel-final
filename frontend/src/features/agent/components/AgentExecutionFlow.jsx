@@ -8,7 +8,7 @@ import { getChamberRelationsCore } from '../../../shared/api/knowledge.js'
 import { auditTargetsOf, mergeAuditItems } from '../../../shared/components/audit/run-audit-view-state.js'
 import { auditActorLabel, auditEntityLabel, auditEventLabel, auditValueLabel } from '../../../shared/components/audit/auditLabels.js'
 import Badge from '../../../shared/components/ui/Badge.jsx'
-import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
+import { Card } from '../../../shared/components/ui/Card.jsx'
 import { STOP_LABELS, investigationTimelineState } from '../investigation-view.js'
 import {
   layoutOntologyNodes,
@@ -74,7 +74,7 @@ const executionStepsOf = (detail) => [
 const isAvailable = (step) =>
   Array.isArray(step.value) ? step.value.length > 0 : step.value != null
 
-const nodeLabel = (step, selected, incidentScopeLabel = null) => {
+const nodeLabel = (step, selected, incidentScopeLabel = null, current = false) => {
   const [label, color, phase] = STEP_META[step.id]
   return (
     <div className="text-center">
@@ -83,8 +83,8 @@ const nodeLabel = (step, selected, incidentScopeLabel = null) => {
       {step.id === 'alarm' && incidentScopeLabel && (
         <div className="mt-1 whitespace-nowrap font-mono text-[10.5px] font-bold text-g1">({incidentScopeLabel} 기준)</div>
       )}
-      <div className="mt-1 text-[11.5px] font-semibold text-g2">
-        {isAvailable(step) ? (selected ? '선택됨' : step.id === 'delivery' ? '전달 상태 조회' : '완료') : '미수행'}
+      <div className={`mt-1 text-[11.5px] font-semibold ${current ? 'text-blue' : 'text-g2'}`}>
+        {current ? '수행 중…' : isAvailable(step) ? (selected ? '선택됨' : step.id === 'delivery' ? '전달 상태 조회' : '완료') : '미수행'}
       </div>
     </div>
   )
@@ -211,6 +211,8 @@ const NODE_TYPES = Object.freeze({
 
 const TOOL_LABELS = Object.freeze({
   get_fdc_summary: 'FDC 요약 조회',
+  get_chamber_parameter_history: '챔버 이력 · 대조 조회',
+  get_metrology_result: '계측 결과 조회',
   get_equipment_context: '장비 · 공정 관계 조회',
   search_documents: '매뉴얼 문서 검색',
   send_action: '조치 전달',
@@ -710,7 +712,6 @@ function StepPanel({ detail, step, alarm }) {
           <div className="mt-1"><strong>누락:</strong> {assessment.missing_sources?.join(' · ') || '없음'}</div>
           {assessment.reason_codes?.length > 0 && <div className="mt-2 font-mono text-[10.5px] text-g2">{assessment.reason_codes.join(' · ')}</div>}
         </div>
-        <div className="text-[11px] text-g2">현재 Level 2는 정해진 충분성 조건으로 다음 단계를 결정합니다.</div>
       </div>
     ) : <EmptyBlock text="근거 충분성 판정 없음" />
   }
@@ -768,12 +769,20 @@ function AgentExecutionFlow({ detail, alarm }) {
     if (detail.tools?.length) return 'tools'
     return 'alarm'
   }, [detail])
+  // 실행 중에는 완료된 단계 수와 다음에 수행할 단계를 화면에 그대로 보여 준다.
+  const progress = useMemo(() => {
+    const running = detail.status === 'RUNNING'
+    const done = steps.filter(isAvailable).length
+    const currentId = running ? steps.find((step) => !isAvailable(step))?.id ?? null : null
+    return { running, done, total: steps.length, currentId }
+  }, [detail.status, steps])
   const [userSelectedId, setUserSelectedId] = useState(null)
   const [expanded, setExpanded] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const selectedId = userSelectedId ?? defaultId
   const nodes = useMemo(() => steps.map((step) => {
     const selected = step.id === selectedId
+    const current = step.id === progress.currentId
     const [, color] = STEP_META[step.id]
     const layout = FLOW_LAYOUT[step.id]
     const decision = layout.decision
@@ -783,14 +792,14 @@ function AgentExecutionFlow({ detail, alarm }) {
     return {
       id: step.id,
       position: { x: layout.x, y: layout.y },
-      data: { label: nodeLabel(step, selected, incidentScopeLabel), color },
+      data: { label: nodeLabel(step, selected, incidentScopeLabel, current), color, current },
       type: decision ? 'decision' : toolPlan ? 'toolPlan' : routedStep ?? 'default',
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       draggable: false,
       style: decision || toolPlan || routedStep ? undefined : { width: 220, minHeight: 92, borderRadius: 10, border: `${selected ? 2.5 : 1.25}px ${layout.experimental ? 'dashed' : 'solid'} ${selected ? color : '#cad5df'}`, background: selected ? `${color}12` : layout.experimental ? '#faf8fc' : '#fff', boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
     }
-  }), [incidentScopeLabel, selectedId, steps])
+  }), [incidentScopeLabel, progress.currentId, selectedId, steps])
   const selected = steps.find((step) => step.id === selectedId) ?? steps[0]
 
   useEffect(() => {
@@ -823,14 +832,32 @@ function AgentExecutionFlow({ detail, alarm }) {
     <div data-testid="agent-execution-flow">
       <button type="button" className="block w-full text-left" onClick={openFlow} data-testid="agent-execution-flow-launcher">
         <Card className="agent-main-readable group overflow-hidden transition hover:border-blue/40 hover:shadow-md">
-          <CardHeader title="Agent 실행 흐름" note="클릭하여 전체 흐름과 단계별 근거 확인" />
+          <div className="flex items-center justify-between gap-4 px-5 pb-3 pt-4">
+            <span className="text-[15px] font-extrabold text-navy">Agent 실행 흐름</span>
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="h-1.5 w-28 flex-none overflow-hidden rounded-full bg-cell-line" aria-hidden="true">
+                <span
+                  className={`block h-full rounded-full ${progress.running ? 'bg-blue' : 'bg-green'}`}
+                  style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                />
+              </span>
+              <span className="whitespace-nowrap font-mono text-[11.5px] font-bold text-g1">
+                {progress.done} / {progress.total}
+              </span>
+              <span className="hidden truncate text-[11.5px] text-g1 sm:inline">
+                {progress.running
+                  ? `${STEP_META[progress.currentId]?.[0] ?? '다음 단계'} 수행 중`
+                  : '클릭하여 전체 흐름과 단계별 근거 확인'}
+              </span>
+            </span>
+          </div>
           <div className="border-t border-cell-line px-5 py-4">
             <div className="grid grid-cols-4 items-center gap-2">
               {[
                 ['입력', incidentScopeLabel ? `알람 Incident (${incidentScopeLabel} 기준)` : '알람 Incident'],
                 ['근거 수집', '측정값 · 매뉴얼 · 설비 관계'],
                 ['분석', '충분성 · 원인 · 영향'],
-                ['조치', isNotificationAction(detail.action) ? '규칙 판정 · 자동 알림 · 모의 연동' : '규칙 판정 · 이전 승인 정책 · 전달'],
+                ['조치', isNotificationAction(detail.action) ? '규칙 판정 · 자동 알림 · 모의 연동' : '규칙 판정 · 전달'],
               ].map(([phase, label], index) => (
                 <div key={phase} className="relative rounded-lg border border-line bg-soft px-3 py-2.5">
                   <div className="text-[9px] font-extrabold tracking-[.08em] text-g2">{phase}</div>

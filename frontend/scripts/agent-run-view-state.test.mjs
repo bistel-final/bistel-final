@@ -549,12 +549,12 @@ assert.match(runSummarySource, /SummaryFact label="대상 LOT"/, 'LLM 요약 LOT
 assert.match(runSummarySource, /Agent 분석 요약/)
 assert.match(runSummarySource, /LLM 원인 분석/)
 assert.match(runSummarySource, /data-testid="agent-analysis-decision-summary"/)
-assert.match(runSummarySource, /grid grid-cols-2 gap-3/, 'Agent 분석 4블록은 두 열·두 줄로 배치해야 합니다')
+assert.match(runSummarySource, /grid grid-cols-2 gap-3/, 'Agent 분석 요약은 두 열로 배치해야 합니다')
 assert.match(runSummarySource, /영향 범위 보기/)
 assert.match(runSummarySource, /AgentImpactGraphModal/)
-assert.match(runSummarySource, /RepresentativeAlarmModal/)
-assert.match(runSummarySource, /HistoryTrendChart/)
-assert.match(runSummarySource, /대표 알람 보기/)
+assert.match(runSummarySource, /권고 조치/, '요약은 원인 분석과 권고 조치까지만 담습니다')
+assert.doesNotMatch(runSummarySource, /대표 알람 보기/, '대표 알람은 기준 알람 실측 섹션이 담당합니다')
+assert.doesNotMatch(runSummarySource, /전달 정책 · 결과 · 관찰/, '전달 결과는 분석 상세에서 확인합니다')
 assert.match(impactModalSource, /getChamberRelationsCore\(selection\.chamberId\)/)
 assert.match(impactModalSource, /getAllAlarms\(params\)/)
 assert.match(impactModalSource, /graph\.graph_revision !== selection\.graphRevision/)
@@ -565,7 +565,7 @@ assert.match(impactModalSource, /data-testid="agent-impact-node-panel"/)
 for (const label of ['Agent 판단 연결', '공개 속성', '선택 노드 운영 요약']) {
   assert.match(impactModalSource, new RegExp(label), `영향 범위 노드 패널에 ${label}이 필요합니다`)
 }
-for (const label of ['영향 범위', '권고 조치', '전달 정책 · 결과 · 관찰']) {
+for (const label of ['영향 범위', '권고 조치']) {
   assert.match(runSummarySource, new RegExp(label), `Agent 분석 요약에 ${label} 정보를 함께 제공해야 합니다`)
 }
 assert.doesNotMatch(runSummarySource, /값이 \$\{bound\}을 벗어나는/, '알람 요약을 고정 템플릿 문장으로 조립하면 안 됩니다')

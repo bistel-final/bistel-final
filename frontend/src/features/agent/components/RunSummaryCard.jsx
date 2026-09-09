@@ -1,13 +1,10 @@
 import { useState } from 'react'
 import { fmtDateTime } from '../../../shared/api/format.js'
 import { Card, CardHeader } from '../../../shared/components/ui/Card.jsx'
-import { HistoryTrendChart } from '../../../shared/components/trace/HistoryTrendChart.jsx'
 import { detailNumbers, limitLines } from '../../../shared/trace/traceModel.js'
 import { alarmJudgement, impactOntologySelection, measuredText } from '../agent-run-view-state.js'
 import AgentImpactGraphModal from './AgentImpactGraphModal.jsx'
 import {
-  alarmDisplayLabel,
-  approvalStatusSummary,
   deliveryStatusSummary,
   impactLabelOf,
   impactSourceOf,
@@ -71,62 +68,7 @@ const SummaryFact = ({ label, value }) => (
   </span>
 )
 
-function RepresentativeAlarmModal({ alarm, run, measured, wafer, lim, judgement, onClose }) {
-  const waferLabel = alarm?.wafer_no != null ? `W${Number(alarm.wafer_no)}` : measuredText(alarm?.wafer_id)
-  const alarmLabel = alarmDisplayLabel({
-    source: alarm?.source ?? run.representative_alarm_source,
-    alarmId: alarm?.alarm_id ?? run.representative_alarm_id,
-    chamberId: alarm?.chamber_id ?? run.incident?.chamber_id,
-    lotId: alarm?.lot_id ?? run.incident?.lot_id,
-    waferNo: alarm?.wafer_no,
-  })
-  const rows = [
-    ['분석 대상', alarmLabel],
-    ['판정', judgement ?? '판정 미제공'],
-    ['발생 시각', measuredText(fmtDateTime(alarm?.occurred_at ?? run.incident_first_at))],
-    ['LOT · WAFER', `${measuredText(alarm?.lot_id ?? run.incident?.lot_id)} · ${waferLabel}`],
-    ['설비 · 챔버', `${measuredText(alarm?.equipment_id ?? run.equipment_id)} · ${measuredText(alarm?.chamber_id ?? run.incident?.chamber_id)}`],
-    ['파라미터', measuredText(alarm?.parameter_id ?? alarm?.sensor_id ?? run.sensor_id)],
-    ['공정 단계', measuredText(alarm?.recipe_step_name ?? run.recipe_step_name)],
-    ['측정값', measured != null ? `${measured}${lim?.unit ? ` ${lim.unit}` : ''}` : '실측 미제공'],
-    ['적용 규칙', measuredText(alarm?.rule_id)],
-    ['반복 건수', alarm?.hit_cnt != null ? `${alarm.hit_cnt}건` : `${run.alarm_count}건`],
-  ]
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="flex max-h-[calc(100vh-48px)] w-[min(1080px,calc(100vw-48px))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label="대표 알람 상세">
-        <div className="flex items-center justify-between border-b border-line px-6 py-4">
-          <div>
-            <div className="text-[16px] font-extrabold text-navy">대표 알람 상세</div>
-            <div className="mt-1 text-[11px] font-semibold text-g2">{alarmLabel}</div>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] font-bold text-g1 hover:bg-soft">닫기 ✕</button>
-        </div>
-        <div className="overflow-y-auto p-6">
-          <div className="h-[360px] rounded-xl border border-cell-line bg-white p-2">
-            <HistoryTrendChart wafer={wafer} lim={lim} highlightWaferNo={alarm?.wafer_no} viewMode="selected" />
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {rows.map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-cell-line bg-soft px-3.5 py-3">
-                <div className="text-[10px] font-bold text-faint">{label}</div>
-                <div className="mt-1 break-all font-mono text-[12.5px] font-semibold text-ink">{value}</div>
-              </div>
-            ))}
-          </div>
-          {!wafer && (
-            <div className="mt-4 rounded-lg border border-dashed border-dash-line px-4 py-5 text-center text-[12px] text-g2">
-              대표 알람의 trace 실측 데이터가 없어 차트를 표시할 수 없습니다.
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
-  const [alarmOpen, setAlarmOpen] = useState(false)
   const [impactOpen, setImpactOpen] = useState(false)
   const judgement = alarmJudgement(run, repAlarm)
   const measured = measuredOf(repAlarm, wafer)
@@ -147,9 +89,7 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
   const verificationSteps = detail?.diagnosis?.verification_steps?.join(' → ') || '추가 확인 절차 미제공'
   const actionCode = action?.action_code ?? run.recommended_action ?? '조치 미결정'
   const actionReason = action?.reason ?? '규칙 기반 조치 사유 미제공'
-  const approvalStatus = approvalStatusSummary(action, detail?.approval)
   const deliveryStatus = deliveryStatusSummary(action)
-  const observation = detail?.post_action_observation?.message ?? '조치 후 관찰 정보 없음'
   const impactSelection = impactOntologySelection(detail, run.incident?.chamber_id ?? repAlarm?.chamber_id)
 
   const stepSeq = repAlarm
@@ -185,11 +125,6 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
                 <span>LLM 원인 분석</span>
                 <span className="font-mono font-semibold text-g2">{detail?.prediction?.llm_model ?? run.llm_model ?? 'model 미제공'}</span>
               </div>
-              {repAlarm && (
-                <button type="button" onClick={() => setAlarmOpen(true)} className="shrink-0 text-[11.5px] font-bold text-blue hover:text-blue-hover">
-                  대표 알람 보기 →
-                </button>
-              )}
             </div>
             <div className="mt-2 text-[13.5px] font-semibold leading-[1.7]">
               {llmSummary ?? '이 실행에는 저장된 LLM 원인 분석 결과가 없습니다.'}
@@ -239,12 +174,6 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
             <div className="mt-2 text-[12px] font-semibold leading-5 text-ink">{actionReason}</div>
             <div className="mt-2 text-[11px] leading-5 text-g1"><strong className="text-navy">다음 확인:</strong> {verificationSteps}</div>
           </section>
-          <section className="rounded-[10px] border border-[#dbeafe] bg-tint-blue px-3.5 py-3">
-            <div className="text-[10.5px] font-extrabold text-blue-hover">전달 정책 · 결과 · 관찰</div>
-            <div className="mt-2 text-[11.5px] leading-5 text-g1"><strong className="text-navy">정책:</strong> {approvalStatus}</div>
-            <div className="mt-1 text-[11.5px] leading-5 text-g1"><strong className="text-navy">전달:</strong> {deliveryStatus}</div>
-            <div className="mt-1 text-[11px] leading-5 text-g2"><strong className="text-navy">조치 후:</strong> {observation}</div>
-          </section>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-x-5 gap-y-3.5">
           {items.map(([k, v, cls]) => (
@@ -257,17 +186,6 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
           ))}
         </div>
       </div>
-      {alarmOpen && repAlarm && (
-        <RepresentativeAlarmModal
-          alarm={repAlarm}
-          run={run}
-          measured={measured}
-          wafer={wafer}
-          lim={lim}
-          judgement={judgement}
-          onClose={() => setAlarmOpen(false)}
-        />
-      )}
       {impactOpen && impactSelection && (
         <AgentImpactGraphModal
           onClose={() => setImpactOpen(false)}
