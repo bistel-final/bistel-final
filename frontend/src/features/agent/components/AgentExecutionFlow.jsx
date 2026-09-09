@@ -162,11 +162,20 @@ function DecisionNode({ data, selected }) {
   )
 }
 
+// 실행 중인 단계는 선택 여부와 무관하게 노드 자체를 그 단계 색으로 강조한다.
+const emphasisStyle = (data, selected) => ({
+  border: `${selected || data.current ? 2.5 : 1.25}px solid ${selected || data.current ? data.color : '#cad5df'}`,
+  background: data.current ? `${data.color}1f` : selected ? `${data.color}12` : '#fff',
+  boxShadow: data.current
+    ? `0 0 0 5px ${data.color}22`
+    : selected ? `0 0 0 4px ${data.color}12` : '0 2px 7px rgba(15,23,42,.05)',
+})
+
 function ToolPlanNode({ data, selected }) {
   return (
     <div
-      className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5"
-      style={{ border: `${selected ? 2.5 : 1.25}px solid ${selected ? data.color : '#cad5df'}`, boxShadow: selected ? `0 0 0 4px ${data.color}12` : '0 2px 7px rgba(15,23,42,.05)' }}
+      className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] px-3 py-2.5"
+      style={emphasisStyle(data, selected)}
     >
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="left" type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
@@ -176,14 +185,9 @@ function ToolPlanNode({ data, selected }) {
   )
 }
 
-const routedStepStyle = (selected, color) => ({
-  border: `${selected ? 2.5 : 1.25}px solid ${selected ? color : '#cad5df'}`,
-  boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)',
-})
-
 function ApprovalStepNode({ data, selected }) {
   return (
-    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
+    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] px-3 py-2.5" style={emphasisStyle(data, selected)}>
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="right" type="source" position={Position.Right} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       {data.label}
@@ -193,7 +197,7 @@ function ApprovalStepNode({ data, selected }) {
 
 function DeliveryStepNode({ data, selected }) {
   return (
-    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] bg-white px-3 py-2.5" style={routedStepStyle(selected, data.color)}>
+    <div className="relative flex min-h-[92px] w-[220px] items-center justify-center rounded-[10px] px-3 py-2.5" style={emphasisStyle(data, selected)}>
       <Handle id="top" type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="left" type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
       <Handle id="bottom" type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
@@ -223,6 +227,16 @@ const TOOL_GUIDES = Object.freeze({
     purpose: '알람이 난 LOT의 측정 추세와 관리 한계 초과 여부를 확인했습니다.',
     success: '측정 데이터와 FDC 판정 근거를 확보했습니다.',
     failure: '측정 데이터 근거를 확보하지 못했습니다.',
+  },
+  get_chamber_parameter_history: {
+    purpose: '같은 파라미터의 이전 LOT 추세와 형제 챔버 값을 대조했습니다.',
+    success: '이력·대조 근거를 확보했습니다.',
+    failure: '이력·대조 근거를 확보하지 못했습니다.',
+  },
+  get_metrology_result: {
+    purpose: '해당 공정 경로의 품질 계측값과 판정 결과를 확인했습니다.',
+    success: '계측 결과 근거를 확보했습니다.',
+    failure: '계측 결과 근거를 확보하지 못했습니다.',
   },
   get_equipment_context: {
     purpose: '해당 챔버의 설비·공정·파라미터 연결 관계와 영향 범위를 확인했습니다.',
@@ -789,15 +803,16 @@ function AgentExecutionFlow({ detail, alarm }) {
     // 진단 노드는 왼쪽 열(근거 충분성 판단)에서 들어오는 화살표를 받도록 왼쪽 입구가 있는 노드 형태를 쓴다.
     const toolPlan = step.id === 'tools' || layout.leftEntry === true
     const routedStep = step.id === 'approval' ? 'approvalStep' : step.id === 'delivery' ? 'deliveryStep' : null
+    const emphasis = current ? color : null
     return {
       id: step.id,
       position: { x: layout.x, y: layout.y },
-      data: { label: nodeLabel(step, selected, incidentScopeLabel, current), color, current },
+      data: { label: nodeLabel(step, selected, incidentScopeLabel, current), color, current, emphasis },
       type: decision ? 'decision' : toolPlan ? 'toolPlan' : routedStep ?? 'default',
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       draggable: false,
-      style: decision || toolPlan || routedStep ? undefined : { width: 220, minHeight: 92, borderRadius: 10, border: `${selected ? 2.5 : 1.25}px ${layout.experimental ? 'dashed' : 'solid'} ${selected ? color : '#cad5df'}`, background: selected ? `${color}12` : layout.experimental ? '#faf8fc' : '#fff', boxShadow: selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
+      style: decision || toolPlan || routedStep ? undefined : { width: 220, minHeight: 92, borderRadius: 10, border: `${selected || current ? 2.5 : 1.25}px solid ${selected || current ? color : '#cad5df'}`, background: current ? `${color}1f` : selected ? `${color}12` : '#fff', boxShadow: current ? `0 0 0 5px ${color}22` : selected ? `0 0 0 4px ${color}12` : '0 2px 7px rgba(15,23,42,.05)' },
     }
   }), [incidentScopeLabel, progress.currentId, selectedId, steps])
   const selected = steps.find((step) => step.id === selectedId) ?? steps[0]
