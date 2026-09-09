@@ -57,13 +57,25 @@ const STEP_META = Object.freeze({
 const evidenceBy = (detail, types) =>
   (detail.evidence_items ?? []).filter((item) => types.includes(item.type))
 
+const succeededCalls = (detail, toolName) =>
+  (detail.tools ?? []).filter((tool) => tool.tool_name === toolName && tool.status === 'SUCCESS')
+
+// 인용된 근거가 있으면 그것을, 없으면 성공한 조회 기록을 단계 값으로 쓴다.
+const collectedBy = (detail, types, toolName) => {
+  const items = evidenceBy(detail, types)
+  return items.length ? items : succeededCalls(detail, toolName)
+}
+
+const observedSteps = (detail, toolName) =>
+  (detail.react_trace ?? []).filter((entry) => entry.tool === toolName && entry.phase === 'OBSERVED')
+
 const executionStepsOf = (detail) => [
   { id: 'alarm', value: evidenceBy(detail, ['ALARM']) },
-  { id: 'fdc', value: evidenceBy(detail, ['TRACE']) },
-  { id: 'history', value: (detail.tools ?? []).filter((tool) => tool.tool_name === 'get_chamber_parameter_history') },
-  { id: 'metrology', value: evidenceBy(detail, ['METROLOGY']) },
-  { id: 'rag', value: evidenceBy(detail, ['DOCUMENT']) },
-  { id: 'graph', value: evidenceBy(detail, ['GRAPH']) },
+  { id: 'fdc', value: collectedBy(detail, ['TRACE'], 'get_fdc_summary') },
+  { id: 'history', value: succeededCalls(detail, 'get_chamber_parameter_history') },
+  { id: 'metrology', value: collectedBy(detail, ['METROLOGY'], 'get_metrology_result') },
+  { id: 'rag', value: collectedBy(detail, ['DOCUMENT'], 'search_documents') },
+  { id: 'graph', value: collectedBy(detail, ['GRAPH'], 'get_equipment_context') },
   { id: 'tools', value: detail.tools ?? [] },
   { id: 'assessment', value: detail.evidence_assessment },
   { id: 'react', value: detail.react_trace ?? null },
@@ -230,6 +242,14 @@ const TOOL_LABELS = Object.freeze({
   get_equipment_context: '장비 · 공정 관계 조회',
   search_documents: '매뉴얼 문서 검색',
   send_action: '조치 전달',
+})
+
+const EVIDENCE_TOOL = Object.freeze({
+  fdc: 'get_fdc_summary',
+  history: 'get_chamber_parameter_history',
+  metrology: 'get_metrology_result',
+  rag: 'search_documents',
+  graph: 'get_equipment_context',
 })
 
 const TOOL_GUIDES = Object.freeze({
@@ -700,22 +720,35 @@ function StepPanel({ detail, step, alarm }) {
   const title = STEP_META[step.id][0]
   let content = null
   if (step.id === 'alarm') content = <AlarmPreview detail={detail} alarm={alarm} items={step.value} />
-  if (['fdc', 'metrology', 'rag', 'graph'].includes(step.id)) content = <EvidenceList detail={detail} items={step.value} />
-  if (step.id === 'history') content = step.value.length ? (
-    <div className="space-y-2">
-      {step.value.map((tool, index) => (
-        <div key={`history:${index}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <strong className="text-[12px] text-navy">{TOOL_LABELS.get_chamber_parameter_history}</strong>
-            <Badge variant={tool.status === 'SUCCESS' ? 't-green' : 't-red'}>{toolStatusText(tool.status)}</Badge>
+  if (['fdc', 'history', 'metrology', 'rag', 'graph'].includes(step.id)) {
+    // 인용된 근거가 있으면 그대로 보여 주고, 조회만 하고 인용되지 않았으면
+    // 조사 기록에서 무엇을 대상으로 무엇을 봤는지 읽어 온다.
+    const cited = step.value.filter((item) => item.type)
+    const observed = observedSteps(detail, EVIDENCE_TOOL[step.id])
+    content = cited.length ? <EvidenceList detail={detail} items={cited} /> : observed.length ? (
+      <div className="space-y-2">
+        {observed.map((entry) => (
+          <div key={`${step.id}:${entry.seq}`} className="rounded-lg border border-line bg-soft px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong className="text-[12px] text-navy">{entry.argument_summary ?? TOOL_LABELS[EVIDENCE_TOOL[step.id]]}</strong>
+              <Badge variant="t-green">수집 완료</Badge>
+            </div>
+            {entry.rationale_summary && (
+              <div className="mt-2 text-[11.5px] leading-5 text-g1"><strong className="text-navy">선택 이유:</strong> {entry.rationale_summary}</div>
+            )}
+            {entry.observation_summary && (
+              <div className="mt-1 text-[11.5px] leading-5 text-g1"><strong className="text-navy">관찰:</strong> {entry.observation_summary}</div>
+            )}
           </div>
-          <div className="mt-2 text-[11.5px] leading-5 text-g1">
-            {TOOL_GUIDES.get_chamber_parameter_history[tool.status === 'SUCCESS' ? 'success' : 'failure']}
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : <EmptyBlock text="이전 LOT·형제 챔버 대조를 수행하지 않았습니다" />
+        ))}
+      </div>
+    ) : step.value.length ? (
+      <div className="rounded-lg border border-line bg-soft px-3 py-2.5 text-[12px] text-g1">
+        {TOOL_LABELS[EVIDENCE_TOOL[step.id]]}를 {step.value.length}회 수행했습니다. 가설이 인용한 근거로는 채택되지 않았습니다.
+      </div>
+    ) : <EmptyBlock text="이 단계의 조회를 수행하지 않았습니다" />
+  }
+
   if (step.id === 'tools') content = step.value.length ? (
     <div className="space-y-2">
       {step.value.map((tool, index) => {

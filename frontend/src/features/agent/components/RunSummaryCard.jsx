@@ -106,7 +106,6 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
               <SummaryFact label="발생 WAFER" value={incidentWaferText} />
               <SummaryFact label="발생 챔버" value={measuredText(run.incident?.chamber_id)} />
               <SummaryFact label="이상 파라미터" value={measuredText(run.sensor_id, '미제공')} />
-              <SummaryFact label="알람 판정" value={`${judgement ?? '미제공'} · ${run.alarm_count}건`} />
             </div>
             {detail?.diagnosis?.evidence_synthesis && (
               <div className="mt-3 border-t border-tint-blue-line pt-2.5 text-[11.5px] leading-6 text-g1">
@@ -115,12 +114,13 @@ function RunSummaryCard({ run, detail, repAlarm, wafer = null, lim, action }) {
             )}
           </section>
           <section className="rounded-[10px] border border-[#dbeafe] bg-tint-blue px-3.5 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[10.5px] font-extrabold text-blue-hover">권고 조치</div>
-              <span className="rounded-md border border-tint-blue-line bg-white px-2 py-0.5 font-mono text-[10.5px] font-bold text-blue">{actionCode}</span>
-            </div>
+            <div className="text-[10.5px] font-extrabold text-blue-hover">권고 조치</div>
             <div className="mt-2 text-[12px] font-semibold leading-5 text-ink">{actionReason}</div>
             <div className="mt-2 text-[11px] leading-5 text-g1"><strong className="text-navy">다음 확인:</strong> {verificationSteps}</div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <SummaryFact label="조치 코드" value={actionCode} />
+              <SummaryFact label="알람 판정" value={`${judgement ?? '미제공'} · ${run.alarm_count}건`} />
+            </div>
             <div className="mt-2 flex items-start justify-between gap-3 border-t border-tint-blue-line pt-2.5">
               <div className="min-w-0 text-[11px] leading-5 text-g1">
                 <strong className="text-navy">영향 범위:</strong> {impact?.summary ?? '저장된 영향 범위 요약이 없습니다.'}
