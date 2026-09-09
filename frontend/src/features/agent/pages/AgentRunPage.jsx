@@ -117,7 +117,6 @@ function AgentRunDetailPage({ runId }) {
   const pollCountRef = useRef(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [section, setSection] = useState('run')
-  const [pollingEnded, setPollingEnded] = useState(false)
   const [state, setState] = useState({
     phase: 'loading',
     runs: [],
@@ -211,10 +210,8 @@ function AgentRunDetailPage({ runId }) {
 
   useEffect(() => {
     if (state.phase !== 'success' || !shouldPollAgentRun(state.detail)) return undefined
-    if (pollCountRef.current >= 15) {
-      const exhausted = window.setTimeout(() => setPollingEnded(true), 0)
-      return () => window.clearTimeout(exhausted)
-    }
+    // Level 3 실행은 보통 1~2분이다. 2초 간격으로 최대 5분까지 따라간다.
+    if (pollCountRef.current >= 150) return undefined
     const timer = window.setTimeout(() => {
       pollCountRef.current += 1
       load()
@@ -319,12 +316,6 @@ function AgentRunDetailPage({ runId }) {
             </div>
           </CollapsibleSection>
           <AgentExecutionFlow detail={detail} alarm={alarm} />
-          {pollingEnded && (
-            <div className="flex items-center justify-between rounded-lg border border-tint-amber-line bg-tint-amber px-4 py-2 text-[12.5px] text-tint-amber-text">
-              <span>30초 자동 갱신이 종료됐습니다. 전송 재시도는 수행하지 않았습니다.</span>
-              <Button sm onClick={() => { pollCountRef.current = 0; setPollingEnded(false); load() }}>수동 새로고침</Button>
-            </div>
-          )}
           <RunSummaryCard
             run={run}
             detail={detail}
